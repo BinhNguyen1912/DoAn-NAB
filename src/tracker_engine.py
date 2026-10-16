@@ -80,14 +80,19 @@ class TrackerEngine:
         self._video_hw = None   # (H, W) của frame gốc — tham chiếu resize mask đầu ra
 
     @classmethod
-    def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT) -> "TrackerEngine":
-        """Dựng predictor SAMURAI tiny (mất ~20-60s). Test dùng fixture session-scoped."""
+    def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
+                      model_cfg=MODEL_CFG) -> "TrackerEngine":
+        """Dựng predictor SAMURAI (mặc định tiny trên CPU; ~20-60s).
+
+        model_cfg: đường dẫn YAML của SAM 2 — có thể đè qua config YAML (ticket 08).
+        Test dùng fixture session-scoped để build 1 lần.
+        """
         from sam2.build_sam import build_sam2_video_predictor
 
         ckpt = checkpoint
         if not os.path.isfile(ckpt):
             ckpt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ckpt)
-        predictor = build_sam2_video_predictor(MODEL_CFG, ckpt, device=device)
+        predictor = build_sam2_video_predictor(model_cfg, ckpt, device=device)
         return cls(predictor)
 
     # ---------- preprocessing (đối chiếu _load_img_as_tensor của SAM 2) ----------

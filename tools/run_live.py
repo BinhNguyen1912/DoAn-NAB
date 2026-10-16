@@ -16,6 +16,7 @@ Phím trong cửa sổ (--display):
   (chỉ định --bbox thì track ngay, không cần kéo; vẫn bấm r để chọn lại bằng chuột)
 
 --record FILE : ghi video mp4 bản đã overlay (HUD mask + ô bao + quỹ đạo + FPS).
+--config FILE : đọc cấu hình từ YAML (configs/default.yaml) — flag CLI đè file.
 Số FPS/latency in ra console là THỰC ĐO trên máy (ADR-0002 — trung thực).
 """
 import argparse
@@ -30,9 +31,10 @@ if _REPO_ROOT not in sys.path:
 
 import sam2.sam2_video_predictor as _vp          # noqa: E402
 
-from src.tracker_engine import DEFAULT_CKPT, TrackerEngine  # noqa: E402
+from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
+from src.config import load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 
@@ -197,30 +199,61 @@ def _run_headless(engine, args):
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Live pipeline: nguồn video → SAMURAI → chọn đối tượng bằng chuột")
-    ap.add_argument("--source", required=True, help="index webcam (số) / rtsp://URL / đường dẫn file")
+    ap = argparse.ArgumentParser(
+        description="Live/headless pipeline: nguồn video → SAMURAI → HUD + metrics",
+        epilog=("Cấu hình: --config configs/default.yaml (checkpoint, nguồn, ghi mp4, "
+                "metrics) — flag CLI đè giá trị file YAML."),
+    )
+    ap.add_argument("--config", default=None, help="file YAML (VD configs/default.yaml)")
+    ap.add_argument("--source", default=None,
+                    help="index webcam (số) / rtsp://URL / đường dẫn file (mặc định lấy config)")
     ap.add_argument("--bbox", default=None, help="'x,y,w,h' frame 0 (headless: mặc định giữa frame; display: track ngay)")
     ap.add_argument("--bbox-file", default=None, help="file txt chứa 'x,y,w,h' frame 0")
     ap.add_argument("--display", action="store_true",
                     help="mở cửa sổ OpenCV + kéo chuột chọn đối tượng (mặc định headless)")
     ap.add_argument("--max-frames", type=int, default=None, help="giới hạn số frame xử lý")
-    ap.add_argument("--record", default=None, help="ghi video mp4 HUD ra file này (mặc định tắt)")
+    ap.add_argument("--record", default=None, help="ghi video mp4 HUD ra file này (đè config)")
     ap.add_argument("--record-fps", type=float, default=None,
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
-    ap.add_argument("--max-trajectory", type=int, default=100,
-                    help="số điểm quỹ đạo tối đa (deque giới hạn bộ nhớ)")
+    ap.add_argument("--max-trajectory", type=int, default=None,
+                    help="số điểm quỹ đạo tối đa (đè config)")
     ap.add_argument("--metrics-csv", default=None,
-                    help="ghi metrics từng frame ra CSV (ticket 07)")
+                    help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
                     help="ghi summary JSON (mean/p95/tỷ lệ mất dấu) — cần --metrics-csv")
-    ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (mặc định tiny trong samurai/)")
+    ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
     args = ap.parse_args()
 
-    if args.source.isdigit():
+    # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
+    cfg = load_config(args.config)
+    cfg = merge_cli_overrides(cfg, {
+        "checkpoint": args.ckpt,
+        "source": args.source,
+        "max_trajectory": args.max_trajectory,
+        "max_frames": args.max_frames,
+        "record_path": args.record,
+        "record_fps": args.record_fps,
+        "metrics_csv": args.metrics_csv,
+        "metrics_summary": args.metrics_summary,
+    })
+    checkpoint = resolve_checkpoint(cfg["checkpoint"])
+    if cfg["source"] is None:
+        print("[LOI] chưa chỉ định nguồn — truyền --source hoặc đặt 'source:' trong file config")
+        raise SystemExit(1)
+    args.source = cfg["source"]
+    if isinstance(args.source, str) and args.source.isdigit():
         args.source = int(args.source)
+    args.max_trajectory = cfg["max_trajectory"]
+    args.max_frames = cfg["max_frames"]
+    args.record_fps = cfg["record_fps"]
+    # bật ghi: --record chỉ định, hoặc record_enabled trong config
+    args.record = args.record or (cfg["record_path"] if cfg["record_enabled"] else None)
+    args.metrics_csv = args.metrics_csv or cfg["metrics_csv"]
+    args.metrics_summary = args.metrics_summary or cfg["metrics_summary"]
+
     _guess_bbox_file(args)
 
-    engine = TrackerEngine.build_default(checkpoint=args.ckpt or DEFAULT_CKPT)
+    engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"])
 
     if args.display:
         _run_display(engine, args)

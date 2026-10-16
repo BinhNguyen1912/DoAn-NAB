@@ -4,9 +4,9 @@
 
 **Blocked by:** 04, 07
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Một lệnh headless trên video file → ra mp4 kết quả + CSV + summary; chạy được môi trường không màn hình (server/Colab)
-- [ ] Đổi checkpoint/tham số qua file YAML trong configs/ không phải sửa code
-- [ ] README cài đặt từ clone mới (clone SAMURAI + conda env + tải checkpoint) đủ cho người khác tự làm; ghi rõ tham chiếu config SAMURAI
-- [ ] Tài liệu ghi nhận lệnh headless dùng cho Colab GPU theo ADR-0002
+- [x] Một lệnh headless trên video file → ra mp4 kết quả + CSV + summary; chạy được môi trường không màn hình (server/Colab)
+- [x] Đổi checkpoint/tham số qua file YAML trong configs/ không phải sửa code
+- [x] README cài đặt từ clone mới (clone SAMURAI + conda env + tải checkpoint) đủ cho người khác tự làm; ghi rõ tham chiếu config SAMURAI
+- [x] Tài liệu ghi nhận lệnh headless dùng cho Colab GPU theo ADR-0002

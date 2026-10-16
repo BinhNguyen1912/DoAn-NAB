@@ -1,0 +1,20 @@
+# Cấu hình mặc định cho run_live.py — chỉ ghi key muốn KHÁC giá trị mặc định.
+# Xem src/config.py:DEFAULTS cho danh sách key + ý nghĩa.
+# Cách dùng: python tools/run_live.py --config configs/default.yaml --source data/video.mp4
+# Các flag CLI (--record, --metrics-csv, --max-trajectory, ...) đè lên giá trị trong file.
+
+checkpoint: samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt   # SAM 2.1 tiny (ADR-0001)
+model_cfg: configs/samurai/sam2.1_hiera_t.yaml              # config SAMURAI gốc — giữ nguyên
+
+source: 0                    # 0 = webcam | rtsp://IP:554/stream | data/video.mp4
+
+max_trajectory: 100          # số điểm quỹ đạo tối đa trên HUD (deque giới hạn)
+
+record_enabled: false        # true = ghi mp4 HUD ra record_path
+record_path: data/demo_hud.mp4
+record_fps: null             # null = lấy từ nguồn (headless) / 30 (display)
+
+metrics_csv: null            # ví dụ data/metrics.csv — bật để ghi số liệu từng frame
+metrics_summary: null        # ví dụ data/summary.json — cần metrics_csv
+
+max_frames: null             # null = chạy hết nguồn; đặt số để cắt ngắn demo
