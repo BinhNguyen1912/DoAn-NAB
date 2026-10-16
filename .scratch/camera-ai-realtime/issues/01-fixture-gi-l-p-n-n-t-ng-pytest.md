@@ -4,9 +4,13 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] pytest chạy được, có ít nhất 1 test green demo cách dùng fixture
 - [x] Fixture sinh chuỗi N frame (numpy) + trả về vị trí (bbox) đúng của ô vuông tại từng frame
 - [x] Có chế độ che khuất (chen cản/ẩn ô vuông vài frame) cho test sau dùng
 - [x] Chạy được trên CPU máy hiện tại, không cần model
+
+## Answer
+
+Hoàn thành: pytest nền tảng + fixture sinh chuỗi frame ô vuông di chuyển + chế độ che khuất; chạy CPU không model. Xem log docs/task/16-10-2026-implement-ticket-01-fixture-pytest.md; test suite hiện 48 test green.

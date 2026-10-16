@@ -4,8 +4,12 @@
 
 **Blocked by:** 05
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] HUD đủ: mask tô màu + ô bao + đường quỹ đạo + FPS/latency; nhãn tiếng Việt hiển thị đúng font
 - [x] Bật ghi video qua config → file mp4 đầu ra mở được, nội dung đúng luồng demo
 - [x] Quỹ đạo vẽ theo tâm đối tượng, giới hạn số điểm (deque) không tràn bộ nhớ
+
+## Answer
+
+Visualizer hoàn thành: HUD 5 lớp (mask alpha + bbox + polyline quỹ đạo deque maxlen + FPS/độ trễ nhãn tiếng Việt PIL/TTF) + ghi mp4 (--record). 17 test mới, full suite 48/48; smoke mp4 đọc lại đúng N frame. Commit dfbfd88.

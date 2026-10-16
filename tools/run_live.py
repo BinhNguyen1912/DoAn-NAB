@@ -57,6 +57,28 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     return viz
 
 
+def _make_metrics(args):
+    """Tạo MetricsLogger nếu --metrics-csv; tắt thì trả None (không log)."""
+    if not args.metrics_csv:
+        return None
+    from src.metrics_logger import MetricsLogger
+    print(f"[pipeline] ghi metrics: {args.metrics_csv} (+summary JSON nếu --metrics-summary)")
+    return MetricsLogger()
+
+
+def _finish_metrics(metrics, args, total):
+    """Xuất CSV + (tuỳ chọn) summary JSON khi phiên xong."""
+    if metrics is None:
+        return
+    metrics.write_csv(args.metrics_csv)
+    if args.metrics_summary:
+        metrics.write_summary_json(args.metrics_summary)
+    s = metrics.summary()
+    print(f"[metrics] {s['total_frames']} frame | mean={s['mean_latency_ms']:.0f} ms | "
+          f"p95={s['p95_latency_ms']:.0f} ms | mất dấu {s['lost_count']}/{s['total_frames']} "
+          f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
+
+
 def _load_bbox(args, first_frame=None):
     """bbox từ --bbox (x,y,w,h) hoặc --bbox-file (file txt).
 
@@ -109,6 +131,7 @@ def _run_display(engine, args):
             print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
 
         viz = _make_visualizer(args)  # kích thước biết ở frame đầu → mở trì hoãn
+        metrics = _make_metrics(args)
         summary = run_interactive(
             source=args.source,
             engine=engine,
@@ -118,7 +141,9 @@ def _run_display(engine, args):
             preselect_bbox=armed_bbox,
             on_result=on_result,
             visualizer=viz,
+            metrics=metrics,
         )
+        _finish_metrics(metrics, args, summary.processed)
     except KeyboardInterrupt:
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
         raise SystemExit(0)
@@ -150,14 +175,17 @@ def _run_headless(engine, args):
         viz = _make_visualizer(args, record_size=(first.shape[1], first.shape[0]),
                                record_fps=record_fps)
         print("[pipeline] bắt đầu tracking... (headless)")
+        metrics = _make_metrics(args)
         summary = run_tracking(
             source=args.source,
             engine=engine,
             bbox=bbox,
             max_frames=args.max_frames,
             visualizer=viz,
+            metrics=metrics,
         )
         viz.close_recorder()
+        _finish_metrics(metrics, args, summary.total_frames)
     except KeyboardInterrupt:
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
         raise SystemExit(0)
@@ -181,6 +209,10 @@ def main():
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
     ap.add_argument("--max-trajectory", type=int, default=100,
                     help="số điểm quỹ đạo tối đa (deque giới hạn bộ nhớ)")
+    ap.add_argument("--metrics-csv", default=None,
+                    help="ghi metrics từng frame ra CSV (ticket 07)")
+    ap.add_argument("--metrics-summary", default=None,
+                    help="ghi summary JSON (mean/p95/tỷ lệ mất dấu) — cần --metrics-csv")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (mặc định tiny trong samurai/)")
     args = ap.parse_args()
 

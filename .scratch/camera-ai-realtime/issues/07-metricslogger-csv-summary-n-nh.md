@@ -4,9 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Cho N bản ghi giả → CSV đúng cột/dòng; summary tính đúng mean/p95
-- [ ] Cờ mất dấu (mask rỗng/điểm dưới ngưỡng) đếm được tỷ lệ trong summary
-- [ ] Tâm (x,y) từng frame được ghi đủ để vẽ quỹ đạo cho báo cáo
-- [ ] Test nhanh, không cần model
+- [x] Cho N bản ghi giả → CSV đúng cột/dòng; summary tính đúng mean/p95
+- [x] Cờ mất dấu (mask rỗng/điểm dưới ngưỡng) đếm được tỷ lệ trong summary
+- [x] Tâm (x,y) từng frame được ghi đủ để vẽ quỹ đạo cho báo cáo
+- [x] Test nhanh, không cần model

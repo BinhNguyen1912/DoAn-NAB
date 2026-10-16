@@ -4,8 +4,12 @@
 
 **Blocked by:** 02, 03
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] Một lệnh chạy pipeline: webcam live (hoặc video file demo) → cửa sổ hiện frame + mask bám theo đối tượng (bbox mặc định từ config / bbox file txt nếu có)
 - [x] Độ trễ trung bình in ra console theo từng frame (trung thực, không claim real-time)
 - [x] Thoát cửa sổ / Ctrl+C sạch, không crash, không để process zombie
+
+## Answer
+
+Hoàn thành: pipeline 1 lệnh nối VideoSource → TrackerEngine → overlay + summary mean/p95/FPS hiệu dụng; Ctrl+C sạch. Log docs/task/16-10-2026-implement-ticket-04-pipeline-live.md. Display/webcam chờ thủ công trên máy có GUI (WSL không màn hình).

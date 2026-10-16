@@ -18,6 +18,7 @@ import cv2
 import numpy as np
 
 from src.video_source import open_video_source
+from src.metrics_logger import FrameRecord
 
 _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
@@ -69,6 +70,19 @@ def draw_overlay_minimal(frame, result):
     return img
 
 
+def _record_from(result) -> FrameRecord:
+    """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
+    x1, y1, x2, y2 = [int(v) for v in result.bbox]
+    center = ((x1 + x2) // 2, (y1 + y2) // 2) if (x2 > x1 and y2 > y1) else None
+    return FrameRecord(
+        frame_idx=result.frame_idx,
+        latency_ms=result.elapsed_ms,
+        score=result.score,
+        center=center,
+        lost=not (result.mask is not None and result.mask.any()),
+    )
+
+
 def _annotate(frame, result, visualizer):
     """Frame + result → HUD: Visualizer đầy đủ nếu có, không thì overlay tối thiểu."""
     if visualizer is not None:
@@ -77,11 +91,12 @@ def _annotate(frame, result, visualizer):
 
 
 def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
-                 visualizer=None) -> SessionSummary:
+                 visualizer=None, metrics=None) -> SessionSummary:
     """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng).
 
     visualizer: Visualizer (ticket 06) — HUD đầy đủ + ghi video nếu đã open_recorder.
                 None → overlay tối thiểu draw_overlay_minimal (ticket 04).
+    metrics   : MetricsLogger (ticket 07) — log FrameRecord mỗi frame (CSV/summary sau).
     """
     """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng)."""
     summary = SessionSummary(total_frames=0)
@@ -91,6 +106,8 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         result = engine.start(frame, bbox)
+        if metrics is not None:
+            metrics.log(_record_from(result))
         img = _annotate(frame, result, visualizer)
         summary.latencies_ms.append(result.elapsed_ms)
         summary.total_frames += 1
@@ -102,6 +119,8 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
             if frame is None:
                 break
             result = engine.process(frame)
+            if metrics is not None:
+                metrics.log(_record_from(result))
             img = _annotate(frame, result, visualizer)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
@@ -121,7 +140,7 @@ class InteractiveSummary:
 
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
-                    visualizer=None) -> InteractiveSummary:
+                    visualizer=None, metrics=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -137,6 +156,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                (ms, bbox...) mà display callback không cần biết result.
     visualizer: Visualizer (ticket 06) cho HUD đầy đủ + ghi video; r chọn lại sẽ reset()
                quỹ đạo. None → overlay tối thiểu như ticket 04.
+    metrics   : MetricsLogger (ticket 07) — log FrameRecord mỗi frame track (kể cả mất dấu).
     Output   : InteractiveSummary(processed = số frame đã track).
     """
     summary = InteractiveSummary()
@@ -167,6 +187,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     summary.processed += 1
                     if on_result is not None:
                         on_result(last_result)
+                    if metrics is not None:
+                        metrics.log(_record_from(last_result))
                     mode = "track"
             else:  # track
                 img = _annotate(frame, last_result, visualizer)
@@ -189,6 +211,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)
+                if metrics is not None:
+                    metrics.log(_record_from(last_result))
     finally:
         src.close()
     return summary
