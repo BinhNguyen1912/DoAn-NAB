@@ -4,8 +4,8 @@
 
 **Blocked by:** 04
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Kéo chuột vẽ ô có khung trực quan; thả chuột → track khởi động từ ô đó
-- [ ] Nhấn r → track dừng, về chế độ chọn lại trên frame hiện tại; chọn đối tượng mới thành công
-- [ ] ESC / q thoát chương trình sạch
+- [x] Kéo chuột vẽ ô có khung trực quan; thả chuột → track khởi động từ ô đó
+- [x] Nhấn r → track dừng, về chế độ chọn lại trên frame hiện tại; chọn đối tượng mới thành công
+- [x] ESC / q thoát chương trình sạch

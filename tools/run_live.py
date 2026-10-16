@@ -1,17 +1,21 @@
 """
-Lệnh chạy pipeline live end-to-end (ticket 04): VideoSource → TrackerEngine → overlay.
+Lệnh chạy pipeline live end-to-end: VideoSource → TrackerEngine → PromptSelector → overlay.
 
 Cách chạy (env conda `samurai`):
-  # Webcam live (hiển thị cửa sổ — chạy trên máy có camera + màn hình):
+  # Webcam live + chọn đối tượng bằng chuột (chạy trên máy có camera + màn hình):
   python tools/run_live.py --source 0 --display
   # Camera điện thoại/IP qua RTSP:
   python tools/run_live.py --source rtsp://IP:554/stream --display
   # Video file (headless — in số liệu console, không mở cửa sổ):
   python tools/run_live.py --source data/video.mp4 --bbox data/dog_bbox_frame0.txt
 
-Phím trong cửa sổ: q hoặc ESC để thoát đúng cách.
+Phím trong cửa sổ (--display):
+  - kéo chuột vẽ ô quanh đối tượng → thả chuột → track khởi động từ ô đó
+  - r          : dừng track, quay về chế độ chọn lại trên frame hiện tại
+  - q hoặc ESC : thoát đúng cách
+  (chỉ định --bbox thì track ngay, không cần kéo; vẫn bấm r để chọn lại bằng chuột)
+
 Số FPS/latency in ra console là THỰC ĐO trên máy (ADR-0002 — trung thực).
-Chọn đối tượng bằng chuột là ticket 05; hiện tại dùng bbox truyền vào / mặc định giữa frame.
 """
 import argparse
 import os
@@ -26,17 +30,22 @@ if _REPO_ROOT not in sys.path:
 import sam2.sam2_video_predictor as _vp          # noqa: E402
 
 from src.tracker_engine import DEFAULT_CKPT, TrackerEngine  # noqa: E402
-from src.live_pipeline import run_tracking                   # noqa: E402
+from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
+from src.prompt_selector import PromptSelector               # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 
 # Tắt progress bar tqdm của SAM 2 cho output console gọn
 _vp.tqdm = lambda it, *a, **k: it
 
-QUIT_KEYS = (ord("q"), 27)  # q / ESC
+WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
 
 
-def _load_bbox(args, first_frame):
-    """bbox từ --bbox (x,y,w,h) hoặc --bbox-file (file txt); mặc định = ô trung tâm."""
+def _load_bbox(args, first_frame=None):
+    """bbox từ --bbox (x,y,w,h) hoặc --bbox-file (file txt).
+
+    Interactive (--display): trả None khi không chỉ định → người dùng kéo chuột chọn.
+    Headless: mặc định = ô trung tâm của frame đầu.
+    """
     text = None
     if args.bbox:
         text = args.bbox
@@ -46,6 +55,8 @@ def _load_bbox(args, first_frame):
     if text:
         x, y, w, h = (int(v) for v in text.split(","))
         return (x, y, x + w, y + h)
+    if first_frame is None:
+        return None
     h, w = first_frame.shape[:2]
     return (w // 2 - 40, h // 2 - 40, w // 2 + 40, h // 2 + 40)
 
@@ -59,31 +70,50 @@ def _guess_bbox_file(args):
             args.bbox_file = neighbor
 
 
-def main():
-    ap = argparse.ArgumentParser(description="Live pipeline: nguồn video → SAMURAI → overlay")
-    ap.add_argument("--source", required=True, help="index webcam (số) / rtsp://URL / đường dẫn file")
-    ap.add_argument("--bbox", default=None, help="'x,y,w,h' frame 0")
-    ap.add_argument("--bbox-file", default=None, help="file txt chứa 'x,y,w,h' frame 0")
-    ap.add_argument("--display", action="store_true", help="mở cửa sổ OpenCV (mặc định headless)")
-    ap.add_argument("--max-frames", type=int, default=None, help="giới hạn số frame xử lý")
-    ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (mặc định tiny trong samurai/)")
-    args = ap.parse_args()
+def _run_display(engine, args):
+    """Chế độ --display: cửa sổ OpenCV, kéo chuột chọn đối tượng + phím r chọn lại (ticket 05)."""
+    selector = PromptSelector(frame_shape=(480, 640, 3))  # shape thật được bind lại khi chạy
+    armed_bbox = _load_bbox(args, first_frame=None)
 
-    if args.source.isdigit():
-        args.source = int(args.source)
-    _guess_bbox_file(args)
+    try:
+        cv2.namedWindow(WINDOW_NAME)
+        cv2.setMouseCallback(WINDOW_NAME, selector.on_mouse)
 
-    engine = TrackerEngine.build_default(checkpoint=args.ckpt or DEFAULT_CKPT)
+        if armed_bbox:
+            print(f"[pipeline] bbox chỉ định sẵn {armed_bbox} — track ngay (r để chọn lại bằng chuột)")
+        else:
+            print("[pipeline] kéo chuột vẽ ô quanh đối tượng → thả chuột để bám; r chọn lại; q/ESC thoát")
 
-    def on_frame(img, result):
-        if args.display:
-            cv2.imshow("Camera AI - Tracking (SAMURAI)", img)
-            key = cv2.waitKey(1) & 0xFF
-            if key in QUIT_KEYS:
-                return False
-        print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
-        return True
+        def on_display(img, mode):
+            cv2.imshow(WINDOW_NAME, img)
+            return cv2.waitKey(1) & 0xFF
 
+        def on_result(result):
+            print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
+
+        summary = run_interactive(
+            source=args.source,
+            engine=engine,
+            selector=selector,
+            display=on_display,
+            max_frames=args.max_frames,
+            preselect_bbox=armed_bbox,
+            on_result=on_result,
+        )
+    except KeyboardInterrupt:
+        print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
+        raise SystemExit(0)
+    finally:
+        cv2.destroyAllWindows()
+
+    print("=" * 60)
+    print(f"[kết quả] {summary.processed} frame đã track "
+          f"(chọn lại bằng phím r không tính thêm phiên)")
+    print("(số ms từng frame in trong vòng lặp; máy CPU không GPU — trung thực theo ADR-0002)")
+
+
+def _run_headless(engine, args):
+    """Chế độ mặc định (không --display): chạy hết nguồn, in số liệu console."""
     try:
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
         peek = open_video_source(args.source).open()
@@ -94,24 +124,44 @@ def main():
             raise SystemExit(1)
         bbox = _load_bbox(args, first)
 
-        print("[pipeline] bắt đầu tracking... (q/ESC để thoát khi --display)")
+        print("[pipeline] bắt đầu tracking... (headless)")
         summary = run_tracking(
             source=args.source,
             engine=engine,
             bbox=bbox,
-            on_frame=on_frame,
             max_frames=args.max_frames,
         )
     except KeyboardInterrupt:
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
         raise SystemExit(0)
-    finally:
-        cv2.destroyAllWindows()
 
     print("=" * 60)
     print(f"[kết quả] {summary.total_frames} frame | mean={summary.mean_ms:.0f} ms | "
           f"p95={summary.p95_ms:.0f} ms | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
     print("(máy CPU laptop không GPU NVIDIA — số liệu trung thực theo ADR-0002)")
+
+
+def main():
+    ap = argparse.ArgumentParser(description="Live pipeline: nguồn video → SAMURAI → chọn đối tượng bằng chuột")
+    ap.add_argument("--source", required=True, help="index webcam (số) / rtsp://URL / đường dẫn file")
+    ap.add_argument("--bbox", default=None, help="'x,y,w,h' frame 0 (headless: mặc định giữa frame; display: track ngay)")
+    ap.add_argument("--bbox-file", default=None, help="file txt chứa 'x,y,w,h' frame 0")
+    ap.add_argument("--display", action="store_true",
+                    help="mở cửa sổ OpenCV + kéo chuột chọn đối tượng (mặc định headless)")
+    ap.add_argument("--max-frames", type=int, default=None, help="giới hạn số frame xử lý")
+    ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (mặc định tiny trong samurai/)")
+    args = ap.parse_args()
+
+    if args.source.isdigit():
+        args.source = int(args.source)
+    _guess_bbox_file(args)
+
+    engine = TrackerEngine.build_default(checkpoint=args.ckpt or DEFAULT_CKPT)
+
+    if args.display:
+        _run_display(engine, args)
+    else:
+        _run_headless(engine, args)
 
 
 if __name__ == "__main__":

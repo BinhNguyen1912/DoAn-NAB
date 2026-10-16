@@ -23,6 +23,15 @@ _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
 _OVERLAY_ALPHA = 0.35
 
+# Phím thoát dùng chung (q / ESC) — run_interactive + tools/run_live cùng quy ước
+QUIT_KEYS = (ord("q"), 27)
+RESET_KEY = ord("r")
+
+# Hint hiển thị trên khung: viết KHÔNG dấu vì font Hershey của cv2.putText
+# không render được chữ có dấu tiếng Việt
+_HINT_SELECT = "[SELECT] keo chuot ve o chon doi tuong | r: chon lai | q/ESC: thoat"
+_HINT_TRACK = "[TRACK] r: chon lai doi tuong | q/ESC: thoat"
+
 
 @dataclass
 class SessionSummary:
@@ -85,6 +94,83 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None) -> Sessio
             summary.total_frames += 1
             if on_frame is not None and on_frame(img, result) is False:
                 break
+    finally:
+        src.close()
+    return summary
+
+
+@dataclass
+class InteractiveSummary:
+    """Số liệu 1 phiên tương tác (frame chọn không đếm, chỉ đếm frame đã track)."""
+
+    processed: int = 0
+
+
+def run_interactive(source, engine, selector, display, max_frames=None,
+                    preselect_bbox=None, on_result=None) -> InteractiveSummary:
+    """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
+
+    source   : nguồn video (truyền vào open_video_source).
+    engine   : TrackerEngine (có start/process/reset) — hoặc duck-type tương tự.
+    selector : PromptSelector; caller gắn vào window bằng
+               cv2.setMouseCallback(window, selector.on_mouse). Test có thể pre-arm bbox.
+    display  : callable(img, mode) -> key (int); mode là 'select' hoặc 'track'.
+               Trả QUIT_KEYS để thoát; với chạy thực đây là cv2.imshow + waitKey.
+    max_frames: gioi han so frame da track (chon lai van duoc qua gioi han).
+    preselect_bbox: (x1,y1,x2,y2) arm sẵn vào selector sau khi bind frame (từ --bbox) —
+               track ngay không cần kéo chuột. None = để người dùng kéo chuột.
+    on_result: callable(TrackingResult) gọi sau mỗi start/process — để caller log số liệu
+               (ms, bbox...) mà display callback không cần biết result.
+    Output   : InteractiveSummary(processed = số frame đã track).
+    """
+    summary = InteractiveSummary()
+    src = open_video_source(source).open()
+    try:
+        frame = src.read()
+        if frame is None:
+            raise RuntimeError("Nguồn không đưa được frame nào")
+        selector.bind(frame)
+        if preselect_bbox is not None:
+            # arm bbox chỉ định sẵn qua đúng đường sự kiện chuột (chuẩn hoá + min-size)
+            selector.on_mouse(cv2.EVENT_LBUTTONDOWN, preselect_bbox[0], preselect_bbox[1], 0, None)
+            selector.on_mouse(cv2.EVENT_LBUTTONUP, preselect_bbox[2], preselect_bbox[3], 0, None)
+        mode = "select"
+        last_result = None
+
+        while max_frames is None or summary.processed < max_frames or mode == "select":
+            if mode == "select":
+                img = selector.draw(frame)
+                cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                key = display(img, "select")
+                if key in QUIT_KEYS:
+                    break
+                if selector.has_bbox():
+                    bbox = selector.take_bbox()
+                    last_result = engine.start(frame, bbox)
+                    summary.processed += 1
+                    if on_result is not None:
+                        on_result(last_result)
+                    mode = "track"
+            else:  # track
+                img = draw_overlay_minimal(frame, last_result)
+                cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (255, 255, 255), 1, cv2.LINE_AA)
+                key = display(img, "track")
+                if key in QUIT_KEYS:
+                    break
+                if key == RESET_KEY:
+                    engine.reset()
+                    selector.bind(frame)  # chon lai tren frame hien tai
+                    mode = "select"
+                    continue
+                frame = src.read()
+                if frame is None:
+                    break
+                last_result = engine.process(frame)
+                summary.processed += 1
+                if on_result is not None:
+                    on_result(last_result)
     finally:
         src.close()
     return summary
