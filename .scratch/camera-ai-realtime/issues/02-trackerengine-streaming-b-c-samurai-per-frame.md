@@ -4,9 +4,9 @@
 
 **Blocked by:** 01
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Trên fixture giả lập: chọn bbox frame 0 → mỗi frame sau trả mask không rỗng, bbox IoU với vị trí thật ≥ 0.5 ở các frame mẫu
-- [ ] Frame bị che: trả mask rỗng/điểm tin cậy thấp mà không crash
-- [ ] Test TrackerEngine đánh dấu slow (build model) tách khỏi test nhanh, chạy được trên CPU laptop
-- [ ] Kết quả process có kèm thời gian xử lý (ms) để metrics dùng được
+- [x] Trên fixture giả lập: chọn bbox frame 0 → mỗi frame sau trả mask không rỗng, bbox IoU với vị trí thật ≥ 0.5 ở các frame mẫu
+- [x] Frame bị che: trả mask rỗng/điểm tin cậy thấp mà không crash
+- [x] Test TrackerEngine đánh dấu slow (build model) tách khỏi test nhanh, chạy được trên CPU laptop
+- [x] Kết quả process có kèm thời gian xử lý (ms) để metrics dùng được
