@@ -15,6 +15,7 @@ Phím trong cửa sổ (--display):
   - q hoặc ESC : thoát đúng cách
   (chỉ định --bbox thì track ngay, không cần kéo; vẫn bấm r để chọn lại bằng chuột)
 
+--record FILE : ghi video mp4 bản đã overlay (HUD mask + ô bao + quỹ đạo + FPS).
 Số FPS/latency in ra console là THỰC ĐO trên máy (ADR-0002 — trung thực).
 """
 import argparse
@@ -33,11 +34,27 @@ from src.tracker_engine import DEFAULT_CKPT, TrackerEngine  # noqa: E402
 from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
+from src.visualizer import Visualizer                        # noqa: E402
 
 # Tắt progress bar tqdm của SAM 2 cho output console gọn
 _vp.tqdm = lambda it, *a, **k: it
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
+
+
+def _make_visualizer(args, record_size=None, record_fps=30.0):
+    """Tạo Visualizer (HUD luôn bật); nếu --record chỉ định thì bật ghi mp4.
+
+    record_size=None → mở trì hoãn ở update() đầu tiên (display mode không biết trước
+    kích thước frame — headless truyền thẳng từ peek).
+    """
+    viz = Visualizer(max_trajectory=args.max_trajectory)
+    if args.record:
+        if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size):
+            print(f"[pipeline] ghi video: {args.record} ({record_fps:.0f} fps)")
+        else:
+            print(f"[LOI] không ghi được video tới {args.record} — chạy không ghi")
+    return viz
 
 
 def _load_bbox(args, first_frame=None):
@@ -91,6 +108,7 @@ def _run_display(engine, args):
         def on_result(result):
             print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
 
+        viz = _make_visualizer(args)  # kích thước biết ở frame đầu → mở trì hoãn
         summary = run_interactive(
             source=args.source,
             engine=engine,
@@ -99,11 +117,13 @@ def _run_display(engine, args):
             max_frames=args.max_frames,
             preselect_bbox=armed_bbox,
             on_result=on_result,
+            visualizer=viz,
         )
     except KeyboardInterrupt:
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
         raise SystemExit(0)
     finally:
+        viz.close_recorder()
         cv2.destroyAllWindows()
 
     print("=" * 60)
@@ -118,19 +138,26 @@ def _run_headless(engine, args):
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
         peek = open_video_source(args.source).open()
         first = peek.read()
+        peek_fps = peek.source_fps  # đọc trước khi close (sau đó thuộc tính chết)
         peek.close()
         if first is None:
             print("[LOI] nguồn không đưa được frame")
             raise SystemExit(1)
         bbox = _load_bbox(args, first)
 
+        # FPS ghi video: lấy từ nguồn (camera/file báo sai thì --record-fps đè)
+        record_fps = args.record_fps or (peek_fps if peek_fps > 0 else 30.0)
+        viz = _make_visualizer(args, record_size=(first.shape[1], first.shape[0]),
+                               record_fps=record_fps)
         print("[pipeline] bắt đầu tracking... (headless)")
         summary = run_tracking(
             source=args.source,
             engine=engine,
             bbox=bbox,
             max_frames=args.max_frames,
+            visualizer=viz,
         )
+        viz.close_recorder()
     except KeyboardInterrupt:
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
         raise SystemExit(0)
@@ -149,6 +176,11 @@ def main():
     ap.add_argument("--display", action="store_true",
                     help="mở cửa sổ OpenCV + kéo chuột chọn đối tượng (mặc định headless)")
     ap.add_argument("--max-frames", type=int, default=None, help="giới hạn số frame xử lý")
+    ap.add_argument("--record", default=None, help="ghi video mp4 HUD ra file này (mặc định tắt)")
+    ap.add_argument("--record-fps", type=float, default=None,
+                    help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
+    ap.add_argument("--max-trajectory", type=int, default=100,
+                    help="số điểm quỹ đạo tối đa (deque giới hạn bộ nhớ)")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (mặc định tiny trong samurai/)")
     args = ap.parse_args()
 

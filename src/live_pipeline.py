@@ -69,7 +69,20 @@ def draw_overlay_minimal(frame, result):
     return img
 
 
-def run_tracking(source, engine, bbox, on_frame=None, max_frames=None) -> SessionSummary:
+def _annotate(frame, result, visualizer):
+    """Frame + result → HUD: Visualizer đầy đủ nếu có, không thì overlay tối thiểu."""
+    if visualizer is not None:
+        return visualizer.update(frame, result)
+    return draw_overlay_minimal(frame, result)
+
+
+def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
+                 visualizer=None) -> SessionSummary:
+    """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng).
+
+    visualizer: Visualizer (ticket 06) — HUD đầy đủ + ghi video nếu đã open_recorder.
+                None → overlay tối thiểu draw_overlay_minimal (ticket 04).
+    """
     """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng)."""
     summary = SessionSummary(total_frames=0)
     src = open_video_source(source).open()
@@ -78,7 +91,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None) -> Sessio
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         result = engine.start(frame, bbox)
-        img = draw_overlay_minimal(frame, result)
+        img = _annotate(frame, result, visualizer)
         summary.latencies_ms.append(result.elapsed_ms)
         summary.total_frames += 1
         if on_frame is not None and on_frame(img, result) is False:
@@ -89,7 +102,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None) -> Sessio
             if frame is None:
                 break
             result = engine.process(frame)
-            img = draw_overlay_minimal(frame, result)
+            img = _annotate(frame, result, visualizer)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
             if on_frame is not None and on_frame(img, result) is False:
@@ -107,7 +120,8 @@ class InteractiveSummary:
 
 
 def run_interactive(source, engine, selector, display, max_frames=None,
-                    preselect_bbox=None, on_result=None) -> InteractiveSummary:
+                    preselect_bbox=None, on_result=None,
+                    visualizer=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -121,6 +135,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                track ngay không cần kéo chuột. None = để người dùng kéo chuột.
     on_result: callable(TrackingResult) gọi sau mỗi start/process — để caller log số liệu
                (ms, bbox...) mà display callback không cần biết result.
+    visualizer: Visualizer (ticket 06) cho HUD đầy đủ + ghi video; r chọn lại sẽ reset()
+               quỹ đạo. None → overlay tối thiểu như ticket 04.
     Output   : InteractiveSummary(processed = số frame đã track).
     """
     summary = InteractiveSummary()
@@ -153,7 +169,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         on_result(last_result)
                     mode = "track"
             else:  # track
-                img = draw_overlay_minimal(frame, last_result)
+                img = _annotate(frame, last_result, visualizer)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
                 key = display(img, "track")
@@ -161,7 +177,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if key == RESET_KEY:
                     engine.reset()
-                    selector.bind(frame)  # chon lai tren frame hien tai
+                    selector.bind(frame)  # chọn lại trên frame hiện tại
+                    if visualizer is not None:
+                        visualizer.reset()  # quỹ đạo đối tượng cũ bỏ đi
                     mode = "select"
                     continue
                 frame = src.read()

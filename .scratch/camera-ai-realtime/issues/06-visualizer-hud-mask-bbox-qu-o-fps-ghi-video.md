@@ -4,8 +4,8 @@
 
 **Blocked by:** 05
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] HUD đủ: mask tô màu + ô bao + đường quỹ đạo + FPS/latency; nhãn tiếng Việt hiển thị đúng font
-- [ ] Bật ghi video qua config → file mp4 đầu ra mở được, nội dung đúng luồng demo
-- [ ] Quỹ đạo vẽ theo tâm đối tượng, giới hạn số điểm (deque) không tràn bộ nhớ
+- [x] HUD đủ: mask tô màu + ô bao + đường quỹ đạo + FPS/latency; nhãn tiếng Việt hiển thị đúng font
+- [x] Bật ghi video qua config → file mp4 đầu ra mở được, nội dung đúng luồng demo
+- [x] Quỹ đạo vẽ theo tâm đối tượng, giới hạn số điểm (deque) không tràn bộ nhớ

@@ -2,6 +2,7 @@
 
 Dùng FakeEngine (không model) + display callback trả phím kịch bản để test headless
 không cần cửa sổ/camera. Phần kéo chuột thật kiểm thủ công (WSL không GUI).
+Thêm cả phần Visualizer (ticket 06): HUD/ghi video + reset quỹ đạo khi chọn lại.
 """
 import cv2
 import numpy as np
@@ -9,6 +10,7 @@ import numpy as np
 from src.live_pipeline import run_interactive
 from src.prompt_selector import PromptSelector
 from src.tracker_engine import TrackingResult
+from src.visualizer import Visualizer
 
 
 class FakeEngine:
@@ -198,3 +200,88 @@ class TestRunInteractive:
         # start gọi rồi, process chưa kịp
         assert engine.calls[0] == ("start", (60, 60, 100, 100))
         assert engine.calls.count(("process",)) == 0
+
+
+class TestVisualizerIntegration:
+    def test_visualizer_hud_va_ghi_video_trong_vong_lap(self, tmp_path):
+        """run_interactive với Visualizer: ảnh hiển thị qua display + mp4 ghi đủ frame."""
+        path, fx = _make_video(tmp_path, n=4)
+        engine = FakeEngine()
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        rec = tmp_path / "demo.mp4"
+        viz = Visualizer()
+        assert viz.open_recorder(str(rec)) is True  # mở trì hoãn tới frame đầu
+
+        def display(img, mode):
+            # HUD phải kèm text + quỹ đạo — ảnh khác frame đọc từ file
+            assert img.shape == (240, 320, 3)
+            if mode == "track":
+                assert not np.array_equal(img, fx.frames[len(engine.calls) - 1])
+            # hết video → thoát (4 frame: 1 start + 3 process)
+            if _count_by_name(engine.calls, "process") == 3:
+                return ord("q")
+            if mode == "select" and not sel.has_bbox():
+                sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 60, 60, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONUP, 100, 100, 0, None)
+            return -1
+
+        summary = run_interactive(
+            source=str(path), engine=engine, selector=sel, display=display,
+            visualizer=viz,
+        )
+        assert summary.processed == 4
+        viz.close_recorder()
+
+        cap = cv2.VideoCapture(str(rec))
+        assert cap.isOpened()
+        n = 0
+        while cap.read()[0]:
+            n += 1
+        cap.release()
+        assert n == 4  # mp4 chứa đúng luồng demo đã overlay
+
+    def test_phim_r_reset_quy_dao_visualizer(self):
+        """Chọn lại đối tượng (r) → Visualizer.reset() xoá quỹ đạo đối tượng cũ."""
+        viz = Visualizer()
+        assert len(viz.trajectory_points) == 0
+        # run_interactive gọi reset trên chính viz được truyền — kiểm bằng cờ gọi
+        called = {"reset": False}
+        real_reset = viz.reset
+
+        def spy_reset():
+            called["reset"] = True
+            real_reset()
+
+        viz.reset = spy_reset
+
+        path_tmp = None  # chưa dùng
+        # dựng phiên mini: dùng run_interactive với video tạm
+        import tempfile
+        cv2_dir = tempfile.mkdtemp()
+        from src.synthetic_video import generate_tracking_sequence
+        fx = generate_tracking_sequence(num_frames=10, frame_size=(240, 320),
+                                        square_size=40, start=(60, 60))
+        rec_path = cv2_dir + "/seq.avi"
+        out = cv2.VideoWriter(rec_path, cv2.VideoWriter_fourcc(*"MJPG"), 30, (320, 240))
+        for f in fx.frames:
+            out.write(f)
+        out.release()
+
+        engine = FakeEngine()
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        pressed = {"r": False}
+
+        def display(img, mode):
+            if mode == "track" and not pressed["r"]:
+                pressed["r"] = True
+                return ord("r")  # chọn lại ngay ở track đầu tiên
+            if mode == "select" and pressed["r"]:
+                return ord("q")  # thoát luôn sau khi quay về select
+            if mode == "select" and not sel.has_bbox():
+                sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 60, 60, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONUP, 100, 100, 0, None)
+            return -1
+
+        run_interactive(source=rec_path, engine=engine, selector=sel,
+                        display=display, visualizer=viz)
+        assert called["reset"] is True  # r đã trigger visualizer.reset()

@@ -4,8 +4,12 @@
 
 **Blocked by:** 04
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] Kéo chuột vẽ ô có khung trực quan; thả chuột → track khởi động từ ô đó
 - [x] Nhấn r → track dừng, về chế độ chọn lại trên frame hiện tại; chọn đối tượng mới thành công
 - [x] ESC / q thoát chương trình sạch
+
+## Answer
+
+PromptSelector hoàn thành: máy trạng thái kéo-thả + run_interactive (r chọn lại, q/ESC thoát) — commit ac5893d, 17 test mới, full suite 31/31. Trục Standards/Spec đã review và sửa xong.
