@@ -4,9 +4,13 @@
 
 **Blocked by:** 04, 07
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] Một lệnh headless trên video file → ra mp4 kết quả + CSV + summary; chạy được môi trường không màn hình (server/Colab)
 - [x] Đổi checkpoint/tham số qua file YAML trong configs/ không phải sửa code
 - [x] README cài đặt từ clone mới (clone SAMURAI + conda env + tải checkpoint) đủ cho người khác tự làm; ghi rõ tham chiếu config SAMURAI
 - [x] Tài liệu ghi nhận lệnh headless dùng cho Colab GPU theo ADR-0002
+
+## Answer
+
+Đóng gói hoàn tất: 1 lệnh headless → mp4 + CSV + summary JSON (smoke thật 4 frame, mean=3067ms, FPS≈0.30); checkpoint/source/ghi/metrics đổi qua configs/*.yaml không sửa code (CLI đè YAML); README cài đặt tái tạo từ clone mới + cơ chế hydra SAM 2 giải thích; mục Colab GPU theo ADR-0002. Commit db8ad09. Suite 75/75.
