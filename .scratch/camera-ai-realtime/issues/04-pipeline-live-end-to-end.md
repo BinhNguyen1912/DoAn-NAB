@@ -4,8 +4,8 @@
 
 **Blocked by:** 02, 03
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] Một lệnh chạy pipeline: webcam live (hoặc video file demo) → cửa sổ hiện frame + mask bám theo đối tượng (bbox mặc định từ config / bbox file txt nếu có)
-- [ ] Độ trễ trung bình in ra console theo từng frame (trung thực, không claim real-time)
-- [ ] Thoát cửa sổ / Ctrl+C sạch, không crash, không để process zombie
+- [x] Một lệnh chạy pipeline: webcam live (hoặc video file demo) → cửa sổ hiện frame + mask bám theo đối tượng (bbox mặc định từ config / bbox file txt nếu có)
+- [x] Độ trễ trung bình in ra console theo từng frame (trung thực, không claim real-time)
+- [x] Thoát cửa sổ / Ctrl+C sạch, không crash, không để process zombie
