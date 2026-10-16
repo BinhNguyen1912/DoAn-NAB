@@ -1,0 +1,26 @@
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*.egg-info/
+.venv/
+venv/
+
+# ===== Nặng — không commit (theo AGENTS.md mục 4) =====
+# Upstream SAMURAI clone (~1.9GB) — cài đặt theo hướng dẫn (docs), không vendor
+samurai/
+# Checkpoints + model exports tái tạo được từ benchmark script
+*.pt
+*.pth
+models/
+# Dữ liệu demo nặng (frames, video mp4) — giữ lại các file txt nhỏ
+data/*
+!data/*.txt
+
+# ===== Cấu hình công cụ cá nhân =====
+.pi/
+
+# ===== Hệ điều hành / IDE =====
+Thumbs.db
+.DS_Store
+.idea/
+.vscode/
