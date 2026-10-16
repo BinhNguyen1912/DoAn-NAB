@@ -1,0 +1,7 @@
+# Dependencies Python của repo DoAn-NAB.
+# Lưu ý: torch/sam2 cài qua conda env `samurai` (xem README khi có — ticket 08);
+# các dòng dưới là phụ thuộc trực tiếp của mã nguồn src/ và tests/.
+
+numpy>=1.26
+opencv-python>=4.10
+pytest>=8.0

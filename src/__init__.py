@@ -1,0 +1,1 @@
+"""Gói src — mã nguồn chính của hệ thống Camera AI."""
