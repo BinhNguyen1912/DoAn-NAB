@@ -4,9 +4,9 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
-- [ ] File adapter đọc đúng số frame/kích thước/dtype (test bằng fixture)
+- [x] File adapter đọc đúng số frame/kích thước/dtype (test bằng fixture)
 - [ ] Webcam adapter mở được camera laptop, trả frame (xác nhận thủ công)
-- [ ] RTSP adapter nhận URL; nguồn lỗi → báo lỗi rõ ràng thay vì treo
-- [ ] Một interface duy nhất — script demo chọn nguồn qua tham số
+- [x] RTSP adapter nhận URL; nguồn lỗi → báo lỗi rõ ràng thay vì treo
+- [x] Một interface duy nhất — script demo chọn nguồn qua tham số
