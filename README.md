@@ -49,7 +49,7 @@ git clone https://github.com/yangchris11/samurai.git samurai
 # 4) tải checkpoint SAM 2.1 tiny
 mkdir -p samurai/sam2/checkpoints
 cd samurai/sam2/checkpoints
-wget https://dl.fbaipublicfiles.com/segment_anything_2/092823/sam2.1_hiera_tiny.pt
+wget https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
 cd ../../..
 
 # 5) cài package sam2 của SAMURAI
