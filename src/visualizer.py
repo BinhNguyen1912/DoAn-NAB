@@ -103,9 +103,9 @@ class Visualizer:
                           thickness=_LINE_THICKNESS)
             cv2.circle(img, self._trajectory[-1], 3, _COLOR_TRAJECTORY, -1)
 
-        # 4) HUD text FPS + độ trễ
+        # 4) HUD text FPS + độ trễ + điểm tin cậy
         self._latencies.append(result.elapsed_ms)
-        self._draw_hud(img)
+        self._draw_hud(img, result.score)
 
         # 5) ghi nếu recorder đang mở
         self._write(img)
@@ -174,18 +174,25 @@ class Visualizer:
 
     # ---------- HUD text ----------
 
-    def _draw_hud(self, img):
-        """Vẽ 2 dòng HUD: FPS + độ trễ; tiếng Việt qua PIL nếu có font, ASCII nếu không."""
-        fps = self.effective_fps
-        ms = self.mean_latency_ms
+    def _draw_hud(self, img, score):
+        """Vẽ HUD 3 dòng: FPS, độ trễ, điểm tin cậy (tiếng Việt qua PIL nếu có font)."""
+        for i, text in enumerate(self.hud_lines(score, self.effective_fps,
+                                               self.mean_latency_ms)):
+            self._put_text(img, text, (8, 20 + 20 * i))
+
+    def hud_lines(self, score, fps, ms):
+        """Nội dung 3 dòng HUD — hàm thuần để test không cần pixel.
+
+        Điểm tin cậy (`object_score_logits` của SAM 2) giúp người dùng so sánh các lần
+        chọn đối tượng: ô chứa đối tượng thật thường có điểm cao hơn vùng nền.
+        """
         if self._font_path is not None:
-            fps_text = f"FPS: {fps:.1f}"
-            ms_text = f"Độ trễ: {ms:.0f} ms/frame"
-        else:  # không có font TTF — ASCII không dấu
-            fps_text = f"FPS: {fps:.1f}"
-            ms_text = f"Tre: {ms:.0f} ms/frame"
-        self._put_text(img, fps_text, (8, 20))
-        self._put_text(img, ms_text, (8, 40))
+            return [f"FPS: {fps:.1f}",
+                    f"Độ trễ: {ms:.0f} ms/frame",
+                    f"Điểm tin cậy: {score:.1f}"]
+        return [f"FPS: {fps:.1f}",
+                f"Tre: {ms:.0f} ms/frame",
+                f"Diem tin cay: {score:.1f}"]
 
     def _put_text(self, img, text, org):
         """Vẽ 1 dòng text: PIL (đủ tiếng Việt) nếu có font, cv2.putText nếu không."""

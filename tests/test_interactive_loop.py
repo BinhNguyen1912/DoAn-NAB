@@ -284,3 +284,40 @@ class TestVisualizerIntegration:
         run_interactive(source=rec_path, engine=engine, selector=sel,
                         display=display, visualizer=viz)
         assert called["reset"] is True  # r đã trigger visualizer.reset()
+
+class TestCanhBaoChonSai:
+    """Chọn ô không chứa đối tượng: SAM 2 vẫn trả mask (bản chất promptable segmentation).
+
+    Phát hiện được chắc chắn khi mask phủ gần cả khung (đo thật 18-10: ô phủ cả khung →
+    mask 97.6% khung). Khi đó phải cảnh báo người dùng bấm r chọn lại.
+    """
+
+    def test_canh_bao_khi_mask_phu_gan_ca_khung(self, capsys):
+        from src.live_pipeline import warn_if_bad_selection
+
+        mask = np.zeros((240, 320), dtype=bool)
+        mask[:] = True  # 100% khung
+        res = TrackingResult(frame_idx=0, mask=mask, bbox=(0, 0, 319, 239),
+                             score=18.77, elapsed_ms=100.0)
+        warn_if_bad_selection(res)
+        out = capsys.readouterr().out
+        assert "WARN" in out and "r" in out
+        assert "100%" in out or "99%" in out
+
+    def test_khong_canh_bao_khi_mask_binh_thuong(self, capsys):
+        from src.live_pipeline import warn_if_bad_selection
+
+        mask = np.zeros((240, 320), dtype=bool)
+        mask[80:140, 80:140] = True  # 1.6% khung — như đối tượng thật
+        res = TrackingResult(frame_idx=0, mask=mask, bbox=(80, 80, 140, 140),
+                             score=22.6, elapsed_ms=100.0)
+        warn_if_bad_selection(res)
+        assert capsys.readouterr().out == ""
+
+    def test_canh_bao_khi_mask_rong(self, capsys):
+        from src.live_pipeline import warn_if_bad_selection
+
+        res = TrackingResult(frame_idx=0, mask=np.zeros((240, 320), dtype=bool),
+                             bbox=(0, 0, 0, 0), score=-1.0, elapsed_ms=100.0)
+        warn_if_bad_selection(res)
+        assert "WARN" in capsys.readouterr().out

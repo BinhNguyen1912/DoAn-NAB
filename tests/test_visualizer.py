@@ -31,6 +31,18 @@ BG = np.array([40, 40, 40])
 
 
 class TestHud:
+    def test_hud_dong_thu_ba_hien_diem_tin_cay(self):
+        """HUD phải hiện điểm tin cậy — để người dùng so sánh các lần chọn (18-10)."""
+        lines = Visualizer().hud_lines(score=8.26, fps=0.2, ms=5047.0)
+        assert len(lines) == 3
+        assert "Điểm tin cậy" in lines[2]
+        assert "8.3" in lines[2]
+
+    def test_hud_giu_nguyen_fps_va_do_tre(self):
+        lines = Visualizer().hud_lines(score=8.26, fps=0.2, ms=5047.0)
+        assert "FPS" in lines[0] and "0.2" in lines[0]
+        assert "Độ trễ" in lines[1] and "5047" in lines[1]
+
     def test_update_khong_crash_va_dung_kich_thuoc(self):
         img = Visualizer().update(_frame(), _result())
         assert img.shape == (240, 320, 3)

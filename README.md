@@ -155,6 +155,7 @@ Chuẩn code chi tiết: `CODING_STANDARDS.md`. Quy ước làm việc: `AGENTS.
 | `Không mở được camera index 0` | Windows: Settings → Privacy → Camera (bật); đóng Teams/Zoom; thử `--source 1`. WSL không thấy webcam → dùng RTSP/HTTP từ điện thoại |
 | HUD hiện ô `?` thay vì dấu tiếng Việt | `export CAMAI_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` (Linux) hoặc `C:\\Windows\\Fonts\\segoeui.ttf` (Windows) |
 | `UserWarning: cannot import name '_C' from 'sam2'` | Bình thường — SAM 2 không build extension C, chỉ mất post-processing `fill_holes` (không ảnh hưởng kết quả demo) |
+| **Chọn ô vào vùng nền mà hệ thống vẫn bám** | Bản chất *promptable segmentation*: SAM 2 luôn trả mask cho bất kỳ ô nào được vẽ (đo thật: ô nền nhỏ → mask 1.2% khung, score 17.8; đối tượng thật → 1.6%, score 22.6). Dấu hiệu để nhận biết: **dòng thứ 3 HUD `Điểm tin cậy:`** thấp hơn hẳn, mask/đường quỹ đạo không khớp vật thể, hoặc console in `[WARN] mask phủ …% khung` khi ô quá lớn. Cách xử lý: bấm **r** chọn lại |
 
 ```bash
 # Dứt cảnh báo QFontDatabase (Linux/WSL) — copy 1 TTF vào thư mục font OpenCV tự tìm

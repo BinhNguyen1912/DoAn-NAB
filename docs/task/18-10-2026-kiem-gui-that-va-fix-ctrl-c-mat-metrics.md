@@ -41,3 +41,30 @@
 
 ## 📚 Tài liệu tham khảo
 - WSLg (`/mnt/wslg`, `DISPLAY=:0`), OpenCV Qt5 xcb plugin, `ldd`; `docs/samurai-setup.md`; ADR-0002 (số liệu trung thực — lý do Ctrl+C phải giữ metrics).
+
+---
+
+## Bổ sung cùng ngày — "chọn vùng nền mà vẫn chạy" (phản hồi của người dùng)
+
+**Hiện tượng người dùng báo:** bấm `r` chọn lại rồi kéo ô vào **vùng nền trống** (không có ô vuông cam) → hệ thống vẫn bám.
+
+**Chẩn đoán bằng đo thật** (`TrackerEngine.start` trên frame 0 của `data/_gui_test.mp4`):
+
+| Trường hợp chọn | Mask | Score (logit) |
+|---|---|---|
+| A. đúng đối tượng (80,80,140,140) | 3618 px (**1.6%** khung) | **22.64** |
+| B. nền trống nhỏ (520,260,580,320) | 2825 px (1.2%) | 17.81 |
+| C. nền trống nhỏ (10,10,60,60) | 2883 px (1.3%) | 19.24 |
+| D. nền trống ô lớn 200×200 | 32256 px (13.9%) | 14.74 |
+| E. ô phủ gần cả khung | 224870 px (**97.6%**) | 18.77 |
+| F. ô nửa đối tượng nửa nền | 3618 px (1.6%) | 15.74 |
+
+**Kết luận:** đây **không phải bug** — SAM 2 là *promptable segmentation*, luôn trả mask cho bất kỳ ô nào được vẽ (kể cả nền). Ô nền nhỏ cho mask ≈ đúng ô đó nên **không phân biệt được** với đối tượng thật qua diện tích/score. Chỉ trường hợp mask phủ gần cả khung (E: 97.6%) mới phát hiện chắc chắn.
+
+**Đã làm (TDD):**
+1. `Visualizer.hud_lines(score, fps, ms)` — HUD thêm **dòng 3: `Điểm tin cậy: x.x`** (hàm thuần, test 2 case) để người dùng so sánh giữa các lần chọn.
+2. `live_pipeline.warn_if_bad_selection(result)` + hằng `MASK_FRAME_WARN_RATIO = 0.6`, gọi ngay sau `engine.start` ở **cả 2 vòng lặp**: mask rỗng → `[WARN] ô chọn không phân đoạn được đối tượng (mask rỗng) — bấm r để chọn lại`; mask > 60% khung → `[WARN] mask phủ N% khung — ô chọn có thể quá lớn hoặc không chứa đối tượng`.
+3. Verify thật: `--bbox "0,0,639,359"` → in `[WARN] mask phủ 98% khung`; `--bbox "80,80,60,60"` → không cảnh báo.
+4. README: hàng mới trong bảng sự cố, nêu bản chất + 3 dấu hiệu nhận biết + cách xử lý (bấm r).
+
+**Test:** 5 test mới (2 HUD + 3 cảnh báo); ruff sạch; full suite 89 passed.

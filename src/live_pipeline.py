@@ -27,6 +27,11 @@ _OVERLAY_ALPHA = 0.35
 QUIT_KEYS = (ord("q"), 27)
 RESET_KEY = ord("r")
 
+# Ngưỡng cảnh báo chọn sai: SAM 2 luôn trả mask cho BẤT KỲ ô nào (kể cả nền trống) —
+# đo thật 18-10: chọn nền nhỏ vẫn được mask 1.2% khung (không phân biệt được với đối tượng),
+# nhưng chọn ô phủ cả khung → mask 97.6% khung → phát hiện được.
+MASK_FRAME_WARN_RATIO = 0.6
+
 # Hint hiển thị trên khung: viết KHÔNG dấu vì font Hershey của cv2.putText
 # không render được chữ có dấu tiếng Việt
 _HINT_SELECT = "[SELECT] keo chuot ve o chon doi tuong | r: chon lai | q/ESC: thoat"
@@ -69,6 +74,23 @@ def draw_overlay_minimal(frame, result):
     return img
 
 
+def warn_if_bad_selection(result):
+    """Cảnh báo khi ô chọn không có đối tượng rõ ràng (mask rỗng hoặc phủ gần cả khung).
+
+    Vì SAM 2 là promptable segmentation: vẽ ô vào nền trống nó vẫn trả mask, nên không thể
+    biết chắc “đây không phải đối tượng”. Phát hiện được: mask rỗng (không phân đoạn được)
+    hoặc mask > MASK_FRAME_WARN_RATIO khung (ô quá lớn/nền đồng nhất).
+    """
+    mask = result.mask
+    if mask is None or not mask.any():
+        print("[WARN] ô chọn không phân đoạn được đối tượng (mask rỗng) — bấm r để chọn lại")
+        return
+    ratio = float(mask.sum()) / mask.size
+    if ratio > MASK_FRAME_WARN_RATIO:
+        print(f"[WARN] mask phủ {ratio * 100:.0f}% khung — ô chọn có thể quá lớn hoặc không "
+              f"chứa đối tượng; bấm r để chọn lại")
+
+
 def _record_from(result) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
@@ -105,6 +127,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         result = engine.start(frame, bbox)
+        warn_if_bad_selection(result)
         if metrics is not None:
             metrics.log(_record_from(result))
         img = _annotate(frame, result, visualizer)
@@ -183,6 +206,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
                     last_result = engine.start(frame, bbox)
+                    warn_if_bad_selection(last_result)
                     summary.processed += 1
                     if on_result is not None:
                         on_result(last_result)
