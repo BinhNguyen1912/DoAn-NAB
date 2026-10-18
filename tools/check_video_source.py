@@ -3,7 +3,8 @@ Script kiểm tra nhanh VideoSource — chọn nguồn bằng 1 tham số (ticke
 
 Cách chạy (env conda `samurai`):
   python tools/check_video_source.py --source 0                      # webcam index 0
-  python tools/check_video_source.py --source rtsp://IP:554/stream    # camera điện thoại/IP
+  python tools/check_video_source.py --source rtsp://IP:554/stream    # camera IP qua RTSP
+  python tools/check_video_source.py --source http://IP:8080/video    # điện thoại MJPEG (IP Webcam)
   python tools/check_video_source.py --source data/video.mp4          # video file
   python tools/check_video_source.py --source video.mp4 --num 60      # đọc 60 frame rồi dừng
 
@@ -26,8 +27,10 @@ from src.video_source import open_video_source
 
 
 def main():
-    ap = argparse.ArgumentParser(description="Kiểm tra nhanh nguồn video (webcam/RTSP/file)")
-    ap.add_argument("--source", required=True, help="index webcam (số), rtsp://URL, hoặc đường dẫn file")
+    ap = argparse.ArgumentParser(
+        description="Kiểm tra nhanh nguồn video (webcam / RTSP / MJPEG-HTTP / file)")
+    ap.add_argument("--source", required=True,
+                    help="index webcam (số), rtsp://URL, http(s)://URL, hoặc đường dẫn file")
     ap.add_argument("--num", type=int, default=30, help="số frame tối đa đọc thử (mặc định 30)")
     ap.add_argument("--open_timeout_ms", type=int, default=5000, help="timeout mở RTSP")
     args = ap.parse_args()

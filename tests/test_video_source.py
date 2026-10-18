@@ -66,3 +66,75 @@ class TestNguonLoi:
         src = open_video_source(str(write_video(tmp_path / "seq.avi", fx.frames)))
         with pytest.raises(RuntimeError, match="open()"):
             src.read()
+
+class TestHttpSource:
+    """Nguồn MJPEG/HTTP (điện thoại: IP Webcam, DroidCam…).
+
+    Lỗi thật 18-10: `--source http://192.168.x.x:8080/video` bị coi là FILE →
+    `FileNotFoundError: Không mở được video file` (thông báo sai đường, dễ gây lạc hướng).
+    """
+
+    def test_http_duoc_dinh_tuyen_sang_nguon_mang(self):
+        from src.video_source import HttpVideoSource, open_video_source
+
+        src = open_video_source("http://192.168.1.25:8080/video")
+        assert isinstance(src, HttpVideoSource)
+        assert isinstance(src, __import__("src.video_source", fromlist=["VideoSource"]).VideoSource)
+
+    def test_https_cung_la_nguon_mang(self):
+        from src.video_source import HttpVideoSource, open_video_source
+
+        assert isinstance(open_video_source("https://cam.local/video"), HttpVideoSource)
+
+    def test_loi_http_bao_huong_dan_lay_ip_that(self, monkeypatch):
+        """Mở thất bại → thông báo nêu: kiểm tra IP thật, cùng Wi-Fi, đúng đường dẫn /video."""
+        import cv2
+
+        from src.video_source import open_video_source
+
+        class FakeCap:
+            def isOpened(self):
+                return False
+
+            def release(self):
+                pass
+
+            def set(self, *a, **k):
+                return True
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *a, **k: FakeCap())
+        src = open_video_source("http://192.168.1.25:8080/video")
+        try:
+            src.open()
+        except ConnectionError as err:
+            msg = str(err)
+            assert "http://192.168.1.25:8080/video" in msg
+            assert "IP" in msg and ("Wi-Fi" in msg or "mạng" in msg)
+        else:
+            raise AssertionError("phải ném ConnectionError")
+
+    def test_placeholder_bi_canh_bao_som(self, monkeypatch):
+        """IP placeholder kiểu 192.168.x.x → báo lỗi nêu rõ 'IP thật' thay vì lỗi DNS thô."""
+        import cv2
+
+        from src.video_source import open_video_source
+
+        class FakeCap:
+            def isOpened(self):
+                return False
+
+            def release(self):
+                pass
+
+            def set(self, *a, **k):
+                return True
+
+        monkeypatch.setattr(cv2, "VideoCapture", lambda *a, **k: FakeCap())
+        with pytest.raises(ConnectionError, match="IP thật|placeholder"):
+            open_video_source("http://192.168.x.x:8080/video").open()
+
+    def test_file_that_su_van_bao_loi_file(self):
+        from src.video_source import open_video_source
+
+        with pytest.raises(FileNotFoundError, match="video file"):
+            open_video_source("data/khong_ton_tai.mp4").open()

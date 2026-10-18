@@ -81,6 +81,32 @@ python tools/run_live.py --source rtsp://IP:554/stream --display   # camera đi�
 Kéo chuột vẽ ô quanh đối tượng → thả chuột → bám; **r** chọn lại trên frame hiện tại,
 **q/ESC** thoát.
 
+### Camera điện thoại (iPhone / Android) — nguồn mạng
+
+Repo hỗ trợ **2 dạng URL** (chỉ cần app hiện đúng 1 trong 2):
+
+| Dạng | Ví dụ | Adapter |
+|---|---|---|
+| MJPEG qua HTTP | `http://192.168.1.25:8080/video` | `HttpVideoSource` |
+| RTSP | `rtsp://192.168.1.25:554/stream` | `RtspVideoSource` |
+
+**Kiểm nguồn trước khi chạy pipeline** (nhanh, không cần model):
+```bash
+python tools/check_video_source.py --source "http://192.168.1.25:8080/video" --num 10
+# → [nguồn] '...' → HttpVideoSource | kích thước (W,H)=(640, 360) | FPS nguồn=25.0
+```
+Rồi:
+```bash
+python tools/run_live.py --source "http://192.168.1.25:8080/video" --display
+```
+
+Checklist khi không kết nối được:
+1. **IP thật** hiện trên app (chuỗi `192.168.x.x` chỉ là ví dụ — dùng đúng IP như `192.168.1.25`).
+2. Điện thoại và máy tính **cùng một mạng Wi-Fi**; app đã bấm **Start server**.
+3. Đúng **đường dẫn stream**: nhiều app MJPEG dùng `/video` (có app dùng `/videofeed`).
+4. App chỉ phát **RTSP** → dùng `rtsp://…` thay vì `http://…`.
+5. WSL2 ra được mạng LAN, nhưng nếu vẫn lỗi: thử từ Windows bằng env Windows (xem mục cài đặt).
+
 ### Headless — 1 lệnh trên video file (server/Colab, không màn hình)
 
 ```bash

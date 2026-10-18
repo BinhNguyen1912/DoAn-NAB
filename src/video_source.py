@@ -136,6 +136,47 @@ class CameraVideoSource(_CaptureSource):
         )
 
 
+class HttpVideoSource(_CaptureSource):
+    """Camera điện thoại/IP phát MJPEG qua HTTP (IP Webcam, DroidCam, iCam…).
+
+    URL thường gặp: `http://<IP>:8080/video` (MJPEG). Một số app chỉ phát RTSP → dùng
+    `rtsp://…` (RtspVideoSource). Lỗi mở nguồn báo rõ: IP thật, cùng Wi-Fi, đường dẫn stream.
+    """
+
+    DEFAULT_OPEN_TIMEOUT_MS = 5000
+
+    def __init__(self, url, open_timeout_ms=DEFAULT_OPEN_TIMEOUT_MS):
+        super().__init__()
+        self._url = str(url)
+        self._timeout_ms = int(open_timeout_ms)
+
+    def _create_capture(self):
+        # Thử FFMPEG trước (MJPEG/HTTP tốt), không được thì để backend mặc định thử lại
+        for backend in (cv2.CAP_FFMPEG, cv2.CAP_ANY):
+            cap = cv2.VideoCapture(self._url, backend)
+            if cap.isOpened():
+                try:
+                    cap.set(cv2.CAP_PROP_OPEN_TIMEOUT_MSEC, self._timeout_ms)
+                    cap.set(cv2.CAP_PROP_READ_TIMEOUT_MSEC, self._timeout_ms)
+                except Exception:
+                    pass  # backend không hỗ trợ timeout — vẫn dùng được
+                return cap
+            cap.release()
+        return cv2.VideoCapture(self._url, cv2.CAP_FFMPEG)  # cap chưa mở → open() báo lỗi
+
+    def _raise_open_error(self):
+        hint = ""
+        if "x.x" in self._url or "<" in self._url:
+            hint = (" — URL còn là PLACEHOLDER, hãy thay bằng IP thật hiện trên app điện thoại "
+                    "(ví dụ http://192.168.1.25:8080/video)")
+        raise ConnectionError(
+            f"Không mở được nguồn mạng '{self._url}' trong {self._timeout_ms} ms{hint}. "
+            f"Kiểm tra: (1) IP thật + điện thoại và máy cùng mạng Wi-Fi; (2) app đã bấm "
+            f"Start server; (3) đúng đường dẫn stream (thường là /video); (4) một số app chỉ "
+            f"phát RTSP → dùng rtsp://…"
+        )
+
+
 class RtspVideoSource(_CaptureSource):
     """Camera rời/điện thoại qua RTSP — mở có timeout, lỗi nguồn báo rõ thay vì treo."""
 
@@ -164,13 +205,17 @@ class RtspVideoSource(_CaptureSource):
 
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:
-    """Factory duy nhất: int → webcam; rtsp://... → RTSP; còn lại → video file.
+    """Factory duy nhất: int → webcam; rtsp:// → RTSP; http(s):// → nguồn mạng MJPEG;
+    còn lại → video file.
 
     Trả về instance CHƯA mở (lazy) — gọi .open() hoặc dùng `with`.
     """
     if isinstance(source, (int, np.integer)):
         return CameraVideoSource(int(source))
     text = str(source)
-    if text.lower().startswith(("rtsp://", "rtspt://")):
+    lower = text.lower()
+    if lower.startswith(("rtsp://", "rtspt://")):
         return RtspVideoSource(text, open_timeout_ms=open_timeout_ms)
+    if lower.startswith(("http://", "https://")):
+        return HttpVideoSource(text, open_timeout_ms=open_timeout_ms)
     return FileVideoSource(text)

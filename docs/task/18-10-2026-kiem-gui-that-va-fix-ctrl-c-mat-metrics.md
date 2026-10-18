@@ -86,3 +86,23 @@
 4. README: mô tả Visualizer nêu banner; bảng sự cố giải thích chọn-nền + 3 dấu hiệu nhận biết.
 
 **Test:** full suite 93 passed; ruff sạch.
+
+---
+
+## Bổ sung 3 — nguồn camera điện thoại qua HTTP (fix theo phản hồi người dùng)
+
+**Người dùng báo:** `--source "http://192.168.x.x:8080/video"` →
+`FileNotFoundError: Không mở được video file` + lỗi DNS. Hai nguyên nhân: (a) dùng đúng chuỗi **placeholder** `192.168.x.x`; (b) **`http://` bị factory coi là video FILE** → thông báo sai đường.
+
+**Đã sửa (TDD, 5 test mới trong `tests/test_video_source.py::TestHttpSource`):**
+1. `HttpVideoSource` (mới) — MJPEG qua HTTP: thử `CAP_FFMPEG` rồi fallback `CAP_ANY`, timeout mở/đọc 5s, cùng lớp `_CaptureSource`.
+2. `open_video_source` định tuyến `http://`/`https://` → `HttpVideoSource` (trước đây rơi vào `FileVideoSource`).
+3. Thông báo lỗi mới nêu 4 việc cần kiểm (IP thật + cùng Wi-Fi, Start server, đúng `/video`, app chỉ RTSP) và **cảnh báo sớm khi URL còn placeholder** (`x.x`, `<`).
+4. `tools/check_video_source.py` + README: mục "Camera điện thoại (iPhone/Android)" — 2 dạng URL, lệnh kiểm nguồn trước khi chạy pipeline, checklist 5 bước.
+
+**Verify thật (không cần điện thoại):** dựng MJPEG-over-HTTP server local từ `data/_gui_test.mp4` (`/tmp/mjpeg_server.py`) rồi chạy đúng code repo:
+- `check_video_source --source http://127.0.0.1:8099/video --num 5` → `HttpVideoSource | (640,360) | FPS 25 | 3.0 ms/frame`.
+- `run_live.py --source http://127.0.0.1:8099/video --bbox 80,80,60,60 --max-frames 2` → `[kết quả] 2 frame | mean=2539 ms` (model thật, bám đúng ô vuông trên luồng mạng).
+- Ghi chú: 2 lần chạy đầu fail vì server nền bị bash tool dọn giữa các lệnh (`Connection refused`) — lỗi harness, không phải code; chạy server + test trong cùng 1 lệnh thì OK.
+
+**Test:** 94 passed (làn nhanh), ruff sạch.
