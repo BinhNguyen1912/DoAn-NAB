@@ -134,7 +134,19 @@ docs/           đề cương, ADR, log công việc theo ngày (docs/task/)
 data/           video demo + bbox frame 0 (KHÔNG commit file nặng)
 ```
 
-## 5. Đánh giá hiệu năng (đang có)
+## 5. Kiểm tra chất lượng (guardrail)
+
+```bash
+python -m pytest -m "not slow"     # làn nhanh ~10s (UI/logic/config) — bỏ test cần checkpoint
+ruff check .                       # lint: import/biến thừa, tên chưa định nghĩa (config: ruff.toml)
+python -m pytest                   # full suite ~2 phút (cần checkpoint SAM 2)
+```
+
+CI (`.github/workflows/checks.yml`) chạy `ruff` + làn nhanh trên mọi push/PR vào `main`.
+`pytest.ini` đặt `--timeout=120` để test treo không treo cả phiên.
+Chuẩn code chi tiết: `CODING_STANDARDS.md`. Quy ước làm việc: `AGENTS.md`.
+
+## 6. Đánh giá hiệu năng (đang có)
 
 | Môi trường | Pipeline (mean ms/frame) | FPS hiệu dụng | Nguồn số liệu |
 |---|---|---|---|
@@ -143,7 +155,7 @@ data/           video demo + bbox frame 0 (KHÔNG commit file nặng)
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.
 
-## 6. Kiến thức nền
+## 7. Kiến thức nền
 
 - **SAMURAI**: https://github.com/yangchris11/samurai (motion-aware memory + Kalman)
 - **SAM 2**: https://github.com/facebookresearch/sam2 (streaming memory propagation)

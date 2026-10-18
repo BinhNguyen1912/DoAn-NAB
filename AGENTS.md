@@ -38,36 +38,7 @@
 
 ### 2.2. Template bắt buộc
 
-Mỗi file log PHẢI theo cấu trúc sau:
-
-```markdown
-# Ngày DD-MM-YYYY — <Tên công việc>
-
-## 🎯 Mục tiêu
-- <Việc định làm hôm nay>
-
-## 📥 Input
-- <Đầu vào: tài liệu tham khảo, repo, model, dữ liệu, yêu cầu từ người dùng...>
-
-## 🔨 Công việc đã thực hiện
-1. <Mô tả chi tiết từng việc: file nào được tạo/sửa, lệnh chạy, cấu hình...>
-2. ...
-
-## 📤 Output / Kết quả
-- <Kết quả đạt được: chức năng chạy được, số liệu đo (FPS, accuracy...), screenshot/log nếu có>
-- Liệt kê file thay đổi:
-  - `path/to/file1.py` — mô tả ngắn
-  - `path/to/file2.md` — mô tả ngắn
-
-## 🐞 Vấn đề gặp phải & cách xử lý
-- <Lỗi/bug/khó khăn + cách giải quyết (hoặc chưa giải quyết)>
-
-## 📌 Việc cần làm tiếp (Next steps)
-- [ ] <Việc tiếp theo>
-
-## 📚 Tài liệu tham khảo
-- <Link paper, repo, docs đã dùng trong ngày>
-```
+Mỗi file log PHẢI theo đúng cấu trúc trong **`docs/task/_template.md`** (đọc file đó rồi copy làm khuôn — 7 mục: Mục tiêu, Input, Công việc đã thực hiện, Output/Kết quả, Vấn đề & cách xử lý, Next steps, Tài liệu tham khảo).
 
 ### 2.3. Nguyên tắc ghi log
 
@@ -83,18 +54,24 @@ Mỗi file log PHẢI theo cấu trúc sau:
 ```
 DOAN-NAB/
 ├── AGENTS.md              # File này — quy ước cho agent
-├── README.md              # Giới thiệu dự án
+├── CODING_STANDARDS.md    # Chuẩn code chi tiết (đọc khi review)
+├── README.md              # Giới thiệu dự án + cài đặt từ clone mới
 ├── docs/
 │   ├── DoAnCameraAI.docx  # Đề cương đề tài gốc
-│   └── task/              # 📁 Log công việc theo ngày (BẮT BUỘC)
+│   ├── adr/               # Quyết định kiến trúc (0001, 0002)
+│   ├── agents/            # Cấu hình skill (issue-tracker, triage-labels, domain)
+│   ├── samurai-setup.md   # Cơ chế hydra/checkpoint upstream (navigation)
+│   └── task/              # 📁 Log công việc theo ngày (BẮT BUỘC) + _template.md
 ├── src/                   # Source code chính của hệ thống
-├── scripts/               # Script tiện ích (đánh giá, benchmark, convert...)
-├── configs/               # File cấu hình (yaml/json)
-├── models/                # Model weights / link tải model
+├── tools/                 # CLI chạy (run_live.py), benchmark, demo
+├── tests/                 # pytest (fixture synthetic, không commit dữ liệu nặng)
+├── configs/               # Cấu hình (default.yaml — checkpoint/nguồn/ghi/metrics)
 ├── data/                  # Dữ liệu test (video mẫu...) — KHÔNG commit file nặng
-├── notebooks/             # Notebook thử nghiệm (nếu có)
+├── models/                # Model weights / link tải model
 ├── requirements.txt       # Dependencies Python
-└── .gitignore
+├── ruff.toml              # Rule lint đã ghim tại repo
+├── pytest.ini             # Marker slow + --timeout=120
+└── .github/workflows/     # CI: ruff + pytest làn nhanh
 ```
 
 > Khi tạo module mới, đặt đúng thư mục theo cấu trúc trên; nếu cần thư mục mới, cập nhật lại mục này trong `AGENTS.md`.
@@ -104,10 +81,9 @@ DOAN-NAB/
 ## 4. Quy ước code
 
 - **Ngôn ngữ:** Python 3.10+.
-- Comment/docstring: tiếng Việt hoặc tiếng Anh, nhất quán trong 1 file.
-- Tên biến/hàm: `snake_case`; class: `PascalCase`.
-- Mỗi module quan trọng cần docstring đầu file mô tả: chức năng, input, output.
-- Không commit: model weights lớn, video dữ liệu nặng, file cache (`__pycache__`, `.venv`...). Dùng `.gitignore`.
+- Chuẩn chi tiết (ngôn ngữ comment, UI phải test headless được, quy tắc test): **`CODING_STANDARDS.md`** — đọc khi review và khi thêm module mới.
+- Kiểm tra cơ học bằng `ruff` (`ruff.toml`) — import/biến thừa, tên chưa định nghĩa — không tự sửa tay khi `ruff check .` báo được.
+- Không commit model weights/video nặng — `.gitignore` đã chặn.
 
 ---
 
@@ -115,19 +91,22 @@ DOAN-NAB/
 
 1. Đọc yêu cầu từ người dùng + xem lại `docs/task/` gần nhất để nắm tiến độ.
 2. Thực hiện code/thay đổi.
-3. Chạy kiểm tra (nếu có thể) trước khi kết thúc.
-4. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** — đây là bước BẮT BUỘC cuối mỗi phiên.
+3. Chạy kiểm tra trước khi kết thúc:
+   - **Làn nhanh** (UI/logic/config — ~10s): `python -m pytest -m "not slow"`.
+   - **Lint:** `ruff check .` (phải xanh — CI chạy đúng lệnh này).
+   - **Full suite** (~100s, cần checkpoint SAM 2): chỉ khi đụng `tracker_engine`/model/CLI model hoặc trước commit cuối.
+4. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên.
 5. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
 
 ---
 
 ## 6. Các repo/model tham khảo
 
-> (Sẽ được cập nhật khi người dùng cung cấp repo cụ thể.)
-
 - SAM 2: https://github.com/facebookresearch/sam2
 - SAMURAI: https://github.com/yangchris11/samurai
 - XMem: https://github.com/hkchengrex/XMem
+
+Cài đặt/cơ chế hydra `model_cfg` của SAMURAI trong repo này: `docs/samurai-setup.md` (cài từ clone mới: `README.md` mục 1).
 
 ---
 
