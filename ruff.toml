@@ -2,6 +2,8 @@
 # Chọn đúng nhóm bắt lỗi cơ học (import thừa/biến thừa/tên chưa định nghĩa/lỗi cú pháp),
 # KHÔNG bật rule phong cách gây nhiễu diff (chấm dấu phẩy, độ dài dòng...).
 target-version = "py310"
+# Notebook Colab chứa %magic/shell cell — không lint như code thư viện
+extend-exclude = ["notebooks/"]
 
 [lint]
 select = ["E4", "E7", "E9", "F"]
