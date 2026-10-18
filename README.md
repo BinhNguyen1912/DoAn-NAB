@@ -248,7 +248,13 @@ Vấn đề: nếu đọc → suy luận → hiển thị tuần tự thì cửa
 → Video mượt như camera thường; mask/ô bao/quỹ đạo cập nhật 2 lần/giây và **tuổi overlay luôn
 hiện trên HUD** (trung thực theo ADR-0002 — không giả vờ 19 FPS là tốc độ model).
 
-Lệnh demo khuyến nghị:
+**Cách chạy ngắn nhất** (tránh lỗi copy-paste làm vỡ dòng lệnh):
+```bash
+bash scripts/demo_webcam.sh          # demo mượt + xuất mp4/CSV/JSON vào data/
+bash scripts/demo_webcam.sh --max-frames 5    # chạy thử 5 frame
+```
+
+Hoặc gõ đầy đủ (một dòng, đừng để xuống hàng giữa tham số):
 ```bash
 python tools/run_live.py --source 0 --display --smooth --image-size 384
 ```
