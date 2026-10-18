@@ -14,3 +14,5 @@
 ## Comments
 
 criteria 3/4 — webcam adapter (criterion 2) cần camera thật + máy có GUI, không làm được trong WSL (lỗi: Camera index out of range). Adapter CameraVideoSource là lớp mỏng trên cv2.VideoCapture, cùng codepath với FileVideoSource đã test tự động 100%. Cần kiểm thủ công trên máy Windows: `python tools/run_live.py --source 0 --display`.
+
+18-10-2026 — Kiểm thủ công trên máy thật (WSLg): GUI OpenCV chạy được, kéo chuột chọn đối tượng bám đúng quỹ đạo (bbox f0 79,80,142,142 ≈ ô thật 80,80–140,140; f14 192,136,252,196 đúng +8x,+4y/frame), ghi mp4 OK (data/gui_hud.mp4), metrics CSV+JSON đúng 15 dòng kể cả khi thoát bằng Ctrl+C (đã sửa bug mất metrics — commit e0e274c). Còn lại: criterion webcam adapter — WSL không thấy camera phần cứng; sẽ kiểm qua RTSP/HTTP từ điện thoại hoặc env Windows.
