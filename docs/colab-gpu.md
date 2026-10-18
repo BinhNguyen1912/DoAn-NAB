@@ -14,7 +14,21 @@ Sản phẩm chính (demo live webcam) **vẫn chạy trên laptop** — Colab c
 Colab free sẽ **ngắt phiên** sau một thời gian rảnh → lần sau phải chạy lại cell cài đặt (checkpoint tải lại).
 Muốn tránh: lưu checkpoint vào Google Drive và copy sang (tuỳ chọn).
 
-## Các bước
+## Cách nhanh nhất — 1 cell duy nhất
+
+Mở notebook, bật **Runtime → Change runtime type → T4 GPU**, rồi chạy **cell "⚡ CHẠY TẤT CẢ"**
+(ngay sau cell kiểm GPU). Cell đó chạy `scripts/colab_run_all.py`, tự làm: clone/pull repo → cài
+`sam2` + `loguru` → tải checkpoint (kiểm tra >100 MB) → tạo video test (nếu chưa có `data/input.mp4`)
+→ chạy pipeline GPU với `--image-size 512 --reanchor-every 10` → in số liệu → đóng gói
+`data/colab_gpu_results.zip`.
+
+Muốn dùng **video thật**: kéo video vào panel Files tại `/content/DoAn-NAB/data/input.mp4` **trước**
+khi chạy cell, và truyền `--bbox` đúng:
+```python
+!python scripts/colab_run_all.py --bbox "x,y,w,h"        # hoặc --max-frames 300
+```
+
+## Các bước thủ công (nếu muốn chạy từng cell)
 
 1. Mở https://colab.research.google.com → **Upload** file `notebooks/colab_gpu_demo.ipynb` (hoặc mở từ GitHub:
    *File → Open notebook → GitHub → `BinhNguyen1912/DoAn-NAB` → `notebooks/colab_gpu_demo.ipynb`*).
