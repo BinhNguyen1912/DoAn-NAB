@@ -146,3 +146,17 @@ class TestImageSizeConfig:
 
     def test_yaml_dat_so_hop_le(self, tmp_path):
         assert load_config(_write_yaml(tmp_path, "image_size: 512\n"))["image_size"] == 512
+
+
+class TestDeviceConfig:
+    """device: cpu (mặc định) | cuda — cần cho Colab GPU (ADR-0002)."""
+
+    def test_mac_dinh_cpu(self):
+        assert DEFAULTS["device"] == "cpu"
+
+    def test_yaml_dat_cuda(self, tmp_path):
+        assert load_config(_write_yaml(tmp_path, "device: cuda\n"))["device"] == "cuda"
+
+    def test_yaml_dat_gi_tri_la_van_load_duoc_nhung_cli_chan(self, tmp_path):
+        # config không chặn giá trị lạ (CLI argparse mới là nơi kiểm choices)
+        assert load_config(_write_yaml(tmp_path, "device: tpu\n"))["device"] == "tpu"

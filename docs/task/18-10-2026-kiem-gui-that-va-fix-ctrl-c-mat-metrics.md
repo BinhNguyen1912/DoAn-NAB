@@ -244,3 +244,25 @@ tốt trước đó (0.977) là do mẫu che khác. ⇒ Khuyến nghị: demo c�
 dùng `--image-size`; README đã ghi rõ.
 
 **Test:** +1 buffer (16 test video_source); full suite 116 passed; ruff sạch.
+
+---
+
+## Bổ sung 9 — chuẩn bị Colab GPU: `--device cuda` + notebook chạy sẵn
+
+**Người dùng chốt:** Colab là nơi chạy trước để lấy video + số liệu GPU (30 phút là thời gian cài đặt
+một lần, không phải thời gian chờ mỗi lần demo).
+
+**Đã làm:**
+1. `--device {cpu,cuda}` trong `run_live.py` (đè được bằng config key `device`), kiểm tra
+   `torch.cuda.is_available()` trước khi build → báo lỗi rõ nếu chưa bật GPU trên Colab; in tên GPU khi dùng cuda.
+2. `notebooks/colab_gpu_demo.ipynb` (6 code cell): kiểm GPU → clone repo + SAMURAI + tải checkpoint +
+   pip install → sinh video test nếu chưa có input → chạy headless `--device cuda` → in `gpu_summary.json`
+   + xem mp4 trong notebook → tải 3 file về máy.
+3. `docs/colab-gpu.md`: thời gian từng bước (cài 8–15 phút/lần, chạy video 20–40 giây), cách quay video nguồn,
+   câu trả lời cho hội đồng, và ghi chú Colab free sẽ ngắt phiên.
+4. README mục 3 trỏ tới notebook + `docs/colab-gpu.md`.
+
+**Kiểm chứng trên máy dev (CPU):** lệnh y như cell 4 (đổi `--device cpu`) → ra mp4 + CSV + JSON;
+`--device cuda` không có GPU → `[LOI] --device cuda nhưng máy không có GPU CUDA (kiểm tra: Colab → …)`.
+
+**Test:** +3 config test (device default/cuda/giá trị lạ); full suite 119 passed; ruff sạch.

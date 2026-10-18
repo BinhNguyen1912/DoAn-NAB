@@ -34,6 +34,8 @@ DEFAULTS = {
     # Độ phân giải đầu vào của model: null = giữ 1024 (chính xác nhất, chậm);
     # 512 = nhanh ~5-6x trên CPU (đo thật) — đánh đổi chi tiết với vật thể nhỏ.
     "image_size": None,
+    # Thiết bị chạy model: "cpu" (mặc định) hoặc "cuda" (Colab GPU / máy có NVIDIA).
+    "device": "cpu",
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
