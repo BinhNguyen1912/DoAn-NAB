@@ -8,6 +8,7 @@ implement 05–08). Hướng dẫn cài đặt đầy đủ từ clone mới: **
 | Thứ | Đường dẫn | Ghi chú |
 |---|---|---|
 | Package `sam2` (upstream) | `samurai/sam2/sam2/` — cài `pip install -e samurai/sam2` | `samurai/` **không vendor** trong Git (`.gitignore`), phải clone |
+| Phụ thuộc riêng của SAMURAI | `pip install loguru` | SAMURAI sửa `sam2/modeling/sam2_base.py` để dùng `loguru` — thiếu là `ModuleNotFoundError: No module named 'loguru'` khi build model |
 | Checkpoint | `samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt` | tải từ `dl.fbaipublicfiles.com/segment_anything_2/...` |
 | Config hydra | `samurai/sam2/sam2/configs/` (có `sam2.1/`, `samurai/`) | upstream, KHÔNG copy vào repo |
 | Config của repo | `configs/default.yaml` | checkpoint/source/record/metrics — đọc bởi `src/config.py` |

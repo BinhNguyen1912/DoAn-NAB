@@ -52,8 +52,9 @@ cd samurai/sam2/checkpoints
 wget https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
 cd ../../..
 
-# 5) cài package sam2 của SAMURAI
-pip install -e samurai/sam2        # hoặc theo hướng dẫn samurai/README
+# 5) cài package sam2 của SAMURAI + phụ thuộc riêng của SAMURAI
+pip install -e samurai/sam2
+pip install loguru                 # SAMURAI import loguru trong sam2/modeling/sam2_base.py
 
 # 6) chạy test (không cần camera; test "slow" cần checkpoint)
 python -m pytest tests/ -m "not slow"
