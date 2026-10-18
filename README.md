@@ -115,6 +115,23 @@ Checklist khi không kết nối được:
 4. App chỉ phát **RTSP** → dùng `rtsp://…` thay vì `http://…`.
 5. WSL2 ra được mạng LAN, nhưng nếu vẫn lỗi: thử từ Windows bằng env Windows (xem mục cài đặt).
 
+#### Riêng iPhone — 3 điều hay làm sai
+
+1. **Cấp quyền "Local Network"** (iOS 14+): app camera server cần quyền này để máy tính truy cập
+   được. Vào **Settings → Privacy & Security → Local Network** → bật cho app. Nếu lúc mở app có
+   hộp thoại hỏi → bấm **Allow** (bấm Don't Allow là mất kết nối, phải vào Settings bật lại).
+2. **Giữ app ở foreground + khoá tự động TẮT**: iOS dừng server khi app xuống nền hoặc màn hình tắt.
+   Đặt **Settings → Display & Brightness → Auto-Lock = Never** trong lúc demo, và không chuyển app.
+3. **Đúng loại app**: app phải là **server** (hiện URL) chứ không phải app *xem* camera. Dấu hiệu đúng:
+   màn hình app có dòng `http://192.168.x.x:PORT/...` hoặc `rtsp://...`. App chỉ tạo "virtual webcam"
+   cho Windows (DroidCam/Iriun/EpocCam) **không dùng được** với repo này.
+
+Nếu app hiện URL mà dạng đường dẫn lạ, quét rộng hơn:
+```bash
+python tools/find_phone_camera.py --ports 8080,8081,8082,8088,8090,4747,5000 \
+  --paths /video,/videofeed,/mjpegfeed,/stream
+```
+
 ### Headless — 1 lệnh trên video file (server/Colab, không màn hình)
 
 ```bash
