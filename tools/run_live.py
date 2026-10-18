@@ -41,6 +41,7 @@ except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn prog
 
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
+from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
@@ -142,18 +143,33 @@ def _run_display(engine, args):
 
         viz = _make_visualizer(args)  # kích thước biết ở frame đầu → mở trì hoãn
         metrics = _make_metrics(args)
-        summary = run_interactive(
-            source=args.source,
-            engine=engine,
-            selector=selector,
-            display=on_display,
-            max_frames=args.max_frames,
-            preselect_bbox=armed_bbox,
-            on_result=on_result,
-            visualizer=viz,
-            metrics=metrics,
-            reanchor_every=args.reanchor_every,
-        )
+        if args.smooth:
+            print("[pipeline] chế độ MƯỢT: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
+                  "(HUD hiện tuổi overlay)")
+            summary = run_smooth_display(
+                source=args.source,
+                engine=engine,
+                selector=selector,
+                display=on_display,
+                max_frames=args.max_frames,
+                preselect_bbox=armed_bbox,
+                on_result=on_result,
+                visualizer=viz,
+                metrics=metrics,
+            )
+        else:
+            summary = run_interactive(
+                source=args.source,
+                engine=engine,
+                selector=selector,
+                display=on_display,
+                max_frames=args.max_frames,
+                preselect_bbox=armed_bbox,
+                on_result=on_result,
+                visualizer=viz,
+                metrics=metrics,
+                reanchor_every=args.reanchor_every,
+            )
     except KeyboardInterrupt:
         interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
@@ -243,6 +259,9 @@ def main():
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
     ap.add_argument("--max-trajectory", type=int, default=None,
                     help="số điểm quỹ đạo tối đa (đè config)")
+    ap.add_argument("--smooth", action="store_true",
+                    help="hiển thị tách luồng: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
+                         "(HUD ghi tuổi overlay) — dùng cho demo mượt")
     ap.add_argument("--device", default=None, choices=["cpu", "cuda"],
                     help="thiết bị chạy model: cpu (mặc định) | cuda (Colab GPU/máy NVIDIA)")
     ap.add_argument("--image-size", type=int, default=None,
@@ -267,6 +286,7 @@ def main():
         "reanchor_every": args.reanchor_every,
         "image_size": args.image_size,
         "device": args.device,
+        "smooth_display": args.smooth or None,
         "max_frames": args.max_frames,
         "record_path": args.record,
         "record_fps": args.record_fps,
@@ -284,6 +304,7 @@ def main():
     args.reanchor_every = cfg["reanchor_every"]
     args.image_size = cfg["image_size"]
     args.device = cfg["device"]
+    args.smooth = bool(args.smooth or cfg["smooth_display"])
     args.max_frames = cfg["max_frames"]
     args.record_fps = cfg["record_fps"]
     # bật ghi: --record chỉ định, hoặc record_enabled trong config

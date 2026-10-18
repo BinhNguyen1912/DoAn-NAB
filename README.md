@@ -227,6 +227,36 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.
 
+### Chế độ MƯỢT cho demo webcam (`--smooth`) — đo thật
+
+Vấn đề: nếu đọc → suy luận → hiển thị tuần tự thì cửa sổ chỉ cập nhật bằng tốc độ model
+(0.3–2 FPS) → "di chuyển mãi mới nhích". Chế độ `--smooth` **tách 3 luồng**:
+
+1. **capture** — luôn giữ frame mới nhất từ webcam (không xếp hàng frame cũ);
+2. **inference** — lấy frame mới nhất đem `engine.start/process`, xong thì ghi kết quả + mốc thời gian;
+3. **display** (main thread — OpenCV chỉ cho 1 luồng dùng GUI) — vẽ frame mới nhất ở ~30 FPS kèm
+   overlay của lần suy luận gần nhất, HUD ghi rõ **`Overlay: N ms trước`**.
+
+**Đo trên webcam thật (image_size 384, 8,3 giây):**
+
+| Chỉ số | Kết quả |
+|---|---|
+| Frame **hiển thị** | 159 frame → **19,0 FPS** (video mượt) |
+| Lần **suy luận** | 16 lần → **1,92 FPS** |
+| Tuổi overlay trung bình | **~522 ms** (mask cập nhật 2 lần/giây) |
+
+→ Video mượt như camera thường; mask/ô bao/quỹ đạo cập nhật 2 lần/giây và **tuổi overlay luôn
+hiện trên HUD** (trung thực theo ADR-0002 — không giả vờ 19 FPS là tốc độ model).
+
+Lệnh demo khuyến nghị:
+```bash
+python tools/run_live.py --source 0 --display --smooth --image-size 384
+```
+Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
+```bash
+python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json
+```
+
 ### Tối ưu tốc độ trên CPU (đo thật trên laptop này, 18-10-2026)
 
 Độ trễ **tăng dần** khi chạy lâu vì chi phí propagate của SAMURAI tỉ lệ với số frame lưu trong

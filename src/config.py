@@ -36,6 +36,8 @@ DEFAULTS = {
     "image_size": None,
     # Thiết bị chạy model: "cpu" (mặc định) hoặc "cuda" (Colab GPU / máy có NVIDIA).
     "device": "cpu",
+    # Hiển thị tách luồng (~30 FPS video, overlay cập nhật mỗi lần suy luận) — cho demo mượt.
+    "smooth_display": False,
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)

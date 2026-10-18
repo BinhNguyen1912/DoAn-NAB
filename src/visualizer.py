@@ -81,7 +81,32 @@ class Visualizer:
     # ---------- API công khai ----------
 
     def update(self, frame, result):
-        """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở."""
+        """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
+
+        Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
+        luồng dùng `consume()` mỗi lần suy luận và `render()` mỗi frame hiển thị.
+        """
+        self.consume(result)
+        return self.render(frame, result)
+
+    def consume(self, result):
+        """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
+
+        Tách khỏi `render()` để chế độ tách luồng không nhân đôi điểm quỹ đạo khi vẽ nhiều
+        frame hiển thị cho cùng một kết quả.
+        """
+        if result.bbox != (0, 0, 0, 0):
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            self._trajectory.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
+        self._latencies.append(result.elapsed_ms)
+        if result.mask is None or not result.mask.any():
+            self.lost_frames += 1
+            self.consecutive_lost += 1
+        else:
+            self.consecutive_lost = 0
+
+    def render(self, frame, result, overlay_age_ms=None, display_fps=None):
+        """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
         # 1) tô mask bán trong suốt
@@ -95,25 +120,19 @@ class Visualizer:
         if x2 > x1 and y2 > y1:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
 
-        # 3) quỹ đạo — thêm tâm (bỏ frame mask rỗng để không thêm điểm rác (0,0)),
-        #    rồi vẽ polyline nối các điểm + chấm hiện tại
-        if result.bbox != (0, 0, 0, 0):
-            cx, cy = int((x1 + x2) / 2), int((y1 + y2) / 2)
-            self._trajectory.append((cx, cy))
+        # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần)
         if len(self._trajectory) >= 2:
             pts = np.array(self._trajectory, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(img, [pts], isClosed=False, color=_COLOR_TRAJECTORY,
                           thickness=_LINE_THICKNESS)
             cv2.circle(img, self._trajectory[-1], 3, _COLOR_TRAJECTORY, -1)
 
-        # 4) HUD text FPS + độ trễ + điểm tin cậy; banner cảnh báo khi mất dấu
-        self._latencies.append(result.elapsed_ms)
-        if result.mask is None or not result.mask.any():
-            self.lost_frames += 1
-            self.consecutive_lost += 1
-        else:
-            self.consecutive_lost = 0
-        self._draw_hud(img, result.score)
+        # 4) HUD (FPS/độ trễ/điểm tin cậy) + banner mất dấu + tuổi overlay nếu có
+        fps = self.effective_fps if display_fps is None else display_fps
+        self._draw_hud(img, result.score, fps=fps)
+        if overlay_age_ms is not None:
+            self._put_text(img, f"Overlay: {overlay_age_ms:.0f} ms truoc",
+                           (8, 80))
         if self.consecutive_lost > 0:
             self._draw_lost_banner(img)
 
@@ -200,9 +219,10 @@ class Visualizer:
             cv2.putText(img, text, _centered_org_cv(img, text, 0.7), cv2.FONT_HERSHEY_SIMPLEX,
                         0.7, _COLOR_LOST, 2, cv2.LINE_AA)
 
-    def _draw_hud(self, img, score):
+    def _draw_hud(self, img, score, fps=None):
         """Vẽ HUD 3 dòng: FPS, độ trễ, điểm tin cậy (tiếng Việt qua PIL nếu có font)."""
-        for i, text in enumerate(self.hud_lines(score, self.effective_fps,
+        for i, text in enumerate(self.hud_lines(score,
+                                               self.effective_fps if fps is None else fps,
                                                self.mean_latency_ms)):
             self._put_text(img, text, (8, 20 + 20 * i))
 

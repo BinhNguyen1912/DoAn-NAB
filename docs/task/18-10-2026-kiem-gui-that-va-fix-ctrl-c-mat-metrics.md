@@ -266,3 +266,35 @@ một lần, không phải thời gian chờ mỗi lần demo).
 `--device cuda` không có GPU → `[LOI] --device cuda nhưng máy không có GPU CUDA (kiểm tra: Colab → …)`.
 
 **Test:** +3 config test (device default/cuda/giá trị lạ); full suite 119 passed; ruff sạch.
+
+---
+
+## Bổ sung 10 — LÀM LẠI phần demo: chế độ hiển thị MƯỢT (tách 3 luồng)
+
+**Yêu cầu người dùng:** "hạn chế bỏ demo, đây là dự án đồ án của tôi… làm lại" — cần demo webcam
+realtime thật, không phải workaround.
+
+**Thiết kế (`src/smooth_display.py` mới):**
+1. `LatestFrameSource` — luồng capture: đọc liên tục, giữ **frame mới nhất** + mốc thời gian, không xếp hàng.
+2. `InferenceWorker` — luồng suy luận: lấy frame mới nhất → `engine.start/process`; `set_bbox()` để chọn/đổi
+   đối tượng (reset + start), `clear()` khi bấm `r`; không có bbox thì **không chạy model**.
+3. `run_smooth_display()` — vòng lặp hiển thị (main thread): vẽ frame mới nhất ~30 FPS + overlay của lần
+   suy luận gần nhất; HUD thêm dòng `Overlay: N ms trước`; mỗi kết quả chỉ `consume()` 1 lần.
+
+**Refactor `Visualizer`:** tách `update()` = `consume()` + `render()`.
+`consume(result)` cập nhật quỹ đạo/latency/bộ đếm mất dấu (mỗi lần suy luận 1 lần);
+`render(frame, result, overlay_age_ms, display_fps)` chỉ vẽ. Nhờ vậy vẽ 30 frame cho cùng 1 kết quả
+không nhân đôi điểm quỹ đạo.
+
+**Lỗi gặp khi làm:**
+- `import torch` **trong luồng nền** (test fake engine) → kẹt import lock, thread đứng im. Sửa: import
+  `TrackingResult` ở main thread trước khi start thread (ghi chú trong test).
+- `summary.processed` ban đầu chỉ tăng khi có `visualizer` → sửa để không phụ thuộc visualizer.
+- Fixture test vượt khung (30 frame × vận tốc 4 px trên khung 160px) → giảm còn 20 frame/khung 200px.
+
+**Đo trên webcam thật (image_size 384, 8,3 s):** **159 frame hiển thị = 19,0 FPS**; **16 lần suy luận
+= 1,92 FPS**; tuổi overlay TB **~522 ms**.
+
+**CLI:** `--smooth` (+ config key `smooth_display`), dùng chung `--record/--metrics-csv/--metrics-summary`
+(ghi mp4 theo luồng hiển thị 19 FPS). **Test:** +8 (2 nguồn/worker, 3 worker, 2 visualizer, 1 tích hợp
+"vẽ nhiều hơn suy luận"); full suite 127 passed; ruff sạch.

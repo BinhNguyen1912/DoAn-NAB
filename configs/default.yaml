@@ -27,3 +27,7 @@ reanchor_every: null
 # Độ phân giải đầu vào của model (SAM 2 mặc định 1024). Hạ 512 → nhanh ~5-6x trên CPU
 # (đo: 5492ms → 733ms/frame) nhưng vật thể nhỏ có thể kém chính xác hơn.
 image_size: null
+
+# Hiển thị MƯỢT (tách luồng): video ~30 FPS, mask/ô bao cập nhật mỗi lần suy luận xong
+# và HUD ghi rõ "Overlay: N ms trước". Bật khi demo cần nhìn mượt (dùng với --display).
+smooth_display: false
