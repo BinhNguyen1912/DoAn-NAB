@@ -5,7 +5,6 @@ Số liệu kỳ vọng trong test là LITERAL tính tay (nguồn độc lập),
 """
 import numpy as np
 import pytest
-import pytest
 
 from src.synthetic_video import BACKGROUND_COLOR, SQUARE_COLOR, generate_tracking_sequence
 

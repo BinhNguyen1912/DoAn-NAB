@@ -254,7 +254,6 @@ class TestVisualizerIntegration:
 
         viz.reset = spy_reset
 
-        path_tmp = None  # chưa dùng
         # dựng phiên mini: dùng run_interactive với video tạm
         import tempfile
         cv2_dir = tempfile.mkdtemp()

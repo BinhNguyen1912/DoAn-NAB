@@ -11,7 +11,6 @@ Output : SessionSummary (tổng frame, latencies, mean/p95 ms, FPS hiệu dụng
 Lưu ý  : số FPS/latency là THỰC ĐO trên phần cứng chạy (ADR-0002: báo cáo trung thực,
          không claim real-time). Chức năng vẽ HUD đầy đủ/quỹ đạo là ticket 06.
 """
-import time
 from dataclasses import dataclass, field
 
 import cv2

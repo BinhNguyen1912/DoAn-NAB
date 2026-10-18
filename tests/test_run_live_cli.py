@@ -1,0 +1,205 @@
+"""Test CLI `tools/run_live.py` — argparse + precedence config/CLI + xuất artefacts (ticket 08).
+
+Vì sao có file này: 3 bug của phiên implement 08 nằm đúng ở CLI (đọc source_fps sau
+peek.close(); source bị validate sai kiểu; precedence config/CLI) và chỉ lộ ra khi chạy
+smoke thật ~90s. Test này khoá lại toàn bộ lớp đó trong ~1s bằng FakeEngine (không model).
+
+Skip khi thiếu package `sam2` (CI không clone SAMURAI): CLI import sam2 ở module level.
+"""
+import csv
+import json
+import sys
+
+import cv2
+import numpy as np
+import pytest
+
+pytest.importorskip("sam2", reason="CLI run_live import sam2 — CI không clone SAMURAI")
+
+from src.prompt_selector import PromptSelector  # noqa: E402
+from src.synthetic_video import generate_tracking_sequence  # noqa: E402
+from src.tracker_engine import TrackingResult  # noqa: E402
+import tools.run_live as run_live  # noqa: E402
+
+
+class FakeEngine:
+    """Engine giả thay TrackerEngine.build_default — CLI không cần model/checkpoint thật."""
+
+    def __init__(self, *a, **kw):
+        self._idx = -1
+
+    def start(self, frame, bbox):
+        self._idx = 0
+        return self._res(0)
+
+    def process(self, frame):
+        self._idx += 1
+        return self._res(self._idx)
+
+    def reset(self):
+        self._idx = -1
+
+    def _res(self, i):
+        x = 60 + 4 * i
+        mask = np.zeros((240, 320), dtype=bool)
+        mask[60:100, x:x + 40] = True
+        return TrackingResult(frame_idx=i, mask=mask, bbox=(x, 60, x + 40, 100),
+                             score=0.9, elapsed_ms=50.0)
+
+
+@pytest.fixture
+def video(tmp_path):
+    fx = generate_tracking_sequence(num_frames=4, frame_size=(240, 320),
+                                    square_size=40, start=(60, 60))
+    path = tmp_path / "seq.avi"
+    out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 30, (320, 240))
+    for f in fx.frames:
+        out.write(f)
+    out.release()
+    return str(path)
+
+
+@pytest.fixture
+def fake_engine(monkeypatch):
+    """build_default trả FakeEngine (checkpoint/model_cfg vẫn đi qua resolve thật)."""
+    monkeypatch.setattr(
+        run_live.TrackerEngine, "build_default",
+        classmethod(lambda cls, **kw: FakeEngine()),
+    )
+
+
+def _write_cfg(tmp_path, text):
+    path = tmp_path / "cfg.yaml"
+    path.write_text(text, encoding="utf-8")
+    return str(path)
+
+
+class TestHeadlessArtefacts:
+    def test_yaml_bat_ghi_metrics_va_mp4_ra_du_artefact(self, tmp_path, video, fake_engine,
+                                                       monkeypatch):
+        """1 lệnh headless qua YAML → mp4 + CSV + summary JSON (tiêu chí 1 ticket 08)."""
+        rec = tmp_path / "out.mp4"
+        csv_out = tmp_path / "metrics.csv"
+        js_out = tmp_path / "summary.json"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}          # engine là fake — resolve chỉ cần file tồn tại
+source: {video}
+record_enabled: true
+record_path: {rec}
+metrics_csv: {csv_out}
+metrics_summary: {js_out}
+max_frames: 4
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+
+        assert rec.is_file(), "record_enabled qua YAML phải bật ghi mp4"
+        assert csv_out.is_file() and js_out.is_file()
+
+        rows = list(csv.reader(open(csv_out, encoding="utf-8")))
+        assert len(rows) == 5, "header + 4 frame"
+        s = json.loads(js_out.read_text(encoding="utf-8"))
+        assert s["total_frames"] == 4 and s["mean_latency_ms"] == pytest.approx(50.0)
+
+        cap = cv2.VideoCapture(str(rec))
+        n = 0
+        while cap.read()[0]:
+            n += 1
+        cap.release()
+        assert n == 4
+
+    def test_cli_de_yaml_ghi_video(self, tmp_path, video, fake_engine, monkeypatch):
+        """--record (CLI) thắng record_path trong YAML."""
+        yaml_rec = tmp_path / "yaml.mp4"
+        cli_rec = tmp_path / "cli.mp4"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {yaml_rec}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv",
+                            ["run_live.py", "--config", cfg, "--record", str(cli_rec)])
+        run_live.main()
+        assert cli_rec.is_file() and not yaml_rec.exists()
+
+    def test_yaml_tat_ghi_thi_khong_tao_file(self, tmp_path, video, fake_engine, monkeypatch):
+        """record_enabled: false (mặc định) → không ghi mp4 ngoài ý muốn."""
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+        assert not list(tmp_path.glob("*.mp4"))
+
+
+class TestConfigErrors:
+    def test_source_null_bao_loi_roi_thoat_ma_1(self, tmp_path, video, fake_engine,
+                                                monkeypatch, capsys):
+        """source: null trong YAML → thông báo hướng dẫn + exit code 1 (không traceback)."""
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: null
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        with pytest.raises(SystemExit) as exc:
+            run_live.main()
+        assert exc.value.code == 1
+        assert "chưa chỉ định nguồn" in capsys.readouterr().out
+
+    def test_max_frames_tu_yaml_duoc_ap(self, tmp_path, video, fake_engine, monkeypatch):
+        """max_frames trong YAML giới hạn đúng số frame (không cần truyền CLI)."""
+        csv_out = tmp_path / "m.csv"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+max_frames: 2
+metrics_csv: {csv_out}
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+        rows = list(csv.reader(open(csv_out, encoding="utf-8")))
+        assert len(rows) == 3, "header + 2 frame (max_frames=2)"
+
+
+class TestDisplayPath:
+    def test_display_wiring_voi_gui_gia(self, tmp_path, video, fake_engine, monkeypatch):
+        """--display: kiểm WIRING (setMouseCallback + imshow/waitKey + thoát bằng q).
+
+        Không gọi GUI thật: trong WSL/CI `cv2.namedWindow` gọi thẳng vào backend và
+        SIGABRT cả process (không phải exception catch được) — xem CODING_STANDARDS.md:
+        mọi test chạm GUI phải giả lập bề mặt cv2. GUI thật kiểm thủ công trên Windows.
+        """
+        events = {"set_mouse_callback": 0, "imshow": 0, "destroy": 0}
+
+        def fake_set_mouse_callback(win, cb):
+            events["set_mouse_callback"] += 1
+            assert callable(cb), "phải gắn selector.on_mouse"
+
+        monkeypatch.setattr(run_live.cv2, "namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr(run_live.cv2, "setMouseCallback", fake_set_mouse_callback)
+        monkeypatch.setattr(run_live.cv2, "imshow",
+                            lambda *a, **k: events.__setitem__("imshow", events["imshow"] + 1))
+        monkeypatch.setattr(run_live.cv2, "destroyAllWindows",
+                            lambda *a, **k: events.__setitem__("destroy", events["destroy"] + 1))
+        # q ngay lần đọc phím đầu tiên → vòng lặp thoát sạch, không treo
+        monkeypatch.setattr(run_live.cv2, "waitKey", lambda *a, **k: ord("q"))
+
+        cfg = _write_cfg(tmp_path, f"checkpoint: {video}\nsource: {video}\nmax_frames: 1\n")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg, "--display",
+                                          "--bbox", "60,60,40,40"])
+        run_live.main()  # không ném SystemExit → thoát sạch
+
+        assert events["set_mouse_callback"] == 1
+        assert events["imshow"] >= 1
+        assert events["destroy"] == 1  # destroyAllWindows trong finally
+
+
+class TestPromptSelectorImport:
+    def test_module_nap_duoc_va_co_selector(self):
+        """Sanity: tools.run_live import đủ dependency cho đường --display."""
+        assert PromptSelector is not None
+        assert callable(run_live.main)

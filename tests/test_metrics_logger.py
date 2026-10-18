@@ -184,7 +184,6 @@ class TestTichHop:
     def test_run_interactive_logs_va_lost_duoc_ghi(self, tmp_path):
         from src.synthetic_video import generate_tracking_sequence
         from src.live_pipeline import run_interactive
-        import cv2 as _cv2
 
         class FakeEngine2:
             def __init__(self):
@@ -213,7 +212,7 @@ class TestTichHop:
         fx = generate_tracking_sequence(num_frames=10, frame_size=(240, 320),
                                         square_size=40, start=(60, 60))
         path = tmp_path / "seq.avi"
-        out = _cv2.VideoWriter(str(path), _cv2.VideoWriter_fourcc(*"MJPG"), 30, (320, 240))
+        out = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"MJPG"), 30, (320, 240))
         for fr in fx.frames:
             out.write(fr)
         out.release()
@@ -224,8 +223,8 @@ class TestTichHop:
 
         def display(img, mode):
             if mode == "select" and len(logger.records) == 0:
-                sel.on_mouse(_cv2.EVENT_LBUTTONDOWN, 100, 100, 0, None)
-                sel.on_mouse(_cv2.EVENT_LBUTTONUP, 140, 140, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 100, 100, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONUP, 140, 140, 0, None)
             # đủ 4 frame (1 start + 3 process, có 1 frame lost) → thoát
             if done["n_process"] >= 4:
                 return ord("q")

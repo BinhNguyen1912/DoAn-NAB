@@ -4,6 +4,8 @@ __pycache__/
 *.egg-info/
 .venv/
 venv/
+.pytest_cache/
+.ruff_cache/
 
 # ===== Nặng — không commit (theo AGENTS.md mục 4) =====
 # Upstream SAMURAI clone (~1.9GB) — cài đặt theo hướng dẫn (docs), không vendor

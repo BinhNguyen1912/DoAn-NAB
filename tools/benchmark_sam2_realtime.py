@@ -45,7 +45,6 @@ def fps_of(ms):
 
 def build_model():
     """Build đúng model SAMURAI tiny như demo CPU đã chạy (device=cpu)."""
-    import torch
     from sam2.build_sam import build_sam2_video_predictor
 
     predictor = build_sam2_video_predictor(CFG_SAMURAI_T, CKPT_TINY, device="cpu")
@@ -235,7 +234,7 @@ def run_openvino_encoder(model):
             continue
         try:
             sess = core.compile_model(ir_path, dev)
-            out = sess({sess.input(0): x_np})
+            sess({sess.input(0): x_np})  # warm-up (không cần giữ output)
             for _ in range(2):
                 sess({sess.input(0): x_np})
             ts = []
