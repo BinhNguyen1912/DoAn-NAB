@@ -177,7 +177,12 @@ lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/col
 4. Số liệu trong `summary.json` **là số đo GPU thật** — dùng cho mục "Đánh giá hiệu năng"
    của báo cáo, đặt cạnh số liệu CPU laptop để đối chiếu trung thực.
 
-## 4. Cấu trúc repo
+## 4. Đóng góp của sinh viên vs thành phần có sẵn
+
+Bảng chi tiết phần nào tự viết, phần nào dùng có sẵn (SAM 2/SAMURAI theo ADR-0001) và bằng chứng
+(commit/file/số liệu): **`docs/team-contribution.md`** — dùng khi bảo vệ.
+
+## 5. Cấu trúc repo
 
 ```
 src/            mã nguồn chính (video_source, tracker_engine, prompt_selector,
@@ -189,7 +194,7 @@ docs/           đề cương, ADR, log công việc theo ngày (docs/task/)
 data/           video demo + bbox frame 0 (KHÔNG commit file nặng)
 ```
 
-## 5. Kiểm tra chất lượng (guardrail)
+## 6. Kiểm tra chất lượng (guardrail)
 
 ```bash
 python -m pytest -m "not slow"     # làn nhanh ~10s (UI/logic/config) — bỏ test cần checkpoint
@@ -218,7 +223,7 @@ FONTDIR="$(python -c 'import cv2, os; print(os.path.join(os.path.dirname(cv2.__f
 mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONTDIR/"
 ```
 
-## 6. Đánh giá hiệu năng (đang có)
+## 7. Đánh giá hiệu năng (đang có)
 
 | Môi trường | Pipeline (mean ms/frame) | FPS hiệu dụng | Nguồn số liệu |
 |---|---|---|---|
@@ -307,7 +312,7 @@ mất dấu **0/19**. Tức là nhanh hơn và trên fixture còn ít mất dấ
 Nút cổ chai thật là suy luận model trên CPU: thu nhận frame chỉ 32 ms, xử lý 3000–6000 ms.
 Muốn 15–25 FPS thật → chạy headless trên **Colab GPU** (mục 3).
 
-## 7. Kiến thức nền
+## 8. Kiến thức nền
 
 - **SAMURAI**: https://github.com/yangchris11/samurai (motion-aware memory + Kalman)
 - **SAM 2**: https://github.com/facebookresearch/sam2 (streaming memory propagation)
