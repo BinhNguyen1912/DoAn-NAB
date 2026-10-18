@@ -23,3 +23,7 @@ max_frames: null             # null = chạy hết nguồn; đặt số để c�
 # null = tắt (memory đầy đủ, chậm dần theo thời gian). N=3 nhanh ~2.2x nhưng đổi chất lượng
 # bộ nhớ dài hạn (đo trên fixture: IoU sau che 0.969 vs 0.981, mất dấu 0/19 vs 5/19).
 reanchor_every: null
+
+# Độ phân giải đầu vào của model (SAM 2 mặc định 1024). Hạ 512 → nhanh ~5-6x trên CPU
+# (đo: 5492ms → 733ms/frame) nhưng vật thể nhỏ có thể kém chính xác hơn.
+image_size: null

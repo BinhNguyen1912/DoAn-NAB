@@ -214,11 +214,25 @@ Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 
 | Cấu hình | mean ms/frame | FPS hiệu dụng | Ghi chú |
 |---|---|---|---|
-| Mặc định (memory đầy đủ) | 5346 (12 frame), tăng tới ~6.3 s | 0.19 | chậm dần rồi bão hoà |
-| `--reanchor-every 3` | 3662 | 0.27 | **nhanh ~1.5×** (12 frame), ~2.2× ở trạng thái ổn định |
-| Giảm camera 320×240 | −10% | | SAM 2 luôn resize về 1024×1024 → gần như không lợi |
+| Mặc định (`image_size=1024`, memory đầy đủ) | 5346 (12 frame), tăng tới ~6.3 s | 0.19 | chậm dần rồi bão hoà |
+| `--reanchor-every 3` | 3662 | 0.27 | nhanh ~1.5× (12 frame), ~2.2× ổn định |
+| `--image-size 512` | 733 | 1.36 | **nhanh ~5–7×** |
+| **`--image-size 512 --reanchor-every 3`** | **558** | **1.79** | ⭐ cấu hình demo khuyến nghị |
+| Giảm camera 320×240 | −10% | | SAM 2 tự resize đầu vào → gần như không lợi |
 | 8 thread thay 4 | −8% | | model-bound |
 | Cắt bớt `non_cond_frame_outputs` | ❌ `KeyError` | | SAM 2 tham chiếu frame cũ → không khả thi |
+
+Xác nhận trên **webcam thật** (5 frame): mặc định `3080 ms` (0.32 FPS) → `--image-size 512
+--reanchor-every 3` = **`569 ms` (1.76 FPS)**, tức **nhanh 5,4×**.
+
+Lệnh demo khuyến nghị cho webcam realtime:
+```bash
+python tools/run_live.py --source 0 --display --image-size 512 --reanchor-every 3
+```
+
+⚖️ Đánh đổi của `--image-size 512`: ảnh được downsample mạnh hơn nên **đối tượng nhỏ** có thể kém
+chính xác. Đo trên fixture (ô vuông 60 px trong khung 640×360): IoU sau che 0.977 (mặc định 0.981)
+— chênh không đáng kể; với vật thể nhỏ trong ảnh thật cần đo lại trước khi kết luận.
 
 **Đánh đổi của `--reanchor-every`** (reset state + chọn lại bbox hiện tại): đo trên fixture 20 frame
 có che khuất 5 frame — baseline IoU sau che **0.981**, mất dấu 5/19; re-anchor 3: IoU **0.969**,

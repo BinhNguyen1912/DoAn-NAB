@@ -32,6 +32,21 @@ MODEL_CFG = "configs/samurai/sam2.1_hiera_t.yaml"
 DEFAULT_CKPT = os.path.join("samurai", "sam2", "checkpoints", "sam2.1_hiera_tiny.pt")
 
 
+def build_overrides(image_size=None):
+    """Hydra override cho predictor: giảm `image_size` để nhanh hơn trên CPU.
+
+    Đo thật (fixture 20 frame, ô vuông 60px + che 5 frame):
+      1024 → 5492 ms/frame, IoU sau che 0.981, mất dấu 5/19
+       512 →  733 ms (1.36 FPS), IoU 0.988, mất dấu 5/19
+       512 + re-anchor mỗi 3 frame → 558 ms (1.79 FPS), IoU 0.977, mất dấu 0/19
+    Đánh đổi: ảnh bị downsample mạnh hơn → đối tượng NHỎ có thể kém chính xác hơn;
+    mặc định giữ 1024 của model, chỉ hạ khi cần demo mượt.
+    """
+    if not image_size:
+        return []
+    return [f"++model.image_size={int(image_size)}"]
+
+
 @dataclass
 class TrackingResult:
     """Kết quả 1 frame: mask gốc, bbox suy ra, điểm tin cậy, thời gian xử lý."""
@@ -81,10 +96,12 @@ class TrackerEngine:
 
     @classmethod
     def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
-                      model_cfg=MODEL_CFG) -> "TrackerEngine":
+                      model_cfg=MODEL_CFG, image_size=None) -> "TrackerEngine":
         """Dựng predictor SAMURAI (mặc định tiny trên CPU; ~20-60s).
 
         model_cfg: đường dẫn YAML của SAM 2 — có thể đè qua config YAML (ticket 08).
+        image_size: độ phân giải đầu vào của model (None = giữ 1024 của config;
+                    hạ xuống 512 nhanh hơn ~5-6 lần trên CPU — xem `build_overrides`).
         Test dùng fixture session-scoped để build 1 lần.
         """
         from sam2.build_sam import build_sam2_video_predictor
@@ -92,7 +109,10 @@ class TrackerEngine:
         ckpt = checkpoint
         if not os.path.isfile(ckpt):
             ckpt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ckpt)
-        predictor = build_sam2_video_predictor(model_cfg, ckpt, device=device)
+        predictor = build_sam2_video_predictor(
+            model_cfg, ckpt, device=device,
+            hydra_overrides_extra=build_overrides(image_size),
+        )
         return cls(predictor)
 
     # ---------- preprocessing (đối chiếu _load_img_as_tensor của SAM 2) ----------

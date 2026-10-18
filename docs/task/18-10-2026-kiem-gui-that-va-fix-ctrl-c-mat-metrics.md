@@ -190,3 +190,32 @@ Xác nhận qua CLI thật (12 frame, video test): `5346 ms → 3662 ms`.
 
 **Test:** +2 (reanchor đúng nhịp + bbox cuối; mặc định không reanchor) + 3 config test; README mục
 "Tối ưu tốc độ trên CPU" có bảng số liệu và đánh đổi; ruff sạch; full suite 111 passed.
+
+---
+
+## Bổ sung 7 — webcam realtime: giảm `image_size` của model (nhanh 5,4×)
+
+**Bối cảnh:** người dùng nhấn mạnh sản phẩm là **webcam realtime** (video file chỉ để test). Nên tối ưu
+phải nhắm vào độ trễ webcam.
+
+**Thử nghiệm (build predictor với `++model.image_size=N`), fixture 20 frame, ô vuông 60px + che 5 frame:**
+
+| image_size | ms/frame | FPS | IoU sau che | Mất dấu |
+|---|---|---|---|---|
+| 1024 (mặc định) | 5492 | 0.18 | 0.981 | 5/19 |
+| 768 | 1645 | 0.61 | 0.993 | — |
+| 512 | 733 | 1.36 | 0.988 | 5/19 |
+| **512 + re-anchor 3** | **558** | **1.79** | 0.977 | **0/19** |
+| 512 + re-anchor 5 | 578 | 1.73 | 0.978 | 4/19 |
+
+**Đã làm:** `TrackerEngine.build_overrides(image_size)` (pure, 2 test) + `build_default(..., image_size=None)`;
+key `image_size` trong config (validate int) + `configs/default.yaml`; flag CLI `--image-size N`
+in cảnh báo khi bật. Mặc định vẫn 1024 (trung thực, không tự ý hạ chất lượng).
+
+**Verify trên webcam thật:** mặc định `3080 ms` (0.32 FPS) → `--image-size 512 --reanchor-every 3`
+= `569 ms` (**1.76 FPS**), nhanh 5,4×. Lệnh demo khuyến nghị đã ghi vào README.
+
+**Cảnh báo trung thực:** hạ image_size làm ảnh downsample mạnh hơn → vật thể NHỎ trong ảnh thật có thể
+kém chính xác; cần đo lại trên video thật trước khi chốt số cho báo cáo.
+
+**Test:** +2 build_overrides + 2 config; full suite 115 passed; ruff sạch.

@@ -78,3 +78,22 @@ class TestTrackerEngineStreaming:
                     assert iou(res.bbox, fx.bboxes[i]) >= 0.3, (
                         f"frame {i} (ngoài che khuất) bám lại yếu: IoU < 0.3"
                     )
+
+class TestImageSizeOverride:
+    """Giảm `image_size` của SAM 2 để nhanh hơn trên CPU (đo thật 18-10).
+
+    Fixture 20 frame (ô vuông + che 5 frame): 1024 → 5492 ms/frame IoU-sau-che 0.981;
+    512 → 733 ms (1.36 FPS) IoU 0.988; 512 + re-anchor 3 → 558 ms (1.79 FPS) IoU 0.977.
+    """
+
+    def test_khong_truyen_thi_khong_override(self):
+        from src.tracker_engine import build_overrides
+
+        assert build_overrides(None) == []
+        assert build_overrides(0) == []
+
+    def test_truyen_so_thi_tao_override_hydra(self):
+        from src.tracker_engine import build_overrides
+
+        assert build_overrides(512) == ["++model.image_size=512"]
+        assert build_overrides(768) == ["++model.image_size=768"]

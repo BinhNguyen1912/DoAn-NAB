@@ -243,6 +243,9 @@ def main():
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
     ap.add_argument("--max-trajectory", type=int, default=None,
                     help="số điểm quỹ đạo tối đa (đè config)")
+    ap.add_argument("--image-size", type=int, default=None,
+                    help="độ phân giải đầu vào của model (512 = nhanh ~5-6x trên CPU; "
+                         "mặc định giữ 1024 của config SAM 2)")
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
@@ -260,6 +263,7 @@ def main():
         "source": args.source,
         "max_trajectory": args.max_trajectory,
         "reanchor_every": args.reanchor_every,
+        "image_size": args.image_size,
         "max_frames": args.max_frames,
         "record_path": args.record,
         "record_fps": args.record_fps,
@@ -275,6 +279,7 @@ def main():
         args.source = int(args.source)
     args.max_trajectory = cfg["max_trajectory"]
     args.reanchor_every = cfg["reanchor_every"]
+    args.image_size = cfg["image_size"]
     args.max_frames = cfg["max_frames"]
     args.record_fps = cfg["record_fps"]
     # bật ghi: --record chỉ định, hoặc record_enabled trong config
@@ -284,7 +289,11 @@ def main():
 
     _guess_bbox_file(args)
 
-    engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"])
+    if args.image_size:
+        print(f"[pipeline] model image_size={args.image_size} (nhanh hơn trên CPU, "
+              f"đánh đổi chi tiết vật thể nhỏ)")
+    engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
+                                         image_size=args.image_size)
 
     if args.display:
         _run_display(engine, args)

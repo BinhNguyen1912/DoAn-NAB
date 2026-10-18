@@ -138,3 +138,11 @@ class TestReanchorConfig:
             load_config(_write_yaml(tmp_path, """
                 reanchor_every: "ba-frame"
                 """))
+
+
+class TestImageSizeConfig:
+    def test_mac_dinh_giu_1024_cua_model(self):
+        assert DEFAULTS["image_size"] is None
+
+    def test_yaml_dat_so_hop_le(self, tmp_path):
+        assert load_config(_write_yaml(tmp_path, "image_size: 512\n"))["image_size"] == 512

@@ -31,10 +31,13 @@ DEFAULTS = {
     # Tối ưu tốc độ (tuỳ chọn): reset + chọn lại bbox mỗi N frame.
     # None = tắt. Đo thật: N=3 → 2.2x nhanh hơn, IoU sau che 0.969 vs 0.981.
     "reanchor_every": None,
+    # Độ phân giải đầu vào của model: null = giữ 1024 (chính xác nhất, chậm);
+    # 512 = nhanh ~5-6x trên CPU (đo thật) — đánh đổi chi tiết với vật thể nhỏ.
+    "image_size": None,
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
-_INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every")   # source có thể int (webcam) hoặc str (file/RTSP)
+_INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size")   # source có thể int (webcam) hoặc str (file/RTSP)
 _FLOAT_KEYS = ("record_fps",)
 
 
