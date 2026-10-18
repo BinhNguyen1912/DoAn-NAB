@@ -230,7 +230,7 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 |---|---|---|---|---|
 | Laptop CPU (i5, không GPU rời) | 720p, image_size 1024 | 5 047 | **0,20** | `data/gui_summary.json` |
 | Laptop CPU + tối ưu | 720p, image_size 384, `--smooth` | 445 | **2,25** | `data/smooth_summary.json` |
-| **Colab GPU Tesla T4** | 720p, image_size 1024 | 380 | **2,63** | `data/gpu_summary.json` |
+| **Colab GPU Tesla T4** | 720p, image_size 1024 | 380 (bỏ frame warmup: **337**) | **2,63** (steady **2,97**) | `data/gpu_summary.json` |
 | **Colab GPU Tesla T4 + tối ưu** | 720p, image_size 512, `--reanchor-every 10` | **65** | **15,28** | `data/gpu_summary2.json` |
 
 → GPU (T4) nhanh hơn CPU laptop **~13×** ở cùng độ phân giải, và **~78×** khi cả hai đã tối ưu.
@@ -284,7 +284,11 @@ python scripts/plot_metrics.py data/smooth_metrics.csv            # 3 hình: lat
 python scripts/plot_metrics.py data/smooth_metrics.csv data/gpu_metrics.csv   # + hình so sánh CPU vs GPU
 # → data/charts/*.png  + bảng tóm tắt (mean/p95/min/max ms, FPS hiệu dụng, tỷ lệ mất dấu)
 ```
-`so_sanh_latency.png` dùng thang log để thấy rõ chênh lệch CPU (~500–5000 ms) vs GPU (~40–70 ms).
+`so_sanh_latency.png` dùng thang log để thấy rõ chênh lệch CPU (~500–5000 ms) vs GPU (~70–350 ms).
+Frame 0 trên GPU gồm **warmup CUDA (~3 s)** nên làm lệch mean — dùng `--skip-warmup 1` để lấy số ổn định:
+```bash
+python scripts/plot_metrics.py data/gpu_metrics.csv --skip-warmup 1
+```
 
 ### Tối ưu tốc độ trên CPU (đo thật trên laptop này, 18-10-2026)
 

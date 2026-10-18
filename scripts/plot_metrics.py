@@ -132,6 +132,9 @@ def main():
     ap = argparse.ArgumentParser(description="Vẽ biểu đồ đánh giá hiệu năng từ CSV metrics")
     ap.add_argument("csv", nargs="+", help="1 hoặc nhiều file *_metrics.csv")
     ap.add_argument("--out", default="data/charts", help="thư mục xuất PNG (mặc định data/charts)")
+    ap.add_argument("--skip-warmup", type=int, default=0,
+                    help="bỏ N frame đầu khi tính thống kê (frame 0 trên GPU gồm warmup CUDA "
+                         "~3 s nên làm sai lệch mean)")
     args = ap.parse_args()
 
     os.makedirs(args.out, exist_ok=True)
@@ -140,7 +143,11 @@ def main():
     for path in args.csv:
         name = os.path.splitext(os.path.basename(path))[0].replace("_metrics", "")
         d = read_metrics(path)
-        s = summarize(name, d)
+        label = name
+        if args.skip_warmup:
+            d = {k: (v[args.skip_warmup:] if hasattr(v, "__len__") else v) for k, v in d.items()}
+            label = f"{name} (bỏ {args.skip_warmup} frame đầu)"
+        s = summarize(label, d)
         items.append((d, s))
         print(f"{name:28} {s['n']:5d} {s['mean_ms']:8.0f} {s['p95_ms']:8.0f} "
               f"{s['min_ms']:8.0f} {s['max_ms']:8.0f} {s['fps']:6.2f} "
