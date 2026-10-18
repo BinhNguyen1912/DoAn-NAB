@@ -120,3 +120,21 @@ class TestDefaults:
 
     def test_defaults_checkpoint_tiny_samurai(self):
         assert "sam2.1_hiera_tiny" in DEFAULTS["checkpoint"]
+
+class TestReanchorConfig:
+    """reanchor_every: tuỳ chọn tối ưu tốc độ — phải validate kiểu số và mặc định tắt."""
+
+    def test_mac_dinh_tat(self):
+        assert DEFAULTS["reanchor_every"] is None
+
+    def test_yaml_dat_so_hop_le(self, tmp_path):
+        cfg = load_config(_write_yaml(tmp_path, """
+            reanchor_every: 3
+            """))
+        assert cfg["reanchor_every"] == 3
+
+    def test_yaml_sai_kieu_bao_loi(self, tmp_path):
+        with pytest.raises(ValueError, match="reanchor_every"):
+            load_config(_write_yaml(tmp_path, """
+                reanchor_every: "ba-frame"
+                """))

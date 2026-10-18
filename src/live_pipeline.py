@@ -111,15 +111,32 @@ def _annotate(frame, result, visualizer):
     return draw_overlay_minimal(frame, result)
 
 
+def _maybe_reanchor(engine, frame, last_bbox, frame_idx, every):
+    """Tối ưu TỐC ĐỘ (tuỳ chọn): reset state + chọn lại bbox hiện tại mỗi `every` frame.
+
+    Vì sao nhanh hơn: chi phí propagate của SAMURAI tăng theo số frame nằm trong
+    `output_dict["non_cond_frame_outputs"]` — đo thật 18-10: 3.4s khi lưu 1 frame → 8.3s khi
+    lưu 8 frame. Reset đưa chi phí về mức nền. Cắt bớt entry cũ trực tiếp KHÔNG được
+    (SAM 2 tham chiếu frame cũ → `KeyError`), nên reset là cách an toàn.
+    Đánh đổi: mất bộ nhớ dài hạn. Đo trên fixture (ô vuông + bị che 5 frame):
+    baseline IoU sau che 0.981 / mất dấu 5/19; re-anchor 3: IoU 0.969 / mất dấu 0/19.
+    """
+    if not every or frame_idx == 0 or frame_idx % every != 0 or last_bbox is None:
+        return None
+    engine.reset()
+    return engine.start(frame, last_bbox)
+
+
 def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
-                 visualizer=None, metrics=None) -> SessionSummary:
+                 visualizer=None, metrics=None, reanchor_every=None) -> SessionSummary:
     """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng).
 
-    visualizer: Visualizer (ticket 06) — HUD đầy đủ + ghi video nếu đã open_recorder.
-                None → overlay tối thiểu draw_overlay_minimal (ticket 04).
-    metrics   : MetricsLogger (ticket 07) — log FrameRecord mỗi frame (CSV/summary sau).
+    visualizer    : Visualizer (ticket 06) — HUD đầy đủ + ghi video nếu đã open_recorder.
+                    None → overlay tối thiểu draw_overlay_minimal (ticket 04).
+    metrics       : MetricsLogger (ticket 07) — log FrameRecord mỗi frame.
+    reanchor_every: N > 0 → reset + chọn lại bbox mỗi N frame (nhanh hơn, đổi chất lượng
+                    memory dài hạn — xem `_maybe_reanchor`). None = tắt (mặc định).
     """
-    """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng)."""
     summary = SessionSummary(total_frames=0)
     src = open_video_source(source).open()
     try:
@@ -127,6 +144,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         result = engine.start(frame, bbox)
+        last_bbox = result.bbox if result.mask.any() else tuple(bbox)
         warn_if_bad_selection(result)
         if metrics is not None:
             metrics.log(_record_from(result))
@@ -140,7 +158,11 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
             frame = src.read()
             if frame is None:
                 break
-            result = engine.process(frame)
+            reanchored = _maybe_reanchor(engine, frame, last_bbox,
+                                         summary.total_frames, reanchor_every)
+            result = reanchored if reanchored is not None else engine.process(frame)
+            if result.mask.any():
+                last_bbox = result.bbox
             if metrics is not None:
                 metrics.log(_record_from(result))
             img = _annotate(frame, result, visualizer)
@@ -162,7 +184,7 @@ class InteractiveSummary:
 
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
-                    visualizer=None, metrics=None) -> InteractiveSummary:
+                    visualizer=None, metrics=None, reanchor_every=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -179,6 +201,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
     visualizer: Visualizer (ticket 06) cho HUD đầy đủ + ghi video; r chọn lại sẽ reset()
                quỹ đạo. None → overlay tối thiểu như ticket 04.
     metrics   : MetricsLogger (ticket 07) — log FrameRecord mỗi frame track (kể cả mất dấu).
+    reanchor_every: N > 0 → reset + chọn lại bbox mỗi N frame (nhanh hơn, đánh đổi memory).
     Output   : InteractiveSummary(processed = số frame đã track).
     """
     summary = InteractiveSummary()
@@ -206,6 +229,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
                     last_result = engine.start(frame, bbox)
+                    last_bbox = last_result.bbox if last_result.mask.any() else tuple(bbox)
                     warn_if_bad_selection(last_result)
                     summary.processed += 1
                     if on_result is not None:
@@ -230,7 +254,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 frame = src.read()
                 if frame is None:
                     break
-                last_result = engine.process(frame)
+                reanchored = _maybe_reanchor(engine, frame, last_bbox,
+                                             summary.processed, reanchor_every)
+                last_result = reanchored if reanchored is not None else engine.process(frame)
+                if last_result.mask.any():
+                    last_bbox = last_result.bbox
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)

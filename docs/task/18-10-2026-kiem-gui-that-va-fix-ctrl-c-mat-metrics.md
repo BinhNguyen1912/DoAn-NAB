@@ -153,3 +153,40 @@ README: thêm mục "Không biết IP/URL của điện thoại? Quét mạng LA
 **Ticket 03 → 4/4 resolved.** Test: làn nhanh 103 passed; ruff sạch.
 
 **Ghi chú môi trường (cho lần sau):** webcam đang attach vào WSL → Windows không dùng được camera cho đến khi `usbipd detach --busid 1-8`.
+
+---
+
+## Bổ sung 6 — chậm dần khi chạy lâu: chẩn đoán + `--reanchor-every`
+
+**Người dùng báo:** demo webcam 640×480, ms tăng dần `1852 → 6378` rồi bão hoà; hỏi có cách tối ưu nhanh hơn.
+
+**Chẩn đoán (đo thật):**
+
+| Phép đo | Kết quả |
+|---|---|
+| Thu nhận 1 frame webcam (MJPG 640×480) | 32 ms |
+| `process()` frame 1 → frame 8 → frame 15 | 3353 → 8314 → 6438 ms |
+| `len(non_cond_frame_outputs)` tương ứng | 1 → 8 → 15 |
+| Giảm camera xuống 320×240 | 3969 → 3576 ms (**−10%**) |
+| `torch.set_num_threads(8)` thay 4 | 3708 → 3410 ms (**−8%**) |
+| Cắt bớt `non_cond_frame_outputs` (giữ 2–4) | ❌ `KeyError: 2` — SAM 2 tham chiếu frame cũ |
+
+→ Nút cổ chai: **chi phí propagate tăng theo số frame lưu trong state**, không phải độ phân giải/thread.
+
+**Đã làm:** `_maybe_reanchor()` trong `src/live_pipeline.py` + tuỳ chọn `reanchor_every` cho cả
+`run_tracking`/`run_interactive`, key `reanchor_every` trong `configs/default.yaml`, flag CLI
+`--reanchor-every N` (mặc định tắt). Cách hoạt động: mỗi N frame → `engine.reset()` rồi
+`engine.start(frame, last_bbox)` (chọn lại chính bbox dự đoán gần nhất).
+
+**Đo hiệu quả (fixture 20 frame, ô vuông + bị che 5 frame):**
+
+| Chế độ | ms/frame | FPS | IoU sau che | Frame mất dấu |
+|---|---|---|---|---|
+| baseline | 5340 | 0.16–0.19 | 0.981 | 5/19 |
+| re-anchor 6 | 3577 | 0.29 | 0.969 | 1/19 |
+| **re-anchor 3** | **3053** | **0.34** | 0.969 | **0/19** |
+
+Xác nhận qua CLI thật (12 frame, video test): `5346 ms → 3662 ms`.
+
+**Test:** +2 (reanchor đúng nhịp + bbox cuối; mặc định không reanchor) + 3 config test; README mục
+"Tối ưu tốc độ trên CPU" có bảng số liệu và đánh đổi; ruff sạch; full suite 111 passed.

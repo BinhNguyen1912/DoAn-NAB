@@ -18,3 +18,8 @@ metrics_csv: null            # ví dụ data/metrics.csv — bật để ghi s�
 metrics_summary: null        # ví dụ data/summary.json — cần metrics_csv
 
 max_frames: null             # null = chạy hết nguồn; đặt số để cắt ngắn demo
+
+# Tối ưu tốc độ trên CPU (tuỳ chọn): reset + chọn lại bbox mỗi N frame.
+# null = tắt (memory đầy đủ, chậm dần theo thời gian). N=3 nhanh ~2.2x nhưng đổi chất lượng
+# bộ nhớ dài hạn (đo trên fixture: IoU sau che 0.969 vs 0.981, mất dấu 0/19 vs 5/19).
+reanchor_every: null

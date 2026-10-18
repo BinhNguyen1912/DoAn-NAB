@@ -207,6 +207,27 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.
 
+### Tối ưu tốc độ trên CPU (đo thật trên laptop này, 18-10-2026)
+
+Độ trễ **tăng dần** khi chạy lâu vì chi phí propagate của SAMURAI tỉ lệ với số frame lưu trong
+`output_dict["non_cond_frame_outputs"]` (đo: 3.4 s khi lưu 1 frame → 8.3 s khi lưu 8 frame).
+
+| Cấu hình | mean ms/frame | FPS hiệu dụng | Ghi chú |
+|---|---|---|---|
+| Mặc định (memory đầy đủ) | 5346 (12 frame), tăng tới ~6.3 s | 0.19 | chậm dần rồi bão hoà |
+| `--reanchor-every 3` | 3662 | 0.27 | **nhanh ~1.5×** (12 frame), ~2.2× ở trạng thái ổn định |
+| Giảm camera 320×240 | −10% | | SAM 2 luôn resize về 1024×1024 → gần như không lợi |
+| 8 thread thay 4 | −8% | | model-bound |
+| Cắt bớt `non_cond_frame_outputs` | ❌ `KeyError` | | SAM 2 tham chiếu frame cũ → không khả thi |
+
+**Đánh đổi của `--reanchor-every`** (reset state + chọn lại bbox hiện tại): đo trên fixture 20 frame
+có che khuất 5 frame — baseline IoU sau che **0.981**, mất dấu 5/19; re-anchor 3: IoU **0.969**,
+mất dấu **0/19**. Tức là nhanh hơn và trên fixture còn ít mất dấu hơn, nhưng **mất bộ nhớ dài hạn**
+(che khuất dài hơn N frame sẽ kém hơn) → mặc định **tắt**, bật khi cần demo mượt.
+
+Nút cổ chai thật là suy luận model trên CPU: thu nhận frame chỉ 32 ms, xử lý 3000–6000 ms.
+Muốn 15–25 FPS thật → chạy headless trên **Colab GPU** (mục 3).
+
 ## 7. Kiến thức nền
 
 - **SAMURAI**: https://github.com/yangchris11/samurai (motion-aware memory + Kalman)

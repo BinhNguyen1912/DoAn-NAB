@@ -152,6 +152,7 @@ def _run_display(engine, args):
             on_result=on_result,
             visualizer=viz,
             metrics=metrics,
+            reanchor_every=args.reanchor_every,
         )
     except KeyboardInterrupt:
         interrupted = True
@@ -202,6 +203,7 @@ def _run_headless(engine, args):
             max_frames=args.max_frames,
             visualizer=viz,
             metrics=metrics,
+            reanchor_every=args.reanchor_every,
         )
     except KeyboardInterrupt:
         interrupted = True
@@ -241,6 +243,9 @@ def main():
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
     ap.add_argument("--max-trajectory", type=int, default=None,
                     help="số điểm quỹ đạo tối đa (đè config)")
+    ap.add_argument("--reanchor-every", type=int, default=None,
+                    help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
+                         "đánh đổi memory dài hạn; mặc định tắt)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
@@ -254,6 +259,7 @@ def main():
         "checkpoint": args.ckpt,
         "source": args.source,
         "max_trajectory": args.max_trajectory,
+        "reanchor_every": args.reanchor_every,
         "max_frames": args.max_frames,
         "record_path": args.record,
         "record_fps": args.record_fps,
@@ -268,6 +274,7 @@ def main():
     if isinstance(args.source, str) and args.source.isdigit():
         args.source = int(args.source)
     args.max_trajectory = cfg["max_trajectory"]
+    args.reanchor_every = cfg["reanchor_every"]
     args.max_frames = cfg["max_frames"]
     args.record_fps = cfg["record_fps"]
     # bật ghi: --record chỉ định, hoặc record_enabled trong config
