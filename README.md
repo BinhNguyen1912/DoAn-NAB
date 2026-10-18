@@ -167,6 +167,11 @@ python tools/run_live.py --config configs/my.yaml            # CLI flag vẫn đ
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:
 
+**Chạy lại khi nào?** Số liệu/video GPU là **sản phẩm tĩnh** — tạo 1 lần, dùng mãi.
+Chỉ chạy lại Colab khi **code đổi** (`src/*.py` ảnh hưởng tracking/HUD/metrics) hoặc **đổi tham số**
+(video, bbox, image_size). Mỗi lần chạy, `scripts/colab_run_all.py` ghi `data/gpu_run_info.json`
+chứa `git_rev` + tham số → so với `git log -1` là biết số liệu còn đúng hay đã cũ.
+
 **Notebook có sẵn:** `notebooks/colab_gpu_evaluation.ipynb` — mở trên Colab (Runtime → T4 GPU) rồi chạy
 lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/colab-gpu.md`.
 

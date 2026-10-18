@@ -59,3 +59,29 @@ khi chạy cell, và truyền `--bbox` đúng:
 
 - Lệnh y như cell 4 (đổi `--device cpu`) chạy đúng: ra mp4 + CSV + JSON.
 - `--device cuda` khi không có GPU → báo lỗi rõ: *"kiểm tra: Colab → Runtime → Change runtime type → GPU"*.
+
+## Sau khi đã có số liệu — có phải chạy lại không?
+
+**Không.** Video + CSV + JSON là **sản phẩm tĩnh**: tạo một lần, dùng cho báo cáo/slide mãi.
+Lúc bảo vệ chỉ cần **mở file mp4** — không cần Colab, không cần GPU, không mạng.
+
+| Việc bạn làm | Cần chạy lại Colab? |
+|---|---|
+| Soạn báo cáo, làm slide, trả lời phản biện | ❌ Không |
+| Demo live bằng webcam laptop | ❌ Không (đó là CPU, dùng `scripts/demo_webcam.sh`) |
+| Sửa `src/tracker_engine.py`, `visualizer.py`, `live_pipeline.py`, `metrics_logger.py` | ✅ Có — số liệu cũ không còn đúng với code mới |
+| Đổi video nguồn / `--bbox` / `--image-size` / `--reanchor-every` | ✅ Có |
+| Muốn thêm kịch bản (video dài hơn, cảnh che khuất) | ✅ Có |
+
+**Cách biết số liệu đã cũ:** mỗi lần chạy, `data/gpu_run_info.json` được ghi kèm `git_rev`:
+
+```bash
+cat data/gpu_run_info.json     # {"git_rev": "e45d87f", "image_size": 512, ...}
+git log -1 --oneline           # so rev ở đây với git_rev
+```
+- Hai rev **giống nhau** → số liệu còn đúng, dùng tiếp.
+- Khác nhau **và** commit mới có đụng `src/` hoặc tham số đo → chạy lại Colab (~10 phút, gồm tải checkpoint).
+
+> ⚠️ Colab **xoá toàn bộ `/content`** khi phiên kết thúc (đóng tab, hết 90 phút, hết quota).
+> Vì vậy phải **tải `colab_gpu_results.zip` về máy** (hoặc copy sang Google Drive) ngay sau khi chạy —
+> đừng dựa vào việc “lần sau mở lại vẫn còn”.

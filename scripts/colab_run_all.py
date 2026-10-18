@@ -14,6 +14,7 @@ Output : data/out_gpu.mp4, data/gpu_metrics.csv, data/gpu_summary.json, data/col
 Lưu ý  : idempotent — chạy lại không tải lại checkpoint/nếu đã có; lỗi mạng được báo rõ.
 """
 import argparse
+import datetime
 import glob
 import json
 import os
@@ -92,10 +93,39 @@ def ensure_video(path, synthetic=True, frames=60):
     return path
 
 
+def write_run_info(tag, args, out_dir="data"):
+    """Ghi lại commit + tham số đã dùng để sinh số liệu → biết số liệu có CŨ so với code không.
+
+    Nhờ file này, khi mở lại báo cáo sau vài tuần bạn so `git_rev` với `git log -1` hiện tại:
+    giống nhau = số liệu còn đúng; khác = đã sửa code, cần chạy lại Colab.
+    """
+    try:
+        rev = subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                             capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        rev = "unknown"
+    info = {
+        "tag": tag,
+        "git_rev": rev,
+        "timestamp": datetime.datetime.now().isoformat(timespec="seconds"),
+        "device": args.device,
+        "image_size": args.image_size,
+        "reanchor_every": args.reanchor_every,
+        "bbox": args.bbox,
+        "video": os.path.basename(str(args.video)),
+        "max_frames": args.max_frames,
+    }
+    path = os.path.join(out_dir, f"{tag}_run_info.json")
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+    print(f"[done] ghi thông tin lần chạy → {path} (git_rev={rev})")
+    return path
+
+
 def zip_results(out_dir, zip_path, tag="gpu"):
     files = sorted(glob.glob(os.path.join(out_dir, f"out_{tag}*.mp4"))
                    + glob.glob(os.path.join(out_dir, f"{tag}_*.csv"))
-                   + glob.glob(os.path.join(out_dir, f"{tag}_*.json")))
+                   + glob.glob(os.path.join(out_dir, f"{tag}_*.json")))   # gồm cả {tag}_run_info.json
     with zipfile.ZipFile(zip_path, "w") as zf:
         for f in files:
             zf.write(f, arcname=os.path.basename(f))
@@ -154,6 +184,7 @@ def main():
         for k, v in s.items():
             print(f"  {k:20} {round(v, 3) if isinstance(v, float) else v}")
 
+    write_run_info(tag, args)
     zip_results("data", f"data/colab_{tag}_results.zip", tag=tag)
     print(f"\nTải về máy: mở panel Files → chuột phải data/colab_{tag}_results.zip → Download")
     print(f"(hoặc: from google.colab import files; files.download('data/colab_{tag}_results.zip'))")

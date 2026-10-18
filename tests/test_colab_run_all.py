@@ -2,7 +2,11 @@
 
 import pytest
 
-from scripts.colab_run_all import checkpoint_ok, ensure_video, zip_results, CKPT_MIN_BYTES
+from types import SimpleNamespace
+
+from scripts.colab_run_all import (
+    CKPT_MIN_BYTES, checkpoint_ok, ensure_video, write_run_info, zip_results,
+)
 
 
 class TestCheckpointOk:
@@ -53,3 +57,17 @@ class TestZipResults:
 
         names = set(zipfile.ZipFile(z).namelist())
         assert names == {"out_gpu.mp4", "gpu_metrics.csv", "gpu_summary.json"}
+
+
+class TestWriteRunInfo:
+    def test_ghi_commit_va_tham_so(self, tmp_path):
+        args = SimpleNamespace(device="cuda", image_size=512, reanchor_every=10,
+                               bbox="200,200,120,120", video="data/input.mp4", max_frames=None)
+        path = write_run_info("gpu", args, out_dir=str(tmp_path))
+        import json
+
+        info = json.load(open(path, encoding="utf-8"))
+        assert info["tag"] == "gpu"
+        assert info["git_rev"] and info["git_rev"] != "unknown"   # đang chạy trong repo git
+        assert info["image_size"] == 512 and info["reanchor_every"] == 10
+        assert info["video"] == "input.mp4"
