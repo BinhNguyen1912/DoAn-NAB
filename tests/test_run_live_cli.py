@@ -8,6 +8,7 @@ không cần `sam2` — CLI import sam2 trong khối có bảo vệ).
 import csv
 import json
 import sys
+import textwrap
 
 import cv2
 import numpy as np
@@ -66,8 +67,9 @@ def fake_engine(monkeypatch):
 
 
 def _write_cfg(tmp_path, text):
+    """Ghi config YAML tạm — dedent để test viết YAML thụt lề tự nhiên."""
     path = tmp_path / "cfg.yaml"
-    path.write_text(text, encoding="utf-8")
+    path.write_text(textwrap.dedent(text), encoding="utf-8")
     return str(path)
 
 
@@ -200,3 +202,82 @@ class TestPromptSelectorImport:
         """Sanity: tools.run_live import đủ dependency cho đường --display."""
         assert PromptSelector is not None
         assert callable(run_live.main)
+
+
+class InterruptingEngine(FakeEngine):
+    """Engine giả ném KeyboardInterrupt ở process thứ N — mô phỏng người dùng bấm Ctrl+C."""
+
+    def __init__(self, fail_at=2):
+        super().__init__()
+        self._fail_at = fail_at
+        self._n = 0
+
+    def process(self, frame):
+        self._n += 1
+        if self._n >= self._fail_at:
+            raise KeyboardInterrupt
+        return super().process(frame)
+
+
+class TestCtrlCFlush:
+    """Ctrl+C là đường thoát phổ biến khi demo → KHÔNG được mất metrics đã đo.
+
+    Bug thật gặp khi kiểm GUI (18-10): run `--display --metrics-csv` bấm Ctrl+C →
+    mp4 có (recorder đóng trong finally) nhưng CSV/JSON KHÔNG được ghi.
+    """
+
+    @pytest.fixture
+    def interrupting_engine(self, monkeypatch):
+        monkeypatch.setattr(
+            run_live.TrackerEngine, "build_default",
+            classmethod(lambda cls, **kw: InterruptingEngine(fail_at=2)),
+        )
+
+    def test_headless_ctrl_c_van_ghi_metrics_csv(self, tmp_path, video, interrupting_engine,
+                                                 monkeypatch, capsys):
+        csv_out = tmp_path / "m.csv"
+        js_out = tmp_path / "s.json"
+        cfg = _write_cfg(tmp_path, f"""
+            checkpoint: {video}
+            source: {video}
+            metrics_csv: {csv_out}
+            metrics_summary: {js_out}
+            """)
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+
+        with pytest.raises(SystemExit) as exc:
+            run_live.main()
+        assert exc.value.code == 0                    # thoát sạch như tài liệu
+        assert "Ctrl+C" in capsys.readouterr().out     # báo cho người dùng
+
+        assert csv_out.is_file(), "metrics đo được phải được ghi cả khi Ctrl+C"
+        rows = list(csv.reader(open(csv_out, encoding="utf-8")))
+        assert len(rows) == 3, "header + 2 frame đã track trước khi ngắt"
+        assert js_out.is_file()
+
+    def test_display_ctrl_c_van_ghi_metrics_csv(self, tmp_path, video, interrupting_engine,
+                                                monkeypatch):
+        """Đường --display: Ctrl+C vẫn ghi CSV/JSON + đóng recorder trong finally."""
+        rec = tmp_path / "r.mp4"
+        csv_out = tmp_path / "m.csv"
+        monkeypatch.setattr(run_live.cv2, "namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr(run_live.cv2, "setMouseCallback", lambda *a, **k: None)
+        monkeypatch.setattr(run_live.cv2, "imshow", lambda *a, **k: None)
+        monkeypatch.setattr(run_live.cv2, "destroyAllWindows", lambda *a, **k: None)
+        monkeypatch.setattr(run_live.cv2, "waitKey", lambda *a, **k: -1)
+
+        cfg = _write_cfg(tmp_path, f"""
+            checkpoint: {video}
+            source: {video}
+            record_enabled: true
+            record_path: {rec}
+            metrics_csv: {csv_out}
+            """)
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg, "--display",
+                                          "--bbox", "60,60,40,40"])
+
+        with pytest.raises(SystemExit) as exc:
+            run_live.main()
+        assert exc.value.code == 0
+        assert csv_out.is_file()
+        assert rec.is_file() and rec.stat().st_size > 0   # recorder đóng đúng trong finally

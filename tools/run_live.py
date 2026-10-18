@@ -73,8 +73,8 @@ def _make_metrics(args):
     return MetricsLogger()
 
 
-def _finish_metrics(metrics, args, total):
-    """Xuất CSV + (tuỳ chọn) summary JSON khi phiên xong."""
+def _finish_metrics(metrics, args):
+    """Xuất CSV + (tuỳ chọn) summary JSON — gọi trong finally để Ctrl+C không mất số liệu."""
     if metrics is None:
         return
     metrics.write_csv(args.metrics_csv)
@@ -120,6 +120,9 @@ def _run_display(engine, args):
     """Chế độ --display: cửa sổ OpenCV, kéo chuột chọn đối tượng + phím r chọn lại (ticket 05)."""
     selector = PromptSelector(frame_shape=(480, 640, 3))  # shape thật được bind lại khi chạy
     armed_bbox = _load_bbox(args, first_frame=None)
+    viz = None
+    metrics = None
+    interrupted = False
 
     try:
         cv2.namedWindow(WINDOW_NAME)
@@ -150,13 +153,19 @@ def _run_display(engine, args):
             visualizer=viz,
             metrics=metrics,
         )
-        _finish_metrics(metrics, args, summary.processed)
     except KeyboardInterrupt:
+        interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
-        raise SystemExit(0)
     finally:
-        viz.close_recorder()
+        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (demo hay dừng kiểu này)
+        if viz is not None:
+            viz.close_recorder()
+        if metrics is not None:
+            _finish_metrics(metrics, args)
         cv2.destroyAllWindows()
+
+    if interrupted:
+        raise SystemExit(0)
 
     print("=" * 60)
     print(f"[kết quả] {summary.processed} frame đã track "
@@ -166,6 +175,9 @@ def _run_display(engine, args):
 
 def _run_headless(engine, args):
     """Chế độ mặc định (không --display): chạy hết nguồn, in số liệu console."""
+    viz = None
+    metrics = None
+    interrupted = False
     try:
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
         peek = open_video_source(args.source).open()
@@ -191,10 +203,17 @@ def _run_headless(engine, args):
             visualizer=viz,
             metrics=metrics,
         )
-        viz.close_recorder()
-        _finish_metrics(metrics, args, summary.total_frames)
     except KeyboardInterrupt:
+        interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
+    finally:
+        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi
+        if viz is not None:
+            viz.close_recorder()
+        if metrics is not None:
+            _finish_metrics(metrics, args)
+
+    if interrupted:
         raise SystemExit(0)
 
     print("=" * 60)

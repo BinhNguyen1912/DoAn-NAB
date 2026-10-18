@@ -146,6 +146,22 @@ CI (`.github/workflows/checks.yml`) chạy `ruff` + làn nhanh trên mọi push/
 `pytest.ini` đặt `--timeout=120` để test treo không treo cả phiên.
 Chuẩn code chi tiết: `CODING_STANDARDS.md`. Quy ước làm việc: `AGENTS.md`.
 
+### Sự cố thường gặp khi chạy GUI
+
+| Hiện tượng | Cách xử lý |
+|---|---|
+| `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"` rồi `Aborted` | Thiếu thư viện Qt (WSL/Linux): `sudo apt-get install -y libice6 libsm6` |
+| 5 dòng `QFontDatabase: Cannot find font directory …cv2/qt/fonts` mỗi lần mở cửa sổ | Bản OpenCV Qt không kèm font — tạo thư mục + copy 1 TTF: xem lệnh dưới |
+| `Không mở được camera index 0` | Windows: Settings → Privacy → Camera (bật); đóng Teams/Zoom; thử `--source 1`. WSL không thấy webcam → dùng RTSP/HTTP từ điện thoại |
+| HUD hiện ô `?` thay vì dấu tiếng Việt | `export CAMAI_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` (Linux) hoặc `C:\\Windows\\Fonts\\segoeui.ttf` (Windows) |
+| `UserWarning: cannot import name '_C' from 'sam2'` | Bình thường — SAM 2 không build extension C, chỉ mất post-processing `fill_holes` (không ảnh hưởng kết quả demo) |
+
+```bash
+# Dứt cảnh báo QFontDatabase (Linux/WSL) — copy 1 TTF vào thư mục font OpenCV tự tìm
+FONTDIR="$(python -c 'import cv2, os; print(os.path.join(os.path.dirname(cv2.__file__), "qt", "fonts"))')"
+mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONTDIR/"
+```
+
 ## 6. Đánh giá hiệu năng (đang có)
 
 | Môi trường | Pipeline (mean ms/frame) | FPS hiệu dụng | Nguồn số liệu |
