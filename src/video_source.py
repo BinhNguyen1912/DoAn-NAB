@@ -18,6 +18,7 @@ Lưu ý  : RTSP/webcam là adapter mỏng — kiểm chứng thủ công; test t
          dùng chung; mỗi adapter chỉ khai báo cách tạo capture + loại lỗi khi mở thất bại.
 """
 from abc import ABC, abstractmethod
+import sys
 
 import cv2
 import numpy as np
@@ -127,7 +128,22 @@ class CameraVideoSource(_CaptureSource):
         self._index = int(index)
 
     def _create_capture(self):
-        return cv2.VideoCapture(self._index)
+        # Linux: OpenCV 5.0 thử backend obsensor/UVC trước → với webcam UVC qua usbipd
+        # isOpened()=True nhưng read() luôn False. V4L2 đọc được thật (đo 18-10) → ưu tiên.
+        # Ngoài ra webcam này CHỈ trả frame khi ép FOURCC=MJPG + 640x480 (đo 4 tổ hợp:
+        # không set → read False kể cả chờ 1s/retry 10 lần; set MJPG → read OK ngay).
+        is_linux = sys.platform.startswith("linux")
+        backends = (cv2.CAP_V4L2, cv2.CAP_ANY) if is_linux else (cv2.CAP_ANY,)
+        for backend in backends:
+            cap = cv2.VideoCapture(self._index, backend)
+            if cap.isOpened():
+                if is_linux:
+                    cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
+                    cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
+                    cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                return cap
+            cap.release()
+        return cv2.VideoCapture(self._index, backends[0])
 
     def _raise_open_error(self):
         raise RuntimeError(

@@ -4,10 +4,10 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] File adapter đọc đúng số frame/kích thước/dtype (test bằng fixture)
-- [ ] Webcam adapter mở được camera laptop, trả frame (xác nhận thủ công)
+- [x] Webcam adapter mở được camera laptop, trả frame (xác nhận thủ công)
 - [x] RTSP adapter nhận URL; nguồn lỗi → báo lỗi rõ ràng thay vì treo
 - [x] Một interface duy nhất — script demo chọn nguồn qua tham số
 
@@ -16,3 +16,7 @@
 criteria 3/4 — webcam adapter (criterion 2) cần camera thật + máy có GUI, không làm được trong WSL (lỗi: Camera index out of range). Adapter CameraVideoSource là lớp mỏng trên cv2.VideoCapture, cùng codepath với FileVideoSource đã test tự động 100%. Cần kiểm thủ công trên máy Windows: `python tools/run_live.py --source 0 --display`.
 
 18-10-2026 — Kiểm thủ công trên máy thật (WSLg): GUI OpenCV chạy được, kéo chuột chọn đối tượng bám đúng quỹ đạo (bbox f0 79,80,142,142 ≈ ô thật 80,80–140,140; f14 192,136,252,196 đúng +8x,+4y/frame), ghi mp4 OK (data/gui_hud.mp4), metrics CSV+JSON đúng 15 dòng kể cả khi thoát bằng Ctrl+C (đã sửa bug mất metrics — commit e0e274c). Còn lại: criterion webcam adapter — WSL không thấy camera phần cứng; sẽ kiểm qua RTSP/HTTP từ điện thoại hoặc env Windows.
+
+## Answer
+
+VideoSource hoàn thành 4/4. Webcam xác nhận thật: gắn HD Webcam (usbipd 1-8) vào WSL, `check_video_source --source 0` đọc 10 frame 640x480 @35ms; pipeline headless 2 frame mean=2780ms. Ba fix phát sinh khi kiểm: (1) ưu tiên backend V4L2 (obsensor mở được nhưng không trả frame), (2) ép MJPG+640x480 (không set → read luôn False), (3) HttpVideoSource cho camera điện thoại + thông báo lỗi có hướng dẫn. RTSP adapter có test tự động. Commit tới: src/video_source.py.

@@ -13,7 +13,10 @@ Lưu ý  : chỉ quét MẠNG CỤC BỘ của chính máy; không cần model n
 """
 import argparse
 import os
+import re
+import shutil
 import socket
+import subprocess
 import sys
 from concurrent.futures import ThreadPoolExecutor
 
@@ -28,8 +31,41 @@ DEFAULT_PORTS = "8080,4747,8081,8088,5000"
 DEFAULT_PATHS = "/video,/videofeed,/mjpegfeed"
 
 
+# Dải KHÔNG phải LAN thật: loopback, link-local, và 172.16.0.0/12 (WSL2 NAT dùng 172.19.x)
+_NOT_LAN_RE = re.compile(r"^(127\.|169\.254\.|172\.(1[6-9]|2[0-9]|3[01])\.)")
+
+
+def pick_lan_ip(ips):
+    """Chọn IP LAN thật: ưu tiên 192.168.*, rồi 10.*; bỏ loopback/link-local/WSL NAT."""
+    candidates = [ip for ip in ips if ip and not _NOT_LAN_RE.match(ip)]
+    for prefix in ("192.168.", "10."):
+        for ip in candidates:
+            if ip.startswith(prefix):
+                return ip
+    return candidates[0] if candidates else None
+
+
+def windows_lan_ips():
+    """IP của Windows host qua interop — WSL2 nằm sau NAT nên không tự biết LAN thật."""
+    if not shutil.which("powershell.exe"):
+        return []
+    cmd = ["powershell.exe", "-NoProfile", "-Command",
+           "Get-NetIPAddress -AddressFamily IPv4 | ForEach-Object { $_.IPAddress }"]
+    try:
+        out = subprocess.run(cmd, capture_output=True, text=True, timeout=20).stdout
+    except (OSError, subprocess.SubprocessError):
+        return []
+    return [line.strip() for line in out.splitlines() if line.strip()]
+
+
 def subnet_of_local_host():
-    """Đoán subnet /24 của máy (ví dụ 192.168.1) bằng cách hỏi route ra ngoài (không gửi gói)."""
+    """Đoán subnet /24: ưu tiên IP LAN của Windows host (WSL2), sau đó IP của chính máy.
+
+    Lỗi thật 18-10: trong WSL2 `connect(8.8.8.8)` trả IP NAT nội bộ (172.19.x) → quét nhầm dải.
+    """
+    ip = pick_lan_ip(windows_lan_ips())
+    if ip:
+        return ".".join(ip.split(".")[:3])
     try:
         with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
             s.connect(("8.8.8.8", 80))  # UDP connect: chỉ để lấy IP nguồn, không có traffic

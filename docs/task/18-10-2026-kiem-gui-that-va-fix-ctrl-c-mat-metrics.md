@@ -124,3 +124,32 @@ python tools/find_phone_camera.py --subnet 127.0.0 --ports 8099 --timeout 0.15
 README: thêm mục "Không biết IP/URL của điện thoại? Quét mạng LAN".
 
 **Lưu ý:** iPhone không có app "IP Webcam" (Android-only) — nếu app không hiện URL (DroidCam/Iriun chỉ tạo virtual camera cho Windows) thì phải dùng env Windows cho webcam; tool quét chỉ có ích khi app thật sự phát MJPEG/RTSP.
+
+---
+
+## Bổ sung 5 — webcam thật qua usbipd: 3 fix backend + format, tool quét LAN sai subnet
+
+**Bối cảnh:** người dùng gắn webcam laptop (`HD Webcam`, usbipd BUSID `1-8`) vào WSL. Sau khi `sudo usermod -aG video $USER` thì `/dev/video0` mở được nhưng **read() luôn False**. Đồng thời `find_phone_camera.py` tự đoán subnet ra `172.19.177.x` (NAT của WSL) → quét nhầm dải.
+
+**Đo thật (4 tổ hợp mở webcam)**:
+
+| Cấu hình | read() đầu tiên |
+|---|---|
+| backend mặc định (obsensor) | False (dù `isOpened()=True`) |
+| `CAP_V4L2`, không set format, đọc ngay | False |
+| `CAP_V4L2`, chờ 1s | False |
+| `CAP_V4L2`, retry 10×200ms | False |
+| `CAP_V4L2` + `FOURCC=MJPG` + 640×480 | **True** |
+
+**Đã sửa (TDD):**
+1. `CameraVideoSource._create_capture` — Linux: ưu tiên `CAP_V4L2` (fallback `CAP_ANY`) và **ép MJPG + 640×480** sau khi mở; Windows giữ backend mặc định. Test: 3 case backend order + 2 case format.
+2. `tools/find_phone_camera.py` — `pick_lan_ip()` (ưu tiên 192.168.*/10.*, loại loopback/link-local/172.16-31) + `windows_lan_ips()` đọc IP LAN của Windows host qua `powershell.exe` interop; chỉ fallback về IP của chính máy khi không lấy được. Test: 3 case `pick_lan_ip`.
+
+**Verify thật sau fix:**
+- `check_video_source --source 0 --num 10` → `CameraVideoSource | (640,480) | FPS 30` + đọc 10 frame @35ms.
+- `run_live.py --source 0 --max-frames 2` → `[kết quả] 2 frame | mean=2780 ms`.
+- `find_phone_camera.py --ports 1` → in `[quet] subnet 192.168.1.1-254` (đúng LAN).
+
+**Ticket 03 → 4/4 resolved.** Test: làn nhanh 103 passed; ruff sạch.
+
+**Ghi chú môi trường (cho lần sau):** webcam đang attach vào WSL → Windows không dùng được camera cho đến khi `usbipd detach --busid 1-8`.

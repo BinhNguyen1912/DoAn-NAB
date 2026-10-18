@@ -138,3 +138,119 @@ class TestHttpSource:
 
         with pytest.raises(FileNotFoundError, match="video file"):
             open_video_source("data/khong_ton_tai.mp4").open()
+
+
+class TestCameraBackend:
+    """Webcam trên Linux: OpenCV 5.0 thử backend obsensor trước → MỞ được nhưng KHÔNG có frame.
+
+    Đo thật 18-10 với webcam laptop qua usbipd: `cv2.VideoCapture(0)` (default) → isOpened True,
+    read() False; `cv2.VideoCapture(0, CAP_V4L2)` → read OK (640x480). Vì vậy phải ưu tiên V4L2.
+    """
+
+    def _fake_capture(self, monkeypatch, opened_backends):
+        import cv2
+
+        import src.video_source as vs
+
+        calls = []
+
+        class FakeCap:
+            def __init__(self, backend):
+                self.backend = backend
+
+            def isOpened(self):
+                return self.backend in opened_backends
+
+            def set(self, prop, value):   # adapter ép MJPG khi mở trên Linux
+                return True
+
+            def release(self):
+                pass
+
+        def fake_capture(index, backend=cv2.CAP_ANY):
+            calls.append(backend)
+            return FakeCap(backend)
+
+        monkeypatch.setattr(vs.cv2, "VideoCapture", fake_capture)
+        return vs, calls
+
+    def test_linux_uu_tien_v4l2(self, monkeypatch):
+        import cv2
+
+        vs, calls = self._fake_capture(monkeypatch, opened_backends={cv2.CAP_V4L2})
+        monkeypatch.setattr(vs.sys, "platform", "linux")
+        cap = vs.CameraVideoSource(0)._create_capture()
+        assert calls[0] == cv2.CAP_V4L2          # thử V4L2 trước
+        assert cap.backend == cv2.CAP_V4L2
+
+    def test_linux_fallback_khi_v4l2_khong_mo_duoc(self, monkeypatch):
+        import cv2
+
+        vs, calls = self._fake_capture(monkeypatch, opened_backends={cv2.CAP_ANY})
+        monkeypatch.setattr(vs.sys, "platform", "linux")
+        cap = vs.CameraVideoSource(0)._create_capture()
+        assert calls == [cv2.CAP_V4L2, cv2.CAP_ANY]
+        assert cap.backend == cv2.CAP_ANY
+
+    def test_windows_chi_dung_backend_mac_dinh(self, monkeypatch):
+        import cv2
+
+        vs, calls = self._fake_capture(monkeypatch, opened_backends={cv2.CAP_ANY})
+        monkeypatch.setattr(vs.sys, "platform", "win32")
+        vs.CameraVideoSource(0)._create_capture()
+        assert calls == [cv2.CAP_ANY]
+
+
+class TestCameraFormat:
+    """Webcam UVC qua usbipd: KHÔNG set format → isOpened True nhưng read() luôn False.
+
+    Đo thật 18-10 (4 tổ hợp): V4L2 + set FOURCC=MJPG + 640x480 → read OK; không set (kể cả
+    chờ 1s hay retry 10 lần) → read False. Vì vậy adapter phải set MJPG khi mở trên Linux.
+    """
+
+    def test_linux_set_mjpeg_640x480_khi_mo(self, monkeypatch):
+        import cv2
+
+        import src.video_source as vs
+
+        sets = {}
+
+        class FakeCap:
+            def isOpened(self):
+                return True
+
+            def set(self, prop, value):
+                sets[prop] = value
+                return True
+
+            def release(self):
+                pass
+
+        monkeypatch.setattr(vs.cv2, "VideoCapture", lambda *a, **k: FakeCap())
+        monkeypatch.setattr(vs.sys, "platform", "linux")
+        vs.CameraVideoSource(0)._create_capture()
+
+        assert sets[cv2.CAP_PROP_FOURCC] == cv2.VideoWriter_fourcc(*"MJPG")
+        assert sets[cv2.CAP_PROP_FRAME_WIDTH] == 640
+        assert sets[cv2.CAP_PROP_FRAME_HEIGHT] == 480
+
+    def test_windows_khong_ep_format(self, monkeypatch):
+        import src.video_source as vs
+
+        sets = {}
+
+        class FakeCap:
+            def isOpened(self):
+                return True
+
+            def set(self, prop, value):
+                sets[prop] = value
+                return True
+
+            def release(self):
+                pass
+
+        monkeypatch.setattr(vs.cv2, "VideoCapture", lambda *a, **k: FakeCap())
+        monkeypatch.setattr(vs.sys, "platform", "win32")
+        vs.CameraVideoSource(0)._create_capture()
+        assert sets == {}   # Windows tự thương lượng format, không ép
