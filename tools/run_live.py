@@ -50,6 +50,17 @@ from src.visualizer import Visualizer                        # noqa: E402
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
 
 
+def _device_note(device):
+    """Câu ghi chú nêu đúng phần cứng đã chạy (CPU laptop hay GPU)."""
+    if device == "cuda":
+        try:
+            import torch
+            return f"GPU {torch.cuda.get_device_name(0)}"
+        except Exception:
+            return "GPU CUDA"
+    return "máy CPU (không GPU NVIDIA)"
+
+
 def _make_visualizer(args, record_size=None, record_fps=30.0):
     """Tạo Visualizer (HUD luôn bật); nếu --record chỉ định thì bật ghi mp4.
 
@@ -187,7 +198,7 @@ def _run_display(engine, args):
     print("=" * 60)
     print(f"[kết quả] {summary.processed} frame đã track "
           f"(chọn lại bằng phím r không tính thêm phiên)")
-    print("(số ms từng frame in trong vòng lặp; máy CPU không GPU — trung thực theo ADR-0002)")
+    print(f"(số ms từng frame in trong vòng lặp; {_device_note(args.device)} — ADR-0002)")
 
 
 def _run_headless(engine, args):
@@ -237,7 +248,7 @@ def _run_headless(engine, args):
     print("=" * 60)
     print(f"[kết quả] {summary.total_frames} frame | mean={summary.mean_ms:.0f} ms | "
           f"p95={summary.p95_ms:.0f} ms | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
-    print("(máy CPU laptop không GPU NVIDIA — số liệu trung thực theo ADR-0002)")
+    print(f"({_device_note(args.device)} — số liệu thực đo theo ADR-0002)")
 
 
 def main():
@@ -264,6 +275,9 @@ def main():
                          "(HUD ghi tuổi overlay) — dùng cho demo mượt")
     ap.add_argument("--device", default=None, choices=["cpu", "cuda"],
                     help="thiết bị chạy model: cpu (mặc định) | cuda (Colab GPU/máy NVIDIA)")
+    ap.add_argument("--postprocess", action="store_true",
+                    help="bật bước fill_holes của SAM 2 (mặc định TẮT: hết cảnh báo lỗi GPU, "
+                         "số đo CPU/GPU so sánh được)")
     ap.add_argument("--image-size", type=int, default=None,
                     help="độ phân giải đầu vào của model (512 = nhanh ~5-6x trên CPU; "
                          "mặc định giữ 1024 của config SAM 2)")
@@ -326,7 +340,8 @@ def main():
             raise SystemExit(1)
         print(f"[pipeline] device=cuda ({torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
-                                         image_size=args.image_size, device=device)
+                                         image_size=args.image_size, device=device,
+                                         apply_postprocessing=args.postprocess)
 
     if args.display:
         _run_display(engine, args)

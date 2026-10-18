@@ -226,9 +226,17 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 
 ## 7. Đánh giá hiệu năng (đang có)
 
-| Môi trường | Pipeline (mean ms/frame) | FPS hiệu dụng | Nguồn số liệu |
-|---|---|---|---|
-| Laptop CPU (tiny) | ~3200–3600 | ~0.28–0.31 | smoke test ticket 05–08 |
+| Môi trường | Cấu hình | mean ms/frame | FPS hiệu dụng | Nguồn số liệu |
+|---|---|---|---|---|
+| Laptop CPU (i5, không GPU rời) | 720p, image_size 1024 | 5 047 | **0,20** | `data/gui_summary.json` |
+| Laptop CPU + tối ưu | 720p, image_size 384, `--smooth` | 445 | **2,25** | `data/smooth_summary.json` |
+| **Colab GPU Tesla T4** | 720p, image_size 1024 | 380 | **2,63** | `data/gpu_summary.json` |
+| **Colab GPU Tesla T4 + tối ưu** | 720p, image_size 512, `--reanchor-every 10` | **65** | **15,28** | `data/gpu_summary2.json` |
+
+→ GPU (T4) nhanh hơn CPU laptop **~13×** ở cùng độ phân giải, và **~78×** khi cả hai đã tối ưu.
+Lưu ý trung thực: T4 là kiến trúc **Turing (SM 7.5)** nên **không bật được FlashAttention**
+(SAM 2 cảnh báo `Flash Attention is disabled as it requires a GPU with Ampere (8.0)`) → số FPS trên
+T4 là **cận dưới**; GPU Ampere/Ada (A100, RTX 30/40) sẽ nhanh hơn nữa.
 
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.

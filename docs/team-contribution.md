@@ -51,6 +51,9 @@ tổng **2 424 dòng code** và **131 test tự động**.
    `BUFFERSIZE=1` mới hết trễ do hàng đợi.
 6. **Chế độ hiển thị mượt 3 luồng**: video 19 FPS trên CPU với overlay cập nhật ~2 lần/s (có tuổi
    overlay trên HUD — trung thực theo ADR-0002).
+7. **Bảng số CPU vs GPU tự đo**: CPU 720p/1024 = 5 047 ms (0,20 FPS); CPU/384 = 445 ms (2,25 FPS);
+   **Colab T4/1024 = 380 ms (2,63 FPS)**; **Colab T4/512 + reanchor = 65 ms (15,28 FPS)** — kèm phát hiện
+   T4 (Turing) không bật được FlashAttention nên số GPU là cận dưới.
 
 ## 5. Cách hội đồng tự kiểm chứng (không cần tin lời)
 

@@ -96,12 +96,18 @@ class TrackerEngine:
 
     @classmethod
     def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
-                      model_cfg=MODEL_CFG, image_size=None) -> "TrackerEngine":
+                      model_cfg=MODEL_CFG, image_size=None,
+                      apply_postprocessing=False) -> "TrackerEngine":
         """Dựng predictor SAMURAI (mặc định tiny trên CPU; ~20-60s).
 
         model_cfg: đường dẫn YAML của SAM 2 — có thể đè qua config YAML (ticket 08).
         image_size: độ phân giải đầu vào của model (None = giữ 1024 của config;
                     hạ xuống 512 nhanh hơn ~5-6 lần trên CPU — xem `build_overrides`).
+        apply_postprocessing: bước `fill_holes_in_mask_scores` của SAM 2. Mặc định TẮT vì
+                    (a) trên CPU thiếu extension `_C` nên bị bỏ qua kèm cảnh báo,
+                    (b) trên GPU (Colab) extension CÓ nhưng nhận tensor CPU →
+                    `INTERNAL ASSERT FAILED: inputs must be a CUDA tensor` (vô hại nhưng
+                    ồn), (c) tắt ở cả hai nơi thì số đo CPU/GPU **so sánh được với nhau**.
         Test dùng fixture session-scoped để build 1 lần.
         """
         from sam2.build_sam import build_sam2_video_predictor
@@ -111,6 +117,7 @@ class TrackerEngine:
             ckpt = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), ckpt)
         predictor = build_sam2_video_predictor(
             model_cfg, ckpt, device=device,
+            apply_postprocessing=apply_postprocessing,
             hydra_overrides_extra=build_overrides(image_size),
         )
         return cls(predictor)

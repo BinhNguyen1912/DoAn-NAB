@@ -356,3 +356,34 @@ cần tài liệu phân định rõ phần tự làm vs có sẵn.
 (0,20 FPS) → hình so sánh cho thấy chênh ~11 lần.
 
 **Test:** +3 (plot_metrics), full suite 134 passed, ruff sạch.
+
+---
+
+## Bổ sung 13 — chạy Colab T4 thật: 3 lỗi môi trường + số liệu GPU
+
+**Lỗi gặp khi chạy trên Colab (đều đã sửa vào repo):**
+1. **Checkpoint 0 byte** — URL `.../092823/sam2.1_hiera_tiny.pt` trả **403** (Meta đổi mã ngày).
+   Đúng: `.../092824/...` (200, 156 008 466 bytes). Notebook đổi sang **urllib Python thuần** + `assert`
+   `>100MB` (chạy được ở mọi cell, không phụ thuộc `!wget`).
+2. **`ModuleNotFoundError: No module named 'loguru'`** — SAMURAI sửa `sam2/modeling/sam2_base.py` để dùng
+   `loguru`, gói này **không** nằm trong `install_requires` của sam2. Thêm `pip install loguru` vào
+   notebook/README/`docs/samurai-setup.md`.
+3. **`INTERNAL ASSERT FAILED ... inputs must be a CUDA tensor`** (từ `fill_holes_in_mask_scores`) — trên Colab
+   extension C `_C.so` **có** nhưng nhận tensor CPU. Sửa: `build_default(apply_postprocessing=False)`
+   (mặc định tắt) + cờ `--postprocess`; đồng thời làm số đo CPU/GPU **so sánh được** với nhau
+   (trên CPU trước đây bước này luôn bị bỏ qua).
+4. Dòng kết luận hard-code "máy CPU laptop" → đổi thành `_device_note(device)` in đúng thiết bị.
+
+**Số liệu GPU thật (T4, video test 720p 60 frame, ô vuông):**
+
+| Cấu hình | mean ms | p95 ms | FPS |
+|---|---|---|---|
+| image_size 1024 (mặc định) | 380 | 362 | 2,63 |
+| **image_size 512 + reanchor 10** | **65** | **74** | **15,28** |
+
+Đối chiếu CPU cùng máy: 5 047 ms (0,20 FPS) ở 1024; 445 ms (2,25 FPS) ở 384+smooth.
+→ GPU nhanh ~13× ở 1024 và ~78× khi cả hai tối ưu. Ghi chú trung thực: T4 là Turing (SM 7.5) nên
+**FlashAttention bị tắt** → số GPU là cận dưới; Ampere/Ada sẽ nhanh hơn.
+
+**Còn lại:** người dùng tải `gpu_metrics2.csv` về `data/` để vẽ biểu đồ so sánh CPU vs GPU bằng
+`scripts/plot_metrics.py`.
