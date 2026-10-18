@@ -268,6 +268,15 @@ Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
 python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json
 ```
 
+### Biểu đồ cho báo cáo (từ CSV của MetricsLogger)
+
+```bash
+python scripts/plot_metrics.py data/smooth_metrics.csv            # 3 hình: latency / quỹ đạo / mất dấu
+python scripts/plot_metrics.py data/smooth_metrics.csv data/gpu_metrics.csv   # + hình so sánh CPU vs GPU
+# → data/charts/*.png  + bảng tóm tắt (mean/p95/min/max ms, FPS hiệu dụng, tỷ lệ mất dấu)
+```
+`so_sanh_latency.png` dùng thang log để thấy rõ chênh lệch CPU (~500–5000 ms) vs GPU (~40–70 ms).
+
 ### Tối ưu tốc độ trên CPU (đo thật trên laptop này, 18-10-2026)
 
 Độ trễ **tăng dần** khi chạy lâu vì chi phí propagate của SAMURAI tỉ lệ với số frame lưu trong

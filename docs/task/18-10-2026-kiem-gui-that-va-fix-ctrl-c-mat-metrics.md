@@ -329,3 +329,30 @@ full suite **131 passed**, ruff sạch.
 
 **Verify trên webcam thật:** chạy → sau 2 lần suy luận bấm `r` → kéo ô mới `(180,120,460,400)` →
 bám tiếp 5 lần suy luận, **42 frame vẽ**, quỹ đạo reset đúng, **không có `[LOI]`**.
+
+---
+
+## Bổ sung 12 — bảng đóng góp + biểu đồ báo cáo
+
+**Người dùng hỏi:** "mình đang làm cho mình, chứ không dùng sẵn đúng không, vì đây là đồ án" →
+cần tài liệu phân định rõ phần tự làm vs có sẵn.
+
+**Đã làm:**
+1. **`docs/team-contribution.md`** — bảng 12 thành phần (TrackerEngine streaming, VideoSource 4 adapter,
+   PromptSelector, Visualizer, MetricsLogger, pipeline + smooth 3 luồng, config/CLI, fixture, tool phụ trợ,
+   guardrail CI, tài liệu/ADR/log, số liệu đo) với cột *Nguồn / Em làm gì / Bằng chứng (file-commit-test)*;
+   mục "không tự viết" (SAM 2, SAMURAI, thư viện, Colab) kèm lý do hợp lệ theo ADR-0001; mục "kết quả gốc";
+   mục cách hội đồng tự kiểm chứng + câu trả lời mẫu. Số liệu thật: **2 424 dòng code**, **131 test**, 25 commit.
+   README thêm mục 4 trỏ tới file này.
+2. **`scripts/plot_metrics.py`** — vẽ PNG từ CSV MetricsLogger: `*_latency.png` (độ trễ + trung bình),
+   `*_trajectory.png` (quỹ đạo tâm, trục y đảo đúng toạ độ ảnh), `*_lost.png` (frame mất dấu), và
+   `so_sanh_latency.png` (so sánh nhiều lần đo, thang log). Thêm `matplotlib` vào requirements + 3 test
+   cho phần đọc/tính (`tests/test_plot_metrics.py`).
+3. **CI bắt lỗi của chính mình:** ruff lint cả code trong notebook → job đỏ ở commit 8f3121b; sửa bằng
+   `extend-exclude = ["notebooks/"]` trong `ruff.toml` + tách import trong cell Colab → xanh (`dc19b68`).
+
+**Verify:** `python scripts/plot_metrics.py data/smooth_metrics.csv data/gui_metrics.csv` →
+7 PNG trong `data/charts/`; bảng in ra: smooth 55 frame mean 445 ms (2,25 FPS); gui 15 frame mean 5 047 ms
+(0,20 FPS) → hình so sánh cho thấy chênh ~11 lần.
+
+**Test:** +3 (plot_metrics), full suite 134 passed, ruff sạch.
