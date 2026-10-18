@@ -2,9 +2,8 @@
 
 Vì sao có file này: 3 bug của phiên implement 08 nằm đúng ở CLI (đọc source_fps sau
 peek.close(); source bị validate sai kiểu; precedence config/CLI) và chỉ lộ ra khi chạy
-smoke thật ~90s. Test này khoá lại toàn bộ lớp đó trong ~1s bằng FakeEngine (không model).
-
-Skip khi thiếu package `sam2` (CI không clone SAMURAI): CLI import sam2 ở module level.
+smoke thật ~90s. Test này khoá lại toàn bộ lớp đó trong ~1.5s bằng FakeEngine (không model,
+không cần `sam2` — CLI import sam2 trong khối có bảo vệ).
 """
 import csv
 import json
@@ -14,12 +13,10 @@ import cv2
 import numpy as np
 import pytest
 
-pytest.importorskip("sam2", reason="CLI run_live import sam2 — CI không clone SAMURAI")
-
-from src.prompt_selector import PromptSelector  # noqa: E402
-from src.synthetic_video import generate_tracking_sequence  # noqa: E402
-from src.tracker_engine import TrackingResult  # noqa: E402
-import tools.run_live as run_live  # noqa: E402
+from src.prompt_selector import PromptSelector
+from src.synthetic_video import generate_tracking_sequence
+from src.tracker_engine import TrackingResult
+import tools.run_live as run_live
 
 
 class FakeEngine:

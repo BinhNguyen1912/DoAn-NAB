@@ -35,6 +35,7 @@ jobs:
         run: pip install --index-url https://download.pytorch.org/whl/cpu torch torchvision
       - name: Cài dependency repo
         run: pip install -r requirements.txt
-      # Test slow cần checkpoint SAM 2 (không có trong CI) → chỉ chạy làn nhanh
+      # CI KHÔNG có samurai/ + checkpoint (bị .gitignore) → làn nhanh phải xanh trong
+      # môi trường này; test nào cần model phải đánh dấu @pytest.mark.slow.
       - name: pytest -m "not slow"
         run: python -m pytest -m "not slow"

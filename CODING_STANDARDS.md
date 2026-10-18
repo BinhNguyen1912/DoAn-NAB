@@ -35,6 +35,9 @@ nhắc lại ở đây. Dưới đây chỉ là những gì máy không tự ph�
 - Dùng fixture chung trong `tests/conftest.py` (`write_video`, `samurai_engine`) thay vì
   copy-paste; engine giả dùng `FakeEngine` (duck-type `start/process/reset`) cho test nhanh.
 - Test cần model/checkpoint đánh dấu `@pytest.mark.slow` — làn nhanh `-m "not slow"` không chạy.
+- **Làn nhanh không được phụ thuộc artifact bị `.gitignore`** (checkpoint `.pt`, video, thư mục
+  `samurai/`): CI chỉ có những gì trong Git. Cần file để test quy tắc đường dẫn → dùng
+  `tmp_path` + `monkeypatch` (mẫu: `tests/test_config.py::TestResolveCheckpoint`).
 
 ## Dữ liệu & artefact
 

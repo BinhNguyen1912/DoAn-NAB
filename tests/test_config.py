@@ -83,21 +83,34 @@ class TestMergeCli:
 
 
 class TestResolveCheckpoint:
-    def test_duong_dan_tuong_doi_giai_theo_repo_root(self):
+    def test_duong_dan_tuong_doi_giai_theo_repo_root(self, tmp_path, monkeypatch):
+        """Quy tắc: đường dẫn tương đối được giải theo REPO_ROOT.
+
+        Dùng REPO_ROOT giả + file giả: test KHÔNG được phụ thuộc checkpoint thật
+        (`samurai/` bị .gitignore → CI không có, xem sự cố CI đầu tiên).
+        """
+        import src.config as config_mod
+
+        monkeypatch.setattr(config_mod, "REPO_ROOT", str(tmp_path))
+        fake = tmp_path / "samurai" / "sam2" / "checkpoints" / "sam2.1_hiera_tiny.pt"
+        fake.parent.mkdir(parents=True)
+        fake.write_bytes(b"gia-lap-weights")
+
         resolved = resolve_checkpoint("samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt")
-        assert resolved.startswith(str(REPO_ROOT))
-        assert resolved.endswith(".pt")
+        assert resolved == str(fake)
 
     def test_duong_dan_tuyet_doi_giu_nguyen(self):
         """File có sẵn dạng tuyệt đối → giữ nguyên (không nối REPO_ROOT lần nữa)."""
         p = os.path.join(REPO_ROOT, "requirements.txt")
         assert resolve_checkpoint(p) == p
 
-    def test_file_khong_ton_tai_bao_loi_ro_rang(self):
-        from pathlib import Path
-        missing = str(Path(REPO_ROOT) / "data" / "khong_co.pt")
+    def test_file_khong_ton_tai_bao_loi_ro_rang(self, tmp_path, monkeypatch):
+        """Thiếu file → FileNotFoundError kèm hướng dẫn (cũng không phụ thuộc repo thật)."""
+        import src.config as config_mod
+
+        monkeypatch.setattr(config_mod, "REPO_ROOT", str(tmp_path))
         with pytest.raises(FileNotFoundError, match="tải checkpoint"):
-            resolve_checkpoint(missing)
+            resolve_checkpoint("samurai/sam2/checkpoints/khong_co.pt")
 
 
 class TestDefaults:

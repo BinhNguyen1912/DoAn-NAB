@@ -29,7 +29,15 @@ _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
     sys.path.insert(0, _REPO_ROOT)
 
-import sam2.sam2_video_predictor as _vp          # noqa: E402
+# Tắt progress bar tqdm của SAM 2 cho output console gọn.
+# Import có bảo vệ: `sam2` cài từ upstream (không vendor trong Git) → máy/CI chưa cài
+# sam2 vẫn import được module này (CLI test bằng engine giả chạy được trong CI).
+try:
+    import sam2.sam2_video_predictor as _vp          # noqa: E402
+
+    _vp.tqdm = lambda it, *a, **k: it
+except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn progress bar khi chạy thật
+    pass
 
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
@@ -37,9 +45,6 @@ from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
-
-# Tắt progress bar tqdm của SAM 2 cho output console gọn
-_vp.tqdm = lambda it, *a, **k: it
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
 
