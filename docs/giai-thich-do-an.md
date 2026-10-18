@@ -17,6 +17,7 @@
 8. [Giới hạn — nói thật để không bị hỏi khó](#8-giới-hạn--nói-thật-để-không-bị-hỏi-khó)
 9. [Nếu hội đồng hỏi — trả lời mẫu](#9-nếu-hội-đồng-hỏi--trả-lời-mẫu)
 10. [Tự kiểm chứng trong 5 phút](#10-tự-kiểm-chứng-trong-5-phút)
+11. [Phụ lục: dùng WSL — vì sao và làm thế nào](#11-phụ-lục-dùng-wsl--vì-sao-và-làm-thế-nào)
 
 ---
 
@@ -306,3 +307,137 @@ python scripts/plot_metrics.py data/smooth_metrics.csv --out data/charts
 | Cách chạy Colab | `docs/colab-gpu.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | Cài đặt từ máy mới | `README.md` mục 1 |
 | Nhật ký từng phiên làm việc | `docs/task/*.md` |
+
+---
+
+## 11. Phụ lục: dùng WSL — vì sao và làm thế nào
+
+### 11.1. WSL là gì (dễ hiểu)
+
+**WSL** = *Windows Subsystem for Linux* — một "máy Linux thu nhỏ" chạy **bên trong Windows**, không cần
+cài máy ảo riêng. Điều quan trọng nhất: **file dùng chung**.
+
+```
+Windows thấy:  D:\DOAN-NAB\src\visualizer.py
+WSL thấy:      /mnt/d/DOAN-NAB/src/visualizer.py     ← CÙNG MỘT FILE
+```
+
+Nên bạn sửa code bằng VS Code trên Windows, chạy bằng Python trong WSL — không cần copy qua lại.
+
+### 11.2. Vì sao đồ án này dùng WSL
+
+| Lý do | Giải thích |
+|---|---|
+| **Mô hình AI cài trên Linux dễ hơn** | SAM 2/SAMURAI hướng dẫn chính thức cho Linux; PyTorch CPU cài bằng 1 lệnh, không vướng lỗi biên dịch trên Windows |
+| **Máy bạn chưa có Python trên Windows** | Thay vì cài thêm Python + hàng GB thư viện cho Windows, dùng luôn môi trường Linux sẵn có |
+| **Cửa sổ vẫn hiện trên Windows** | WSL2 có **WSLg** — cửa sổ OpenCV hiện ra như ứng dụng Windows bình thường, chuột dùng được |
+| **Chạy được trên máy không màn hình** | Cùng môi trường đó dùng cho Colab/chế độ headless → số liệu so sánh được |
+
+> **WSL lo phần "tính toán"**, Windows lo phần "nhìn và cắm thiết bị". Đó là lý do đồ án chạy trong WSL
+> nhưng bạn vẫn thao tác chuột trên cửa sổ Windows.
+
+### 11.3. Cài từ đầu (nếu làm lại trên máy khác)
+
+```powershell
+# 1) Trong PowerShell (Admin) trên Windows
+wsl --install -d Ubuntu          # cài WSL + Ubuntu, khởi động lại nếu được yêu cầu
+```
+
+```bash
+# 2) Trong Ubuntu (WSL) — gõ lần lượt
+sudo apt update
+sudo apt install -y git libice6 libsm6      # 2 thư viện cuối: BẮT BUỘC để mở cửa sổ OpenCV
+
+# 3) Python + môi trường
+#    (cài Miniconda theo hướng dẫn miniconda.sh, rồi:)
+conda create -n samurai python=3.10 -y
+conda activate samurai
+cd /mnt/d/DOAN-NAB
+pip install -r requirements.txt              # numpy, opencv, pyyaml, pillow, pytest, ruff, matplotlib
+pip install torch torchvision                 # bản CPU là đủ
+
+# 4) Mô hình (SAMURAI không nằm trong Git — phải clone)
+git clone https://github.com/yangchris11/samurai.git samurai
+mkdir -p samurai/sam2/checkpoints
+wget -O samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt \
+  https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt
+pip install -e samurai/sam2
+pip install loguru                           # SAMURAI cần riêng gói này
+
+# 5) Kiểm tra
+python -c "import torch, cv2, sam2; print('OK')"
+python -m pytest -m "not slow"               # ~10 giây, không cần checkpoint
+```
+
+### 11.4. Cửa sổ hiện trên Windows thế nào (WSLg)
+
+```bash
+echo $DISPLAY          # phải ra :0
+ls /mnt/wslg           # phải thấy thư mục (WSLg đang bật)
+```
+Nếu cửa sổ không hiện: cài `libice6 libsm6` (mục 11.3 bước 2) — thiếu 2 gói này thì OpenCV **abort**
+ngay khi mở cửa sổ (đúng lỗi đã gặp, xem bảng 11.7).
+
+### 11.5. Đưa webcam vào WSL (WSL không tự thấy webcam)
+
+WSL là "máy khác" nên **không thấy webcam của laptop**. Cần công cụ **usbipd-win** để "gắn" thiết bị USB
+sang WSL:
+
+```powershell
+# PowerShell (Admin) trên Windows
+winget install -e --id dorssel.usbipd-win
+usbipd list                          # tìm dòng "HD Webcam", ghi BUSID (VD 1-8)
+usbipd bind --busid 1-8              # làm 1 lần (cần Admin)
+usbipd attach --wsl --busid 1-8      # mỗi lần khởi động lại WSL phải chạy lại
+```
+```bash
+# Trong WSL
+ls /dev/video*                       # phải thấy /dev/video0
+sudo usermod -aG video $USER         # cấp quyền đọc camera (làm 1 lần)
+#   → sau đó MỞ TERMINAL MỚI (hoặc `newgrp video`) để quyền có hiệu lực
+python tools/check_video_source.py --source 0 --num 10
+```
+
+**Trả camera lại cho Windows** (để dùng Teams/Camera app):
+```powershell
+usbipd detach --busid 1-8
+```
+
+### 11.6. Lệnh hay dùng trong WSL
+
+| Việc | Lệnh |
+|---|---|
+| Vào repo | `cd /mnt/d/DOAN-NAB` |
+| Bật môi trường | `source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai` |
+| Demo webcam (mượt, ghi video+số liệu) | `bash scripts/demo_webcam.sh` |
+| Chạy thử nhanh 5 khung | `bash scripts/demo_webcam.sh --max-frames 5` |
+| Kiểm nguồn camera trước khi chạy | `python tools/check_video_source.py --source 0 --num 10` |
+| Test nhanh (không cần mô hình) | `python -m pytest -m "not slow"` |
+| Vẽ biểu đồ từ CSV | `python scripts/plot_metrics.py data/smooth_metrics.csv` |
+| Tắt hẳn WSL (giải phóng RAM) | (PowerShell) `wsl --shutdown` |
+
+### 11.7. Lỗi WSL đã gặp và cách sửa (đều đã xử lý trong repo)
+
+| Hiện tượng | Nguyên nhân | Cách sửa |
+|---|---|---|
+| `qt.qpa.plugin: Could not load the Qt platform plugin "xcb"` rồi process **Aborted** | Thiếu 2 thư viện hệ thống | `sudo apt install -y libice6 libsm6` |
+| 5 dòng `QFontDatabase: Cannot find font directory …cv2/qt/fonts` mỗi lần mở cửa sổ | Bản OpenCV không kèm font | Tạo thư mục đó + copy 1 font TTF (lệnh trong README mục sự cố) |
+| `Camera index out of range` / mở được nhưng **không có hình** | OpenCV chọn sai "backend" | Code đã ưu tiên **V4L2** + ép **MJPG 640×480** (tự động) |
+| `Permission denied` khi mở `/dev/video0` | User chưa ở nhóm `video` | `sudo usermod -aG video $USER` → mở terminal mới |
+| `newgrp: command not found` | Ubuntu tối giản thiếu gói | `sudo apt install -y util-linux-extra`, hoặc chỉ cần mở terminal mới |
+| Webcam mất sau khi khởi động lại máy | `usbipd attach` chỉ có hiệu lực trong phiên | Chạy lại `usbipd attach --wsl --busid 1-8` |
+| Dữ liệu đang ghi bị mất khi `wsl --shutdown` | Tắt WSL = tắt tiến trình Linux | Bấm `q` trong cửa sổ demo trước khi tắt WSL |
+| Chạy `python` báo **command not found** | Chưa `conda activate` | `source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai` |
+
+### 11.8. WSL vs Windows — cái nào làm gì
+
+| Việc | Làm ở đâu |
+|---|---|
+| Chạy mô hình AI, xử lý video, ghi số liệu | **WSL** (Linux) |
+| Xem cửa sổ demo, kéo chuột chọn đối tượng | **Windows** (cửa sổ WSLg) |
+| Sửa code | Cả hai (cùng một file trong `D:\DOAN-NAB`) |
+| Cắm/rút webcam, quản lý thiết bị USB | **Windows** (`usbipd`) |
+| Chạy Colab | Trình duyệt (không liên quan WSL) |
+
+> 💡 Mẹo: đừng đặt môi trường Python (`venv`/conda) **trong** `/mnt/d/...` vì ổ Windows đọc chậm hơn ổ
+> Linux — repo này để môi trường ở `~/miniconda3` (trong home Linux) nên khởi động nhanh.
