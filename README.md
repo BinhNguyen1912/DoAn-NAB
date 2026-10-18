@@ -233,8 +233,10 @@ Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 |---|---|---|---|
 | Mặc định (`image_size=1024`, memory đầy đủ) | 5346 (12 frame), tăng tới ~6.3 s | 0.19 | chậm dần rồi bão hoà |
 | `--reanchor-every 3` | 3662 | 0.27 | nhanh ~1.5× (12 frame), ~2.2× ổn định |
-| `--image-size 512` | 733 | 1.36 | **nhanh ~5–7×** |
-| **`--image-size 512 --reanchor-every 3`** | **558** | **1.79** | ⭐ cấu hình demo khuyến nghị |
+| `--image-size 512` | 733 | 1.36 | nhanh ~5–7× |
+| `--image-size 512 --reanchor-every 3` | 558 | 1.79 | ⭐ cấu hình demo khuyến nghị |
+| `--image-size 384` (+ reanchor 3) | 435 | **2.30** | mượt hơn nữa, chất lượng giảm nhẹ |
+| `--image-size 256` (+ reanchor 3) | 239 | 4.19 | nhanh nhất, chất lượng giảm rõ (IoU 0.79) |
 | Giảm camera 320×240 | −10% | | SAM 2 tự resize đầu vào → gần như không lợi |
 | 8 thread thay 4 | −8% | | model-bound |
 | Cắt bớt `non_cond_frame_outputs` | ❌ `KeyError` | | SAM 2 tham chiếu frame cũ → không khả thi |
@@ -247,9 +249,16 @@ Lệnh demo khuyến nghị cho webcam realtime:
 python tools/run_live.py --source 0 --display --image-size 512 --reanchor-every 3
 ```
 
-⚖️ Đánh đổi của `--image-size 512`: ảnh được downsample mạnh hơn nên **đối tượng nhỏ** có thể kém
-chính xác. Đo trên fixture (ô vuông 60 px trong khung 640×360): IoU sau che 0.977 (mặc định 0.981)
-— chênh không đáng kể; với vật thể nhỏ trong ảnh thật cần đo lại trước khi kết luận.
+⚖️ **Đánh đổi của `--image-size`:** ảnh bị downsample mạnh hơn nên **đối tượng nhỏ** kém chính xác;
+384/256 còn làm IoU giảm rõ (fixture có che khuất: 384 → 0.861; 256 → 0.791). Với ảnh thật cần đo lại.
+
+⚠️ **`--reanchor-every` không ổn định khi có che khuất:** reset state đúng lúc đối tượng bị che sẽ
+"chọn lại" vào nền → bám sai (đo được IoU 0.509 ở image_size 512, che 3 frame). Khi demo có che khuất:
+**bỏ** `--reanchor-every`, chỉ dùng `--image-size`.
+
+🔧 **Bộ đệm camera:** driver V4L2 mặc định giữ **4 frame**; sau mỗi lần suy luận 0.5–3 s, hàng đợi toàn
+frame cũ nên người dùng thấy "di chuyển rồi lâu mới hiện". `CameraVideoSource` ép
+`CAP_PROP_BUFFERSIZE = 1` → luôn đọc frame mới nhất (chỉ trễ đúng 1 frame).
 
 **Đánh đổi của `--reanchor-every`** (reset state + chọn lại bbox hiện tại): đo trên fixture 20 frame
 có che khuất 5 frame — baseline IoU sau che **0.981**, mất dấu 5/19; re-anchor 3: IoU **0.969**,

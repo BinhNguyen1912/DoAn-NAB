@@ -141,6 +141,9 @@ class CameraVideoSource(_CaptureSource):
                     cap.set(cv2.CAP_PROP_FOURCC, cv2.VideoWriter_fourcc(*"MJPG"))
                     cap.set(cv2.CAP_PROP_FRAME_WIDTH, 640)
                     cap.set(cv2.CAP_PROP_FRAME_HEIGHT, 480)
+                # Đệm 1 frame: driver mặc định giữ 4 frame (đo thật) → sau mỗi lần xử lý
+                # 0.5-3s, hàng đợi toàn frame CŨ → cảm giác "di chuyển mãi mới thấy".
+                cap.set(cv2.CAP_PROP_BUFFERSIZE, 1)
                 return cap
             cap.release()
         return cv2.VideoCapture(self._index, backends[0])

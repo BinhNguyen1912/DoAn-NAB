@@ -219,3 +219,28 @@ in cảnh báo khi bật. Mặc định vẫn 1024 (trung thực, không tự ý
 kém chính xác; cần đo lại trên video thật trước khi chốt số cho báo cáo.
 
 **Test:** +2 build_overrides + 2 config; full suite 115 passed; ruff sạch.
+
+---
+
+## Bổ sung 8 — "lag quá, di chuyển 1 phút sau mới thấy": bộ đệm camera + mức image_size
+
+**Chẩn đoán:** driver V4L2 đệm **4 frame** (đọc liên tiếp 10 frame mất 675 ms → toàn frame cũ trong
+queue). Cộng với suy luận 3–8 s/frame (mặc định) ⇒ cảm giác trễ hàng chục giây.
+
+**Đã sửa:** `CameraVideoSource` ép `CAP_PROP_BUFFERSIZE = 1` (test riêng; verify driver báo 1.0) →
+luôn đọc frame mới nhất, chỉ trễ 1 frame (~33 ms) cộng thời gian suy luận.
+
+**Đo thêm các mức image_size (fixture 14 frame, che 3 frame, re-anchor 3):**
+
+| image_size | ms/frame | FPS | IoU TB |
+|---|---|---|---|
+| 512 | 882 | 1.13 | 0.509 ⚠️ |
+| 384 | 435 | **2.30** | 0.861 |
+| 256 | 239 | 4.19 | 0.791 |
+
+**Phát hiện quan trọng (sửa lại kết luận trước):** `--reanchor-every` **không ổn định khi có che
+khuất** — nếu reset đúng lúc đối tượng bị che, nó "chọn lại" vào nền và bám sai (IoU 0.509). Kết quả
+tốt trước đó (0.977) là do mẫu che khác. ⇒ Khuyến nghị: demo có che khuất thì **bỏ** re-anchor, chỉ
+dùng `--image-size`; README đã ghi rõ.
+
+**Test:** +1 buffer (16 test video_source); full suite 116 passed; ruff sạch.

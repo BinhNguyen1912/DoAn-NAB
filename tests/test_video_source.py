@@ -235,6 +235,8 @@ class TestCameraFormat:
         assert sets[cv2.CAP_PROP_FRAME_HEIGHT] == 480
 
     def test_windows_khong_ep_format(self, monkeypatch):
+        import cv2
+
         import src.video_source as vs
 
         sets = {}
@@ -253,4 +255,36 @@ class TestCameraFormat:
         monkeypatch.setattr(vs.cv2, "VideoCapture", lambda *a, **k: FakeCap())
         monkeypatch.setattr(vs.sys, "platform", "win32")
         vs.CameraVideoSource(0)._create_capture()
-        assert sets == {}   # Windows tự thương lượng format, không ép
+        # Windows tự thương lượng format (không ép FOURCC/kích thước), nhưng vẫn ép đệm 1 frame
+        assert cv2.CAP_PROP_FOURCC not in sets
+        assert cv2.CAP_PROP_BUFFERSIZE in sets
+
+
+class TestCameraBuffer:
+    """Driver V4L2 mặc định đệm 4 frame (đo thật 18-10) → sau mỗi lần suy luận 0.5-3s,
+    hàng đợi chứa toàn frame cũ nên người dùng thấy "di chuyển rồi lâu mới hiện".
+    Adapter phải ép đệm = 1 frame để luôn đọc frame mới nhất.
+    """
+
+    def test_ep_buffer_bang_1(self, monkeypatch):
+        import cv2
+
+        import src.video_source as vs
+
+        sets = {}
+
+        class FakeCap:
+            def isOpened(self):
+                return True
+
+            def set(self, prop, value):
+                sets[prop] = value
+                return True
+
+            def release(self):
+                pass
+
+        monkeypatch.setattr(vs.cv2, "VideoCapture", lambda *a, **k: FakeCap())
+        monkeypatch.setattr(vs.sys, "platform", "linux")
+        vs.CameraVideoSource(0)._create_capture()
+        assert sets[cv2.CAP_PROP_BUFFERSIZE] == 1
