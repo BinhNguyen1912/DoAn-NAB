@@ -28,6 +28,12 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 - `src/metrics_logger.py` — hàm thuần: CSV từng frame + summary mean/p95/tỷ lệ mất dấu.
 - Cấu hình YAML: `configs/default.yaml` (checkpoint, nguồn, ghi mp4, metrics).
 
+## 0. Chưa biết thuật ngữ? Đọc file này trước
+
+**`docs/giai-thich-do-an.md`** — giải thích toàn bộ đồ án bằng ngôn ngữ đời thường: từ điển thuật ngữ
+(AI, mô hình, mask, FPS, GPU…), hệ thống hoạt động ra sao, Colab là gì và vì sao cần, thiết bị của bạn
+mạnh/yếu chỗ nào, bảng "bị gì → cần gì → đã làm gì", và 8 câu trả lời mẫu cho hội đồng.
+
 ## 1. Cài đặt từ clone mới (tái tạo được)
 
 ```bash
