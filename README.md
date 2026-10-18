@@ -30,6 +30,7 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 
 ## 0. Chưa biết thuật ngữ? Đọc file này trước
 
+**`docs/cheatsheet-lenh.md`** — mọi lệnh cần dùng, mỗi lệnh có giải thích "làm gì → kỳ vọng → khi nào dùng".
 **`docs/giai-thich-do-an.md`** — giải thích toàn bộ đồ án bằng ngôn ngữ đời thường: từ điển thuật ngữ
 (AI, mô hình, mask, FPS, GPU…), hệ thống hoạt động ra sao, Colab là gì và vì sao cần, thiết bị của bạn
 mạnh/yếu chỗ nào, bảng "bị gì → cần gì → đã làm gì", và 8 câu trả lời mẫu cho hội đồng.
