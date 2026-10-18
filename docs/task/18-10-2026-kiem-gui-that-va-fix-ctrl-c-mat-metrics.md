@@ -298,3 +298,34 @@ không nhân đôi điểm quỹ đạo.
 **CLI:** `--smooth` (+ config key `smooth_display`), dùng chung `--record/--metrics-csv/--metrics-summary`
 (ghi mp4 theo luồng hiển thị 19 FPS). **Test:** +8 (2 nguồn/worker, 3 worker, 2 visualizer, 1 tích hợp
 "vẽ nhiều hơn suy luận"); full suite 127 passed; ruff sạch.
+
+---
+
+## Bổ sung 11 — sửa 2 bug người dùng gặp khi chạy `--smooth`
+
+**Người dùng báo (log thật):** sau ~38 frame xuất hiện `[LOI] suy luận thất bại: TypeError:
+'NoneType' object is not subscriptable`, rồi lặp mãi `[f38] …`, và **phím `r` không chọn lại được**.
+
+**Hai nguyên nhân (đều là bug của bản `--smooth` vừa thêm):**
+1. **Race trên engine** — phím `r` gọi `engine.reset()` ngay ở luồng hiển thị trong khi luồng suy luận
+   đang chạy model → `inference_state` bị xoá giữa chừng → `TypeError: 'NoneType' object is not
+   subscriptable`; state hỏng nên các lần sau trả mãi frame cũ f38.
+2. **`clear()` không xoá kết quả cũ** — vòng hiển thị vẫn thấy overlay cũ nên ở lại chế độ `track`,
+   không vẽ lại con trỏ chọn ⇒ người dùng không kéo được ô mới. Thêm nữa, khi không có `visualizer`
+   thì biến `mode` bị gán lại thành `select` dù đang track.
+
+**Đã sửa:**
+- `InferenceWorker` — **mọi thao tác engine chỉ diễn ra trong luồng suy luận**; `set_bbox()`/`clear()`
+  từ main thread chỉ ghi `_pending` ("start"/"clear"), worker thực hiện `engine.reset()` rồi start.
+- `clear()` xoá `_stamped` (về chế độ chọn), thêm `is_tracking()`; vòng hiển thị dựa vào
+  `is_tracking()` thay vì kết quả cũ.
+- Khi suy luận lỗi: in **1 lần** kèm hướng dẫn "bấm r để chọn lại", reset engine, về chế độ chọn
+  (không lặp lỗi vô hạn như trước).
+- Vòng hiển thị giữ đúng `mode = "track"` kể cả khi không có `visualizer`.
+
+**Test:** +4 (`TestThreadSafety`: set_bbox không chạm engine ở main thread; clear xoá kết quả và ngừng
+suy luận; lỗi chỉ báo 1 lần và về chế độ chọn; `r` rồi kéo ô mới thì start lại) — 12 test smooth_display,
+full suite **131 passed**, ruff sạch.
+
+**Verify trên webcam thật:** chạy → sau 2 lần suy luận bấm `r` → kéo ô mới `(180,120,460,400)` →
+bám tiếp 5 lần suy luận, **42 frame vẽ**, quỹ đạo reset đúng, **không có `[LOI]`**.

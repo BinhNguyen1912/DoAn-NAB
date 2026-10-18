@@ -26,7 +26,8 @@ from dataclasses import dataclass
 import cv2
 
 from src.live_pipeline import (
-    InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, warn_if_bad_selection,
+    InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
+    warn_if_bad_selection,
 )
 from src.video_source import open_video_source
 
@@ -97,7 +98,8 @@ class InferenceWorker:
         self._frames = frame_source
         self._lock = threading.Lock()
         self._stamped = None
-        self._bbox = None            # bbox chờ chọn (None = chưa chọn → không suy luận)
+        self._bbox = None            # bbox đang track (None = chưa chọn → không suy luận)
+        self._pending = None         # yêu cầu từ main thread: ("start", bbox) | ("clear", None)
         self._stop = threading.Event()
         self._thread = None
         self._seq = 0
@@ -110,18 +112,32 @@ class InferenceWorker:
         return self
 
     def set_bbox(self, bbox):
-        """Bắt đầu/chọn lại đối tượng: reset engine rồi start với bbox này."""
+        """Yêu cầu bắt đầu/chọn lại đối tượng.
+
+        CHỈ ghi yêu cầu — mọi thao tác trên engine do luồng suy luận thực hiện, vì gọi
+        `engine.reset()` từ main thread trong lúc model đang chạy sẽ phá state
+        (`TypeError: 'NoneType' object is not subscriptable`) — bug thật gặp 18-10.
+        """
         with self._lock:
-            self._bbox = tuple(bbox)
-            self._started = False
-            self._engine.reset()
+            self._pending = ("start", tuple(bbox))
+            self._stamped = None
 
     def clear(self):
-        """Dừng suy luận, quay về chế độ chờ chọn đối tượng (phím r)."""
+        """Dừng suy luận, quay về chế độ chờ chọn đối tượng (phím r).
+
+        Xoá luôn kết quả cũ để vòng hiển thị trở về chế độ chọn (bug thật 18-10:
+        không xoá → màn hình vẫn ở chế độ track nên không kéo chọn lại được).
+        """
         with self._lock:
+            self._pending = ("clear", None)
+            self._stamped = None
             self._bbox = None
             self._started = False
-            self._engine.reset()
+
+    def is_tracking(self):
+        """Đang có đối tượng để bám hay không (main thread dùng để quyết định chế độ hiển thị)."""
+        with self._lock:
+            return self._bbox is not None
 
     def latest_result(self):
         with self._lock:
@@ -129,6 +145,22 @@ class InferenceWorker:
 
     def _loop(self):
         while not self._stop.is_set():
+            # 1) Xử lý yêu cầu từ main thread (chỉ nơi này được chạm vào engine)
+            with self._lock:
+                pending, self._pending = self._pending, None
+            if pending is not None:
+                action, bbox_req = pending
+                try:
+                    self._engine.reset()
+                except Exception as exc:
+                    print(f"[LOI] reset engine thất bại: {type(exc).__name__}: {exc}")
+                with self._lock:
+                    self._started = False
+                    self._bbox = bbox_req if action == "start" else None
+                    if action != "start":
+                        self._stamped = None
+
+            # 2) Suy luận trên frame MỚI NHẤT
             with self._lock:
                 bbox = self._bbox
                 need_start = not self._started
@@ -144,9 +176,19 @@ class InferenceWorker:
                         self._started = True
                 else:
                     result = self._engine.process(frame)
-            except Exception as exc:                      # không để chết luồng nền âm thầm
-                print(f"[LOI] suy luận thất bại: {type(exc).__name__}: {exc}")
-                time.sleep(0.2)
+            except Exception as exc:
+                # State có thể đã hỏng → về chế độ chờ chọn, KHÔNG lặp lỗi vô hạn
+                print(f"[LOI] suy luận thất bại: {type(exc).__name__}: {exc} — "
+                      f"bấm r để chọn lại đối tượng")
+                try:
+                    self._engine.reset()
+                except Exception:
+                    pass
+                with self._lock:
+                    self._bbox = None
+                    self._started = False
+                    self._stamped = None
+                time.sleep(0.1)
                 continue
             with self._lock:
                 self._seq += 1
@@ -188,7 +230,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 selector.bind(frame)          # lần đầu: biết kích thước frame
                 selector_bound = True
 
-            stamped = worker.latest_result()
+            stamped = worker.latest_result() if worker.is_tracking() else None
             img = None
             if stamped is not None and stamped.seq != consumed_seq:  # mỗi kết quả 1 lần
                 consumed_seq = stamped.seq
@@ -207,11 +249,15 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     img = visualizer.render(frame, stamped.result,
                                             overlay_age_ms=stamped.age_ms,
                                             display_fps=display_fps)
-            if img is None:
+                else:                       # không có HUD: vẫn phải giữ chế độ track
+                    img = frame.copy()
+                cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (255, 255, 255), 1, cv2.LINE_AA)
+            else:
+                mode = "select"
                 img = selector.draw(frame)
                 cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                mode = "select"
 
             key = display(img, mode)
             disp_count += 1

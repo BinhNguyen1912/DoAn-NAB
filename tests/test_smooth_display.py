@@ -245,3 +245,107 @@ class TestRunSmoothDisplay:
         assert state["display"] >= 12
         assert summary.processed >= 1
         assert state["display"] > summary.processed     # vẽ nhiều hơn suy luận → mượt
+
+
+class TestThreadSafety:
+    """Bug thật 18-10: bấm `r` → main thread gọi engine.reset() trong khi luồng suy luận đang
+    chạy model → `TypeError: 'NoneType' object is not subscriptable`, state hỏng, engine trả
+    mãi frame cũ và KHÔNG chọn lại được. Sửa: main thread chỉ gửi yêu cầu, worker thực hiện.
+    """
+
+    def _setup(self, engine_cls=None):
+        src = LatestFrameSource(FakeSource(delay=0.005)).start()
+        engine = (engine_cls or FakeEngine)(delay=0.03)
+        worker = InferenceWorker(engine, src).start()
+        return src, engine, worker
+
+    def test_set_bbox_khong_goi_engine_o_main_thread(self):
+        src, engine, worker = self._setup()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            # NGAY sau khi gọi: main thread chưa được chạm vào engine
+            assert engine.calls == []
+            time.sleep(0.15)                      # worker mới là nơi reset+start
+            assert engine.calls[:2] == ["reset", "start"]
+        finally:
+            worker.stop()
+            src.stop()
+
+    def test_clear_xoa_ket_qua_cu_va_ngung_suy_luan(self):
+        src, engine, worker = self._setup()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            time.sleep(0.15)
+            assert worker.latest_result() is not None
+            worker.clear()                        # như bấm r
+            assert worker.latest_result() is None, "phải xoá kết quả cũ để về chế độ chọn"
+            assert worker.is_tracking() is False
+            time.sleep(0.15)                      # để worker xử lý yêu cầu clear
+            n = len(engine.calls)
+            time.sleep(0.2)
+            assert len(engine.calls) == n, "không được suy luận khi đã clear"
+        finally:
+            worker.stop()
+            src.stop()
+
+    def test_loi_suy_luan_quay_ve_che_do_chon_khong_loop(self, capsys):
+        """Engine lỗi (state hỏng) → worker về chế độ chờ chọn, KHÔNG lặp lỗi vô hạn."""
+
+        class LoiEngine(FakeEngine):
+            def process(self, frame):
+                with self.lock:
+                    self.calls.append("process")
+                raise TypeError("'NoneType' object is not subscriptable")
+
+        src, engine, worker = self._setup(LoiEngine)
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            time.sleep(0.3)
+            assert worker.is_tracking() is False      # về chế độ chọn
+            assert worker.latest_result() is None
+            n_err = capsys.readouterr().out.count("[LOI]")
+            assert n_err == 1, "chỉ báo lỗi 1 lần, không spam"
+        finally:
+            worker.stop()
+            src.stop()
+
+    def test_r_roi_chon_lai_duoc_trong_vong_lap(self, tmp_path, write_video):
+        """Đúng kịch bản người dùng: chạy → bấm r → kéo ô mới → phải bám lại được."""
+        from src.live_pipeline import RESET_KEY, QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.smooth_display import run_smooth_display
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=20, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = FakeEngine(delay=0.05)
+        selector = PromptSelector(frame_shape=(120, 200, 3))
+        state = {"display": 0, "infer": 0, "pressed_r": False, "armed": False}
+
+        def display(img, mode):
+            import cv2 as _cv2
+
+            state["display"] += 1
+            if mode == "track" and state["infer"] >= 1 and not state["pressed_r"]:
+                state["pressed_r"] = True
+                return RESET_KEY                     # bấm r
+            if (state["pressed_r"] and not state["armed"] and mode == "select"
+                    and not selector.has_bbox()):
+                state["armed"] = True                # kéo ô mới — CHỈ 1 lần
+                selector.on_mouse(_cv2.EVENT_LBUTTONDOWN, 20, 20, 0, None)
+                selector.on_mouse(_cv2.EVENT_LBUTTONUP, 60, 60, 0, None)
+                return -1
+            if state["pressed_r"] and state["infer"] >= 3:
+                return list(QUIT_KEYS)[0]            # q
+            return -1
+
+        summary = run_smooth_display(
+            source=str(path), engine=engine, selector=selector, display=display,
+            preselect_bbox=(10, 10, 50, 50),
+            on_result=lambda r: state.__setitem__("infer", state["infer"] + 1),
+        )
+        assert state["pressed_r"] is True
+        starts = [c for c in engine.calls if c == "start"]
+        assert len(starts) >= 2, "sau khi bấm r + kéo ô mới phải start lại"
+        assert summary.processed >= 2
