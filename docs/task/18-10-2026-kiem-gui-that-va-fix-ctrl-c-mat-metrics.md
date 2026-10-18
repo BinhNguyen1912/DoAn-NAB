@@ -68,3 +68,21 @@
 4. README: hàng mới trong bảng sự cố, nêu bản chất + 3 dấu hiệu nhận biết + cách xử lý (bấm r).
 
 **Test:** 5 test mới (2 HUD + 3 cảnh báo); ruff sạch; full suite 89 passed.
+
+---
+
+## Bổ sung 2 — phản hồi "chọn nền thì vẫn chạy" và "mất dấu im lặng"
+
+**Người dùng báo (log thật):**
+- Lần 1: chọn bbox `(243,75,301,133)` **không nằm trên ô cam** → bám đúng vùng nền đó rồi **từ f7 liên tục `bbox=(0,0,0,0)`** (mask rỗng = mất dấu, chỉ thỉnh thoảng bắt lại).
+- Lần 2: bấm `r`, chọn `(271,176,332,236)` = đúng vị trí ô cam lúc đó (ô đã đi tới `80+24·8, 80+24·4`) → bám đúng `(+8,+4)`/frame.
+
+**Kết luận:** cả hai là hành vi đúng (promptable segmentation); thiếu sót là **không có phản hồi khi mất dấu**.
+
+**Đã làm (TDD, 4 test mới trong `tests/test_visualizer.py`):**
+1. `Visualizer.lost_frames` (tổng) + `consecutive_lost` (chuỗi liên tiếp); reset cả hai trong `reset()` (phím r).
+2. Banner đỏ **`MẤT DẤU — bấm r chọn lại`** căn giữa khung khi mask rỗng; helper `_centered_org` (PIL, đo bằng font thật) / `_centered_org_cv` (fallback), màu `_COLOR_LOST`.
+3. Verify end-to-end bằng model thật (bbox `243,75,301,133`, 10 frame): metrics `lost=[0,0,0,0,0,1,0,0,0,0]` ↔ pixel đỏ dải banner `[181,213,180,180,180,689,217,…]` → **mọi frame lost=1 có banner (689 px), mọi frame lost=0 không có (<217 px)**. Ảnh bằng chứng: `data/_banner_evidence.png` (HUD `FPS: 0.3`, `Độ trễ: 3333 ms/frame`, `Điểm tin cậy: -1.0` + banner giữa khung).
+4. README: mô tả Visualizer nêu banner; bảng sự cố giải thích chọn-nền + 3 dấu hiệu nhận biết.
+
+**Test:** full suite 93 passed; ruff sạch.

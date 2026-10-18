@@ -28,6 +28,7 @@ _COLOR_MASK = (0, 140, 255)      # BGR cam — cùng màu fixture/ticket 04
 _COLOR_BOX = (0, 0, 255)         # BGR đỏ
 _COLOR_TRAJECTORY = (255, 0, 255)  # BGR tím
 _COLOR_TEXT = (255, 255, 255)    # BGR trắng
+_COLOR_LOST = (0, 0, 255)        # BGR đỏ — banner mất dấu
 _MASK_ALPHA = 0.35
 _LINE_THICKNESS = 2
 _LATENCY_WINDOW = 30             # cửa sổ trượt để tính FPS/độ trễ trên HUD
@@ -74,6 +75,8 @@ class Visualizer:
         self._font_size = int(font_size)
         self._writer = None      # cv2.VideoWriter khi ghi video
         self._pending_recorder = None  # (path, fps) chờ frame đầu để biết kích thước
+        self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
+        self.consecutive_lost = 0  # số frame mất dấu liền tiếp (hiện tại)
 
     # ---------- API công khai ----------
 
@@ -103,18 +106,27 @@ class Visualizer:
                           thickness=_LINE_THICKNESS)
             cv2.circle(img, self._trajectory[-1], 3, _COLOR_TRAJECTORY, -1)
 
-        # 4) HUD text FPS + độ trễ + điểm tin cậy
+        # 4) HUD text FPS + độ trễ + điểm tin cậy; banner cảnh báo khi mất dấu
         self._latencies.append(result.elapsed_ms)
+        if result.mask is None or not result.mask.any():
+            self.lost_frames += 1
+            self.consecutive_lost += 1
+        else:
+            self.consecutive_lost = 0
         self._draw_hud(img, result.score)
+        if self.consecutive_lost > 0:
+            self._draw_lost_banner(img)
 
         # 5) ghi nếu recorder đang mở
         self._write(img)
         return img
 
     def reset(self):
-        """Xoá quỹ đạo + số liệu trượt (khi chọn lại đối tượng — phím r)."""
+        """Xoá quỹ đạo + số liệu trượt + bộ đếm mất dấu (khi chọn lại đối tượng — phím r)."""
         self._trajectory.clear()
         self._latencies.clear()
+        self.lost_frames = 0
+        self.consecutive_lost = 0
 
     @property
     def trajectory_points(self):
@@ -174,6 +186,20 @@ class Visualizer:
 
     # ---------- HUD text ----------
 
+    def _draw_lost_banner(self, img):
+        """Banner giữa khung khi mất dấu — để người xem biết hệ thống ĐANG mất dấu,
+        không phải đang bám đúng (mask rỗng mà im lặng là phản hồi gây hiểu nhầm)."""
+        h, w = img.shape[:2]
+        text = ("MẤT DẤU — bấm r chọn lại" if self._font_path is not None
+                else "MAT DAU - bam r")
+        if self._font_path is not None:
+            _pil_put_text(img, text, _centered_org(img, text, self._font_path,
+                                                    self._font_size + 6),
+                          self._font_path, self._font_size + 6, _COLOR_LOST)
+        else:
+            cv2.putText(img, text, _centered_org_cv(img, text, 0.7), cv2.FONT_HERSHEY_SIMPLEX,
+                        0.7, _COLOR_LOST, 2, cv2.LINE_AA)
+
     def _draw_hud(self, img, score):
         """Vẽ HUD 3 dòng: FPS, độ trễ, điểm tin cậy (tiếng Việt qua PIL nếu có font)."""
         for i, text in enumerate(self.hud_lines(score, self.effective_fps,
@@ -218,3 +244,21 @@ def _pil_put_text(img_bgr, text, org, font_path, size, color_bgr):
     # BGR → RGB cho fill (PIL dùng RGB)
     draw.text((x, y), text, font=font, fill=(color_bgr[2], color_bgr[1], color_bgr[0]))
     img_bgr[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+
+def _centered_org(img, text, font_path, size):
+    """Toạ độ để text căn giữa ngang + giữa dọc khung (đo bằng font TTF thật)."""
+    from PIL import ImageFont
+
+    font = ImageFont.truetype(font_path, size)
+    left, top, right, bottom = font.getbbox(text)
+    w_text = right - left
+    h_text = bottom - top
+    h, w = img.shape[:2]
+    return ((w - w_text) // 2 - left, (h - h_text) // 2 - top)
+
+
+def _centered_org_cv(img, text, scale):
+    """Như trên nhưng đo bằng cv2.getTextSize (khi máy không có font TTF)."""
+    (w_text, h_text), _ = cv2.getTextSize(text, cv2.FONT_HERSHEY_SIMPLEX, scale, 2)
+    h, w = img.shape[:2]
+    return ((w - w_text) // 2, (h + h_text) // 2)

@@ -22,8 +22,9 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 - `src/tracker_engine.py` — seam trung tâm: `start(bbox)` → `process(frame)` mỗi frame →
   mask + bbox + điểm tin cậy + ms. Đóng gói SAMURAI nguyên bản (Kalman + memory bank).
 - `src/prompt_selector.py` — máy trạng thái kéo-thả chọn ô; phím **r** chọn lại đối tượng.
-- `src/visualizer.py` — HUD: mask alpha + ô bao + quỹ đạo (deque giới hạn) + FPS/độ trễ
-  nhãn tiếng Việt (PIL font TTF) + ghi mp4.
+- `src/visualizer.py` — HUD: mask alpha + ô bao + quỹ đạo (deque giới hạn) + 3 dòng
+  FPS/độ trễ/**điểm tin cậy** (nhãn tiếng Việt qua PIL font TTF) + banner đỏ
+  `MẤT DẤU — bấm r chọn lại` khi mask rỗng + ghi mp4.
 - `src/metrics_logger.py` — hàm thuần: CSV từng frame + summary mean/p95/tỷ lệ mất dấu.
 - Cấu hình YAML: `configs/default.yaml` (checkpoint, nguồn, ghi mp4, metrics).
 

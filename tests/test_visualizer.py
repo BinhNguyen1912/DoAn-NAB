@@ -181,3 +181,41 @@ class TestGhiVideo:
         img = viz.update(_frame(), _result())
         assert img.shape == (240, 320, 3)
         assert not (tmp_path / "hud.mp4").exists()
+
+class TestChiBaoMatDau:
+    """Khi mask rỗng (mất dấu) phải có chỉ báo rõ — người dùng báo 18-10: mask biến mất
+    im lặng sau khi chọn vào vùng nền, không biết đang mất dấu hay đang chạy đúng."""
+
+    def test_dem_so_frame_mat_dau_va_chuoi_lien_tiep(self):
+        viz = Visualizer()
+        live = _result(frame_idx=0, bbox=(100, 100, 140, 140))
+        lost = _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None)
+        viz.update(_frame(), live)
+        viz.update(_frame(), lost)
+        viz.update(_frame(), lost)
+        viz.update(_frame(), live)
+        viz.update(_frame(), lost)
+        assert viz.lost_frames == 3          # tổng số frame mất dấu
+        assert viz.consecutive_lost == 1     # chuỗi hiện tại (reset sau frame bắt lại)
+
+    def test_ve_banner_mat_dau_khi_mask_rong(self):
+        """Banner vẽ ở GIỮA khung (không trùng HUD/mask/bbox) — so với frame gốc."""
+        frame = _frame()
+        img = Visualizer().update(
+            frame, _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None))
+        band = img[100:140, 160:300]   # vùng sạch: không HUD/mask/bbox
+        assert not np.array_equal(band, frame[100:140, 160:300])
+
+    def test_khong_ve_banner_khi_con_bam(self):
+        frame = _frame()
+        img = Visualizer().update(frame, _result(frame_idx=0, bbox=(100, 100, 140, 140)))
+        # vùng sạch không có lớp overlay nào → giữ nguyên nền
+        band = img[100:140, 160:300]
+        assert np.array_equal(band, frame[100:140, 160:300])
+
+    def test_reset_xoa_bo_dem_mat_dau(self):
+        viz = Visualizer()
+        viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
+        assert viz.lost_frames == 1
+        viz.reset()
+        assert viz.lost_frames == 0 and viz.consecutive_lost == 0
