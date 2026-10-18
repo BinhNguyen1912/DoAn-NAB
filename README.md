@@ -167,7 +167,7 @@ python tools/run_live.py --config configs/my.yaml            # CLI flag vẫn đ
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:
 
-**Notebook có sẵn:** `notebooks/colab_gpu_demo.ipynb` — mở trên Colab (Runtime → T4 GPU) rồi chạy
+**Notebook có sẵn:** `notebooks/colab_gpu_evaluation.ipynb` — mở trên Colab (Runtime → T4 GPU) rồi chạy
 lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/colab-gpu.md`.
 
 1. Đẩy repo (kèm `samurai/` clone + checkpoint) lên Drive/clone trực tiếp trong notebook.

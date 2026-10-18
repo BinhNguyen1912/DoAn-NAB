@@ -255,7 +255,7 @@ một lần, không phải thời gian chờ mỗi lần demo).
 **Đã làm:**
 1. `--device {cpu,cuda}` trong `run_live.py` (đè được bằng config key `device`), kiểm tra
    `torch.cuda.is_available()` trước khi build → báo lỗi rõ nếu chưa bật GPU trên Colab; in tên GPU khi dùng cuda.
-2. `notebooks/colab_gpu_demo.ipynb` (6 code cell): kiểm GPU → clone repo + SAMURAI + tải checkpoint +
+2. `notebooks/colab_gpu_evaluation.ipynb` (6 code cell): kiểm GPU → clone repo + SAMURAI + tải checkpoint +
    pip install → sinh video test nếu chưa có input → chạy headless `--device cuda` → in `gpu_summary.json`
    + xem mp4 trong notebook → tải 3 file về máy.
 3. `docs/colab-gpu.md`: thời gian từng bước (cài 8–15 phút/lần, chạy video 20–40 giây), cách quay video nguồn,

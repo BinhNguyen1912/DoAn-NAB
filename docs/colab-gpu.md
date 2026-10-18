@@ -30,8 +30,8 @@ khi chạy cell, và truyền `--bbox` đúng:
 
 ## Các bước thủ công (nếu muốn chạy từng cell)
 
-1. Mở https://colab.research.google.com → **Upload** file `notebooks/colab_gpu_demo.ipynb` (hoặc mở từ GitHub:
-   *File → Open notebook → GitHub → `BinhNguyen1912/DoAn-NAB` → `notebooks/colab_gpu_demo.ipynb`*).
+1. Mở https://colab.research.google.com → **Upload** file `notebooks/colab_gpu_evaluation.ipynb` (hoặc mở từ GitHub:
+   *File → Open notebook → GitHub → `BinhNguyen1912/DoAn-NAB` → `notebooks/colab_gpu_evaluation.ipynb`*).
 2. **Runtime → Change runtime type → T4 GPU → Save**.
 3. Chạy lần lượt các cell (Shift+Enter):
    - Cell 1: kiểm tra GPU (`Tesla T4`, `CUDA sẵn sàng: True`).
