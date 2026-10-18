@@ -106,3 +106,21 @@
 - Ghi chú: 2 lần chạy đầu fail vì server nền bị bash tool dọn giữa các lệnh (`Connection refused`) — lỗi harness, không phải code; chạy server + test trong cùng 1 lệnh thì OK.
 
 **Test:** 94 passed (làn nhanh), ruff sạch.
+
+---
+
+## Bổ sung 4 — tool tìm camera trong LAN (người dùng không biết IP thật)
+
+**Vấn đề:** người dùng chạy `--source "http://192.168.1.25:8080/video"` — đó là IP *ví dụ* trong hướng dẫn, không phải IP điện thoại → không tìm được host.
+
+**Đã thêm:** `tools/find_phone_camera.py` — quét subnet /24 của máy trên các cổng thường dùng của app camera (`8080, 4747, 8081, 8088, 5000`), thử mở từng ứng viên như luồng MJPEG (`/video`, `/videofeed`, `/mjpegfeed`), in URL đọc được frame + lệnh pipeline gợi ý. Chỉ quét mạng cục bộ của máy, không cần model nên chạy vài giây.
+
+**Verify:** dựng MJPEG server local (`/tmp/mjpeg_server.py`, port 8099) rồi chạy:
+```
+python tools/find_phone_camera.py --subnet 127.0.0 --ports 8099 --timeout 0.15
+→ [OK] http://127.0.0.1:8099/video → 640x360
+→ python tools/run_live.py --source "http://127.0.0.1:8099/video" --display
+```
+README: thêm mục "Không biết IP/URL của điện thoại? Quét mạng LAN".
+
+**Lưu ý:** iPhone không có app "IP Webcam" (Android-only) — nếu app không hiện URL (DroidCam/Iriun chỉ tạo virtual camera cho Windows) thì phải dùng env Windows cho webcam; tool quét chỉ có ích khi app thật sự phát MJPEG/RTSP.

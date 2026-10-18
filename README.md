@@ -90,6 +90,14 @@ Repo hỗ trợ **2 dạng URL** (chỉ cần app hiện đúng 1 trong 2):
 | MJPEG qua HTTP | `http://192.168.1.25:8080/video` | `HttpVideoSource` |
 | RTSP | `rtsp://192.168.1.25:554/stream` | `RtspVideoSource` |
 
+**Không biết IP/URL của điện thoại?** Quét mạng LAN để tìm:
+```bash
+python tools/find_phone_camera.py                       # tự đoán subnet của máy
+python tools/find_phone_camera.py --subnet 192.168.1    # hoặc chỉ định
+# → [OK] http://192.168.1.7:8080/video → 640x480
+# → python tools/run_live.py --source "http://192.168.1.7:8080/video" --display
+```
+
 **Kiểm nguồn trước khi chạy pipeline** (nhanh, không cần model):
 ```bash
 python tools/check_video_source.py --source "http://192.168.1.25:8080/video" --num 10
