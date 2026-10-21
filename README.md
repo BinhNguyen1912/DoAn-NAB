@@ -321,6 +321,16 @@ Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
 python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json
 ```
 
+### Thí nghiệm che khuất một phần (bằng chứng cho tên đề tài)
+
+```bash
+python scripts/experiment_occlusion.py --image-size 320   # → data/charts/occlusion_iou_320.png
+```
+Đo IoU theo từng khung khi đối tượng bị che **50%** và **100%** (khung 12–17), rồi hiện lại:
+-che 50%: IoU 0,97 → **0,53** (không mất dấu) → **0,967 ngay khung đầu sau che**
+-che 100%: IoU 0,98 → 0,00 (mất dấu 6/6) → **0,984 ngay khung đầu sau che**, mất dấu 0/12
+Chi tiết: `docs/giai-thich-do-an.md` mục 13.
+
 ### Biểu đồ cho báo cáo (từ CSV của MetricsLogger)
 
 ```bash

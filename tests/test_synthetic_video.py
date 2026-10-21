@@ -69,3 +69,34 @@ class TestCauHinhLoi:
             generate_tracking_sequence(
                 num_frames=4, frame_size=(240, 320), square_size=40, start=(300, 20)
             )
+
+class TestCheMotPhan:
+    """Tên đề tài nói "bị che khuất MỘT PHẦN" → fixture phải mô phỏng được mức che 0–100%."""
+
+    def _dem_pixel_doi_tuong(self, frame, bbox):
+        x1, y1, x2, y2 = bbox
+        vung = frame[y1:y2, x1:x2]
+        mau = np.array(SQUARE_COLOR, dtype=np.uint8)
+        return int(np.all(vung == mau, axis=-1).sum())
+
+    def test_che_mot_nua_con_lai_dung_nua_o(self):
+        fx = generate_tracking_sequence(num_frames=3, frame_size=(240, 320), square_size=40,
+                                        start=(20, 20), occlusion_frames=(1,),
+                                        occlusion_fraction=0.5)
+        full = self._dem_pixel_doi_tuong(fx.frames[0], fx.bboxes[0])     # 40*40
+        half = self._dem_pixel_doi_tuong(fx.frames[1], fx.bboxes[1])
+        assert full == 1600
+        assert half == 800          # đúng một nửa còn nhìn thấy
+        assert fx.occluded[1] is True or fx.occluded[1]
+
+    def test_che_hoan_toan_khong_con_pixel(self):
+        fx = generate_tracking_sequence(num_frames=3, frame_size=(240, 320), square_size=40,
+                                        start=(20, 20), occlusion_frames=(1,),
+                                        occlusion_fraction=1.0)
+        assert self._dem_pixel_doi_tuong(fx.frames[1], fx.bboxes[1]) == 0
+
+    def test_khong_che_thi_giu_nguyen_toan_bo(self):
+        fx = generate_tracking_sequence(num_frames=3, frame_size=(240, 320), square_size=40,
+                                        start=(20, 20), occlusion_frames=(1,),
+                                        occlusion_fraction=0.0)
+        assert self._dem_pixel_doi_tuong(fx.frames[1], fx.bboxes[1]) == 1600

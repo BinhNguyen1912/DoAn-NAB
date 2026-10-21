@@ -19,6 +19,7 @@
 10. [Tự kiểm chứng trong 5 phút](#10-tự-kiểm-chứng-trong-5-phút)
 11. [Phụ lục: dùng WSL — vì sao và làm thế nào](#11-phụ-lục-dùng-wsl--vì-sao-và-làm-thế-nào)
 12. [Vì sao mask "ăn" cả tóc / cả người](#12-vì-sao-mask-ăn-cả-tóc--cả-người)
+13. [Thí nghiệm che khuất một phần — bằng chứng cho tên đề tài](#13-thí-nghiệm-che-khuất-một-phần--bằng-chứng-cho-tên-đề-tài)
 
 ---
 
@@ -483,3 +484,46 @@ năng**, không phải mô hình kém. (Hướng phát triển: thêm click trá
 > **cả đầu (mặt + tóc)**, và khi tư thế thay đổi lớn thì là **cả người**. Đồ án xử lý bằng: ngưỡng logit
 > (`--mask-threshold`), độ phân giải model (`--image-size`), và quy trình chọn lại (`r`). Hướng phát
 > triển: bổ sung **điểm nhắc âm** (click để loại trừ tóc) để đạt mức bộ phận."
+
+---
+
+## 13. Thí nghiệm che khuất một phần — bằng chứng cho tên đề tài
+
+Tên đề tài ghi: *"…duy trì khả năng theo dõi đối tượng khi di chuyển, thay đổi hình dạng hoặc **bị che
+khuất một phần**"*. Mục này là **số đo thật** cho đúng vế cuối.
+
+**Cách làm:** sinh 30 khung có một ô vuông di chuyển; khung **12–17** có vật cản che **50%** hoặc
+**100%** đối tượng; chạy `TrackerEngine` thật; đo **IoU** giữa ô bao dự đoán và đáp án từng khung.
+Chạy lại được bằng:
+
+```bash
+python scripts/experiment_occlusion.py --image-size 320     # nhanh
+python scripts/experiment_occlusion.py --image-size 512     # nét hơn
+# → data/charts/occlusion_iou_320.png
+```
+
+**Kết quả (đo trên laptop CPU):**
+
+| Mức che | Giai đoạn | `image_size 320` | `image_size 512` |
+|---|---|---|---|
+| **50%** | trước khi che | IoU **0,973** | 0,990 |
+| | trong khi che | 0,531 · **mất dấu 0/6** | 0,517 · không mất dấu |
+| | **khung đầu sau khi che** | **0,967** | 0,984 |
+| | sau khi che (12 khung) | **0,977** · mất dấu 0/12 | 0,979 · 0/12 |
+| **100%** | trước khi che | 0,978 | 0,988 |
+| | trong khi che | 0,000 · mất dấu 6/6 *(đúng: không còn gì để tách)* | 0,000 · 6/6 |
+| | **khung đầu sau khi che** | **0,984** | 0,984 |
+| | sau khi che | **0,981** · **mất dấu 0/12** | 0,989 · 0/12 |
+
+**Đọc số liệu này thế nào (quan trọng khi bảo vệ):**
+
+1. **Che 50% → IoU tụt còn ~0,52 nhưng KHÔNG mất dấu.** Vì mặt nạ chỉ phủ **phần còn nhìn thấy**, ô bao
+   co lại ~một nửa ⇒ IoU ≈ 0,5. Đây là hành vi **đúng**: hệ thống vẫn biết đối tượng ở đâu.
+2. **Che 100% → mask rỗng, báo mất dấu** (6/6). Đúng nghĩa đen: không còn pixel nào của đối tượng.
+3. **Ngay khung đầu tiên sau khi đối tượng hiện lại: IoU 0,967–0,984 và không mất dấu** ⇒ **bộ nhớ
+   chuyển động + lan truyền theo thời gian hoạt động**: không cần người dùng chọn lại.
+4. **Hạ `image_size` xuống 320 gần như không giảm khả năng phục hồi** ở thí nghiệm này (0,977 vs 0,979)
+   ⇒ có thể dùng 320 cho demo nhanh mà vẫn giữ được tính năng cốt lõi.
+
+**Hình:** `data/charts/occlusion_iou_320.png` (vùng hồng = các khung bị che) — dùng trực tiếp trong
+báo cáo mục "Kết quả thí nghiệm".

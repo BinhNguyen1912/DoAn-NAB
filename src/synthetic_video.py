@@ -39,8 +39,14 @@ def generate_tracking_sequence(
     start=(20, 20),
     velocity=(4, 2),
     occlusion_frames=(),
+    occlusion_fraction=1.0,
 ):
-    """Sinh chuỗi frame giả lập + đáp án quỹ đạo. Xem docstring module."""
+    """Sinh chuỗi frame giả lập + đáp án quỹ đạo. Xem docstring module.
+
+    occlusion_fraction: phần đối tượng bị che ở các frame trong `occlusion_frames`
+        (1.0 = che hoàn toàn — mặc định; 0.5 = che một nửa; 0.0 = không che).
+        Dùng để đo "duy trì bám bắt khi bị **che khuất một phần**" (tên đề tài).
+    """
     height, width = frame_size
     x, y = start
 
@@ -63,10 +69,12 @@ def generate_tracking_sequence(
         frames[i, :, :] = BACKGROUND_COLOR
         x1, y1 = x, y
         x2, y2 = x + square_size, y + square_size
+        frames[i, y1:y2, x1:x2, :] = SQUARE_COLOR
         if i in occlusion_frames:
-            occluded[i] = True  # ô "lý thuyết" vẫn có vị trí, nhưng không vẽ lên frame
-        else:
-            frames[i, y1:y2, x1:x2, :] = SQUARE_COLOR
+            occluded[i] = True          # ô "lý thuyết" vẫn có vị trí, nhưng bị che một phần/toàn bộ
+            cover_w = int(round((x2 - x1) * float(occlusion_fraction)))
+            if cover_w > 0:             # vẽ "vật cản" che từ trái sang (như bàn tay che nửa mặt)
+                frames[i, y1:y2, x1:x1 + cover_w, :] = BACKGROUND_COLOR
         bboxes.append((x1, y1, x2, y2))
         x += velocity[0]
         y += velocity[1]
