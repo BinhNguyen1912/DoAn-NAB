@@ -38,6 +38,8 @@ DEFAULTS = {
     "device": "cpu",
     # Hiển thị tách luồng (~30 FPS video, overlay cập nhật mỗi lần suy luận) — cho demo mượt.
     "smooth_display": False,
+    # Vẽ đường quỹ đạo (màu tím) trên HUD — tắt nếu thấy rối mắt khi demo.
+    "show_trajectory": True,
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)

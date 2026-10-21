@@ -219,3 +219,38 @@ class TestChiBaoMatDau:
         assert viz.lost_frames == 1
         viz.reset()
         assert viz.lost_frames == 0 and viz.consecutive_lost == 0
+
+
+class TestAnQuyDao:
+    """Người dùng hỏi: 'đường hồng chi vậy, ẩn được không' — đó là quỹ đạo (trajectory)."""
+
+    def _res(self, i, bbox):
+        from src.tracker_engine import TrackingResult
+
+        mask = np.zeros((120, 160), dtype=bool)
+        mask[0:10, 0:10] = True
+        return TrackingResult(frame_idx=i, mask=mask, bbox=bbox, score=1.0, elapsed_ms=10.0)
+
+    def test_mac_dinh_ve_quy_dao(self):
+        frame = np.zeros((120, 160, 3), np.uint8)
+        viz = Visualizer(max_trajectory=10)
+        viz.consume(self._res(0, (10, 10, 20, 20)))      # tâm (15,15)
+        r2 = self._res(1, (130, 90, 140, 100))           # tâm (135,95)
+        viz.consume(r2)                                  # cần ≥2 điểm mới có đường nối
+        img = viz.render(frame, r2)
+        # điểm giữa đoạn nối có màu (đường quỹ đạo tím)
+        assert not np.array_equal(img[55, 75], frame[55, 75])
+
+    def test_tat_quy_dao_thi_khong_ve_giua(self):
+        frame = np.zeros((120, 160, 3), np.uint8)
+        viz = Visualizer(max_trajectory=10, show_trajectory=False)
+        viz.consume(self._res(0, (10, 10, 20, 20)))
+        r2 = self._res(1, (130, 90, 140, 100))
+        viz.consume(r2)
+        img = viz.render(frame, r2)
+        assert np.array_equal(img[55, 75], frame[55, 75])   # không có đường nối
+
+    def test_tat_quy_dao_van_ve_mask_va_o_bao(self):
+        img = Visualizer(show_trajectory=False).update(_frame(), _result())
+        assert img.shape == (240, 320, 3)
+        assert not np.array_equal(img[170, 120], np.array([40, 40, 40], np.uint8))  # mask vẫn tô

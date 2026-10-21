@@ -294,6 +294,9 @@ Hoặc gõ đầy đủ (một dòng, đừng để xuống hàng giữa tham s�
 ```bash
 python tools/run_live.py --source 0 --display --smooth --image-size 384
 ```
+
+Muốn **ẩn đường quỹ đạo** (màu tím) cho gọn mắt: thêm `--hide-trajectory`
+(hoặc `show_trajectory: false` trong `configs/default.yaml`).
 Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
 ```bash
 python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json

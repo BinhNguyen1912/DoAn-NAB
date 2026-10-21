@@ -79,7 +79,8 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     record_size=None → mở trì hoãn ở update() đầu tiên (display mode không biết trước
     kích thước frame — headless truyền thẳng từ peek).
     """
-    viz = Visualizer(max_trajectory=args.max_trajectory)
+    viz = Visualizer(max_trajectory=args.max_trajectory,
+                     show_trajectory=getattr(args, "show_trajectory", True))
     if args.record:
         if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size):
             print(f"[pipeline] ghi video: {args.record} ({record_fps:.0f} fps)")
@@ -298,6 +299,8 @@ def main():
                          "(HUD ghi tuổi overlay) — dùng cho demo mượt")
     ap.add_argument("--device", default=None, choices=["cpu", "cuda"],
                     help="thiết bị chạy model: cpu (mặc định) | cuda (Colab GPU/máy NVIDIA)")
+    ap.add_argument("--hide-trajectory", action="store_true",
+                    help="KHÔNG vẽ đường quỹ đạo (màu tím) — chỉ giữ mặt nạ + ô bao + HUD")
     ap.add_argument("--postprocess", action="store_true",
                     help="bật bước fill_holes của SAM 2 (mặc định TẮT: hết cảnh báo lỗi GPU, "
                          "số đo CPU/GPU so sánh được)")
@@ -324,6 +327,7 @@ def main():
         "image_size": args.image_size,
         "device": args.device,
         "smooth_display": args.smooth or None,
+        "show_trajectory": (False if args.hide_trajectory else None),
         "max_frames": args.max_frames,
         "record_path": args.record,
         "record_fps": args.record_fps,
@@ -342,6 +346,7 @@ def main():
     args.image_size = cfg["image_size"]
     args.device = cfg["device"]
     args.smooth = bool(args.smooth or cfg["smooth_display"])
+    args.show_trajectory = cfg["show_trajectory"] and not args.hide_trajectory
     args.max_frames = cfg["max_frames"]
     args.record_fps = cfg["record_fps"]
     # bật ghi: --record chỉ định, hoặc record_enabled trong config

@@ -132,6 +132,7 @@ python tools/run_live.py --source 0 --display --smooth --image-size 384
 | `--reanchor-every 3` | reset bộ nhớ mỗi 3 khung → **độ trễ không tăng dần** | demo không có che khuất |
 | `--record-fps 1` | ghi video 1 khung/giây → phát lại gần đúng tốc độ CPU thật | khi làm video minh chứng trung thực |
 | `--max-trajectory 50` | giới hạn số điểm quỹ đạo | video dài |
+| `--hide-trajectory` | **KHÔNG vẽ đường quỹ đạo (màu tím)** — chỉ còn mặt nạ + ô bao + HUD | khi thấy rối mắt |
 | `--postprocess` | bật bước vá lỗ hổng mặt nạ của SAM 2 | khi cần mask mịn hơn (mặc định tắt) |
 
 ### 1.5. Phím trong cửa sổ (phải **click vào cửa sổ** trước)

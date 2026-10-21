@@ -62,17 +62,20 @@ def find_vietnamese_font():
 class Visualizer:
     """Lớp vẽ HUD mỗi frame + quản lý quỹ đạo (deque) + ghi video mp4."""
 
-    def __init__(self, max_trajectory=100, font_path=None, font_size=16):
+    def __init__(self, max_trajectory=100, font_path=None, font_size=16,
+                 show_trajectory=True):
         """
         max_trajectory: số điểm quỹ đạo tối đa giữ trong deque (điểm cũ tự rơi ra).
         font_path      : đè font tìm tự động (None → find_vietnamese_font()).
         font_size      : cỡ chữ HUD (px).
+        show_trajectory: có vẽ đường quỹ đạo (màu tím) hay không (mặc định có).
         """
         self.max_trajectory = int(max_trajectory)
         self._trajectory = deque(maxlen=self.max_trajectory)  # (cx, cy) tâm đối tượng
         self._latencies = deque(maxlen=_LATENCY_WINDOW)       # ms, cửa sổ trượt
         self._font_path = font_path or find_vietnamese_font()
         self._font_size = int(font_size)
+        self.show_trajectory = bool(show_trajectory)
         self._writer = None      # cv2.VideoWriter khi ghi video
         self._pending_recorder = None  # (path, fps) chờ frame đầu để biết kích thước
         self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
@@ -121,7 +124,7 @@ class Visualizer:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
 
         # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần)
-        if len(self._trajectory) >= 2:
+        if self.show_trajectory and len(self._trajectory) >= 2:
             pts = np.array(self._trajectory, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(img, [pts], isClosed=False, color=_COLOR_TRAJECTORY,
                           thickness=_LINE_THICKNESS)
