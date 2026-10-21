@@ -5,7 +5,51 @@
 
 ---
 
-## 0. Gõ tắt bằng `./run` (khuyến nghị)
+## 0a. Chạy ở ĐÂU? — mở đúng terminal trước đã
+
+`run` là **script Linux (bash)**, không phải chương trình Windows:
+
+- ❌ **Đừng double-click** file `run` trong Explorer (Windows sẽ hỏi "mở bằng app nào" — đóng hộp thoại đó).
+- ❌ **Đừng mở bằng VS Code/IDE** như một tài liệu.
+- ✅ Phải **gõ trong terminal WSL (Ubuntu)**.
+
+### 3 cách mở đúng terminal
+
+| Cách | Làm thế nào |
+|---|---|
+| **1. App Ubuntu** | Bấm Start → gõ `Ubuntu` → mở app → cửa sổ đen hiện ra |
+| **2. Windows Terminal** | Mở Windows Terminal → bấm mũi tên cạnh dấu `+` → chọn **Ubuntu** |
+| **3. VS Code** (nếu đang dùng) | Mở repo → menu **Terminal → New Terminal** → ở ô chọn shell (bên phải dấu `+`) chọn **Ubuntu (WSL)**, KHÔNG chọn PowerShell |
+
+### Nhìn prompt để biết đã đúng chưa
+
+| Đúng ✅ | Sai ❌ |
+|---|---|
+| `msi@NGUYEN-ANH-BINH:/mnt/d/DOAN-NAB$` | `PS D:\DOAN-NAB>` ← đây là PowerShell (Windows), `./run` sẽ không chạy |
+| có dòng chữ `(samurai)` sau khi `./run` tự bật môi trường | `C:\Users\MSI>` ← cmd của Windows |
+
+### Đứng ở đâu để gõ
+
+```bash
+cd /mnt/d/DOAN-NAB     # đứng trong thư mục repo (nơi có file 'run')
+./run help             # rồi mới gõ ./run ...
+```
+
+### Cách khỏi gõ gì cả: double-click trên Windows
+
+File **`start-demo.cmd`** trong `D:\DOAN-NAB` — double-click là nó tự mở WSL, vào repo, chạy demo:
+
+| Double-click | Tác dụng |
+|---|---|
+| `start-demo.cmd` | chạy `./run demo` (demo webcam) |
+| `start-demo.cmd test` (chuột phải → Edit rồi sửa, hoặc gõ trong cmd) | chạy `./run test` |
+
+> Nếu double-click `start-demo.cmd` mà cửa sổ loé lên rồi tắt: mở PowerShell, chạy
+> `D:\DOAN-NAB\start-demo.cmd` để thấy thông báo lỗi (script có `pause` khi lỗi).
+
+---
+
+## 0b. Gõ tắt bằng `./run` (khuyến nghị)
 
 Trong thư mục repo, gõ **`./run <lệnh>`** — script tự bật môi trường conda, không cần
 `source ... && conda activate` nữa:
@@ -40,7 +84,7 @@ Sau đó chỉ cần: `demo` · `demo5` · `view` · `camcheck` · `testfast` ·
 
 ---
 
-## 0b. Cách thủ công (khi không dùng `./run`) — chạy 2 dòng mỗi khi mở terminal
+## 0c. Cách thủ công (khi không dùng `./run`) — chạy 2 dòng mỗi khi mở terminal
 
 ```bash
 cd /mnt/d/DOAN-NAB
