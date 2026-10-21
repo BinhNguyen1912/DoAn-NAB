@@ -265,6 +265,7 @@ class TestCtrlCFlush:
         monkeypatch.setattr(run_live.cv2, "imshow", lambda *a, **k: None)
         monkeypatch.setattr(run_live.cv2, "destroyAllWindows", lambda *a, **k: None)
         monkeypatch.setattr(run_live.cv2, "waitKey", lambda *a, **k: -1)
+        monkeypatch.setattr(run_live.cv2, "getWindowProperty", lambda *a, **k: 1.0)  # cửa sổ còn mở
 
         cfg = _write_cfg(tmp_path, f"""
             checkpoint: {video}
@@ -299,3 +300,50 @@ class TestKhongGhiDeKhiLoi:
 
         assert csv_out.read_text() == "frame_idx,latency_ms\n0,123\n"   # còn nguyên
         assert not js_out.exists()
+
+
+class TestDongCuaSoBangX:
+    """Bug 21-10: bấm X trên cửa sổ OpenCV → process vẫn chạy mãi, phải kill tay."""
+
+    def test_cua_so_bi_dong_tra_true(self, monkeypatch):
+        import tools.run_live as rl
+
+        monkeypatch.setattr(rl.cv2, "getWindowProperty", lambda *a, **k: 0.0)
+        assert rl._window_closed("w") is True
+
+    def test_cua_so_con_mo_tra_false(self, monkeypatch):
+        import tools.run_live as rl
+
+        monkeypatch.setattr(rl.cv2, "getWindowProperty", lambda *a, **k: 1.0)
+        assert rl._window_closed("w") is False
+
+    def test_cua_so_da_huy_khong_crash(self, monkeypatch):
+        import tools.run_live as rl
+
+        def boom(*a, **k):
+            raise rl.cv2.error("window destroyed")
+
+        monkeypatch.setattr(rl.cv2, "getWindowProperty", boom)
+        assert rl._window_closed("w") is True
+
+    def test_display_tra_quit_key_khi_cua_so_dong(self, tmp_path, video, fake_engine, monkeypatch):
+        """on_display phải trả phím thoát để vòng lặp kết thúc (không treo process)."""
+        import tools.run_live as rl
+        from src.live_pipeline import QUIT_KEYS
+
+        monkeypatch.setattr(rl.cv2, "namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr(rl.cv2, "setMouseCallback", lambda *a, **k: None)
+        monkeypatch.setattr(rl.cv2, "imshow", lambda *a, **k: None)
+        monkeypatch.setattr(rl.cv2, "destroyAllWindows", lambda *a, **k: None)
+        monkeypatch.setattr(rl.cv2, "waitKey", lambda *a, **k: -1)
+        monkeypatch.setattr(rl.cv2, "getWindowProperty", lambda *a, **k: 0.0)  # X bị bấm
+
+        cfg = _write_cfg(tmp_path, f"""
+            checkpoint: {video}
+            source: {video}
+            max_frames: 1
+            """)
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg, "--display",
+                                          "--bbox", "60,60,40,40"])
+        run_live.main()          # không được treo
+        assert list(QUIT_KEYS)      # sanity

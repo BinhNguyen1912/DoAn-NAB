@@ -11,6 +11,7 @@ ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 cd "$ROOT"
 
 PYTHON="${PYTHON:-python}"
+export PYTHONUNBUFFERED=1     # in log ngay (không bị buffer khi chạy nền/ redirect)
 if ! command -v "$PYTHON" >/dev/null 2>&1; then
   echo "[LOI] Không thấy 'python' — chạy: source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai"
   exit 1

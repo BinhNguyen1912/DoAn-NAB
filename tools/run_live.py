@@ -40,7 +40,7 @@ except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn prog
     pass
 
 from src.tracker_engine import TrackerEngine                 # noqa: E402
-from src.live_pipeline import run_interactive, run_tracking  # noqa: E402
+from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
 from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
@@ -48,6 +48,18 @@ from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
+
+
+def _window_closed(window_name):
+    """True nếu người dùng đã đóng cửa sổ bằng nút X (OpenCV không tự thoát chương trình).
+
+    Lỗi thật 21-10: bấm X thì cửa sổ biến mất nhưng process vẫn chạy mãi, phải kill tay.
+    """
+    try:
+        visible = cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE)
+        return visible < 1
+    except cv2.error:
+        return True          # cửa sổ đã bị huỷ hẳn
 
 
 def _device_note(device):
@@ -154,7 +166,11 @@ def _run_display(engine, args):
 
         def on_display(img, mode):
             cv2.imshow(WINDOW_NAME, img)
-            return cv2.waitKey(1) & 0xFF
+            key = cv2.waitKey(1) & 0xFF
+            if _window_closed(WINDOW_NAME):
+                print("[pipeline] cửa sổ đã đóng — thoát")
+                return QUIT_KEYS[0]
+            return key
 
         def on_result(result):
             print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
