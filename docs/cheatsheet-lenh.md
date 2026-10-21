@@ -5,7 +5,42 @@
 
 ---
 
-## 0. Chuẩn bị — chạy 2 dòng này mỗi khi mở terminal mới
+## 0. Gõ tắt bằng `./run` (khuyến nghị)
+
+Trong thư mục repo, gõ **`./run <lệnh>`** — script tự bật môi trường conda, không cần
+`source ... && conda activate` nữa:
+
+| Lệnh | Tác dụng |
+|---|---|
+| `./run demo` | Demo webcam mượt + ghi `data/webcam_smooth.mp4` + CSV + JSON |
+| `./run demo5` | Demo 5 khung rồi tự thoát (kiểm môi trường ~20 giây) |
+| `./run view` | Chỉ mở cửa sổ xem, không ghi file |
+| `./run video [file]` | Demo trên video file (mặc định `data/_gui_test.mp4`) |
+| `./run fast` | Demo bản nhanh (image_size 256 + reanchor 3) |
+| `./run check 0` | Kiểm nguồn camera 5 giây (0 = webcam) |
+| `./run phone` | Quét LAN tìm URL camera điện thoại |
+| `./run cam` | In lệnh `usbipd` để cấp webcam cho WSL |
+| `./run test` | Test nhanh (~10 giây, 140+ test) |
+| `./run testall` | Toàn bộ test (~2 phút, cần checkpoint) |
+| `./run lint` | `ruff check .` |
+| `./run charts [csv…]` | Vẽ biểu đồ báo cáo (mặc định `data/smooth_metrics.csv`) |
+| `./run summary` | In tóm tắt mọi file `*_summary.json` |
+| `./run gpu` | In link Colab + cách đo GPU |
+| `./run env` | In trạng thái: python, torch, opencv, webcam, GUI |
+| `./run help` | Bảng lệnh |
+
+**Gõ còn ngắn hơn nữa (alias):**
+```bash
+./run aliases --install     # thêm alias vào ~/.bashrc (chỉ 1 lần)
+source ~/.bashrc            # hoặc mở terminal mới
+```
+Sau đó chỉ cần: `demo` · `demo5` · `view` · `camcheck` · `testfast` · `charts` · `camenv`
+
+`./run aliases` (không có `--install`) chỉ **in** khối alias để bạn tự dán nếu muốn.
+
+---
+
+## 0b. Cách thủ công (khi không dùng `./run`) — chạy 2 dòng mỗi khi mở terminal
 
 ```bash
 cd /mnt/d/DOAN-NAB

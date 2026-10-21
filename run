@@ -1,0 +1,195 @@
+#!/usr/bin/env bash
+# Lệnh tắt cho đồ án — gõ ngắn, không phải nhớ tham số dài.
+#
+#   ./run              (hoặc ./run help)   → xem danh sách lệnh
+#   ./run demo                             → demo webcam mượt + ghi video/số liệu
+#   ./run test                             → test nhanh (~10 giây)
+#
+# Script tự: vào thư mục repo + bật môi trường conda `samurai`, nên bạn KHÔNG cần
+# chạy `source ~/miniconda3/... && conda activate samurai` trước.
+set -uo pipefail
+
+ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+cd "$ROOT"
+
+PYTHON="${PYTHON:-python}"
+
+# --- tự bật môi trường nếu chưa ---
+activate_env() {
+  if [ "${CONDA_DEFAULT_ENV:-}" = "samurai" ]; then
+    return 0
+  fi
+  if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then
+    # shellcheck disable=SC1091
+    source "$HOME/miniconda3/etc/profile.d/conda.sh"
+    conda activate samurai
+  elif command -v conda >/dev/null 2>&1; then
+    conda activate samurai
+  fi
+  if ! command -v "$PYTHON" >/dev/null 2>&1; then
+    echo "[LOI] không tìm thấy python. Cài môi trường theo README mục 1,"
+    echo "      hoặc chạy thủ công: source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai"
+    exit 1
+  fi
+}
+
+usage() {
+  cat <<'EOF'
+Lệnh tắt của đồ án Camera AI — ./run <lệnh>
+
+  DEMO
+    demo            Demo webcam mượt + ghi data/webcam_smooth.mp4 + CSV + JSON
+    demo5           Demo 5 khung rồi tự thoát (kiểm tra môi trường ~20 giây)
+    view            Chỉ mở cửa sổ xem, không ghi file
+    video [file]    Demo trên video file (mặc định data/_gui_test.mp4)
+    fast            Demo bản nhanh hơn (image_size 256, reanchor 3)
+
+  NGUỒN CAMERA
+    check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
+    phone           Quét LAN tìm URL camera điện thoại
+    cam             Hướng dẫn cấp lại webcam cho WSL (usbipd, chạy trên Windows)
+
+  KIỂM TRA CHẤT LƯỢNG
+    test            Test nhanh (~10 giây, không cần checkpoint)
+    testall         Toàn bộ test (~2 phút, cần checkpoint)
+    lint            ruff check .
+
+  SỐ LIỆU & BÁO CÁO
+    charts [csv…]   Vẽ biểu đồ từ CSV (mặc định data/smooth_metrics.csv)
+    summary         In tóm tắt các file *_summary.json đang có
+    gpu             In link Colab + lệnh chạy GPU
+
+  KHÁC
+    env             In trạng thái môi trường (python, torch, opencv, webcam, GUI)
+    help            In bảng này
+
+Ví dụ:  ./run demo      ./run check 0      ./run charts data/gpu_metrics.csv
+EOF
+}
+
+cmd="${1:-help}"
+shift || true
+
+case "$cmd" in
+  demo)
+    activate_env
+    bash scripts/demo_webcam.sh "$@"
+    ;;
+  demo5)
+    activate_env
+    bash scripts/demo_webcam.sh --max-frames 5 "$@"
+    ;;
+  view)
+    activate_env
+    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --image-size 384
+    ;;
+  video)
+    activate_env
+    video="${1:-data/_gui_test.mp4}"
+    shift || true
+    exec "$PYTHON" tools/run_live.py --source "$video" --display --smooth --image-size 384 "$@"
+    ;;
+  fast)
+    activate_env
+    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth \
+      --image-size 256 --reanchor-every 3
+    ;;
+  check)
+    activate_env
+    exec "$PYTHON" tools/check_video_source.py --source "${1:-0}" --num "${2:-10}"
+    ;;
+  phone)
+    activate_env
+    exec "$PYTHON" tools/find_phone_camera.py "$@"
+    ;;
+  cam)
+    cat <<'EOF'
+Cấp webcam cho WSL — chạy trong PowerShell (Admin) trên WINDOWS:
+  usbipd list                      # tìm dòng "HD Webcam", ghi BUSID (ví dụ 1-8)
+  usbipd attach --wsl --busid 1-8  # mỗi lần khởi động lại WSL cần chạy lại
+  usbipd detach --busid 1-8        # trả camera lại cho Windows
+
+Kiểm trong WSL:  ls /dev/video0   →  ./run check 0
+EOF
+    ;;
+  test)
+    activate_env
+    exec "$PYTHON" -m pytest -m "not slow" "$@"
+    ;;
+  testall)
+    activate_env
+    exec "$PYTHON" -m pytest "$@"
+    ;;
+  lint)
+    activate_env
+    exec "$PYTHON" -m ruff check . "$@"
+    ;;
+  charts)
+    activate_env
+    if [ "$#" -eq 0 ]; then
+      set -- data/smooth_metrics.csv
+    fi
+    exec "$PYTHON" scripts/plot_metrics.py "$@"
+    ;;
+  summary)
+    activate_env
+    "$PYTHON" - <<'PY'
+import glob, json, os
+files = sorted(glob.glob("data/*_summary.json"))
+if not files:
+    print("Chưa có file *_summary.json — chạy ./run demo hoặc ./run video trước.")
+for f in files:
+    d = json.load(open(f, encoding="utf-8"))
+    print(f"{os.path.basename(f):28} {d.get('total_frames','?'):>4} frame | "
+          f"mean={d.get('mean_latency_ms',0):7.0f} ms | p95={d.get('p95_latency_ms',0):7.0f} | "
+          f"FPS={d.get('effective_fps',0):5.2f} | mất dấu={d.get('lost_count',0)}")
+PY
+    ;;
+  gpu)
+    cat <<'EOF'
+Đo trên GPU (miễn phí, ~10 phút lần đầu):
+  Mở: https://colab.research.google.com/github/BinhNguyen1912/DoAn-NAB/blob/main/notebooks/colab_gpu_evaluation.ipynb
+  → Runtime → Change runtime type → T4 GPU → Save
+  → chạy cell "⚡ CHẠY TẤT CẢ"   (hoặc trong Colab: !python scripts/colab_run_all.py)
+  → tải data/colab_gpu_results.zip về máy, chép vào D:\DOAN-NAB\data\
+Kỳ vọng: mean≈65 ms | FPS≈15,3 (Tesla T4)
+EOF
+    ;;
+  env)
+    activate_env
+    echo "repo      : $ROOT"
+    echo "env       : ${CONDA_DEFAULT_ENV:-?}"
+    "$PYTHON" - <<'PY'
+import shutil, cv2, torch
+print("python    :", __import__("sys").version.split()[0], "|", shutil.which("python"))
+print("torch     :", torch.__version__, "| CUDA:", torch.cuda.is_available())
+print("opencv    :", cv2.__version__)
+print("webcam    :", "/dev/video0 có" if __import__("os").path.exists("/dev/video0") else "/dev/video0 KHÔNG có (./run cam)")
+print("GUI       :", "DISPLAY=" + (__import__("os").environ.get("DISPLAY") or "(trống)"))
+PY
+    ;;
+  aliases)
+    if [ "${1:-}" = "--install" ]; then
+      if grep -q "doan camera ai (auto)" "$HOME/.bashrc" 2>/dev/null; then
+        echo "Alias đã có trong ~/.bashrc (không thêm trùng)."
+      else
+        printf '\n' >> "$HOME/.bashrc"
+        cat "$ROOT/scripts/aliases.sh" >> "$HOME/.bashrc"
+        echo "Đã thêm alias vào ~/.bashrc → mở terminal mới hoặc chạy: source ~/.bashrc"
+      fi
+    else
+      echo "Dán khối sau vào cuối ~/.bashrc (hoặc chạy: ./run aliases --install):"
+      echo
+      cat "$ROOT/scripts/aliases.sh"
+    fi
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  *)
+    echo "[LOI] không có lệnh '$cmd'."
+    echo
+    usage
+    exit 2
+    ;;
+esac

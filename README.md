@@ -28,7 +28,17 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 - `src/metrics_logger.py` — hàm thuần: CSV từng frame + summary mean/p95/tỷ lệ mất dấu.
 - Cấu hình YAML: `configs/default.yaml` (checkpoint, nguồn, ghi mp4, metrics).
 
-## 0. Chưa biết thuật ngữ? Đọc file này trước
+## 0. Gõ tắt — `./run`
+
+```bash
+./run demo      # demo webcam mượt + ghi video/số liệu (tự bật môi trường conda)
+./run test      # test nhanh ~10 giây
+./run help      # xem tất cả lệnh tắt
+./run aliases --install   # (tuỳ chọn) tạo alias ngắn hơn: demo, testfast, charts…
+```
+Danh sách đầy đủ + giải thích từng lệnh: `docs/cheatsheet-lenh.md`.
+
+## 0b. Chưa biết thuật ngữ? Đọc file này trước
 
 **`docs/cheatsheet-lenh.md`** — mọi lệnh cần dùng, mỗi lệnh có giải thích "làm gì → kỳ vọng → khi nào dùng".
 **`docs/giai-thich-do-an.md`** — giải thích toàn bộ đồ án bằng ngôn ngữ đời thường: từ điển thuật ngữ
