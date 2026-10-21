@@ -263,6 +263,25 @@ T4 là **cận dưới**; GPU Ampere/Ada (A100, RTX 30/40) sẽ nhanh hơn nữa
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.
 
+### Chọn `--image-size` nào? (đo trên laptop này, cùng một nguồn 720p)
+
+Nhịp cập nhật **khung đỏ + mặt nạ** = 1000 / ms mỗi lần suy luận (video vẫn mượt 19 FPS nhờ `--smooth`).
+
+| `--image-size` | ms/lần | Khung đỏ cập nhật | Chất lượng biên | Dùng khi |
+|---|---|---|---|---|
+| 1024 (mặc định) | 3 700–5 000 | 0,2–0,27 lần/s | tốt nhất | xuất ảnh cho báo cáo (headless, không cần realtime) |
+| **512** | **572** | **1,75 lần/s** | tốt | khi đứng yên, cần biên nét |
+| **384** | **316** | **3,2 lần/s** | khá | demo hiện tại (cân bằng) |
+| **320** | **236** | **4,2 lần/s** | trung bình | ⭐ demo CPU: khung đỏ phản hồi tốt hơn |
+| **256** | **161** | **6,2 lần/s** | giảm rõ (IoU 0,79 khi có che) | cần khung đỏ nhanh nhất trên CPU |
+| GPU T4 (512 + reanchor) | 65 | 15,4 lần/s | tốt | video minh hoạ + số liệu GPU |
+
+**Ngưỡng "đủ" theo cảm nhận:**
+- Khung đỏ **< 2 lần/s** → giật, khó theo dõi
+- **5–10 lần/s** → dùng được (mắt thấy cập nhật đều)
+- **≥ 10 lần/s** → mượt (chỉ đạt trên GPU với cấu hình này)
+- Video hiển thị **≥ 15 FPS** → mượt (chế độ `--smooth` đang cho ~19 FPS)
+
 ### Chế độ MƯỢT cho demo webcam (`--smooth`) — đo thật
 
 Vấn đề: nếu đọc → suy luận → hiển thị tuần tự thì cửa sổ chỉ cập nhật bằng tốc độ model
