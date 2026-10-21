@@ -248,7 +248,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         metrics.log(_record_from(last_result))
                     mode = "track"
             else:  # track
-                img = _annotate(frame, last_result, visualizer)
+                if visualizer is not None:
+                    img = visualizer.update(frame, last_result, switch_warning=switch)
+                else:
+                    img = draw_overlay_minimal(frame, last_result)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
                 key = display(img, "track")
