@@ -18,6 +18,7 @@ Lưu ý  : RTSP/webcam là adapter mỏng — kiểm chứng thủ công; test t
          dùng chung; mỗi adapter chỉ khai báo cách tạo capture + loại lỗi khi mở thất bại.
 """
 from abc import ABC, abstractmethod
+import os
 import sys
 
 import cv2
@@ -155,6 +156,63 @@ class CameraVideoSource(_CaptureSource):
         )
 
 
+class FramesVideoSource(VideoSource):
+    """Đọc frame từ **thư mục ảnh** (JPEG/PNG đã tách sẵn) — định dạng SAM 2 gốc dùng.
+
+    Vì sao cần: bản SAM 2 gốc nhận `video_path` là **thư mục JPEG**, không nhận file video.
+    Repo có sẵn `data/demo_input_frames/` (90 ảnh 1280x720 tách từ video demo) nên cần adapter
+    này để chạy được:  `python tools/run_live.py --source data/demo_input_frames --display`
+    """
+
+    _EXTS = (".jpg", ".jpeg", ".png", ".bmp")
+
+    def __init__(self, path, fps=30.0):
+        self._path = str(path)
+        self._fps = float(fps)
+        self._files = []
+        self._idx = 0
+        self._size = None
+
+    def open(self):
+        names = [n for n in os.listdir(self._path)
+                 if n.lower().endswith(self._EXTS)] if os.path.isdir(self._path) else []
+        self._files = sorted(names)              # 00000.jpg, 00001.jpg, ...
+        if not self._files:
+            raise FileNotFoundError(
+                f"Thư mục '{self._path}' không có ảnh nào ({', '.join(self._EXTS)}) — "
+                f"kiểm tra lại đường dẫn hoặc tách frame từ video trước"
+            )
+        first = cv2.imread(os.path.join(self._path, self._files[0]))
+        if first is None:
+            raise FileNotFoundError(f"Không đọc được ảnh đầu tiên trong '{self._path}'")
+        self._size = (first.shape[1], first.shape[0])   # (W, H)
+        self._idx = 0
+        return self
+
+    @property
+    def frame_size(self):
+        if self._size is None:
+            raise RuntimeError("Gọi open() trước khi đọc thuộc tính nguồn")
+        return self._size
+
+    @property
+    def source_fps(self):
+        return self._fps
+
+    def read(self):
+        if not self._files:
+            raise RuntimeError("Gọi open() trước khi read()")
+        if self._idx >= len(self._files):
+            return None
+        frame = cv2.imread(os.path.join(self._path, self._files[self._idx]))
+        self._idx += 1
+        return frame
+
+    def close(self):
+        self._files = []
+        self._idx = 0
+
+
 class HttpVideoSource(_CaptureSource):
     """Camera điện thoại/IP phát MJPEG qua HTTP (IP Webcam, DroidCam, iCam…).
 
@@ -225,7 +283,7 @@ class RtspVideoSource(_CaptureSource):
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:
     """Factory duy nhất: int → webcam; rtsp:// → RTSP; http(s):// → nguồn mạng MJPEG;
-    còn lại → video file.
+    thư mục → dãy ảnh (frames); còn lại → video file.
 
     Trả về instance CHƯA mở (lazy) — gọi .open() hoặc dùng `with`.
     """
@@ -237,4 +295,6 @@ def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEO
         return RtspVideoSource(text, open_timeout_ms=open_timeout_ms)
     if lower.startswith(("http://", "https://")):
         return HttpVideoSource(text, open_timeout_ms=open_timeout_ms)
+    if os.path.isdir(text):                      # thư mục ảnh (định dạng SAM 2 gốc)
+        return FramesVideoSource(text)
     return FileVideoSource(text)

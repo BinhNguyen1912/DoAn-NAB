@@ -18,7 +18,7 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
                                         └─► cửa sổ OpenCV / video out mp4
 ```
 
-- `src/video_source.py` — 1 interface cho 3 nguồn: webcam index, RTSP, video file.
+- `src/video_source.py` — 1 interface cho 4 nguồn: webcam index, RTSP, video file, **thư mục ảnh** (frames).
 - `src/tracker_engine.py` — seam trung tâm: `start(bbox)` → `process(frame)` mỗi frame →
   mask + bbox + điểm tin cậy + ms. Đóng gói SAMURAI nguyên bản (Kalman + memory bank).
 - `src/prompt_selector.py` — máy trạng thái kéo-thả chọn ô; phím **r** chọn lại đối tượng.
