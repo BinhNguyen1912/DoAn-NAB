@@ -281,5 +281,7 @@ ls /dev/video0                     # phải thấy mới dùng được webcam t
 | `Không mở được camera index 0` | WSL chưa thấy webcam / Windows đang giữ | Windows: `usbipd attach --wsl --busid 1-8`; đóng Teams/Camera app |
 | Cửa sổ không hiện / process abort | thiếu 2 thư viện Qt | `sudo apt install -y libice6 libsm6` |
 | HUD hiện ô `?` thay vì dấu tiếng Việt | không tìm được font | `export CAMAI_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` |
-| Lệnh dài bị `expected one argument` | copy-paste làm vỡ dòng | dùng `bash scripts/demo_webcam.sh` thay vì gõ tay |
+| Lệnh dài bị `expected one argument` | copy-paste làm vỡ dòng | dùng `./run demo` thay vì gõ tay |
+| `RuntimeError: Không mở được camera index 0` | webcam chưa `attach` vào WSL (thường sau khi khởi động lại) | (Windows, Admin) `usbipd attach --wsl --busid 1-8` → `./run check 0` |
+| Demo không có webcam mà vẫn muốn thử | — | `./run video` (chạy trên video file) |
 | Mất số liệu khi tắt máy | tắt WSL đột ngột | bấm `q` trong cửa sổ trước khi `wsl --shutdown` |

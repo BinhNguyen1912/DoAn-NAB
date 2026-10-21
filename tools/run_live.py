@@ -86,8 +86,15 @@ def _make_metrics(args):
 
 
 def _finish_metrics(metrics, args):
-    """Xuất CSV + (tuỳ chọn) summary JSON — gọi trong finally để Ctrl+C không mất số liệu."""
+    """Xuất CSV + (tuỳ chọn) summary JSON — gọi trong finally để Ctrl+C không mất số liệu.
+
+    Nếu phiên KHÔNG có frame nào (mở camera lỗi, Ctrl+C quá sớm) thì **không ghi**, để không
+    ghi đè kết quả tốt của lần chạy trước bằng file rỗng (bug gặp 21-10).
+    """
     if metrics is None:
+        return
+    if not metrics.records:
+        print("[metrics] chưa có frame nào — không ghi file (giữ nguyên kết quả lần chạy trước)")
         return
     metrics.write_csv(args.metrics_csv)
     if args.metrics_summary:

@@ -281,3 +281,21 @@ class TestCtrlCFlush:
         assert exc.value.code == 0
         assert csv_out.is_file()
         assert rec.is_file() and rec.stat().st_size > 0   # recorder đóng đúng trong finally
+
+class TestKhongGhiDeKhiLoi:
+    """Bug 21-10: mở camera lỗi → phiên 0 frame vẫn ghi CSV/JSON rỗng, đè mất số liệu tốt."""
+
+    def test_phien_0_frame_khong_ghi_file(self, tmp_path):
+        from src.metrics_logger import MetricsLogger
+        from tools.run_live import _finish_metrics
+
+        csv_out = tmp_path / "m.csv"
+        js_out = tmp_path / "s.json"
+        existing = tmp_path / "m.csv"
+        existing.write_text("frame_idx,latency_ms\n0,123\n")     # số liệu tốt của lần trước
+
+        args = type("A", (), {"metrics_csv": str(csv_out), "metrics_summary": str(js_out)})()
+        _finish_metrics(MetricsLogger(), args)                   # logger rỗng
+
+        assert csv_out.read_text() == "frame_idx,latency_ms\n0,123\n"   # còn nguyên
+        assert not js_out.exists()
