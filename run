@@ -73,7 +73,18 @@ shift || true
 case "$cmd" in
   demo)
     activate_env
+    if [ ! -e /dev/video0 ]; then
+      cat <<'EOF'
+[demo] CHƯA có webcam trong WSL (/dev/video0 không tồn tại).
+  Cách 1 — gắn webcam laptop vào WSL (tự dò BUSID):   ./run cam attach
+  Cách 2 — demo bằng video (không cần webcam):        ./run video
+  Cách 3 — kiểm nguồn camera trước:                    ./run check 0
+EOF
+      exit 1
+    fi
     bash scripts/demo_webcam.sh "$@"
+    echo
+    echo "[demo] xem kết quả:  ./run summary   (bảng số)   |   ./run charts   (biểu đồ)"
     ;;
   demo5)
     activate_env

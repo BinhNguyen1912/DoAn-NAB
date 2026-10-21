@@ -311,7 +311,7 @@ bash scripts/demo_webcam.sh --max-frames 5    # chạy thử 5 frame
 
 Hoặc gõ đầy đủ (một dòng, đừng để xuống hàng giữa tham số):
 ```bash
-python tools/run_live.py --source 0 --display --smooth --image-size 384
+python tools/run_live.py --source 0 --display --smooth --image-size 320
 ```
 
 Muốn **ẩn đường quỹ đạo** (màu tím) cho gọn mắt: thêm `--hide-trajectory`

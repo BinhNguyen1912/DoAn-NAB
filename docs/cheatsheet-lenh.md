@@ -104,7 +104,7 @@ source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai
 ```bash
 bash scripts/demo_webcam.sh
 ```
-- **Làm gì:** mở cửa sổ webcam ở **chế độ mượt** (`--smooth`, `--image-size 384`), đồng thời ghi
+- **Làm gì:** mở cửa sổ webcam ở **chế độ mượt** (`--smooth`, `--image-size 320`), đồng thời ghi
   `data/webcam_smooth.mp4`, `data/smooth_metrics.csv`, `data/smooth_summary.json`.
 - **Kỳ vọng:** video mượt ~19 FPS, HUD 4 dòng; kéo chuột để chọn đối tượng.
 - **Khi nào:** khi cần vừa demo vừa có video + số liệu cho báo cáo.
@@ -127,7 +127,7 @@ python tools/run_live.py --source 0 --display --smooth --image-size 384
 
 | Tham số | Tác dụng | Khi nào |
 |---|---|---|
-| `--image-size 384` | model thu nhỏ ảnh về 384 → **nhanh ~5–7×** so với 1024 | mặc định cho demo |
+| `--image-size 320` | model thu nhỏ ảnh về 384 → **nhanh ~5–7×** so với 1024 | mặc định cho demo |
 | `--image-size 256` | nhanh hơn nữa (~4 FPS) nhưng **kém chi tiết** vật nhỏ | khi cần mask cập nhật dày |
 | `--reanchor-every 3` | reset bộ nhớ mỗi 3 khung → **độ trễ không tăng dần** | demo không có che khuất |
 | `--record-fps 1` | ghi video 1 khung/giây → phát lại gần đúng tốc độ CPU thật | khi làm video minh chứng trung thực |

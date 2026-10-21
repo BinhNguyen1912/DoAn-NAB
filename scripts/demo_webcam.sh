@@ -17,13 +17,13 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[demo] webcam (source 0) · chế độ MƯỢT · image_size 384"
+echo "[demo] webcam (source 0) · chế độ MƯỢT · image_size ${IMG_SIZE:-320} (khung đỏ ~4 lần/giây)"
 echo "[demo] xuất: data/webcam_smooth.mp4 + data/smooth_metrics.csv + data/smooth_summary.json"
 "$PYTHON" tools/run_live.py \
   --source 0 \
   --display \
   --smooth \
-  --image-size 384 \
+  --image-size "${IMG_SIZE:-320}" \
   --record data/webcam_smooth.mp4 \
   --metrics-csv data/smooth_metrics.csv \
   --metrics-summary data/smooth_summary.json \
