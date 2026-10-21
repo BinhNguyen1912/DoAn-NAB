@@ -63,7 +63,8 @@ Trong thư mục repo, gõ **`./run <lệnh>`** — script tự bật môi trư�
 | `./run fast` | Demo bản nhanh (image_size 256 + reanchor 3) |
 | `./run check 0` | Kiểm nguồn camera 5 giây (0 = webcam) |
 | `./run phone` | Quét LAN tìm URL camera điện thoại |
-| `./run cam` | In lệnh `usbipd` để cấp webcam cho WSL |
+| `./run cam` | Xem trạng thái webcam + **BUSID hiện tại** (BUSID đổi sau mỗi lần khởi động lại!) |
+| `./run cam attach` | **Tự dò BUSID rồi gắn webcam vào WSL** (không cần Admin) |
 | `./run test` | Test nhanh (~10 giây, 140+ test) |
 | `./run testall` | Toàn bộ test (~2 phút, cần checkpoint) |
 | `./run lint` | `ruff check .` |

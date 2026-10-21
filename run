@@ -103,14 +103,22 @@ case "$cmd" in
     exec "$PYTHON" tools/find_phone_camera.py "$@"
     ;;
   cam)
-    cat <<'EOF'
-Cấp webcam cho WSL — chạy trong PowerShell (Admin) trên WINDOWS:
-  usbipd list                      # tìm dòng "HD Webcam", ghi BUSID (ví dụ 1-8)
-  usbipd attach --wsl --busid 1-8  # mỗi lần khởi động lại WSL cần chạy lại
-  usbipd detach --busid 1-8        # trả camera lại cho Windows
+    activate_env
+    if [ "${1:-}" = "attach" ]; then
+      "$PYTHON" scripts/usbipd_helper.py attach
+    else
+      "$PYTHON" scripts/usbipd_helper.py status || true
+      cat <<'EOF'
 
-Kiểm trong WSL:  ls /dev/video0   →  ./run check 0
+Cấp webcam cho WSL — tự tìm BUSID (BUSID ĐỔI sau mỗi lần khởi động lại):
+  ./run cam attach        # tự dò BUSID hiện tại rồi attach (không cần Admin)
+  ./run cam status        # xem bảng thiết bị usbipd
+
+Nếu báo 'Device busy (exported)' (cổng USB/IP trong Linux bị kẹt):
+  (PowerShell) wsl --shutdown   → mở lại Ubuntu → ./run cam attach
+Trước khi tắt máy/WSL, nhớ nhả camera: (PowerShell) usbipd detach --busid <BUSID>
 EOF
+    fi
     ;;
   test)
     activate_env
