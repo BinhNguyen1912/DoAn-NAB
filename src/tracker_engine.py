@@ -86,8 +86,11 @@ class _StreamingImages:
 class TrackerEngine:
     """Streaming per-frame trên 1 đối tượng (single object, theo ADR-0001)."""
 
-    def __init__(self, predictor):
+    def __init__(self, predictor, mask_threshold=0.0):
+        """mask_threshold: ngưỡng logit để cắt rìa mờ của mask (0.0 = lấy hết phần model cho là
+        đối tượng; 0.5–2.0 = chỉ giữ phần tự tin → mask co lại, bớt "ăn" tóc/viền)."""
         self._predictor = predictor
+        self._mask_threshold = float(mask_threshold)
         self._state = None
         self._images = None
         self._tmpdir = None
@@ -97,7 +100,7 @@ class TrackerEngine:
     @classmethod
     def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
                       model_cfg=MODEL_CFG, image_size=None,
-                      apply_postprocessing=False) -> "TrackerEngine":
+                      apply_postprocessing=False, mask_threshold=0.0) -> "TrackerEngine":
         """Dựng predictor SAMURAI (mặc định tiny trên CPU; ~20-60s).
 
         model_cfg: đường dẫn YAML của SAM 2 — có thể đè qua config YAML (ticket 08).
@@ -120,7 +123,7 @@ class TrackerEngine:
             apply_postprocessing=apply_postprocessing,
             hydra_overrides_extra=build_overrides(image_size),
         )
-        return cls(predictor)
+        return cls(predictor, mask_threshold=mask_threshold)
 
     # ---------- preprocessing (đối chiếu _load_img_as_tensor của SAM 2) ----------
 
@@ -212,7 +215,7 @@ class TrackerEngine:
         out_idx, obj_ids, video_res_masks = yielded
         assert out_idx == frame_idx, f"thứ tự frame lệch: kỳ vọng {frame_idx}, nhận {out_idx}"
 
-        mask_bool, bbox = self._mask_to_bbox(video_res_masks[0])
+        mask_bool, bbox = self._mask_to_bbox(video_res_masks[0], self._mask_threshold)
         score = self._object_score(frame_idx)
         elapsed_ms = (time.time() - t0) * 1000.0
         return TrackingResult(
@@ -224,9 +227,13 @@ class TrackerEngine:
         )
 
     @staticmethod
-    def _mask_to_bbox(mask_scores):
-        """Video_res mask (1, H, W) float → (mask bool, bbox gọn)."""
-        mask = (mask_scores[0] > 0.0).cpu().numpy()
+    def _mask_to_bbox(mask_scores, threshold=0.0):
+        """Video_res mask (1, H, W) logit float → (mask bool, bbox gọn).
+
+        threshold: logit > threshold được coi là thuộc đối tượng. Nâng ngưỡng → mask co lại
+        (cắt rìa mờ như tóc/viền), hạ về 0 → lấy đúng như model trả.
+        """
+        mask = (mask_scores[0] > threshold).cpu().numpy()
         ys, xs = np.nonzero(mask)
         if len(xs) == 0:
             return mask, (0, 0, 0, 0)

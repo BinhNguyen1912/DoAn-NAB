@@ -160,3 +160,17 @@ class TestDeviceConfig:
     def test_yaml_dat_gi_tri_la_van_load_duoc_nhung_cli_chan(self, tmp_path):
         # config không chặn giá trị lạ (CLI argparse mới là nơi kiểm choices)
         assert load_config(_write_yaml(tmp_path, "device: tpu\n"))["device"] == "tpu"
+
+
+class TestMaskThresholdConfig:
+    def test_mac_dinh_lay_nhu_model(self):
+        assert DEFAULTS["mask_threshold"] == 0.0
+
+    def test_yaml_dat_so_thuc(self, tmp_path):
+        assert load_config(_write_yaml(tmp_path, "mask_threshold: 1.5\n"))["mask_threshold"] == 1.5
+
+    def test_yaml_sai_kieu_bao_loi(self, tmp_path):
+        import pytest
+
+        with pytest.raises(ValueError, match="mask_threshold"):
+            load_config(_write_yaml(tmp_path, "mask_threshold: cao\n"))

@@ -97,3 +97,39 @@ class TestImageSizeOverride:
 
         assert build_overrides(512) == ["++model.image_size=512"]
         assert build_overrides(768) == ["++model.image_size=768"]
+
+
+class TestNguongMask:
+    """`--mask-threshold`: ngưỡng logit để cắt phần rìa mờ (tóc, viền) khỏi mask.
+
+    Mặc định 0.0 = lấy toàn bộ vùng model cho là đối tượng (dễ "ăn" tóc).
+    Nâng lên 0.5–2.0 = chỉ giữ phần model TỰ TIN, mask co lại quanh vùng chắc chắn.
+    """
+
+    def test_nguong_0_lay_moi_pixel_duong(self):
+        import torch
+
+        from src.tracker_engine import TrackerEngine
+
+        logits = torch.tensor([[[-2.0, 0.1], [0.5, 3.0]]])      # (1,H,W) như propagate trả
+        mask, _ = TrackerEngine._mask_to_bbox(logits, threshold=0.0)
+        assert mask.sum() == 3          # bỏ -2.0, giữ 0.1 / 0.5 / 3.0
+
+    def test_nguong_cao_chi_giu_phan_tu_tin(self):
+        import torch
+
+        from src.tracker_engine import TrackerEngine
+
+        logits = torch.tensor([[[-2.0, 0.1], [0.5, 3.0]]])      # (1,H,W) như propagate trả
+        mask, bbox = TrackerEngine._mask_to_bbox(logits, threshold=1.0)
+        assert mask.sum() == 1          # chỉ còn logit 3.0
+        assert bbox == (1, 1, 1, 1)
+
+    def test_nguong_qua_cao_mask_rong_bbox_0(self):
+        import torch
+
+        from src.tracker_engine import TrackerEngine
+
+        logits = torch.tensor([[[-2.0, 0.1], [0.5, 0.9]]])
+        mask, bbox = TrackerEngine._mask_to_bbox(logits, threshold=5.0)
+        assert mask.sum() == 0 and bbox == (0, 0, 0, 0)

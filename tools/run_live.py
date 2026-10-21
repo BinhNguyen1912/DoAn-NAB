@@ -299,6 +299,9 @@ def main():
                          "(HUD ghi tuổi overlay) — dùng cho demo mượt")
     ap.add_argument("--device", default=None, choices=["cpu", "cuda"],
                     help="thiết bị chạy model: cpu (mặc định) | cuda (Colab GPU/máy NVIDIA)")
+    ap.add_argument("--mask-threshold", type=float, default=None,
+                    help="ngưỡng logit của mask (0 = như model trả; 0.5–2.0 = cắt rìa mờ, "
+                         "mask co lại — dùng khi mask 'ăn' cả tóc/viền)")
     ap.add_argument("--hide-trajectory", action="store_true",
                     help="KHÔNG vẽ đường quỹ đạo (màu tím) — chỉ giữ mặt nạ + ô bao + HUD")
     ap.add_argument("--postprocess", action="store_true",
@@ -328,6 +331,7 @@ def main():
         "device": args.device,
         "smooth_display": args.smooth or None,
         "show_trajectory": (False if args.hide_trajectory else None),
+        "mask_threshold": args.mask_threshold,
         "max_frames": args.max_frames,
         "record_path": args.record,
         "record_fps": args.record_fps,
@@ -347,6 +351,7 @@ def main():
     args.device = cfg["device"]
     args.smooth = bool(args.smooth or cfg["smooth_display"])
     args.show_trajectory = cfg["show_trajectory"] and not args.hide_trajectory
+    args.mask_threshold = cfg["mask_threshold"]
     args.max_frames = cfg["max_frames"]
     args.record_fps = cfg["record_fps"]
     # bật ghi: --record chỉ định, hoặc record_enabled trong config
@@ -369,7 +374,8 @@ def main():
         print(f"[pipeline] device=cuda ({torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
                                          image_size=args.image_size, device=device,
-                                         apply_postprocessing=args.postprocess)
+                                         apply_postprocessing=args.postprocess,
+                                         mask_threshold=args.mask_threshold)
 
     if args.display:
         _run_display(engine, args)

@@ -18,6 +18,7 @@
 9. [Nếu hội đồng hỏi — trả lời mẫu](#9-nếu-hội-đồng-hỏi--trả-lời-mẫu)
 10. [Tự kiểm chứng trong 5 phút](#10-tự-kiểm-chứng-trong-5-phút)
 11. [Phụ lục: dùng WSL — vì sao và làm thế nào](#11-phụ-lục-dùng-wsl--vì-sao-và-làm-thế-nào)
+12. [Vì sao mask "ăn" cả tóc / cả người](#12-vì-sao-mask-ăn-cả-tóc--cả-người)
 
 ---
 
@@ -441,3 +442,44 @@ usbipd detach --busid 1-8
 
 > 💡 Mẹo: đừng đặt môi trường Python (`venv`/conda) **trong** `/mnt/d/...` vì ổ Windows đọc chậm hơn ổ
 > Linux — repo này để môi trường ở `~/miniconda3` (trong home Linux) nên khởi động nhanh.
+
+---
+
+## 12. Vì sao mask "ăn" cả tóc / cả người
+
+> Đây là **hành vi của mô hình**, không phải lỗi lập trình. Hiểu nguyên nhân để trả lời hội đồng
+> và biết dùng đúng tham số.
+
+### 12.1. Sáu nguyên nhân
+
+| # | Nguyên nhân | Giải thích dễ hiểu |
+|---|---|---|
+| 1 | **SAM 2 tách "vật thể", không tách "khuôn mặt"** | Mô hình được dạy để trả lời "vật thể nào nằm trong ô này?", không có khái niệm "mặt người". Khi bạn khoanh mặt, đối tượng liền mạch nhất chứa ô đó thường là **cái đầu** (mặt + tóc) — và khi bạn đứng dậy, **cả người** là một vật thể liền mạch ⇒ mask nở ra theo. |
+| 2 | **Ô chữ nhật bao cả tóc theo hình học** | Bạn vẽ hình chữ nhật quanh mặt; tóc nằm *trong* hình đó. Mô hình lấy ô làm gợi ý mạnh về phạm vi đối tượng → tóc bị tính vào. Tệ hơn: **viền ngoài của tóc tương phản với nền mạnh hơn đường chân tóc** (da và tóc na ná màu) → đường biên mô hình tìm được chính là viền tóc. |
+| 3 | **Chọn ứng viên mask nào** | Với mỗi lần nhắc, SAM 2 trả **3 ứng viên** (cả vật thể / một phần / phần nhỏ). Engine hiện lấy **ứng viên #0 = "cả vật thể"** → ô quanh mặt cho ra **cả đầu**, không phải phần mặt. |
+| 4 | **Độ phân giải đầu vào** | Chạy `--image-size 384` (hoặc 512) thì mô hình nhìn ảnh đã thu nhỏ → **đường chân tóc bị nhoè**, các pixel lưỡng lự vẫn được tính vào. Ở 768/1024 biên rõ hơn. |
+| 5 | **Ngưỡng logit = 0** | Điều kiện "thuộc đối tượng" hiện là `logit > 0` → pixel nào mô hình *hơi nghiêng* về phía trong cũng bị lấy ⇒ dính **rìa mờ** (sợi tóc, bóng đổ). Nâng ngưỡng sẽ cắt rìa này. |
+| 6 | **Trí nhớ + lan truyền thời gian** | Khung đầu bạn định nghĩa "đối tượng" là khuôn mặt → các khung sau mô hình dùng **bộ nhớ** để bám *cùng đối tượng đó*. Người đứng dậy vẫn là **cùng một người**, chỉ to hơn ⇒ mask mở rộng ra toàn thân. Đây là hành vi đúng của *tracking theo vật thể*. |
+
+### 12.2. Ô nhắc (box) không thể nói "chỉ mặt, đừng lấy tóc"
+
+SAM 2 có cơ chế **điểm âm** (click vào tóc để nói "không phải cái này") + **điểm dương** (click vào mặt).
+Giao diện hiện tại chỉ có **kéo ô**, nên **không diễn đạt được việc loại trừ** → đây là **giới hạn tính
+năng**, không phải mô hình kém. (Hướng phát triển: thêm click trái = chọn, click phải = loại trừ.)
+
+### 12.3. Bốn cách giảm ngay, không cần sửa code
+
+| Cách | Lệnh / thao tác | Tác dụng | Đánh đổi |
+|---|---|---|---|
+| **Nâng ngưỡng mask** | `./run demo --mask-threshold 1.0` (thử 0.5 → 1.0 → 2.0) | cắt rìa mờ, mask **co lại** quanh phần chắc chắn | nâng quá cao (≥3) sẽ **mất cả mặt** → mask rỗng, báo mất dấu |
+| **Tăng độ phân giải model** | `./run demo --image-size 768` (hoặc 1024) | biên mặt/tóc nét hơn | chậm hơn ~2–3 lần (0,4 s → 1,2 s/khung ở 768) |
+| **Kéo ô nhỏ, nằm gọn trong mặt** | thao tác chuột | ít "gợi ý" tóc hơn | mô hình vẫn có thể tự mở rộng — cần thử |
+| **Chọn lại khi đổi tư thế** | bấm `r` khi ngồi → đứng | đối tượng đã đổi kích thước ⇒ định nghĩa lại | không tự động (đúng theo spec: không tự bắt lại sau mất dấu) |
+
+### 12.4. Kết luận trung thực để đưa vào báo cáo
+
+> "SAM 2 phân đoạn ở **mức vật thể** (object-level), không phải mức bộ phận (part-level). Vì vậy khi
+> nhắc bằng **ô chữ nhật**, vùng được chọn là *vật thể liền mạch* chứa ô đó — với khuôn mặt thường là
+> **cả đầu (mặt + tóc)**, và khi tư thế thay đổi lớn thì là **cả người**. Đồ án xử lý bằng: ngưỡng logit
+> (`--mask-threshold`), độ phân giải model (`--image-size`), và quy trình chọn lại (`r`). Hướng phát
+> triển: bổ sung **điểm nhắc âm** (click để loại trừ tóc) để đạt mức bộ phận."

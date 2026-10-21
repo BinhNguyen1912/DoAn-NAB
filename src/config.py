@@ -40,11 +40,14 @@ DEFAULTS = {
     "smooth_display": False,
     # Vẽ đường quỹ đạo (màu tím) trên HUD — tắt nếu thấy rối mắt khi demo.
     "show_trajectory": True,
+    # Ngưỡng logit của mask: 0.0 = lấy đúng như model trả (dễ "ăn" tóc/viền);
+    # 0.5–2.0 = chỉ giữ phần model tự tin → mask co lại.
+    "mask_threshold": 0.0,
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
 _INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size")   # source có thể int (webcam) hoặc str (file/RTSP)
-_FLOAT_KEYS = ("record_fps",)
+_FLOAT_KEYS = ("record_fps", "mask_threshold")
 
 
 def _validate(cfg: dict) -> dict:
