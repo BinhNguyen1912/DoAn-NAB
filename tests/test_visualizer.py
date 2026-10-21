@@ -254,3 +254,17 @@ class TestAnQuyDao:
         img = Visualizer(show_trajectory=False).update(_frame(), _result())
         assert img.shape == (240, 320, 3)
         assert not np.array_equal(img[170, 120], np.array([40, 40, 40], np.uint8))  # mask vẫn tô
+
+
+class TestCanhBaoDoiDoiTuong:
+    """Cảnh báo khi nghi bám sang đối tượng khác (chọn mặt A, A trốn → nhảy sang B)."""
+
+    def test_co_canh_bao_thi_ve_chu(self):
+        frame = np.zeros((240, 320, 3), np.uint8)
+        img = Visualizer().update(frame, _result(), switch_warning=True)
+        assert not np.array_equal(img[96:112, :260], frame[96:112, :260])
+
+    def test_khong_canh_bao_thi_khong_ve(self):
+        frame = np.zeros((240, 320, 3), np.uint8)
+        img = Visualizer().update(frame, _result(), switch_warning=False)
+        assert np.array_equal(img[96:112, :260], frame[96:112, :260])

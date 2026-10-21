@@ -18,6 +18,7 @@ import numpy as np
 
 from src.video_source import open_video_source
 from src.metrics_logger import FrameRecord
+from src.identity_guard import is_suspect_switch
 
 _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
@@ -89,6 +90,15 @@ def warn_if_bad_selection(result):
     if ratio > MASK_FRAME_WARN_RATIO:
         print(f"[WARN] mask phủ {ratio * 100:.0f}% khung — ô chọn có thể quá lớn hoặc không "
               f"chứa đối tượng; bấm r để chọn lại")
+
+
+def _switch_warning(prev_bbox, result, frame_shape):
+    """Cảnh báo khi ô bao nhảy quá xa trong 1 bước (nghi bám sang đối tượng khác)."""
+    if is_suspect_switch(prev_bbox, result.bbox, frame_shape):
+        print(f"[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ {tuple(prev_bbox)} "
+              f"sang {result.bbox}) — bấm r chọn lại")
+        return True
+    return False
 
 
 def _record_from(result) -> FrameRecord:
@@ -257,6 +267,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                              summary.processed, reanchor_every)
                 last_result = reanchored if reanchored is not None else engine.process(frame)
+                switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                 if last_result.mask.any():
                     last_bbox = last_result.bbox
                 summary.processed += 1

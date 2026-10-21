@@ -83,14 +83,14 @@ class Visualizer:
 
     # ---------- API công khai ----------
 
-    def update(self, frame, result):
+    def update(self, frame, result, switch_warning=False):
         """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
 
         Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
         luồng dùng `consume()` mỗi lần suy luận và `render()` mỗi frame hiển thị.
         """
         self.consume(result)
-        return self.render(frame, result)
+        return self.render(frame, result, switch_warning=switch_warning)
 
     def consume(self, result):
         """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
@@ -108,7 +108,8 @@ class Visualizer:
         else:
             self.consecutive_lost = 0
 
-    def render(self, frame, result, overlay_age_ms=None, display_fps=None):
+    def render(self, frame, result, overlay_age_ms=None, display_fps=None,
+               switch_warning=False):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
@@ -138,6 +139,8 @@ class Visualizer:
                            (8, 80))
         if self.consecutive_lost > 0:
             self._draw_lost_banner(img)
+        if switch_warning:
+            self._put_text(img, "NGHI NGO DOI TUONG — bam r", (8, 104))
 
         # 5) ghi nếu recorder đang mở
         self._write(img)

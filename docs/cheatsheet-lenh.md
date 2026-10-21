@@ -286,6 +286,7 @@ ls /dev/video0                     # phải thấy mới dùng được webcam t
 | Lệnh dài bị `expected one argument` | copy-paste làm vỡ dòng | dùng `./run demo` thay vì gõ tay |
 | `RuntimeError: Không mở được camera index 0` | webcam chưa `attach` vào WSL (thường sau khi khởi động lại) | (Windows, Admin) `usbipd attach --wsl --busid 1-8` → `./run check 0` |
 | Demo không có webcam mà vẫn muốn thử | — | `./run video` (chạy trên video file) |
+| Ô bao **nhảy sang người/vật khác** (banner `NGHI NGO DOI TUONG`) | bộ nhớ bám sang vật thể giống nhất khi đối tượng gốc bị che — giới hạn của tracking, không phải lỗi | bấm **`r`** chọn lại; đừng bật `--reanchor-every` khi demo 2 người |
 | `usbipd: error: Failed to attach ... Device busy (exported)` (lặp lại dù đã `--force`) | Cổng USB/IP trong kernel Linux kẹt ở trạng thái lỗi. Kiểm: `cat /sys/devices/platform/vhci_hcd.0/status` → các port `sta 004` | Reset hẳn WSL: (PowerShell) `wsl --shutdown` → mở Ubuntu → `usbipd attach --wsl --busid 1-8` |
 | Muốn tránh lỗi trên lần sau | Tắt WSL khi camera còn attach sẽ để lại trạng thái kẹt | Trước khi tắt máy/`wsl --shutdown`: (PowerShell) `usbipd detach --busid 1-8` |
 | Mất số liệu khi tắt máy | tắt WSL đột ngột | bấm `q` trong cửa sổ trước khi `wsl --shutdown` |

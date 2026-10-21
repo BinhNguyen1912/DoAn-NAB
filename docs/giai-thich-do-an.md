@@ -20,6 +20,7 @@
 11. [Phụ lục: dùng WSL — vì sao và làm thế nào](#11-phụ-lục-dùng-wsl--vì-sao-và-làm-thế-nào)
 12. [Vì sao mask "ăn" cả tóc / cả người](#12-vì-sao-mask-ăn-cả-tóc--cả-người)
 13. [Thí nghiệm che khuất một phần — bằng chứng cho tên đề tài](#13-thí-nghiệm-che-khuất-một-phần--bằng-chứng-cho-tên-đề-tài)
+14. [Chọn mặt A mà nó bám sang mặt B — vì sao và cách xử lý](#14-chọn-mặt-a-mà-nó-bám-sang-mặt-b--vì-sao-và-cách-xử-lý)
 
 ---
 
@@ -527,3 +528,53 @@ python scripts/experiment_occlusion.py --image-size 512     # nét hơn
 
 **Hình:** `data/charts/occlusion_iou_320.png` (vùng hồng = các khung bị che) — dùng trực tiếp trong
 báo cáo mục "Kết quả thí nghiệm".
+
+---
+
+## 14. Chọn mặt A mà nó bám sang mặt B — vì sao và cách xử lý
+
+### 14.1. Đây là "đổi danh tính" (identity switch), không phải lỗi code
+
+Khi bạn chọn mặt **A** rồi A cúi xuống/che mặt/bước ra khỏi khung, mô hình mất đối tượng và bộ nhớ
+trở nên **mơ hồ**. Lúc đó các vật thể *giống nhất* (một khuôn mặt khác trong khung) có thể được
+bộ nhớ "nhận nhầm" là cùng một đối tượng ⇒ ô bao nhảy sang **B**.
+
+Vì sao mô hình không phân biệt được A và B:
+- SAM 2 tách theo **hình dáng/màu sắc**, **không nhận dạng danh tính** (không biết "đây là A").
+- Bộ nhớ lưu *đặc trưng mask* của các khung trước; hai khuôn mặt cùng kích thước, cùng tông màu,
+  cùng tư thế → đặc trưng gần giống nhau.
+- Khi A biến mất, **không có tín hiệu "đối tượng đã rời đi"** để hệ thống dừng lại.
+
+Đây là **giới hạn đã biết** của bài toán tracking một đối tượng; muốn nhận lại đúng người cần
+**mô hình re-identification** (nhận dạng khuôn mặt/áo) — spec đã xếp **ngoài phạm vi** đồ án.
+
+### 14.2. Đồ án đã thêm gì để không "âm thầm bám sai"
+
+Module `src/identity_guard.py` (+ 8 test): so sánh **ô bao của lần suy luận trước** với **lần hiện tại**;
+nếu **tâm nhảy xa hơn 25% đường chéo khung** trong một bước (không thể là chuyển động thật) thì:
+
+- in cảnh báo: `[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ … sang …) — bấm r chọn lại`
+- vẽ dòng chữ cam **`NGHI NGO DOI TUONG — bam r`** trên HUD
+
+Ví dụ (kiểm bằng số):
+```
+A -> A (đi nhẹ)   : không cảnh báo
+A -> B (nhảy 350px): CẢNH BÁO  ✅
+```
+
+### 14.3. Cách xử lý khi gặp
+
+| Việc | Vì sao |
+|---|---|
+| **Bấm `r` chọn lại ngay khi A bị che/khuất** | chủ động, chính xác nhất |
+| Thấy banner `NGHI NGO DOI TUONG` → bấm `r` | cảnh báo vừa thêm giúp phát hiện sớm |
+| **Giữ 2 người ở xa nhau** trong khung | giảm khả năng "nhảy" sang người kia |
+| **Không bật `--reanchor-every`** khi demo 2 người | re-anchor dùng lại ô bao cũ ⇒ rất dễ chọn nhầm người mới đi vào vùng đó |
+| Hạ ngưỡng cảnh báo nếu muốn nhạy hơn | `max_jump_ratio` trong `src/identity_guard.py` (mặc định 0,25) |
+
+### 14.4. Câu trả lời cho hội đồng
+
+> "Hệ thống bám **vật thể** chứ không **nhận dạng danh tính**, nên khi đối tượng bị che hoàn toàn,
+> bộ nhớ có thể bám sang vật thể giống nhất. Đây là giới hạn của bài toán, đã ghi trong phạm vi
+> (không làm re-identification). Đồ án giảm thiểu bằng: **cảnh báo nhảy ô bao** (`identity_guard`,
+> ngưỡng 25% đường chéo khung) và quy trình **chọn lại bằng phím `r`**."

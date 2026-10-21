@@ -27,7 +27,7 @@ import cv2
 
 from src.live_pipeline import (
     InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
-    warn_if_bad_selection,
+    _switch_warning, warn_if_bad_selection,
 )
 from src.video_source import open_video_source
 
@@ -213,6 +213,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     frames = LatestFrameSource(open_video_source(source).open()).start()
     worker = InferenceWorker(engine, frames).start()
     consumed_seq = 0
+    last_bbox = None
+    switch = False
     mode = "select"
     selector_bound = False
     disp_count, disp_t0 = 0, time.monotonic()
@@ -235,6 +237,9 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if stamped is not None and stamped.seq != consumed_seq:  # mỗi kết quả 1 lần
                 consumed_seq = stamped.seq
                 summary.processed += 1
+                switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                if stamped.result.mask.any():
+                    last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
                 if metrics is not None:
@@ -248,7 +253,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     display_fps = disp_count / elapsed if disp_count else 0.0
                     img = visualizer.render(frame, stamped.result,
                                             overlay_age_ms=stamped.age_ms,
-                                            display_fps=display_fps)
+                                            display_fps=display_fps,
+                                            switch_warning=switch)
                 else:                       # không có HUD: vẫn phải giữ chế độ track
                     img = frame.copy()
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
