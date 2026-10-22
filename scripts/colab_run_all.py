@@ -24,6 +24,11 @@ import urllib.request
 import zipfile
 
 REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+# Cho phép chạy `python scripts/colab_run_all.py` từ bất kỳ đâu: khi chạy trực tiếp,
+# sys.path[0] là thư mục `scripts/` nên `import src` sẽ thất bại
+# (lỗi thật trên Colab: ModuleNotFoundError: No module named 'src').
+if REPO_ROOT not in sys.path:
+    sys.path.insert(0, REPO_ROOT)
 CKPT = os.path.join(REPO_ROOT, "samurai", "sam2", "checkpoints", "sam2.1_hiera_tiny.pt")
 CKPT_URL = "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt"
 CKPT_MIN_BYTES = 100_000_000
