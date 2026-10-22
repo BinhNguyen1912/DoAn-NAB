@@ -42,7 +42,7 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     demo5           Demo 5 khung rồi tự thoát (kiểm tra môi trường ~20 giây)
     view            Chỉ mở cửa sổ xem, không ghi file
     video [file]    Demo trên video file (mặc định data/_gui_test.mp4)
-    fast            Demo bản nhanh hơn (image_size 256, reanchor 3)
+    fast            Demo bản nhanh (image_size 256)
 
   NGUỒN CAMERA
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
@@ -92,18 +92,18 @@ EOF
     ;;
   view)
     activate_env
-    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --image-size 384
+    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --reid --image-size 384
     ;;
   video)
     activate_env
     video="${1:-data/_gui_test.mp4}"
     shift || true
-    exec "$PYTHON" tools/run_live.py --source "$video" --display --smooth --image-size 384 "$@"
+    exec "$PYTHON" tools/run_live.py --source "$video" --display --smooth --reid --image-size 384 "$@"
     ;;
   fast)
     activate_env
-    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth \
-      --image-size 256 --reanchor-every 3
+    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --reid \
+      --image-size 256
     ;;
   check)
     activate_env

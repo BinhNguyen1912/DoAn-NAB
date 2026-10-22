@@ -349,3 +349,34 @@ class TestThreadSafety:
         starts = [c for c in engine.calls if c == "start"]
         assert len(starts) >= 2, "sau khi bấm r + kéo ô mới phải start lại"
         assert summary.processed >= 2
+
+
+class TestWorkerVoiReId:
+    """InferenceWorker nhận reid_session (ADR-0003): dùng máy trạng thái thay vì gọi engine trực tiếp."""
+
+    def test_dung_may_trang_thai_va_bao_trang_thai_ra_ngoai(self):
+        from src.reid import ReIdSession
+
+        class NoFaceEmbedder:
+            def detect(self, frame):
+                return []
+
+        src = LatestFrameSource(FakeSource(delay=0.005))
+        src.start()
+        engine = FakeEngine(delay=0.01)
+        session = ReIdSession(engine, NoFaceEmbedder(), threshold=0.5, lost_after_frames=99)
+        worker = InferenceWorker(engine, src, reid_session=session)
+        worker.start()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            time.sleep(0.15)
+            state, score, reacquired = worker.reid_status()
+            res = worker.latest_result()
+        finally:
+            worker.stop()
+            src.stop()
+
+        assert state == "tracking"          # mask còn → vẫn đang bám
+        assert res is not None and res.result is not None
+        assert engine.calls[:2] == ["reset", "start"]
+        assert engine.calls.count("process") >= 1

@@ -101,7 +101,7 @@ def _switch_warning(prev_bbox, result, frame_shape):
     return False
 
 
-def _record_from(result) -> FrameRecord:
+def _record_from(result, state=None, reid_score=None, reacquired=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     center = ((x1 + x2) // 2, (y1 + y2) // 2) if (x2 > x1 and y2 > y1) else None
@@ -111,13 +111,16 @@ def _record_from(result) -> FrameRecord:
         score=result.score,
         center=center,
         lost=not (result.mask is not None and result.mask.any()),
+        state=state,
+        reid_score=reid_score,
+        reacquired=reacquired,
     )
 
 
-def _annotate(frame, result, visualizer):
+def _annotate(frame, result, visualizer, reid_state=None, reid_score=None):
     """Frame + result → HUD: Visualizer đầy đủ nếu có, không thì overlay tối thiểu."""
     if visualizer is not None:
-        return visualizer.update(frame, result)
+        return visualizer.update(frame, result, reid_state=reid_state, reid_score=reid_score)
     return draw_overlay_minimal(frame, result)
 
 
@@ -138,7 +141,8 @@ def _maybe_reanchor(engine, frame, last_bbox, frame_idx, every):
 
 
 def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
-                 visualizer=None, metrics=None, reanchor_every=None) -> SessionSummary:
+                 visualizer=None, metrics=None, reanchor_every=None,
+                 reid_session=None) -> SessionSummary:
     """Chạy vòng lặp: đọc frame → track → overlay → gọi on_frame (trả False = dừng).
 
     visualizer    : Visualizer (ticket 06) — HUD đầy đủ + ghi video nếu đã open_recorder.
@@ -153,12 +157,13 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         frame = src.read()
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
-        result = engine.start(frame, bbox)
+        result = reid_session.start(frame, bbox) if reid_session is not None else engine.start(frame, bbox)
+        state = reid_session.state if reid_session is not None else None
         last_bbox = result.bbox if result.mask.any() else tuple(bbox)
         warn_if_bad_selection(result)
         if metrics is not None:
-            metrics.log(_record_from(result))
-        img = _annotate(frame, result, visualizer)
+            metrics.log(_record_from(result, state))
+        img = _annotate(frame, result, visualizer, state)
         summary.latencies_ms.append(result.elapsed_ms)
         summary.total_frames += 1
         if on_frame is not None and on_frame(img, result) is False:
@@ -168,14 +173,20 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
             frame = src.read()
             if frame is None:
                 break
-            reanchored = _maybe_reanchor(engine, frame, last_bbox,
-                                         summary.total_frames, reanchor_every)
-            result = reanchored if reanchored is not None else engine.process(frame)
+            if reid_session is not None:
+                step = reid_session.step(frame)
+                result, state = step.result, step.state
+                reid_score, reacquired = step.reid_score, step.reacquired
+            else:
+                reanchored = _maybe_reanchor(engine, frame, last_bbox,
+                                             summary.total_frames, reanchor_every)
+                result = reanchored if reanchored is not None else engine.process(frame)
+                state = reid_score = reacquired = None
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
-                metrics.log(_record_from(result))
-            img = _annotate(frame, result, visualizer)
+                metrics.log(_record_from(result, state, reid_score, reacquired))
+            img = _annotate(frame, result, visualizer, state, reid_score)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
             if on_frame is not None and on_frame(img, result) is False:
@@ -194,7 +205,8 @@ class InteractiveSummary:
 
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
-                    visualizer=None, metrics=None, reanchor_every=None) -> InteractiveSummary:
+                    visualizer=None, metrics=None, reanchor_every=None,
+                    reid_session=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -227,6 +239,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             selector.on_mouse(cv2.EVENT_LBUTTONUP, preselect_bbox[2], preselect_bbox[3], 0, None)
         mode = "select"
         last_result = None
+        switch = False  # cảnh báo đổi đối tượng: tính lại mỗi frame track, mặc định tắt ở frame đầu
+        state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
 
         while max_frames is None or summary.processed < max_frames or mode == "select":
             if mode == "select":
@@ -238,18 +252,22 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
-                    last_result = engine.start(frame, bbox)
+                    last_result = (reid_session.start(frame, bbox) if reid_session is not None
+                                   else engine.start(frame, bbox))
+                    state = reid_session.state if reid_session is not None else None
+                    reid_score = reacquired = None
                     last_bbox = last_result.bbox if last_result.mask.any() else tuple(bbox)
                     warn_if_bad_selection(last_result)
                     summary.processed += 1
                     if on_result is not None:
                         on_result(last_result)
                     if metrics is not None:
-                        metrics.log(_record_from(last_result))
+                        metrics.log(_record_from(last_result, state))
                     mode = "track"
             else:  # track
                 if visualizer is not None:
-                    img = visualizer.update(frame, last_result, switch_warning=switch)
+                    img = visualizer.update(frame, last_result, switch_warning=switch,
+                                            reid_state=state, reid_score=reid_score)
                 else:
                     img = draw_overlay_minimal(frame, last_result)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
@@ -259,6 +277,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if key == RESET_KEY:
                     engine.reset()
+                    if reid_session is not None:
+                        reid_session.reset()
+                    state = reid_score = reacquired = None
                     selector.bind(frame)  # chọn lại trên frame hiện tại
                     if visualizer is not None:
                         visualizer.reset()  # quỹ đạo đối tượng cũ bỏ đi
@@ -267,9 +288,15 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 frame = src.read()
                 if frame is None:
                     break
-                reanchored = _maybe_reanchor(engine, frame, last_bbox,
-                                             summary.processed, reanchor_every)
-                last_result = reanchored if reanchored is not None else engine.process(frame)
+                if reid_session is not None:
+                    step = reid_session.step(frame)
+                    last_result, state = step.result, step.state
+                    reid_score, reacquired = step.reid_score, step.reacquired
+                else:
+                    reanchored = _maybe_reanchor(engine, frame, last_bbox,
+                                                 summary.processed, reanchor_every)
+                    last_result = reanchored if reanchored is not None else engine.process(frame)
+                    state = reid_score = reacquired = None
                 switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                 if last_result.mask.any():
                     last_bbox = last_result.bbox
@@ -277,7 +304,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if on_result is not None:
                     on_result(last_result)
                 if metrics is not None:
-                    metrics.log(_record_from(last_result))
+                    metrics.log(_record_from(last_result, state, reid_score, reacquired))
     finally:
         src.close()
     return summary

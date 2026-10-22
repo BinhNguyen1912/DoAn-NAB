@@ -116,3 +116,62 @@ class TestReanchor:
         names = [c[0] for c in engine.calls]
         assert names.count("reset") == 0
         assert names.count("start") == 1
+
+
+class TestPipelineReId:
+    """Wiring re-ID ở mức pipeline: mất dấu thì ĐÓNG BĂNG, không gọi engine.process nữa."""
+
+    def _engine(self, empty_after=1):
+        from src.tracker_engine import TrackingResult
+        calls = {"process": 0, "start": []}
+
+        class FakeEngine:
+            def start(self, frame, bbox):
+                calls["start"].append(tuple(bbox))
+                return TrackingResult(frame_idx=0, mask=np.ones((240, 320), bool),
+                                      bbox=(20, 20, 80, 80), score=1.0, elapsed_ms=1.0)
+
+            def process(self, frame):
+                calls["process"] += 1
+                empty = calls["process"] >= empty_after
+                mask = np.zeros((240, 320), bool) if empty else np.ones((240, 320), bool)
+                return TrackingResult(frame_idx=calls["process"], mask=mask,
+                                      bbox=(20, 20, 80, 80), score=1.0, elapsed_ms=1.0)
+
+            def reset(self):
+                pass
+
+        return FakeEngine(), calls
+
+    def _session(self, engine):
+        from src.reid import ReIdSession
+
+        class NoFaceEmbedder:
+            def detect(self, frame):
+                return []
+
+        return ReIdSession(engine, NoFaceEmbedder(), threshold=0.5, lost_after_frames=1)
+
+    def test_mat_dau_thi_khong_goi_process_nua_va_co_cot_trang_thai(self, tmp_path, write_video):
+        from src.metrics_logger import MetricsLogger
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=8, frame_size=(240, 320),
+                                        square_size=40, start=(60, 60))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine, calls = self._engine(empty_after=1)
+        session = self._session(engine)
+        metrics = MetricsLogger()
+
+        run_tracking(source=str(path), engine=engine, bbox=fx.bboxes[0],
+                     reid_session=session, metrics=metrics)
+
+        # Frame đầu process trả mask rỗng → chuyển LOST; các frame sau KHÔNG process nữa
+        assert calls["process"] == 1
+        states = [r.state for r in metrics.records]
+        assert states[0] == "tracking"
+        assert "lost" in states or "reacquiring" in states
+        assert states[-1] == "reacquiring"
+        # Record mất dấu được ghi nhận trung thực
+        assert any(r.lost for r in metrics.records)
+        assert metrics.summary()["lost_count"] >= 1

@@ -564,17 +564,49 @@ A -> B (nhảy 350px): CẢNH BÁO  ✅
 
 ### 14.3. Cách xử lý khi gặp
 
-| Việc | Vì sao |
+### 14.3. Đã triển khai **tái nhận diện bằng khuôn mặt** (ADR-0003, buổi 6 + buổi 9)
+
+Từ 22-10-2026, hệ thống **không còn bám sang B** khi bật `--reid` (và `configs/default.yaml`
+đã bật sẵn). Cơ chế — máy trạng thái 3 pha trong `src/reid.py`:
+
+| Pha | Hành vi |
 |---|---|
-| **Bấm `r` chọn lại ngay khi A bị che/khuất** | chủ động, chính xác nhất |
-| Thấy banner `NGHI NGO DOI TUONG` → bấm `r` | cảnh báo vừa thêm giúp phát hiện sớm |
-| **Giữ 2 người ở xa nhau** trong khung | giảm khả năng "nhảy" sang người kia |
-| **Không bật `--reanchor-every`** khi demo 2 người | re-anchor dùng lại ô bao cũ ⇒ rất dễ chọn nhầm người mới đi vào vùng đó |
-| Hạ ngưỡng cảnh báo nếu muốn nhạy hơn | `max_jump_ratio` trong `src/identity_guard.py` (mặc định 0,25) |
+| `tracking` | bám bình thường; đồng thời lưu **mẫu khuôn mặt của A** (chỉ mặt nằm trong ô đang bám + đủ lớn + đủ tin cậy) |
+| `lost` | mask rỗng ≥ `lost_after_frames` (mặc định 2) ⇒ **ngừng gọi `engine.process`** — bộ nhớ SAM 2 không có cơ hội nhảy sang B |
+| `reacquiring` | mỗi frame: **YuNet** phát hiện mặt + **SFace** trích embedding → so **cosine** với tập mẫu của A, lấy **max**; ≥ `reid_threshold` thì `engine.start(bbox mặt)` ⇒ bám lại **đúng A** |
+
+HUD hiện `DANG TIM LAI A... (khop 0.xx)` khi đang tìm. Metrics thêm cột `state`, `reid_score`,
+`reacquired` để **đo được** khả năng tái nhận diện (yêu cầu "độ ổn định bám bắt").
+
+**Giới hạn trung thực (phải nói rõ khi bảo vệ):**
+- Không nhận lại được nếu **không thấy khuôn mặt** (quay lưng, che kín mặt, quá xa/mờ) → hệ thống ở
+  `reacquiring` và chờ, **không đoán bừa**.
+- Ngưỡng cosine phụ thuộc camera/ánh sáng/khoảng cách; đo thật: cùng 1 người, mặt nhỏ 42×62 px,
+  cosine so một mốc chỉ **0,20–0,72**. Vì vậy phải giữ **nhiều mẫu** + lấy max, và **hiệu chỉnh ngưỡng**
+  trên video demo (không dùng số tài liệu 0,363 một cách máy móc).
+- Mặt quá nhỏ (< `reid_min_face_px` = 40 px) hoặc điểm phát hiện < 0,8 sẽ **bị bỏ qua** — demo nên
+  đứng gần camera.
+- Vẫn có thể nhầm nếu hai người rất giống nhau (cùng giới/tuổi/kính).
+
+Công tắc: bật/tắt `reid_enabled` trong `configs/default.yaml` hoặc `--reid`; chỉnh `--reid-threshold`,
+`--lost-after-frames`, `--reid-min-face-px`, `--reid-ref-max`. **Không dùng chung với `--smooth`.**
 
 ### 14.4. Câu trả lời cho hội đồng
 
-> "Hệ thống bám **vật thể** chứ không **nhận dạng danh tính**, nên khi đối tượng bị che hoàn toàn,
-> bộ nhớ có thể bám sang vật thể giống nhất. Đây là giới hạn của bài toán, đã ghi trong phạm vi
-> (không làm re-identification). Đồ án giảm thiểu bằng: **cảnh báo nhảy ô bao** (`identity_guard`,
-> ngưỡng 25% đường chéo khung) và quy trình **chọn lại bằng phím `r`**."
+> "Hệ thống bám **vật thể** bằng SAM 2 nên bộ nhớ có thể bám sang vật thể giống nhất khi đối tượng
+> bị che. Đồ án **giảm thiểu bằng ba lớp**: (1) **cảnh báo nhảy ô bao** (`identity_guard`, ngưỡng 25%
+> đường chéo khung); (2) **đóng băng khi mất dấu** — ngừng lan truyền nên không thể bám sang người
+> khác; (3) **tái nhận diện khuôn mặt** (YuNet + SFace, lưu nhiều mẫu embedding, so cosine) để khi
+> đối tượng quay lại thì tự bám lại đúng người — đáp ứng yêu cầu 'tái nhận diện đối tượng' của đề
+> cương. Giới hạn còn lại: nếu không thấy khuôn mặt (quay lưng/che kín/xa) thì hệ thống ở trạng thái
+> 'đang tìm lại' và không đoán bừa; ngưỡng nhận dạng phải hiệu chỉnh theo camera thực tế — số đo
+> nằm trong ADR-0003."
+
+| Việc | Vì sao |
+|---|---|
+| **Bật `--reid`** (mặc định đã bật trong `configs/default.yaml`) | mất dấu thì đóng băng + tự bám lại đúng người |
+| **Bấm `r` chọn lại** khi đổi đối tượng | chủ động, chính xác nhất |
+| **Giữ 2 người ở xa nhau** trong khung | giảm khả năng "nhảy" sang người kia |
+| **Không bật `--reanchor-every`** khi demo 2 người | re-anchor dùng lại ô bao cũ ⇒ rất dễ chọn nhầm người mới đi vào vùng đó (code tự tắt khi bật re-ID) |
+| Hạ ngưỡng cảnh báo nếu muốn nhạy hơn | `max_jump_ratio` trong `src/identity_guard.py` (mặc định 0,25) |
+| Muốn nhận lại dễ hơn | hạ `--reid-threshold` (đổi lại là dễ nhận nhầm người khác) |

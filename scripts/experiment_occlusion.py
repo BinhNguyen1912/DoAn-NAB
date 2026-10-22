@@ -24,8 +24,6 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
-from sam2.build_sam import build_sam2_video_predictor  # noqa: E402
-
 from src.synthetic_video import generate_tracking_sequence  # noqa: E402
 from src.tracker_engine import DEFAULT_CKPT, MODEL_CFG, TrackerEngine  # noqa: E402
 
@@ -59,6 +57,13 @@ def run_scenario(engine, fraction, frames_n=30, cover=6, start_cover=12):
     return np.array(ious), np.array(lost), fx.occluded
 
 
+def _build_sam2_video_predictor(*args, **kwargs):
+    """Lazy import sam2 — chỉ cần khi chạy main() với model thật."""
+    from sam2.build_sam import build_sam2_video_predictor
+
+    return build_sam2_video_predictor(*args, **kwargs)
+
+
 def main():
     ap = argparse.ArgumentParser(description="Thí nghiệm che khuất một phần (đo IoU theo khung)")
     ap.add_argument("--image-size", type=int, default=320)
@@ -69,7 +74,7 @@ def main():
     ap.add_argument("--out", default="data/charts", help="thư mục xuất ảnh")
     args = ap.parse_args()
 
-    pred = build_sam2_video_predictor(MODEL_CFG, DEFAULT_CKPT, device="cpu",
+    pred = _build_sam2_video_predictor(MODEL_CFG, DEFAULT_CKPT, device="cpu",
                                      hydra_overrides_extra=[f"++model.image_size={args.image_size}"])
     engine = TrackerEngine(pred)
 

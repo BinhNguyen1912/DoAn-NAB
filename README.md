@@ -70,10 +70,19 @@ wget https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.
 cd ../../..
 
 # 5) cài package sam2 của SAMURAI + phụ thuộc riêng của SAMURAI
+#    (không nằm trong setup.py của sam2 nên phải cài tay)
 pip install -e samurai/sam2
-pip install loguru                 # SAMURAI import loguru trong sam2/modeling/sam2_base.py
+pip install loguru scipy           # loguru: sam2/modeling/sam2_base.py
+                                   # scipy : sam2/utils/kalman_filter.py (Kalman của SAMURAI)
 
-# 6) chạy test (không cần camera; test "slow" cần checkpoint)
+# 6) tải model khuôn mặt cho tái nhận diện (ADR-0003) — ~39 MB, đặt trong models/face/
+mkdir -p models/face
+curl -L -o models/face/face_detection_yunet_2023mar.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_detection_yunet/face_detection_yunet_2023mar.onnx
+curl -L -o models/face/face_recognition_sface_2021dec.onnx \
+  https://github.com/opencv/opencv_zoo/raw/main/models/face_recognition_sface/face_recognition_sface_2021dec.onnx
+
+# 7) chạy test (không cần camera; test "slow" cần checkpoint)
 python -m pytest tests/ -m "not slow"
 python -m pytest tests/                # full suite
 ```
@@ -193,8 +202,8 @@ chứa `git_rev` + tham số → so với `git log -1` là biết số liệu c�
 lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/colab-gpu.md`.
 
 1. Đẩy repo (kèm `samurai/` clone + checkpoint) lên Drive/clone trực tiếp trong notebook.
-2. Trên Colab: `!pip install -r requirements.txt && pip install -e samurai/sam2`
-   (torch CUDA đã có sẵn).
+2. Trên Colab: `!pip install -r requirements.txt && pip install -e samurai/sam2 loguru scipy`
+   (torch CUDA đã có sẵn; `loguru`/`scipy` là phụ thuộc riêng của SAMURAI).
 3. Chạy `!python tools/run_live.py --source data/video.mp4 --bbox "..." --device cuda \
    --record data/colab_gpu.mp4 --metrics-csv data/colab_metrics.csv --metrics-summary data/colab_summary.json`
 4. Số liệu trong `summary.json` **là số đo GPU thật** — dùng cho mục "Đánh giá hiệu năng"
@@ -320,6 +329,32 @@ Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
 ```bash
 python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json
 ```
+
+### Tái nhận diện: mất dấu thì ĐÓNG BĂNG, quay lại thì bám lại đúng người (ADR-0003)
+
+Demo 2 người (bạn = A, bạn của bạn = B): chọn mặt A → A rời khung → hệ thống **báo MẤT DẤU và dừng**
+(không bám sang B) → A quay lại → **tự bám lại đúng A** nhờ so khớp khuôn mặt (YuNet + SFace).
+**Đã bật sẵn** trong mọi lệnh `./run demo` / `demo5` / `view` / `video` / `fast`.
+Chỉ cần chạy:
+
+```bash
+./run demo
+```
+
+Chỉnh tham số (hiếm khi cần):
+
+```bash
+python tools/run_live.py --source 0 --display --smooth --reid \
+  --reid-threshold 0.45 --lost-after-frames 3
+```
+
+HUD hiện `DANG TIM LAI A... (khop 0.xx)` khi đang tìm; CSV metrics có thêm cột
+`state` / `reid_score` / `reacquired` để đo khả năng tái nhận diện.
+
+**Giới hạn (trung thực):** không nhận lại được khi **không thấy khuôn mặt** (quay lưng, che kín,
+quá xa/mờ) — hệ thống ở trạng thái "đang tìm lại", không đoán bừa; ngưỡng cosine phụ thuộc
+camera/ánh sáng nên **phải hiệu chỉnh trên video thật** (số đo + lý do: `docs/adr/0003`).
+Mặt nhỏ hơn `reid_min_face_px` (40 px) bị bỏ qua → demo nên đứng gần camera.
 
 ### Thí nghiệm che khuất một phần (bằng chứng cho tên đề tài)
 

@@ -174,3 +174,32 @@ class TestMaskThresholdConfig:
 
         with pytest.raises(ValueError, match="mask_threshold"):
             load_config(_write_yaml(tmp_path, "mask_threshold: cao\n"))
+
+
+class TestReIdConfig:
+    """Tái nhận diện khuôn mặt (ADR-0003, ticket 09) — mặc định tắt, bật qua YAML/CLI."""
+
+    def test_mac_dinh_tat_de_khong_doi_hanh_vi_cu(self):
+        assert DEFAULTS["reid_enabled"] is False
+
+    def test_mac_dinh_tro_dung_model_trong_repo(self):
+        assert "models/face/" in DEFAULTS["reid_detector_model"]
+        assert "models/face/" in DEFAULTS["reid_recognizer_model"]
+
+    def test_yaml_bat_va_chinh_nguong(self, tmp_path):
+        cfg = load_config(_write_yaml(tmp_path, """
+            reid_enabled: true
+            reid_threshold: 0.45
+            lost_after_frames: 3
+            reid_min_face_px: 48
+            reid_ref_max: 12
+            """))
+        assert cfg["reid_enabled"] is True
+        assert cfg["reid_threshold"] == pytest.approx(0.45)
+        assert cfg["lost_after_frames"] == 3
+        assert cfg["reid_min_face_px"] == 48
+        assert cfg["reid_ref_max"] == 12
+
+    def test_yaml_sai_kieu_bao_loi(self, tmp_path):
+        with pytest.raises(ValueError, match="lost_after_frames"):
+            load_config(_write_yaml(tmp_path, "lost_after_frames: hai\n"))

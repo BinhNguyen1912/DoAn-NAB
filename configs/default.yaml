@@ -31,3 +31,18 @@ image_size: null
 # Hiển thị MƯỢT (tách luồng): video ~30 FPS, mask/ô bao cập nhật mỗi lần suy luận xong
 # và HUD ghi rõ "Overlay: N ms trước". Bật khi demo cần nhìn mượt (dùng với --display).
 smooth_display: false
+# ---- Tái nhận diện khuôn mặt (ADR-0003 — buổi 6 + buổi 9 đề cương) ----
+# Bật: mất dấu thì ĐÓNG BĂNG (không bám sang người khác trong khung), khi đối tượng
+# quay lại thì tự bám lại đúng người nhờ so khớp embedding khuôn mặt (YuNet + SFace).
+# Tắt: hành vi cũ (bám liên tục, chỉ cảnh báo khi ô bao nhảy xa).
+# Lưu ý: cần model trong models/face/ (xem docs/adr/0003). Không dùng chung với --smooth.
+reid_enabled: true
+reid_detector_model: models/face/face_detection_yunet_2023mar.onnx
+reid_recognizer_model: models/face/face_recognition_sface_2021dec.onnx
+# Ngưỡng cosine: 0.363 là khuyến nghị tài liệu OpenCV, NHƯNG phải hiệu chỉnh trên video thật
+# (đo: cùng 1 người, mặt nhỏ 42x62px, cosine so một mốc chỉ 0.20–0.72 → ADR-0003).
+reid_threshold: 0.363
+lost_after_frames: 2        # mask rỗng liên tiếp bao nhiêu frame thì đóng băng
+reid_min_face_px: 40        # cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên
+reid_min_detect_score: 0.8  # điểm phát hiện mặt tối thiểu
+reid_ref_max: 8             # số mẫu tham chiếu giữ lại (lấy max cosine trên toàn tập)

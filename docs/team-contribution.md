@@ -27,6 +27,7 @@ tổng **2 424 dòng code** và **131 test tự động**.
 | 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: 131 test, `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
 | 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001/0002, spec, 8 ticket + tracker, **12 file log theo ngày**, README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | 12 | **Số liệu đánh giá** | đo trên máy thật | **Tự đo & phân tích**: latency/FPS CPU, độ trễ tăng theo memory, đánh đổi `image_size` (1024/768/512/384/256), `reanchor`, độ phân giải camera, thread; phát hiện SAM 2 luôn trả mask với vùng nền | Bảng trong `README.md` mục "Đánh giá hiệu năng"/"Tối ưu tốc độ", `docs/task/18-10-2026-*.md`, `data/*_summary.json` |
+| 13 | **`ReIdSession` — tái nhận diện khuôn mặt** (mất dấu → đóng băng → tự bám lại đúng người) | YuNet + SFace của OpenCV Zoo (model có sẵn) | **Tự viết toàn bộ cơ chế**: máy trạng thái `tracking/lost/reacquiring`, **chặn bám sang người khác** bằng cách ngừng `engine.process`, **tập embedding tham chiếu** (chỉ lấy mặt nằm trong ô đang bám + cổng chất lượng), **max cosine**, ngưỡng hiệu chỉnh bằng số đo thật, cột metrics `state/reid_score/reacquired` | `src/reid.py`, `tests/test_reid.py` (16 test), `docs/adr/0003`, `configs/default.yaml` |
 
 ## 3. Thành phần **không** tự viết (và vì sao hợp lệ)
 
@@ -35,6 +36,7 @@ tổng **2 424 dòng code** và **131 test tự động**.
 | **SAM 2.1 tiny** (`sam2_video_predictor.py` 1 176 dòng, `mask_decoder.py` 295 dòng, …) | Meta AI (Apache-2.0) | **Backbone** — đề cương + **ADR-0001** chốt: "Backbone: SAM 2.1 tiny với config SAMURAI". Đồ án không huấn luyện lại |
 | **SAMURAI** (Kalman + motion-aware memory bank selection) | yangchris11/samurai | Spec ghi rõ: **"đóng gói Kalman + memory-bank selection có sẵn của SAMURAI (không viết lại)"** — em viết lớp bọc streaming quanh nó |
 | OpenCV, PyTorch, NumPy, PyYAML, Pillow, pytest, ruff | thư viện mã nguồn mở | Hạ tầng bình thường của mọi đồ án |
+| **YuNet** (phát hiện mặt) + **SFace** (embedding 128-D) | OpenCV Zoo (model ONNX có sẵn, tải về ở `models/face/`) | Dùng làm **tín hiệu nhận dạng** cho tái nhận diện (ADR-0003) — cùng triết lý ADR-0001: dùng model có sẵn, đóng góp nằm ở cơ chế + ngưỡng + đánh giá; không train lại |
 | Google Colab (T4) | Google | Chỉ là **máy có GPU cho mượn** để đo số FPS GPU + xuất video minh hoạ; code chạy trên đó là repo của em (ADR-0002) |
 
 ## 4. Những kết quả **gốc** (không có trong repo nào khác)

@@ -40,10 +40,11 @@ class TestCsv:
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
         assert rows[0] == ["frame_idx", "latency_ms", "score",
-                           "center_x", "center_y", "lost"]
+                           "center_x", "center_y", "lost",
+                           "state", "reid_score", "reacquired"]
         assert len(rows) == 6  # header + 5 dòng
-        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0"]
-        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0"]
+        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", ""]
+        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -56,7 +57,7 @@ class TestCsv:
         logger.write_csv(str(out))
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
-        assert rows[2] == ["1", "200.0", "0.1", "", "", "1"]
+        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -239,3 +240,45 @@ class TestTichHop:
         assert s["total_frames"] == 4
         assert s["lost_count"] == 1
         assert s["lost_ratio"] == pytest.approx(0.25)
+
+class TestTrangThaiTaiNhanDien:
+    """Cột state/reid_score/reacquired + đếm số lần nhận lại (ADR-0003, ticket 09)."""
+
+    def _log(self, logger):
+        logger.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=0.9, center=(10, 10),
+                               state="tracking", reid_score=-1.0, reacquired=False))
+        logger.log(FrameRecord(frame_idx=1, latency_ms=100.0, score=0.0, center=None,
+                               lost=True, state="lost", reid_score=-1.0, reacquired=False))
+        logger.log(FrameRecord(frame_idx=2, latency_ms=100.0, score=0.0, center=None,
+                               lost=True, state="reacquiring", reid_score=0.21,
+                               reacquired=False))
+        logger.log(FrameRecord(frame_idx=3, latency_ms=100.0, score=0.9, center=(90, 90),
+                               state="tracking", reid_score=0.71, reacquired=True))
+
+    def test_csv_co_them_cot_trang_thai(self, tmp_path):
+        logger = MetricsLogger()
+        self._log(logger)
+        path = logger.write_csv(tmp_path / "m.csv")
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        header = rows[0]
+        assert header[-3:] == ["state", "reid_score", "reacquired"]
+        assert rows[3][header.index("state")] == "reacquiring"
+        assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
+        assert rows[4][header.index("reacquired")] == "1"
+
+    def test_summary_dem_frame_tim_lai_va_so_lan_nhan_lai(self):
+        logger = MetricsLogger()
+        self._log(logger)
+        s = logger.summary()
+        assert s["reacquiring_frames"] == 1
+        assert s["reacquired_count"] == 1
+        assert s["lost_count"] == 2
+
+    def test_ban_ghi_cu_khong_co_trang_thai_van_hop_le(self, tmp_path):
+        logger = MetricsLogger()
+        logger.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=0.9, center=(10, 10)))
+        path = logger.write_csv(tmp_path / "old.csv")
+        with open(path, encoding="utf-8") as f:
+            rows = list(csv.reader(f))
+        assert rows[1][-3:] == ["", "", ""]

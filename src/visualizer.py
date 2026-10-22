@@ -83,14 +83,15 @@ class Visualizer:
 
     # ---------- API công khai ----------
 
-    def update(self, frame, result, switch_warning=False):
+    def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None):
         """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
 
         Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
         luồng dùng `consume()` mỗi lần suy luận và `render()` mỗi frame hiển thị.
         """
         self.consume(result)
-        return self.render(frame, result, switch_warning=switch_warning)
+        return self.render(frame, result, switch_warning=switch_warning,
+                           reid_state=reid_state, reid_score=reid_score)
 
     def consume(self, result):
         """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
@@ -109,7 +110,7 @@ class Visualizer:
             self.consecutive_lost = 0
 
     def render(self, frame, result, overlay_age_ms=None, display_fps=None,
-               switch_warning=False):
+               switch_warning=False, reid_state=None, reid_score=None):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
@@ -141,6 +142,9 @@ class Visualizer:
             self._draw_lost_banner(img)
         if switch_warning:
             self._put_text(img, "NGHI NGO DOI TUONG — bam r", (8, 104))
+        if reid_state == "reacquiring":
+            score_txt = "" if reid_score is None or reid_score < 0 else f" (khop {reid_score:.2f})"
+            self._put_text(img, f"DANG TIM LAI A...{score_txt}", (8, 128))
 
         # 5) ghi nếu recorder đang mở
         self._write(img)

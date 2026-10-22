@@ -268,3 +268,28 @@ class TestCanhBaoDoiDoiTuong:
         frame = np.zeros((240, 320, 3), np.uint8)
         img = Visualizer().update(frame, _result(), switch_warning=False)
         assert np.array_equal(img[96:112, :260], frame[96:112, :260])
+
+
+class TestTrangThaiTaiNhanDien:
+    """HUD hiện trạng thái đang tìm lại + điểm khớp (ADR-0003, ticket 09)."""
+
+    def _result(self, mask=True):
+        from src.tracker_engine import TrackingResult
+        m = np.ones((240, 320), bool) if mask else np.zeros((240, 320), bool)
+        return TrackingResult(frame_idx=0, mask=m, bbox=(10, 10, 50, 50),
+                              score=0.9, elapsed_ms=1.0)
+
+    def test_trang_thai_reacquiring_ve_duoc_khong_crash(self, tmp_path):
+        from src.visualizer import Visualizer
+        vis = Visualizer()
+        frame = np.zeros((240, 320, 3), np.uint8)
+        img = vis.update(frame, self._result(mask=False),
+                         reid_state="reacquiring", reid_score=0.42)
+        assert img.shape == frame.shape and img.dtype == np.uint8
+
+    def test_khong_co_trang_thai_van_nhu_cu(self):
+        from src.visualizer import Visualizer
+        vis = Visualizer()
+        frame = np.zeros((240, 320, 3), np.uint8)
+        img = vis.update(frame, self._result())
+        assert img.shape == frame.shape

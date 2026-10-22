@@ -93,9 +93,10 @@ class StampedResult:
 class InferenceWorker:
     """Luồng suy luận: luôn lấy frame mới nhất, không xếp hàng; đổi đối tượng = set_bbox()."""
 
-    def __init__(self, engine, frame_source):
+    def __init__(self, engine, frame_source, reid_session=None):
         self._engine = engine
         self._frames = frame_source
+        self._reid = reid_session       # ReIdSession (ADR-0003) — None = không tái nhận diện
         self._lock = threading.Lock()
         self._stamped = None
         self._bbox = None            # bbox đang track (None = chưa chọn → không suy luận)
@@ -105,6 +106,9 @@ class InferenceWorker:
         self._seq = 0
         self.inference_count = 0
         self._started = False   # engine đã start với bbox hiện tại chưa
+        self._reid_state = None
+        self._reid_score = None
+        self._reacquired = False
 
     def start(self):
         self._thread = threading.Thread(target=self._loop, name="inference", daemon=True)
@@ -143,6 +147,11 @@ class InferenceWorker:
         with self._lock:
             return self._stamped
 
+    def reid_status(self):
+        """(state, reid_score, reacquired) của lần suy luận gần nhất — None khi không bật re-ID."""
+        with self._lock:
+            return self._reid_state, self._reid_score, self._reacquired
+
     def _loop(self):
         while not self._stop.is_set():
             # 1) Xử lý yêu cầu từ main thread (chỉ nơi này được chạm vào engine)
@@ -154,6 +163,8 @@ class InferenceWorker:
                     self._engine.reset()
                 except Exception as exc:
                     print(f"[LOI] reset engine thất bại: {type(exc).__name__}: {exc}")
+                if self._reid is not None:
+                    self._reid.reset()
                 with self._lock:
                     self._started = False
                     self._bbox = bbox_req if action == "start" else None
@@ -170,10 +181,23 @@ class InferenceWorker:
                 continue
             try:
                 if need_start:
-                    result = self._engine.start(frame, bbox)
+                    if self._reid is not None:
+                        result = self._reid.start(frame, bbox)
+                        with self._lock:
+                            self._reid_state = self._reid.state
+                            self._reid_score, self._reacquired = None, False
+                    else:
+                        result = self._engine.start(frame, bbox)
                     warn_if_bad_selection(result)
                     with self._lock:
                         self._started = True
+                elif self._reid is not None:
+                    step = self._reid.step(frame)
+                    result = step.result
+                    with self._lock:
+                        self._reid_state = step.state
+                        self._reid_score = step.reid_score
+                        self._reacquired = step.reacquired
                 else:
                     result = self._engine.process(frame)
             except Exception as exc:
@@ -188,6 +212,7 @@ class InferenceWorker:
                     self._bbox = None
                     self._started = False
                     self._stamped = None
+                    self._reid_state = None
                 time.sleep(0.1)
                 continue
             with self._lock:
@@ -203,7 +228,7 @@ class InferenceWorker:
 
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
-                       on_result=None) -> InteractiveSummary:
+                       on_result=None, reid_session=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -211,10 +236,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     """
     summary = InteractiveSummary()
     frames = LatestFrameSource(open_video_source(source).open()).start()
-    worker = InferenceWorker(engine, frames).start()
+    worker = InferenceWorker(engine, frames, reid_session=reid_session).start()
     consumed_seq = 0
     last_bbox = None
     switch = False
+    reid_state = reid_score = reacquired = None
     mode = "select"
     selector_bound = False
     disp_count, disp_t0 = 0, time.monotonic()
@@ -238,12 +264,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 consumed_seq = stamped.seq
                 summary.processed += 1
                 switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                reid_state, reid_score, reacquired = worker.reid_status()
                 if stamped.result.mask.any():
                     last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
                 if metrics is not None:
-                    metrics.log(_record_from(stamped.result))
+                    metrics.log(_record_from(stamped.result, reid_state, reid_score, reacquired))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:
@@ -254,7 +281,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     img = visualizer.render(frame, stamped.result,
                                             overlay_age_ms=stamped.age_ms,
                                             display_fps=display_fps,
-                                            switch_warning=switch)
+                                            switch_warning=switch,
+                                            reid_state=reid_state, reid_score=reid_score)
                 else:                       # không có HUD: vẫn phải giữ chế độ track
                     img = frame.copy()
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,

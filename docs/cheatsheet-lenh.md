@@ -60,7 +60,11 @@ Trong thư mục repo, gõ **`./run <lệnh>`** — script tự bật môi trư�
 | `./run demo5` | Demo 5 khung rồi tự thoát (kiểm môi trường ~20 giây) |
 | `./run view` | Chỉ mở cửa sổ xem, không ghi file |
 | `./run video [file]` | Demo trên video file (mặc định `data/_gui_test.mp4`) |
-| `./run fast` | Demo bản nhanh (image_size 256 + reanchor 3) |
+| `./run fast` | Demo bản nhanh (image_size 256) |
+
+> Tái nhận diện khuôn mặt (**mất dấu thì đóng băng, quay lại thì bám lại đúng người** — ADR-0003)
+> **bật sẵn trong mọi lệnh demo** ở trên. Muốn tắt: gọi thẳng `tools/run_live.py` mà không có
+> `--reid`, hoặc đặt `reid_enabled: false` trong `configs/default.yaml`.
 | `./run check 0` | Kiểm nguồn camera 5 giây (0 = webcam) |
 | `./run phone` | Quét LAN tìm URL camera điện thoại |
 | `./run cam` | Xem trạng thái webcam + **BUSID hiện tại** (BUSID đổi sau mỗi lần khởi động lại!) |

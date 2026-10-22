@@ -46,6 +46,8 @@ Demo live trên CPU với số FPS trung thực; mọi việc nặng offline (n�
 23. Là người phát triển, tôi muốn mỗi frame ghi lại được **tọa độ tâm đối tượng** (trong CSV), để vẽ biểu đồ quỹ đạo cho báo cáo.
 24. Là người trình bày, tôi muốn các **nhãn hiển thị trên HUD bằng tiếng Việt**, để hội đồng và người xem hiểu ngay.
 25. Là người phát triển, tôi muốn module đo (`MetricsLogger`) là **hàm thuần** nhận bản ghi, để test độc lập không cần chạy model.
+26. Là người trình bày, tôi muốn khi đối tượng rời khỏi khung hệ thống **báo MẤT DẤU và DỪNG bám** (không nhảy sang người khác trong khung), để demo 2 người không bị "bám nhầm bạn tôi".
+27. Là người trình bày, tôi muốn khi **tôi quay lại khung** hệ thống **tự bám lại đúng tôi** (không phải người khác), để đáp ứng yêu cầu "tái nhận diện đối tượng" của đề cương (buổi 9) và "duy trì định danh đối tượng qua các khung hình" (buổi 6).
 
 ## Implementation Decisions
 
@@ -62,6 +64,14 @@ Demo live trên CPU với số FPS trung thực; mọi việc nặng offline (n�
 - **Single object** (ADR-0001): một TrackerEngine = một đối tượng; chọn đối tượng mới = khởi tạo lại engine.
 - **Điểm tin cậy**: dùng `best_iou_score`/object score SAM 2 xuất sẵn làm proxy chất lượng mask khi live (không có ground truth ngoài synthetic fixture) — đủ cho chỉ số độ ổn định + báo cáo trung thực.
 - **Khởi tạo lại đối tượng**: phím r — dừng track hiện tại, quay về chế độ chọn ô trên frame hiện tại.
+- **Xử lý mất dấu + tái nhận diện (buổi 6 + 9 đề cương, ADR-0003)** — máy trạng thái 3 pha thay cho hành vi "bám mãi":
+  - `TRACKING`: như hiện tại (SAM 2 propagate từng frame).
+  - `LOST`: mask rỗng ≥ `LOST_AFTER_FRAMES` (mặc định 2) → **ngừng gọi propagate** ⇒ bộ nhớ không thể nhảy sang người khác trong khung (đây là cơ chế chặn "bám sang B"); HUD hiện banner MẤT DẤU + trạng thái "đang tìm lại".
+  - `REACQUIRING`: mỗi frame chạy **YuNet** (`cv2.FaceDetectorYN_create`) phát hiện khuôn mặt + **SFace** (`cv2.FaceRecognizerSF_create`) trích embedding 128-D, so **cosine** với **tập embedding tham chiếu của A**; khớp ≥ ngưỡng → `engine.start(frame, bbox_mặt)` → về `TRACKING`.
+  - **Tập tham chiếu**: trong lúc `TRACKING`, mỗi khi phát hiện khuôn mặt **đủ lớn + đủ tin cậy** (diện tích ≥ `REID_MIN_FACE_PX`, score ≥ `REID_MIN_DETECT_SCORE`) thì lưu embedding vào deque (tối đa `REID_REF_MAX`); khi so khớp lấy **max cosine trên toàn tập** (đo thật: cùng người, mặt 42×62px, cosine so với 1 frame mốc chỉ 0,20–0,72 ⇒ so với 1 mẫu duy nhất sẽ trượt, phải lấy max trên tập).
+  - **Ngưỡng** bắt đầu ở 0,363 (khuyến nghị tài liệu OpenCV cho `FR_COSINE`) nhưng **phải hiệu chỉnh trên video demo thật** và ghi số đo vào báo cáo, không giả định.
+  - **Model**: `models/face/face_detection_yunet_2023mar.onnx` + `models/face/face_recognition_sface_2021dec.onnx` (OpenCV Zoo, `models/` đã gitignored) ⇒ **không thêm dependency Python**; đường dẫn khai báo trong `configs/default.yaml`.
+  - **Đo lường**: `MetricsLogger` thêm cột `state` (`tracking`/`lost`/`reacquiring`) và `reid_score` (cosine tốt nhất ở frame đó) để định lượng "khả năng tái nhận diện" (tiêu chí `docs/research/02` mục đánh giá).
 - **Ghi video**: ghi trực tiếp các frame đã overlay ra mp4 bằng OpenCV VideoWriter khi bật trong config.
 - **Cài đặt SAMURAI không vendor trong Git** (đã loại trong `.gitignore`): README ghi lệnh clone + `pip install -e .` + script tải checkpoint; conda env `samurai` dùng cho máy hiện tại.
 
@@ -84,7 +94,7 @@ Demo live trên CPU với số FPS trung thực; mọi việc nặng offline (n�
 - Đạt ≥ 10 FPS on-device / mọi tối ưu tốc độ: skip-frame, decoupled tracker, đa luồng, decord, TensorRT (ADR-0002 đã bỏ ngưỡng; làm lại sau nếu báo cáo cần).
 - Multi-object tracking hơn 1 đối tượng cùng lúc.
 - Đổi backbone sang EdgeTAM/EfficientTAM/XMem (ADR-0001 loại; nếu sau này đổi sẽ là ADR mới).
-- Tái nhận diện đối tượng sau khi mất dấu lâu (một phần xử lý tự nhiên của SAMURAI memory, nhưng không xây cơ chế riêng).
+- Tái nhận diện khi **không còn tín hiệu khuôn mặt** (quay lưng, bị che kín mặt, quá xa/mờ) hoặc phân biệt nhiều người trông giống nhau — chỉ hỗ trợ **1 đối tượng mục tiêu** có khuôn mặt nhìn thấy được. (Tái nhận diện cơ bản bằng khuôn mặt **nằm trong phạm vi** — ADR-0003, buổi 6 + buổi 9 đề cương.)
 - Giao diện web/Gradio; chỉ dùng cửa sổ OpenCV.
 - Colab notebook + các job offline (nén INT8, đánh giá dataset LaSOT...) — tách phase sau; phần này chỉ đảm bảo chế độ headless chạy được.
 - Training/fine-tuning mô hình.

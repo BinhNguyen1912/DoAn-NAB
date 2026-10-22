@@ -25,7 +25,8 @@ import numpy as np
 # object_score_logits của SAM 2 > 0 nghĩa là tin cậy → dưới bằng 0 coi là mất dấu
 LOST_SCORE_THRESHOLD = 0.0
 
-CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"]
+CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost",
+              "state", "reid_score", "reacquired"]
 
 
 @dataclass
@@ -37,6 +38,10 @@ class FrameRecord:
     score: float                          # điểm tin cậy mask (object_score_logits)
     center: Optional[Tuple[int, int]]     # (cx, cy) tâm đối tượng; None = mất dấu
     lost: Optional[bool] = None           # cờ mất dấu; None → tự suy qua is_lost()
+    # Trạng thái tái nhận diện (ADR-0003, ticket 09) — None khi không bật re-ID
+    state: Optional[str] = None           # "tracking" | "lost" | "reacquiring"
+    reid_score: Optional[float] = None    # cosine tốt nhất frame đó (-1 = không có ứng viên)
+    reacquired: Optional[bool] = None     # True ở đúng frame vừa nhận lại đối tượng
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -67,6 +72,8 @@ class MetricsLogger:
                 "mean_score": 0.0,
                 "lost_count": 0,
                 "lost_ratio": 0.0,
+                "reacquiring_frames": 0,
+                "reacquired_count": 0,
             }
         latencies = np.array([r.latency_ms for r in self.records], dtype=float)
         lost_count = sum(1 for r in self.records if is_lost(r))
@@ -79,6 +86,8 @@ class MetricsLogger:
             "mean_score": float(np.mean([r.score for r in self.records])),
             "lost_count": lost_count,
             "lost_ratio": lost_count / len(self.records),
+            "reacquiring_frames": sum(1 for r in self.records if r.state == "reacquiring"),
+            "reacquired_count": sum(1 for r in self.records if r.reacquired),
         }
 
     def write_csv(self, path: str) -> str:
@@ -91,6 +100,9 @@ class MetricsLogger:
                 writer.writerow([
                     r.frame_idx, f"{float(r.latency_ms):.1f}", f"{float(r.score):.6g}",
                     cx, cy, 1 if is_lost(r) else 0,
+                    r.state if r.state is not None else "",
+                    f"{float(r.reid_score):.6g}" if r.reid_score is not None else "",
+                    (1 if r.reacquired else 0) if r.reacquired is not None else "",
                 ])
         return str(path)
 

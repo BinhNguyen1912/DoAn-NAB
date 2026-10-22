@@ -43,11 +43,22 @@ DEFAULTS = {
     # Ngưỡng logit của mask: 0.0 = lấy đúng như model trả (dễ "ăn" tóc/viền);
     # 0.5–2.0 = chỉ giữ phần model tự tin → mask co lại.
     "mask_threshold": 0.0,
+    # ---- Tái nhận diện khuôn mặt (ADR-0003, buổi 6 + 9 đề cương) ----
+    # Tắt mặc định để không đổi hành vi cũ; bật trong configs/default.yaml.
+    "reid_enabled": False,
+    "reid_detector_model": os.path.join("models", "face", "face_detection_yunet_2023mar.onnx"),
+    "reid_recognizer_model": os.path.join("models", "face", "face_recognition_sface_2021dec.onnx"),
+    "reid_threshold": 0.363,        # cosine SFace tối thiểu để coi là cùng người (phải hiệu chỉnh)
+    "lost_after_frames": 2,         # mask rỗng liên tiếp bao nhiêu frame thì ĐÓNG BĂNG
+    "reid_min_face_px": 40,         # cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên
+    "reid_min_detect_score": 0.8,   # điểm phát hiện mặt tối thiểu
+    "reid_ref_max": 8,              # số mẫu tham chiếu giữ lại (deque)
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
-_INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size")   # source có thể int (webcam) hoặc str (file/RTSP)
-_FLOAT_KEYS = ("record_fps", "mask_threshold")
+_INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size",
+             "lost_after_frames", "reid_min_face_px", "reid_ref_max")   # source có thể int (webcam) hoặc str (file/RTSP)
+_FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score")
 
 
 def _validate(cfg: dict) -> dict:

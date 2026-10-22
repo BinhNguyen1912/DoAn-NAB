@@ -43,11 +43,36 @@ from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
 from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
-from src.config import load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
+from src.config import REPO_ROOT, load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
+
+
+def _make_reid_session(engine, args):
+    """Dựng ReIdSession khi bật re-ID (ADR-0003); None nếu tắt. Thiều model → báo lỗi có hướng dẫn."""
+    if not getattr(args, "reid", False):
+        return None
+    from src.reid import FaceEmbedder, ReIdSession
+
+    def _abs(path):
+        return path if os.path.isabs(path) else os.path.join(REPO_ROOT, path)
+
+    detector, recognizer = _abs(args.reid_detector_model), _abs(args.reid_recognizer_model)
+    for path in (detector, recognizer):
+        if not os.path.isfile(path):
+            print(f"[LOI] thiếu model khuôn mặt: {path}\n"
+                  f"  → tải theo docs/adr/0003 (đặt vào models/face/), rồi chạy lại")
+            raise SystemExit(1)
+    embedder = FaceEmbedder(detector, recognizer,
+                            min_face_px=args.reid_min_face_px,
+                            min_score=args.reid_min_detect_score)
+    print(f"[re-ID] bật: ngưỡng cosine={args.reid_threshold}, đóng băng sau "
+          f"{args.lost_after_frames} frame mất dấu, giữ tối đa {args.reid_ref_max} mẫu")
+    return ReIdSession(engine, embedder, threshold=args.reid_threshold,
+                       lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
+                       min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score)
 
 
 def _window_closed(window_name):
@@ -178,6 +203,7 @@ def _run_display(engine, args):
 
         viz = _make_visualizer(args)  # kích thước biết ở frame đầu → mở trì hoãn
         metrics = _make_metrics(args)
+        reid_session = _make_reid_session(engine, args)
         if args.smooth:
             print("[pipeline] chế độ MƯỢT: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
                   "(HUD hiện tuổi overlay)")
@@ -191,6 +217,7 @@ def _run_display(engine, args):
                 on_result=on_result,
                 visualizer=viz,
                 metrics=metrics,
+                reid_session=reid_session,
             )
         else:
             summary = run_interactive(
@@ -204,6 +231,7 @@ def _run_display(engine, args):
                 visualizer=viz,
                 metrics=metrics,
                 reanchor_every=args.reanchor_every,
+                reid_session=reid_session,
             )
     except KeyboardInterrupt:
         interrupted = True
@@ -247,6 +275,7 @@ def _run_headless(engine, args):
                                record_fps=record_fps)
         print("[pipeline] bắt đầu tracking... (headless)")
         metrics = _make_metrics(args)
+        reid_session = _make_reid_session(engine, args)
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -255,6 +284,7 @@ def _run_headless(engine, args):
             visualizer=viz,
             metrics=metrics,
             reanchor_every=args.reanchor_every,
+            reid_session=reid_session,
         )
     except KeyboardInterrupt:
         interrupted = True
@@ -313,6 +343,17 @@ def main():
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
+    ap.add_argument("--reid", action="store_true",
+                    help="bật tái nhận diện khuôn mặt: mất dấu thì ĐÓNG BĂNG, quay lại thì "
+                         "tự bám lại đúng người (ADR-0003; cần model trong models/face/)")
+    ap.add_argument("--reid-threshold", type=float, default=None,
+                    help="ngưỡng cosine SFace để coi là cùng người (mặc định 0.363)")
+    ap.add_argument("--lost-after-frames", type=int, default=None,
+                    help="số frame mask rỗng liên tiếp trước khi đóng băng (mặc định 2)")
+    ap.add_argument("--reid-min-face-px", type=int, default=None,
+                    help="cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên (mặc định 40)")
+    ap.add_argument("--reid-ref-max", type=int, default=None,
+                    help="số mẫu tham chiếu giữ lại (mặc định 8)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
@@ -337,6 +378,11 @@ def main():
         "record_fps": args.record_fps,
         "metrics_csv": args.metrics_csv,
         "metrics_summary": args.metrics_summary,
+        "reid_enabled": (True if args.reid else None),
+        "reid_threshold": args.reid_threshold,
+        "lost_after_frames": args.lost_after_frames,
+        "reid_min_face_px": args.reid_min_face_px,
+        "reid_ref_max": args.reid_ref_max,
     })
     checkpoint = resolve_checkpoint(cfg["checkpoint"])
     if cfg["source"] is None:
@@ -358,6 +404,18 @@ def main():
     args.record = args.record or (cfg["record_path"] if cfg["record_enabled"] else None)
     args.metrics_csv = args.metrics_csv or cfg["metrics_csv"]
     args.metrics_summary = args.metrics_summary or cfg["metrics_summary"]
+    args.reid = bool(args.reid or cfg["reid_enabled"])
+    args.reid_threshold = cfg["reid_threshold"]
+    args.lost_after_frames = cfg["lost_after_frames"]
+    args.reid_min_face_px = cfg["reid_min_face_px"]
+    args.reid_min_detect_score = cfg["reid_min_detect_score"]
+    args.reid_ref_max = cfg["reid_ref_max"]
+    args.reid_detector_model = cfg["reid_detector_model"]
+    args.reid_recognizer_model = cfg["reid_recognizer_model"]
+    if args.reid and args.reanchor_every:
+        print("[re-ID] tắt --reanchor-every: re-anchor chọn lại ô cũ sẽ phá trạng thái "
+              "mất dấu/nhận lại (ADR-0003)")
+        args.reanchor_every = None
 
     _guess_bbox_file(args)
 
