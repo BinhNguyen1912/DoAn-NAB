@@ -206,6 +206,7 @@ class ReIdSession:
 
         if self._state == STATE_TRACKING:
             result = self.engine.process(frame)
+            self._stamp_frame_idx(result)
             if result.mask is None or not result.mask.any():
                 self._lost_streak += 1
                 if self._lost_streak >= self.lost_after_frames:
@@ -231,10 +232,7 @@ class ReIdSession:
         if best_hit is not None and best_score >= self.threshold:
             result = self.engine.start(frame, best_hit.bbox)
             # engine.start reset bộ đếm frame của nó → giữ frame_idx liên tục cho CSV/biểu đồ
-            try:
-                result.frame_idx = self._frame_idx
-            except AttributeError:  # engine giả/duck-type không cho ghi → bỏ qua
-                pass
+            self._stamp_frame_idx(result)
             self._state = STATE_TRACKING
             self._lost_streak = 0
             self._collect_reference(frame, best_hit.bbox)
@@ -244,6 +242,17 @@ class ReIdSession:
         return Step(result=self._lost_result(), state=self._state, reid_score=best_score)
 
     # -- nội bộ --
+    def _stamp_frame_idx(self, result) -> None:
+        """Gán frame_idx theo bộ đếm của session (engine.start reset bộ đếm của engine).
+
+        Phải làm ở MỌI frame, không chỉ frame nhận lại — nếu không, sau khi nhận lại CSV
+        sẽ lùi số (lỗi thật 22-10: ... 213 → 1) và biểu đồ quỹ đạo bị sai.
+        """
+        try:
+            result.frame_idx = self._frame_idx
+        except AttributeError:  # engine giả/duck-type không cho ghi → bỏ qua
+            pass
+
     def _lost_result(self) -> LostResult:
         return LostResult(frame_idx=self._frame_idx)
 

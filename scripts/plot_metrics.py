@@ -36,22 +36,27 @@ def read_metrics(path):
         "cx": np.array([float(r["center_x"]) if r["center_x"] else np.nan for r in rows]),
         "cy": np.array([float(r["center_y"]) if r["center_y"] else np.nan for r in rows]),
         "lost": np.array([int(r["lost"]) for r in rows]),
+        # Trạng thái tái nhận diện: frame "lost"/"reacquiring" KHÔNG chạy model → latency 0,
+        # phải loại khỏi thống kê (nếu không, mean/FPS báo sai — cùng quy tắc với MetricsLogger).
+        "frozen": np.array([(r.get("state") in ("lost", "reacquiring")) for r in rows]),
     }
 
 
 def summarize(name, d):
-    lat = d["latency"]
+    measured = ~d["frozen"] if "frozen" in d else np.ones(len(d["latency"]), bool)
+    lat = d["latency"][measured] if measured.any() else d["latency"]
     lost = int(d["lost"].sum())
     return {
         "file": name,
-        "n": len(lat),
+        "n": len(d["latency"]),
+        "frozen": int((~measured).sum()) if "frozen" in d else 0,
         "mean_ms": float(np.mean(lat)),
         "p95_ms": float(np.percentile(lat, 95)),
         "min_ms": float(np.min(lat)),
         "max_ms": float(np.max(lat)),
         "fps": 1000.0 / float(np.mean(lat)) if np.mean(lat) > 0 else 0.0,
         "lost": lost,
-        "lost_ratio": lost / len(lat),
+        "lost_ratio": lost / len(d["latency"]),
     }
 
 
@@ -145,8 +150,14 @@ def main():
         d = read_metrics(path)
         label = name
         if args.skip_warmup:
-            d = {k: (v[args.skip_warmup:] if hasattr(v, "__len__") else v) for k, v in d.items()}
-            label = f"{name} (bỏ {args.skip_warmup} frame đầu)"
+            if len(d["latency"]) <= args.skip_warmup:
+                # File ít frame hơn số muốn bỏ ⇒ giữ nguyên + báo rõ (trước đây crash IndexError
+                # trong np.percentile vì mảng rỗng — gặp thật khi trộn file CPU 5 frame với file GPU).
+                print(f"[bỏ qua --skip-warmup {args.skip_warmup} cho {name}: chỉ có "
+                      f"{len(d['latency'])} frame]", file=sys.stderr)
+            else:
+                d = {k: (v[args.skip_warmup:] if hasattr(v, "__len__") else v) for k, v in d.items()}
+                label = f"{name} (bỏ {args.skip_warmup} frame đầu)"
         s = summarize(label, d)
         items.append((d, s))
         print(f"{name:28} {s['n']:5d} {s['mean_ms']:8.0f} {s['p95_ms']:8.0f} "

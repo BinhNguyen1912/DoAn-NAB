@@ -282,3 +282,43 @@ class TestTrangThaiTaiNhanDien:
         with open(path, encoding="utf-8") as f:
             rows = list(csv.reader(f))
         assert rows[1][-3:] == ["", "", ""]
+
+
+class TestThongKeKhongBiLechBoiFrameDongBang:
+    """Frame đóng băng (mất dấu → không suy luận) có latency 0 → phải loại khỏi thống kê latency.
+
+    Lỗi thật gặp khi chạy `./run demo` 22-10: 35/145 dòng có latency 0 ms làm mean tụt
+    từ 311 ms xuống 236 ms → báo cáo FPS sai (4,24 thay vì 3,22).
+    """
+
+    def test_loai_frame_dong_bang_khoi_mean_p95(self):
+        logger = MetricsLogger()
+        logger.log(FrameRecord(frame_idx=0, latency_ms=300.0, score=1.0, center=(10, 10),
+                               state="tracking"))
+        logger.log(FrameRecord(frame_idx=1, latency_ms=310.0, score=1.0, center=(11, 11),
+                               state="tracking"))
+        # frame đóng băng: không gọi model nên latency 0
+        logger.log(FrameRecord(frame_idx=2, latency_ms=0.0, score=0.0, center=None, lost=True,
+                               state="reacquiring", reid_score=-1.0))
+        s = logger.summary()
+        assert s["mean_latency_ms"] == pytest.approx(305.0)
+        assert s["effective_fps"] == pytest.approx(1000 / 305.0, rel=1e-6)
+        assert s["frozen_frames"] == 1
+        assert s["total_frames"] == 3
+
+    def test_ban_ghi_khong_co_state_van_tinh_nhu_cu(self):
+        logger = MetricsLogger()
+        logger.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(1, 1)))
+        logger.log(FrameRecord(frame_idx=1, latency_ms=200.0, score=1.0, center=(2, 2)))
+        s = logger.summary()
+        assert s["mean_latency_ms"] == pytest.approx(150.0)
+        assert s["frozen_frames"] == 0
+
+    def test_toan_bo_frame_dong_bang_thi_khong_chia_cho_0(self):
+        logger = MetricsLogger()
+        logger.log(FrameRecord(frame_idx=0, latency_ms=0.0, score=0.0, center=None, lost=True,
+                               state="lost"))
+        s = logger.summary()
+        assert s["mean_latency_ms"] == 0.0
+        assert s["effective_fps"] == 0.0
+        assert s["frozen_frames"] == 1

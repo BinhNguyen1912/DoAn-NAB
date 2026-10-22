@@ -380,3 +380,57 @@ class TestWorkerVoiReId:
         assert res is not None and res.result is not None
         assert engine.calls[:2] == ["reset", "start"]
         assert engine.calls.count("process") >= 1
+
+
+class TestKhongQuayVongHetTocKhiDongBang:
+    """Đang đóng băng (mất dấu) thì vòng suy luận phải được hãm nhịp.
+
+    Lỗi thật 22-10: khi LOST, vòng lặp chỉ chạy detect mặt nên quay ~50–100 lần/giây,
+    frame_idx phình lên 213 trong khi chỉ 145 kết quả thật được hiển thị.
+    """
+
+    def test_so_buoc_suy_luan_bi_gioi_han_khi_mat_dau(self):
+        from src.reid import ReIdSession
+        from src.tracker_engine import TrackingResult
+
+        class NoFace:
+            def detect(self, frame):
+                return []
+
+        class LostEngine:
+            """start → mask có; process → mask RỖNG (mất dấu ngay) để rơi vào LOST."""
+
+            def __init__(self):
+                self.calls = 0
+
+            def start(self, frame, bbox):
+                m = np.zeros((120, 160), bool)
+                m[10:50, 10:50] = True
+                return TrackingResult(frame_idx=0, mask=m, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=1.0)
+
+            def process(self, frame):
+                self.calls += 1
+                return TrackingResult(frame_idx=self.calls, mask=np.zeros((120, 160), bool),
+                                      bbox=(0, 0, 0, 0), score=0.0, elapsed_ms=0.0)
+
+            def reset(self):
+                self.calls = 0
+
+        src = LatestFrameSource(FakeSource(delay=0.005))
+        src.start()
+        engine = LostEngine()
+        session = ReIdSession(engine, NoFace(), threshold=0.5, lost_after_frames=1)
+        worker = InferenceWorker(engine, src, reid_session=session, frozen_poll_interval=0.04)
+        worker.start()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            time.sleep(0.1)                        # để rơi vào LOST (mask rỗng từ frame 1)
+            start_count = worker.inference_count
+            time.sleep(0.4)                        # 0,4 s ở nhịp 40 ms ⇒ tối đa ~10 vòng
+            spun = worker.inference_count - start_count
+        finally:
+            worker.stop()
+            src.stop()
+        assert session.state in ("lost", "reacquiring")
+        assert spun <= 20, f"vòng suy luận quay {spun} lần trong 0,4 s — chưa hãm nhịp?"

@@ -128,3 +128,36 @@
 - OpenCV Zoo: YuNet (`face_detection_yunet_2023mar`) + SFace (`face_recognition_sface_2021dec`)
 - SFace paper: *Sigmoid-Constrained Hypersphere Loss for Robust Face Recognition*
 - `docs/giai-thich-do-an.md` mục 14; `docs/research/01` (dòng 137), `docs/research/02` (dòng 242)
+
+## Cập nhật: chạy `./run demo` thật trên webcam → phát hiện & sửa 3 lỗi
+
+**Kết quả lần chạy thật (webcam, image_size 320, `--smooth --reid`, 145 frame):**
+- re-ID bật, mất dấu ở `f48`, **nhận lại ở `f213` với `reid_score = 0,598`** (ngưỡng 0,363) —
+  người dùng xác nhận ô bao **bám lại đúng mặt mình**, không phải mặt người khác.
+- 36/145 frame mất dấu (25%) → đây là lần chạy **stress**, không phải số đại diện chất lượng bám.
+
+**Ba lỗi log/CSV lộ ra và đã sửa (kèm test):**
+
+1. **`frame_idx` lùi sau khi nhận lại** (`... 213 → 1`): `engine.start` reset bộ đếm frame của engine,
+   nhưng session chỉ gán lại `frame_idx` ở đúng frame nhận lại. → `ReIdSession._stamp_frame_idx()`
+   gán **mỗi frame** (cả TRACKING lẫn lúc nhận lại). Test: `test_frame_idx_tang_lien_tuc_sau_khi_nhan_lai`.
+2. **Frame đóng băng ghi `latency_ms = 0`** → mean bị kéo từ **311 ms xuống 236 ms**, FPS báo sai
+   **4,24** thay vì **3,22**. → `MetricsLogger`: thêm `is_frozen()` + `FROZEN_STATES`, loại frame
+   `lost`/`reacquiring` khỏi thống kê latency, thêm `frozen_frames` vào summary.
+   `data/smooth_summary.json` được **tính lại** bằng code mới (không chạy lại webcam — chỉ sửa cách tính).
+   Test: 3 test mới trong `test_metrics_logger.py`.
+3. **Khi LOST, luồng suy luận quay hết tốc CPU**: đo bằng mutation check — **5 553 vòng trong 0,4 s
+   (≈14 000 lần/giây)**, làm `frame_idx` phình lên 213 trong khi chỉ 145 kết quả thật được hiển thị.
+   → `InferenceWorker(..., frozen_poll_interval=0.04)` hãm nhịp khi đang đóng băng.
+   Test: `TestKhongQuayVongHetTocKhiDongBang` (đã kiểm: bỏ throttle → test FAIL với 5 553 vòng).
+
+**Sửa thêm `scripts/plot_metrics.py` (đường báo cáo):**
+- `summarize()` loại frame đóng băng khỏi mean/p95/FPS (trước đây tính cả → biểu đồ báo 236 ms).
+- `--skip-warmup N` không còn crash `IndexError` khi file có ít hơn N frame (gặp thật khi trộn
+  file CPU 5 frame với file GPU 60 frame) — nay giữ nguyên file đó và in cảnh báo.
+
+**Gates:** `ruff check .` sạch; full `pytest` → **221 passed** (thêm 5 test).
+
+**Lưu ý `git_rev`:** 3 sửa trên đụng `src/` nên về nguyên tắc lệch `git_rev=8d64d59` của số GPU.
+Nhưng lần đo GPU **không bật re-ID** và `lost_count = 0` → phép đo GPU không bị ảnh hưởng.
+README đã ghi rõ số GPU sinh từ `8d64d59` và dòng CPU re-ID là lần chạy 22-10.

@@ -93,10 +93,11 @@ class StampedResult:
 class InferenceWorker:
     """Luồng suy luận: luôn lấy frame mới nhất, không xếp hàng; đổi đối tượng = set_bbox()."""
 
-    def __init__(self, engine, frame_source, reid_session=None):
+    def __init__(self, engine, frame_source, reid_session=None, frozen_poll_interval=0.04):
         self._engine = engine
         self._frames = frame_source
         self._reid = reid_session       # ReIdSession (ADR-0003) — None = không tái nhận diện
+        self._frozen_poll = float(frozen_poll_interval)  # nhịp vòng khi đóng băng (xem _loop)
         self._lock = threading.Lock()
         self._stamped = None
         self._bbox = None            # bbox đang track (None = chưa chọn → không suy luận)
@@ -219,6 +220,13 @@ class InferenceWorker:
                 self._seq += 1
                 self.inference_count += 1
                 self._stamped = StampedResult(self._seq, result, time.monotonic())
+                frozen = self._reid is not None and self._reid.state != "tracking"
+
+            # 3) Đang đóng băng (chỉ detect mặt, KHÔNG chạy model) → không quay vòng hết tốc CPU.
+            # Lỗi thật 22-10: vòng lặp quay ~50–100 lần/s, frame_idx phình lên 213 trong khi
+            # chỉ 145 kết quả thật được hiển thị → tốn CPU và số frame mất nghĩa.
+            if frozen:
+                time.sleep(self._frozen_poll)
 
     def stop(self):
         self._stop.set()

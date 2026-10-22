@@ -51,6 +51,18 @@ def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> boo
     return record.center is None or record.score <= threshold
 
 
+# Trạng thái tái nhận diện mà model KHÔNG chạy (đóng băng) → latency bằng 0, không phải số đo
+FROZEN_STATES = ("lost", "reacquiring")
+
+
+def is_frozen(record: FrameRecord) -> bool:
+    """True nếu frame này không chạy model (đang đóng băng chờ nhận lại đối tượng).
+
+    Dùng để loại khỏi thống kê latency/FPS — nếu tính cả, con số FPS bị thổi phồng.
+    """
+    return record.state in FROZEN_STATES
+
+
 class MetricsLogger:
     """Thu thập FrameRecord từng frame; xuất CSV + summary — thuần, test không cần model."""
 
@@ -72,20 +84,30 @@ class MetricsLogger:
                 "mean_score": 0.0,
                 "lost_count": 0,
                 "lost_ratio": 0.0,
+                "frozen_frames": 0,
                 "reacquiring_frames": 0,
                 "reacquired_count": 0,
             }
-        latencies = np.array([r.latency_ms for r in self.records], dtype=float)
         lost_count = sum(1 for r in self.records if is_lost(r))
-        mean_ms = float(np.mean(latencies))
+        # Frame đóng băng (mất dấu → không gọi model) có latency 0. Tính latency trên
+        # chúng sẽ kéo mean xuống và làm FPS báo sai (lỗi thật 22-10: 236 thay vì 311 ms).
+        frozen = [r for r in self.records if is_frozen(r)]
+        measured = [r for r in self.records if not is_frozen(r)]
+        latencies = np.array([r.latency_ms for r in measured], dtype=float)
+        if latencies.size == 0:
+            mean_ms = p95_ms = 0.0
+        else:
+            mean_ms = float(np.mean(latencies))
+            p95_ms = float(np.percentile(latencies, 95))
         return {
             "total_frames": len(self.records),
             "mean_latency_ms": mean_ms,
-            "p95_latency_ms": float(np.percentile(latencies, 95)),
+            "p95_latency_ms": p95_ms,
             "effective_fps": 1000.0 / mean_ms if mean_ms > 0 else 0.0,
             "mean_score": float(np.mean([r.score for r in self.records])),
             "lost_count": lost_count,
             "lost_ratio": lost_count / len(self.records),
+            "frozen_frames": len(frozen),
             "reacquiring_frames": sum(1 for r in self.records if r.state == "reacquiring"),
             "reacquired_count": sum(1 for r in self.records if r.reacquired),
         }

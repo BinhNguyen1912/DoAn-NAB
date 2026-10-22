@@ -267,7 +267,7 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 | Môi trường | Cấu hình | mean ms/frame | FPS hiệu dụng | Nguồn số liệu |
 |---|---|---|---|---|
 | Laptop CPU (i5, không GPU rời) | 720p, image_size 1024 | 5 047 | **0,20** | `data/gui_summary.json` |
-| Laptop CPU + tối ưu | 720p, image_size **320**, `--smooth` (5 frame — `./run demo5`) | **269** | **3,72** | `data/smooth_summary.json` |
+| Laptop CPU + tối ưu, **re-ID bật** ⭐ (webcam thật, 145 frame) | 720p, image_size **320**, `--smooth --reid` | **311** (chỉ frame có suy luận; 35 frame đóng băng không tính) | **3,22** | `data/smooth_summary.json` |
 | **Colab GPU Tesla T4** *(đo commit cũ, video thật)* | 720p, image_size 1024 | 380 (bỏ frame warmup: **337**) | **2,63** (steady **2,97**) | `data/gpu_summary.json` (bản cũ) |
 | **Colab GPU Tesla T4 + tối ưu** ⭐ *(mới nhất)* | 720p, **video tổng hợp**, image_size 512, `--reanchor-every 10` | thô **100,8** → bỏ 5 frame warmup **49,6** | thô **9,92** → **20,15** | `data/gpu_summary.json` + `data/gpu_metrics.csv` (git `8d64d59`) |
 
@@ -278,8 +278,12 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 > `data/gpu_run_info.json` với `git log -1`.
 >
 > Lần chạy đầy đủ trên webcam **159 frame** (18-10-2026, image_size 384) đo **445 ms ≈ 2,25 FPS** —
-> con số dùng khi demo; CSV của lần đó không còn giữ, dòng `smooth` trong bảng là lần chạy
-> `./run demo5` (5 frame, image_size 320) mới nhất.
+> con số dùng khi demo. Dòng `re-ID bật` ở trên là lần chạy **22-10-2026, 145 frame** có
+> **36 frame mất dấu → 1 lần nhận lại** (`reid_score 0,598`) — đây là lần chạy **stress**
+> (25% mất dấu) dùng để chứng minh cơ chế, không phải số đại diện cho chất lượng bám.
+> ⚠️ Frame đóng băng (mất dấu, **không gọi model**) có `latency_ms = 0` và được **loại khỏi
+> thống kê latency/FPS** (`frozen_frames` trong summary) — nếu tính cả, mean tụt còn 236 ms
+> và FPS báo sai thành 4,24.
 
 → GPU (T4) nhanh hơn CPU laptop **~13×** ở cùng độ phân giải (1024), và **~9×** khi so cấu hình tối ưu
 hai bên (49,6 ms vs 445 ms). Lưu ý trung thực: T4 là kiến trúc **Turing (SM 7.5)** nên **không bật được

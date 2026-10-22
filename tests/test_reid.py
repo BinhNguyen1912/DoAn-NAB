@@ -198,3 +198,25 @@ class TestReIdSessionReacquire:
         session.reset()
         assert session.state == STATE_TRACKING
         assert session.ref_count == 0
+
+
+class TestFrameIdxLienTuc:
+    """frame_idx phải đơn điệu tăng qua cả mốc nhận lại (engine.start reset bộ đếm của nó).
+
+    Lỗi thật 22-10: CSV có ... 213 → 1 (lùi) làm biểu đồ quỹ đạo sai.
+    """
+
+    def test_frame_idx_tang_lien_tuc_sau_khi_nhan_lai(self):
+        ref = _vec(1)
+        embedder = FakeEmbedder([_hit((10, 10, 60, 60), ref)])
+        engine = FakeEngine(masks=[True])
+        session = ReIdSession(engine=engine, embedder=embedder, threshold=0.5,
+                              lost_after_frames=1)
+        session.start(np.zeros((8, 8, 3), np.uint8), (0, 0, 100, 100))
+        s1 = session.step(np.zeros((8, 8, 3), np.uint8))        # → LOST
+        embedder.hits = [_hit((300, 300, 360, 360), ref)]
+        s2 = session.step(np.zeros((8, 8, 3), np.uint8))        # → nhận lại
+        s3 = session.step(np.zeros((8, 8, 3), np.uint8))        # frame bám tiếp theo
+        assert s2.reacquired is True
+        assert s1.result.frame_idx < s2.result.frame_idx < s3.result.frame_idx
+        assert s2.result.frame_idx == 2 and s3.result.frame_idx == 3
