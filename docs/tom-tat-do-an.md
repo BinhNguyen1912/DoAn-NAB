@@ -99,11 +99,13 @@ Vì sao phải **tập mẫu + lấy max**: đo thật cùng 1 người, mặt n
 | CPU laptop, 1024 (mặc định) | 5 047 | **0,20** |
 | CPU laptop, 384 + mượt | 445 | **2,25** |
 | CPU laptop, 384 + tái nhận diện | 292 | **3,40** |
-| **Colab GPU T4**, 512 + tối ưu | **65** | **15,28** |
+| **Colab GPU T4**, 512 + tối ưu (bỏ 5 frame warmup) | **49,6** | **20,15** |
+| *(cùng cấu hình, mean thô 60 frame — bị frame 0 warmup 2 954 ms kéo lên)* | *100,8* | *9,92* |
 
 - Che khuất **50%**: IoU 0,97 → **0,53** → phục hồi **0,967** ngay khung đầu sau khi hết che.
 - Che khuất **100%**: mất dấu 6/6 → hết che thì **0,984** ngay, mất dấu **0/12**.
-- GPU T4 nhanh hơn CPU **13×** (cùng độ phân giải) → **78×** (khi cả hai đã tối ưu).
+- GPU T4 nhanh hơn CPU **13×** (cùng độ phân giải) → **~9×** (khi so cấu hình tối ưu hai bên:
+  49,6 ms vs 445 ms). Số GPU mới nhất: `data/gpu_summary.json` (git `8d64d59`).
 - Test: **216 pass**, ruff sạch.
 
 ---

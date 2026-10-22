@@ -152,7 +152,7 @@ báo mất dấu, điểm tin cậy, cảnh báo khi chọn vào vùng nền, 14
 | **Reset bộ nhớ định kỳ** (re-anchor mỗi N khung) | Nhanh thêm ~20–30% | ⚠️ dùng có điều kiện (xem mục 8) |
 | **Tách luồng hiển thị** (video 1 luồng, mô hình 1 luồng) | Video **19 FPS** thay vì 2 FPS | ✅ **dùng cho demo** |
 | Cắt bớt bộ nhớ mô hình trực tiếp | ❌ lỗi (mô hình cần các khung cũ) | ❌ |
-| Đo trên **GPU** (Colab) | **15,28 FPS** | ✅ dùng để làm video + lấy số báo cáo |
+| Đo trên **GPU** (Colab) | **20,15 FPS** (bỏ 5 frame warmup; mean thô 9,92 FPS) | ✅ dùng để làm video + lấy số báo cáo |
 
 **Kết luận về máy bạn:** CPU này là **nút cổ chai tuyệt đối** — mọi mẹo phần mềm chỉ cứu được phần
 "cảm giác" (video mượt 19 FPS, mặt nạ cập nhật 2 lần/giây), còn tốc độ thật của mô hình vẫn ~0,2–2 FPS.
@@ -171,7 +171,7 @@ kết quả về. **Không cần cài gì trên laptop.**
 
 | Lý do | Giải thích |
 |---|---|
-| **1. Laptop không đủ nhanh** | CPU: 0,20 FPS (5 047 ms/khung) → video chiếu cho hội đồng sẽ là "slideshow". GPU T4: **15,28 FPS** → video xem được như camera thường. |
+| **1. Laptop không đủ nhanh** | CPU: 0,20 FPS (5 047 ms/khung) → video chiếu cho hội đồng sẽ là "slideshow". GPU T4: **20,15 FPS** → video xem được như camera thường. |
 | **2. Báo cáo cần số liệu GPU để chứng minh "real-time-capable"** | ADR-0002 (quyết định đã thống nhất với GVHD) ghi rõ: số FPS GPU tham chiếu lấy từ **Colab T4**. Không có số GPU thì câu "hệ thống chạy real-time được trên GPU" chỉ là lời nói. |
 | **3. Chứng minh hệ thống chạy được trên máy không màn hình** | Chế độ **headless** (không cửa sổ) chỉ thực sự được kiểm khi chạy trên máy chủ — Colab là máy chủ đó. |
 
@@ -218,10 +218,10 @@ hiểu hệ thống chứ không chỉ chạy lệnh.
 | Colab: checkpoint tải về **0 byte** | URL cũ trả lỗi **403** (Meta đổi đường dẫn) | Dùng URL mới + **kiểm tra dung lượng >100 MB**, báo lỗi rõ | hết lỗi |
 | Colab: `No module named 'loguru'` | `loguru` là phụ thuộc của **SAMURAI**, không nằm trong gói `sam2` | `pip install loguru` | hết lỗi |
 | Colab: `inputs must be a CUDA tensor` | Bước "vá lỗ hổng mặt nạ" của SAM 2 nhận dữ liệu sai thiết bị | Tắt bước đó (mặc định) — đồng thời làm số CPU/GPU **so sánh được** | log sạch |
-| Số GPU đầu tiên chỉ 2,63 FPS | ① chưa giảm độ phân giải model; ② khung đầu là "warmup" ~3 s làm sai lệch trung bình | Chạy lại với `--image-size 512 --reanchor-every 10`; bỏ khung đầu khi tính | **15,28 FPS** |
+| Số GPU đầu tiên chỉ 2,63 FPS | ① chưa giảm độ phân giải model; ② khung đầu là "warmup" ~3 s làm sai lệch trung bình | Chạy lại với `--image-size 512 --reanchor-every 10`; bỏ khung đầu khi tính | **20,15 FPS** (bỏ warmup) |
 
 > Ghi chú thêm: **T4 là chip đời Turing** nên không bật được "FlashAttention" (một kỹ thuật tăng tốc
-> cần chip Ampere trở lên). Vì vậy **15,28 FPS là cận dưới** — GPU đời mới (A100, RTX 30/40) sẽ nhanh hơn.
+> cần chip Ampere trở lên). Vì vậy **20,15 FPS là cận dưới** — GPU đời mới (A100, RTX 30/40) sẽ nhanh hơn.
 
 ---
 
@@ -242,7 +242,7 @@ hiểu hệ thống chứ không chỉ chạy lệnh.
 
 **1. "Hệ thống này chạy real-time không?"**
 > "Trên laptop CPU thì không ạ — đo thật là 0,20 FPS (5 047 ms/khung) vì máy không có GPU rời; em công bố
-> trung thực con số này chứ không nói quá. Trên GPU Tesla T4 (Colab) cùng hệ thống đạt **15,28 FPS**,
+> trung thực con số này chứ không nói quá. Trên GPU Tesla T4 (Colab) cùng hệ thống đạt **20,15 FPS**,
 > tức kiến trúc **đủ khả năng real-time**; em có bảng so sánh 4 môi trường trong báo cáo."
 
 **2. "Vậy em làm gì, hay chỉ chạy repo của Meta?"**

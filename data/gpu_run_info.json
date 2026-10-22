@@ -1,0 +1,11 @@
+{
+  "tag": "gpu",
+  "git_rev": "8d64d59",
+  "timestamp": "2026-10-22T15:56:21",
+  "device": "cuda",
+  "image_size": 512,
+  "reanchor_every": 10,
+  "bbox": "200,200,120,120",
+  "video": "input.mp4",
+  "max_frames": null
+}

@@ -267,14 +267,24 @@ mkdir -p "$FONTDIR" && cp /usr/share/fonts/truetype/dejavu/DejaVuSans.ttf "$FONT
 | Môi trường | Cấu hình | mean ms/frame | FPS hiệu dụng | Nguồn số liệu |
 |---|---|---|---|---|
 | Laptop CPU (i5, không GPU rời) | 720p, image_size 1024 | 5 047 | **0,20** | `data/gui_summary.json` |
-| Laptop CPU + tối ưu | 720p, image_size 384, `--smooth` | 445 | **2,25** | `data/smooth_summary.json` |
-| **Colab GPU Tesla T4** | 720p, image_size 1024 | 380 (bỏ frame warmup: **337**) | **2,63** (steady **2,97**) | `data/gpu_summary.json` |
-| **Colab GPU Tesla T4 + tối ưu** | 720p, image_size 512, `--reanchor-every 10` | **65** | **15,28** | `data/gpu_summary2.json` |
+| Laptop CPU + tối ưu | 720p, image_size **320**, `--smooth` (5 frame — `./run demo5`) | **269** | **3,72** | `data/smooth_summary.json` |
+| **Colab GPU Tesla T4** *(đo commit cũ, video thật)* | 720p, image_size 1024 | 380 (bỏ frame warmup: **337**) | **2,63** (steady **2,97**) | `data/gpu_summary.json` (bản cũ) |
+| **Colab GPU Tesla T4 + tối ưu** ⭐ *(mới nhất)* | 720p, **video tổng hợp**, image_size 512, `--reanchor-every 10` | thô **100,8** → bỏ 5 frame warmup **49,6** | thô **9,92** → **20,15** | `data/gpu_summary.json` + `data/gpu_metrics.csv` (git `8d64d59`) |
 
-→ GPU (T4) nhanh hơn CPU laptop **~13×** ở cùng độ phân giải, và **~78×** khi cả hai đã tối ưu.
-Lưu ý trung thực: T4 là kiến trúc **Turing (SM 7.5)** nên **không bật được FlashAttention**
-(SAM 2 cảnh báo `Flash Attention is disabled as it requires a GPU with Ampere (8.0)`) → số FPS trên
-T4 là **cận dưới**; GPU Ampere/Ada (A100, RTX 30/40) sẽ nhanh hơn nữa.
+> ⚠️ **Cách đọc bảng này (rất quan trọng khi báo cáo):** cột `mean` **bị kéo lên bởi frame 0** vì Colab
+> phải warmup CUDA — đo được **2 954 ms ở frame 0**, các frame sau chỉ **42–62 ms**. Vì vậy phải nói
+> **cả hai số**: "mean thô 100,8 ms (9,92 FPS) do warmup; **tốc độ ổn định 49,6 ms/frame ≈ 20,15 FPS**".
+> Số liệu tái tạo được: chạy `scripts/colab_run_all.py` trên T4, so `git_rev` trong
+> `data/gpu_run_info.json` với `git log -1`.
+>
+> Lần chạy đầy đủ trên webcam **159 frame** (18-10-2026, image_size 384) đo **445 ms ≈ 2,25 FPS** —
+> con số dùng khi demo; CSV của lần đó không còn giữ, dòng `smooth` trong bảng là lần chạy
+> `./run demo5` (5 frame, image_size 320) mới nhất.
+
+→ GPU (T4) nhanh hơn CPU laptop **~13×** ở cùng độ phân giải (1024), và **~9×** khi so cấu hình tối ưu
+hai bên (49,6 ms vs 445 ms). Lưu ý trung thực: T4 là kiến trúc **Turing (SM 7.5)** nên **không bật được
+FlashAttention** (SAM 2 cảnh báo `Flash Attention is disabled as it requires a GPU with Ampere (8.0)`)
+→ số FPS trên T4 là **cận dưới**; GPU Ampere/Ada (A100, RTX 30/40) sẽ nhanh hơn nữa.
 
 Chi tiết từng phiên chạy: `docs/task/`; số liệu mẫu:
 `[metrics] mean=3441 ms | p95=4123 ms | FPS hiệu dụng ≈ 0.29 | mất dấu 0/5`.

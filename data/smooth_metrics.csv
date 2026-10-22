@@ -1,0 +1,6 @@
+frame_idx,latency_ms,score,center_x,center_y,lost,state,reid_score,reacquired
+0,337.4,16.8582,308,348,0,tracking,,0
+1,256.3,7.26322,312,357,0,tracking,-1,0
+2,256.4,6.87796,313,358,0,tracking,-1,0
+3,246.1,6.17033,321,362,0,tracking,-1,0
+4,248.9,5.52074,406,375,0,tracking,-1,0
