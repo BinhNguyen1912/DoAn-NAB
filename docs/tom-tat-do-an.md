@@ -59,6 +59,27 @@ Nguyên tắc (ADR-0001): **không huấn luyện lại model** — đóng góp 
 
 ---
 
+## 4b. Model nào — của ai, license gì (hội đồng rất hay hỏi)
+
+Hệ thống dùng **HAI bộ model khác nhau**, đừng nhầm khi bảo vệ:
+
+| Bộ | Làm gì | Model | Nguồn · license | Số chính thức | Dùng ở đâu |
+|---|---|---|---|---|---|
+| **Lõi** | Phân đoạn (mask) + bám bắt + motion memory + temporal propagation | **SAM 2.1 tiny** + config **SAMURAI** | Meta (Apache-2.0) + yangchris11/samurai | — | `src/tracker_engine.py` |
+| **Tái nhận diện** | Chỉ khi **mất dấu**: phát hiện mặt + embedding 128-D | **YuNet** + **SFace** | **OpenCV Zoo** (YuNet MIT · SFace Apache-2.0) | YuNet: WIDER Face AP **0,834 / 0,824 / 0,708**; SFace: **accuracy 0,9940** | `src/reid.py` (API `cv2.FaceDetectorYN_create`, `cv2.FaceRecognizerSF_create`) |
+| **Hạ tầng** | Thu nhận camera, vẽ HUD, ghi mp4, 2 model trên | OpenCV | Apache-2.0 | — | khắp nơi |
+
+- SFace = **MobileFaceNet** + SFace loss, input 112×112 **align bằng 5 landmark**; paper: *SFace: Sigmoid-Constrained Hypersphere Loss*.
+- YuNet paper: *A tiny millisecond-level face detector*; **không phải YOLO**.
+- Ngưỡng cosine **0,363** lấy từ chính demo OpenCV Zoo (`demo.cpp:87`).
+
+> ⚠️ **Câu hỏi bẫy: “SFace chính xác 99,4% à?”**
+> *“Đó là số của tác giả đo trên ảnh **align chất lượng cao**. Trên webcam thật của em, mặt nhỏ
+> 42×62 px nên cosine **cùng một người** chỉ 0,20–0,72 (em đo, ghi trong ADR-0003). Vì vậy em
+> không dựa vào 99,4% mà đo trực tiếp: lần chạy thật nhận lại **2/2** với cosine **0,650** và **0,772**.”*
+
+---
+
 ## 5. Ba trụ của đề cương nằm ở đâu trong code
 
 | Trụ | Nằm ở đâu |
@@ -139,4 +160,5 @@ Vì sao phải **tập mẫu + lấy max**: đo thật cùng 1 người, mặt n
 | "Phần nào em tự làm?" | `docs/team-contribution.md` |
 | "Sao chọn SAM 2/SAMURAI?" | `docs/adr/0001` ; "Sao không real-time?" → `docs/adr/0002` |
 | "Tái nhận diện làm sao?" | `docs/adr/0003` |
+| "Dùng model gì, của ai, license gì?" | **file này mục 4b** + `docs/adr/0003` |
 | "Hôm qua làm gì?" | `docs/task/22-10-2026-tai-nhan-dien-khuon-mat-yunet-sface.md` |
