@@ -198,6 +198,9 @@ Chỉ chạy lại Colab khi **code đổi** (`src/*.py` ảnh hưởng tracking
 (video, bbox, image_size). Mỗi lần chạy, `scripts/colab_run_all.py` ghi `data/gpu_run_info.json`
 chứa `git_rev` + tham số → so với `git log -1` là biết số liệu còn đúng hay đã cũ.
 
+**Mở notebook trực tiếp (1 click):**
+https://colab.research.google.com/github/BinhNguyen1912/DoAn-NAB/blob/main/notebooks/colab_gpu_evaluation.ipynb
+
 **Notebook có sẵn:** `notebooks/colab_gpu_evaluation.ipynb` — mở trên Colab (Runtime → T4 GPU) rồi chạy
 lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/colab-gpu.md`.
 
@@ -208,6 +211,10 @@ lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/col
    --record data/colab_gpu.mp4 --metrics-csv data/colab_metrics.csv --metrics-summary data/colab_summary.json`
 4. Số liệu trong `summary.json` **là số đo GPU thật** — dùng cho mục "Đánh giá hiệu năng"
    của báo cáo, đặt cạnh số liệu CPU laptop để đối chiếu trung thực.
+5. Tải `data/colab_results.zip` về, giải nén vào `data/` rồi commit các file số liệu
+   (`.gitignore` đã mở ngoại lệ cho `data/*_summary.json`, `data/*_metrics.csv`, `data/*_run_info.json`)
+   → hội đồng mở repo ra đối chiếu được số trong báo cáo. Kiểm `git_rev` trong
+   `data/gpu_run_info.json` phải bằng `git log -1`.
 
 ## 4. Đóng góp của sinh viên vs thành phần có sẵn
 

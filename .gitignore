@@ -17,6 +17,11 @@ models/
 # Dữ liệu demo nặng (frames, video mp4) — giữ lại các file txt nhỏ
 data/*
 !data/*.txt
+# Ngoại lệ: SỐ LIỆU ĐO (nhỏ) phải vào Git để hội đồng kiểm chứng được số trong báo cáo
+# (ADR-0002: báo cáo trung thực — số liệu phải tái tạo/đối chiếu được)
+!data/*_summary.json
+!data/*_metrics.csv
+!data/*_run_info.json
 
 # ===== Cấu hình công cụ cá nhân =====
 .pi/

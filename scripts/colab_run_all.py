@@ -2,7 +2,7 @@
 Chạy TOÀN BỘ pipeline trên Colab GPU bằng 1 lệnh (dành cho người không muốn bấm từng cell).
 
 Chức năng: tự làm lần lượt
-  1. clone SAMURAI (nếu chưa có) + cài package `sam2` + `loguru` (nếu thiếu)
+  1. clone SAMURAI (nếu chưa có) + cài package `sam2` + `loguru` + `scipy` (nếu thiếu)
   2. tải checkpoint SAM 2.1 tiny (nếu thiếu/hỏng) + kiểm tra dung lượng > 100 MB
   3. chuẩn bị video: dùng `data/input.mp4` nếu có, không thì sinh video test 720p
   4. chạy `tools/run_live.py` với cấu hình nhanh nhất cho GPU (image_size 512 + reanchor)
@@ -55,7 +55,7 @@ def ensure_checkpoint(path=CKPT, url=CKPT_URL):
 
 
 def ensure_samurai(install=True):
-    """Clone SAMURAI (không vendor trong Git) + cài sam2/loguru nếu thiếu."""
+    """Clone SAMURAI (không vendor trong Git) + cài sam2 và phụ thuộc riêng nếu thiếu."""
     samurai_dir = os.path.join(REPO_ROOT, "samurai")
     if not os.path.isdir(os.path.join(samurai_dir, "sam2")):
         print("[setup] clone SAMURAI…")
@@ -66,8 +66,10 @@ def ensure_samurai(install=True):
         import sam2  # noqa: F401
         print("[setup] package sam2 đã cài")
     except ImportError:
-        print("[setup] cài sam2 + loguru…")
-        run([sys.executable, "-m", "pip", "install", "-q", "loguru"], check=True)
+        # loguru: sam2/modeling/sam2_base.py — scipy: sam2/utils/kalman_filter.py (Kalman của
+        # SAMURAI). Cả hai KHÔNG nằm trong setup.py của sam2 → thiếu là crash. (ADR-0003)
+        print("[setup] cài sam2 + loguru + scipy…")
+        run([sys.executable, "-m", "pip", "install", "-q", "loguru", "scipy"], check=True)
         run([sys.executable, "-m", "pip", "install", "-q", "-e",
              os.path.join(samurai_dir, "sam2")], check=True)
 
