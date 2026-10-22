@@ -27,7 +27,17 @@
 
 - **Không thêm dependency**: đã kiểm chứng `opencv-python` (5.0.0 trên máy này) có `FaceDetectorYN_create` / `FaceRecognizerSF_create` / `alignCrop` / `feature` / `match`.
 - **Cùng triết lý ADR-0001**: dùng model có sẵn, đóng góp của đồ án nằm ở hệ thống + ngưỡng + đánh giá, **không huấn luyện lại**. Điều này đã được ghi ở `docs/team-contribution.md` và trả lời được hội đồng.
-- **Có cơ sở học thuật để trích dẫn**: SFace (Sigmoid-Constrained Hypersphere Loss, benchmark LFW) — trả lời được câu "sao biết đúng người?" tốt hơn nhiều so với "em tự so histogram màu".
+- **Có cơ sở học thuật để trích dẫn** (số chính thức lấy từ OpenCV Zoo, không phải tự suy):
+  - **YuNet** — WIDER Face val: **AP 0,834 (easy) / 0,824 (medium) / 0,708 (hard)**; paper
+    *Yunet: A tiny millisecond-level face detector*; license **MIT**.
+  - **SFace** — backbone **MobileFaceNet** + SFace loss; **accuracy 0,9940** theo bảng eval của
+    OpenCV Zoo; paper *SFace: Sigmoid-Constrained Hypersphere Loss*; license **Apache-2.0**.
+    Input 112×112 **align bằng 5 landmark** (`FaceRecognizerSF.alignCrop`).
+  - **Ngưỡng cosine 0,363** lấy từ chính demo của OpenCV Zoo
+    (`models/face_recognition_sface/demo.cpp:87` — `_threshold_cosine = 0.363`).
+  - ⚠️ Trung thực khi báo cáo: các số trên là của **tác giả/zoo đo trên ảnh align chất lượng cao**;
+    đo trên webcam thật của đồ án **thấp hơn nhiều** (mặt nhỏ 42×62 px: cosine cùng người chỉ
+    0,20–0,72 — xem bảng bằng chứng bên dưới), nên phải nêu số đo của mình, không chỉ trích 99,4%.
 - **Nhẹ, chạy CPU**: detect + embed chỉ chạy ở pha `REACQUIRING` (khi đã mất dấu) nên **không ảnh hưởng FPS lúc đang bám**.
 
 ## Bằng chứng đo (máy hiện tại, 22-10-2026)
