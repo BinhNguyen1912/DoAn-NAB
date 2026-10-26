@@ -1,12 +1,12 @@
 {
-  "total_frames": 145,
-  "mean_latency_ms": 310.97090909090906,
-  "p95_latency_ms": 355.505,
-  "effective_fps": 3.2157348831226544,
-  "mean_score": 2.5864916551724138,
-  "lost_count": 36,
-  "lost_ratio": 0.2482758620689655,
-  "frozen_frames": 35,
-  "reacquiring_frames": 35,
-  "reacquired_count": 1
+  "total_frames": 264,
+  "mean_latency_ms": 315.1746019721031,
+  "p95_latency_ms": 342.72676706314087,
+  "effective_fps": 3.172844492363355,
+  "mean_score": 0.39828126177643286,
+  "lost_count": 233,
+  "lost_ratio": 0.8825757575757576,
+  "frozen_frames": 232,
+  "reacquiring_frames": 231,
+  "reacquired_count": 0
 }
