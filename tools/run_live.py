@@ -60,31 +60,60 @@ def _make_reid_session(engine, args):
         return path if os.path.isabs(path) else os.path.join(REPO_ROOT, path)
 
     detector, recognizer = _abs(args.reid_detector_model), _abs(args.reid_recognizer_model)
-    for path in (detector, recognizer):
-        if not os.path.isfile(path):
-            print(f"[LOI] thiếu model khuôn mặt: {path}\n"
-                  f"  → tải theo docs/adr/0003 (đặt vào models/face/), rồi chạy lại")
-            raise SystemExit(1)
-    embedder = FaceEmbedder(detector, recognizer,
-                            min_face_px=args.reid_min_face_px,
-                            min_score=args.reid_min_detect_score)
-    print(f"[re-ID] bật: ngưỡng cosine={args.reid_threshold}, đóng băng sau "
-          f"{args.lost_after_frames} frame mất dấu, giữ tối đa {args.reid_ref_max} mẫu")
+    cue = getattr(args, "reid_cue", "face")
+    embedder = None
+    if cue in ("face", "both"):
+        missing = [p for p in (detector, recognizer) if not os.path.isfile(p)]
+        if missing:
+            if cue == "face":
+                print(f"[LOI] thiếu model khuôn mặt: {missing[0]}\n"
+                      f"  → tải theo docs/adr/0003 (đặt vào models/face/), rồi chạy lại")
+                raise SystemExit(1)
+            # cue=both mà thiếu model mặt → vẫn chạy được bằng cue vật thể
+            print("[re-ID] thiếu model khuôn mặt → lùi về cue vật thể (object)")
+            cue = "object"
+        else:
+            from src.reid import FaceEmbedder
+            embedder = FaceEmbedder(detector, recognizer,
+                                    min_face_px=args.reid_min_face_px,
+                                    min_score=args.reid_min_detect_score)
+    print(f"[re-ID] bật cue={cue}: ngưỡng cosine mặt={args.reid_threshold}, "
+          f"ngưỡng vật thể={getattr(args, 'reid_obj_threshold', 0.6)}, "
+          f"đóng băng sau {args.lost_after_frames} frame mất dấu")
     return ReIdSession(engine, embedder, threshold=args.reid_threshold,
                        lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
-                       min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score)
+                       min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
+                       cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
+                       obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0))
 
 
-def _window_closed(window_name):
+def _window_closed(window_name, seen_visible=None, max_misses=3):
     """True nếu người dùng đã đóng cửa sổ bằng nút X (OpenCV không tự thoát chương trình).
 
-    Lỗi thật 21-10: bấm X thì cửa sổ biến mất nhưng process vẫn chạy mãi, phải kill tay.
+    Lưu ý WSLg/X11-từ-xa: cửa sổ được map TRỄ vài trăm ms sau `imshow` đầu tiên, và có thể
+    báo "không thấy" một hai frame khi cửa sổ đang được vẽ lại/di chuyển → nếu tin ngay thì
+    chương trình tự thoát trước khi người dùng kịp kéo chuột (lỗi thật 27-10-2026).
+    Vì vậy: (a) chỉ coi là đóng khi cửa sổ TỪNG hiện ra, và (b) phải "không thấy" liên tiếp
+    `max_misses` lần mới kết luận.
+
+    seen_visible: dict trạng thái dùng chung ({"ok": bool, "miss": int}); bỏ trống thì giữ
+    hành vi cũ (tin ngay lần đầu).
     """
     try:
         visible = cv2.getWindowProperty(window_name, cv2.WND_PROP_VISIBLE)
-        return visible < 1
     except cv2.error:
         return True          # cửa sổ đã bị huỷ hẳn
+    if visible >= 1:
+        if seen_visible is not None:
+            seen_visible["ok"] = True
+            seen_visible["miss"] = 0
+        return False
+    if seen_visible is None:
+        return True
+    if not seen_visible.get("ok"):
+        return False         # chưa từng thấy cửa sổ → đang map trễ, chưa phải đóng
+    seen_visible["miss"] = int(seen_visible.get("miss", 0)) + 1
+    return seen_visible["miss"] >= max_misses
 
 
 def _device_note(device):
@@ -190,10 +219,12 @@ def _run_display(engine, args):
         else:
             print("[pipeline] kéo chuột vẽ ô quanh đối tượng → thả chuột để bám; r chọn lại; q/ESC thoát")
 
+        seen_visible = {"ok": False}
+
         def on_display(img, mode):
             cv2.imshow(WINDOW_NAME, img)
             key = cv2.waitKey(1) & 0xFF
-            if _window_closed(WINDOW_NAME):
+            if _window_closed(WINDOW_NAME, seen_visible):
                 print("[pipeline] cửa sổ đã đóng — thoát")
                 return QUIT_KEYS[0]
             return key
@@ -354,6 +385,14 @@ def main():
                     help="cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên (mặc định 40)")
     ap.add_argument("--reid-ref-max", type=int, default=None,
                     help="số mẫu tham chiếu giữ lại (mặc định 8)")
+    ap.add_argument("--reid-cue", default=None, choices=["face", "object", "both"],
+                    help="cue tái nhận diện: face (mặt), object (đặc trưng vật thể — dùng được "
+                         "cho remote TV), both (thử mặt trước, không khớp thì thử vật thể)")
+    ap.add_argument("--reid-obj-threshold", type=float, default=None,
+                    help="ngưỡng cosine đặc trưng vật thể để nhận lại (mặc định 0.6, phải hiệu chỉnh)")
+    ap.add_argument("--reid-obj-ncc-min", type=float, default=None,
+                    help="cổng NCC tối thiểu cho vật ít màu/texture (mặc định 0 = tắt; "
+                         "đo: cùng vật 1,000 vs vật đen khác 0,897)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
@@ -383,6 +422,9 @@ def main():
         "lost_after_frames": args.lost_after_frames,
         "reid_min_face_px": args.reid_min_face_px,
         "reid_ref_max": args.reid_ref_max,
+        "reid_cue": args.reid_cue,
+        "reid_obj_threshold": args.reid_obj_threshold,
+        "reid_obj_ncc_min": args.reid_obj_ncc_min,
     })
     checkpoint = resolve_checkpoint(cfg["checkpoint"])
     if cfg["source"] is None:
@@ -410,6 +452,9 @@ def main():
     args.reid_min_face_px = cfg["reid_min_face_px"]
     args.reid_min_detect_score = cfg["reid_min_detect_score"]
     args.reid_ref_max = cfg["reid_ref_max"]
+    args.reid_cue = cfg["reid_cue"]
+    args.reid_obj_threshold = cfg["reid_obj_threshold"]
+    args.reid_obj_ncc_min = cfg["reid_obj_ncc_min"]
     args.reid_detector_model = cfg["reid_detector_model"]
     args.reid_recognizer_model = cfg["reid_recognizer_model"]
     if args.reid and args.reanchor_every:

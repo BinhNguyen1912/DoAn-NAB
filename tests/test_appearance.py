@@ -18,6 +18,7 @@ from src.appearance import (
     candidate_boxes,
     mask_to_bbox,
     object_signature,
+    prefilter_candidates,
     signature_quality_ok,
 )
 
@@ -144,3 +145,30 @@ class TestCandidateBoxes:
         boxes = candidate_boxes(SHAPE, (100, 100), stride_frac=0.5, scales=(0.75, 1.0, 1.5))
         widths = {x2 - x1 for x1, _, x2, _ in boxes}
         assert {75, 100, 150} <= widths
+
+
+class TestPrefilterCandidates:
+    """Tầng 1 của cascade: tìm ứng viên RẺ bằng NCC trên frame thu nhỏ (mượn SPLT/TLD/KeepTrack).
+
+    Mục tiêu: thay vì chấm descriptor đắt cho 348 ô (đo 323 ms), chỉ chấm cho top-K.
+    """
+
+    def test_tim_dung_vat_bang_match_template(self):
+        frame = _striped_frame(BOX)
+        template = frame[BOX[1]:BOX[3], BOX[0]:BOX[2]].copy()
+        boxes = prefilter_candidates(frame, template, top_k=5)
+        assert boxes, "phải trả về ít nhất 1 ứng viên"
+        assert max(_iou(b, BOX) for b in boxes) >= 0.5
+
+    def test_gioi_han_so_o_tra_ve(self):
+        frame = _striped_frame(BOX)
+        template = frame[BOX[1]:BOX[3], BOX[0]:BOX[2]].copy()
+        assert len(prefilter_candidates(frame, template, top_k=3)) <= 3
+
+    def test_template_rong_tra_danh_sach_rong(self):
+        assert prefilter_candidates(_frame(BOX), np.zeros((0, 0), np.uint8)) == []
+
+    def test_template_lon_hon_frame_van_khong_no(self):
+        frame = _frame(BOX)
+        big = np.full((SHAPE[0] * 2, SHAPE[1] * 2, 3), 120, np.uint8)
+        assert prefilter_candidates(frame, big, top_k=3) == []

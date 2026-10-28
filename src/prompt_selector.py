@@ -15,8 +15,12 @@ Lưu ý  : máy trạng thái thuần — test headless qua sự kiện chuột 
 """
 import cv2
 
-# Kích thước ô tối thiểu để chấp nhận (tránh click nhầm tạo bbox điểm)
-MIN_BOX = 5
+# Kích thước ô tối thiểu để chấp nhận.
+# Trước đây 5 px → một cú click/rê chuột nhỏ cũng được nhận làm "đối tượng": đo thật 27-10
+# thấy ô rác 42×60 làm SAM 2 bám loạn rồi mất dấu. Nâng lên 16 px (vẫn nhỏ hơn mặt/vật thật)
+# và in cảnh báo để người dùng biết phải kéo lại.
+MIN_BOX = 16
+HINT_TOO_SMALL = "[chọn] ô quá nhỏ — kéo rộng hơn quanh đối tượng rồi thả chuột"
 
 _COLOR_DRAG = (0, 255, 0)    # xanh lá — đang kéo
 _COLOR_DONE = (0, 200, 255)  # cam — đã xác nhận
@@ -77,7 +81,8 @@ class PromptSelector:
                     self.bbox = bbox
                     self.state = self.DONE
                 else:
-                    # ô quá nhỏ (click nhầm) — huỷ, về idle
+                    # ô quá nhỏ (click nhầm) — huỷ, về idle + nói rõ để người dùng biết
+                    print(HINT_TOO_SMALL)
                     self.reset()
         elif event == cv2.EVENT_RBUTTONDOWN:
             # click phải huỷ chọn đang dở

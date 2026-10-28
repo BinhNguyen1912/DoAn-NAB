@@ -109,6 +109,7 @@ class InferenceWorker:
         self._started = False   # engine đã start với bbox hiện tại chưa
         self._reid_state = None
         self._reid_score = None
+        self._reid_ncc = None
         self._reacquired = False
 
     def start(self):
@@ -149,9 +150,9 @@ class InferenceWorker:
             return self._stamped
 
     def reid_status(self):
-        """(state, reid_score, reacquired) của lần suy luận gần nhất — None khi không bật re-ID."""
+        """(state, reid_score, reacquired, ncc) gần nhất — None khi không bật re-ID."""
         with self._lock:
-            return self._reid_state, self._reid_score, self._reacquired
+            return self._reid_state, self._reid_score, self._reacquired, self._reid_ncc
 
     def _loop(self):
         while not self._stop.is_set():
@@ -199,6 +200,7 @@ class InferenceWorker:
                         self._reid_state = step.state
                         self._reid_score = step.reid_score
                         self._reacquired = step.reacquired
+                        self._reid_ncc = step.ncc
                 else:
                     result = self._engine.process(frame)
             except Exception as exc:
@@ -272,13 +274,14 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 consumed_seq = stamped.seq
                 summary.processed += 1
                 switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
-                reid_state, reid_score, reacquired = worker.reid_status()
+                reid_state, reid_score, reacquired, reid_ncc = worker.reid_status()
                 if stamped.result.mask.any():
                     last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
                 if metrics is not None:
-                    metrics.log(_record_from(stamped.result, reid_state, reid_score, reacquired))
+                    metrics.log(_record_from(stamped.result, reid_state, reid_score,
+                                             reacquired, reid_ncc))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:

@@ -53,11 +53,24 @@ DEFAULTS = {
     "reid_min_face_px": 40,         # cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên
     "reid_min_detect_score": 0.8,   # điểm phát hiện mặt tối thiểu
     "reid_ref_max": 8,              # số mẫu tham chiếu giữ lại (deque)
+    # ---- Tái nhận diện VẬT THỂ (ticket 10) — dùng được cho vật không có khuôn mặt ----
+    # cue: "face" (mặc định, hành vi cũ) | "object" | "both"
+    "reid_cue": "face",
+    "reid_obj_threshold": 0.6,      # cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh)
+    "reid_obj_ref_max": 8,          # số mẫu đặc trưng vật thể giữ lại
+    "reid_obj_min_side": 24,        # cạnh nhỏ nhất của vật để được làm mẫu
+    "reid_obj_min_fill": 0.5,       # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
+    "reid_obj_top_k": 20,           # số ứng viên được chấm descriptor đắt mỗi frame lost
+    # Cổng NCC cho vật ÍT texture-màu (chai đen): 0.0 = TẮT (mặc định). Đo thật 27-10:
+    # hai vật đen khác nhau cho cosine 1,000 nhưng NCC 0,897; cùng vật NCC 1,000.
+    # Chỉ bật sau khi hiệu chuẩn trên clip thật (vd 0,95).
+    "reid_obj_ncc_min": 0.0,
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
 _INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size",
-             "lost_after_frames", "reid_min_face_px", "reid_ref_max")   # source có thể int (webcam) hoặc str (file/RTSP)
+             "lost_after_frames", "reid_min_face_px", "reid_ref_max",
+             "reid_obj_ref_max", "reid_obj_min_side", "reid_obj_top_k")   # source có thể int (webcam) hoặc str (file/RTSP)
 _FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score")
 
 

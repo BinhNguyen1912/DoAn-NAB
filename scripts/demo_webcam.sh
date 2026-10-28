@@ -17,7 +17,18 @@ if ! command -v "$PYTHON" >/dev/null 2>&1; then
   exit 1
 fi
 
-echo "[demo] webcam (source 0) · MƯỢT + TÁI NHẬN DIỆN khuôn mặt · image_size ${IMG_SIZE:-320}"
+# Đọc cue THẬT từ tham số dòng lệnh (--reid-cue X) — KHÔNG dùng biến REID_CUE:
+# biến môi trường không được set khi người dùng truyền cờ CLI, in sai sẽ gây hiểu nhầm.
+DEMO_CUE="face"
+_prev=""
+for _a in "$@"; do
+  if [ "$_prev" = "--reid-cue" ]; then DEMO_CUE="$_a"; fi
+  _prev="$_a"
+done
+echo "[demo] webcam (source 0) · MƯỢT + TÁI NHẬN DIỆN cue=${DEMO_CUE} · image_size ${IMG_SIZE:-320}"
+if [ "$DEMO_CUE" = "face" ]; then
+  echo "[demo] đang dùng cue=face (mặc định) — với VẬT (chai, remote) thêm: --reid-cue object"
+fi
 echo "[demo] xuất: data/webcam_smooth.mp4 + data/smooth_metrics.csv + data/smooth_summary.json"
 "$PYTHON" tools/run_live.py \
   --source 0 \

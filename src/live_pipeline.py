@@ -101,7 +101,7 @@ def _switch_warning(prev_bbox, result, frame_shape):
     return False
 
 
-def _record_from(result, state=None, reid_score=None, reacquired=None) -> FrameRecord:
+def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     center = ((x1 + x2) // 2, (y1 + y2) // 2) if (x2 > x1 and y2 > y1) else None
@@ -114,6 +114,7 @@ def _record_from(result, state=None, reid_score=None, reacquired=None) -> FrameR
         state=state,
         reid_score=reid_score,
         reacquired=reacquired,
+        ncc=ncc,
     )
 
 
@@ -177,15 +178,17 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 step = reid_session.step(frame)
                 result, state = step.result, step.state
                 reid_score, reacquired = step.reid_score, step.reacquired
+                reid_ncc = step.ncc
             else:
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                              summary.total_frames, reanchor_every)
                 result = reanchored if reanchored is not None else engine.process(frame)
                 state = reid_score = reacquired = None
+                reid_ncc = None
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
-                metrics.log(_record_from(result, state, reid_score, reacquired))
+                metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc))
             img = _annotate(frame, result, visualizer, state, reid_score)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1

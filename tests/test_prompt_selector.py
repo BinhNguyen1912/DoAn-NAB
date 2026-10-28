@@ -43,6 +43,18 @@ class TestStateMachine:
         assert not sel.has_bbox()
         assert sel.bbox is None
 
+    def test_o_nho_16px_bi_loai_va_in_canh_bao(self, capsys):
+        """Bug thật 27-10: rẽ chuột nhỏ (42x60) lọt ngưỡng 5px → SAM 2 bám loạn rồi mất dấu."""
+        sel = PromptSelector(frame_shape=(480, 640, 3))
+        self._drag(sel, (200, 200), (210, 220))  # 10x20 — dưới MIN_BOX=16
+        assert sel.state == "idle" and sel.bbox is None
+        assert "ô quá nhỏ" in capsys.readouterr().out
+
+    def test_o_du_lon_van_duoc_nhan(self):
+        sel = PromptSelector(frame_shape=(480, 640, 3))
+        self._drag(sel, (200, 200), (240, 260))  # 40x60 — hợp lệ
+        assert sel.has_bbox() and sel.bbox == (200, 200, 240, 260)
+
     def test_take_bbox_tra_bbox_va_reset_ve_idle_san_sang_chon_lai(self):
         sel = PromptSelector(frame_shape=(240, 320, 3))
         self._drag(sel, (50, 50), (150, 200))

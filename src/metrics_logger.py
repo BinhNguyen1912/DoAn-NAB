@@ -26,7 +26,7 @@ import numpy as np
 LOST_SCORE_THRESHOLD = 0.0
 
 CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost",
-              "state", "reid_score", "reacquired"]
+              "state", "reid_score", "reacquired", "ncc"]
 
 
 @dataclass
@@ -42,6 +42,7 @@ class FrameRecord:
     state: Optional[str] = None           # "tracking" | "lost" | "reacquiring"
     reid_score: Optional[float] = None    # cosine tốt nhất frame đó (-1 = không có ứng viên)
     reacquired: Optional[bool] = None     # True ở đúng frame vừa nhận lại đối tượng
+    ncc: Optional[float] = None           # điểm NCC của ô được chọn (-1/None = không dùng)
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -125,6 +126,7 @@ class MetricsLogger:
                     r.state if r.state is not None else "",
                     f"{float(r.reid_score):.6g}" if r.reid_score is not None else "",
                     (1 if r.reacquired else 0) if r.reacquired is not None else "",
+                    f"{float(r.ncc):.6g}" if r.ncc is not None else "",
                 ])
         return str(path)
 

@@ -12,8 +12,15 @@ class TestRunHelp:
     def test_help_lists_main_commands(self):
         r = _run("help")
         assert r.returncode == 0
-        for cmd in ("demo", "demo5", "check", "phone", "test", "lint", "charts", "gpu", "env"):
+        for cmd in ("demo", "demo5", "check", "phone", "test", "lint", "charts", "gpu", "env",
+                    "reid"):
             assert cmd in r.stdout, f"thiếu lệnh '{cmd}' trong help"
+
+    def test_reid_thieu_tham_so_bao_loi_ro_rang(self):
+        """`./run reid` cần video + bbox; thiếu thì báo lỗi dễ hiểu, mã thoát 2."""
+        r = _run("reid", "data/khong-co.mp4")
+        assert r.returncode == 2
+        assert "x,y,w,h" in r.stdout
 
     def test_khong_truyen_gi_cung_in_help(self):
         r = _run()

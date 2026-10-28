@@ -46,3 +46,20 @@ lost_after_frames: 2        # mask rỗng liên tiếp bao nhiêu frame thì đ�
 reid_min_face_px: 40        # cạnh nhỏ nhất của ô mặt để dùng làm mẫu/ứng viên
 reid_min_detect_score: 0.8  # điểm phát hiện mặt tối thiểu
 reid_ref_max: 8             # số mẫu tham chiếu giữ lại (lấy max cosine trên toàn tập)
+
+# ---- Tái nhận diện VẬT THỂ (ticket 10) — cho vật KHÔNG có khuôn mặt (remote TV...) ----
+# cue: face (chỉ mặt, hành vi cũ) | object (chỉ đặc trưng vật thể) | both (thử mặt trước)
+# Cơ chế: lưu vector covariance+HSV của vùng mask khi đang bám; khi mất dấu thì lọc ứng viên
+# rẻ bằng NCC trên frame thu nhỏ (top-K) rồi chấm điểm — đo 23,8 ms/frame lost (trước: 845 ms).
+reid_cue: face
+# Ngưỡng cosine đặc trưng vật thể — KHỞI ĐIỂM, phải hiệu chỉnh trên clip thật (đo fixture:
+# cùng vật 1,000; cùng màu khác hoa văn 0,581; khác màu 0,327; hai vật giống y hệt 1,000).
+reid_obj_threshold: 0.6
+reid_obj_ref_max: 8         # số mẫu đặc trưng vật thể giữ lại
+reid_obj_min_side: 24       # cạnh nhỏ nhất của vật để được làm mẫu
+reid_obj_min_fill: 0.5      # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
+reid_obj_top_k: 20          # số ứng viên được chấm descriptor đắt mỗi frame mất dấu
+# Cổng NCC cho vật ÍT màu/texture (chai đen...) — 0 = TẮT (mặc định, giữ hành vi cũ).
+# Đo thật 27-10: hai vật đen khác nhau → cosine 1,000 (mù) nhưng NCC 0,897; cùng vật NCC 1,000.
+# Bật sau khi hiệu chuẩn trên clip thật, ví dụ 0.95.
+reid_obj_ncc_min: 0.0

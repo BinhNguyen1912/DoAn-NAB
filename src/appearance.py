@@ -30,6 +30,11 @@ DEFAULT_SCALES: Tuple[float, ...] = (0.75, 1.0, 1.5)
 # Trọng số 2 khối trong vector ghép (bằng nhau: chưa có số đo biện minh cho lệch).
 DEFAULT_WEIGHT_COV = 0.5
 DEFAULT_WEIGHT_HIST = 0.5
+# Tầng 1 của cascade tìm lại: NCC trên frame thu nhỏ, chỉ giữ top-K cho tầng đắt.
+# Chấm descriptor cho cả 348 ô đo được 323 ms → lọc trước để chỉ còn ~20 ô (mục tiêu < 50 ms).
+DEFAULT_PREFILTER_TOP_K = 20
+DEFAULT_PREFILTER_DOWNSCALE = 4
+DEFAULT_PREFILTER_MIN_SCORE = 0.05
 
 
 def mask_to_bbox(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
@@ -140,3 +145,72 @@ def _l2(v: np.ndarray) -> np.ndarray:
     v = np.asarray(v, dtype=np.float32)
     n = float(np.linalg.norm(v))
     return v if n == 0.0 else (v / n).astype(np.float32)
+
+
+def _response_peaks(resp: np.ndarray, k: int, sep: int) -> list:
+    """Lấy tối đa `k` đỉnh NCC cách nhau ít nhất `sep` pixel (NMS thủ công, không cần scipy)."""
+    flat = resp.ravel()
+    order = np.argsort(flat)[::-1]
+    picked = []
+    width = resp.shape[1]
+    for idx in order[:max(k * 8, 32)]:
+        y, x = divmod(int(idx), width)
+        if all(abs(x - px) > sep or abs(y - py) > sep for _, px, py in picked):
+            picked.append((float(flat[idx]), x, y))
+        if len(picked) >= k:
+            break
+    return picked
+
+
+def prefilter_candidates(frame: np.ndarray, template: np.ndarray,
+                         top_k: int = DEFAULT_PREFILTER_TOP_K,
+                         scales: Sequence[float] = DEFAULT_SCALES,
+                         downscale: int = DEFAULT_PREFILTER_DOWNSCALE,
+                         min_score: float = DEFAULT_PREFILTER_MIN_SCORE,
+                         with_scores: bool = False
+                         ) -> list:
+    """Tầng 1 của cascade tìm lại: ô ứng viên RẺ bằng NCC trên frame thu nhỏ.
+
+    Ý tưởng mượn từ SPLT (skim cascade), TLD (cascade lọc rẻ trước) và KeepTrack (lấy cực
+    đại cục bộ của score map): chấm descriptor đắt cho toàn bộ lưới là quá phí (đo 323 ms
+    cho 348 ô), nên lọc bằng tương quan mẫu (rất rẻ trên ảnh xám đã thu nhỏ) rồi chỉ giữ
+    `top_k` ô cho tầng chấm điểm đắt (`object_signature`).
+
+    Input : frame BGR/gray; template = ảnh cắt của vật ở lần thấy cuối (cùng số kênh frame).
+    Output: list ô (x1, y1, x2, y2) sắp giảm dần theo điểm NCC; nếu `with_scores=True`
+            trả list (ô, điểm NCC) — điểm này dùng được cho vật ít texture-màu (vật đen)
+            vì nó dựa trên **hình dạng/hoa văn** chứ không dựa trên histogram màu.
+            List rỗng nếu template rỗng hoặc lớn hơn frame ở mọi tỉ lệ.
+    """
+    if template is None or getattr(template, "size", 0) == 0:
+        return []
+    height, width = frame.shape[:2]
+    step = max(1, int(downscale))
+    gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    tpl_gray = template if template.ndim == 2 else cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
+    small = cv2.resize(gray, (max(1, width // step), max(1, height // step)),
+                       interpolation=cv2.INTER_AREA)
+    tpl_h, tpl_w = tpl_gray.shape[:2]
+    scales = tuple(scales) or (1.0,)
+    # Mỗi tỉ lệ một suất riêng: điểm NCC giữa các tỉ lệ KHÔNG so sánh được với nhau (template đã
+    # bị resize), nên nếu gộp rồi NMS xuyên tỉ lệ thì ứng viên đúng cỡ có thể bị ứng viên tỉ lệ
+    # khác chồng lên và bị loại oan (đã gặp thật: ô đúng 40x40 bị ô 30x30 loại, lệch 14 px).
+    per_scale_k = max(1, int(np.ceil(int(top_k) / len(scales))))
+    found = []          # (điểm NCC, ô ở toạ độ gốc)
+    for scale in scales:
+        bw = int(round(tpl_w * float(scale)))
+        bh = int(round(tpl_h * float(scale)))
+        sw, sh = max(1, bw // step), max(1, bh // step)
+        if sw < 2 or sh < 2 or sw > small.shape[1] or sh > small.shape[0]:
+            continue
+        tmpl_small = cv2.resize(tpl_gray, (sw, sh), interpolation=cv2.INTER_AREA)
+        resp = cv2.matchTemplate(small, tmpl_small, cv2.TM_CCOEFF_NORMED)
+        for score, x, y in _response_peaks(resp, per_scale_k, max(2, sw // 2)):
+            if score < float(min_score):
+                continue
+            found.append((score, (x * step, y * step, x * step + bw, y * step + bh)))
+    found.sort(key=lambda t: -t[0])
+    top = found[: int(top_k)]
+    if with_scores:
+        return [(box, score) for score, box in top]
+    return [box for _score, box in top]

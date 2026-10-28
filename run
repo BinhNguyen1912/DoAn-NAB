@@ -49,6 +49,11 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     phone           Quét LAN tìm URL camera điện thoại
     cam             Hướng dẫn cấp lại webcam cho WSL (usbipd, chạy trên Windows)
 
+  TÁI NHẬN DIỆN VẬT THỂ (ticket 10)
+    reid <video> <x,y,w,h> [--max-frames N]
+                    Test mất dấu → tìm lại vật: headless, ghi data/reid_hud.mp4
+                    + data/reid_metrics.csv + data/reid_summary.json
+
   KIỂM TRA CHẤT LƯỢNG
     test            Test nhanh (~10 giây, không cần checkpoint)
     testall         Toàn bộ test (~2 phút, cần checkpoint)
@@ -92,7 +97,10 @@ EOF
     ;;
   view)
     activate_env
-    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --reid --image-size 384
+    src_view="${1:-0}"
+    shift || true
+    exec "$PYTHON" tools/run_live.py --source "$src_view" --display --smooth --reid \
+      --image-size 384 "$@"
     ;;
   video)
     activate_env
@@ -102,12 +110,28 @@ EOF
     ;;
   fast)
     activate_env
-    exec "$PYTHON" tools/run_live.py --source "${1:-0}" --display --smooth --reid \
-      --image-size 256
+    src_fast="${1:-0}"
+    shift || true
+    exec "$PYTHON" tools/run_live.py --source "$src_fast" --display --smooth --reid \
+      --image-size 256 "$@"
     ;;
   check)
     activate_env
     exec "$PYTHON" tools/check_video_source.py --source "${1:-0}" --num "${2:-10}"
+    ;;
+  reid)
+    activate_env
+    if [ $# -lt 2 ]; then
+      echo "[LOI] thiếu tham số. Dùng: ./run reid <video> <x,y,w,h> [--max-frames N]"
+      echo "      Ví dụ: ./run reid data/binh1.mp4 104,308,209,287 --max-frames 130"
+      exit 2
+    fi
+    reid_video="$1"; reid_bbox="$2"
+    shift 2
+    exec "$PYTHON" tools/run_live.py --source "$reid_video" --bbox "$reid_bbox" \
+      --reid --reid-cue object --image-size 512 \
+      --metrics-csv data/reid_metrics.csv --metrics-summary data/reid_summary.json \
+      --record data/reid_hud.mp4 "$@"
     ;;
   phone)
     activate_env

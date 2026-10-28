@@ -66,6 +66,40 @@ class FakeEngine:
         return np.zeros((4, 4), bool) if empty else np.ones((4, 4), bool)
 
 
+class FakeEngineMasks:
+    """Engine giả cho cue VẬT THỂ: mask đúng kích thước frame, lấy theo hàng đợi (None = mask theo bbox).
+
+    Không đụng `FakeEngine` cũ để không làm đổi hành vi các test khuôn mặt.
+    """
+
+    def __init__(self, masks, shape=(96, 96)):
+        self._masks = list(masks)
+        self._shape = tuple(shape)
+        self.start_calls = []
+        self.process_calls = 0
+
+    def _box_mask(self, bbox):
+        m = np.zeros(self._shape, bool)
+        x1, y1, x2, y2 = [int(v) for v in bbox]
+        m[max(0, y1):min(y2, self._shape[0]), max(0, x1):min(x2, self._shape[1])] = True
+        return m
+
+    def _result(self, mask, bbox):
+        return type("R", (), {"frame_idx": 0, "mask": mask, "bbox": bbox,
+                              "score": 1.0, "elapsed_ms": 1.0})()
+
+    def start(self, frame, bbox):
+        self.start_calls.append(tuple(bbox))
+        return self._result(self._box_mask(bbox), bbox)
+
+    def process(self, frame):
+        self.process_calls += 1
+        nxt = self._masks.pop(0) if self._masks else None
+        if nxt is None:
+            return self._result(self._box_mask((10, 10, 50, 50)), (10, 10, 50, 50))
+        return self._result(nxt, (10, 10, 50, 50))
+
+
 def _hit(bbox, emb, score=0.95):
     return FaceHit(bbox=tuple(bbox), score=score, embedding=emb)
 
@@ -220,3 +254,149 @@ class TestFrameIdxLienTuc:
         assert s2.reacquired is True
         assert s1.result.frame_idx < s2.result.frame_idx < s3.result.frame_idx
         assert s2.result.frame_idx == 2 and s3.result.frame_idx == 3
+
+    def test_frame_idx_khong_lui_khi_chon_lai_giua_video(self):
+        """Bug thật 27-10: bấm `r` (reset + start) làm frame_idx về 0 → CSV lùi số
+        (f11..72 xuất hiện sau f180..186). Số frame phải đơn điệu suốt một lần chạy."""
+        engine = FakeEngine(masks=[False, False, False])
+        session = ReIdSession(engine=engine, embedder=FakeEmbedder([]), lost_after_frames=9)
+        session.start(np.zeros((8, 8, 3), np.uint8), (0, 0, 10, 10))
+        for _ in range(3):
+            session.step(np.zeros((8, 8, 3), np.uint8))
+        truoc = session.step(np.zeros((8, 8, 3), np.uint8)).result.frame_idx
+        session.reset()                                     # người dùng bấm r
+        sau = session.start(np.zeros((8, 8, 3), np.uint8), (0, 0, 10, 10)).frame_idx
+        tiep = session.step(np.zeros((8, 8, 3), np.uint8)).result.frame_idx
+        assert truoc == 4
+        assert sau >= truoc, f"frame_idx lùi sau khi chọn lại: {truoc} → {sau}"
+        assert tiep > sau
+
+
+def _obj_frame(box=(20, 20, 60, 60), color=(0, 140, 255), shape=(96, 96)):
+    """Frame 96x96 nền tối + vật hình vuông có sọc (đủ cấu trúc để covariance bắt được)."""
+    f = np.full((shape[0], shape[1], 3), (35, 37, 32), np.uint8)
+    x1, y1, x2, y2 = box
+    f[y1:y2, x1:x2] = color
+    for x in range(x1, x2, 8):
+        f[y1:y2, x:min(x + 3, x2)] = (255, 255, 255)
+    return f
+
+
+def _obj_mask(box=(20, 20, 60, 60), shape=(96, 96)):
+    m = np.zeros(shape, bool)
+    x1, y1, x2, y2 = box
+    m[y1:y2, x1:x2] = True
+    return m
+
+
+def _iou(a, b):
+    """IoU viết tay (nguồn độc lập với code đang test)."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
+
+
+class TestReIdSessionObjectCue:
+    """Cue VẬT THỂ (ticket 10): không có khuôn mặt vẫn phải lưu mẫu và nhận lại được.
+
+    Đây là hành vi hỏng trước đây: `_collect_reference` chỉ lưu khi có MẶT → remote TV
+    không có mẫu nào → `best_match` trả -1.0 → mất dấu là mất vĩnh viễn.
+    """
+
+    def test_vat_khong_co_mat_van_luu_mau(self):
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        assert session.state == STATE_TRACKING
+        assert session.object_ref_count > 0   # vật có mẫu dù KHÔNG có mặt
+        assert session.ref_count == 0         # không có mẫu khuôn mặt nào
+
+    def test_cue_face_khong_luu_mau_vat(self):
+        """Mặc định (cue face) giữ nguyên hành vi cũ: không đụng tới mẫu vật thể."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=FakeEmbedder([]),
+                              lost_after_frames=1)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        assert session.object_ref_count == 0
+
+    def test_mat_dau_roi_vat_quay_lai_thi_bam_lai(self):
+        present = _obj_mask((20, 20, 60, 60))
+        empty = np.zeros((96, 96), bool)
+        engine = FakeEngineMasks([present, empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.6)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        session.step(_obj_frame())                       # còn thấy → vẫn tracking
+        s_lost = session.step(_obj_frame())              # mask rỗng → lost
+        assert s_lost.state == STATE_LOST
+        moved = (30, 30, 70, 70)                          # vật quay lại ở chỗ khác
+        s_re = session.step(_obj_frame(moved))
+        assert s_re.reacquired is True
+        assert s_re.state == STATE_TRACKING
+        assert len(engine.start_calls) == 2               # start ban đầu + start nhận lại
+        # Prefilter NCC chạy trên frame thu nhỏ 4x nên ô trả về lệch tối đa ~4 px mỗi cạnh —
+        # đúng thiết kế (SAM 2 sẽ tinh chỉnh lại mask). Chuẩn kiểm tra là chồng lấn, không phải px tuyệt đối.
+        assert _iou(engine.start_calls[-1], moved) >= 0.5
+
+    def test_khong_co_mau_thi_van_lost_va_khong_bao_nham(self):
+        """Vật quá nhỏ bị cổng chất lượng loại → không có mẫu → phải ở LOST, không nhận bừa."""
+        small = (10, 10, 20, 20)
+        engine = FakeEngineMasks([np.zeros((96, 96), bool)], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1)
+        session.start(_obj_frame(small), small)
+        assert session.object_ref_count == 0
+        step = session.step(_obj_frame(small))
+        assert step.state == STATE_LOST
+        assert step.reacquired is False
+        assert step.reid_score == -1.0
+
+
+def _black_frame(box, shape=(200, 300)):
+    """Nền sáng + vật ĐEN đặc (mô phỏng chai đen) — ca mà cosine gần như mù."""
+    f = np.full((shape[0], shape[1], 3), (205, 208, 212), np.uint8)
+    x1, y1, x2, y2 = box
+    f[y1:y2, x1:x2] = (20, 20, 20)
+    return f
+
+
+class TestCongNccVatDen:
+    """Cổng NCC (ticket 11): vật đen đặc cho cosine ≈ 1.0 với MỌI vật đen khác → phải nhờ NCC.
+
+    Đo thật 27-10: hai vật đen khác nhau → cosine 1,000 (mù), NCC 0,897; cùng vật → NCC 1,000.
+    """
+
+    BOX_A = (40, 50, 90, 150)      # vật A 50x100
+    BOX_B = (200, 60, 240, 130)    # vật B KHÁC: 40x70
+
+    def _session(self, engine, ncc_min):
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           obj_ncc_min=ncc_min)
+
+    def test_cos_mu_voi_vat_den_khac_nhung_co_ncc(self):
+        """Bật cổng NCC cao → KHÔNG được nhận nhầm vật đen khác (dù cosine cao)."""
+        empty = np.zeros((200, 300), bool)
+        engine = FakeEngineMasks([empty], shape=(200, 300))
+        session = self._session(engine, ncc_min=1.01)     # ngưỡng không thể đạt → chặn hết
+        session.start(_black_frame(self.BOX_A), self.BOX_A)
+        assert session.object_ref_count > 0
+        session.step(_black_frame(self.BOX_A))            # mask rỗng → lost
+        step = session.step(_black_frame(self.BOX_B))     # frame chỉ có vật B
+        assert step.reacquired is False
+        assert step.state == STATE_REACQUIRING    # đang tìm tiếp, chưa nhận bừa
+        assert step.ncc >= 0.0                    # vẫn ghi ncc của ô bị loại để hiệu chuẩn
+
+    def test_khi_tat_cong_ncc_thi_van_nhan_nham_nhu_cu(self):
+        """Chứng minh cổng là cần thiết: tắt cổng (mặc định) thì cosine cao → nhận nhầm."""
+        empty = np.zeros((200, 300), bool)
+        engine = FakeEngineMasks([empty], shape=(200, 300))
+        session = self._session(engine, ncc_min=0.0)
+        session.start(_black_frame(self.BOX_A), self.BOX_A)
+        session.step(_black_frame(self.BOX_A))
+        step = session.step(_black_frame(self.BOX_B))
+        assert step.reacquired is True          # đây là hành vi CŨ (chưa cứu được vật đen)
+        assert step.ncc >= 0.0                  # và NCC có được ghi lại để hiệu chuẩn

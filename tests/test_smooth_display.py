@@ -370,7 +370,7 @@ class TestWorkerVoiReId:
         try:
             worker.set_bbox((10, 10, 50, 50))
             time.sleep(0.15)
-            state, score, reacquired = worker.reid_status()
+            state, score, reacquired, ncc = worker.reid_status()
             res = worker.latest_result()
         finally:
             worker.stop()
