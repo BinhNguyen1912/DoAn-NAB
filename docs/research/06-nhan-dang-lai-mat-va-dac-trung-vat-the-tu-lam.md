@@ -130,6 +130,23 @@ tầng nhận dạng. Cue lấy từ encoder **gần như miễn phí** vì enco
 3. **Vì (1) và (2), giá trị "tự làm" nằm ở tầng hợp nhất + hiệu chuẩn ngưỡng, không nằm ở việc
    viết thêm một descriptor.** Đây là điểm trả lời được câu hỏi của hội đồng "phần nào là của em?".
 
+### 4.4 Vật ĐEN / ít texture — giới hạn thật (đo 27-10-2026)
+
+Đo trên fixture tự sinh (vật đen đặc trên nền sáng, mô phỏng chai đen):
+
+| Ca | Cosine (cov+HSV, đang dùng) | NCC (`TM_CCOEFF_NORMED`) |
+|---|---|---|
+| cùng vật, dịch nhẹ | 1,000 | **1,000** |
+| **vật đen KHÁC** (khác cỡ) | **1,000** ❌ | 0,897 ⚠️ |
+| vật đen khác **có nhãn trắng** | 0,766 ⚠️ | **0,394** ✅ |
+| vật đen vs vật xám | 0,986 ❌ | 0,000 (khối gradient) |
+
+**Nguyên nhân vật lý:** vật đặc một màu → histogram HSV dồn 1 bin, covariance gần như phẳng, gradient chỉ có ở viền
+→ vector đặc trưng gần như **hằng số**, mất khả năng phân biệt. Đây là **cùng một loại giới hạn** với ca
+"hai vật giống y hệt" ở §4.2: **ngoại hình không thể giải**, phải dựa vào **hình dạng (NCC)** và **cue thời gian**.
+
+→ Việc tiếp theo: ticket 11 (dùng NCC làm cổng quyết định + ghi NCC vào metrics để hiệu chuẩn trên clip thật).
+
 ---
 
 ## 5. Kiến trúc đề xuất (phần "tự làm" là tầng 1–3)

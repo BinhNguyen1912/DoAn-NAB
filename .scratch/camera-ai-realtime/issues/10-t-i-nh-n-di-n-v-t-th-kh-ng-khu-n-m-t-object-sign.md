@@ -12,11 +12,11 @@ Không làm ở v1: feature encoder SAM 2 (`TrackerEngine`), mạng embedding t�
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** done
 
-- [ ] `src/appearance.py`: `object_signature` (covariance 5×5 + HSV hist), `signature_quality_ok`, `candidate_boxes` — hàm thuần
-- [ ] `tests/test_appearance.py`: cùng vật → cosine cao; khác màu → thấp; mask rỗng → bị chặn bởi quality gate; `candidate_boxes` phủ được đúng vị trí vật (có ô IoU ≥ 0.5)
-- [ ] `ReIdSession` thêm cue `object`: lưu mẫu từ vùng mask khi TRACKING, LOST → quét lưới → `engine.start(bbox)` khi vượt ngưỡng
-- [ ] `configs/default.yaml` + `src/config.py`: `reid_cue` (face|object|both) và tham số `obj_sig_*`; mặc định giữ nguyên hành vi cũ nếu không bật
-- [ ] `pytest -m "not slow"` + `ruff check .` xanh
-- [ ] Số đo ghi vào log: độ trễ thêm vào (ms/frame) và tỉ lệ nhận lại đúng trên fixture có che khuất
+- [x] `src/appearance.py`: `object_signature` (covariance 5×5 + HSV hist), `signature_quality_ok`, `candidate_boxes` — hàm thuần
+- [x] `tests/test_appearance.py`: cùng vật → cosine cao; khác màu → thấp; mask rỗng → bị chặn bởi quality gate; `candidate_boxes` phủ được đúng vị trí vật (có ô IoU ≥ 0.5)
+- [x] `ReIdSession` thêm cue `object`: lưu mẫu từ vùng mask khi TRACKING, LOST → quét lưới → `engine.start(bbox)` khi vượt ngưỡng
+- [x] `configs/default.yaml` + `src/config.py`: `reid_cue` (face|object|both) và tham số `obj_sig_*`; mặc định giữ nguyên hành vi cũ nếu không bật
+- [x] `pytest -m "not slow"` + `ruff check .` xanh
+- [x] Số đo ghi vào log: độ trễ thêm vào (ms/frame) và tỉ lệ nhận lại đúng trên fixture có che khuất
