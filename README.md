@@ -403,7 +403,7 @@ IMG_SIZE=320 ./run demo --reid-cue object
 |---|---|
 | `--reid-cue face\|object\|both` | cue dùng khi mất dấu (mặc định `face` = hành vi cũ) |
 | `--reid-obj-threshold 0.6` | cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh trên clip thật) |
-| `--reid-obj-ncc-min 0.0` | **cổng phụ NCC** cho vật đen/ít texture — **mặc định TẮT**: đo thật 29-10 cho thấy NCC rất mỏng manh (mẫu lệch 2 px → 0,099) nên không dùng làm cổng quyết định được |
+| `--reid-obj-ncc-min 0.70` | **cổng CHÍNH khi nhận lại** (khớp mẫu ảnh). Đo trên video thật có nhãn người dùng: ca **sai** (dấu vật → bám bóng đèn/tay) ncc **0,39–0,69**; ca **đúng** ncc **0,78–0,92** |
 | `--lost-score-threshold 0.0` | score ≤ ngưỡng này → coi như **không thấy vật** (kể cả khi mask không rỗng) |
 | `--reid-confirm 2` | ứng viên phải khớp **cùng một chỗ** bao nhiêu frame liên tiếp mới nhận lại |
 | `--reid-verify 2` | sau khi nhận lại, kiểm chứng bao nhiêu frame (không giống vật → bỏ, về LOST) |
@@ -431,8 +431,8 @@ Lưu ý: webcam qua WSL đọc chỉ ~14 FPS (66,9 ms/frame) → trần "mượt
 
 - **Hai vật giống y hệt nhau** và **vật đặc một màu (chai đen)** → mọi cue ngoại hình cho cosine ≈ 1,0
   (đo: hai vật đen khác nhau vẫn 1,000). Ca đó **chỉ cue thời gian** (Kalman/motion memory của SAMURAI)
-  giải được; muốn thêm ràng buộc hình dạng thì bật `--reid-obj-ncc-min` (đo thật: vật đúng ncc 0,858 →
-  đừng đặt 0,95, sẽ chặn nhầm; dùng khoảng 0,5–0,6).
+  giải được. Từ 29-10 cổng NCC bật mặc định 0,70 nên hệ thống **thà không bám còn hơn bám nhầm**:
+  nếu khi quay lại vật chỉ đạt ncc ~0,6, nó sẽ ở trạng thái ĐANG TÌM chứ không khoá vào vật khác.
 - Ngưỡng 0,6 là **số khởi điểm**, chưa hiệu chỉnh trên clip vật thật (ticket 11 còn 1 criteria).
 - Chi tiết + số đo đầy đủ: `docs/research/06` và `docs/task/27-10-2026-*`.
 
