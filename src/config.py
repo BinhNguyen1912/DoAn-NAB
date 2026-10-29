@@ -56,7 +56,7 @@ DEFAULTS = {
     # ---- Tái nhận diện VẬT THỂ (ticket 10) — dùng được cho vật không có khuôn mặt ----
     # cue: "face" (mặc định, hành vi cũ) | "object" | "both"
     "reid_cue": "face",
-    "reid_obj_threshold": 0.75,      # cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh)
+    "reid_obj_threshold": 0.6,      # cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh)
     "reid_obj_ref_max": 8,          # số mẫu đặc trưng vật thể giữ lại
     "reid_obj_min_side": 24,        # cạnh nhỏ nhất của vật để được làm mẫu
     "reid_obj_min_fill": 0.5,       # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
@@ -64,7 +64,7 @@ DEFAULTS = {
     # Cổng NCC cho vật ÍT texture-màu (chai đen): 0.0 = TẮT (mặc định). Đo thật 27-10:
     # hai vật đen khác nhau cho cosine 1,000 nhưng NCC 0,897; cùng vật NCC 1,000.
     # Chỉ bật sau khi hiệu chuẩn trên clip thật (vd 0,95).
-    "reid_obj_ncc_min": 0.55,      # cổng PHỤ (mẫu ảnh) — cổng CHÍNH là reid_obj_threshold (cosine):
+    "reid_obj_ncc_min": 0.70,      # cổng CHÍNH (dùng NCC của prefilter). Đo thật 29-10 có nhãn người dùng:
     # 4 lần nhận lại SAI (dấu ly → bám bóng đèn) chỉ 0,48–0,62 dù cosine 0,78–0,99.
     "reid_search_grow_frames": 12,  # số frame lost tìm trong vùng hẹp quanh chỗ cũ trước khi mở rộng
     "reid_search_grow_step": 0.25,  # bán kính tìm = max(w,h) × (0,75 + 0,25 × số frame lost)

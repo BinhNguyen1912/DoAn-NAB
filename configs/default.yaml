@@ -54,8 +54,7 @@ reid_ref_max: 8             # số mẫu tham chiếu giữ lại (lấy max cos
 reid_cue: face
 # Ngưỡng cosine đặc trưng vật thể — KHỞI ĐIỂM, phải hiệu chỉnh trên clip thật (đo fixture:
 # cùng vật 1,000; cùng màu khác hoa văn 0,581; khác màu 0,327; hai vật giống y hệt 1,000).
-# cosine tối thiểu — đo trên pixel thật (29-10, descriptor 105 số): cùng vật 0,994 vs vật khác 0,53
-reid_obj_threshold: 0.75
+reid_obj_threshold: 0.6
 reid_obj_ref_max: 8         # số mẫu đặc trưng vật thể giữ lại
 reid_obj_min_side: 24       # cạnh nhỏ nhất của vật để được làm mẫu
 reid_obj_min_fill: 0.5      # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
@@ -66,9 +65,7 @@ reid_obj_top_k: 20          # số ứng viên được chấm descriptor đắt
 # Cổng NCC **bật mặc định** 0.75 — đo thật 29-10: bốn lần "nhận lại" SAI (dấu cái ly nhưng bám
 # vào bóng đèn) có ncc 0,48–0,62 dù cosine 0,78–0,99; ca ĐÚNG có ncc 0,858 (binh1) / 1,00 (fixture).
 # Hạ xuống 0 để tắt (quay lại hành vi cũ = dễ bám nhầm).
-# cổng PHỤ: mẫu ảnh (NCC prefilter) phải khớp tối thiểu — KHÔNG dùng làm cổng chính vì NCC
-# từng cho ca sai (0,71–0,74) cao hơn ca đúng (0,59)
-reid_obj_ncc_min: 0.55
+reid_obj_ncc_min: 0.70
 # Vùng tìm nở DẦN: 12 frame đầu chỉ tìm quanh vị trí vật ở lần thấy cuối, bán kính = max(w,h)×(1+0,5×số frame)
 # → tránh nhảy sang vật khác (bóng đèn, tay nắm cửa) ngay khi vừa mất dấu.
 reid_search_grow_frames: 12
