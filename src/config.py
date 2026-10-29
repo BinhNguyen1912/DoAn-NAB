@@ -58,7 +58,7 @@ DEFAULTS = {
     "reid_cue": "face",
     "reid_obj_threshold": 0.6,      # cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh)
     "reid_obj_ref_max": 8,          # số mẫu đặc trưng vật thể giữ lại
-    "reid_obj_min_side": 24,        # cạnh nhỏ nhất của vật để được làm mẫu
+    "reid_obj_min_side": 8,         # cạnh NGẮN tối thiểu (px) — vật mảnh như bút vẫn lưu được mẫu
     "reid_obj_min_fill": 0.5,       # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
     "reid_obj_top_k": 20,           # số ứng viên được chấm descriptor đắt mỗi frame lost
     # Cổng NCC cho vật ÍT texture-màu (chai đen): 0.0 = TẮT (mặc định). Đo thật 27-10:

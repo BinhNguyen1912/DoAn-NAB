@@ -549,3 +549,19 @@ class TestTuPhucHoi:
         s.start(self._frame(self.BOX), self.BOX)
         s.step(self._frame(self.BOX))
         assert s.step(self._frame(near)).state == STATE_TRACKING
+
+
+class TestCauHinhMacDinh:
+    """Khoá các giá trị mặc định quan trọng — bug thật 29-10: reid.py truyền min_side=24 ĐÈ mất
+    hằng số trong appearance.py nên bản sửa "vật mảnh (bút)" không có tác dụng."""
+
+    def test_min_side_cho_vat_manh(self):
+        assert ReIdSession(engine=None, embedder=None, cue="object").obj_min_side == 8
+
+    def test_cong_chinh_la_cosine(self):
+        s = ReIdSession(engine=None, embedder=None, cue="object")
+        assert s.obj_threshold == pytest.approx(0.60)
+        assert s.obj_ncc_min == 0.0        # cổng NCC tắt mặc định
+
+    def test_bat_tu_phuc_hoi_mac_dinh(self):
+        assert ReIdSession(engine=None, embedder=None, cue="object").auto_recover is True

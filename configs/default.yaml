@@ -56,7 +56,8 @@ reid_cue: face
 # cùng vật 1,000; cùng màu khác hoa văn 0,581; khác màu 0,327; hai vật giống y hệt 1,000).
 reid_obj_threshold: 0.6
 reid_obj_ref_max: 8         # số mẫu đặc trưng vật thể giữ lại
-reid_obj_min_side: 24       # cạnh nhỏ nhất của vật để được làm mẫu
+reid_obj_min_side: 8        # cạnh NGẮN tối thiểu (px) — vật mảnh (bút, thìa) vẫn lưu được mẫu
+                            # (chuẩn chính là diện tích mask ≥ 600 px²)
 reid_obj_min_fill: 0.5      # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
 reid_obj_top_k: 20          # số ứng viên được chấm descriptor đắt mỗi frame mất dấu
 # Cổng NCC cho vật ÍT màu/texture (chai đen...) — 0 = TẮT (mặc định, giữ hành vi cũ).

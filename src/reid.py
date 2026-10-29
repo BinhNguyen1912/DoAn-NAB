@@ -42,7 +42,8 @@ CUE_OBJECT = "object"
 CUE_BOTH = "both"
 DEFAULT_OBJ_THRESHOLD = 0.60      # cổng CHÍNH: cosine đặc trưng vật thể (hiệu chỉnh trên clip thật)
 DEFAULT_OBJ_REF_MAX = 8           # số mẫu đặc trưng vật thể giữ lại
-DEFAULT_OBJ_MIN_SIDE = 24         # cạnh nhỏ nhất của vật để được làm mẫu
+DEFAULT_OBJ_MIN_SIDE = 8          # cạnh ngắn tối thiểu (px) — để vật MẢNH (bút, thìa) vẫn lưu được mẫu.
+# Lưu ý: trước đây để 24 và nó ĐÈ mất hằng số trong appearance.py → bản sửa "vật mảnh" không có tác dụng.
 DEFAULT_OBJ_MIN_FILL = 0.5        # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
 DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor đắt mỗi frame lost
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
