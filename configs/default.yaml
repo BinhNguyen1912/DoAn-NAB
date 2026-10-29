@@ -63,3 +63,9 @@ reid_obj_top_k: 20          # số ứng viên được chấm descriptor đắt
 # Đo thật 27-10: hai vật đen khác nhau → cosine 1,000 (mù) nhưng NCC 0,897; cùng vật NCC 1,000.
 # Bật sau khi hiệu chuẩn trên clip thật, ví dụ 0.95.
 reid_obj_ncc_min: 0.0
+
+# ---- Chống "bám nhầm rồi kẹt" (bug thật 27-10: vật rời khung → bám vào nền → không bao giờ tự sửa) ----
+# SAM 2 hay "tưởng tượng" ra mask khi vật đã rời khung (đo: mask 782 px nhưng object_score = -4,98).
+lost_score_threshold: 0.0   # score ≤ ngưỡng này → coi như KHÔNG thấy vật (mask bị bỏ qua)
+reid_reacquire_confirm: 2   # ứng viên phải khớp CÙNG MỘT CHỖ bao nhiêu frame liên tiếp mới nhận lại
+reid_verify_frames: 2       # sau khi bám lại, kiểm chứng mấy frame (không giống vật → về LOST)

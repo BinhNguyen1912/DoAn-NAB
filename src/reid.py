@@ -49,6 +49,9 @@ DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor 
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
 # chỉ bật sau khi hiệu chuẩn trên clip thật.
 DEFAULT_OBJ_NCC_MIN = 0.0
+DEFAULT_LOST_SCORE_THRESHOLD = 0.0   # score ≤ 0 → coi như KHÔNG thấy vật (mask hay bị "tưởng tượng")
+DEFAULT_REACQUIRE_CONFIRM = 2         # số frame liên tiếp phải khớp cùng một chỗ mới nhận lại
+DEFAULT_VERIFY_FRAMES = 2             # số frame kiểm chứng sau khi bám lại (chống bám nhầm nền)
 
 STATE_TRACKING = "tracking"
 STATE_LOST = "lost"
@@ -107,6 +110,15 @@ def best_match(refs: Sequence[np.ndarray], emb: np.ndarray) -> float:
     if not refs:
         return -1.0
     return max(cosine(r, emb) for r in refs)
+
+
+def _iou(a, b) -> float:
+    """IoU 2 ô (x1, y1, x2, y2) — dùng để kiểm tra ứng viên có "cùng một chỗ" không."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
+    union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
+    return inter / union if union > 0 else 0.0
 
 
 def face_quality_ok(bbox, score, min_face_px=DEFAULT_MIN_FACE_PX,
@@ -183,7 +195,10 @@ class ReIdSession:
                  enabled=True, cue=CUE_FACE, obj_threshold=DEFAULT_OBJ_THRESHOLD,
                  obj_ref_max=DEFAULT_OBJ_REF_MAX, obj_min_side=DEFAULT_OBJ_MIN_SIDE,
                  obj_min_fill=DEFAULT_OBJ_MIN_FILL, obj_top_k=DEFAULT_OBJ_TOP_K,
-                 obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN):
+                 obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN,
+                 lost_score_threshold=DEFAULT_LOST_SCORE_THRESHOLD,
+                 reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
+                 verify_frames=DEFAULT_VERIFY_FRAMES):
         self.engine = engine
         self.embedder = embedder
         self.threshold = float(threshold)
@@ -197,6 +212,12 @@ class ReIdSession:
         self.obj_top_k = int(obj_top_k)
         self.obj_ncc_min = float(obj_ncc_min)
         self.obj_scales = tuple(obj_scales) if obj_scales else None
+        self.lost_score_threshold = float(lost_score_threshold)
+        self.reacquire_confirm = max(1, int(reacquire_confirm))
+        self.verify_frames = max(0, int(verify_frames))
+        self._confirm_count = 0
+        self._confirm_box = None
+        self._verify_left = 0
         # Cue mặt cần embedder; cue vật thể thì không → có thể chạy không có model mặt.
         self.face_on = bool(enabled) and embedder is not None and self.cue in (CUE_FACE, CUE_BOTH)
         self.object_on = bool(enabled) and self.cue in (CUE_OBJECT, CUE_BOTH)
@@ -237,6 +258,9 @@ class ReIdSession:
         self._last_obj_size = None
         self._state = STATE_TRACKING
         self._lost_streak = 0
+        self._confirm_count = 0
+        self._confirm_box = None
+        self._verify_left = 0
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -260,13 +284,27 @@ class ReIdSession:
         if self._state == STATE_TRACKING:
             result = self.engine.process(frame)
             self._stamp_frame_idx(result)
-            if result.mask is None or not result.mask.any():
+            # "Còn thấy vật" = mask không rỗng **VÀ** score > ngưỡng. SAM 2 hay "tưởng tượng" ra
+            # mask khi vật đã rời khung (đo thật 27-10: mask 782 px nhưng score = -4,98) — nếu chỉ
+            # dựa vào mask rỗng thì hệ thống không bao giờ vào LOST và sẽ bám rác mãi mãi.
+            seen = (result.mask is not None and result.mask.any()
+                    and float(result.score) > self.lost_score_threshold)
+            if not seen:
                 self._lost_streak += 1
                 if self._lost_streak >= self.lost_after_frames:
                     self._state = STATE_LOST
+                    self._verify_left = 0
+                    self._confirm_count = 0
             else:
                 self._lost_streak = 0
-                if self.enabled:
+                if self._verify_left > 0:
+                    # Đang kiểm chứng một lần "nhận lại" → nếu không giống vật thì bỏ ngay,
+                    # nếu không sẽ kẹt vĩnh viễn trên vùng bám nhầm (bug thật 27-10).
+                    if self._verify_ok(frame, result):
+                        self._verify_left -= 1
+                    else:
+                        return self._abandon_reacquire()
+                if self.enabled and self._verify_left == 0:
                     self._collect_reference(frame, result.bbox, getattr(result, "mask", None))
             return Step(result=result, state=self._state)
 
@@ -285,7 +323,8 @@ class ReIdSession:
                 if score > best_score:
                     best_score, best_bbox = score, hit.bbox
             if best_bbox is not None and best_score >= self.threshold:
-                return self._reacquire(frame, best_bbox, best_score)
+                if self._confirm(best_bbox):
+                    return self._reacquire(frame, best_bbox, best_score)
 
         # Cue 2: đặc trưng vật thể — cascade: prefilter NCC rẻ → chấm điểm đắt cho top-K
         if self.object_on and self._obj_refs:
@@ -295,9 +334,10 @@ class ReIdSession:
                 # được (đo: 1,000 giữa hai vật đen khác nhau) nên phải có thêm điều kiện hình dạng.
                 ncc_ok = self.obj_ncc_min <= 0.0 or ncc >= self.obj_ncc_min
                 if score >= self.obj_threshold and ncc_ok:
-                    step = self._reacquire(frame, bbox, score)
-                    step.ncc = ncc
-                    return step
+                    if self._confirm(bbox):
+                        step = self._reacquire(frame, bbox, score)
+                        step.ncc = ncc
+                        return step
             best_score = max(best_score, score)
             best_ncc = max(best_ncc, ncc)   # ghi cả khi BỊ LOẠI — để hiệu chuẩn ngưỡng
 
@@ -311,8 +351,53 @@ class ReIdSession:
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
         self._lost_streak = 0
-        self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
+        self._confirm_count = 0
+        self._confirm_box = None
+        self._verify_left = self.verify_frames      # chưa tin ngay: kiểm chứng mấy frame đầu
+        if self._verify_left == 0:
+            self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         return Step(result=result, state=self._state, reid_score=score, reacquired=True)
+
+    def _confirm(self, bbox) -> bool:
+        """Chỉ nhận lại khi ứng viên khớp Ở CÙNG MỘT CHỖ `reacquire_confirm` frame liên tiếp.
+
+        Chống "khớp may rủi" một frame (đo thật 27-10: ứng viên nền khớp 0,50 → bám nhầm).
+        """
+        if self.reacquire_confirm <= 1:
+            return True
+        if self._confirm_box is not None and _iou(self._confirm_box, bbox) >= 0.3:
+            self._confirm_count += 1
+        else:
+            self._confirm_count = 1
+        self._confirm_box = tuple(bbox)
+        return self._confirm_count >= self.reacquire_confirm
+
+    def _verify_ok(self, frame, result) -> bool:
+        """Kiểm chứng sau khi bám lại: mask mới phải còn giống vật (cue vật thể).
+
+        Với cue mặt thì chỉ cần "còn thấy" (score) — đã lọc ở nhánh TRACKING.
+        """
+        if not self.object_on or not self._obj_refs:
+            return True
+        if result.mask is None or not result.mask.any():
+            return False
+        sig = object_signature(frame, result.mask)
+        if sig is None:
+            return False
+        return best_match(self._obj_refs, sig) >= self.obj_threshold
+
+    def _abandon_reacquire(self) -> Step:
+        """Bỏ lần nhận lại sai: reset engine + về LOST để tìm tiếp (không kẹt trên vùng nhầm)."""
+        try:
+            self.engine.reset()
+        except Exception:      # engine giả/duck-type có thể không có reset → vẫn phải thoát
+            pass
+        self._state = STATE_LOST
+        self._lost_streak = max(self._lost_streak, self.lost_after_frames)
+        self._verify_left = 0
+        self._confirm_count = 0
+        self._confirm_box = None
+        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0)
 
     def _match_object(self, frame):
         """Tìm lại vật: lọc rẻ bằng NCC (top-K) rồi chấm `object_signature` cho từng ô.

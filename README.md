@@ -404,6 +404,17 @@ IMG_SIZE=320 ./run demo --reid-cue object
 | `--reid-cue face\|object\|both` | cue dùng khi mất dấu (mặc định `face` = hành vi cũ) |
 | `--reid-obj-threshold 0.6` | cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh trên clip thật) |
 | `--reid-obj-ncc-min 0.0` | **cổng phụ NCC** cho vật đen/ít texture (0 = tắt; xem giới hạn bên dưới) |
+| `--lost-score-threshold 0.0` | score ≤ ngưỡng này → coi như **không thấy vật** (kể cả khi mask không rỗng) |
+| `--reid-confirm 2` | ứng viên phải khớp **cùng một chỗ** bao nhiêu frame liên tiếp mới nhận lại |
+| `--reid-verify 2` | sau khi nhận lại, kiểm chứng bao nhiêu frame (không giống vật → bỏ, về LOST) |
+
+**Vì sao "vật ra khỏi khung rồi vào lại" trước đây không bám lại được** (sửa 27-10, ticket 13):
+SAM 2 hay **"tưởng tượng" ra mask** khi vật đã rời khung (đo: mask 782 px nhưng `object_score` = **-4,98**),
+nên nếu chỉ coi là mất dấu lúc *mask rỗng* thì hệ thống **bám nhầm vào nền** rồi **kẹt vĩnh viễn**
+(không bao giờ về LOST để tìm lại). Nay: mất dấu theo **`score`**, ứng viên phải **khớp 2 frame
+liên tiếp**, và sau khi bám lại còn **kiểm chứng 2 frame** — sai thì `engine.reset()` + về LOST.
+Đo lại trên fixture (vật bị xoá f10–17): f12 loại ứng viên nền 0,50 → f18 khớp 0,93 → **f19 bám lại
+đúng vật (0,94)**, không còn kẹt.
 
 **Số đo (máy i7-1195G7, webcam thật, 213 frame):** mất dấu **81% → 12%**, số lần nhận lại **0 → 6**
 (cos 0,671–0,955). Chi phí: thêm **~3 ms/frame** khi bám; lúc tìm lại **~24 ms/frame**

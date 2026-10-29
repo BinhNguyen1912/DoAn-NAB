@@ -103,13 +103,16 @@ tracking     : bám bình thường + lưu MẪU của đối tượng (mặt tr
      │ mask rỗng 2 frame liên tiếp
      ▼
 lost         : NGỪNG lan truyền  →  bộ nhớ không thể nhảy sang B   ← đây là chỗ chặn "bám sang B"
+               (mất dấu khi mask RỖNG **hoặc `object_score` ≤ 0** — SAM 2 hay "tưởng tượng" mask
+               khi vật đã rời khung: đo thật mask 782 px nhưng score -4,98)
      │
      ▼
 reacquiring  : cue MẶT : detect mặt (YuNet) + embedding (SFace) → cosine với TẬP mẫu, lấy MAX
                cue VẬT : cascade NCC (frame thu nhỏ 4×, top-K) → cosine 89 số với tập mẫu
-     │ ≥ ngưỡng (mặt 0.363 / vật 0.6 — phải hiệu chỉnh)
+     │ ≥ ngưỡng (mặt 0.363 / vật 0.6 — phải hiệu chỉnh) **VÀ** khớp cùng một chỗ 2 frame liên tiếp
      ▼
-tracking     : engine.start(bbox)  →  bám lại ĐÚNG đối tượng
+tracking     : engine.start(bbox)  →  bám lại ĐÚNG đối tượng, rồi **kiểm chứng 2 frame**
+               (mask mới không giống vật → engine.reset() + về lost, không kẹt trên vùng nhầm)
 ```
 
 Vì sao phải **tập mẫu + lấy max**: đo thật cùng 1 người, mặt nhỏ 42×62 px → cosine chỉ **0,199–0,723**

@@ -65,12 +65,18 @@ DEFAULTS = {
     # hai vật đen khác nhau cho cosine 1,000 nhưng NCC 0,897; cùng vật NCC 1,000.
     # Chỉ bật sau khi hiệu chuẩn trên clip thật (vd 0,95).
     "reid_obj_ncc_min": 0.0,
+    # ---- Chống "bám nhầm rồi kẹt" (bug thật 27-10) ----
+    # SAM 2 hay "tưởng tượng" mask khi vật đã rời khung (đo: mask 782 px nhưng score = -4,98)
+    "lost_score_threshold": 0.0,   # score ≤ ngưỡng này → coi như KHÔNG thấy vật
+    "reid_reacquire_confirm": 2,   # số frame liên tiếp khớp CÙNG MỘT CHỖ mới nhận lại
+    "reid_verify_frames": 2,       # số frame kiểm chứng sau khi bám lại (fail → về LOST)
 }
 
 # Key kiểu int — validate khi YAML ghi chuỗi nhầm (VD: max_trajectory: ten-frames)
 _INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size",
              "lost_after_frames", "reid_min_face_px", "reid_ref_max",
-             "reid_obj_ref_max", "reid_obj_min_side", "reid_obj_top_k")   # source có thể int (webcam) hoặc str (file/RTSP)
+             "reid_obj_ref_max", "reid_obj_min_side", "reid_obj_top_k",
+             "reid_reacquire_confirm", "reid_verify_frames")   # source có thể int (webcam) hoặc str (file/RTSP)
 _FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score")
 
 

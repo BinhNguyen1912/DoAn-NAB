@@ -186,3 +186,29 @@ Ticket 12 → **done** (4/4). Ticket 11 → 5/6 (còn hiệu chuẩn trên clip 
 - arXiv:2411.11922 (SAMURAI), arXiv:2207.07115 (XMem), arXiv:1708.00197 (VS-ReID).
 - File LICENSE đã đọc trực tiếp: `KaiyangZhou/deep-person-reid` (MIT), `JDAI-CV/fast-reid` (Apache-2.0),
   `mikel-brostrom/boxmot` (AGPL-3.0).
+
+### Bổ sung 4 — vì sao "vật ra khỏi khung rồi vào lại" KHÔNG bám lại (ticket 13)
+
+Người dùng báo lại đúng ca thật (remote/ly/chén/bút rời khung rồi vào lại). Đo trên fixture của repo
+(vật bị **xoá hẳn** khỏi cảnh ở f10–17, `image_size=320`):
+
+| Frame | Trạng thái | mask | `object_score` | Chuyện gì |
+|---|---|---|---|---|
+| f10 | tracking | **rỗng** | **-4,98** | SAM 2 bắt đầu không thấy vật |
+| f11 | lost | rỗng | -6,26 | **vào LOST đúng** ✅ |
+| f12 | tracking | 782 px | **+19,40** (giả) | **BÁM NHẦM NỀN** (reid 0,50 vượt ngưỡng 0,5) |
+| f13–f22 | tracking | ~1500 px | +1,77 → -0,94 | bám rác, **không bao giờ tự sửa** |
+
+Ba lỗi: (1) chỉ coi là mất dấu khi mask **rỗng** → mask "tưởng tượng" làm hệ thống không bao giờ về LOST;
+(2) nhận lại ngay frame đầu tiên (khớp may rủi); (3) không có bước kiểm chứng sau khi bám lại → kẹt vĩnh viễn.
+
+**Đã sửa** (`src/reid.py`, ticket 13):
+- `lost_score_threshold` (0.0): còn thấy vật = mask không rỗng **VÀ** `score > ngưỡng`.
+- `reacquire_confirm` (2): ứng viên phải khớp **cùng một chỗ** 2 frame liên tiếp (IoU ≥ 0,3).
+- `verify_frames` (2): sau khi bám lại, đặc trưng mask mới phải còn khớp tập mẫu — sai thì
+  `engine.reset()` + về LOST (không kẹt trên vùng nhầm).
+
+**Đo lại sau sửa (cùng fixture):** f12–f17 vẫn `reacquiring` và **LOẠI** ứng viên nền 0,50;
+f18 khớp 0,93 (chờ xác nhận); **f19 bám lại đúng vật (reid 0,94, score +18,93)**; f20–f23 tracking thật.
+
+Cổng kiểm tra: `ruff` xanh · `pytest -m "not slow"` → **254 test** (thêm 3 test cho 3 lỗi trên).

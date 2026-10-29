@@ -70,13 +70,17 @@ class FakeEngineMasks:
     """Engine giả cho cue VẬT THỂ: mask đúng kích thước frame, lấy theo hàng đợi (None = mask theo bbox).
 
     Không đụng `FakeEngine` cũ để không làm đổi hành vi các test khuôn mặt.
+    `scores`: hàng đợi điểm object_score (mặc định 1.0) — cần để test ca SAM 2 "tưởng tượng" mask.
     """
 
-    def __init__(self, masks, shape=(96, 96)):
+    def __init__(self, masks, shape=(96, 96), scores=None, start_score=1.0):
         self._masks = list(masks)
+        self._scores = list(scores) if scores is not None else None
+        self._start_score = float(start_score)
         self._shape = tuple(shape)
         self.start_calls = []
         self.process_calls = 0
+        self.reset_calls = 0
 
     def _box_mask(self, bbox):
         m = np.zeros(self._shape, bool)
@@ -84,20 +88,24 @@ class FakeEngineMasks:
         m[max(0, y1):min(y2, self._shape[0]), max(0, x1):min(x2, self._shape[1])] = True
         return m
 
-    def _result(self, mask, bbox):
+    def _result(self, mask, bbox, score=1.0):
         return type("R", (), {"frame_idx": 0, "mask": mask, "bbox": bbox,
-                              "score": 1.0, "elapsed_ms": 1.0})()
+                              "score": float(score), "elapsed_ms": 1.0})()
 
     def start(self, frame, bbox):
         self.start_calls.append(tuple(bbox))
-        return self._result(self._box_mask(bbox), bbox)
+        return self._result(self._box_mask(bbox), bbox, self._start_score)
 
     def process(self, frame):
         self.process_calls += 1
         nxt = self._masks.pop(0) if self._masks else None
+        score = self._scores.pop(0) if self._scores else 1.0
         if nxt is None:
-            return self._result(self._box_mask((10, 10, 50, 50)), (10, 10, 50, 50))
-        return self._result(nxt, (10, 10, 50, 50))
+            return self._result(self._box_mask((10, 10, 50, 50)), (10, 10, 50, 50), score)
+        return self._result(nxt, (10, 10, 50, 50), score)
+
+    def reset(self):
+        self.reset_calls += 1
 
 
 def _hit(bbox, emb, score=0.95):
@@ -212,7 +220,7 @@ class TestReIdSessionReacquire:
         embedder = FakeEmbedder([_hit((10, 10, 60, 60), ref_emb)])
         engine = FakeEngine(masks=[True])
         session = ReIdSession(engine=engine, embedder=embedder, threshold=0.5,
-                              lost_after_frames=1)
+                              lost_after_frames=1, reacquire_confirm=1, verify_frames=0)
         session.start(np.zeros((8, 8, 3), np.uint8), (0, 0, 100, 100))
         session.step(np.zeros((8, 8, 3), np.uint8))          # → LOST (hết mask)
 
@@ -245,7 +253,7 @@ class TestFrameIdxLienTuc:
         embedder = FakeEmbedder([_hit((10, 10, 60, 60), ref)])
         engine = FakeEngine(masks=[True])
         session = ReIdSession(engine=engine, embedder=embedder, threshold=0.5,
-                              lost_after_frames=1)
+                              lost_after_frames=1, reacquire_confirm=1, verify_frames=0)
         session.start(np.zeros((8, 8, 3), np.uint8), (0, 0, 100, 100))
         s1 = session.step(np.zeros((8, 8, 3), np.uint8))        # → LOST
         embedder.hits = [_hit((300, 300, 360, 360), ref)]
@@ -327,7 +335,8 @@ class TestReIdSessionObjectCue:
         empty = np.zeros((96, 96), bool)
         engine = FakeEngineMasks([present, empty], shape=(96, 96))
         session = ReIdSession(engine=engine, embedder=None, cue="object",
-                              lost_after_frames=1, obj_threshold=0.6)
+                              lost_after_frames=1, obj_threshold=0.6,
+                              reacquire_confirm=1, verify_frames=0)
         session.start(_obj_frame(), (20, 20, 60, 60))
         session.step(_obj_frame())                       # còn thấy → vẫn tracking
         s_lost = session.step(_obj_frame())              # mask rỗng → lost
@@ -375,7 +384,7 @@ class TestCongNccVatDen:
     def _session(self, engine, ncc_min):
         return ReIdSession(engine=engine, embedder=None, cue="object",
                            lost_after_frames=1, obj_threshold=0.5,
-                           obj_ncc_min=ncc_min)
+                           obj_ncc_min=ncc_min, reacquire_confirm=1, verify_frames=0)
 
     def test_cos_mu_voi_vat_den_khac_nhung_co_ncc(self):
         """Bật cổng NCC cao → KHÔNG được nhận nhầm vật đen khác (dù cosine cao)."""
@@ -400,3 +409,59 @@ class TestCongNccVatDen:
         step = session.step(_black_frame(self.BOX_B))
         assert step.reacquired is True          # đây là hành vi CŨ (chưa cứu được vật đen)
         assert step.ncc >= 0.0                  # và NCC có được ghi lại để hiệu chuẩn
+
+
+class TestChongBamNham:
+    """3 lỗi thật 27-10: SAM 2 "tưởng tượng" mask khi vật rời khung → bám nhầm nền → không tự sửa.
+
+    Đo trên fixture (vật bị xoá hẳn): mask 782 px nhưng `object_score_logits` = **-4,98**,
+    và sau khi bám nhầm vào nền thì score dương giả → hệ thống kẹt vĩnh viễn.
+    """
+
+    def test_mask_khong_rong_nhung_score_am_van_la_mat_dau(self):
+        """Chỉ dựa vào 'mask rỗng' là sai: mask giả + score âm phải tính là MẤT DẤU."""
+        seen_mask = _obj_mask((20, 20, 60, 60))
+        engine = FakeEngineMasks([seen_mask, seen_mask], shape=(96, 96),
+                                 scores=[-4.98, -6.26])
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=2, reacquire_confirm=1, verify_frames=0)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        s1 = session.step(_obj_frame())
+        s2 = session.step(_obj_frame())
+        assert s1.state == STATE_TRACKING          # 1 frame score âm chưa đủ
+        assert s2.state == STATE_LOST              # 2 frame liên tiếp → mất dấu
+
+    def test_ung_vien_phai_khop_2_frame_lien_tiep_moi_nhan_lai(self):
+        empty = np.zeros((96, 96), bool)
+        engine = FakeEngineMasks([empty, empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.5,
+                              reacquire_confirm=2, verify_frames=0)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        session.step(_obj_frame())                      # → LOST
+        moved = (24, 24, 64, 64)
+        a = session.step(_obj_frame(moved))             # khớp lần 1 → chưa nhận
+        b = session.step(_obj_frame(moved))             # khớp lần 2 (cùng chỗ) → nhận
+        assert a.reacquired is False
+        assert b.reacquired is True and b.state == STATE_TRACKING
+
+    def test_bam_nham_thi_tu_bo_va_ve_lost(self):
+        """Sau khi bám lại, mask mới KHÔNG giống vật (đang bám nền) → bỏ, reset engine, về LOST."""
+        empty = np.zeros((96, 96), bool)
+        # mask bám nhầm = một vùng nền trơn ở góc dưới (không phải vật cam có sọc)
+        wrong = np.zeros((96, 96), bool)
+        wrong[80:96, 80:96] = True
+        # hàng đợi: process#1 = mask rỗng (→ LOST); process#2 = mask NỀN (frame kiểm chứng)
+        engine = FakeEngineMasks([empty, wrong, wrong], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.5,
+                              reacquire_confirm=1, verify_frames=2)
+        session.start(_obj_frame(), (20, 20, 60, 60))
+        session.step(_obj_frame())                      # → LOST
+        moved = (24, 24, 64, 64)
+        re_ = session.step(_obj_frame(moved))           # nhận lại, vào cửa sổ kiểm chứng
+        assert re_.reacquired is True
+        bad = session.step(_obj_frame())                # frame kiểm chứng: mask = vùng nền
+        assert bad.state == STATE_LOST
+        assert bad.reacquired is False
+        assert engine.reset_calls >= 1                  # đã bỏ track sai

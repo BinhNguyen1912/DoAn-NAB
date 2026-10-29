@@ -84,7 +84,10 @@ def _make_reid_session(engine, args):
                        lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
                        min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
                        cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
-                       obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0))
+                       obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0),
+                       lost_score_threshold=getattr(args, "lost_score_threshold", 0.0),
+                       reacquire_confirm=getattr(args, "reid_confirm", 2),
+                       verify_frames=getattr(args, "reid_verify", 2))
 
 
 def _window_closed(window_name, seen_visible=None, max_misses=3):
@@ -393,6 +396,13 @@ def main():
     ap.add_argument("--reid-obj-ncc-min", type=float, default=None,
                     help="cổng NCC tối thiểu cho vật ít màu/texture (mặc định 0 = tắt; "
                          "đo: cùng vật 1,000 vs vật đen khác 0,897)")
+    ap.add_argument("--lost-score-threshold", type=float, default=None,
+                    help="score ≤ ngưỡng này coi như mất dấu (mặc định 0; chống SAM 2 "
+                         "tưởng tượng mask khi vật đã rời khung)")
+    ap.add_argument("--reid-confirm", type=int, default=None,
+                    help="số frame liên tiếp phải khớp cùng một chỗ mới nhận lại (mặc định 2)")
+    ap.add_argument("--reid-verify", type=int, default=None,
+                    help="số frame kiểm chứng sau khi nhận lại (mặc định 2; fail → về LOST)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
@@ -425,6 +435,9 @@ def main():
         "reid_cue": args.reid_cue,
         "reid_obj_threshold": args.reid_obj_threshold,
         "reid_obj_ncc_min": args.reid_obj_ncc_min,
+        "lost_score_threshold": args.lost_score_threshold,
+        "reid_reacquire_confirm": args.reid_confirm,
+        "reid_verify_frames": args.reid_verify,
     })
     checkpoint = resolve_checkpoint(cfg["checkpoint"])
     if cfg["source"] is None:
@@ -455,6 +468,9 @@ def main():
     args.reid_cue = cfg["reid_cue"]
     args.reid_obj_threshold = cfg["reid_obj_threshold"]
     args.reid_obj_ncc_min = cfg["reid_obj_ncc_min"]
+    args.lost_score_threshold = cfg["lost_score_threshold"]
+    args.reid_confirm = cfg["reid_reacquire_confirm"]
+    args.reid_verify = cfg["reid_verify_frames"]
     args.reid_detector_model = cfg["reid_detector_model"]
     args.reid_recognizer_model = cfg["reid_recognizer_model"]
     if args.reid and args.reanchor_every:
