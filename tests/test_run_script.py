@@ -22,6 +22,21 @@ class TestRunHelp:
         assert r.returncode == 2
         assert "x,y,w,h" in r.stdout
 
+    def test_fast_nhan_co_thay_vi_lam_nguon(self):
+        """Bug thật 27-10: `./run fast --reid-cue object` ăn "--reid-cue" làm nguồn → argparse báo lỗi.
+
+        Dùng `--help` để kiểm headless (argparse thoát trước khi mở cửa sổ).
+        """
+        r = _run("fast", "--help")
+        assert r.returncode == 0
+        assert "unrecognized arguments" not in (r.stdout + r.stderr)
+        assert "--reid-cue" in r.stdout          # cờ được chuyển tiếp nguyên vẹn
+
+    def test_view_nhan_co_thay_vi_lam_nguon(self):
+        r = _run("view", "--help")
+        assert r.returncode == 0
+        assert "unrecognized arguments" not in (r.stdout + r.stderr)
+
     def test_khong_truyen_gi_cung_in_help(self):
         r = _run()
         assert r.returncode == 0 and "DEMO" in r.stdout
