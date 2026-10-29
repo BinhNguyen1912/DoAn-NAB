@@ -55,6 +55,11 @@ DEFAULT_OBJ_NCC_MIN = 0.0         # cổng PHỤ (mẫu ảnh) — TẮT mặc �
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
 DEFAULT_SEARCH_GROW_FRAMES = 12    # số frame lost tìm trong vùng hẹp quanh vị trí cũ trước khi mở rộng
 DEFAULT_SEARCH_GROW_STEP = 0.25    # bán kính tìm = max(w,h) × (0,75 + 0,25 × số frame lost)
+# TỰ PHỤC HỒI (không cần người dùng bấm r): nếu ô bao NHẢY BẤT THƯỜNG giữa 2 frame (dấu hiệu bám
+# sang vật khác), hệ thống tự reset engine + về trạng thái tìm lại, GIỮ ký ức vật (mẫu tham chiếu)
+# để tự nhận diện lại. Ngưỡng = bội số của đường chéo ô bao trước đó.
+DEFAULT_JUMP_RATIO = 1.5
+DEFAULT_RECOVER_COOLDOWN = 3       # số frame tối thiểu giữa 2 lần tự phục hồi (chống rung)
 DEFAULT_LOST_SCORE_THRESHOLD = 0.0   # score ≤ 0 → coi như KHÔNG thấy vật (mask hay bị "tưởng tượng")
 DEFAULT_REACQUIRE_CONFIRM = 2         # số frame liên tiếp phải khớp cùng một chỗ mới nhận lại
 DEFAULT_VERIFY_FRAMES = 2             # số frame kiểm chứng sau khi bám lại (chống bám nhầm nền)
@@ -243,7 +248,9 @@ class ReIdSession:
                  reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
                  verify_frames=DEFAULT_VERIFY_FRAMES,
                  search_grow_frames=DEFAULT_SEARCH_GROW_FRAMES,
-                 search_grow_step=DEFAULT_SEARCH_GROW_STEP):
+                 search_grow_step=DEFAULT_SEARCH_GROW_STEP,
+                 jump_ratio=DEFAULT_JUMP_RATIO,
+                 auto_recover=True):
         self.engine = engine
         self.embedder = embedder
         self.threshold = float(threshold)
@@ -262,6 +269,10 @@ class ReIdSession:
         self.verify_frames = max(0, int(verify_frames))
         self.search_grow_frames = max(1, int(search_grow_frames))
         self.search_grow_step = float(search_grow_step)
+        self.jump_ratio = float(jump_ratio)
+        self.auto_recover = bool(auto_recover)
+        self._recover_cooldown = 0
+        self._last_bbox = None
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = 0
@@ -312,6 +323,8 @@ class ReIdSession:
         self._verify_left = 0
         self._lost_age = 0
         self._last_center = None
+        self._recover_cooldown = 0
+        self._last_bbox = None
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -338,6 +351,11 @@ class ReIdSession:
             # "Còn thấy vật" = mask không rỗng **VÀ** score > ngưỡng. SAM 2 hay "tưởng tượng" ra
             # mask khi vật đã rời khung (đo thật 27-10: mask 782 px nhưng score = -4,98) — nếu chỉ
             # dựa vào mask rỗng thì hệ thống không bao giờ vào LOST và sẽ bám rác mãi mãi.
+            # --- TỰ PHỤC HỒI: ô bao nhảy bất thường = dấu hiệu bám sang vật khác ---
+            if self.auto_recover and self._is_suspicious_jump(result):
+                return self._auto_recover()
+            if result.mask is not None and result.mask.any():
+                self._last_bbox = tuple(result.bbox)
             seen = (result.mask is not None and result.mask.any()
                     and float(result.score) > self.lost_score_threshold)
             if not seen:
@@ -360,6 +378,7 @@ class ReIdSession:
             return Step(result=result, state=self._state)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
+        self._recover_cooldown = max(0, self._recover_cooldown - 1)
         self._state = STATE_REACQUIRING
         self._lost_age += 1
         if not self.enabled:
@@ -395,6 +414,45 @@ class ReIdSession:
 
         return Step(result=self._lost_result(), state=self._state,
                     reid_score=best_score, ncc=best_ncc)
+
+    def _is_suspicious_jump(self, result) -> bool:
+        """Ô bao nhảy xa bất thường so với frame trước → nghi bám sang vật khác.
+
+        Dùng để TỰ phục hồi (người dùng không phải bấm r): đo thật 29-10 — khi dấu vật, hệ thống
+        nhảy 216–295 px (gấp 1–2 lần kích thước vật) sang bóng đèn/tay.
+        """
+        if self._recover_cooldown > 0 or self._last_bbox is None:
+            return False
+        if result.mask is None or not result.mask.any():
+            return False
+        px1, py1, px2, py2 = [float(v) for v in self._last_bbox]
+        x1, y1, x2, y2 = [float(v) for v in result.bbox]
+        diag = ((px2 - px1) ** 2 + (py2 - py1) ** 2) ** 0.5
+        if diag <= 1.0:
+            return False
+        dcx = ((x1 + x2) - (px1 + px2)) / 2.0
+        dcy = ((y1 + y2) - (py1 + py2)) / 2.0
+        return (dcx ** 2 + dcy ** 2) ** 0.5 > self.jump_ratio * diag
+
+    def _auto_recover(self) -> Step:
+        """Tự bỏ track hiện tại (nghi sai) + về trạng thái TÌM LẠI, GIỮ mẫu tham chiếu.
+
+        Không xoá `_obj_refs`/`_obj_template` — đó là ký ức để tự nhận diện lại. Không cập nhật
+        `_last_center` theo ô sai (giữ mốc cũ để vùng tìm không bị lệch theo vật bám nhầm).
+        """
+        try:
+            self.engine.reset()
+        except Exception:
+            pass
+        self._state = STATE_LOST
+        self._lost_streak = max(self._lost_streak, self.lost_after_frames)
+        self._lost_age = 0
+        self._verify_left = 0
+        self._confirm_count = 0
+        self._confirm_box = None
+        self._recover_cooldown = int(DEFAULT_RECOVER_COOLDOWN)
+        self._last_bbox = None
+        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0)
 
     def _reacquire(self, frame, bbox, score: float) -> Step:
         """Nhận lại đối tượng: khởi động bám lại từ ô vừa khớp (dùng chung cho mọi cue)."""

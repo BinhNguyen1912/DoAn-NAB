@@ -74,9 +74,10 @@ class FakeEngineMasks:
     `scores`: hàng đợi điểm object_score (mặc định 1.0) — cần để test ca SAM 2 "tưởng tượng" mask.
     """
 
-    def __init__(self, masks, shape=(96, 96), scores=None, start_score=1.0):
+    def __init__(self, masks, shape=(96, 96), scores=None, start_score=1.0, bboxes=None):
         self._masks = list(masks)
         self._scores = list(scores) if scores is not None else None
+        self._bboxes = list(bboxes) if bboxes is not None else None
         self._start_score = float(start_score)
         self._shape = tuple(shape)
         self.start_calls = []
@@ -101,9 +102,10 @@ class FakeEngineMasks:
         self.process_calls += 1
         nxt = self._masks.pop(0) if self._masks else None
         score = self._scores.pop(0) if self._scores else 1.0
+        bbox = self._bboxes.pop(0) if self._bboxes else (10, 10, 50, 50)
         if nxt is None:
-            return self._result(self._box_mask((10, 10, 50, 50)), (10, 10, 50, 50), score)
-        return self._result(nxt, (10, 10, 50, 50), score)
+            return self._result(self._box_mask(bbox), bbox, score)
+        return self._result(nxt, bbox, score)
 
     def reset(self):
         self.reset_calls += 1
@@ -494,3 +496,56 @@ class TestCongNhanLai:
 
     def test_tat_cong_bang_0_thi_chi_xet_cos_floor(self):
         assert accept_candidate(0.10, 0.90, 0.0, 0.40) is True
+
+
+class TestTuPhucHoi:
+    """Không cần người dùng bấm `r`: ô bao nhảy bất thường → tự reset + tự tìm lại.
+
+    Đo thật 29-10: khi dấu vật, ô bao nhảy 216–295 px (gấp 1–2 lần kích thước vật) sang bóng đèn.
+    Khung test 200×300; vật 40×40 → đường chéo ≈ 57 px; ngưỡng 1,5× ≈ 85 px.
+    """
+
+    SHAPE = (200, 300)
+    BOX = (20, 20, 60, 60)
+    MASK = None
+
+    def _mk(self, box):
+        return _obj_mask(box, self.SHAPE)
+
+    def _frame(self, box):
+        return _obj_frame(box, shape=self.SHAPE)
+
+    def _session(self, engine, **kw):
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           reacquire_confirm=1, verify_frames=0, **kw)
+
+    def test_o_bao_nhay_bat_thuong_thi_tu_bo_va_ve_lost(self):
+        far = (250, 150, 290, 190)          # cách ~260 px >> 85 px
+        engine = FakeEngineMasks([self._mk(self.BOX), self._mk(far)], shape=self.SHAPE,
+                                 bboxes=[self.BOX, far])
+        s = self._session(engine)
+        s.start(self._frame(self.BOX), self.BOX)
+        assert s.step(self._frame(self.BOX)).state == STATE_TRACKING
+        step = s.step(self._frame(far))
+        assert step.state == STATE_LOST                     # tự phát hiện → bỏ
+        assert engine.reset_calls >= 1
+        assert s.object_ref_count > 0                       # GIỮ ký ức để nhận diện lại
+
+    def test_tat_tu_phuc_hoi_thi_khong_bo(self):
+        far = (250, 150, 290, 190)
+        engine = FakeEngineMasks([self._mk(self.BOX), self._mk(far)], shape=self.SHAPE,
+                                 bboxes=[self.BOX, far])
+        s = self._session(engine, auto_recover=False)
+        s.start(self._frame(self.BOX), self.BOX)
+        s.step(self._frame(self.BOX))
+        assert s.step(self._frame(far)).state == STATE_TRACKING
+
+    def test_di_chuyen_nhanh_nhung_trong_nguong_thi_khong_bo(self):
+        near = (50, 34, 90, 74)             # dịch ~30 px < 85 px
+        engine = FakeEngineMasks([self._mk(self.BOX), self._mk(near)], shape=self.SHAPE,
+                                 bboxes=[self.BOX, near])
+        s = self._session(engine)
+        s.start(self._frame(self.BOX), self.BOX)
+        s.step(self._frame(self.BOX))
+        assert s.step(self._frame(near)).state == STATE_TRACKING

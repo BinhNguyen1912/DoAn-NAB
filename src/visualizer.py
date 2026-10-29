@@ -143,7 +143,7 @@ class Visualizer:
         if self.consecutive_lost > 0:
             self._draw_lost_banner(img)
         if switch_warning:
-            self._put_text(img, "NGHI NGO DOI TUONG — bam r", (8, 104))
+            self._put_text(img, "NGHI NGO DOI TUONG — TU TIM LAI", (8, 104))
         if reid_state == "reacquiring":
             # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.
@@ -229,8 +229,8 @@ class Visualizer:
         """Banner giữa khung khi mất dấu — để người xem biết hệ thống ĐANG mất dấu,
         không phải đang bám đúng (mask rỗng mà im lặng là phản hồi gây hiểu nhầm)."""
         h, w = img.shape[:2]
-        text = ("MẤT DẤU — bấm r chọn lại" if self._font_path is not None
-                else "MAT DAU - bam r")
+        text = ("MẤT DẤU — TỰ TÌM LẠI" if self._font_path is not None
+                else "MAT DAU - TU TIM LAI")
         if self._font_path is not None:
             _pil_put_text(img, text, _centered_org(img, text, self._font_path,
                                                     self._font_size + 6),
