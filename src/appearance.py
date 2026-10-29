@@ -21,8 +21,12 @@ import numpy as np
 
 # Số bin histogram HSV (H x S) — 8x8 đủ mịn cho vùng nhỏ mà vẫn nhẹ (đo ~1 ms/vùng).
 DEFAULT_HIST_BINS = 8
-# Cổng chất lượng: cạnh nhỏ nhất của ô (px) và tỉ lệ mask/ô tối thiểu (chặn vật bị che).
-DEFAULT_MIN_SIDE = 24
+# Cổng chất lượng mẫu: cạnh nhỏ nhất + DIỆN TÍCH.
+# Trước đây đòi cả 2 cạnh ≥ 24 px → vật DÀI/MẢNH (cây bút 120×14, cái thìa, dây) KHÔNG BAO GIỜ
+# lưu được mẫu → re-ID chết ngay từ đầu (đo thật 29-10). Nay dùng diện tích làm chuẩn chính;
+# cạnh ngắn chỉ để loại ô rác (click nhầm).
+DEFAULT_MIN_SIDE = 8          # cạnh ngắn tối thiểu (px) — đủ để biết không phải ô rác
+DEFAULT_MIN_AREA = 600       # diện tích mask tối thiểu (px²) — dưới mức này đặc trưng quá nhiễu
 DEFAULT_MIN_FILL = 0.5
 # Quét lưới khi mất dấu: bước = 0.5 cạnh vật, 3 tỉ lệ quanh kích thước đã biết.
 DEFAULT_STRIDE_FRAC = 0.5
@@ -50,11 +54,13 @@ def mask_to_bbox(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
 
 
 def signature_quality_ok(bbox, mask, min_side: int = DEFAULT_MIN_SIDE,
-                         min_fill: float = DEFAULT_MIN_FILL) -> bool:
-    """Cổng chất lượng mẫu/ứng viên: ô đủ lớn VÀ mask chiếm đủ tỉ lệ trong ô.
+                         min_fill: float = DEFAULT_MIN_FILL,
+                         min_area: int = DEFAULT_MIN_AREA) -> bool:
+    """Cổng chất lượng mẫu/ứng viên: đủ DIỆN TÍCH, mask chiếm đủ tỉ lệ trong ô, và không phải ô rác.
 
-    `min_fill` chặn trường hợp vật bị che phần lớn: đặc trưng tính trên phần còn thấy
-    sẽ mô tả "vật cản" chứ không phải vật (bài học từ ngưỡng mặt ở ADR-0003).
+    Dùng diện tích (không phải "cả 2 cạnh ≥ 24 px") để vật dài/mảnh như CÂY BÚT vẫn lưu được mẫu.
+    `min_fill` chặn trường hợp vật bị che phần lớn: đặc trưng tính trên phần còn thấy sẽ mô tả
+    "vật cản" chứ không phải vật (bài học từ ngưỡng mặt ở ADR-0003).
     """
     if bbox is None:
         return False
@@ -68,6 +74,8 @@ def signature_quality_ok(bbox, mask, min_side: int = DEFAULT_MIN_SIDE,
     if x2c <= x1c or y2c <= y1c:
         return False
     sub = m[y1c:y2c, x1c:x2c]
+    if int(sub.sum()) < int(min_area):
+        return False
     return bool(sub.mean() >= float(min_fill))
 
 

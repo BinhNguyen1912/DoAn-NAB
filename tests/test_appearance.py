@@ -172,3 +172,25 @@ class TestPrefilterCandidates:
         frame = _frame(BOX)
         big = np.full((SHAPE[0] * 2, SHAPE[1] * 2, 3), 120, np.uint8)
         assert prefilter_candidates(frame, big, top_k=3) == []
+
+
+class TestVatDaiManh:
+    """Vật dài/mảnh (cây bút, cái thìa) — cổng cũ đòi CẢ 2 cạnh ≥ 24 px nên không bao giờ lưu mẫu.
+
+    Đo trên pixel thật 29-10: người dùng lo "lấy cây bút thì chết dở" — đúng, bút 120×14 bị loại.
+    Nay dùng DIỆN TÍCH làm chuẩn (≥ 600 px²) + cạnh ngắn ≥ 8 px.
+    """
+
+    def test_cay_but_manh_duoc_chap_nhan(self):
+        pen = (100, 100, 220, 114)          # 120×14 = 1680 px²
+        assert signature_quality_ok(pen, _mask(pen)) is True
+
+    def test_o_rac_van_bi_loai(self):
+        junk = (300, 300, 320, 320)         # 20×20 = 400 px² (< 600)
+        assert signature_quality_ok(junk, _mask(junk)) is False
+
+    def test_but_qua_nho_bi_loai(self):
+        tiny = (100, 100, 160, 110)         # 60×10 = 600 px² nhưng... cạnh 10 ≥ 8 → đạt; dùng 60×6
+        assert signature_quality_ok(tiny, _mask(tiny)) is True
+        tiny2 = (100, 100, 140, 106)        # 40×6 → cạnh 6 < 8
+        assert signature_quality_ok(tiny2, _mask(tiny2)) is False
