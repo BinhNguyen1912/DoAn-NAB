@@ -212,3 +212,20 @@ Ba lỗi: (1) chỉ coi là mất dấu khi mask **rỗng** → mask "tưởng t
 f18 khớp 0,93 (chờ xác nhận); **f19 bám lại đúng vật (reid 0,94, score +18,93)**; f20–f23 tracking thật.
 
 Cổng kiểm tra: `ruff` xanh · `pytest -m "not slow"` → **254 test** (thêm 3 test cho 3 lỗi trên).
+
+
+### Bổ sung 5 — lần chạy THÀNH CÔNG trên webcam thật (29-10, `fast_1029-212632`)
+
+Sau khi bỏ "bắt người dùng bấm r" và chuyển cổng chính về cosine 0,60:
+
+| Chỉ số | Kết quả |
+|---|---|
+| frame | 576 (mean 183 ms, **5,5 FPS**) |
+| mất dấu | 107/576 = **19%**, chia 31 đoạn (8 đoạn chỉ 1–2 frame) |
+| **tự nhận lại** | **17/17 lần**, không cần thao tác tay |
+| cosine khi nhận lại | 13 × ≥0,90 · 3 × 0,80–0,89 · 1 × 0,77 |
+| kiểm chứng bằng mắt | ca nhảy **407 px** (f328) → **bám ĐÚNG vật** (người dùng xác nhận) |
+
+Kết luận: các cú "nhảy xa" (150–534 px) là do tay di chuyển nhanh ở 5,5 FPS, **không phải bám nhầm**.
+Việc còn lại (sau demo): đo xem bao nhiêu lần rớt là do `auto_recover` cắt nhầm — cần thêm cột
+`recover` vào CSV để biết, chưa làm để tránh rủi ro trước buổi bảo vệ.

@@ -33,6 +33,21 @@
 
 > Nếu cảnh 3 **không bám lại**: nói luôn *"với vật này nó chưa đủ tin cậy nên vẫn ở trạng thái đang tìm — đây là hành vi em chọn có chủ đích, em đã đo và ghi trong tài liệu"* → rồi chuyển sang cảnh 4 (video dự phòng có cảnh bám lại thành công).
 
+### ⭐ Bằng chứng nó CHẠY ĐƯỢC (dùng để trấn an khi thầy hỏi)
+
+Lần chạy thật `data/fast_1029-212632.mp4` (576 frame, webcam, `--reid-cue object`):
+
+| Chỉ số | Kết quả |
+|---|---|
+| frame mất dấu | 107/576 (**19%**), chia 31 đoạn |
+| **số lần tự nhận lại** | **17 / 17** (không lần nào phải bấm `r`) |
+| cosine khi nhận lại | **13 lần ≥ 0,90** · 3 lần 0,80–0,89 · 1 lần 0,77 |
+| FPS | 5,5 (183 ms/frame) |
+| ca khó nhất đã kiểm chứng | nhận lại sau khi tâm **nhảy 407 px** (tay di chuyển nhanh) → **bám đúng vật** (người dùng xác nhận ảnh `data/reid_review3/3_f328_nhay407px.png`) |
+
+→ Câu nói khi demo: *"Trong lần đo này, mất dấu 19% số frame, nhưng hệ thống tự nhận lại 17/17 lần,
+13 lần cosine trên 0,90. Không có lần nào phải chọn lại bằng tay."*
+
 ### Cảnh 4 (dự phòng) — Chiếu video đã ghi
 - Mở `data/fast_*.mp4` (có HUD) hoặc `data/out_binh1_simloss.mp4` (**mất dấu f60, bám lại f80 với điểm 0,918**).
 
