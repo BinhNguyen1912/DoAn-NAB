@@ -55,7 +55,7 @@ DEFAULT_OBJ_COS_FLOOR = 0.40      # cổng lỏng theo cosine (chỉ để chặ
 #   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
 DEFAULT_SEARCH_GROW_FRAMES = 12    # số frame lost tìm trong vùng hẹp quanh vị trí cũ trước khi mở rộng
-DEFAULT_SEARCH_GROW_STEP = 0.5     # bán kính tìm = max(w,h) * (1 + 0.5 * số frame lost)
+DEFAULT_SEARCH_GROW_STEP = 0.25    # bán kính tìm = max(w,h) × (0,75 + 0,25 × số frame lost)
 DEFAULT_LOST_SCORE_THRESHOLD = 0.0   # score ≤ 0 → coi như KHÔNG thấy vật (mask hay bị "tưởng tượng")
 DEFAULT_REACQUIRE_CONFIRM = 2         # số frame liên tiếp phải khớp cùng một chỗ mới nhận lại
 DEFAULT_VERIFY_FRAMES = 2             # số frame kiểm chứng sau khi bám lại (chống bám nhầm nền)
@@ -117,6 +117,20 @@ def best_match(refs: Sequence[np.ndarray], emb: np.ndarray) -> float:
     if not refs:
         return -1.0
     return max(cosine(r, emb) for r in refs)
+
+
+def accept_candidate(ncc: float, cos: float, ncc_min: float, cos_floor: float) -> bool:
+    """Quyết định NHẬN LẠI một ứng viên — hàm thuần, test không cần model.
+
+    Nguồn số (đo thật trên video người dùng 29-10, nhãn do họ xác nhận):
+      - ca SAI (bám bóng đèn/tay khi dấu vật): ncc **0,54 / 0,58 / 0,59 / 0,69 / 0,72**
+      - ca ĐÚNG (bám lại đúng ly):            ncc **0,78 / 0,91 / 0,92**
+    → cổng chính là NCC (`ncc_min` mặc định 0,70); cosine chỉ làm cổng lỏng `cos_floor` vì
+    nó KHÔNG tách được (đo: ly-vs-tay cosine 0,77).
+    """
+    if ncc < float(ncc_min):
+        return False
+    return cos >= float(cos_floor)
 
 
 def _iou(a, b) -> float:
@@ -423,7 +437,9 @@ class ReIdSession:
         if self._lost_age > self.search_grow_frames:
             return pairs                      # đã tìm đủ lâu → cho phép quét toàn khung
         base = max(int(self._last_obj_size[0]), int(self._last_obj_size[1]), 1)
-        radius = base * (1.0 + self.search_grow_step * (self._lost_age - 1))
+        # Nở CHẬM: đo thật 29-10 — cả 3 lần bám nhầm đều nhảy 216–295 px chỉ sau 2–3 frame mất dấu.
+        # 12 frame đầu bán kính chỉ ~0,75–1,75 lần cạnh vật → chặn kiểu "nhảy sang vật ở góc phòng".
+        radius = base * (0.75 + self.search_grow_step * (self._lost_age - 1))
         cx0, cy0 = self._last_center
         height, width = frame_shape[0], frame_shape[1]
         radius = min(radius, float((height ** 2 + width ** 2) ** 0.5))
@@ -508,8 +524,8 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
-            if raw < self.obj_cos_floor:        # cổng lỏng: chặn ứng viên quá khác về ngoại hình
-                continue
+            if not accept_candidate(float(ncc), raw, self.obj_ncc_min, self.obj_cos_floor):
+                continue            # cổng chính = NCC, cổng lỏng = cosine
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))

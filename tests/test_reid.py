@@ -7,6 +7,7 @@ import pytest
 
 from src.reid import (
     STATE_LOST,
+    accept_candidate,
     STATE_REACQUIRING,
     STATE_TRACKING,
     FaceHit,
@@ -465,3 +466,31 @@ class TestChongBamNham:
         assert bad.state == STATE_LOST
         assert bad.reacquired is False
         assert engine.reset_calls >= 1                  # đã bỏ track sai
+
+
+class TestCongNhanLai:
+    """Cổng quyết định nhận lại — số liệu từ video THẬT của người dùng (29-10, có nhãn).
+
+    Ca SAI (dấu vật → bám bóng đèn/tay): ncc 0,39 / 0,54 / 0,58 / 0,59 / 0,69
+    Ca ĐÚNG (bám lại đúng ly):           ncc 0,78 / 0,91 / 0,92
+    → ngưỡng 0,70 tách được cả hai phía.
+    """
+
+    @pytest.mark.parametrize("ncc,cos,expected", [
+        (0.39, 0.90, False),   # tay (đo trên pixel thật)
+        (0.54, 0.77, False),   # bám sai lần #1 của lần quay 204458
+        (0.58, 0.89, False),   # #1 lần quay 204458
+        (0.59, 0.93, False),   # #2, #3 lần quay 204458
+        (0.69, 0.85, False),   # sát ngưỡng nhưng vẫn sai
+        (0.78, 0.80, True),    # đúng (binh1)
+        (0.91, 0.62, True),    # đúng dù cosine thấp
+    ])
+    def test_cong_ncc_tach_dung_sai(self, ncc, cos, expected):
+        assert accept_candidate(ncc, cos, 0.70, 0.40) is expected
+
+    def test_cos_van_lam_cong_long(self):
+        """NCC cao nhưng cosine quá thấp (>0) → vẫn loại (chặn ứng viên kỳ dị)."""
+        assert accept_candidate(0.95, 0.10, 0.70, 0.40) is False
+
+    def test_tat_cong_bang_0_thi_chi_xet_cos_floor(self):
+        assert accept_candidate(0.10, 0.90, 0.0, 0.40) is True

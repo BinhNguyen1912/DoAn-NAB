@@ -65,11 +65,11 @@ reid_obj_top_k: 20          # số ứng viên được chấm descriptor đắt
 # Cổng NCC **bật mặc định** 0.75 — đo thật 29-10: bốn lần "nhận lại" SAI (dấu cái ly nhưng bám
 # vào bóng đèn) có ncc 0,48–0,62 dù cosine 0,78–0,99; ca ĐÚNG có ncc 0,858 (binh1) / 1,00 (fixture).
 # Hạ xuống 0 để tắt (quay lại hành vi cũ = dễ bám nhầm).
-reid_obj_ncc_min: 0.0
+reid_obj_ncc_min: 0.70
 # Vùng tìm nở DẦN: 12 frame đầu chỉ tìm quanh vị trí vật ở lần thấy cuối, bán kính = max(w,h)×(1+0,5×số frame)
 # → tránh nhảy sang vật khác (bóng đèn, tay nắm cửa) ngay khi vừa mất dấu.
 reid_search_grow_frames: 12
-reid_search_grow_step: 0.5
+reid_search_grow_step: 0.25
 
 # ---- Chống "bám nhầm rồi kẹt" (bug thật 27-10: vật rời khung → bám vào nền → không bao giờ tự sửa) ----
 # SAM 2 hay "tưởng tượng" ra mask khi vật đã rời khung (đo: mask 782 px nhưng object_score = -4,98).
