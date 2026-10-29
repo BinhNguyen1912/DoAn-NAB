@@ -74,9 +74,10 @@ class FakeEngineMasks:
     `scores`: hàng đợi điểm object_score (mặc định 1.0) — cần để test ca SAM 2 "tưởng tượng" mask.
     """
 
-    def __init__(self, masks, shape=(96, 96), scores=None, start_score=1.0):
+    def __init__(self, masks, shape=(96, 96), scores=None, start_score=1.0, bboxes=None):
         self._masks = list(masks)
         self._scores = list(scores) if scores is not None else None
+        self._bboxes = list(bboxes) if bboxes is not None else None
         self._start_score = float(start_score)
         self._shape = tuple(shape)
         self.start_calls = []
@@ -101,9 +102,10 @@ class FakeEngineMasks:
         self.process_calls += 1
         nxt = self._masks.pop(0) if self._masks else None
         score = self._scores.pop(0) if self._scores else 1.0
+        bbox = self._bboxes.pop(0) if self._bboxes else (10, 10, 50, 50)
         if nxt is None:
-            return self._result(self._box_mask((10, 10, 50, 50)), (10, 10, 50, 50), score)
-        return self._result(nxt, (10, 10, 50, 50), score)
+            return self._result(self._box_mask(bbox), bbox, score)
+        return self._result(nxt, bbox, score)
 
     def reset(self):
         self.reset_calls += 1
@@ -453,7 +455,9 @@ class TestChongBamNham:
         wrong = np.zeros((96, 96), bool)
         wrong[80:96, 80:96] = True
         # hàng đợi: process#1 = mask rỗng (→ LOST); process#2 = mask NỀN (frame kiểm chứng)
-        engine = FakeEngineMasks([empty, wrong, wrong], shape=(96, 96))
+        # process#1: mask rỗng (→ LOST); process#2: mask VÙNG NỀN + bbox cũng ở vùng nền
+        engine = FakeEngineMasks([empty, wrong, wrong], shape=(96, 96),
+                                 bboxes=[(10, 10, 50, 50), (78, 78, 96, 96), (78, 78, 96, 96)])
         session = ReIdSession(engine=engine, embedder=None, cue="object",
                               lost_after_frames=1, obj_threshold=0.5,
                               reacquire_confirm=1, verify_frames=2)
@@ -476,21 +480,17 @@ class TestCongNhanLai:
     → ngưỡng 0,70 tách được cả hai phía.
     """
 
-    @pytest.mark.parametrize("ncc,cos,expected", [
-        (0.39, 0.90, False),   # tay (đo trên pixel thật)
-        (0.54, 0.77, False),   # bám sai lần #1 của lần quay 204458
-        (0.58, 0.89, False),   # #1 lần quay 204458
-        (0.59, 0.93, False),   # #2, #3 lần quay 204458
-        (0.69, 0.85, False),   # sát ngưỡng nhưng vẫn sai
-        (0.78, 0.80, True),    # đúng (binh1)
-        (0.91, 0.62, True),    # đúng dù cosine thấp
+    @pytest.mark.parametrize("cos,ncc,expected", [
+        (0.994, 0.90, True),    # cùng vật lệch 8 px (đo pixel thật)
+        (0.537, 0.90, False),   # ly vs TAY
+        (0.535, 0.90, False),   # ly vs BÓNG ĐÈN
+        (0.60, 0.95, False),    # cosine thấp → loại dù NCC cao
+        (0.80, 0.40, False),    # cosine đủ nhưng mẫu ảnh gần như không khớp → loại
+        (0.85, 0.60, True),
     ])
-    def test_cong_ncc_tach_dung_sai(self, ncc, cos, expected):
-        assert accept_candidate(ncc, cos, 0.70, 0.40) is expected
+    def test_cong_chinh_la_cosine(self, cos, ncc, expected):
+        assert accept_candidate(cos, ncc, 0.75, 0.55) is expected
 
-    def test_cos_van_lam_cong_long(self):
-        """NCC cao nhưng cosine quá thấp (>0) → vẫn loại (chặn ứng viên kỳ dị)."""
-        assert accept_candidate(0.95, 0.10, 0.70, 0.40) is False
-
-    def test_tat_cong_bang_0_thi_chi_xet_cos_floor(self):
-        assert accept_candidate(0.10, 0.90, 0.0, 0.40) is True
+    def test_tat_cong_ncc_bang_0(self):
+        """Đặt ncc_min=0 → chỉ xét cosine."""
+        assert accept_candidate(0.80, 0.00, 0.75, 0.0) is True

@@ -27,9 +27,15 @@ DEFAULT_MIN_FILL = 0.5
 # Quét lưới khi mất dấu: bước = 0.5 cạnh vật, 3 tỉ lệ quanh kích thước đã biết.
 DEFAULT_STRIDE_FRAC = 0.5
 DEFAULT_SCALES: Tuple[float, ...] = (0.75, 1.0, 1.5)
-# Trọng số 2 khối trong vector ghép (bằng nhau: chưa có số đo biện minh cho lệch).
-DEFAULT_WEIGHT_COV = 0.5
-DEFAULT_WEIGHT_HIST = 0.5
+# Trọng số 3 khối trong vector ghép. ĐO THẬT 29-10 (cảnh của người dùng, nhãn họ xác nhận):
+#   chi H+S (màu) : ly-vs-tay 0,615 | ly-vs-bóng đèn 0,248  ← yếu
+#   chi V  (sáng) : ly-vs-tay 0,000 | ly-vs-bóng đèn 0,033  ← TÁCH TUYỆT ĐỐI
+#                    còn ly-vs-ly (lệch 8 px) = 0,996 → ổn định trong cùng vật
+# Đó là lý do phải có khối độ sáng: vật tối (ly, remote đen) thì H/S gần như vô nghĩa.
+DEFAULT_WEIGHT_COV = 0.34
+DEFAULT_WEIGHT_HIST = 0.33
+DEFAULT_WEIGHT_V = 0.33
+DEFAULT_HIST_V_BINS = 16
 # Tầng 1 của cascade tìm lại: NCC trên frame thu nhỏ, chỉ giữ top-K cho tầng đắt.
 # Chấm descriptor cho cả 348 ô đo được 323 ms → lọc trước để chỉ còn ~20 ô (mục tiêu < 50 ms).
 DEFAULT_PREFILTER_TOP_K = 20
@@ -73,8 +79,10 @@ def signature_quality_ok(bbox, mask, min_side: int = DEFAULT_MIN_SIDE,
 
 def object_signature(frame: np.ndarray, mask: np.ndarray,
                      hist_bins: int = DEFAULT_HIST_BINS,
+                     v_bins: int = DEFAULT_HIST_V_BINS,
                      weight_cov: float = DEFAULT_WEIGHT_COV,
-                     weight_hist: float = DEFAULT_WEIGHT_HIST) -> Optional[np.ndarray]:
+                     weight_hist: float = DEFAULT_WEIGHT_HIST,
+                     weight_v: float = DEFAULT_WEIGHT_V) -> Optional[np.ndarray]:
     """Vector đặc trưng (float32, chuẩn hoá L2) của vùng mask trong frame; None nếu rỗng.
 
     Toạ độ x/y được chuẩn hoá theo ô bao (chia cạnh) nên đặc trưng BẤT BIẾN với vị trí
@@ -109,7 +117,13 @@ def object_signature(frame: np.ndarray, mask: np.ndarray,
                         [hist_bins, hist_bins], [0, 180, 0, 256]).ravel().astype(np.float32)
     hist = _l2(hist)
 
-    sig = np.concatenate([cov * float(weight_cov), hist * float(weight_hist)])
+    # --- Khối 3: histogram ĐỘ SÁNG (V) — đo thật 29-10: đây là cue tách mạnh nhất cho vật tối
+    # (ly vs tay 0,000; ly vs bóng đèn 0,033; cùng vật lệch 8 px vẫn 0,996) ---
+    vhist, _ = np.histogram(hsv[..., 2][m], bins=int(v_bins), range=(0, 256))
+    vhist = _l2(vhist.astype(np.float32))
+
+    sig = np.concatenate([cov * float(weight_cov), hist * float(weight_hist),
+                          vhist * float(weight_v)])
     return _l2(sig).astype(np.float32)
 
 
@@ -160,6 +174,26 @@ def _response_peaks(resp: np.ndarray, k: int, sep: int) -> list:
         if len(picked) >= k:
             break
     return picked
+
+
+def ellipse_mask(shape, bbox) -> np.ndarray:
+    """Mask hình ELIP nội tiếp ô bao — dùng khi chỉ có bbox (ứng viên) để khỏi lấy cả nền.
+
+    Vì sao: trước đây mẫu tham chiếu tính trên mask của SAM 2 (ôm sát vật) còn ứng viên tính trên
+    HÌNH CHỮ NHẬT ĐẶC (lẫn nền) → hai bên khác bản chất, khối covariance/cường độ thành vô nghĩa
+    (đo: covariance ly-vs-tay 0,929). Nay CẢ HAI cùng dùng elip nội tiếp ô bao → so sánh được.
+    """
+    m = np.zeros((int(shape[0]), int(shape[1])), bool)
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    cx, cy = (x1 + x2) // 2, (y1 + y2) // 2
+    ax, ay = max(1, (x2 - x1) // 2), max(1, (y2 - y1) // 2)
+    cv2.ellipse(m.view(np.uint8), (cx, cy), (ax, ay), 0, 0, 360, 1, -1)
+    return m.astype(bool)
+
+
+def box_signature(frame: np.ndarray, bbox, **kwargs) -> Optional[np.ndarray]:
+    """Đặc trưng của một Ô BAO (không cần mask) — dùng elip nội tiếp, cùng cách với mẫu tham chiếu."""
+    return object_signature(frame, ellipse_mask(frame.shape, bbox), **kwargs)
 
 
 def prefilter_candidates(frame: np.ndarray, template: np.ndarray,

@@ -24,8 +24,7 @@ from typing import List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from src.appearance import (candidate_boxes, mask_to_bbox, object_signature,
-                            prefilter_candidates, signature_quality_ok)
+from src.appearance import (box_signature, candidate_boxes, mask_to_bbox, prefilter_candidates, signature_quality_ok)
 
 DEFAULT_DETECTOR_PATH = "models/face/face_detection_yunet_2023mar.onnx"
 DEFAULT_RECOGNIZER_PATH = "models/face/face_recognition_sface_2021dec.onnx"
@@ -40,7 +39,7 @@ DEFAULT_LOST_AFTER_FRAMES = 2     # mask rỗng liên tiếp bao nhiêu frame th
 CUE_FACE = "face"
 CUE_OBJECT = "object"
 CUE_BOTH = "both"
-DEFAULT_OBJ_THRESHOLD = 0.6       # cosine đặc trưng vật thể tối thiểu (khởi điểm, phải hiệu chỉnh)
+DEFAULT_OBJ_THRESHOLD = 0.75      # cosine tối thiểu — đo thật 29-10: cùng vật 0,994 vs vật khác 0,53
 DEFAULT_OBJ_REF_MAX = 8           # số mẫu đặc trưng vật thể giữ lại
 DEFAULT_OBJ_MIN_SIDE = 24         # cạnh nhỏ nhất của vật để được làm mẫu
 DEFAULT_OBJ_MIN_FILL = 0.5        # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
@@ -48,9 +47,7 @@ DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor 
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
 # chỉ bật sau khi hiệu chuẩn trên clip thật.
-DEFAULT_OBJ_NCC_MIN = 0.70        # cổng khớp mẫu ảnh (NCC của prefilter). Đo thật 29-10 trên
-# video người dùng: LY 0,78 / ca ĐÚNG 0,91 vs TAY 0,39 và ca SAI 0,54 — chọn 0,70 tách cả 2 phía.
-DEFAULT_OBJ_COS_FLOOR = 0.40      # cổng lỏng theo cosine (chỉ để chặn ứng viên kỳ dị)
+DEFAULT_OBJ_NCC_MIN = 0.55        # cổng PHỤ: mẫu ảnh phải khớp ở mức tối thiểu
 #   ca ĐÚNG (binh1, vật quay lại đúng) ncc = 0,858; fixture đúng = 1,00
 #   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
@@ -119,18 +116,20 @@ def best_match(refs: Sequence[np.ndarray], emb: np.ndarray) -> float:
     return max(cosine(r, emb) for r in refs)
 
 
-def accept_candidate(ncc: float, cos: float, ncc_min: float, cos_floor: float) -> bool:
+def accept_candidate(cos: float, ncc: float, cos_min: float, ncc_min: float) -> bool:
     """Quyết định NHẬN LẠI một ứng viên — hàm thuần, test không cần model.
 
-    Nguồn số (đo thật trên video người dùng 29-10, nhãn do họ xác nhận):
-      - ca SAI (bám bóng đèn/tay khi dấu vật): ncc **0,54 / 0,58 / 0,59 / 0,69 / 0,72**
-      - ca ĐÚNG (bám lại đúng ly):            ncc **0,78 / 0,91 / 0,92**
-    → cổng chính là NCC (`ncc_min` mặc định 0,70); cosine chỉ làm cổng lỏng `cos_floor` vì
-    nó KHÔNG tách được (đo: ly-vs-tay cosine 0,77).
+    Nguồn số (đo trên pixel thật của người dùng, 29-10, descriptor 105 số):
+      - cùng vật (lệch 8 px)          : cosine **0,994**  → phải NHẬN
+      - ly vs TAY (vật khác)          : cosine **0,537**  → phải LOẠI
+      - ly vs BÓNG ĐÈN (vật khác)     : cosine **0,535**  → phải LOẠI
+    → biên an toàn 0,45 ⇒ cổng chính là **cosine** (`obj_threshold` 0,75).
+    NCC chỉ làm **cổng phụ lỏng** (`obj_ncc_min` 0,55) để chặn ứng viên mà mẫu ảnh gần như
+    không khớp (NCC từng cho ca sai 0,71–0,74 > ca đúng 0,59 nên KHÔNG dùng làm cổng chính).
     """
-    if ncc < float(ncc_min):
+    if cos < float(cos_min):
         return False
-    return cos >= float(cos_floor)
+    return ncc >= float(ncc_min)
 
 
 def _iou(a, b) -> float:
@@ -237,7 +236,6 @@ class ReIdSession:
                  obj_ref_max=DEFAULT_OBJ_REF_MAX, obj_min_side=DEFAULT_OBJ_MIN_SIDE,
                  obj_min_fill=DEFAULT_OBJ_MIN_FILL, obj_top_k=DEFAULT_OBJ_TOP_K,
                  obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN,
-                 obj_cos_floor=DEFAULT_OBJ_COS_FLOOR,
                  lost_score_threshold=DEFAULT_LOST_SCORE_THRESHOLD,
                  reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
                  verify_frames=DEFAULT_VERIFY_FRAMES,
@@ -255,7 +253,6 @@ class ReIdSession:
         self.obj_min_fill = float(obj_min_fill)
         self.obj_top_k = int(obj_top_k)
         self.obj_ncc_min = float(obj_ncc_min)
-        self.obj_cos_floor = float(obj_cos_floor)
         self.obj_scales = tuple(obj_scales) if obj_scales else None
         self.lost_score_threshold = float(lost_score_threshold)
         self.reacquire_confirm = max(1, int(reacquire_confirm))
@@ -459,7 +456,7 @@ class ReIdSession:
             return True
         if result.mask is None or not result.mask.any():
             return False
-        sig = object_signature(frame, result.mask)
+        sig = box_signature(frame, result.bbox)     # CÙNG cách với mẫu (elip trong ô bao)
         if sig is None:
             return False
         return best_match(self._obj_refs, sig) >= self.obj_threshold
@@ -518,19 +515,17 @@ class ReIdSession:
                 if ncc > best_ncc:
                     best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
                 continue
-            mask = np.zeros((height, width), bool)
-            mask[max(0, y1):min(y2, height), max(0, x1):min(x2, width)] = True
-            sig = object_signature(frame, mask)
+            sig = box_signature(frame, (x1, y1, x2, y2))   # elip nội tiếp — không lấy cả nền
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
-            if not accept_candidate(float(ncc), raw, self.obj_ncc_min, self.obj_cos_floor):
-                continue            # cổng chính = NCC, cổng lỏng = cosine
+            if not accept_candidate(raw, float(ncc), self.obj_threshold, self.obj_ncc_min):
+                continue            # cổng chính = cosine, cổng phụ = NCC
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))
                 prior = float(np.sqrt(min(area, target_area) / max(area, target_area)))
-            choice = float(ncc) * prior
+            choice = raw * prior        # cosine là chính; prior phá thế hoà cỡ vật
             if choice > best_choice:
                 best_choice, best_raw, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
         return best_raw, best_box, best_ncc
@@ -564,7 +559,7 @@ class ReIdSession:
             if obj_box is None or not signature_quality_ok(obj_box, mask, self.obj_min_side,
                                                            self.obj_min_fill):
                 return
-            sig = object_signature(frame, mask)
+            sig = box_signature(frame, obj_box)     # elip nội tiếp ô bao — CÙNG cách với ứng viên
             if sig is None:
                 return
             self._obj_refs.append(sig)
