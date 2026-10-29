@@ -236,6 +236,10 @@ def _run_display(engine, args):
             print(f"[f{result.frame_idx}] bbox={result.bbox} ms={result.elapsed_ms:.0f}")
 
         viz = _make_visualizer(args)  # kích thước biết ở frame đầu → mở trì hoãn
+        if viz is not None:
+            # HUD hiện "khop X / can Y" → người xem thấy đây là ngưỡng, không phải bám bừa.
+            viz.reid_threshold = (getattr(args, "reid_obj_threshold", None)
+                                  if getattr(args, "reid_cue", "face") != "face" else None)
         metrics = _make_metrics(args)
         reid_session = _make_reid_session(engine, args)
         if args.smooth:

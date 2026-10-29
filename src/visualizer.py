@@ -76,6 +76,8 @@ class Visualizer:
         self._font_path = font_path or find_vietnamese_font()
         self._font_size = int(font_size)
         self.show_trajectory = bool(show_trajectory)
+        # Ngưỡng nhận lại (do run_live set) — chỉ để HUD hiện "khop X / can Y" cho minh bach.
+        self.reid_threshold = None
         self._writer = None      # cv2.VideoWriter khi ghi video
         self._pending_recorder = None  # (path, fps) chờ frame đầu để biết kích thước
         self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
@@ -143,8 +145,16 @@ class Visualizer:
         if switch_warning:
             self._put_text(img, "NGHI NGO DOI TUONG — bam r", (8, 104))
         if reid_state == "reacquiring":
-            score_txt = "" if reid_score is None or reid_score < 0 else f" (khop {reid_score:.2f})"
-            self._put_text(img, f"DANG TIM LAI A...{score_txt}", (8, 128))
+            # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
+            # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.
+            thr = getattr(self, "reid_threshold", None)
+            if reid_score is None or reid_score < 0:
+                detail = " (chua co ung vien)"
+            elif thr:
+                detail = f" (khop {reid_score:.2f} / can {float(thr):.2f})"
+            else:
+                detail = f" (khop {reid_score:.2f})"
+            self._put_text(img, f"DANG TIM LAI...{detail}", (8, 128))
 
         # 5) ghi nếu recorder đang mở
         self._write(img)
