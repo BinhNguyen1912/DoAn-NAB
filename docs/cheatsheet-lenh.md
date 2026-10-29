@@ -75,6 +75,7 @@ Mặc định demo dùng cue **mặt**. Với vật thì phải nói rõ cue:
 | `./run fast --reid-cue object` | Demo webcam, chọn **vật** bằng chuột, image_size 256 (**6,5 FPS**) |
 | `IMG_SIZE=320 ./run demo --reid-cue object` | Cân bằng tốc độ/chất lượng (4,5 FPS) |
 | `./run reid <video> <x,y,w,h>` | **Headless**: ghi `data/reid_hud.mp4` + `data/reid_metrics.csv` + `data/reid_summary.json` |
+| `./run raw 10` | Ghi **frame gốc** (không HUD, không model) 10 giây → `data/raw_<mốc-giờ>.mp4` để phân tích offline |
 | `./run reid data/binh1.mp4 104,308,209,287 --max-frames 130` | Ví dụ đầy đủ (bbox = `x,y,rộng,cao`, KHÔNG phải `x1,y1,x2,y2`) |
 
 - Khi mất dấu, hệ thống tìm lại bằng **cascade**: lọc ứng viên bằng NCC trên frame thu nhỏ (rẻ)

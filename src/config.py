@@ -64,7 +64,10 @@ DEFAULTS = {
     # Cổng NCC cho vật ÍT texture-màu (chai đen): 0.0 = TẮT (mặc định). Đo thật 27-10:
     # hai vật đen khác nhau cho cosine 1,000 nhưng NCC 0,897; cùng vật NCC 1,000.
     # Chỉ bật sau khi hiệu chuẩn trên clip thật (vd 0,95).
-    "reid_obj_ncc_min": 0.0,
+    "reid_obj_ncc_min": 0.0,       # TẮT: NCC mỏng manh (mẫu lệch 2px → 0,099). Đo thật 29-10: ca ĐÚNG 0,858;
+    # 4 lần nhận lại SAI (dấu ly → bám bóng đèn) chỉ 0,48–0,62 dù cosine 0,78–0,99.
+    "reid_search_grow_frames": 12,  # số frame lost tìm trong vùng hẹp quanh chỗ cũ trước khi mở rộng
+    "reid_search_grow_step": 0.5,   # bán kính tìm = max(w,h) × (1 + 0,5 × số frame lost)
     # ---- Chống "bám nhầm rồi kẹt" (bug thật 27-10) ----
     # SAM 2 hay "tưởng tượng" mask khi vật đã rời khung (đo: mask 782 px nhưng score = -4,98)
     "lost_score_threshold": 0.0,   # score ≤ ngưỡng này → coi như KHÔNG thấy vật
@@ -76,7 +79,8 @@ DEFAULTS = {
 _INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size",
              "lost_after_frames", "reid_min_face_px", "reid_ref_max",
              "reid_obj_ref_max", "reid_obj_min_side", "reid_obj_top_k",
-             "reid_reacquire_confirm", "reid_verify_frames")   # source có thể int (webcam) hoặc str (file/RTSP)
+             "reid_reacquire_confirm", "reid_verify_frames",
+             "reid_search_grow_frames")   # source có thể int (webcam) hoặc str (file/RTSP)
 _FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score")
 
 

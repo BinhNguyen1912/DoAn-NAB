@@ -48,7 +48,13 @@ DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor 
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
 # chỉ bật sau khi hiệu chuẩn trên clip thật.
-DEFAULT_OBJ_NCC_MIN = 0.0
+DEFAULT_OBJ_NCC_MIN = 0.0         # TAT: đo thật 29-10 cho thấy NCC rất mỏng manh (mẫu lệch 2px → 0,099)
+# (ghi chú cũ, giữ để hiểu lịch sử) — đo thật 29-10: ca ĐÚNG (binh1) ncc 0,858;
+#   ca ĐÚNG (binh1, vật quay lại đúng) ncc = 0,858; fixture đúng = 1,00
+#   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
+#   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
+DEFAULT_SEARCH_GROW_FRAMES = 12    # số frame lost tìm trong vùng hẹp quanh vị trí cũ trước khi mở rộng
+DEFAULT_SEARCH_GROW_STEP = 0.5     # bán kính tìm = max(w,h) * (1 + 0.5 * số frame lost)
 DEFAULT_LOST_SCORE_THRESHOLD = 0.0   # score ≤ 0 → coi như KHÔNG thấy vật (mask hay bị "tưởng tượng")
 DEFAULT_REACQUIRE_CONFIRM = 2         # số frame liên tiếp phải khớp cùng một chỗ mới nhận lại
 DEFAULT_VERIFY_FRAMES = 2             # số frame kiểm chứng sau khi bám lại (chống bám nhầm nền)
@@ -119,6 +125,26 @@ def _iou(a, b) -> float:
     inter = max(0, ix2 - ix1) * max(0, iy2 - iy1)
     union = (a[2] - a[0]) * (a[3] - a[1]) + (b[2] - b[0]) * (b[3] - b[1]) - inter
     return inter / union if union > 0 else 0.0
+
+
+def _ncc(template, crop, size: int = 32) -> float:
+    """Tương quan mẫu (NCC) giữa 2 ảnh BGR bất kỳ kích thước — về cùng size rồi tính.
+
+    Dùng trong bước KIỂM CHỨNG sau khi bám lại: cosine đặc trưng có thể "đúng giả" với vật
+    ít texture (đo 29-10: bám vào bóng đèn vẫn 0,78–0,99) nên phải kiểm thêm mẫu ảnh.
+    """
+    if template is None or crop is None or getattr(template, "size", 0) == 0 or getattr(crop, "size", 0) == 0:
+        return 0.0
+    a = cv2.resize(template, (size, size))
+    b = cv2.resize(crop, (size, size))
+    if a.ndim == 3:
+        a = cv2.cvtColor(a, cv2.COLOR_BGR2GRAY)
+    if b.ndim == 3:
+        b = cv2.cvtColor(b, cv2.COLOR_BGR2GRAY)
+    a = a.astype(np.float32) - float(np.mean(a))
+    b = b.astype(np.float32) - float(np.mean(b))
+    na, nb = float(np.linalg.norm(a)), float(np.linalg.norm(b))
+    return float((a * b).sum() / (na * nb)) if na > 0 and nb > 0 else 0.0
 
 
 def face_quality_ok(bbox, score, min_face_px=DEFAULT_MIN_FACE_PX,
@@ -198,7 +224,9 @@ class ReIdSession:
                  obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN,
                  lost_score_threshold=DEFAULT_LOST_SCORE_THRESHOLD,
                  reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
-                 verify_frames=DEFAULT_VERIFY_FRAMES):
+                 verify_frames=DEFAULT_VERIFY_FRAMES,
+                 search_grow_frames=DEFAULT_SEARCH_GROW_FRAMES,
+                 search_grow_step=DEFAULT_SEARCH_GROW_STEP):
         self.engine = engine
         self.embedder = embedder
         self.threshold = float(threshold)
@@ -215,9 +243,13 @@ class ReIdSession:
         self.lost_score_threshold = float(lost_score_threshold)
         self.reacquire_confirm = max(1, int(reacquire_confirm))
         self.verify_frames = max(0, int(verify_frames))
+        self.search_grow_frames = max(1, int(search_grow_frames))
+        self.search_grow_step = float(search_grow_step)
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = 0
+        self._lost_age = 0          # đã mất dấu bao nhiêu frame (để mở rộng vùng tìm dần)
+        self._last_center = None    # tâm vật ở lần thấy cuối (mốc để giới hạn vùng tìm)
         # Cue mặt cần embedder; cue vật thể thì không → có thể chạy không có model mặt.
         self.face_on = bool(enabled) and embedder is not None and self.cue in (CUE_FACE, CUE_BOTH)
         self.object_on = bool(enabled) and self.cue in (CUE_OBJECT, CUE_BOTH)
@@ -261,6 +293,8 @@ class ReIdSession:
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = 0
+        self._lost_age = 0
+        self._last_center = None
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -310,6 +344,7 @@ class ReIdSession:
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
         self._state = STATE_REACQUIRING
+        self._lost_age += 1
         if not self.enabled:
             return Step(result=self._lost_result(), state=self._state)
 
@@ -354,6 +389,7 @@ class ReIdSession:
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = self.verify_frames      # chưa tin ngay: kiểm chứng mấy frame đầu
+        self._lost_age = 0
         if self._verify_left == 0:
             self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         return Step(result=result, state=self._state, reid_score=score, reacquired=True)
@@ -372,6 +408,29 @@ class ReIdSession:
         self._confirm_box = tuple(bbox)
         return self._confirm_count >= self.reacquire_confirm
 
+    def _filter_by_radius(self, pairs, frame_shape):
+        """Chỉ giữ ứng viên trong bán kính nở dần quanh vị trí vật ở lần thấy cuối.
+
+        Lý do (bug thật 29-10): ngay frame đầu mất dấu mà quét toàn khung thì ứng viên khớp mờ
+        ở bất kỳ đâu (bóng đèn, tay nắm cửa...) sẽ được chọn. Vùng tìm bắt đầu hẹp (1× kích thước
+        vật) rồi nở 0,5×/frame, hết `search_grow_frames` thì mở toàn khung.
+        """
+        if self._last_center is None or not self._last_obj_size:
+            return pairs
+        if self._lost_age > self.search_grow_frames:
+            return pairs                      # đã tìm đủ lâu → cho phép quét toàn khung
+        base = max(int(self._last_obj_size[0]), int(self._last_obj_size[1]), 1)
+        radius = base * (1.0 + self.search_grow_step * (self._lost_age - 1))
+        cx0, cy0 = self._last_center
+        height, width = frame_shape[0], frame_shape[1]
+        radius = min(radius, float((height ** 2 + width ** 2) ** 0.5))
+        keep = []
+        for box, ncc in pairs:
+            cx, cy = (box[0] + box[2]) / 2.0, (box[1] + box[3]) / 2.0
+            if ((cx - cx0) ** 2 + (cy - cy0) ** 2) ** 0.5 <= radius:
+                keep.append((box, ncc))
+        return keep
+
     def _verify_ok(self, frame, result) -> bool:
         """Kiểm chứng sau khi bám lại: mask mới phải còn giống vật (cue vật thể).
 
@@ -384,7 +443,15 @@ class ReIdSession:
         sig = object_signature(frame, result.mask)
         if sig is None:
             return False
-        return best_match(self._obj_refs, sig) >= self.obj_threshold
+        if best_match(self._obj_refs, sig) < self.obj_threshold:
+            return False
+        # Kiểm cả mẫu ảnh (NCC) — cosine với vật ít texture rất dễ "đúng giả" (bug thật 29-10)
+        if self.obj_ncc_min > 0.0 and self._obj_template is not None:
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            crop = frame[max(0, y1):y2, max(0, x1):x2]
+            if _ncc(self._obj_template, crop) < 0.8 * self.obj_ncc_min:
+                return False
+        return True
 
     def _abandon_reacquire(self) -> Step:
         """Bỏ lần nhận lại sai: reset engine + về LOST để tìm tiếp (không kẹt trên vùng nhầm)."""
@@ -420,11 +487,26 @@ class ReIdSession:
             boxes = candidate_boxes(frame.shape[:2], self._last_obj_size, **grid_kwargs)
             pairs = [(b, -1.0) for b in boxes[: self.obj_top_k]]
 
+        # Vùng tìm nở DẦN: mấy frame đầu chỉ tìm quanh chỗ cũ → không nhảy sang vật khác
+        # ở góc phòng (bug thật 29-10: dấu cái ly lại bám vào bóng đèn).
+        pairs = self._filter_by_radius(pairs, frame.shape[:2])
+
         best_score, best_box, best_ncc = -1.0, None, -1.0
         best_choice = -1.0
         height, width = frame.shape[:2]
         target_area = (self._last_obj_size[0] * self._last_obj_size[1]) if self._last_obj_size else None
-        for (x1, y1, x2, y2), ncc in pairs:
+        for (x1, y1, x2, y2), prefilter_ncc in pairs:
+            # Điểm NCC của prefilter chỉ để ĐỀ XUẤT ứng viên: nó tính trên frame thu nhỏ 4× nên rất
+            # nhiễu (đo thật 29-10: ô ĐÚNG chỉ 0,267 còn ô sai 0,632). Cổng quyết định phải dùng NCC
+            # FULL-RES giữa mẫu gốc và chính vùng ứng viên.
+            crop = frame[max(0, y1):y2, max(0, x1):x2]
+            ncc = prefilter_ncc
+            if self.obj_ncc_min > 0.0 and self._obj_template is not None:
+                ncc = _ncc(self._obj_template, crop)
+                if ncc < self.obj_ncc_min:
+                    if ncc > best_ncc:
+                        best_ncc = ncc      # ghi lại để hiệu chuẩn (kể cả khi bị loại)
+                    continue
             mask = np.zeros((height, width), bool)
             mask[max(0, y1):min(y2, height), max(0, x1):min(x2, width)] = True
             sig = object_signature(frame, mask)
@@ -480,3 +562,4 @@ class ReIdSession:
             x1, y1, x2, y2 = obj_box
             self._obj_template = np.array(frame[y1:y2, x1:x2], copy=True)
             self._last_obj_size = (int(x2 - x1), int(y2 - y1))
+            self._last_center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)   # mốc cho vùng tìm nở dần

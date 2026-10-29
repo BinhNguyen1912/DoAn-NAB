@@ -61,6 +61,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     lint            ruff check .
 
   SỐ LIỆU & BÁO CÁO
+    raw [giây]      Ghi video GỐC (không HUD, không model) để phân tích offline
+                    → data/raw_<mốc-giờ>.mp4
     charts [csv…]   Vẽ biểu đồ từ CSV (mặc định data/smooth_metrics.csv)
     summary         In tóm tắt các file *_summary.json đang có
     gpu             In link Colab + lệnh chạy GPU
@@ -185,6 +187,10 @@ EOF
   lint)
     activate_env
     exec "$PYTHON" -m ruff check . "$@"
+    ;;
+  raw)
+    activate_env
+    exec "$PYTHON" scripts/record_raw.py --seconds "${1:-10}" "${@:2}"
     ;;
   charts)
     activate_env
