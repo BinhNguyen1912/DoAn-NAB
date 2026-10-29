@@ -190,7 +190,13 @@ EOF
     ;;
   raw)
     activate_env
-    exec "$PYTHON" scripts/record_raw.py --seconds "${1:-10}" "${@:2}"
+    # Nếu tham số đầu là cờ (vd `./run raw --help`) thì KHÔNG chen --seconds (bug cùng loại với
+    # `./run fast --reid-cue` ngày 27-10: ăn cờ làm giá trị).
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      exec "$PYTHON" scripts/record_raw.py --seconds "$1" "${@:2}"
+    else
+      exec "$PYTHON" scripts/record_raw.py "$@"
+    fi
     ;;
   charts)
     activate_env

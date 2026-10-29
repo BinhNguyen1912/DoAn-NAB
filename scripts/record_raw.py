@@ -34,6 +34,8 @@ def main(argv=None):
     ap.add_argument("--seconds", type=float, default=10.0, help="ghi bao nhiêu giây (mặc định 10)")
     ap.add_argument("--out", default=None, help="file mp4 ra (mặc định data/raw_<moc-gio>.mp4)")
     ap.add_argument("--fps", type=float, default=None, help="fps ghi (mặc định theo nguồn/30)")
+    ap.add_argument("--no-display", action="store_true",
+                    help="không mở cửa sổ preview (mặc định MỞ để bạn thấy khung hình đang ghi)")
     args = ap.parse_args(argv)
 
     source = int(args.source) if str(args.source).isdigit() else args.source
@@ -64,6 +66,8 @@ def main(argv=None):
     print(f"[raw] ghi {args.seconds:.0f} giây — cử động vật như lúc demo; Ctrl-C để dừng sớm")
     t0 = time.monotonic()
     n = 0
+    show = not args.no_display
+    win = "Ghi frame goc (q de dung)"
     try:
         while time.monotonic() - t0 < args.seconds:
             frame = src.read()
@@ -72,11 +76,27 @@ def main(argv=None):
                 break
             writer.write(frame)
             n += 1
+            if show:
+                # Chuỗi cv2.putText phải ASCII (font Hershey không có glyph dấu tiếng Việt)
+                view = frame.copy()
+                cv2.putText(view, f"REC {n} f | {time.monotonic() - t0:.1f}s",
+                            (8, 24), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
+                cv2.putText(view, "q: stop", (8, 48), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (0, 0, 255), 1)
+                cv2.imshow(win, view)
+                if (cv2.waitKey(1) & 0xFF) in (ord("q"), 27):
+                    print("[raw] dừng theo phím q")
+                    break
     except KeyboardInterrupt:
         print("\n[raw] dừng theo yêu cầu")
     finally:
         writer.release()
         src.close()
+        if show:
+            try:
+                cv2.destroyWindow(win)
+            except cv2.error:
+                pass
 
     dur = time.monotonic() - t0
     print(f"[raw] xong: {n} frame trong {dur:.1f}s (thực {n / max(dur, 1e-6):.1f} fps) → {out}")
