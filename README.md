@@ -8,7 +8,7 @@ Hệ thống nhận diện, phân đoạn và bám bắt đối tượng trong v
 > NVIDIA) đạt **~0.2–0.3 FPS** (~3–5 giây/frame) — là "slideshow có chủ đích", mọi số liệu
 > được đo và in/GHI RA FILE trung thực. Video minh hoạ tốc độ GPU sẽ chạy headless trên Colab.
 
-## Kiến trúc (5 module)
+## Kiến trúc (6 module)
 
 ```
 VideoSource ──► TrackerEngine ──► Visualizer (HUD)
@@ -26,7 +26,10 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
   FPS/độ trễ/**điểm tin cậy** (nhãn tiếng Việt qua PIL font TTF) + banner đỏ
   `MẤT DẤU — bấm r chọn lại` khi mask rỗng + ghi mp4.
 - `src/metrics_logger.py` — hàm thuần: CSV từng frame + summary mean/p95/tỷ lệ mất dấu.
-- Cấu hình YAML: `configs/default.yaml` (checkpoint, nguồn, ghi mp4, metrics).
+- `src/reid.py` + `src/appearance.py` — tái nhận diện: máy trạng thái `tracking → lost → reacquiring`
+  với 2 cue dùng chung: **khuôn mặt** (YuNet + SFace, ADR-0003) và **đặc trưng vật thể**
+  (covariance + HSV hist + cascade NCC — dùng được cho vật không có mặt như chai/remote).
+- Cấu hình YAML: `configs/default.yaml` (checkpoint, nguồn, ghi mp4, metrics, re-ID).
 
 ## 0. Gõ tắt — `./run`
 
@@ -225,7 +228,8 @@ Bảng chi tiết phần nào tự viết, phần nào dùng có sẵn (SAM 2/SA
 
 ```
 src/            mã nguồn chính (video_source, tracker_engine, prompt_selector,
-                visualizer, metrics_logger, live_pipeline, config)
+                visualizer, metrics_logger, live_pipeline, config,
+                reid + appearance = tái nhận diện người/vật)
 tools/          CLI chạy (run_live.py), benchmark, demo scripts
 configs/        default.yaml + config SAMURAI
 tests/          pytest (fixture synthetic, không commit dữ liệu nặng)
@@ -376,6 +380,43 @@ HUD hiện `DANG TIM LAI A... (khop 0.xx)` khi đang tìm; CSV metrics có thêm
 quá xa/mờ) — hệ thống ở trạng thái "đang tìm lại", không đoán bừa; ngưỡng cosine phụ thuộc
 camera/ánh sáng nên **phải hiệu chỉnh trên video thật** (số đo + lý do: `docs/adr/0003`).
 Mặt nhỏ hơn `reid_min_face_px` (40 px) bị bỏ qua → demo nên đứng gần camera.
+
+### Tái nhận diện VẬT THỂ — không cần khuôn mặt (ticket 10)
+
+Với **vật** (chai, remote, hộp…): vẫn dùng đúng máy trạng thái đó, nhưng "dấu vân tay" là
+**89 con số tính từ vùng mask** (covariance 5×5 trên `[x, y, B, G, R]` + histogram HSV 8×8) —
+**không cần model học sẵn, không train**. Khi mất dấu, hệ thống lọc ứng viên rẻ bằng NCC
+(`cv2.matchTemplate` trên frame thu nhỏ 4×) rồi mới chấm điểm đặc trưng cho top-K.
+
+```bash
+# demo webcam, chọn vật bằng chuột (mượt nhất)
+./run fast --reid-cue object
+
+# cân bằng tốc độ/chất lượng
+IMG_SIZE=320 ./run demo --reid-cue object
+
+# headless 1 lệnh: ghi HUD + CSV + JSON (không cần màn hình)
+./run reid data/binh1.mp4 104,308,209,287 --max-frames 130
+```
+
+| Cờ | Ý nghĩa |
+|---|---|
+| `--reid-cue face\|object\|both` | cue dùng khi mất dấu (mặc định `face` = hành vi cũ) |
+| `--reid-obj-threshold 0.6` | cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh trên clip thật) |
+| `--reid-obj-ncc-min 0.0` | **cổng phụ NCC** cho vật đen/ít texture (0 = tắt; xem giới hạn bên dưới) |
+
+**Số đo (máy i7-1195G7, webcam thật, 213 frame):** mất dấu **81% → 12%**, số lần nhận lại **0 → 6**
+(cos 0,671–0,955). Chi phí: thêm **~3 ms/frame** khi bám; lúc tìm lại **~24 ms/frame**
+(trước đó quét lưới 379 ô = 845 ms). CSV có thêm cột **`ncc`** (ghi cả frame bị loại) để hiệu chuẩn.
+
+**Giới hạn (quan trọng, nên nói trước với hội đồng):**
+
+- **Hai vật giống y hệt nhau** và **vật đặc một màu (chai đen)** → mọi cue ngoại hình cho cosine ≈ 1,0
+  (đo: hai vật đen khác nhau vẫn 1,000). Ca đó **chỉ cue thời gian** (Kalman/motion memory của SAMURAI)
+  giải được; muốn thêm ràng buộc hình dạng thì bật `--reid-obj-ncc-min` (đo thật: vật đúng ncc 0,858 →
+  đừng đặt 0,95, sẽ chặn nhầm; dùng khoảng 0,5–0,6).
+- Ngưỡng 0,6 là **số khởi điểm**, chưa hiệu chỉnh trên clip vật thật (ticket 11 còn 1 criteria).
+- Chi tiết + số đo đầy đủ: `docs/research/06` và `docs/task/27-10-2026-*`.
 
 ### Thí nghiệm che khuất một phần (bằng chứng cho tên đề tài)
 

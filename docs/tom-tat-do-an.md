@@ -95,21 +95,29 @@ Nguyên nhân: SAM 2 chỉ biết *hình dáng/màu sắc*, **không biết danh
 
 ## 6. Tái nhận diện — 3 pha, 3 dòng
 
+Máy trạng thái **dùng chung cho 2 loại cue** (người → khuôn mặt, vật → đặc trưng ngoại hình):
+
 ```
-tracking     : bám bình thường + lưu mẫu khuôn mặt CỦA A (mặt trong ô đang bám, ≥40px, score≥0.8)
+tracking     : bám bình thường + lưu MẪU của đối tượng (mặt trong ô đang bám, ≥40px, score≥0.8
+               — hoặc 89 số covariance+HSV của vùng mask nếu là VẬT)
      │ mask rỗng 2 frame liên tiếp
      ▼
 lost         : NGỪNG lan truyền  →  bộ nhớ không thể nhảy sang B   ← đây là chỗ chặn "bám sang B"
      │
      ▼
-reacquiring  : mỗi frame detect mặt (YuNet) + embedding (SFace) → cosine với TẬP mẫu của A, lấy MAX
-     │ ≥ ngưỡng 0.363
+reacquiring  : cue MẶT : detect mặt (YuNet) + embedding (SFace) → cosine với TẬP mẫu, lấy MAX
+               cue VẬT : cascade NCC (frame thu nhỏ 4×, top-K) → cosine 89 số với tập mẫu
+     │ ≥ ngưỡng (mặt 0.363 / vật 0.6 — phải hiệu chỉnh)
      ▼
-tracking     : engine.start(bbox mặt)  →  bám lại ĐÚNG A
+tracking     : engine.start(bbox)  →  bám lại ĐÚNG đối tượng
 ```
 
 Vì sao phải **tập mẫu + lấy max**: đo thật cùng 1 người, mặt nhỏ 42×62 px → cosine chỉ **0,199–0,723**
 (so 1 mẫu duy nhất là trượt). Đo đầy đủ: `docs/adr/0003`.
+
+**Vì sao cue vật thể không dùng model**: không tồn tại model "nhận ra cái remote này là cùng một cái"
+cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) → phải tự mô tả bằng đặc trưng
+(**covariance 5×5 + histogram HSV = 89 số**, tính ~2,9 ms) — đây cũng chính là phần "tự làm".
 
 ---
 
@@ -118,24 +126,40 @@ Vì sao phải **tập mẫu + lấy max**: đo thật cùng 1 người, mặt n
 | Cấu hình | ms/frame | FPS |
 |---|---|---|
 | CPU laptop, 1024 (mặc định) | 5 047 | **0,20** |
-| CPU laptop, 384 + mượt | 445 | **2,25** |
-| CPU laptop, 384 + tái nhận diện | 292 | **3,40** |
+| CPU laptop, **256** + mượt (`./run fast`) | **155** | **6,5** |
+| CPU laptop, 320 + mượt | 222 | 4,5 |
+| CPU laptop, 384 + mượt | 329 | 3,0 |
+| CPU laptop, 384 + `--reanchor-every 3` | 276 | 3,6 |
+| CPU laptop, 512 | 672 | 1,5 |
 | **Colab GPU T4**, 512 + tối ưu (bỏ 5 frame warmup) | **49,6** | **20,15** |
 | *(cùng cấu hình, mean thô 60 frame — bị frame 0 warmup 2 954 ms kéo lên)* | *100,8* | *9,92* |
 
+**Tái nhận diện VẬT THỂ (webcam thật, 213 frame, `--reid-cue object`):**
+
+| Chỉ số | Trước (chỉ cue mặt) | Sau |
+|---|---|---|
+| frame mất dấu | 207/257 (**81%**) | 25/213 (**12%**) |
+| số lần nhận lại | **0** | **6** (cos 0,671–0,955) |
+
+- Chi phí thêm khi đang bám: **~3 ms/frame**; lúc tìm lại: **~24 ms/frame**
+  (thay cho quét lưới 379 ô = 845 ms — nhanh **~35×**).
 - Che khuất **50%**: IoU 0,97 → **0,53** → phục hồi **0,967** ngay khung đầu sau khi hết che.
 - Che khuất **100%**: mất dấu 6/6 → hết che thì **0,984** ngay, mất dấu **0/12**.
 - GPU T4 nhanh hơn CPU **13×** (cùng độ phân giải) → **~9×** (khi so cấu hình tối ưu hai bên:
   49,6 ms vs 445 ms). Số GPU mới nhất: `data/gpu_summary.json` (git `8d64d59`).
-- Test: **216 pass**, ruff sạch.
+- Test: **251 pass** làn nhanh (255 tổng, 4 cần checkpoint), ruff sạch.
 
 ---
 
 ## 8. Giới hạn — nói trước, đừng để bị hỏi
 
-1. **Không real-time trên laptop**: 0,2–3,4 FPS (không GPU rời). Muốn 15 FPS phải GPU.
+1. **Không real-time trên laptop**: 1,5–6,5 FPS tuỳ `image_size` (không GPU rời). Muốn 15 FPS phải GPU.
+   Lưu ý: `--smooth` làm **video** mượt ~30 FPS, còn overlay/mask cập nhật theo FPS suy luận.
 2. **Không nhận lại được nếu không thấy mặt** (quay lưng, che kín, xa/mờ) — giới hạn phương pháp.
-3. Ngưỡng tái nhận diện **chưa hiệu chỉnh trên clip 2 người thật** (cần quay).
+3. **Vật giống y hệt** / **vật đặc một màu (chai đen)**: mọi cue ngoại hình cho cosine ≈ 1,0
+   (đo: hai vật đen khác nhau vẫn 1,000) → chỉ cue thời gian (Kalman/motion memory) giải được;
+   muốn thêm ràng buộc hình dạng thì bật `--reid-obj-ncc-min` (đo thật: ca đúng có ncc 0,858 → đừng đặt 0,95).
+4. Ngưỡng tái nhận diện (mặt 0.363 / vật 0.6) **chưa hiệu chỉnh trên clip thật** — ticket 09 và 11 còn treo.
 4. **Chưa đánh giá trên dataset chuẩn** (DAVIS/LaSOT) — mới có fixture tự sinh + số đo thực.
 5. **Chưa có BE/FE web** — app desktop 1 process, HUD OpenCV.
 6. Độ trễ **tăng dần** khi chạy lâu (3,4 s → 8,3 s) vì memory SAM 2 phình ra.

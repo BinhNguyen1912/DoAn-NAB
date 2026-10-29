@@ -60,11 +60,28 @@ Trong thư mục repo, gõ **`./run <lệnh>`** — script tự bật môi trư�
 | `./run demo5` | Demo 5 khung rồi tự thoát (kiểm môi trường ~20 giây) |
 | `./run view` | Chỉ mở cửa sổ xem, không ghi file |
 | `./run video [file]` | Demo trên video file (mặc định `data/_gui_test.mp4`) |
-| `./run fast` | Demo bản nhanh (image_size 256) |
+| `./run fast` | Demo bản nhanh (image_size 256 → **6,5 FPS**, mượt nhất) |
 
 > Tái nhận diện khuôn mặt (**mất dấu thì đóng băng, quay lại thì bám lại đúng người** — ADR-0003)
 > **bật sẵn trong mọi lệnh demo** ở trên. Muốn tắt: gọi thẳng `tools/run_live.py` mà không có
 > `--reid`, hoặc đặt `reid_enabled: false` trong `configs/default.yaml`.
+
+### 0b-bis. Tái nhận diện **VẬT THỂ** (chai, remote) — không cần khuôn mặt
+
+Mặc định demo dùng cue **mặt**. Với vật thì phải nói rõ cue:
+
+| Lệnh | Tác dụng |
+|---|---|
+| `./run fast --reid-cue object` | Demo webcam, chọn **vật** bằng chuột, image_size 256 (**6,5 FPS**) |
+| `IMG_SIZE=320 ./run demo --reid-cue object` | Cân bằng tốc độ/chất lượng (4,5 FPS) |
+| `./run reid <video> <x,y,w,h>` | **Headless**: ghi `data/reid_hud.mp4` + `data/reid_metrics.csv` + `data/reid_summary.json` |
+| `./run reid data/binh1.mp4 104,308,209,287 --max-frames 130` | Ví dụ đầy đủ (bbox = `x,y,rộng,cao`, KHÔNG phải `x1,y1,x2,y2`) |
+
+- Khi mất dấu, hệ thống tìm lại bằng **cascade**: lọc ứng viên bằng NCC trên frame thu nhỏ (rẻ)
+  → chỉ chấm "dấu vân tay" (89 số: covariance + HSV hist) cho top-K ô.
+- Cột `ncc` trong CSV = điểm NCC của ô được chọn (ghi cả frame **bị loại**) để hiệu chuẩn.
+- Giới hạn: **hai vật giống y hệt** hoặc **vật đặc một màu (chai đen)** thì ngoại hình không phân biệt được
+  (cosine ≈ 1,0) — chỉ cue thời gian giải; xem README mục "Tái nhận diện VẬT THỂ".
 | `./run check 0` | Kiểm nguồn camera 5 giây (0 = webcam) |
 | `./run phone` | Quét LAN tìm URL camera điện thoại |
 | `./run cam` | Xem trạng thái webcam + **BUSID hiện tại** (BUSID đổi sau mỗi lần khởi động lại!) |
