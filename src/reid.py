@@ -40,7 +40,7 @@ DEFAULT_LOST_AFTER_FRAMES = 2     # mask rỗng liên tiếp bao nhiêu frame th
 CUE_FACE = "face"
 CUE_OBJECT = "object"
 CUE_BOTH = "both"
-DEFAULT_OBJ_THRESHOLD = 0.6       # cosine đặc trưng vật thể tối thiểu (khởi điểm, phải hiệu chỉnh)
+DEFAULT_OBJ_THRESHOLD = 0.60      # cổng CHÍNH: cosine đặc trưng vật thể (hiệu chỉnh trên clip thật)
 DEFAULT_OBJ_REF_MAX = 8           # số mẫu đặc trưng vật thể giữ lại
 DEFAULT_OBJ_MIN_SIDE = 24         # cạnh nhỏ nhất của vật để được làm mẫu
 DEFAULT_OBJ_MIN_FILL = 0.5        # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
@@ -48,9 +48,8 @@ DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor 
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
 # chỉ bật sau khi hiệu chuẩn trên clip thật.
-DEFAULT_OBJ_NCC_MIN = 0.70        # cổng khớp mẫu ảnh (NCC của prefilter). Đo thật 29-10 trên
-# video người dùng: LY 0,78 / ca ĐÚNG 0,91 vs TAY 0,39 và ca SAI 0,54 — chọn 0,70 tách cả 2 phía.
-DEFAULT_OBJ_COS_FLOOR = 0.40      # cổng lỏng theo cosine (chỉ để chặn ứng viên kỳ dị)
+DEFAULT_OBJ_NCC_MIN = 0.0         # cổng PHỤ (mẫu ảnh) — TẮT mặc định: đo thật cho thấy NCC của ca
+# đúng có lúc chỉ 0,55 (176 frame không nhận lại được) và ca sai có lúc 0,74 → không dùng làm cổng.
 #   ca ĐÚNG (binh1, vật quay lại đúng) ncc = 0,858; fixture đúng = 1,00
 #   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
@@ -119,18 +118,21 @@ def best_match(refs: Sequence[np.ndarray], emb: np.ndarray) -> float:
     return max(cosine(r, emb) for r in refs)
 
 
-def accept_candidate(ncc: float, cos: float, ncc_min: float, cos_floor: float) -> bool:
+def accept_candidate(cos: float, ncc: float, cos_min: float, ncc_min: float = 0.0) -> bool:
     """Quyết định NHẬN LẠI một ứng viên — hàm thuần, test không cần model.
 
-    Nguồn số (đo thật trên video người dùng 29-10, nhãn do họ xác nhận):
-      - ca SAI (bám bóng đèn/tay khi dấu vật): ncc **0,54 / 0,58 / 0,59 / 0,69 / 0,72**
-      - ca ĐÚNG (bám lại đúng ly):            ncc **0,78 / 0,91 / 0,92**
-    → cổng chính là NCC (`ncc_min` mặc định 0,70); cosine chỉ làm cổng lỏng `cos_floor` vì
-    nó KHÔNG tách được (đo: ly-vs-tay cosine 0,77).
+    Vì sao cosine là cổng CHÍNH (đo thật 29-10, nhiều lần chạy trên cảnh người dùng):
+      - NCC của **ca đúng** dao động rất mạnh: 0,59 / 0,78 / 0,91 / 0,92 (tuỳ góc & nền)
+        và lần gần nhất (fast_1029-212010) **suốt 176 frame mất dấu NCC chỉ đạt 0,55** →
+        nếu đặt cổng NCC 0,70 thì hệ thống KHÔNG BAO GIỜ nhận lại (đúng như người dùng gặp).
+      - NCC của **ca sai** lại có lúc 0,71–0,74 → không thể làm cổng chính.
+    Vì vậy: cổng chính = cosine đặc trưng (`cos_min`, mặc định 0,60) + **cổng phụ NCC tuỳ chọn**
+    (`ncc_min`, mặc định 0,0 = TẮT). Chống bám nhầm dựa vào: vùng tìm nở dần + xác nhận 2 frame
+    + kiểm chứng 2 frame (xem `_filter_by_radius`, `_confirm`, `_verify_ok`).
     """
-    if ncc < float(ncc_min):
+    if cos < float(cos_min):
         return False
-    return cos >= float(cos_floor)
+    return ncc >= float(ncc_min)
 
 
 def _iou(a, b) -> float:
@@ -237,7 +239,6 @@ class ReIdSession:
                  obj_ref_max=DEFAULT_OBJ_REF_MAX, obj_min_side=DEFAULT_OBJ_MIN_SIDE,
                  obj_min_fill=DEFAULT_OBJ_MIN_FILL, obj_top_k=DEFAULT_OBJ_TOP_K,
                  obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN,
-                 obj_cos_floor=DEFAULT_OBJ_COS_FLOOR,
                  lost_score_threshold=DEFAULT_LOST_SCORE_THRESHOLD,
                  reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
                  verify_frames=DEFAULT_VERIFY_FRAMES,
@@ -255,7 +256,6 @@ class ReIdSession:
         self.obj_min_fill = float(obj_min_fill)
         self.obj_top_k = int(obj_top_k)
         self.obj_ncc_min = float(obj_ncc_min)
-        self.obj_cos_floor = float(obj_cos_floor)
         self.obj_scales = tuple(obj_scales) if obj_scales else None
         self.lost_score_threshold = float(lost_score_threshold)
         self.reacquire_confirm = max(1, int(reacquire_confirm))
@@ -505,7 +505,7 @@ class ReIdSession:
         # Chọn ứng viên chủ yếu theo NCC (khớp mẫu ảnh), KHÔNG theo cosine: đo thật 29-10 trên
         # video người dùng — cosine ly/tay = 0,77 (không tách được, vì khối covariance của ứng viên
         # là hình chữ nhật đặc nên vô nghĩa: 0,929), còn NCC thì tách được: ly 0,78 vs tay 0,39.
-        #   choice = ncc × size_prior   (size_prior phá thế hoà khi nhiều ô cùng NCC)
+        #   choice = cosine × size_prior   (cosine là chính; prior phá thế hoà khi nhiều ô cùng điểm)
         #   cos vẫn tính để báo cáo + làm cổng lỏng (chặn trường hợp kỳ dị)
         best_ncc = -1.0
         best_raw = -1.0
@@ -524,13 +524,13 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
-            if not accept_candidate(float(ncc), raw, self.obj_ncc_min, self.obj_cos_floor):
-                continue            # cổng chính = NCC, cổng lỏng = cosine
+            if not accept_candidate(raw, float(ncc), self.obj_threshold, self.obj_ncc_min):
+                continue            # cổng chính = cosine, cổng phụ = NCC (mặc định tắt)
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))
                 prior = float(np.sqrt(min(area, target_area) / max(area, target_area)))
-            choice = float(ncc) * prior
+            choice = raw * prior
             if choice > best_choice:
                 best_choice, best_raw, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
         return best_raw, best_box, best_ncc
