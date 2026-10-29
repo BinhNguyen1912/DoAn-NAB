@@ -37,6 +37,12 @@ class TestRunHelp:
         assert r.returncode == 0
         assert "unrecognized arguments" not in (r.stdout + r.stderr)
 
+    def test_fast_tu_ghi_video_co_moc_thoi_gian(self):
+        """Bug thật 29-10: `./run fast` không ghi file → người dùng tưởng đã lưu video."""
+        r = _run("fast", "--help")          # --help thoát trước khi mở cửa sổ
+        assert r.returncode == 0
+        assert "[fast] ghi: data/fast_" in r.stdout
+
     def test_khong_truyen_gi_cung_in_help(self):
         r = _run()
         assert r.returncode == 0 and "DEMO" in r.stdout

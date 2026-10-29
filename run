@@ -42,7 +42,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     demo5           Demo 5 khung rồi tự thoát (kiểm tra môi trường ~20 giây)
     view            Chỉ mở cửa sổ xem, không ghi file
     video [file]    Demo trên video file (mặc định data/_gui_test.mp4)
-    fast            Demo bản nhanh (image_size 256)
+    fast            Demo bản nhanh (image_size 256 → ~6,5 FPS) + TỰ GHI
+                    data/fast_<mốc-giờ>.mp4 + CSV/JSON để xem lại/phân tích
 
   NGUỒN CAMERA
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
@@ -122,8 +123,16 @@ EOF
     else
       src_fast=0
     fi
+    # Tự ghi video + số liệu (bug thật 29-10: người dùng chạy `./run fast` rồi tưởng đã lưu video,
+    # nhưng `fast` không có --record → không có gì để xem lại/phân tích). Tên có mốc thời gian để
+    # không ghi đè lần trước; truyền --record của bạn thì argparse lấy cái sau (của bạn).
+    _stamp="$(date +%m%d-%H%M%S)"
+    _rec="data/fast_${_stamp}.mp4"
+    _csv="data/fast_${_stamp}_metrics.csv"
+    _json="data/fast_${_stamp}_summary.json"
+    echo "[fast] ghi: ${_rec}  (+ ${_csv}, ${_json})"
     exec "$PYTHON" tools/run_live.py --source "$src_fast" --display --smooth --reid \
-      --image-size 256 "$@"
+      --image-size 256 --record "$_rec" --metrics-csv "$_csv" --metrics-summary "$_json" "$@"
     ;;
   check)
     activate_env
