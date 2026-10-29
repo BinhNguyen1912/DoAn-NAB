@@ -186,6 +186,10 @@ def prefilter_candidates(frame: np.ndarray, template: np.ndarray,
         return []
     height, width = frame.shape[:2]
     step = max(1, int(downscale))
+    # Frame nhỏ (vd fixture 96x96 trong test): thu nhỏ 4x thì còn <60 px → NCC vô nghĩa
+    # (đo: ô đúng chỉ 0,63 thay vì ~1,0). Giảm mức thu nhỏ để giữ độ phân giải tương đối.
+    if min(height, width) < 200:
+        step = max(1, step // 2)
     gray = frame if frame.ndim == 2 else cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
     tpl_gray = template if template.ndim == 2 else cv2.cvtColor(template, cv2.COLOR_BGR2GRAY)
     small = cv2.resize(gray, (max(1, width // step), max(1, height // step)),

@@ -48,8 +48,9 @@ DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor 
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
 # chỉ bật sau khi hiệu chuẩn trên clip thật.
-DEFAULT_OBJ_NCC_MIN = 0.0         # TAT: đo thật 29-10 cho thấy NCC rất mỏng manh (mẫu lệch 2px → 0,099)
-# (ghi chú cũ, giữ để hiểu lịch sử) — đo thật 29-10: ca ĐÚNG (binh1) ncc 0,858;
+DEFAULT_OBJ_NCC_MIN = 0.70        # cổng khớp mẫu ảnh (NCC của prefilter). Đo thật 29-10 trên
+# video người dùng: LY 0,78 / ca ĐÚNG 0,91 vs TAY 0,39 và ca SAI 0,54 — chọn 0,70 tách cả 2 phía.
+DEFAULT_OBJ_COS_FLOOR = 0.40      # cổng lỏng theo cosine (chỉ để chặn ứng viên kỳ dị)
 #   ca ĐÚNG (binh1, vật quay lại đúng) ncc = 0,858; fixture đúng = 1,00
 #   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
@@ -222,6 +223,7 @@ class ReIdSession:
                  obj_ref_max=DEFAULT_OBJ_REF_MAX, obj_min_side=DEFAULT_OBJ_MIN_SIDE,
                  obj_min_fill=DEFAULT_OBJ_MIN_FILL, obj_top_k=DEFAULT_OBJ_TOP_K,
                  obj_scales=None, obj_ncc_min=DEFAULT_OBJ_NCC_MIN,
+                 obj_cos_floor=DEFAULT_OBJ_COS_FLOOR,
                  lost_score_threshold=DEFAULT_LOST_SCORE_THRESHOLD,
                  reacquire_confirm=DEFAULT_REACQUIRE_CONFIRM,
                  verify_frames=DEFAULT_VERIFY_FRAMES,
@@ -239,6 +241,7 @@ class ReIdSession:
         self.obj_min_fill = float(obj_min_fill)
         self.obj_top_k = int(obj_top_k)
         self.obj_ncc_min = float(obj_ncc_min)
+        self.obj_cos_floor = float(obj_cos_floor)
         self.obj_scales = tuple(obj_scales) if obj_scales else None
         self.lost_score_threshold = float(lost_score_threshold)
         self.reacquire_confirm = max(1, int(reacquire_confirm))
@@ -443,15 +446,7 @@ class ReIdSession:
         sig = object_signature(frame, result.mask)
         if sig is None:
             return False
-        if best_match(self._obj_refs, sig) < self.obj_threshold:
-            return False
-        # Kiểm cả mẫu ảnh (NCC) — cosine với vật ít texture rất dễ "đúng giả" (bug thật 29-10)
-        if self.obj_ncc_min > 0.0 and self._obj_template is not None:
-            x1, y1, x2, y2 = [int(v) for v in result.bbox]
-            crop = frame[max(0, y1):y2, max(0, x1):x2]
-            if _ncc(self._obj_template, crop) < 0.8 * self.obj_ncc_min:
-                return False
-        return True
+        return best_match(self._obj_refs, sig) >= self.obj_threshold
 
     def _abandon_reacquire(self) -> Step:
         """Bỏ lần nhận lại sai: reset engine + về LOST để tìm tiếp (không kẹt trên vùng nhầm)."""
@@ -491,40 +486,38 @@ class ReIdSession:
         # ở góc phòng (bug thật 29-10: dấu cái ly lại bám vào bóng đèn).
         pairs = self._filter_by_radius(pairs, frame.shape[:2])
 
-        best_score, best_box, best_ncc = -1.0, None, -1.0
+        # Chọn ứng viên chủ yếu theo NCC (khớp mẫu ảnh), KHÔNG theo cosine: đo thật 29-10 trên
+        # video người dùng — cosine ly/tay = 0,77 (không tách được, vì khối covariance của ứng viên
+        # là hình chữ nhật đặc nên vô nghĩa: 0,929), còn NCC thì tách được: ly 0,78 vs tay 0,39.
+        #   choice = ncc × size_prior   (size_prior phá thế hoà khi nhiều ô cùng NCC)
+        #   cos vẫn tính để báo cáo + làm cổng lỏng (chặn trường hợp kỳ dị)
+        best_ncc = -1.0
+        best_raw = -1.0
+        best_box = None
         best_choice = -1.0
         height, width = frame.shape[:2]
         target_area = (self._last_obj_size[0] * self._last_obj_size[1]) if self._last_obj_size else None
-        for (x1, y1, x2, y2), prefilter_ncc in pairs:
-            # Điểm NCC của prefilter chỉ để ĐỀ XUẤT ứng viên: nó tính trên frame thu nhỏ 4× nên rất
-            # nhiễu (đo thật 29-10: ô ĐÚNG chỉ 0,267 còn ô sai 0,632). Cổng quyết định phải dùng NCC
-            # FULL-RES giữa mẫu gốc và chính vùng ứng viên.
-            crop = frame[max(0, y1):y2, max(0, x1):x2]
-            ncc = prefilter_ncc
-            if self.obj_ncc_min > 0.0 and self._obj_template is not None:
-                ncc = _ncc(self._obj_template, crop)
-                if ncc < self.obj_ncc_min:
-                    if ncc > best_ncc:
-                        best_ncc = ncc      # ghi lại để hiệu chuẩn (kể cả khi bị loại)
-                    continue
+        for (x1, y1, x2, y2), ncc in pairs:
+            if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
+                if ncc > best_ncc:
+                    best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
+                continue
             mask = np.zeros((height, width), bool)
             mask[max(0, y1):min(y2, height), max(0, x1):min(x2, width)] = True
             sig = object_signature(frame, mask)
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
-            # Size prior: cosine một mình ưu tiên ô CẮT BÊN TRONG vật (đo thật: ô 30x30 trong
-            # vật 40x40 được 0,930 còn ô đúng cỡ 40x40 chỉ 0,886). Vật không đổi kích thước
-            # đột ngột giữa 2 frame, nên cân lại bằng prior mềm sqrt(tỉ lệ diện tích) để CHỌN ô;
-            # còn ngưỡng chấp nhận vẫn xét cosine thô (để không phạt vật đến gần/ra xa).
+            if raw < self.obj_cos_floor:        # cổng lỏng: chặn ứng viên quá khác về ngoại hình
+                continue
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))
                 prior = float(np.sqrt(min(area, target_area) / max(area, target_area)))
-            choice = raw * prior
+            choice = float(ncc) * prior
             if choice > best_choice:
-                best_choice, best_score, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
-        return best_score, best_box, best_ncc
+                best_choice, best_raw, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
+        return best_raw, best_box, best_ncc
 
     # -- nội bộ --
     def _stamp_frame_idx(self, result) -> None:
@@ -560,6 +553,10 @@ class ReIdSession:
                 return
             self._obj_refs.append(sig)
             x1, y1, x2, y2 = obj_box
-            self._obj_template = np.array(frame[y1:y2, x1:x2], copy=True)
+            # Template CHỈ lấy Ở LẦN ĐẦU (khung người dùng tự chọn = mẫu sạch nhất).
+            # Đo thật 29-10: nếu ghi đè mỗi frame thì tay/che khuất lọt vào mẫu → mẫu trôi dần
+            # và "tay" khớp mẫu (NCC tay 0,69 trong khi ly 0,78 → chọn sai).
+            if self._obj_template is None:
+                self._obj_template = np.array(frame[y1:y2, x1:x2], copy=True)
             self._last_obj_size = (int(x2 - x1), int(y2 - y1))
             self._last_center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)   # mốc cho vùng tìm nở dần
