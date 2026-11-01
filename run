@@ -44,6 +44,7 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     video [file]    Demo trên video file (mặc định data/_gui_test.mp4)
     fast            Demo bản nhanh (image_size 256 → ~6,5 FPS) + TỰ GHI
                     data/fast_<mốc-giờ>.mp4 + CSV/JSON + run_info để xem lại/phân tích
+                    (mặc định cue=object — bám VẬT; đổi: --reid-cue face|both)
 
   NGUỒN CAMERA
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
@@ -134,8 +135,15 @@ EOF
     _rec="data/fast_${_stamp}.mp4"
     _csv="data/fast_${_stamp}_metrics.csv"
     _json="data/fast_${_stamp}_summary.json"
+    # Bug thật 01-11: `./run fast` không truyền --reid-cue → rơi về cue=face của config.
+    # Test bằng VẬT (chai, hộp) thì re-ID có 0 mẫu MẶT → không bao giờ nhận lại
+    # (đo: 201 frame, 180 mất dấu, reid_score = -1 suốt phiên). Mặc định bám VẬT;
+    # cờ --reid-cue của người dùng đứng SAU nên vẫn đè được (argparse lấy cái sau).
+    _fast_cue="object"
     echo "[fast] ghi: ${_rec}  (+ ${_csv}, ${_json}, data/fast_${_stamp}_run_info.json)"
+    echo "[fast] re-ID cue=${_fast_cue}  (đổi: --reid-cue face|both)"
     exec "$PYTHON" tools/run_live.py --source "$src_fast" --display --smooth --reid \
+      --reid-cue "$_fast_cue" \
       --image-size 256 --record "$_rec" --metrics-csv "$_csv" --metrics-summary "$_json" "$@"
     ;;
   check)

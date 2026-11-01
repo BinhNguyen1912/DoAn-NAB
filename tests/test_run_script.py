@@ -43,6 +43,14 @@ class TestRunHelp:
         assert r.returncode == 0
         assert "[fast] ghi: data/fast_" in r.stdout
 
+    def test_fast_mac_dinh_bam_VAT_khong_phai_mat(self):
+        """Bug thật 01-11: `./run fast` để cue=face → test bằng VẬT thì re-ID có 0 mẫu mặt,
+        không bao giờ nhận lại (đo: 201 frame, 180 mất dấu, reid_score = -1 suốt phiên).
+        `fast` là lệnh test nhanh nên mặc định phải bám VẬT; `--reid-cue` của người dùng vẫn đè được."""
+        r = _run("fast", "--help")
+        assert r.returncode == 0
+        assert "cue=object" in r.stdout
+
     def test_khong_truyen_gi_cung_in_help(self):
         r = _run()
         assert r.returncode == 0 and "DEMO" in r.stdout

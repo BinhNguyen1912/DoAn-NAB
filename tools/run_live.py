@@ -91,6 +91,11 @@ def _make_reid_session(engine, args):
     print(f"[re-ID] bật cue={cue}: ngưỡng cosine mặt={args.reid_threshold}, "
           f"ngưỡng vật thể={getattr(args, 'reid_obj_threshold', 0.6)}, "
           f"đóng băng sau {args.lost_after_frames} frame mất dấu")
+    if cue == "face":
+        # Bug thật 01-11: test bằng VẬT với cue=face → 0 mẫu mặt → reid_score = -1 suốt phiên,
+        # mất dấu là mất luôn. Nói ngay lúc khởi động thay vì để người dùng đoán.
+        print("[re-ID] cue=face CHỈ nhận lại được KHUÔN MẶT. Đang bám VẬT (chai, hộp, remote)? "
+              "thêm --reid-cue object (hoặc both).")
     return ReIdSession(engine, embedder, threshold=args.reid_threshold,
                        lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
                        min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
