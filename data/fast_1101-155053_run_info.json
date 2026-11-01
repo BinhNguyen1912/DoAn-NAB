@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-11-01T15:51:35",
+  "git_rev": "532a44c",
+  "source": "0",
+  "image_size": 256,
+  "reanchor_every": null,
+  "max_frames": null,
+  "reid": true,
+  "reid_cue": "object",
+  "reid_obj_threshold": 0.6,
+  "reid_obj_ncc_min": 0.35,
+  "lost_score_threshold": 0.0,
+  "reid_reacquire_confirm": null,
+  "reid_verify_frames": null
+}
