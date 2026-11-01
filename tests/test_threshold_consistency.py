@@ -21,6 +21,16 @@ from src.reid import ReIdSession
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
+# Tài liệu SỐNG người đọc dùng để trình bày/báo cáo. KHÔNG gồm docs/task + docs/research
+# vì đó là log lịch sử (AGENTS.md: không sửa log cũ) — chúng được phép ghi lại trạng thái cũ.
+TAI_LIEU_SONG = (
+    "README.md",
+    "docs/tom-tat-do-an.md",
+    "docs/demo-ngay-mai.md",
+    "docs/giai-thich-do-an.md",
+    "docs/cheatsheet-lenh.md",
+)
+
 # Ngưỡng re-ID: tên key trong config → (hằng số trong reid.py, thuộc tính trên ReIdSession)
 BANG_NGUONG = {
     "reid_obj_threshold": (reid.DEFAULT_OBJ_THRESHOLD, "obj_threshold"),
@@ -65,16 +75,25 @@ class TestTaiLieuKhongNoiSai:
 
     def test_cong_ncc_dang_tat_thi_tai_lieu_khong_noi_bat_mac_dinh(self):
         assert DEFAULTS["reid_obj_ncc_min"] == 0.0, "test này chỉ đúng khi cổng NCC đang TẮT"
-        for ten in ("README.md", "docs/tom-tat-do-an.md"):
+        for ten in TAI_LIEU_SONG:
             text = (REPO_ROOT / ten).read_text(encoding="utf-8")
             for m in re.finditer(r"cổng NCC[^\n]*bật mặc định", text, flags=re.IGNORECASE):
                 raise AssertionError(
                     f"{ten}: tài liệu nói cổng NCC 'bật mặc định' nhưng cấu hình là 0.0 (TẮT) "
                     f"→ «{m.group(0).strip()}»")
 
+    def test_khong_goi_y_nguong_ncc_070_nhu_gia_tri_dung(self):
+        """0,70 là giá trị SAI: dữ liệu thật cho thấy nó chặn 6/17 ca đúng (min ncc = 0,415)."""
+        for ten in TAI_LIEU_SONG:
+            text = (REPO_ROOT / ten).read_text(encoding="utf-8")
+            for m in re.finditer(r"(?:đặt|dùng|bật)\s+ngưỡng\s+(?:NCC\s+)?0[,.]70", text,
+                                 flags=re.IGNORECASE):
+                raise AssertionError(
+                    f"{ten}: gợi ý đặt ngưỡng 0,70 là SAI (chặn 6/17 ca đúng) → «{m.group(0)}»")
+
     def test_cong_ncc_khong_duoc_goi_la_cong_chinh(self):
         """Cosine là cổng chính, NCC là cổng phụ (accept_candidate) — tài liệu phải nói đúng."""
-        for ten in ("README.md", "docs/tom-tat-do-an.md"):
+        for ten in TAI_LIEU_SONG:
             text = (REPO_ROOT / ten).read_text(encoding="utf-8")
             for m in re.finditer(r"NCC[^\n]{0,20}cổng CHÍNH", text):
                 raise AssertionError(f"{ten}: gọi NCC là 'cổng CHÍNH' là sai → «{m.group(0)}»")

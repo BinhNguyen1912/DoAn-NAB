@@ -29,7 +29,7 @@
 ### Cảnh 3 — Mất dấu & tìm lại (phần **tự làm**)
 - **Đưa vật ra khỏi khung hẳn** 2–3 giây → HUD hiện `MẤT DẤU / ĐANG TÌM LẠI`.
 - Đưa vật vào lại **chỗ khác**.
-- Nói: *"Hệ thống đóng băng thay vì bám sang vật khác. Khi vật trở lại, nó so khớp 'dấu vân tay' 89 số (covariance + histogram màu) với tập mẫu và bám lại khi đủ tin cậy. Em đặt ngưỡng 0,70 vì đo trên video thật: ca đúng 0,78–0,92, ca sai 0,39–0,69 — thà không bám còn hơn bám nhầm."*
+- Nói: *"Hệ thống đóng băng thay vì bám sang vật khác. Khi vật trở lại, nó so khớp 'dấu vân tay' 89 số (covariance + histogram màu) với tập mẫu và bám lại khi đủ tin cậy. Cổng chính là cosine 0,60; cổng phụ NCC em để TẮT vì đo trên video thật: ca sai có ncc 0,39–0,69 nhưng ca ĐÚNG cũng có lúc chỉ 0,42 — bật 0,70 sẽ chặn 6/17 ca đúng. Chống bám nhầm nhờ vùng tìm nở dần + xác nhận 2 frame + kiểm chứng 2 frame, nên thà ở trạng thái ĐANG TÌM còn hơn bám nhầm."*
 
 > Nếu cảnh 3 **không bám lại**: nói luôn *"với vật này nó chưa đủ tin cậy nên vẫn ở trạng thái đang tìm — đây là hành vi em chọn có chủ đích, em đã đo và ghi trong tài liệu"* → rồi chuyển sang cảnh 4 (video dự phòng có cảnh bám lại thành công).
 
