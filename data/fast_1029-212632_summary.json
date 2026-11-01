@@ -1,0 +1,12 @@
+{
+  "total_frames": 576,
+  "mean_latency_ms": 183.19219363416224,
+  "p95_latency_ms": 206.22267723083496,
+  "effective_fps": 5.45874788746193,
+  "mean_score": 2.970913889261687,
+  "lost_count": 107,
+  "lost_ratio": 0.1857638888888889,
+  "frozen_frames": 103,
+  "reacquiring_frames": 87,
+  "reacquired_count": 17
+}
