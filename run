@@ -54,6 +54,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     reid <video> <x,y,w,h> [--max-frames N]
                     Test mất dấu → tìm lại vật: headless, ghi data/reid_hud.mp4
                     + data/reid_metrics.csv + data/reid_summary.json
+    calibrate <csv> [--good …] [--bad …]
+                    Hiệu chỉnh ngưỡng nhận lại từ CSV có nhãn (--list để xem sự kiện)
 
   KIỂM TRA CHẤT LƯỢNG
     test            Test nhanh (~30 giây, không cần checkpoint)
@@ -153,6 +155,10 @@ EOF
       --reid --reid-cue object --image-size 512 \
       --metrics-csv data/reid_metrics.csv --metrics-summary data/reid_summary.json \
       --record data/reid_hud.mp4 "$@"
+    ;;
+  calibrate)
+    activate_env
+    exec "$PYTHON" scripts/calibrate_reid.py "$@"
     ;;
   phone)
     activate_env

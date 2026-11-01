@@ -439,6 +439,28 @@ Lưu ý: webcam qua WSL đọc chỉ ~14 FPS (66,9 ms/frame) → trần "mượt
 - Ngưỡng 0,6 là **số khởi điểm**, chưa hiệu chỉnh trên clip vật thật (ticket 11 còn 1 criteria).
 - Chi tiết + số đo đầy đủ: `docs/research/06` và `docs/task/27-10-2026-*`.
 
+### Hiệu chỉnh ngưỡng nhận lại trên clip có nhãn (retro 01-11)
+
+Thay vì chỉnh tay bằng cảm nhận (đã đổi **6 lần trong 3 ngày**), đo trên CSV đã ghi —
+**không chạy lại model**:
+
+```bash
+./run calibrate data/fast_1029-212632_metrics.csv --list          # 1) xem 17 lần nhận lại
+./run calibrate data/fast_1029-212632_metrics.csv \
+    --good 99,150,165 --bad 271,321 --json data/calib.json         # 2) quét lưới ngưỡng
+```
+
+Công cụ báo **cận tách được** (`ca sai cao nhất` / `ca đúng thấp nhất` → điểm giữa) cho từng
+cue và bảng lưới `cosine × ncc`. Ba điểm cần biết:
+
+- Phép quyết định dùng đúng `src.reid.accept_candidate` nên hiệu chỉnh đúng cổng hệ thống dùng.
+- **Thiếu ca SAI có nhãn → không đề xuất ngưỡng** (cận trên chưa xác định) — tránh tự tin vô căn cứ.
+- Chỉ hiệu chỉnh được **cổng nhận lại**, không biết frames chưa từng được chấm ứng viên.
+
+Minh họa trên `fast_1029-212632` (người dùng đã xác nhận 17/17 đúng): ca đúng có `ncc` thấp
+nhất **0,415**, và **6/17** ca có `ncc < 0,70` → cổng NCC 0,70 sẽ **chặn 6 ca đúng**.
+Đây là số học, không phải cảm nhận.
+
 ### Thí nghiệm che khuất một phần (bằng chứng cho tên đề tài)
 
 ```bash

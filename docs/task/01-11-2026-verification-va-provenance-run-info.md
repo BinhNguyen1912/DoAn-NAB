@@ -89,6 +89,34 @@ NCC là "cổng CHÍNH". Nguyên nhân: **6 lần đổi ngưỡng trong 3 ngày
 `reid_obj_threshold` × `reid_obj_ncc_min` trên clip có nhãn, in bảng (đúng/sai nhận lại).
 Đó là gốc của phát hiện 1 (hiệu chỉnh không có nhà đo) → nên đi qua `/to-spec` thay vì sửa tay.
 
+### Bổ sung — đã làm `scripts/calibrate_reid.py` (người dùng yêu cầu làm luôn)
+
+**Mục tiêu:** cho ngưỡng một NHÀ ĐO, offline, không chạy lại model.
+**Không làm:** không tự gán nhãn, không đổi hành vi `reid.py`.
+
+- Đọc `*_metrics.csv` → các dòng `reacquired=1` (mỗi sự kiện có `cosine`, `ncc`).
+- Người dùng gán `--good` / `--bad` bằng mắt; `--list` in danh sách để chọn nhãn.
+- Báo **cận tách được** cho từng cue (ca sai cao nhất · ca đúng thấp nhất · điểm giữa),
+  bảng biên lưới `cosine × ncc`, đề xuất điểm giữa, và `--json` làm bằng chứng báo cáo.
+- Quyết định trong sweep dùng đúng `src.reid.accept_candidate` (không chép lại logic).
+
+**Hai điều tự phát hiện khi chạy thử và đã sửa:**
+1. Bảng đầu tiên in **150/190 dòng trùng lặp** → gộp theo `cos_min`, chỉ giữ biên (ncc siết nhất).
+2. Khi **không có ca SAI nào** mà vẫn in "ĐỀ XUẤT cos=0,50" — tự tin vô căn cứ. Nay trả `None`
+   và in rõ "cận TRÊN chưa xác định", chỉ báo cận dưới (`min_good`).
+
+**Minh họa trên số thật** (`fast_1029-212632`, người dùng đã xác nhận 17/17 đúng, chỉ gán `--good`):
+- `ncc` của ca đúng thấp nhất = **0,415**; **6/17** ca có `ncc < 0,70` → cổng NCC 0,70 sẽ chặn 6 ca đúng.
+- `cosine` của ca đúng thấp nhất = **0,770** → `cos_min` ≤ 0,75 vẫn giữ đủ 17; 0,80→16; 0,90→13.
+- Công cụ in đúng "CHƯA ĐỀ XUẤT ĐƯỢC" vì thiếu ca SAI có nhãn — đúng thiết kế.
+
+**Test:** `tests/test_calibrate_reid.py` (9 test, không cần model): đọc CSV, gán nhãn, cận tách,
+đề xuất midpoint, và 2 ca "không được đề xuất" (thiếu ca sai / không cue nào tách được).
+Làn nhanh: **298 passed, 4 deselected** (20,8 s); `./run lint` sạch.
+
+**File thay đổi:** `scripts/calibrate_reid.py` (mới), `tests/test_calibrate_reid.py` (mới),
+`run` (lệnh `calibrate` + help), `README.md` (mục "Hiệu chỉnh ngưỡng nhận lại").
+
 ## 📚 Tài liệu tham khảo
 - `docs/adr/0002-giu-laptop-cpu-demo-live-colab-cho-offline.md` (báo cáo trung thực, số liệu tái tạo được).
 - `scripts/colab_run_all.py:103` — mẫu `write_run_info` sẵn có.
