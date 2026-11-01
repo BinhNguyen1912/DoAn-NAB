@@ -197,9 +197,10 @@ def _write_run_info(args):
                              getattr(args, "metrics_summary", None))
     if not path:
         return None
+    rev = _git_rev()
     write_run_info(
         path,
-        git_rev=_git_rev(),
+        git_rev=rev,
         source=str(getattr(args, "source", "")),
         image_size=getattr(args, "image_size", None),
         reanchor_every=getattr(args, "reanchor_every", None),
@@ -212,7 +213,7 @@ def _write_run_info(args):
         reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
         reid_verify_frames=getattr(args, "reid_verify_frames", None),
     )
-    print(f"[metrics] provenance: {path} (git_rev={_git_rev()})")
+    print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
 
 
