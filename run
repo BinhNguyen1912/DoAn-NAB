@@ -43,7 +43,7 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     view            Chỉ mở cửa sổ xem, không ghi file
     video [file]    Demo trên video file (mặc định data/_gui_test.mp4)
     fast            Demo bản nhanh (image_size 256 → ~6,5 FPS) + TỰ GHI
-                    data/fast_<mốc-giờ>.mp4 + CSV/JSON để xem lại/phân tích
+                    data/fast_<mốc-giờ>.mp4 + CSV/JSON + run_info để xem lại/phân tích
 
   NGUỒN CAMERA
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
@@ -132,7 +132,7 @@ EOF
     _rec="data/fast_${_stamp}.mp4"
     _csv="data/fast_${_stamp}_metrics.csv"
     _json="data/fast_${_stamp}_summary.json"
-    echo "[fast] ghi: ${_rec}  (+ ${_csv}, ${_json})"
+    echo "[fast] ghi: ${_rec}  (+ ${_csv}, ${_json}, data/fast_${_stamp}_run_info.json)"
     exec "$PYTHON" tools/run_live.py --source "$src_fast" --display --smooth --reid \
       --image-size 256 --record "$_rec" --metrics-csv "$_csv" --metrics-summary "$_json" "$@"
     ;;

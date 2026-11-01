@@ -175,7 +175,9 @@ python tools/run_live.py \
 
 → Xuất: `data/ket_qua.mp4` (mask + ô bao + quỹ đạo + HUD), `data/metrics.csv` (tâm, ms,
 score, cờ mất dấu từng frame — vẽ quỹ đạo cho báo cáo), `data/summary.json`
-(mean/p95 latency, FPS hiệu dụng, tỷ lệ mất dấu).
+(mean/p95 latency, FPS hiệu dụng, tỷ lệ mất dấu), và `data/run_info.json`
+(**provenance lần đo**: `git_rev`, nguồn, `image_size`, ngưỡng re-ID, mốc thời gian —
+để lần đo THẤT BẠI tự giải thích được và hội đồng đối chiếu số với code).
 
 ### Đổi model/tham số qua file YAML (không sửa code)
 

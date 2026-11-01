@@ -16,7 +16,9 @@ Lưu ý  : cờ mất dấu do caller biết chắc (explicit) được ưu tiê
          không phụ thuộc model — test nhanh trên list bản ghi giả.
 """
 import csv
+import datetime
 import json
+import os
 from dataclasses import dataclass
 from typing import Optional, Tuple
 
@@ -135,3 +137,43 @@ class MetricsLogger:
         with open(path, "w", encoding="utf-8") as f:
             json.dump(self.summary(), f, ensure_ascii=False, indent=2)
         return str(path)
+
+
+# ---------------------------------------------------------------------------
+# Provenance lần đo — `{tag}_run_info.json` (khớp whitelist `!data/*_run_info.json`)
+# ---------------------------------------------------------------------------
+
+def run_info_path_for(metrics_csv: Optional[str] = None,
+                      metrics_summary: Optional[str] = None) -> Optional[str]:
+    """Suy đường dẫn run_info từ file metrics: `X_summary.json`/`X_metrics.csv` → `X_run_info.json`.
+
+    Ưu tiên summary (cùng tag với CSV), không có file nào → None (không bật metrics ⇒ không ghi).
+    Giữ nguyên kiểu phân cách của đường dẫn đầu vào (chạy đúng trên Windows lẫn Linux).
+    """
+    path = metrics_summary or metrics_csv
+    if not path:
+        return None
+    path = str(path)
+    for suffix in ("_summary.json", "_metrics.csv"):
+        if path.endswith(suffix):
+            return path[: -len(suffix)] + "_run_info.json"
+    # Tên không theo quy ước → bỏ đuôi file, gắn hậu tố
+    root, _ext = os.path.splitext(path)
+    return root + "_run_info.json"
+
+
+def write_run_info(path: str, timestamp: Optional[str] = None, **fields) -> str:
+    """Ghi `{tag}_run_info.json`: nguồn/config/git_rev của lần đo → lần đo THẤT BẠI tự giải thích được.
+
+    Nhờ file này, vài tuần sau mở lại báo cáo: so `git_rev` với `git log -1` hiện tại — giống
+    nhau = số liệu còn đúng; khác = đã sửa code, cần chạy lại. `timestamp` tự thêm nếu không truyền.
+    Tự tạo thư mục cha. Trả lại đường dẫn đã ghi.
+    """
+    info = {"timestamp": timestamp or datetime.datetime.now().isoformat(timespec="seconds")}
+    info.update(fields)
+    parent = os.path.dirname(str(path))
+    if parent:
+        os.makedirs(parent, exist_ok=True)
+    with open(path, "w", encoding="utf-8") as f:
+        json.dump(info, f, ensure_ascii=False, indent=2)
+    return str(path)

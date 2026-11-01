@@ -21,6 +21,7 @@ Số FPS/latency in ra console là THỰC ĐO trên máy (ADR-0002 — trung th�
 """
 import argparse
 import os
+import subprocess
 import sys
 
 import cv2
@@ -44,10 +45,20 @@ from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: 
 from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import REPO_ROOT, load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
+from src.metrics_logger import run_info_path_for, write_run_info  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
+
+
+def _git_rev() -> str:
+    """Git SHA ngắn của lần chạy ("unknown" nếu không phải repo) — số liệu còn khớp code không."""
+    try:
+        return subprocess.run(["git", "rev-parse", "--short", "HEAD"],
+                              capture_output=True, text=True, check=True).stdout.strip()
+    except (OSError, subprocess.SubprocessError):
+        return "unknown"
 
 
 def _make_reid_session(engine, args):
@@ -169,10 +180,40 @@ def _finish_metrics(metrics, args):
     metrics.write_csv(args.metrics_csv)
     if args.metrics_summary:
         metrics.write_summary_json(args.metrics_summary)
+    _write_run_info(args)
     s = metrics.summary()
     print(f"[metrics] {s['total_frames']} frame | mean={s['mean_latency_ms']:.0f} ms | "
           f"p95={s['p95_latency_ms']:.0f} ms | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
+
+
+def _write_run_info(args):
+    """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
+
+    Bug thật 29-10: lần đo `fast_1029-212010` (234f, mất dấu từ f58 đến hết) không phân biệt
+    được "vật rời khung" (đúng) với "re-ID lỗi" (bug) vì không lưu nguồn/config/git.
+    """
+    path = run_info_path_for(getattr(args, "metrics_csv", None),
+                             getattr(args, "metrics_summary", None))
+    if not path:
+        return None
+    write_run_info(
+        path,
+        git_rev=_git_rev(),
+        source=str(getattr(args, "source", "")),
+        image_size=getattr(args, "image_size", None),
+        reanchor_every=getattr(args, "reanchor_every", None),
+        max_frames=getattr(args, "max_frames", None),
+        reid=bool(getattr(args, "reid", False)),
+        reid_cue=getattr(args, "reid_cue", None),
+        reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
+        reid_obj_ncc_min=getattr(args, "reid_obj_ncc_min", None),
+        lost_score_threshold=getattr(args, "lost_score_threshold", None),
+        reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
+        reid_verify_frames=getattr(args, "reid_verify_frames", None),
+    )
+    print(f"[metrics] provenance: {path} (git_rev={_git_rev()})")
+    return path
 
 
 def _load_bbox(args, first_frame=None):

@@ -282,6 +282,44 @@ class TestCtrlCFlush:
         assert exc.value.code == 0
         assert csv_out.is_file()
         assert rec.is_file() and rec.stat().st_size > 0   # recorder đóng đúng trong finally
+        # Provenance đi kèm đường thật main() → ./run fast tự giải thích được lần đo
+        assert (tmp_path / "m_run_info.json").is_file()
+
+class TestGhiRunInfoKhiCoMetrics:
+    """Lần đo phải tự giải thích được: `_finish_metrics` ghi run_info cạnh summary."""
+
+    def test_ghi_run_info_canh_summary(self, tmp_path):
+        from src.metrics_logger import FrameRecord, MetricsLogger
+        from tools.run_live import _finish_metrics
+
+        m = MetricsLogger()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=5.0, center=(10, 10)))
+        csv_out = tmp_path / "fast_1_metrics.csv"
+        js_out = tmp_path / "fast_1_summary.json"
+        args = type("A", (), {"metrics_csv": str(csv_out), "metrics_summary": str(js_out),
+                             "source": "0", "image_size": 256})()
+        _finish_metrics(m, args)
+
+        info_path = tmp_path / "fast_1_run_info.json"
+        assert info_path.is_file()
+        d = json.loads(info_path.read_text(encoding="utf-8"))
+        assert d["source"] == "0"
+        assert d["image_size"] == 256
+        assert "git_rev" in d
+
+    def test_args_thieu_thuoc_tinh_khong_crash(self, tmp_path):
+        # args tối thiểu (chỉ có đường dẫn) vẫn phải ghi được run_info, không AttributeError
+        from src.metrics_logger import FrameRecord, MetricsLogger
+        from tools.run_live import _finish_metrics
+
+        m = MetricsLogger()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=5.0, center=(10, 10)))
+        csv_out = tmp_path / "x_metrics.csv"
+        js_out = tmp_path / "x_summary.json"
+        args = type("A", (), {"metrics_csv": str(csv_out), "metrics_summary": str(js_out)})()
+        _finish_metrics(m, args)
+        assert (tmp_path / "x_run_info.json").is_file()
+
 
 class TestKhongGhiDeKhiLoi:
     """Bug 21-10: mở camera lỗi → phiên 0 frame vẫn ghi CSV/JSON rỗng, đè mất số liệu tốt."""
