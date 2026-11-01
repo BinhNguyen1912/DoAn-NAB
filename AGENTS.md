@@ -91,10 +91,11 @@ DOAN-NAB/
 
 1. Đọc yêu cầu từ người dùng + xem lại `docs/task/` gần nhất để nắm tiến độ.
 2. Thực hiện code/thay đổi.
-3. Chạy kiểm tra trước khi kết thúc:
-   - **Làn nhanh** (UI/logic/config — ~10s): `python -m pytest -m "not slow"`.
-   - **Lint:** `ruff check .` (phải xanh — CI chạy đúng lệnh này).
-   - **Full suite** (~100s, cần checkpoint SAM 2): chỉ khi đụng `tracker_engine`/model/CLI model hoặc trước commit cuối.
+3. Chạy kiểm tra trước khi kết thúc bằng **lệnh tắt của repo** (`run` tự chọn đúng môi trường Python):
+   - **Lint:** `./run lint` — CI chạy đúng lệnh `ruff check .`; phải xanh.
+   - **Làn nhanh** (UI/logic/config — ~30s): `./run test` — CI chạy `pytest -m "not slow"`.
+   - **Full suite** (cần checkpoint SAM 2): `./run testall` — chỉ khi đụng
+     `tracker_engine`/model/CLI model hoặc trước commit cuối.
 4. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên.
 5. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
 

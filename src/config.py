@@ -63,9 +63,11 @@ DEFAULTS = {
     "reid_obj_top_k": 20,           # số ứng viên được chấm descriptor đắt mỗi frame lost
     # Cổng NCC cho vật ÍT texture-màu (chai đen): 0.0 = TẮT (mặc định). Đo thật 27-10:
     # hai vật đen khác nhau cho cosine 1,000 nhưng NCC 0,897; cùng vật NCC 1,000.
-    # Chỉ bật sau khi hiệu chuẩn trên clip thật (vd 0,95).
-    "reid_obj_ncc_min": 0.0,      # cổng CHÍNH (dùng NCC của prefilter). Đo thật 29-10 có nhãn người dùng:
-    # 4 lần nhận lại SAI (dấu ly → bám bóng đèn) chỉ 0,48–0,62 dù cosine 0,78–0,99.
+    # Chỉ bật sau khi hiệu chuẩn trên clip thật — khoảng dùng được là 0,5–0,6 (KHÔNG phải 0,95:
+    # ca đúng có lúc chỉ đạt 0,55).
+    "reid_obj_ncc_min": 0.0,      # cổng PHỤ tuỳ chọn (NCC của prefilter); 0 = TẮT. Cổng chính = cosine.
+    # Đo thật 29-10 có nhãn người dùng: 4 lần nhận lại SAI (dấu ly → bám bóng đèn) chỉ 0,48–0,62
+    # dù cosine 0,78–0,99, nhưng có lần mất dấu dài NCC của ca ĐÚNG chỉ 0,55 → bật 0,70 chặn nhầm.
     "reid_search_grow_frames": 12,  # số frame lost tìm trong vùng hẹp quanh chỗ cũ trước khi mở rộng
     "reid_search_grow_step": 0.25,  # bán kính tìm = max(w,h) × (0,75 + 0,25 × số frame lost)
     # ---- Chống "bám nhầm rồi kẹt" (bug thật 27-10) ----

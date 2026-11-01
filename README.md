@@ -405,7 +405,7 @@ IMG_SIZE=320 ./run demo --reid-cue object
 |---|---|
 | `--reid-cue face\|object\|both` | cue dùng khi mất dấu (mặc định `face` = hành vi cũ) |
 | `--reid-obj-threshold 0.6` | cosine đặc trưng vật thể tối thiểu (phải hiệu chỉnh trên clip thật) |
-| `--reid-obj-ncc-min 0.70` | **cổng CHÍNH khi nhận lại** (khớp mẫu ảnh). Đo trên video thật có nhãn người dùng: ca **sai** (dấu vật → bám bóng đèn/tay) ncc **0,39–0,69**; ca **đúng** ncc **0,78–0,92** |
+| `--reid-obj-ncc-min 0.0` | **cổng PHỤ** (khớp mẫu ảnh), mặc định **TẮT** — cổng chính là cosine. Đo trên video thật có nhãn: ca **sai** ncc **0,39–0,69**, ca **đúng** **0,78–0,92**, NHƯNG có lần mất dấu dài ncc chỉ **0,55** → bật 0,70 sẽ chặn nhầm; chỉ bật (0,5–0,6) sau khi hiệu chuẩn clip thật |
 | `--lost-score-threshold 0.0` | score ≤ ngưỡng này → coi như **không thấy vật** (kể cả khi mask không rỗng) |
 | `--reid-confirm 2` | ứng viên phải khớp **cùng một chỗ** bao nhiêu frame liên tiếp mới nhận lại |
 | `--reid-verify 2` | sau khi nhận lại, kiểm chứng bao nhiêu frame (không giống vật → bỏ, về LOST) |
@@ -433,8 +433,9 @@ Lưu ý: webcam qua WSL đọc chỉ ~14 FPS (66,9 ms/frame) → trần "mượt
 
 - **Hai vật giống y hệt nhau** và **vật đặc một màu (chai đen)** → mọi cue ngoại hình cho cosine ≈ 1,0
   (đo: hai vật đen khác nhau vẫn 1,000). Ca đó **chỉ cue thời gian** (Kalman/motion memory của SAMURAI)
-  giải được. Từ 29-10 cổng NCC bật mặc định 0,70 nên hệ thống **thà không bám còn hơn bám nhầm**:
-  nếu khi quay lại vật chỉ đạt ncc ~0,6, nó sẽ ở trạng thái ĐANG TÌM chứ không khoá vào vật khác.
+  giải được. Cổng NCC là **cổng PHỤ, mặc định TẮT** (0.0) vì đo thật cho thấy ca ĐÚNG có lúc chỉ
+  đạt ncc 0,55 — bật 0,70 sẽ **chặn cả ca đúng**. Chống bám nhầm dựa vào cosine 0,60 + vùng tìm
+  nở dần + xác nhận 2 frame; bật NCC (0,5–0,6) chỉ sau khi hiệu chuẩn trên clip thật.
 - Ngưỡng 0,6 là **số khởi điểm**, chưa hiệu chỉnh trên clip vật thật (ticket 11 còn 1 criteria).
 - Chi tiết + số đo đầy đủ: `docs/research/06` và `docs/task/27-10-2026-*`.
 

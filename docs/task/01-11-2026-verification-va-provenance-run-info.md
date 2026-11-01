@@ -60,6 +60,35 @@
       vào báo cáo (dùng run_info của các lần chạy mới để tránh lặp lại).
 - [ ] Khi chạy lại `./run fast`: xác nhận có `data/fast_<mốc>_run_info.json`.
 
+## 🧪 Bổ sung — Retro và sửa 2 phát hiện
+
+Chạy `/retro` trên chuỗi build re-ID (25-10 → 29-10) + phiên này. Phát hiện 2 việc, đã sửa ngay:
+
+**1. Ngưỡng re-ID có 3 giá trị ở 5 file (nặng nhất).** `reid_obj_ncc_min` thực tế = **0.0 (TẮT)**
+(khoá bởi `test_reid.py::TestCauHinhMacDinh`), nhưng README nói "bật mặc định 0,70",
+`docs/tom-tat-do-an.md` nói 0,70, comment `configs/default.yaml` nói 0,75, `src/config.py` lại gọi
+NCC là "cổng CHÍNH". Nguyên nhân: **6 lần đổi ngưỡng trong 3 ngày** (`3a2d447`→`44bbbee`→
+`1eabb3c`→`2f7b35b`→`f6927fa`), mỗi lần sync 3 chỗ bằng tay.
+- Sửa 5 chỗ về đúng: cổng chính = **cosine 0,60**, NCC = **cổng PHỤ, mặc định TẮT (0.0)**,
+  khoảng dùng được **0,5–0,6** (0,95 là sai — ca đúng có lúc chỉ 0,55).
+- Thêm `tests/test_threshold_consistency.py` (5 test): bắt buộc **4 nguồn khớp nhau**
+  (`DEFAULTS` ↔ `configs/default.yaml` ↔ hằng số `reid.py` ↔ tham số `ReIdSession`) + tài liệu
+  không được khẳng định "bật mặc định" khi cấu hình đang TẮT. Đây đúng lớp bug 27-10
+  (`reid.py` truyền `min_side=24` đè hằng số → bản sửa "vật mảnh" không có tác dụng).
+
+**2. `AGENTS.md` §5 chép lệnh kiểm tra và lệnh đó sai trên máy này.** §5 ghi `ruff check .` /
+`python -m pytest -m "not slow"`; chạy `ruff check .` → **`ruff: command not found`** (phải mò ra
+`.venv/bin/ruff`). Repo đã có `./run lint` / `./run test` / `./run testall` tự chọn môi trường.
+- §5 nay trỏ `./run lint` + `./run test` (giữ câu "CI chạy `ruff check .`" làm hợp đồng CI).
+- Sửa `run` help: `test nhanh (~10 giây)` → `~30 giây` (đo thật 19–34 s).
+
+**Kiểm chứng 2 lệnh vừa ghi vào AGENTS.md (chạy thật):** `./run lint` → All checks passed;
+`./run test` → **289 passed, 4 deselected** (19,6 s).
+
+**Còn lại (đề xuất, chưa làm):** `scripts/calibrate_reid.py` — quét lưới
+`reid_obj_threshold` × `reid_obj_ncc_min` trên clip có nhãn, in bảng (đúng/sai nhận lại).
+Đó là gốc của phát hiện 1 (hiệu chỉnh không có nhà đo) → nên đi qua `/to-spec` thay vì sửa tay.
+
 ## 📚 Tài liệu tham khảo
 - `docs/adr/0002-giu-laptop-cpu-demo-live-colab-cho-offline.md` (báo cáo trung thực, số liệu tái tạo được).
 - `scripts/colab_run_all.py:103` — mẫu `write_run_info` sẵn có.

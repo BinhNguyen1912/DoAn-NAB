@@ -56,7 +56,7 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
                     + data/reid_metrics.csv + data/reid_summary.json
 
   KIỂM TRA CHẤT LƯỢNG
-    test            Test nhanh (~10 giây, không cần checkpoint)
+    test            Test nhanh (~30 giây, không cần checkpoint)
     testall         Toàn bộ test (~2 phút, cần checkpoint)
     lint            ruff check .
 

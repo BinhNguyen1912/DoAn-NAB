@@ -161,8 +161,8 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 2. **Không nhận lại được nếu không thấy mặt** (quay lưng, che kín, xa/mờ) — giới hạn phương pháp.
 3. **Vật giống y hệt** / **vật đặc một màu (chai đen)**: mọi cue ngoại hình cho cosine ≈ 1,0
    (đo: hai vật đen khác nhau vẫn 1,000) → chỉ cue thời gian (Kalman/motion memory) giải được;
-   cổng NCC bật mặc định **0,70** (đo có nhãn: sai 0,39–0,69 vs đúng 0,78–0,92) → thà không bám
-   còn hơn bám nhầm; hệ thống ở trạng thái ĐANG TÌM nếu vật quay lại chỉ đạt ~0,6.
+   cổng NCC là **cổng PHỤ, mặc định TẮT** (0.0 — bật 0,70 sẽ chặn cả ca đúng, đo có lần ncc chỉ 0,55);
+   chống bám nhầm nhờ cosine 0,60 + vùng tìm nở dần + xác nhận 2 frame.
 4. Ngưỡng tái nhận diện (mặt 0.363 / vật 0.6) **chưa hiệu chỉnh trên clip thật** — ticket 09 và 11 còn treo.
 4. **Chưa đánh giá trên dataset chuẩn** (DAVIS/LaSOT) — mới có fixture tự sinh + số đo thực.
 5. **Chưa có BE/FE web** — app desktop 1 process, HUD OpenCV.
