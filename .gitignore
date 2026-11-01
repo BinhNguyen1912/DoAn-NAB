@@ -22,6 +22,7 @@ data/*
 !data/*_summary.json
 !data/*_metrics.csv
 !data/*_run_info.json
+!data/*_calib.json
 
 # ===== Cấu hình công cụ cá nhân =====
 .pi/

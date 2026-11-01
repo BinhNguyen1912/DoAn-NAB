@@ -12,8 +12,8 @@ import csv
 
 import pytest
 
-from scripts.calibrate_reid import (boundary, label_events, read_reacquire_events,
-                                    suggest)
+from scripts.calibrate_reid import (_parse_labels, boundary, label_events,
+                                    read_reacquire_events, suggest)
 
 HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost",
           "state", "reid_score", "reacquired", "ncc"]
@@ -88,6 +88,37 @@ class TestCanTachNguong:
         assert b["ncc"]["min_good"] == pytest.approx(0.42)   # chỉ biết cận dưới
 
 
+class TestGopNhieuCsv:
+    """Ngưỡng phải hiệu chỉnh trên TẤT CẢ clip có nhãn, không phải từng clip rời."""
+
+    def _two_csv(self, tmp_path):
+        a = _write_metrics(tmp_path / "a_metrics.csv", [(10, "0.95", "0.80", 1)])
+        b = _write_metrics(tmp_path / "b_metrics.csv", [(41, "0.90", "0.28", 1)])
+        return a, b
+
+    def test_doc_va_gan_nhan_theo_chi_so_csv(self, tmp_path):
+        a, b = self._two_csv(tmp_path)
+        ev = label_events(read_reacquire_events([a, b]),
+                          good=[(0, 10)], bad=[(1, 41)])
+        assert [(e.frame_idx, e.label) for e in ev] == [(10, "good"), (41, "bad")]
+
+    def test_tach_duoc_ncc_khi_gop_hai_clip(self, tmp_path):
+        a, b = self._two_csv(tmp_path)
+        ev = label_events(read_reacquire_events([a, b]), good=[(0, 10)], bad=[(1, 41)])
+        s = suggest(ev)
+        assert s["ncc_min"] == pytest.approx(0.54)      # giữa 0,28 và 0,80
+        assert s["cos_min"] == pytest.approx(0.93)      # giữa 0,90 và 0,95 = 0,925 → 0,93
+
+    def test_nhieu_csv_ma_nhan_khong_co_tien_to_thi_bao_loi(self, tmp_path):
+        a, b = self._two_csv(tmp_path)
+        with pytest.raises(ValueError, match="chỉ số CSV"):
+            _parse_labels("10", n_csv=2)
+
+    def test_chi_so_csv_vuot_qua_so_file_thi_bao_loi(self, tmp_path):
+        with pytest.raises(ValueError, match="chỉ số CSV"):
+            _parse_labels("5:10", n_csv=2)
+
+
 class TestDeXuat:
     def test_de_xuat_midpoint_khi_tach_duoc_ca_hai_cue(self, tmp_path):
         p = _write_metrics(tmp_path / "m.csv", [
@@ -101,6 +132,13 @@ class TestDeXuat:
     def test_khong_co_ca_sai_thi_KHONG_de_xuat_nguong(self, tmp_path):
         p = _write_metrics(tmp_path / "m.csv", [(10, "0.82", "0.71", 1)])
         ev = label_events(read_reacquire_events(p), good=[10])
+        assert suggest(ev) is None
+
+    def test_chi_co_ca_sai_thi_cung_KHONG_de_xuat_nguong(self, tmp_path):
+        """Bug thật 01-11: chỉ có ca SAI → công cụ báo nhầm 'hai cue không tách được'.
+        Thật ra thiếu ca ĐÚNG nên cận DƯỚI chưa biết — không đề xuất gì."""
+        p = _write_metrics(tmp_path / "m.csv", [(41, "0.899365", "0.279373", 1)])
+        ev = label_events(read_reacquire_events(p), bad=[41])
         assert suggest(ev) is None
 
     def test_co_ca_sai_nhung_khong_tach_duoc_thi_de_xuat_None(self, tmp_path):

@@ -48,6 +48,7 @@ class Event:
     cosine: float
     ncc: float
     label: Optional[str] = None       # "good" | "bad" | None
+    csv_idx: int = 0                  # vị trí file CSV trong danh sách đầu vào
 
 
 @dataclass
@@ -63,34 +64,48 @@ class Row:
     unlabeled: int
 
 
-def read_reacquire_events(path: str) -> List[Event]:
-    """Đọc CSV của MetricsLogger → các dòng `reacquired=1` (bỏ dòng thiếu cosine/ncc)."""
+def read_reacquire_events(path) -> List[Event]:
+    """Đọc CSV của MetricsLogger → các dòng `reacquired=1` (bỏ dòng thiếu cosine/ncc).
+
+    `path` nhận 1 đường dẫn hoặc DANH SÁCH đường dẫn — gộp sự kiện của nhiều clip để hiệu
+    chỉnh ngưỡng trên toàn bộ dữ liệu có nhãn (không phải từng clip rời).
+    """
+    paths = [path] if isinstance(path, (str, bytes)) else list(path)
     events: List[Event] = []
-    with open(path, newline="", encoding="utf-8") as f:
-        for row in csv.DictReader(f):
-            if row.get("reacquired") != "1":
-                continue
-            try:
-                cos = float(row["reid_score"])
-                ncc = float(row["ncc"])
-            except (KeyError, TypeError, ValueError):
-                print(f"[calibrate] bỏ frame {row.get('frame_idx')}: thiếu cosine/ncc",
-                      file=sys.stderr)
-                continue
-            events.append(Event(int(row["frame_idx"]), cos, ncc))
+    for i, p in enumerate(paths):
+        with open(p, newline="", encoding="utf-8") as f:
+            for row in csv.DictReader(f):
+                if row.get("reacquired") != "1":
+                    continue
+                try:
+                    cos = float(row["reid_score"])
+                    ncc = float(row["ncc"])
+                except (KeyError, TypeError, ValueError):
+                    print(f"[calibrate] bỏ {p} frame {row.get('frame_idx')}: thiếu cosine/ncc",
+                          file=sys.stderr)
+                    continue
+                events.append(Event(int(row["frame_idx"]), cos, ncc, None, i))
     return events
 
 
 def label_events(events: Sequence[Event], good=(), bad=()) -> List[Event]:
-    """Gán nhãn theo frame: `good` = nhận lại đúng, `bad` = nhận lại sai. Còn lại để None."""
-    good_set, bad_set = {int(x) for x in good}, {int(x) for x in bad}
+    """Gán nhãn: `good` = nhận lại đúng, `bad` = nhận lại sai. Còn lại để None.
+
+    Nhãn là `frame` (1 clip) hoặc `(chỉ_số_csv, frame)` (nhiều clip — tránh nhầm frame trùng số).
+    """
+    def _key(item):
+        return (int(item[0]), int(item[1])) if isinstance(item, (tuple, list)) else (0, int(item))
+
+    good_set = {_key(x) for x in good}
+    bad_set = {_key(x) for x in bad}
     clash = good_set & bad_set
     if clash:
-        raise ValueError(f"frame vừa là good vừa là bad: {sorted(clash)}")
+        raise ValueError(f"(csv, frame) vừa là good vừa là bad: {sorted(clash)}")
     out = []
     for e in events:
-        label = "good" if e.frame_idx in good_set else "bad" if e.frame_idx in bad_set else None
-        out.append(Event(e.frame_idx, e.cosine, e.ncc, label))
+        key = (e.csv_idx, e.frame_idx)
+        label = "good" if key in good_set else "bad" if key in bad_set else None
+        out.append(Event(e.frame_idx, e.cosine, e.ncc, label, e.csv_idx))
     return out
 
 
@@ -117,13 +132,13 @@ def boundary(events: Sequence[Event]) -> dict:
 
 
 def suggest(events: Sequence[Event]) -> Optional[dict]:
-    """Đề xuất ngưỡng từ cận tách được. Trả None khi CHƯA có ca SAI nào có nhãn.
+    """Đề xuất ngưỡng từ cận tách được. Trả None khi THIẾU một phía nhãn.
 
-    Vì sao None: không có ca sai thì không biết cận TRÊN — mọi ngưỡng cao hơn ca đúng đều
-    "trông đẹp" trên dữ liệu này mà chưa chứng minh được gì. Đề xuất lúc đó là tự tin vô căn cứ.
+    Vì sao None: chỉ có ca sai (không có ca đúng) → không biết cận DƯỚI; chỉ có ca đúng
+    (không có ca sai) → không biết cận TRÊN. Cả hai trường hợp đều chưa đủ cơ sở đề xuất.
     """
     b = boundary(events)
-    if b["cosine"]["max_bad"] is None and b["ncc"]["max_bad"] is None:
+    if b["cosine"]["max_bad"] is None or b["cosine"]["min_good"] is None:
         return None
     return {
         "cos_min": b["cosine"]["midpoint"],     # None = không tách được bằng cosine
@@ -198,30 +213,62 @@ def _in_bang(front: Sequence[Row]) -> None:
         print(f"  {r.cos_min:>8.2f} {r.ncc_min:>8.2f} {r.good_accept:>9} {r.good_reject:>7}")
 
 
+def _parse_labels(text: str, n_csv: int) -> list:
+    """Đọc `--good`/`--bad`: `"10,20"` (1 clip) hoặc `"0:99,1:41"` (nhiều clip).
+
+    Nhiều CSV thì BẮT BUỘC có tiền tố chỉ số — frame trùng số giữa các clip là chuyện thường,
+    nên nhãn không tiền tố sẽ gán sai clip mà không ai biết.
+    """
+    items = []
+    for token in text.replace(" ", "").split(","):
+        if not token:
+            continue
+        if ":" in token:
+            idx_text, frame_text = token.split(":", 1)
+            try:
+                idx, frame = int(idx_text), int(frame_text)
+            except ValueError as exc:
+                raise ValueError(f"nhãn «{token}» sai định dạng (cần <chỉ-số-CSV>:<frame>)") \
+                    from exc
+            if not 0 <= idx < n_csv:
+                raise ValueError(f"chỉ số CSV {idx} ngoài phạm vi 0..{n_csv - 1} «{token}»")
+            items.append((idx, frame))
+        else:
+            if n_csv > 1:
+                raise ValueError(
+                    f"có {n_csv} file CSV → nhãn phải ghi <chỉ số CSV>:<frame>, vd 0:{token}")
+            items.append(int(token))
+    return items
+
+
 def main(argv=None) -> int:
     ap = argparse.ArgumentParser(
         description="Quét lưới ngưỡng nhận lại re-ID từ CSV có nhãn (không cần model)")
-    ap.add_argument("metrics_csv", help="file *_metrics.csv do MetricsLogger ghi")
-    ap.add_argument("--good", default="", help="frame của các lần nhận lại ĐÚNG (vd 99,150)")
-    ap.add_argument("--bad", default="", help="frame của các lần nhận lại SAI (vd 271,321)")
+    ap.add_argument("metrics_csv", nargs="+",
+                    help="một hoặc nhiều file *_metrics.csv do MetricsLogger ghi")
+    ap.add_argument("--good", default="",
+                    help="nhận lại ĐÚNG: '10,99' (1 clip) hoặc '0:99,1:41' (nhiều clip)")
+    ap.add_argument("--bad", default="",
+                    help="nhận lại SAI: cùng định dạng với --good")
     ap.add_argument("--list", action="store_true",
                     help="chỉ in danh sách sự kiện nhận lại để chọn nhãn")
     ap.add_argument("--json", default=None, help="ghi kết quả ra JSON (bằng chứng cho báo cáo)")
     args = ap.parse_args(argv)
 
     def _frames(text):
-        return [int(x) for x in text.replace(" ", "").split(",") if x]
+        return _parse_labels(text, n_csv=len(args.metrics_csv))
 
     events = label_events(read_reacquire_events(args.metrics_csv),
                           good=_frames(args.good), bad=_frames(args.bad))
     dem = _dem(events)
-    print(f"[calibrate] {args.metrics_csv}: {dem['total']} lần nhận lại | "
+    print(f"[calibrate] {len(args.metrics_csv)} clip: "
+          f"{dem['total']} lần nhận lại | "
           f"có nhãn: đúng {dem['good']}, sai {dem['bad']} | chưa gán nhãn {dem['unlabeled']}")
 
     if args.list:
-        print(f"\n  {'frame':>7} {'cosine':>8} {'ncc':>8}  nhãn")
+        print(f"\n  {'csv':>3} {'frame':>7} {'cosine':>8} {'ncc':>8}  nhãn")
         for e in events:
-            print(f"  {e.frame_idx:>7} {e.cosine:>8.3f} {e.ncc:>8.3f}  {e.label or ''}")
+            print(f"  {e.csv_idx:>3} {e.frame_idx:>7} {e.cosine:>8.3f} {e.ncc:>8.3f}  {e.label or ''}")
         print("\nGán nhãn bằng mắt trên video HUD, rồi chạy lại với --good/--bad.")
         return 0
 
@@ -235,13 +282,17 @@ def main(argv=None) -> int:
     _in_ds("cosine", b["cosine"])
     _in_ds("ncc", b["ncc"])
 
-    front = frontier(sweep(events))
-    _in_bang(front)
+    if dem["good"] > 0:
+        _in_bang(frontier(sweep(events)))
 
     s = suggest(events)
     if s is None:
-        print("\nCHƯA ĐỀ XUẤT ĐƯỢC: chưa có ca SAI nào có nhãn → cận TRÊN chưa xác định.")
-        print("  Cần gán nhãn ít nhất 1 lần nhận lại SAI (--bad) rồi chạy lại.")
+        if dem["good"] == 0:
+            print("\nCHƯA ĐỀ XUẤT ĐƯỢC: chưa có ca ĐÚNG nào có nhãn → cận DƯỚI chưa xác định.")
+            print("  Cần gán nhãn ít nhất 1 lần nhận lại ĐÚNG (--good) rồi chạy lại.")
+        else:
+            print("\nCHƯA ĐỀ XUẤT ĐƯỢC: chưa có ca SAI nào có nhãn → cận TRÊN chưa xác định.")
+            print("  Cần gán nhãn ít nhất 1 lần nhận lại SAI (--bad) rồi chạy lại.")
     elif s["cos_min"] is None and s["ncc_min"] is None:
         print("\nHAI CUE KHÔNG TÁCH ĐƯỢC trên clip này (ca sai cao hơn ca đúng ở cả 2).")
         print("  → Cổng điểm không đủ; dựa vào vùng tìm nở dần + xác nhận 2 frame "
@@ -255,12 +306,12 @@ def main(argv=None) -> int:
 
     if args.json:
         data = {
-            "metrics_csv": args.metrics_csv,
+            "metrics_csv": list(args.metrics_csv),
             "dem": dem,
             "events": [asdict(e) for e in events],
             "boundary": b,
             "suggest": s,
-            "frontier": [asdict(r) for r in front],
+            "frontier": [asdict(r) for r in frontier(sweep(events))] if dem["good"] else [],
         }
         with open(args.json, "w", encoding="utf-8") as f:
             json.dump(data, f, ensure_ascii=False, indent=2)
