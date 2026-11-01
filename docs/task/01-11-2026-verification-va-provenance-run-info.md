@@ -117,6 +117,29 @@ Làn nhanh: **298 passed, 4 deselected** (20,8 s); `./run lint` sạch.
 **File thay đổi:** `scripts/calibrate_reid.py` (mới), `tests/test_calibrate_reid.py` (mới),
 `run` (lệnh `calibrate` + help), `README.md` (mục "Hiệu chỉnh ngưỡng nhận lại").
 
+### Bổ sung — phân tích lần test webcam thật của người dùng (`fast_1101-153223`)
+
+Người dùng chạy `./run fast` (không kèm cờ) để test bằng **vật thể** (hộp nhựa trong suốt), kết quả:
+**201 frame, mất dấu 180 (90%), bbox = 0 từ f21**.
+
+**Hai nguyên nhân độc lập (từ run_info + CSV + trích frame video):**
+1. **cue=face** (`run_info.reid_cue = "face"`): `reid_score = -1` cho **cả 201 frame** → re-ID
+   **chưa chấm được ứng viên nào**. Cue face chỉ lưu mẫu KHUÔN MẶT; bám cái hộp thì `_refs`
+   rỗng → `best_match()` luôn -1 → mất dấu là mất luôn. `./run fast` không truyền `--reid-cue`
+   nên rơi về mặc định `face` của config.
+2. **Mất dấu ở f21**: tâm ô bao trôi sang mép phải (x 435→553→590→**600**/640) rồi score sụp
+   −2,24 (mask rỗng). Vật **trong suốt** (chữ nền xuyên qua) → mask vốn không ổn định.
+
+**Đã sửa:**
+- `run`: `fast` truyền `--reid-cue object` (in rõ `[fast] re-ID cue=object`); cờ `--reid-cue`
+  của người dùng đứng sau nên vẫn đè được.
+- `tools/run_live.py`: khi `cue=face` in cảnh báo **ngay lúc khởi động** ("CHỈ nhận lại được
+  KHUÔN MẶT... thêm --reid-cue object|both").
+- `tests/test_run_script.py`: khoá `cue=object` trong `./run fast --help`.
+- Commit kèm 3 artefact của lần test (`fast_1101-153223_*`) làm bằng chứng.
+
+**Làn nhanh: 300 passed, 4 deselected**; `./run lint` sạch.
+
 ## 📚 Tài liệu tham khảo
 - `docs/adr/0002-giu-laptop-cpu-demo-live-colab-cho-offline.md` (báo cáo trung thực, số liệu tái tạo được).
 - `scripts/colab_run_all.py:103` — mẫu `write_run_info` sẵn có.
