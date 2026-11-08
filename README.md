@@ -345,9 +345,11 @@ Nguyên tắc đã giữ:
 - **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,6 lần/giây với `vos_every=3`); giữa hai
   lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS". UI hiện đúng hai nhịp
   (`/api/live/status` có `mask_fps`, `stability`, `latency_ms`), nguồn không có model thì ẩn dòng.
-- **Chống nhấp nháy mask (`--mask-smoothing`, mặc định 1.0 = TẮT):** đã đo 3 clip — bộ lọc giữ mask
-  (`holds`) kích hoạt 0 lần trên `binh1`/`binh1_simloss`, và trên `binh2` nó **không** làm IoU hiển
-  thị cao hơn (0,681 vs 0,706) ⇒ để tắt theo mặc định, bật bằng `--mask-smoothing 0.5` khi cần.
+- **Chống nhấp nháy mask (`--mask-smoothing`, mặc định 1.0 = TẮT):** đo trên 3 clip cho thấy **không
+  phân biệt được** trong nhiễu giữa hai lần chạy (0,681 vs 0,706 — SAM 2 không tất định) ⇒ để tắt
+  mặc định. Sau khi sửa lỗi P1 (bộ lọc bị "teleport" bởi `bbox=(0,0,0,0)`), cùng cấu hình trên
+  `binh1_simloss` cho `empty_runs=14, mask_holds=4, mask_drops=2` — số liệu ở
+  `data/live_2026-11-08_vos3_smoothing05_metrics.json` (có `git_rev` + lệnh chạy).
 
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"

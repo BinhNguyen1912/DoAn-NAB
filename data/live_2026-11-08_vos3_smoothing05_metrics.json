@@ -1,0 +1,35 @@
+{
+  "do_luc": "2026-11-08T14:21:13",
+  "git_rev": "b8158ccaa0c4a2f8672a7814b787728f1a562be2",
+  "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch bản CPU",
+  "lenh": "python tools/live_worker.py --source data/binh1_simloss.mp4 --out-dir <tmp> --image-size 192 --max-fps 30 --vos-every 3 --mask-smoothing 0.5 --stop-after-frames 600",
+  "ket_qua": {
+    "state": "stopped",
+    "frames": 600,
+    "vos_runs": 172,
+    "measured_fps": 29.2,
+    "vos_fps": 8.0,
+    "vos_ms": 81.7,
+    "lk_ms": 3.43,
+    "stability": 0.962,
+    "stability_shown": 0.949,
+    "empty_runs": 14,
+    "mask_holds": 4,
+    "mask_drops": 2,
+    "lost_streak": 0,
+    "bbox": [
+      26,
+      339,
+      294,
+      663
+    ],
+    "message": ""
+  },
+  "truoc_khi_fix_p1": {
+    "empty_runs": null,
+    "mask_holds": 0,
+    "mask_drops": 0,
+    "ghi_chu": "cùng lệnh, cùng code trừ fix _bbox_hop_le trong _smooth"
+  },
+  "ghi_chu": "empty_runs=14 chứng minh model THẬT SỰ có lúc trả mask rỗng; trước fix, bộ lọc không bao giờ kích hoạt vì bộ tích luỹ bị dịch theo bbox (0,0,0,0)."
+}

@@ -49,6 +49,10 @@
 **Rủi ro cả ba cùng bỏ qua (C nêu):** không ai định nghĩa **ngưỡng nhiễu** trước khi so A/B ⇒ mọi
 kết luận "tốt hơn/xấu hơn" đều có thể là nhiễu. Đã đưa thành việc số 2.
 
+> ⚠️ **Các tiêu chí dưới đây là ĐÍCH, chưa phải kết quả.** `lk_drift_iou`, `mask_age_ms`,
+> `scripts/measure_live.py`, `scripts/repeatability.py`, watchdog — **chưa tồn tại** trong repo tại
+> thời điểm lập plan (đã kiểm bằng `grep`). Không được trích dẫn chúng như số đo đã có.
+
 ## ✅ Quyết định
 
 - **Chọn thứ tự:** (1) số liệu live **có file + `git_rev`** (gộp B1+A1) → (2) đo **giá của nội suy LK**

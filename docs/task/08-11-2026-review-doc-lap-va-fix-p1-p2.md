@@ -99,12 +99,46 @@
   khi thêm `empty_runs` vào `LiveTelemetry` mà quên field, số liệu về 0 **mà test vẫn xanh** (vì test
   của mình monkeypatch nguồn). Đã thêm `logger.warning` + sửa field.
 
+## 🔁 Review lần 2 (bắt buộc theo AGENTS §9.1) — trên chính bản fix
+
+Review lần 2 (agent reviewer độc lập) kết luận **"chưa merge được"**, không phải vì fix sai mà vì
+**tiêu chí nghiệm thu của chính PR chưa đạt**. Đã xử lý hết:
+
+| Phát hiện | Mức | Đã xử lý |
+|---|---|---|
+| Test P1 **không đỏ khi revert** (assert `drawn[2]` phụ thuộc index của frame `start()`) | P1 | Quét **toàn bộ** mask đã vẽ + `mask_drops == 0`; **đã thử revert**: test đỏ, phục hồi: xanh |
+| Lỗi trong **callback** luồng VOS (`_store_vos`/`_smooth`) nằm ngoài `try/except` ⇒ thread chết im lặng | P1 | Bọc cả `_on_result` → `_on_error`; test monkeypatch `_smooth` ném ⇒ `state=error` (đỏ khi revert) |
+| `stability_shown` vẫn = 1,0 khi **màn hình trống** | P2 | Mask rỗng ⇒ `stability`/`stability_shown` = 0,0 + reset mẫu; test < 0,999 |
+| `_prev_raw_mask` giữ qua khoảng mất dấu ⇒ IoU "liên tiếp" bị nối xuyên khoảng | P2 | Reset mẫu khi mask rỗng (đã gộp vào fix trên) |
+| Không có test cho seam `status.json → LiveTelemetry` (đúng chỗ từng làm `empty_runs` "chết trong adapter") | P2 | `TestWorkerTelemetry` (2 test: đọc đúng 5 trường; file hỏng ⇒ 0, không crash) |
+| `LIVE_READ_FPS` không có test (revert 30→15 im lặng) | P2 | `TestNhipDocFrame`: assert `>= 30` và `_interval == 1/30` |
+| `_bbox_hop_le` loại oan bbox **mỏng 1 px** (mask 1 cột = vật ở xa) | P3 | Cho phép `x2 >= x1`, chỉ loại `(0,0,0,0)`/đảo/âm; có test |
+| `command.py` còn clamp im lặng `max(1, vos_every)` | P3 | Bỏ clamp, để CLI báo lỗi |
+| Schema mô tả `frames` là "số frame đã đọc" (thực tế đếm frame MỚI) | P3 | Sửa mô tả |
+| Số headline không có artifact trong repo | P3 | Lưu `data/live_2026-11-08_vos3_smoothing05_metrics.json` (có `git_rev`, lệnh, môi trường) + thêm `.gitignore` ngoại lệ `!data/*_metrics.json` |
+| `test_status_co_do_on_dinh` chỉ assert `0 ≤ stability ≤ 1` (không thể đỏ) | P3 | Thêm `stability > 0,5` trên ca bình thường + `empty_runs == 0` |
+
+Review lần 2 cũng **bác đúng** nhiều nghi ngờ của mình (không deadlock giữa `_stats_lock` và `_lock`;
+`_prev_vos_bbox` không cập nhật khi bbox không hợp lệ **không** gây shift sai; `status_payload`
+forward-ref vô hại; `LiveTrackConfig` không frozen; `maskRhythmLine` không sinh NaN; API không đếm
+trùng frame) — tức không bịa lỗi.
+
+**Còn nợ (đã ghi ticket, không chặn merge):**
+- API **chưa đọc** `state=error` từ `status.json` của worker ⇒ worker chết thì UI vẫn "running" tới
+  khi stream timeout. Đây chính là việc "watchdog" trong plan (2 h).
+- `_VosWorker.submit()`/`_wake.clear()` có khe race khiến frame mới có thể trễ tới 1 chu kỳ
+  `wait(0,2)` ⇒ ảnh hưởng `mask_age_ms` mà plan sắp đo — cần đo trước khi kết luận.
+- Chưa đo chi phí CPU khi `LIVE_READ_FPS` 15→30 ở chế độ **raw** (`OpenCvFrameSource` decode+encode
+  mỗi tick).
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Thực hiện 6 việc đã chốt trong `docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md`
       (bắt đầu: `scripts/measure_live.py` ghi artifact có `git_rev`).
 - [ ] **Người dùng** quay 2 clip: vật bị che một phần; vật ra khỏi khung rồi vào lại.
 - [ ] Transcode H.264 cho `--record` (recorder đang `mp4v` — Chrome không phát được video demo).
 - [ ] Gắn nhãn P3 còn lại: đổi `8.6` → `8,6` (vi-VN) trên UI nếu muốn khớp tài liệu.
+- [ ] Việc **watchdog** (API đọc `state`/`message` từ worker) — đã thành việc 3 của plan.
+- [ ] Đo lại bảng số live **có artifact** bằng `scripts/measure_live.py` (việc 1 của plan).
 
 ## 📚 Tài liệu tham khảo
 - `AGENTS.md` §9 (rule review độc lập + plan 3 ý kiến).
