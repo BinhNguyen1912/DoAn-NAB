@@ -351,6 +351,22 @@ Nguyên tắc đã giữ:
   `binh1_simloss` cho `empty_runs=14, mask_holds=4, mask_drops=2` — số liệu ở
   `data/live_2026-11-08_vos3_smoothing05_metrics.json` (có `git_rev` + lệnh chạy).
 
+### Chất lượng phân đoạn (mIoU mask vs ground-truth)
+
+Trước 08-11 repo **không có** con số nào về độ chính xác của mask (chỉ có IoU hộp bao). Đo trên
+fixture có **GT mask giải tích** (`src/synthetic_video.py`), laptop CPU, `image_size=320`:
+
+| Kịch bản | bbox IoU (trong che) | **mask mIoU** | mất dấu | mIoU sau khi ra khỏi vật cản |
+|---|---|---|---|---|
+| không bị che | 0,973 | **0,956** | 0/12 | — |
+| che 50 % | 0,53 | **0,892** | 0/6 | 0,959 |
+| che 100 % | 0,00 | **None** (GT rỗng) | 6/6 | 0,962 |
+
+> Đọc đúng: mask chỉ được tính trên phần **nhìn thấy**, nên khi bị che một nửa `bbox IoU` tụt còn
+> 0,53 trong khi `mIoU` vẫn 0,89 — phải báo **cả hai + tỷ lệ mất dấu**, đừng chọn số đẹp.
+> Số liệu: `data/occlusion_metrics_320_metrics.json`; lệnh: `./run occl`. **GT là giải tích trên
+> ảnh tổng hợp — không phải mIoU trên DAVIS/thật**, không được trích dẫn như vậy.
+
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:

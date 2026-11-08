@@ -161,6 +161,10 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   khi có clip bị che thật sự chứng minh được lợi ích.
 - **SAM 2 không tất định**: cùng seed, cùng video, hai lần chạy cho ô bao cuối khác nhau ⇒ chỉ so
   sánh chỉ số **trong cùng một lần chạy**.
+- **Chất lượng phân đoạn phải là mIoU mask vs GT, không phải IoU hộp bao.** Số hiện có (fixture
+  tổng hợp, image_size 320): mIoU **0,956** nền / **0,892** khi bị che 50 % / **None** khi che kín
+  (GT rỗng, 6/6 lần mất dấu) — `data/occlusion_metrics_320_metrics.json`. Quy tắc: metric IoU mà
+  một bên **rỗng** thì KHÔNG được tính là 1,0 (bẫy đã gặp 2 lần: `stability` và `mIoU`).
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo

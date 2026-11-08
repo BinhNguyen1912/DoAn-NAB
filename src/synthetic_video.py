@@ -11,6 +11,9 @@ Output : TrackingFixture gồm:
          - frames  : (N, H, W, 3) uint8
          - bboxes  : (N, 4) (x1, y1, x2, y2) — đáp án đúng, tiếp tục tính cả khi ô bị che
          - occluded: (N,) bool — frame nào ô bị che khuất
+         - masks   : (N, H, W) bool — ĐÁP ÁN MASK theo từng pixel (ô vuông trừ phần bị che).
+           Có mask GT mới đo được **chất lượng phân đoạn** (mIoU) — nếu chỉ có bbox thì mọi con
+           số "chất lượng" đều là IoU hộp bao, không trả lời được câu "mask có đúng không".
 Lưu ý  : hàm thuần, không random, chạy ngay trên CPU không cần model.
 """
 from dataclasses import dataclass
@@ -30,6 +33,7 @@ class TrackingFixture:
     bboxes: tuple        # N phần tử (x1, y1, x2, y2)
     occluded: np.ndarray  # (N,) bool
     frame_size: tuple    # (H, W)
+    masks: np.ndarray = None  # (N, H, W) bool — GT theo pixel (None nếu không sinh)
 
 
 def generate_tracking_sequence(
@@ -62,6 +66,7 @@ def generate_tracking_sequence(
             )
 
     frames = np.zeros((num_frames, height, width, 3), dtype=np.uint8)
+    masks = np.zeros((num_frames, height, width), dtype=bool)
     bboxes = []
     occluded = np.zeros(num_frames, dtype=bool)
 
@@ -70,13 +75,16 @@ def generate_tracking_sequence(
         x1, y1 = x, y
         x2, y2 = x + square_size, y + square_size
         frames[i, y1:y2, x1:x2, :] = SQUARE_COLOR
+        masks[i, y1:y2, x1:x2] = True     # GT pixel = ô vuông …
         if i in occlusion_frames:
             occluded[i] = True          # ô "lý thuyết" vẫn có vị trí, nhưng bị che một phần/toàn bộ
             cover_w = int(round((x2 - x1) * float(occlusion_fraction)))
             if cover_w > 0:             # vẽ "vật cản" che từ trái sang (như bàn tay che nửa mặt)
                 frames[i, y1:y2, x1:x1 + cover_w, :] = BACKGROUND_COLOR
+                masks[i, y1:y2, x1:x1 + cover_w] = False   # … trừ phần bị che ⇒ KHÔNG còn nhìn thấy
         bboxes.append((x1, y1, x2, y2))
         x += velocity[0]
         y += velocity[1]
 
-    return TrackingFixture(frames=frames, bboxes=tuple(bboxes), occluded=occluded, frame_size=frame_size)
+    return TrackingFixture(frames=frames, bboxes=tuple(bboxes), occluded=occluded,
+                           frame_size=frame_size, masks=masks)

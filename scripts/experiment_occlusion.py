@@ -24,6 +24,7 @@ _ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _ROOT not in sys.path:
     sys.path.insert(0, _ROOT)
 
+from src.mask_filter import mask_iou  # noqa: E402
 from src.synthetic_video import generate_tracking_sequence  # noqa: E402
 from src.tracker_engine import DEFAULT_CKPT, MODEL_CFG, TrackerEngine  # noqa: E402
 
@@ -39,8 +40,47 @@ def iou(a, b):
     return inter / union if union else 0.0
 
 
+def _mask_iou_or_nan(pred, gt):
+    """mIoU 1 frame; NaN khi không đo được (một trong hai mask rỗng)."""
+    if gt is None or pred is None or not gt.any() or not pred.any():
+        return float("nan")
+    return mask_iou(pred, gt)
+
+
+def summarize(ious, lost, mask_ious, occl, start, cover):
+    """Gom số của 1 kịch bản — cùng một chỗ cho cả bbox IoU và **mIoU mask vs GT**.
+
+    Vì sao cần mIoU: đề tài tên là *segmentation*; IoU hộp bao không trả lời được "mask có đúng
+    không". GT mask ở đây là giải tích (ô vuông trừ dải bị che) nên đo được **mọi frame**, không
+    phải gán tay vài chục frame.
+    """
+    a, b = start, start + cover
+
+    def _mean(values):
+        """Trung bình trên các frame ĐO ĐƯỢC; None nếu không có frame nào đo được."""
+        clean = np.asarray(values, dtype=float)
+        clean = clean[~np.isnan(clean)]
+        return round(float(clean.mean()), 4) if clean.size else None
+
+    return {
+        "bbox_iou_truoc": round(float(ious[1:a].mean()), 4) if a > 1 else None,
+        "bbox_iou_trong": round(float(ious[a:b].mean()), 4),
+        "bbox_iou_sau": round(float(ious[b:].mean()), 4),
+        # NaN = frame không đo được (GT rỗng do bị che kín, hoặc model trả mask rỗng):
+        # `mask_iou(rỗng, rỗng) = 1,0` nếu tính bừa sẽ biến "che kín" thành "phân đoạn hoàn hảo".
+        "mask_miou_truoc": _mean(mask_ious[1:a]) if a > 1 else None,
+        "mask_miou_trong": _mean(mask_ious[a:b]),
+        "mask_miou_sau": _mean(mask_ious[b:]),
+        "so_frame_do_miou": int(np.count_nonzero(~np.isnan(np.asarray(mask_ious, float)))),
+        "mat_dau_trong_che": int(lost[a:b].sum()),
+        "mat_dau_sau_che": int(lost[b:].sum()),
+        "so_frame": int(len(ious)),
+        "so_lan_cap_nhat_mask_trong_che": int(min(cover, sum(int(x) for x in occl[a:b]))),
+    }
+
+
 def run_scenario(engine, fraction, frames_n=30, cover=6, start_cover=12):
-    """Chạy 1 kịch bản che `fraction` (0..1) và trả (ious, lost, occluded)."""
+    """Chạy 1 kịch bản che `fraction` (0..1) và trả (bbox_ious, lost, occluded, mask_ious)."""
     fx = generate_tracking_sequence(
         num_frames=frames_n, frame_size=(360, 640), square_size=60,
         start=(80, 80), velocity=(8, 4),
@@ -50,11 +90,13 @@ def run_scenario(engine, fraction, frames_n=30, cover=6, start_cover=12):
     engine.reset()
     r = engine.start(fx.frames[0], fx.bboxes[0])
     ious, lost = [iou(r.bbox, fx.bboxes[0])], [int(not r.mask.any())]
+    mask_ious = [_mask_iou_or_nan(r.mask, fx.masks[0])]
     for i in range(1, frames_n):
         r = engine.process(fx.frames[i])
         ious.append(iou(r.bbox, fx.bboxes[i]))
         lost.append(int(not r.mask.any()))
-    return np.array(ious), np.array(lost), fx.occluded
+        mask_ious.append(_mask_iou_or_nan(r.mask, fx.masks[i]))
+    return np.array(ious), np.array(lost), fx.occluded, np.array(mask_ious)
 
 
 def _build_sam2_video_predictor(*args, **kwargs):
@@ -79,15 +121,18 @@ def main():
     engine = TrackerEngine(pred)
 
     scenarios = [(args.fraction, f"che {args.fraction * 100:.0f}%"), (1.0, "che 100%")]
-    results = []
+    results, summary = [], {}
     for frac, label in scenarios:
-        ious, lost, occl = run_scenario(engine, frac, frames_n=args.frames, cover=args.cover,
-                                       start_cover=args.start)
+        ious, lost, occl, mask_ious = run_scenario(engine, frac, frames_n=args.frames,
+                                                   cover=args.cover, start_cover=args.start)
         results.append((label, ious, lost, occl))
-        a, b = args.start, args.start + args.cover      # [a,b) = các khung bị che
-        print(f"[{label}] truoc che IoU TB={ious[1:a].mean():.3f} | trong che={ious[a:b].mean():.3f} "
-              f"(mat dau {lost[a:b].sum()}/{b - a}) | sau che={ious[b:].mean():.3f} "
-              f"(mat dau {lost[b:].sum()}/{len(ious) - b}, khung dau={ious[b]:.3f})")
+        row = summarize(ious, lost, mask_ious, occl, args.start, args.cover)
+        summary[label] = row
+        print(f"[{label}] bbox IoU: truoc={row['bbox_iou_truoc']} trong={row['bbox_iou_trong']} "
+              f"sau={row['bbox_iou_sau']} | MASK mIoU: truoc={row['mask_miou_truoc']} "
+              f"trong={row['mask_miou_trong']} sau={row['mask_miou_sau']} | "
+              f"mat dau: trong che {row['mat_dau_trong_che']}/{args.cover}, "
+              f"sau che {row['mat_dau_sau_che']}")
 
     fig, ax = plt.subplots(figsize=(9, 4.2))
     for label, ious, _lost, _occl in results:
@@ -105,6 +150,26 @@ def main():
     fig.savefig(png, dpi=130)
     plt.close(fig)
     print(f"[done] biểu đồ: {png}")
+
+    import json
+    import subprocess
+
+    artifact = {
+        "git_rev": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                                  cwd=_ROOT).stdout.strip(),
+        "moi_truong": "CPU (không GPU rời), torch bản CPU",
+        "image_size": args.image_size,
+        "so_frame": args.frames,
+        "khung_bi_che": [args.start, args.start + args.cover],
+        "ket_qua": summary,
+        "ghi_chu": "GT mask là GIẢI TÍCH (ô vuông trừ dải bị che) trên fixture tổng hợp — "
+                   "KHÔNG phải mIoU trên dataset thật; không được trích dẫn như số liệu DAVIS.",
+    }
+    path = os.path.join(_ROOT, "data",
+                        f"occlusion_metrics_{args.image_size}_metrics.json")
+    with open(path, "w", encoding="utf-8") as handle:
+        json.dump(artifact, handle, ensure_ascii=False, indent=2)
+    print(f"[done] số liệu: {path}")
 
 
 if __name__ == "__main__":
