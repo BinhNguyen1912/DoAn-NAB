@@ -61,6 +61,14 @@
 - **Đơn luồng không đạt 30 FPS** dù `vos_every=3`: 108 ms của model nằm ngay trong vòng phát.
   Xử lý: `_VosWorker` thread + nội suy LK từ frame VOS gần nhất. Đã kiểm chứng bằng số (18 → 29,8).
 - `time.sleep` không phải thủ phạm (đo riêng: sleep 20/33 ms chính xác 20,3/33,4 ms).
+- **CI đã ĐỎ từ 08-11 (5 commit, kể cả `main`)** — phát hiện khi mở PR #4, không phải do Phase 4c:
+  1. `test_schema_sinh_ra_co_du_endpoint` so **bằng** tập path OpenAPI; máy dev có `web/dist` nên
+     route `/` được mount dạng StaticFiles (không vào OpenAPI), còn CI **không build** frontend nên
+     `/` là fallback route ⇒ lệch. Sửa: khẳng định **tập bắt buộc ⊆ thực tế** + chặn endpoint lạ
+     (bỏ qua `/`), kèm giải thích ngay trong docstring.
+  2. `test_stream_tra_multipart_mjpeg` treo > 120 s trên CI (starlette/httpx mới đệm cả body của
+     luồng MJPEG vô hạn). Sửa: chỉ kiểm **header** của route; định dạng part (Content-Length + magic
+     JPEG) đã được kiểm ở tầng service. Ghi rõ lý do trong test để không ai "sửa lại cho chặt".
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] HUD/UI hiện `vos_fps` để người xem biết mask đang mới ở nhịp nào (hiện chỉ trong status.json).

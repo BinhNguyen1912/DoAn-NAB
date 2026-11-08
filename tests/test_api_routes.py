@@ -191,8 +191,10 @@ class TestDelete:
 
 class TestHopDongOpenApi:
     def test_schema_sinh_ra_co_du_endpoint(self, client):
+        """Mọi endpoint phải có trong OpenAPI; "/" KHÔNG tính (nó xuất hiện hay không tuỳ
+        `web/dist` có được build hay không — CI không build nên có fallback "/" — bug CI 08-11)."""
         paths = client.get("/openapi.json").json()["paths"]
-        assert set(paths) == {
+        bat_buoc = {
             "/health",
             "/api/jobs",
             "/api/jobs/{job_id}",
@@ -206,6 +208,10 @@ class TestHopDongOpenApi:
             "/api/live/frame",
             "/api/live/stream",
         }
+        assert bat_buoc <= set(paths), f"thiếu endpoint: {bat_buoc - set(paths)}"
+        # không có endpoint lạ ngoài danh sách (bỏ "/" — phụ thuộc web/dist)
+        la = {p for p in paths if p != "/" and p not in bat_buoc}
+        assert not la, f"endpoint chưa khai báo trong test: {la}"
         assert "delete" in paths["/api/jobs/{job_id}"]
 
     def test_json_tra_ve_khong_co_bytes(self, client):

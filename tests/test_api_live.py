@@ -113,14 +113,19 @@ class TestLiveRoutes:
         assert live_client.get("/api/live/stream").status_code == 409
 
     def test_stream_tra_multipart_mjpeg(self, live_client):
+        """Chỉ kiểm HEADER của route stream.
+
+        Lưu ý (bug CI 08-11): đọc phần thân đầu tiên của MJPEG vô hạn qua `TestClient` treo trên
+        CI (starlette/httpx mới đệm cả body) — timeout 120 s. ĐỊNH DẠNG part đã được kiểm ở tầng
+        service (`test_luong_frames_sinh_ra_part_dung_dinh_dang_mjpeg`, có cả Content-Length),
+        nên ở đây chỉ cần route trả đúng content-type.
+        """
         live_client.post("/api/live/start", json={"source": "0"})
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 1)
 
         with live_client.stream("GET", "/api/live/stream") as response:
             assert response.status_code == 200
             assert "multipart/x-mixed-replace" in response.headers["content-type"]
-            first = next(response.iter_raw())
-            assert first.startswith(b"--frame")
 
         live_client.post("/api/live/stop")
 
