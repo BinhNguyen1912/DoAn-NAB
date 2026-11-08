@@ -144,6 +144,11 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `EDGE_MIN_AREA_FRAC` (0,35) diện tích EMA; dải rác sát mép vẫn bị chặn. `HINT_CHAM_MEP` chỉ in
   khi **không lưu được mẫu nào**. Chi tiết:
   `docs/task/05-11-2026-tang-toc-256-toi-uu-hud-va-nguon-snapshot.md` (mục "Bổ sung 14:00").
+- **Live: model 108 ms (@192) mà hình vẫn 30 FPS là nhờ LUỒNG RIÊNG + LK** (`src/light_tracker.py`,
+  `_VosWorker` trong `src/live_tracking.py`). Đo thật: đơn luồng **18 FPS**, tách luồng **29,8 FPS**
+  (`vos_every=3`, VOS 8,5 lần/giây). Đừng "tối ưu" bằng cách tăng `vos_every` — hình đã chạm trần
+  30 FPS, chỉ mask cũ đi. **Mask vẫn ~8,5 FPS**, cấm claim 30 FPS cho mask.
+  Chi tiết: `docs/task/09-11-2026-hybrid-vos-lk-30fps-live.md`.
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo

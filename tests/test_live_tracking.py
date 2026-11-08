@@ -64,7 +64,9 @@ def video_source(write_video, tmp_path):
 
 
 def _config(source, tmp_path, **kwargs):
-    return LiveTrackConfig(source=source, out_dir=tmp_path / "live", max_fps=100, **kwargs)
+    # vos_every=1: chạy VOS mỗi frame để test logic cũ (hybrid có test riêng bên dưới)
+    return LiveTrackConfig(source=source, out_dir=tmp_path / "live", display_fps=100,
+                           vos_every=1, **kwargs)
 
 
 class TestLiveTrackingSession:
@@ -107,8 +109,8 @@ class TestLiveTrackingSession:
         LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
-        assert set(status) == {"state", "frames", "measured_fps", "inference_ms",
-                               "lost_streak", "bbox", "message"}
+        assert set(status) == {"state", "frames", "vos_runs", "measured_fps", "vos_fps",
+                               "vos_ms", "lk_ms", "lost_streak", "bbox", "message"}
 
     def test_file_duoc_lap_lai_khi_chay_lien_tuc(self, video_source, tmp_path):
         """Video 6 frame nhưng chạy liên tục → phải lặp lại, không dừng ở frame 6."""
@@ -180,3 +182,109 @@ class TestLenhWorker:
 
         assert "--image-size" not in build_live_worker_command("0", tmp_path,
                                                                repo_root=tmp_path)[2]
+
+
+def _pre_select(out_dir, bbox=(20, 12, 10, 10)):
+    """Ghi sẵn ô chọn (như người dùng đã kéo trên UI) để vào thẳng chế độ bám."""
+    out_dir = out_dir if isinstance(out_dir, __import__("pathlib").Path) else __import__("pathlib").Path(out_dir)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / BBOX_NAME).write_text(
+        json.dumps({"x": bbox[0], "y": bbox[1], "w": bbox[2], "h": bbox[3]}), encoding="utf-8"
+    )
+
+
+class _SlowFakeEngine(FakeEngine):
+    """Engine giả ĐẮT như SAM 2 thật: mỗi lần process "tốn" thời gian để lộ chi phí thật."""
+
+    def __init__(self, cost_s=0.05):
+        super().__init__()
+        self.cost_s = cost_s
+
+    def process(self, frame):
+        import time
+
+        time.sleep(self.cost_s)
+        return super().process(frame)
+
+
+@pytest.fixture
+def textured_video(write_video, tmp_path):
+    """Video có TEXTURE + ô sáng dịch dần: LK cần gradient mới bám được (nền phẳng thì LK bó tay)."""
+    rng = np.random.default_rng(11)
+    frames = []
+    for step in range(12):
+        frame = rng.integers(50, 110, size=(48, 64, 3), dtype=np.uint8)
+        x = 20 + step
+        frame[12:22, x:x + 10] = 230
+        frames.append(frame)
+    return str(write_video(tmp_path / "textured.mp4", np.stack(frames), fps=10))
+
+
+class TestHybridVosAndLk:
+    """Phase 4c: VOS cách quãng + LK lấp frame giữa (mask chỉ mới ở nhịp VOS)."""
+
+    def test_chi_chay_vos_moi_n_frame(self, textured_video, tmp_path):
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out)
+        config = LiveTrackConfig(source=textured_video, out_dir=out,
+                                 display_fps=100, vos_every=3, loop_files=True)
+        stats = LiveTrackingSession(engine, config).run(stop_event=_StopAfter(24))
+
+        # literal: start() 1 lần + process() cho các frame index chia hết cho 3
+        assert stats.frames >= 11
+        assert stats.vos_runs == engine.processed
+        assert stats.vos_runs < stats.frames, "VOS phải chạy ÍT hơn số frame phát"
+        assert stats.vos_runs <= stats.frames // 2
+
+    def test_frame_lk_van_co_o_bao_va_mask(self, textured_video, tmp_path):
+        """Frame LK phải cho ra ô bao + mask DỊCH theo (không phải mask cũ đứng yên)."""
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=4, loop_files=True))
+        stats = session.run(stop_event=_StopAfter(24))
+
+        assert stats.bbox[0] > 0            # ô bao vẫn tiến theo thời gian nhờ LK
+        assert stats.lk_ms > 0             # có frame LK thật
+        assert stats.vos_ms > 0            # và có frame VOS thật
+        assert stats.lost_streak == 0
+
+    def test_vos_every_1_thi_tat_lk(self, textured_video, tmp_path):
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True)).run(stop_event=_StopAfter(8))
+
+        assert stats.vos_runs == stats.frames      # VOS mỗi frame, không có frame LK
+        assert stats.lk_ms == 0.0
+
+    def test_hud_va_status_co_so_lieu_hai_nhip(self, textured_video, tmp_path):
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True)).run(stop_event=_StopAfter(20))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["vos_runs"] > 0
+        assert status["frames"] > status["vos_runs"]
+        assert status["vos_ms"] > 0
+        # HUD phải tách nhịp VOS khỏi nhịp phát — không được gộp thành một con số FPS
+        assert set(status) >= {"vos_fps", "vos_ms", "lk_ms"}
+
+    def test_engine_dat_thi_display_fps_cao_hon_vos_fps(self, textured_video, tmp_path):
+        """Bằng chứng cho mục tiêu Phase 4c: model tốn 50 ms nhưng vòng phát vẫn nhanh hơn."""
+        engine = _SlowFakeEngine(cost_s=0.05)
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=4,
+            loop_files=True)).run(stop_event=_StopAfter(24))
+
+        assert stats.measured_fps > stats.vos_fps, (
+            f"hybrid không có tác dụng: display {stats.measured_fps} vs VOS {stats.vos_fps}")

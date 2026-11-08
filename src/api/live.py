@@ -49,7 +49,7 @@ class LiveStreamService:
     # ------------------------------------------------------------------ lệnh
 
     def start(self, source: str, *, mode: str = "raw", bbox=None,
-              image_size: int | None = None) -> LiveStatus:
+              image_size: int | None = None, vos_every: int | None = None) -> LiveStatus:
         """Mở nguồn và bắt đầu phát.
 
         mode="raw"   : phát khung hình gốc (nhanh, không cần model).
@@ -59,7 +59,7 @@ class LiveStreamService:
         with self._lock:
             self._stop_locked()
 
-        candidate = self._make_source(str(source), mode, bbox, image_size)
+        candidate = self._make_source(str(source), mode, bbox, image_size, vos_every)
         try:
             candidate.start()
         except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400

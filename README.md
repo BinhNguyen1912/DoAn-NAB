@@ -306,6 +306,11 @@ curl -X POST localhost:8000/api/live/start -H 'Content-Type: application/json' \
      -d '{"source": "data/video.mp4", "mode": "track",
           "bbox": {"x": 120, "y": 80, "w": 60, "h": 60}, "image_size": 192}'
 
+# vos_every: chạy model mỗi N frame; các frame còn lại nội suy bằng LK optical flow
+#             (mặc định 3; 1 = model mỗi frame, tắt LK)
+curl -X POST localhost:8000/api/live/start -H 'Content-Type: application/json' \
+     -d '{"source": "0", "mode": "track", "bbox": {"x":120,"y":80,"w":60,"h":60}, "vos_every": 3}'
+
 curl localhost:8000/api/live/status     # state, frames, measured_fps (FPS THỰC ĐO)
 curl localhost:8000/api/live/frame      # 1 frame JPEG (để đóng băng & kéo chuột chọn đối tượng)
 curl -X POST localhost:8000/api/live/stop
@@ -314,17 +319,28 @@ curl -X POST localhost:8000/api/live/stop
 Trên giao diện: mục **4. Phát trực tiếp** → nhập nguồn → *Bật phát* → *Chọn đối tượng để bám* →
 kéo chuột → *Bám đối tượng*.
 
-**Số đo trên máy này** (video 160×120, `image_size=192`): **10,6 FPS · 98 ms/frame**, `lost_streak=0`
-— khớp số đo CLI (~97 ms). `image_size` mặc định cho live là **192**; để 1024 (mặc định SAM 2) chỉ
-còn **~0,4 FPS** (đo 08-11: 2 frame trong 6 s) nên rất dễ tưởng là treo.
+**Số đo trên máy này** (`data/binh1.mp4` 1280×720, `image_size=192`, 30 s/phiên):
+
+| `vos_every` | FPS hiển thị | Nhịp mask mới (VOS) | VOS ms | LK ms |
+|---|---|---|---|---|
+| 1 (tắt LK) | 10,1 | 10,1 | 78 | — |
+| **3 (mặc định)** | **29,8** | 8,5 | 108 | 4,6 |
+| 6 | 29,8 | 5,0 | 94 | 4,5 |
+| 10 | 29,8 | 3,0 | 70 | 3,1 |
+
+`image_size` mặc định cho live là **192**; để 1024 (mặc định SAM 2) chỉ còn **~0,4 FPS**
+(đo 08-11: 2 frame trong 6 s) nên rất dễ tưởng là treo.
 
 Nguyên tắc đã giữ:
 - **API không import torch/SAM 2**: worker (`tools/live_worker.py`) chạy ở tiến trình riêng, ghi
   `frame.jpg` + `status.json` vào `/dev/shm/doan-live` (tmpfs), API chỉ đọc file mới nhất.
 - **FPS báo cáo = frame MỚI thực sự**, không phải số lần đọc file (bug thật 08-11: API báo 15 FPS
   trong khi worker bám được 0,4 FPS).
-- Hybrid **VOS ~10 FPS + LK 30 FPS** (ADR-nghiên cứu `docs/research/09`) là bước tiếp theo, **chưa có**:
-  hiện tại mỗi frame hiển thị đều là 1 lần suy luận thật.
+- **Hybrid VOS + LK (Phase 4c)**: model chạy ở **luồng riêng**, luồng phát chỉ đọc frame + nội suy
+  bằng LK (`src/light_tracker.py`, ~2–5 ms) + vẽ + ghi. Chạy đơn luồng chỉ được 18 FPS vì 108 ms
+  của model chặn nhịp phát; tách luồng mới đạt 29,8 FPS.
+- **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,5 lần/giây với `vos_every=3`); giữa hai
+  lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS".
 
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"

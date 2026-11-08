@@ -31,8 +31,9 @@ from src.live_tracking import (  # noqa: E402
 
 def _write_loading(out_dir: Path, message: str = "Đang nạp model...") -> None:
     write_json_atomic(out_dir / "status.json", {
-        "state": STATE_LOADING, "frames": 0, "measured_fps": 0.0, "inference_ms": 0.0,
-        "lost_streak": 0, "bbox": [], "message": message,
+        "state": STATE_LOADING, "frames": 0, "vos_runs": 0, "measured_fps": 0.0,
+        "vos_fps": 0.0, "vos_ms": 0.0, "lk_ms": 0.0, "lost_streak": 0, "bbox": [],
+        "message": message,
     })
 
 
@@ -45,8 +46,10 @@ def main() -> int:
     parser.add_argument("--out-dir", required=True, help="thư mục chia sẻ với API (nên ở /dev/shm)")
     parser.add_argument("--image-size", type=int, default=None,
                         help="độ phân giải model (192 ≈ 10 FPS, 256 ≈ 6,5 FPS trên CPU)")
-    parser.add_argument("--max-fps", type=float, default=15.0,
-                        help="nhịp ĐỌC frame tối đa (model có thể chậm hơn — số FPS thật ghi ở status)")
+    parser.add_argument("--max-fps", type=float, default=30.0,
+                        help="nhịp PHÁT frame (display). VOS có thể chậm hơn — LK lấp phần giữa")
+    parser.add_argument("--vos-every", type=int, default=3,
+                        help="chạy VOS mỗi N frame (1 = VOS mỗi frame, tắt LK; mask mới ở nhịp 1/N)")
     parser.add_argument("--trajectory-len", type=int, default=100)
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
@@ -74,12 +77,14 @@ def main() -> int:
     config = LiveTrackConfig(
         source=args.source,
         out_dir=out_dir,
-        max_fps=args.max_fps,
+        display_fps=args.max_fps,
+        vos_every=args.vos_every,
         trajectory_len=args.trajectory_len,
         stop_after_frames=args.stop_after_frames,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
-    print(f"[worker] kết thúc: {stats.frames} frame, FPS đo {stats.measured_fps}", flush=True)
+    print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "
+          f"display {stats.measured_fps} FPS | VOS {stats.vos_fps} FPS", flush=True)
     return 0
 
 

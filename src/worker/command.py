@@ -76,7 +76,8 @@ def build_command(job_dir, *, params: dict, bbox, python_exe: str | None = None,
 
 
 def build_live_worker_command(source: str, out_dir, *, image_size: int | None = None,
-                              max_fps: float = 15.0, python_exe: str | None = None,
+                              max_fps: float = 30.0, vos_every: int | None = None,
+                              python_exe: str | None = None,
                               repo_root: Path | None = None) -> list[str]:
     """Trả argv chạy worker bám trực tiếp (tools/live_worker.py) trong conda env.
 
@@ -94,5 +95,7 @@ def build_live_worker_command(source: str, out_dir, *, image_size: int | None = 
     ]
     if image_size:
         args += ["--image-size", str(int(image_size))]
+    if vos_every:
+        args += ["--vos-every", str(max(1, int(vos_every)))]
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
     return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]
