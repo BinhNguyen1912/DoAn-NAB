@@ -1,4 +1,4 @@
-# Ngày 09-11-2026 — Hybrid VOS + LK: live 30 FPS, mask vẫn ~8,5 FPS
+# Ngày 08-11-2026 — Hybrid VOS + LK: live 30 FPS, mask vẫn ~8,5 FPS
 
 ## 🎯 Mục tiêu
 - Phase 4c: hình live mượt **~30 FPS** trên laptop CPU (trần VOS @192 là ~10 FPS).

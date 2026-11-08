@@ -19,7 +19,7 @@ from collections import deque
 from typing import Callable, Iterator
 
 from src.api.domain import LiveState, LiveStatus, SourceUnavailable
-from src.api.ports import FrameSource
+from src.api.ports import FrameSource, LiveTelemetrySource
 
 logger = logging.getLogger("doan.api.live")
 
@@ -49,7 +49,8 @@ class LiveStreamService:
     # ------------------------------------------------------------------ lệnh
 
     def start(self, source: str, *, mode: str = "raw", bbox=None,
-              image_size: int | None = None, vos_every: int | None = None) -> LiveStatus:
+              image_size: int | None = None, vos_every: int | None = None,
+              mask_smoothing: float | None = None) -> LiveStatus:
         """Mở nguồn và bắt đầu phát.
 
         mode="raw"   : phát khung hình gốc (nhanh, không cần model).
@@ -59,7 +60,8 @@ class LiveStreamService:
         with self._lock:
             self._stop_locked()
 
-        candidate = self._make_source(str(source), mode, bbox, image_size, vos_every)
+        candidate = self._make_source(str(source), mode, bbox, image_size, vos_every,
+                                      mask_smoothing)
         try:
             candidate.start()
         except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400
@@ -98,13 +100,24 @@ class LiveStreamService:
 
     def status(self) -> LiveStatus:
         with self._lock:
-            return LiveStatus(
+            source = self._source
+            base = dict(
                 state=self._state,
                 source=self._label,
                 frames=self._frames,
                 measured_fps=self._measured_fps_locked(),
                 message=self._message,
             )
+        # Đọc số liệu chi tiết NGOÀI lock (đọc file, có thể chậm) — nguồn không hỗ trợ thì bỏ qua
+        if isinstance(source, LiveTelemetrySource):
+            try:
+                detail = source.telemetry()
+            except Exception:                      # noqa: BLE001 — số liệu hỏng không được làm sập API
+                detail = None
+            if detail is not None:
+                base.update(mask_fps=detail.mask_fps, stability=detail.stability,
+                            latency_ms=detail.latency_ms)
+        return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:
         """Frame mới nhất (None khi chưa có) — dùng cho endpoint chụp 1 ảnh."""

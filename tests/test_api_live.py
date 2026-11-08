@@ -35,6 +35,28 @@ class TestLiveStreamService:
         assert live_service.latest_jpeg().startswith(b"\xff\xd8fake-frame")
         assert live_service.status().measured_fps > 0
 
+    def test_nguon_co_telemetry_thi_status_phoi_so_lieu(self, live_service, monkeypatch):
+        """Nguồn là LiveTelemetrySource (worker) ⇒ status có mask_fps/stability/latency_ms."""
+        from src.api.domain import LiveTelemetry
+
+        from tests.conftest import FakeFrameSource
+
+        class _TelemetrySource(FakeFrameSource):
+            def telemetry(self):
+                return LiveTelemetry(mask_fps=8.6, stability=0.96, latency_ms=108.0, lk_ms=4.6)
+
+        monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _TelemetrySource("0"))
+        live_service.start("0")
+        status = live_service.status()
+        assert (status.mask_fps, status.stability, status.latency_ms) == (8.6, 0.96, 108.0)
+        live_service.stop()
+
+    def test_nguon_khong_co_telemetry_thi_so_lieu_bang_0(self, live_service, make_frame_source):
+        live_service.start("0")     # FakeFrameSource: chỉ có frame, không có số liệu chi tiết
+        status = live_service.status()
+        assert (status.mask_fps, status.stability) == (0.0, 0.0)
+        live_service.stop()
+
     def test_stop_dong_nguon_va_xoa_frame(self, live_service, make_frame_source):
         live_service.start("0")
         source = make_frame_source.created[-1]
@@ -95,7 +117,8 @@ class TestLiveRoutes:
         body = r.json()
         assert body["state"] == "running"
         assert body["source"] == "giả:0"
-        assert set(body) == {"state", "source", "frames", "measured_fps", "message"}
+        assert set(body) == {"state", "source", "frames", "measured_fps", "mask_fps",
+                             "stability", "latency_ms", "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
         assert live_client.get("/api/live/status").json()["state"] == "running"
@@ -139,17 +162,20 @@ class TestLiveRoutes:
         """Phase 4c: `vos_every` phải đi từ JSON request → service → nhà máy nguồn (worker)."""
         seen = {}
 
-        def spy(source, mode="raw", bbox=None, image_size=None, vos_every=None):
+        def spy(source, mode="raw", bbox=None, image_size=None, vos_every=None,
+                mask_smoothing=None):
             from tests.conftest import FakeFrameSource
 
-            seen.update(mode=mode, image_size=image_size, vos_every=vos_every)
+            seen.update(mode=mode, image_size=image_size, vos_every=vos_every,
+                        mask_smoothing=mask_smoothing)
             return FakeFrameSource(source)
 
         monkeypatch.setattr(live_client.app.state.live, "_make_source", spy)
         r = live_client.post("/api/live/start",
                              json={"source": "0", "mode": "track", "vos_every": 6})
         assert r.status_code == 200
-        assert seen == {"mode": "track", "image_size": None, "vos_every": 6}
+        assert seen == {"mode": "track", "image_size": None, "vos_every": 6,
+                        "mask_smoothing": None}
         live_client.post("/api/live/stop")
 
     @pytest.mark.parametrize("bad", [0, 31, "ba"])

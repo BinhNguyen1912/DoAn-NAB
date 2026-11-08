@@ -93,13 +93,24 @@ class TestLiveTrackingSession:
         stats = LiveTrackingSession(engine, _config(video_source, tmp_path,
                                                      stop_after_frames=3)).run()
 
-        # SAM 2 dùng prompt dạng (x, y, w, h) — giữ nguyên, không đổi sang x1y1x2y2
-        assert engine.started_with == (5, 5, 20, 16)
+        # bbox.json là (x, y, w, h); SAM 2 nhận (x1, y1, x2, y2) ⇒ (5,5,5+20,5+16)
+        assert engine.started_with == (5, 5, 25, 21)
         assert stats.frames == 3
         assert stats.measured_fps > 0
         assert stats.bbox and len(stats.bbox) == 4
         frame = (out / FRAME_NAME).read_bytes()
         assert frame[:2] == b"\xff\xd8"                    # JPEG hợp lệ
+
+    def test_o_chon_xywh_duoc_doi_sang_xyxy_truoc_khi_start(self, video_source, tmp_path):
+        """`bbox.json` là (x, y, w, h) nhưng SAM 2 nhận (x1, y1, x2, y2) — bug thật 10-11."""
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out, (10, 12, 20, 24))          # x=10, y=12, w=20, h=24
+        LiveTrackingSession(engine, LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True)).run(stop_event=_StopAfter(3))
+
+        assert engine.started_with == (10, 12, 30, 36), "phải là (x1,y1,x2,y2), không phải (x,y,w,h)"
 
     def test_status_duoc_ghi_moi_frame(self, video_source, tmp_path):
         out = tmp_path / "live"
@@ -110,7 +121,8 @@ class TestLiveTrackingSession:
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert set(status) == {"state", "frames", "vos_runs", "measured_fps", "vos_fps",
-                               "vos_ms", "lk_ms", "lost_streak", "bbox", "message"}
+                               "vos_ms", "lk_ms", "stability", "stability_shown", "mask_holds",
+                               "mask_drops", "lost_streak", "bbox", "message"}
 
     def test_file_duoc_lap_lai_khi_chay_lien_tuc(self, video_source, tmp_path):
         """Video 6 frame nhưng chạy liên tục → phải lặp lại, không dừng ở frame 6."""
@@ -288,3 +300,77 @@ class TestHybridVosAndLk:
 
         assert stats.measured_fps > stats.vos_fps, (
             f"hybrid không có tác dụng: display {stats.measured_fps} vs VOS {stats.vos_fps}")
+
+
+class _BlinkingEngine(FakeEngine):
+    """Engine giả NHẤP NHÁY: cứ mỗi lần gọi lại trả mask rỗng (mô phỏng model "chớp" mất vật)."""
+
+    def __init__(self):
+        super().__init__()
+        self._blink = False
+
+    def process(self, frame):
+        result = super().process(frame)
+        self._blink = not self._blink
+        if self._blink:
+            result.mask = np.zeros(frame.shape[:2], dtype=bool)
+        return result
+
+
+class TestMaskStability:
+    """Phase 4d: làm mượt mask + đo độ ổn định (IoU giữa hai mask VOS liên tiếp)."""
+
+    def _run(self, tmp_path, engine, smoothing):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(engine, LiveTrackConfig(
+            source=str(tmp_path / "x.mp4"), out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=smoothing))
+        drawn = []
+        session._annotate = lambda frame, result, _d=drawn: (
+            _d.append(getattr(result, "mask", None)), frame.copy())[1]
+        stats = session.run(stop_event=_StopAfter(10))
+        return stats, drawn
+
+    def test_lam_muot_khong_de_mask_chop_tat(self, textured_video, tmp_path, monkeypatch):
+        monkeypatch.setattr(LiveTrackConfig, "source", str(textured_video), raising=False)
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(_BlinkingEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=0.5))
+        drawn = []
+        session._annotate = lambda frame, result, _d=drawn: (
+            _d.append(getattr(result, "mask", None)), frame.copy())[1]
+        session.run(stop_event=_StopAfter(12))
+
+        assert drawn, "phải có frame được vẽ"
+        # bỏ frame đầu (chưa có mẫu để trộn) — các frame sau không được TẮT hẳn
+        assert all(m is not None and m.any() for m in drawn[1:]), \
+            "mask chớp tắt lọt ra màn hình dù đã bật làm mượt"
+
+    def test_tat_lam_muot_thi_mask_chop_van_lo_ra(self, textured_video, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(_BlinkingEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=1.0))
+        drawn = []
+        session._annotate = lambda frame, result, _d=drawn: (
+            _d.append(getattr(result, "mask", None)), frame.copy())[1]
+        stats = session.run(stop_event=_StopAfter(12))
+
+        assert any(m is not None and not m.any() for m in drawn), \
+            "tắt làm mượt thì phải thấy đúng hiện tượng nhấp nháy (test đối chứng)"
+        assert stats.stability < 1.0, "mask nhấp nháy ⇒ stability < 1"
+
+    def test_status_co_do_on_dinh(self, textured_video, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            loop_files=True))
+        session.run(stop_event=_StopAfter(12))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert 0.0 <= status["stability"] <= 1.0

@@ -12,7 +12,7 @@ Lưu ý  : KHÔNG import adapter cụ thể ở đây. Đổi filesystem → SQL
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Protocol, runtime_checkable
 
-from src.api.domain import Job, JobStatus
+from src.api.domain import Job, JobStatus, LiveTelemetry
 
 
 @runtime_checkable
@@ -104,3 +104,15 @@ class FrameSource(Protocol):
     @property
     def label(self) -> str:
         """Mô tả nguồn để hiện trên UI."""
+
+
+@runtime_checkable
+class LiveTelemetrySource(Protocol):
+    """Nguồn frame có SỐ LIỆU CHI TIẾT (hiện thực: WorkerFrameSource đọc status.json của worker).
+
+    Tách thành port riêng: nguồn chỉ đưa frame (webcam, file) không cần biết gì về nhịp model.
+    Service kiểm `isinstance(source, LiveTelemetrySource)` để quyết định có đọc số liệu hay không.
+    """
+
+    def telemetry(self) -> "LiveTelemetry":
+        """Số liệu mới nhất của nguồn (rỗng/0 nếu worker chưa ghi)."""

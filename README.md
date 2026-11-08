@@ -321,12 +321,15 @@ kéo chuột → *Bám đối tượng*.
 
 **Số đo trên máy này** (`data/binh1.mp4` 1280×720, `image_size=192`, 30 s/phiên):
 
-| `vos_every` | FPS hiển thị | Nhịp mask mới (VOS) | VOS ms | LK ms |
-|---|---|---|---|---|
-| 1 (tắt LK) | 10,1 | 10,1 | 78 | — |
-| **3 (mặc định)** | **29,8** | 8,5 | 108 | 4,6 |
-| 6 | 29,8 | 5,0 | 94 | 4,5 |
-| 10 | 29,8 | 3,0 | 70 | 3,1 |
+| `vos_every` | FPS hiển thị | Nhịp mask mới (VOS) | VOS ms | LK ms | IoU mask liên tiếp |
+|---|---|---|---|---|---|
+| 1 (tắt LK) | 8,8 | 8,8 | 87 | — | 0,990 |
+| **3 (mặc định)** | **29,9** | 8,6 | 100 | 2,7 | 0,963 |
+| 6 | 29,8 | 5,1 | 88 | 3,2 | 0,921 |
+
+> Số **đo lại ngày 08-11** sau khi sửa bug ô chọn `(x,y,w,h)` → `(x1,y1,x2,y2)` (xem
+> `docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md`). Bảng cũ (10,1 FPS) đo bằng ô chọn
+> SAI nên chỉ giữ làm mốc lịch sử.
 
 `image_size` mặc định cho live là **192**; để 1024 (mặc định SAM 2) chỉ còn **~0,4 FPS**
 (đo 08-11: 2 frame trong 6 s) nên rất dễ tưởng là treo.
@@ -339,8 +342,12 @@ Nguyên tắc đã giữ:
 - **Hybrid VOS + LK (Phase 4c)**: model chạy ở **luồng riêng**, luồng phát chỉ đọc frame + nội suy
   bằng LK (`src/light_tracker.py`, ~2–5 ms) + vẽ + ghi. Chạy đơn luồng chỉ được 18 FPS vì 108 ms
   của model chặn nhịp phát; tách luồng mới đạt 29,8 FPS.
-- **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,5 lần/giây với `vos_every=3`); giữa hai
-  lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS".
+- **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,6 lần/giây với `vos_every=3`); giữa hai
+  lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS". UI hiện đúng hai nhịp
+  (`/api/live/status` có `mask_fps`, `stability`, `latency_ms`), nguồn không có model thì ẩn dòng.
+- **Chống nhấp nháy mask (`--mask-smoothing`, mặc định 1.0 = TẮT):** đã đo 3 clip — bộ lọc giữ mask
+  (`holds`) kích hoạt 0 lần trên `binh1`/`binh1_simloss`, và trên `binh2` nó **không** làm IoU hiển
+  thị cao hơn (0,681 vs 0,706) ⇒ để tắt theo mặc định, bật bằng `--mask-smoothing 0.5` khi cần.
 
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
