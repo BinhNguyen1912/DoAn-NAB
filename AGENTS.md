@@ -172,15 +172,21 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   (`stability`, `mIoU`, và một test).
 - **Artifact số đo phải có `git_rev` == commit code đang chạy, `git_dirty`, `lenh`, `do_luc`.**
   Số đo trên working tree bẩn thì không tái lập được (review 08-11 bắt đúng lỗi này).
-- **`stability` KHÔNG phải thước đo độ chính xác.** Thước đo độ chính xác là **mIoU mask vs GT**
-  (hiện chỉ có trên fixture) và **`drift_iou`** (LK nội suy lệch bao nhiêu so với lần VOS kế tiếp).
-  `stability` chỉ nói mask có nhấp nháy không — mask sai mà ổn định vẫn 0,96.
-- **Mọi so sánh A/B phải nêu ngưỡng nhiễu** (`scripts/repeatability.py`). Đo 3 lần cùng cấu hình
-  (08-11): `drift_iou` ±0,003; `vos_fps` ±7,3 %; `measured_fps` ±3,4 %; `mask_age_p95` ±4,6 %.
-  Chênh lệch nhỏ hơn các mức đó ⇒ phải viết **"không phân biệt được"**, không được viết "tốt hơn".
-- **Hybrid chỉ giữ được ô bao trên một số clip**: binh1 drift 0,93 (p05 0,80), simloss 0,92 (p05 0,78),
-  **binh2 p05 = 0,00 (LK mất dấu, 22 lần mask rỗng)**. Cấm phát biểu "hybrid luôn bám được" — phải
-  nêu clip + drift đo được.
+- **`stability` KHÔNG phải thước đo độ chính xác.** `drift_iou` cũng KHÔNG: nó là **độ tự nhất quán**
+  của ô đang hiển thị so với lần VOS kế tiếp (VOS bám lệch hệ thống mà ổn định thì drift vẫn cao).
+  Độ chính xác chỉ có **mIoU mask vs GT**. `stability` chỉ nói mask có nhấp nháy không.
+- **Mọi so sánh A/B phải nêu ngưỡng nhiễu** (`scripts/repeatability.py`; đo 3 lần cùng cấu hình
+  08-11/192): `drift_iou` ±0,004, `drift_iou_p05` ±0,057, `vos_fps` ±1,2 %, `measured_fps` ±0,3 %,
+  `mask_age_p95` ±3 ms. Chênh lệch nhỏ hơn ⇒ viết **"không phân biệt được"**, không viết "tốt hơn".
+  Ngưỡng chỉ đúng cho **cùng clip + cùng cấu hình**; `n < 2` (một lần chạy) thì không kết luận được gì.
+- **`vos_every` KHÔNG phải nút điều khiển độ tươi của mask.** Ở 192, VOS chỉ chạy 7,5–8,7 lần/giây
+  (`vos_ms` ≈ 130 ms) nên tuổi dữ liệu ảnh người xem thấy p95 ≈ **210–250 ms ở vos_every 2, 3 và 6**
+  như nhau. Báo cáo phải nói "HUD 30 FPS, mask lấy từ model cũ ~0,2 s" — cấm viết "mask 30 FPS".
+- **Hybrid chỉ giữ được ô bao trên một số clip**: binh1 drift 0,88–0,89 (p05 0,66–0,72), simloss 0,87
+  (p05 0,64), **binh2 p05 = 0,00 (VOS trả mask rỗng 26 lần; `mask_drops`/`lost_streak` = 0 nên KHÔNG
+  phải LK mất dấu)**. Cấm phát biểu "hybrid luôn bám được" — phải nêu clip + drift đo được.
+- **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
+  khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo

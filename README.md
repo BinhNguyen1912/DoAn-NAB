@@ -327,12 +327,17 @@ kéo chuột → *Bám đối tượng*.
 | **3 (mặc định)** | **29,9** | 8,6 | 100 | 2,7 | 0,963 |
 | 6 | 29,8 | 5,1 | 88 | 3,2 | 0,921 |
 
-> **Nội suy LK giữ ô bao tốt đến đâu (đo 08-11, 600 frame/cấu hình):** `drift_iou` = IoU giữa ô
-> bao **đang hiển thị** và ô bao của **lần VOS kế tiếp** — binh1: **0,93** (p05 0,80), simloss: 0,92
-> (p05 0,78); `mask_age` p95 **≈115 ms**. ⚠️ Trên `binh2` drift p05 = **0,00** (22 lần mask rỗng) ⇒
-> nội suy **mất dấu** ở clip đó: tuyên bố "hybrid giữ được ô bao" **không đúng cho mọi clip**.
-> Ngưỡng nhiễu giữa các lần chạy: drift ±0,003, `vos_fps` ±7 %, `mask_age_p95` ±5 %.
-> Số liệu: `data/drift_2026-11-08_metrics.json`.
+> **Nội suy LK giữ ô bao tốt đến đâu** (đo 08-11, `image_size=192`, 900 frame/cấu hình, 3 lần/cấu
+> hình): `drift_iou` = IoU giữa ô bao **người xem đã thấy ở đúng frame đó** và ô bao VOS sửa lại —
+> binh1: **0,88–0,89** (p05 0,66–0,72); binh1_simloss: 0,87 (p05 0,64).
+> **Tuổi dữ liệu ảnh người xem thực thấy** (`mask_age_total_ms` = tuổi mask + thời gian suy luận)
+> p95 = **210–250 ms ở mọi `vos_every` ∈ {2, 3, 6}** — vì VOS chỉ chạy được 7,5–8,7 lần/giây
+> (`vos_ms` ≈ 130 ms), nên giảm `vos_every` **không** làm mask mới hơn. HUD 30 FPS nhưng mask/ô bao
+> lấy từ kết quả model cũ khoảng **0,2 giây** — không được mô tả là "mask 30 FPS".
+> ⚠️ Trên `binh2`: drift p05 = **0,00** (VOS trả mask rỗng 26 lần) ⇒ **không** được nói "hybrid luôn
+> bám được". Ngưỡng nhiễu (3 lần cùng cấu hình): `drift_iou` ±0,004, `drift_iou_p05` ±0,057,
+> `vos_fps` ±1,2 %, `measured_fps` ±0,3 %, `mask_age_p95` ±3 ms.
+> Số liệu: `data/drift_2026-11-08_metrics.json`; ngưỡng đăng ký trước & kết luận: xem log 08-11.
 
 > Số **đo lại ngày 08-11** sau khi sửa bug ô chọn `(x,y,w,h)` → `(x1,y1,x2,y2)` (xem
 > `docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md`). Bảng cũ (10,1 FPS) đo bằng ô chọn

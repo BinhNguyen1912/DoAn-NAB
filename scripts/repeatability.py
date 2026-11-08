@@ -31,8 +31,14 @@ def spread(values) -> dict:
     }
 
 
-def la_khac_biet(a: float, b: float, nguong: float) -> bool:
-    """Hai số khác nhau **thật** hay chỉ là nhiễu? `nguong` lấy từ `spread(...)["spread"]`."""
+def la_khac_biet(a: float, b: float, nguong: float, n: int | None = None) -> bool:
+    """Hai số khác nhau **thật** hay chỉ là nhiễu? `nguong` lấy từ `spread(...)["spread"]`.
+
+    `n < 2` ⇒ CHƯA có ngưỡng nhiễu (1 lần chạy không cho độ tản) ⇒ luôn trả False: thà nói
+    "không phân biệt được" còn hơn kết luận "khác thật" từ một phép đo duy nhất.
+    """
+    if n is not None and n < 2:
+        return False
     return abs(float(a) - float(b)) > float(nguong)
 
 
@@ -45,5 +51,7 @@ def danh_gia(ket_qua: dict) -> str:
     if la_khac_biet(ket_qua["a_mean"], ket_qua["b_mean"], ket_qua["nguong"]):
         return (f"{a} ({ket_qua['a_mean']}) khác {b} ({ket_qua['b_mean']}) vượt ngưỡng nhiễu "
                 f"{ket_qua['nguong']}")
+    n = ket_qua.get("n")
+    duoi = f" (ngưỡng nhiễu {ket_qua['nguong']}, n={n})" if n else f" (ngưỡng nhiễu {ket_qua['nguong']})"
     return (f"KHÔNG PHÂN BIỆT ĐƯỢC {a} ({ket_qua['a_mean']}) và {b} ({ket_qua['b_mean']}): chênh "
-            f"lệch nhỏ hơn ngưỡng nhiễu {ket_qua['nguong']} ⇒ inconclusive")
+            f"lệch không vượt ngưỡng nhiễu{duoi} ⇒ inconclusive")
