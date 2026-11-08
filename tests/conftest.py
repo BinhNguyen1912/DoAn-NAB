@@ -82,7 +82,10 @@ class FakeRunner:
         return job_id in self.running
 
     def artifact_names(self):
-        return ("out.mp4", "metrics.csv", "summary.json", "run_info.json", "worker.log")
+        # Dùng đúng whitelist của production để test không bị lệch khi thêm artifact mới
+        from src.worker import ARTIFACT_NAMES
+
+        return tuple(ARTIFACT_NAMES)
 
     def read_progress(self, job_dir):
         return self.progress.get(os.path.basename(str(job_dir)))

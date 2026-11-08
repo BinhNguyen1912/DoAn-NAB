@@ -249,6 +249,20 @@ Backend FastAPI + frontend React, **không cần GPU, không cần database** (j
 #   mở http://127.0.0.1:8000/docs       (thử API trực tiếp)
 ```
 
+Kiểm thử tự động:
+
+```bash
+./run webtest   # vitest: toán học quy đổi toạ độ canvas → pixel video
+./run e2e       # E2E TRÌNH DUYỆT THẬT (Chrome + Playwright): upload → kéo chuột chọn vật
+                # → chờ job xong → kiểm video phát được + bảng số liệu + tải CSV
+                #   (cần Windows có Chrome/Edge và playwright: cd web && npm i -D playwright)
+```
+
+> ⚠️ **Codec:** `out.mp4` do OpenCV ghi là **mp4v** — Chrome/Edge **không** giải mã được (đo 08-11:
+> `canPlayType('video/mp4; codecs="mp4v.20.9"')` trả `""`, `videoWidth = 0`). Vì vậy sau khi pipeline
+> xong, `src/worker/web_export.py` chuyển sang **`out_web.mp4` (H.264 + faststart)** bằng
+> `imageio-ffmpeg` (cài qua pip, không cần sudo) và UI phát bản đó; bản gốc vẫn để tải về xem bằng VLC.
+
 Chế độ dev frontend (sửa code là tự reload, cần backend chạy song song ở terminal khác):
 
 ```bash

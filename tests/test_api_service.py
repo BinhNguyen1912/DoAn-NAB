@@ -122,15 +122,30 @@ class TestStatusVaTienTrinh:
 
         assert service.status(job.job_id).status.progress == 0
 
-    def test_co_summary_thi_done_100(self, service, fake_runner):
+    def test_co_summary_va_da_xong_thi_done_100(self, service, fake_runner):
         job = _create(service)
         service.select(job.job_id, BOX)
         fake_runner.summaries[job.job_id] = {"total_frames": 5}
+        fake_runner.running.discard(job.job_id)      # pipeline đã thoát hẳn
 
         view = service.status(job.job_id)
         assert view.status.state is JobState.DONE
         assert view.status.progress == 100
         assert view.summary == {"total_frames": 5}
+
+    def test_co_summary_nhung_con_dang_xuat_ban_thi_van_running(self, service, fake_runner):
+        """Bug thật 08-11 (E2E): summary.json có TRƯỚC khi xuất out_web.mp4.
+
+        Nếu báo done sớm, UI hiện player khi chưa có bản H.264 → Chrome không phát được.
+        """
+        job = _create(service)
+        service.select(job.job_id, BOX)
+        fake_runner.summaries[job.job_id] = {"total_frames": 5}
+        # vẫn còn trong fake_runner.running = đang hoàn tất (xuất H.264)
+
+        view = service.status(job.job_id)
+        assert view.status.state is JobState.RUNNING
+        assert view.status.progress < 100
 
     def test_tien_trinh_chet_khong_co_ket_qua_thi_error(self, service, fake_runner, fs_store):
         """Ca server restart: không còn process, không có summary → phải báo lỗi rõ ràng."""
@@ -154,11 +169,15 @@ class TestStatusVaTienTrinh:
 
 class TestListingVaArtifact:
     def test_liet_ke_moi_nhat_truoc(self, service, fs_store):
+        """Sắp theo created_at (mili-giây) — tạo cách nhau để thứ tự xác định."""
+        import time
+
         first = _create(service)
+        time.sleep(0.02)          # đủ để created_at khác nhau ở độ phân giải mili-giây
         second = _create(service)
 
         ids = [view.job.job_id for view in service.listing()]
-        assert ids.index(second.job_id) < ids.index(first.job_id)
+        assert ids == [second.job_id, first.job_id]
 
     def test_artifact_chi_hien_khi_file_ton_tai(self, service, fs_store, fake_runner):
         job = _create(service)
@@ -168,6 +187,16 @@ class TestListingVaArtifact:
         assert service.status(job.job_id).artifacts == {
             "out.mp4": f"/api/jobs/{job.job_id}/artifacts/out.mp4"
         }
+
+    def test_ban_web_h264_duoc_lieu_ke_nhu_artifact(self, service, fs_store):
+        """UI cần out_web.mp4 (H.264) — thiếu nó thì Chrome không phát được video."""
+        job = _create(service)
+        (fs_store.path(job.job_id) / "out.mp4").write_bytes(b"x")
+        (fs_store.path(job.job_id) / "out_web.mp4").write_bytes(b"x")
+
+        artifacts = service.status(job.job_id).artifacts
+        assert "out_web.mp4" in artifacts
+        assert artifacts["out_web.mp4"].endswith("/artifacts/out_web.mp4")
 
     def test_artifact_ngoai_whitelist_bi_chan(self, service, fs_store):
         job = _create(service)

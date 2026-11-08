@@ -11,6 +11,7 @@ Bố cục:
   command.py   — dựng lệnh (hàm thuần, biết `tools/run_live.py`)
   artifacts.py — đọc progress/summary/metrics + whitelist artifact
   process.py   — subprocess: chạy nền, log, callback khi kết thúc
+  web_export.py — chuyển bản ghi mp4v (OpenCV) sang H.264 để trình duyệt phát được
 """
 
 from pathlib import Path
@@ -31,9 +32,11 @@ from src.worker.command import (
     RUN_LIVE_REL,
     SOURCE_NAME,
     SUMMARY_NAME,
+    WEB_NAME,
     build_command,
 )
 from src.worker.process import is_running, notify_on_exit, start
+from src.worker.web_export import find_ffmpeg, transcode_for_web
 
 REPO_ROOT = Path(__file__).resolve().parents[2]
 
@@ -48,12 +51,15 @@ __all__ = [
     "RUN_LIVE_REL",
     "SOURCE_NAME",
     "SUMMARY_NAME",
+    "WEB_NAME",
     "artifact_path",
     "build_command",
+    "find_ffmpeg",
     "is_running",
     "load_metrics",
     "load_summary",
     "notify_on_exit",
     "read_progress",
+    "transcode_for_web",
     "start",
 ]

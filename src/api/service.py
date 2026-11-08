@@ -174,16 +174,19 @@ class JobService:
         }
 
     def _refresh(self, job_id: str) -> JobStatus:
-        """Suy trạng thái thật từ tiến trình/kết quả rồi lưu lại."""
+        """Suy trạng thái thật từ tiến trình/kết quả rồi lưu lại.
+
+        Thứ tự kiểm tra RẤT quan trọng: `summary.json` được pipeline ghi TRƯỚC khi tiến trình
+        thoát, còn bản H.264 cho web được xuất SAU đó. Nếu thấy summary là báo done ngay thì
+        UI sẽ hiện player khi chưa có `out_web.mp4` → Chrome không phát được video.
+        Vì vậy: chỉ `done` khi runner đã thực sự xong (is_running = False).
+        """
         status = self._store.read_status(job_id)
         if status.state not in ACTIVE_STATES:
             return status
 
         job_path = self._store.path(job_id)
-        if self._runner.load_summary(job_path) is not None:
-            return self._store.save_status(
-                job_id, JobStatus(JobState.DONE, 100, MSG_DONE)
-            )
+        summary = self._runner.load_summary(job_path)
 
         percent = clamp_percent(status.progress)
         progress = self._runner.read_progress(job_path)
@@ -196,10 +199,12 @@ class JobService:
             return self._store.save_status(
                 job_id, JobStatus(JobState.RUNNING, percent, MSG_RUNNING)
             )
+
+        if summary is not None:
+            return self._store.save_status(job_id, JobStatus(JobState.DONE, 100, MSG_DONE))
+
         # Tiến trình không còn chạy và không có kết quả (server restart, bị kill...)
-        return self._store.save_status(
-            job_id, JobStatus(JobState.ERROR, percent, MSG_DIED)
-        )
+        return self._store.save_status(job_id, JobStatus(JobState.ERROR, percent, MSG_DIED))
 
     def _on_exit(self, job_id: str, returncode: int) -> None:
         """Callback khi pipeline kết thúc (chạy trong thread của runner)."""

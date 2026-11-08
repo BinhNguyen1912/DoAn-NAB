@@ -69,6 +69,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     api [cổng]     Chạy backend FastAPI (mặc định 8000) → /docs để thử API
     web            Build frontend React → API tự phục vụ ở "/" (một lệnh là có demo)
     webdev         Chạy Vite dev server (cần ./run api ở terminal khác)
+    webtest        Test frontend bằng vitest (toán học canvas, hàm thuần)
+    e2e            E2E TRÌNH DUYỆT THẬT: Chrome/Edge lái giao diện, kéo chuột chọn vật,
+                   chờ job xong, kiểm video + bảng số liệu + tải CSV (cần Windows + playwright)
 
   SỐ LIỆU & BÁO CÁO
     raw [giây]      Ghi video GỐC (không HUD, không model) để phân tích offline
@@ -260,6 +263,32 @@ EOF
     fi
     npm run build || exit 1
     echo "[web] đã build web/dist → chạy: ./run api   rồi mở http://127.0.0.1:8000/"
+    ;;
+  webtest)
+    cd "$ROOT/web" 2>/dev/null || { echo "[LOI] chưa có thư mục web/"; exit 1; }
+    exec npm test -- "$@"
+    ;;
+  e2e)
+    # E2E bằng TRÌNH DUYỆT THẬT: server chạy trong WSL, Chrome/Edge lái từ Windows qua cmd.exe.
+    # Thiếu một trong hai thứ dưới đây thì báo rõ thay vì fail khó hiểu.
+    activate_env
+    if ! command -v cmd.exe >/dev/null 2>&1; then
+      echo "[e2e] cần WSL (script dùng cmd.exe + Chrome/Edge trên Windows)"
+      exit 1
+    fi
+    if [ ! -d "$ROOT/web/node_modules/playwright" ]; then
+      echo "[e2e] thiếu playwright → chạy:  cd web && npm i -D playwright"
+      exit 1
+    fi
+    "$PYTHON" scripts/make_e2e_video.py || exit 1
+    port="${E2E_PORT:-8013}"
+    "$PYTHON" -m uvicorn src.api.main:app --host 0.0.0.0 --port "$port" \
+      > "$ROOT/data/e2e_server.log" 2>&1 &
+    srv=$!
+    trap 'kill $srv 2>/dev/null' EXIT
+    for _ in $(seq 1 25); do curl -sf "localhost:$port/health" >/dev/null && break; sleep 1; done
+    win_root="$(wslpath -w "$ROOT")"
+    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& node scripts\\e2e_web.js"
     ;;
   raw)
     activate_env

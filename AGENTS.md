@@ -108,6 +108,10 @@ DOAN-NAB/
    - **Làn nhanh** (UI/logic/config — ~30s): `./run test` — CI chạy `pytest -m "not slow"`.
    - **Full suite** (cần checkpoint SAM 2): `./run testall` — chỉ khi đụng
      `tracker_engine`/model/CLI model hoặc trước commit cuối.
+   - **Frontend:** `./run webtest` (vitest, hàm thuần) khi sửa `web/src/**`.
+   - **E2E trình duyệt thật** (Chrome/Edge + Playwright, cần Windows): `./run e2e` — bắt buộc trước khi
+     báo "xong" cho bất kỳ thay đổi nào ở UI/API (nó đã bắt được 3 bug thật ngày 08-11: canvas
+     300×150, codec mp4v không phát được, và job báo `done` trước khi xuất H.264).
 4. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên.
 5. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
 

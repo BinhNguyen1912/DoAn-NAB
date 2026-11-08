@@ -53,7 +53,8 @@ class FileSystemJobStore:
 
         job = Job(
             job_id=job_id,
-            created_at=datetime.now().isoformat(timespec="seconds"),
+            # mili-giây: hai job tạo trong cùng một giây vẫn phân biệt được thứ tự
+            created_at=datetime.now().isoformat(timespec="milliseconds"),
             original_name=original_name,
             params=dict(params or {}),
         )
@@ -136,15 +137,22 @@ class FileSystemJobStore:
         )
 
     def list_ids(self, limit: int) -> list[str]:
+        """Id các job, MỚI NHẤT TRƯỚC — sắp theo `created_at` (không theo tên thư mục).
+
+        Lưu ý: tên thư mục chỉ có độ phân giải 1 giây + 6 hex ngẫu nhiên ⇒ sắp theo tên sẽ
+        cho thứ tự không xác định với các job tạo cùng giây (bug thật 08-11).
+        """
         if not self._root.is_dir():
             return []
-        ids = [
-            path.name
-            # Tên thư mục chính là job_id → sắp xếp giảm dần = mới nhất trước
-            for path in sorted(self._root.iterdir(), reverse=True)
-            if path.is_dir() and _JOB_ID_RE.match(path.name)
-        ]
-        return ids[:limit]
+        entries = []
+        for path in self._root.iterdir():
+            if not path.is_dir() or not _JOB_ID_RE.match(path.name):
+                continue
+            data = self._read_json(path / JOB_FILE) or {}
+            entries.append((str(data.get("created_at", "")), path.name))
+        # Sắp giảm dần; tên làm khoá phụ để kết quả luôn xác định
+        entries.sort(reverse=True)
+        return [name for _created_at, name in entries[:limit]]
 
     # ------------------------------------------------------------------ xoá
 

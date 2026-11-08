@@ -16,3 +16,7 @@ fastapi>=0.115
 uvicorn[standard]>=0.30
 python-multipart>=0.0.9   # bắt buộc để FastAPI đọc multipart/form-data (upload video)
 httpx>=0.27               # TestClient của FastAPI (test API, không dùng khi chạy thật)
+
+# Chuyển bản ghi OpenCV (mp4v) sang H.264 để TRÌNH DUYỆT phát được (src/worker/web_export.py).
+# Chrome không giải mã mp4v — đo 08-11: canPlayType trả "", videoWidth = 0.
+imageio-ffmpeg>=0.5

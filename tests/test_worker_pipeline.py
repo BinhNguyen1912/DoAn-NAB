@@ -148,9 +148,10 @@ class TestArtifactPath:
         assert artifacts.artifact_path(job, "../job.json") is None
         assert artifacts.artifact_path(job, "sub/out.mp4") is None
 
-    def test_whitelist_gom_5_file_hop_dong(self):
+    def test_whitelist_gom_6_file_hop_dong(self):
         assert ARTIFACT_NAMES == (
-            "out.mp4", "metrics.csv", "summary.json", "run_info.json", "worker.log",
+            "out.mp4", "out_web.mp4", "metrics.csv", "summary.json", "run_info.json",
+            "worker.log",
         )
 
 
@@ -250,3 +251,107 @@ def test_total_frames_hint_chi_tin_file_that(source):
     from tools.run_live import _total_frames_hint
 
     assert _total_frames_hint(source) is None
+
+
+class TestWebExport:
+    """Bản ghi mp4v của OpenCV không phát được trên Chrome → phải xuất thêm bản H.264."""
+
+    def test_ten_artifact_co_ban_web(self):
+        assert "out_web.mp4" in ARTIFACT_NAMES
+
+    def test_find_ffmpeg_uu_tien_bien_moi_truong(self, tmp_path, monkeypatch):
+        from src.worker import web_export
+
+        fake = tmp_path / "ffmpeg-gia"
+        fake.write_text("#!/bin/sh\n", encoding="utf-8")
+        monkeypatch.setenv(web_export.FFMPEG_ENV, str(fake))
+        assert web_export.find_ffmpeg() == str(fake)
+
+    def test_lenh_chuyen_ma_dung_h264_cho_web(self, tmp_path):
+        from src.worker import web_export
+
+        cmd = web_export.build_transcode_command("ffmpeg", tmp_path / "a.mp4", tmp_path / "b.mp4")
+        assert cmd[0] == "ffmpeg"
+        assert "libx264" in cmd
+        assert "yuv420p" in cmd          # Chrome/Safari không giải mã yuv444p
+        assert "+faststart" in cmd       # phát được ngay, không cần tải hết file
+
+    def test_src_khong_ton_tai_tra_none(self, tmp_path):
+        from src.worker import web_export
+
+        assert web_export.transcode_for_web(tmp_path / "khong-co.mp4") is None
+
+    def test_thieu_ffmpeg_thi_tra_none_khong_no(self, tmp_path, monkeypatch):
+        from src.worker import web_export
+
+        monkeypatch.setattr(web_export, "find_ffmpeg", lambda: None)
+        src = tmp_path / "out.mp4"
+        src.write_bytes(b"x")
+        assert web_export.transcode_for_web(src) is None
+
+    def test_chuyen_ma_that_tao_ra_file_h264(self, tmp_path, write_video):
+        """Chuyển mã thật (mp4v → H.264) — bỏ qua nếu máy không có ffmpeg."""
+        from src.worker import web_export
+
+        if web_export.find_ffmpeg() is None:
+            pytest.skip("máy không có ffmpeg (imageio-ffmpeg/PATH)")
+
+        frames = np.full((6, 48, 64, 3), 90, np.uint8)
+        src = write_video(tmp_path / "out.mp4", frames, fps=10)
+        result = web_export.transcode_for_web(src, ffmpeg=web_export.find_ffmpeg())
+
+        assert result is not None
+        import cv2
+
+        cap = cv2.VideoCapture(result)
+        try:
+            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC)).to_bytes(4, "little")
+            # ffmpeg ghi tag 'avc1' hoặc 'h264' tuỳ bản; cả hai đều là H.264.
+            # Bằng chứng thật sự là Chrome giải mã được — xem scripts/e2e_web.js.
+            assert fourcc in (b"avc1", b"h264"), f"phải là H.264, nhận {fourcc!r}"
+        finally:
+            cap.release()
+
+
+class TestAdapterDangHoanTat:
+    """Adapter thật: trong lúc xuất H.264, job phải được coi là ĐANG CHẠY."""
+
+    def test_xuat_ban_h264_van_tinh_la_dang_chay(self, tmp_path, monkeypatch):
+        import threading
+        import time
+
+        from src.api.adapters import subprocess_runner as adapter
+
+        gate = threading.Event()
+        finished = []
+
+        class _Proc:
+            def wait(self):
+                return 0
+
+            def poll(self):
+                return 0
+
+        monkeypatch.setattr(adapter, "start", lambda *a, **k: _Proc())
+        monkeypatch.setattr(adapter, "transcode_for_web", lambda src: (gate.wait(5), str(src))[1])
+
+        runner = adapter.SubprocessPipelineRunner(tmp_path)
+        job_dir = tmp_path / "20261108-120000-abcdef"
+        job_dir.mkdir()
+        (job_dir / "out.mp4").write_bytes(b"x")
+
+        runner.start("job-1", job_dir, params={}, bbox=(0, 0, 4, 4),
+                     on_exit=lambda code: finished.append(code))
+
+        # chờ tới khi luồng nền đã vào bước xuất bản (đang chặn ở gate)
+        deadline = time.time() + 5
+        while time.time() < deadline and runner._finalizing.__len__() == 0:  # noqa: SLF001
+            time.sleep(0.01)
+        assert runner.is_running("job-1") is True     # đang xuất H.264
+
+        gate.set()
+        deadline = time.time() + 5
+        while time.time() < deadline and not finished:
+            time.sleep(0.01)
+        assert finished == [0]
+        assert runner.is_running("job-1") is False     # xong hẳn

@@ -23,6 +23,7 @@ RUN_LIVE_REL = "tools/run_live.py"
 # Tên file cố định trong thư mục job (hợp đồng giữa pipeline ↔ storage ↔ API ↔ frontend)
 SOURCE_NAME = "source.mp4"
 OUT_NAME = "out.mp4"
+WEB_NAME = "out_web.mp4"   # bản H.264 để trình duyệt phát được (xem web_export.py)
 METRICS_NAME = "metrics.csv"
 SUMMARY_NAME = "summary.json"
 RUN_INFO_NAME = "run_info.json"

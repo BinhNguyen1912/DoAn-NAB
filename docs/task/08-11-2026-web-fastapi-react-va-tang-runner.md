@@ -175,3 +175,69 @@ Test tách theo tầng: `test_api_domain.py` (thuần logic) · `test_api_servic
 giả) · `test_api_routes.py` (hợp đồng HTTP + 1 test `Cv2VideoProbe` thật) · `test_worker_pipeline.py`.
 Không test nào cần checkpoint SAM 2 hay HTTP server thật; adapter giả nằm trong `tests/conftest.py`.
 E2E sau refactor còn xác nhận `GET /api/jobs/{id}/artifacts/job.json` → **404** (whitelist chạy đúng).
+
+---
+
+## 🧪 Bổ sung (cùng ngày) — Tự kiểm bằng trình duyệt thật + 3 bug tìm được
+
+**Bối cảnh:** người dùng hỏi "bạn tự làm tự test luôn được không". Môi trường WSL **không** dựng
+được Chromium (`libnss3`, `libasound2`… thiếu; `sudo` cần mật khẩu) ⇒ dùng **Chrome/Edge trên
+Windows** lái từ WSL qua `cmd.exe` + Playwright (`channel: 'chrome'`, headless).
+
+### Bộ kiểm mới (đã vào repo)
+
+| Thành phần | Nội dung |
+|---|---|
+| `web/src/selection.ts` | tách **toàn bộ toán học** quy đổi toạ độ canvas → pixel video thành hàm thuần |
+| `web/src/selection.test.ts` | 16 test vitest (tỉ lệ 3,2×, kéo ngược chiều, kẹp biên, khung width=0, NaN/∞) |
+| `scripts/make_e2e_video.py` | sinh fixture 160×120 20 frame (kích thước cố định để tính kỳ vọng bằng tay) |
+| `scripts/e2e_web.js` | E2E Playwright: upload → kéo chuột → chờ done → kiểm giải mã video + bảng số liệu + CSV |
+| `./run webtest`, `./run e2e` | hai lệnh chạy 2 bộ trên (e2e tự bật server + sinh fixture) |
+
+### 3 bug THẬT do E2E bắt được
+
+1. **Canvas 300×150** — `<canvas>` chưa có `width/height` mặc định là 300×150, nên trước khi ảnh
+   preview load xong nó vừa nhấp nháy sai tỉ lệ, vừa làm `getBoundingClientRect()` đổi giữa lúc kéo
+   ⇒ toạ độ lệch (`16,24,48×32` thay vì `16,36,48×48`). Sửa: **chỉ render canvas sau khi biết kích
+   thước thật** (`width={size.w} height={size.h}`).
+2. **Video không phát được trên web** — OpenCV ghi fourcc `FMP4/mp4v`; Chrome trả
+   `canPlayType('video/mp4; codecs="mp4v.20.9"') = ""`, `videoWidth = 0` (đo bằng probe Playwright).
+   OpenCV **không** ghi được H.264 (`avc1` → `opened=False`, chỉ có encoder phần cứng
+   `h264_v4l2m2m` không tồn tại). Sửa: `src/worker/web_export.py` chuyển `out.mp4` →
+   **`out_web.mp4` (libx264 + yuv420p + faststart)** bằng `imageio-ffmpeg` (pip, **không cần sudo**,
+   có sẵn libx264); UI phát bản web, vẫn cho tải bản gốc để xem bằng VLC.
+3. **Job báo `done` trước khi có video phát được** — `summary.json` do pipeline ghi *trước* khi
+   tiến trình thoát, còn bản H.264 xuất *sau* đó; service thấy summary là báo done ⇒ UI hiện player
+   khi chưa có `out_web.mp4`. Sửa: adapter có cờ `_finalizing` — trong lúc xuất bản web,
+   `is_running()` vẫn `True`; service **chỉ** `done` khi runner đã xong hẳn. Có test riêng cho cả
+   service (`test_co_summary_nhung_con_dang_xuat_ban_thi_van_running`) và adapter
+   (`test_xuat_ban_h264_van_tinh_la_dang_chay`).
+
+**Bug phụ (không do E2E):** `summary.json` trả `lost_count` nhưng frontend đọc `lost_frames` → cột
+"Frame mất dấu" hiện "—". Sửa FE + thêm `TestHopDongSummary` chốt danh sách khoá mà
+`web/src/api.ts` phụ thuộc. Ngoài ra `list_ids` sắp theo tên thư mục (độ phân giải 1 giây + hex
+ngẫu nhiên) → hai job cùng giây có thứ tự không xác định; đổi sang sắp theo `created_at`
+(mili-giây).
+
+### Kết quả E2E cuối cùng (Chrome 141 headless, Windows → server trong WSL)
+
+```text
+✓ trang tải được + frontend kết nối backend
+✓ upload sai định dạng bị chặn + báo lỗi tiếng Việt — "định dạng không hỗ trợ (.txt)"
+✓ canvas đúng kích thước video gốc — {"w":160,"h":120}
+✓ kéo chuột sinh ra bbox hợp lệ — 16,36,48,48
+✓ quy đổi canvas → pixel video ĐÚNG tỉ lệ — nhận 16,36,48×48 — kỳ vọng 16,36,48×48
+✓ job kết thúc done — 4,6 s
+✓ có player video kết quả — …/artifacts/out_web.mp4
+✓ trình duyệt GIẢI MÃ được video kết quả (H.264) — {"readyState":4,"decoded":true,"w":160,"h":120}
+✓ bảng số liệu có 7 dòng · độ trễ TB 142 ms · FPS 7,07
+✓ tải được metrics.csv (200, 5 dòng) · artifact ngoài whitelist bị 404
+✓ không có lỗi JS trên trang
+KẾT LUẬN: PASS
+```
+
+Ảnh chụp `data/e2e_web.png` cho thấy **khung hình HUD thật** trong player
+("FPS: 7.4 · Độ trễ: 136 ms/frame · Điểm tin cậy: 15.1") cùng ô đỏ bám vật và bảng số liệu.
+
+**Tổng kiểm chứng sau khi thêm web_export:** `./run lint` xanh · `./run test` → **487 passed**
+(38,52 s) · `./run webtest` → **16 passed** · `./run e2e` → **PASS**.

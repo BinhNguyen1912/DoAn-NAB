@@ -20,7 +20,7 @@ export function SummaryTable({ summary }: { summary: JobSummary }): JSX.Element 
     ['Độ trễ trung bình', fmt(summary.mean_latency_ms, 0, ' ms')],
     ['Độ trễ p95', fmt(summary.p95_latency_ms, 0, ' ms')],
     ['FPS hiệu dụng', fmt(summary.effective_fps, 2)],
-    ['Frame mất dấu', fmt(summary.lost_frames, 0)],
+    ['Frame mất dấu', fmt(summary.lost_count, 0)],
     ['Tỷ lệ mất dấu', summary.lost_ratio === undefined ? '—' : fmt(summary.lost_ratio * 100, 1, ' %')],
     ['Số lần nhận lại', fmt(summary.reacquired_count, 0)],
   ]

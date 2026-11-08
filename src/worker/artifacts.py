@@ -20,10 +20,11 @@ from src.worker.command import (
     PROGRESS_NAME,
     RUN_INFO_NAME,
     SUMMARY_NAME,
+    WEB_NAME,
 )
 
 # Artifact được phép tải ra ngoài (whitelist cứng — cũng là hàng rào chống path traversal)
-ARTIFACT_NAMES = (OUT_NAME, METRICS_NAME, SUMMARY_NAME, RUN_INFO_NAME, LOG_NAME)
+ARTIFACT_NAMES = (OUT_NAME, WEB_NAME, METRICS_NAME, SUMMARY_NAME, RUN_INFO_NAME, LOG_NAME)
 
 
 def _job_path(job_dir) -> Path:

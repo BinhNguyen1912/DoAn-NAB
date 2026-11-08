@@ -22,8 +22,12 @@ export interface JobSummary {
   mean_latency_ms?: number
   p95_latency_ms?: number
   effective_fps?: number
-  lost_frames?: number
+  mean_score?: number
+  /** Tên khoá PHẢI khớp `MetricsLogger._summary_core()` (xem tests/test_api_routes.py). */
+  lost_count?: number
   lost_ratio?: number
+  frozen_frames?: number
+  reacquiring_frames?: number
   reacquired_count?: number
 }
 

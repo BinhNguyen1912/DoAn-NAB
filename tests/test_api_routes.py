@@ -206,3 +206,44 @@ class TestHopDongOpenApi:
         """Response phải serialize được — chặn lỗi kiểu numpy/bytes lọt vào DTO."""
         job_id = _upload(client).json()["job_id"]
         json.dumps(client.get(f"/api/jobs/{job_id}").json())
+
+
+class TestHopDongSummary:
+    """Chốt hợp đồng `summary` giữa backend và frontend.
+
+    Danh sách khoá dưới đây PHẢI khớp interface `JobSummary` trong `web/src/api.ts`.
+    Bug thật 08-11 (ảnh chụp E2E): backend trả `lost_count` nhưng frontend đọc `lost_frames`
+    → cột "Frame mất dấu" hiện "—" dù dữ liệu có. Test này chặn tái diễn.
+    """
+
+    KEYS_FRONTEND_DUNG = {
+        "total_frames",
+        "mean_latency_ms",
+        "p95_latency_ms",
+        "effective_fps",
+        "lost_count",
+        "lost_ratio",
+        "reacquired_count",
+    }
+
+    def test_summary_co_du_khoa_frontend_can(self):
+        from src.metrics_logger import FrameRecord, MetricsLogger
+
+        logger = MetricsLogger()
+        for index in range(3):
+            logger.log(FrameRecord(frame_idx=index, latency_ms=175.0, score=2.0, center=(10, 10)))
+        summary = logger.summary()
+
+        missing = self.KEYS_FRONTEND_DUNG - set(summary)
+        assert not missing, f"summary thiếu khoá mà web/src/api.ts cần: {sorted(missing)}"
+
+    def test_khoa_lost_count_khong_phai_lost_frames(self):
+        """Tên cũ `lost_frames` đã bỏ — nếu ai đó đổi về tên đó thì test này nhắc."""
+        from src.metrics_logger import FrameRecord, MetricsLogger
+
+        logger = MetricsLogger()
+        logger.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=None, lost=True))
+        summary = logger.summary()
+
+        assert summary["lost_count"] == 1
+        assert "lost_frames" not in summary

@@ -13,7 +13,10 @@ import { SummaryTable } from './SummaryTable'
 
 export function ResultPanel({ jobId, job }: { jobId: string; job: JobStatus }): JSX.Element {
   const done = job.state === 'done'
-  const hasVideo = done && Boolean(job.artifacts['out.mp4'])
+  // Ưu tiên bản H.264 (out_web.mp4) — Chrome KHÔNG giải mã được bản mp4v của OpenCV.
+  const webVideo = job.artifacts['out_web.mp4']
+  const rawVideo = job.artifacts['out.mp4']
+  const hasVideo = done && Boolean(webVideo || rawVideo)
 
   return (
     <section className="card">
@@ -29,7 +32,13 @@ export function ResultPanel({ jobId, job }: { jobId: string; job: JobStatus }): 
 
       {hasVideo && (
         <>
-          <video controls src={artifactUrl(jobId, 'out.mp4')} />
+          <video controls preload="metadata" src={artifactUrl(jobId, webVideo ? 'out_web.mp4' : 'out.mp4')} />
+          {!webVideo && (
+            <p className="hint">
+              Chưa có bản H.264 (máy thiếu ffmpeg) — trình duyệt có thể không phát được video.
+              Vẫn tải được bản gốc bên dưới để xem bằng VLC.
+            </p>
+          )}
           {job.summary && <SummaryTable summary={job.summary} />}
           <p className="row">
             <a className="button" href={artifactUrl(jobId, 'metrics.csv')}>
@@ -38,6 +47,11 @@ export function ResultPanel({ jobId, job }: { jobId: string; job: JobStatus }): 
             {job.artifacts['summary.json'] && (
               <a className="button ghost" href={artifactUrl(jobId, 'summary.json')}>
                 Tải summary (JSON)
+              </a>
+            )}
+            {job.artifacts['out.mp4'] && (
+              <a className="button ghost" href={artifactUrl(jobId, 'out.mp4')}>
+                Tải video gốc (mp4v)
               </a>
             )}
           </p>
