@@ -22,6 +22,7 @@ from src.api.adapters import (
     FileSystemJobStore,
     OpenCvFrameSource,
     SubprocessPipelineRunner,
+    WorkerFrameSource,
 )
 from src.api.config import ApiSettings
 from src.api.domain import (
@@ -71,8 +72,15 @@ def build_default_service(settings: ApiSettings) -> JobService:
 
 
 def build_default_live() -> LiveStreamService:
-    """Lắp ghép phiên live mặc định: nguồn OpenCV (webcam/RTSP/snapshot/file lặp), 15 FPS."""
-    return LiveStreamService(lambda source: OpenCvFrameSource(source), target_fps=15)
+    """Lắp ghép phiên live: mode "raw" = OpenCV tại chỗ, mode "track" = worker model riêng."""
+
+    def make_source(source, mode="raw", bbox=None, image_size=None):
+        if mode == "track":
+            # Mặc định 192: đo trên máy này 192 ≈ 10 FPS, 256 ≈ 6,5 FPS, 1024 ≈ 0,4 FPS.
+            return WorkerFrameSource(source, bbox=bbox, image_size=image_size or 192)
+        return OpenCvFrameSource(source)
+
+    return LiveStreamService(make_source, target_fps=15)
 
 
 def register_error_handlers(app: FastAPI) -> None:

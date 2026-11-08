@@ -4,7 +4,7 @@ LiveStreamService — phiên phát trực tiếp: giữ nguồn frame, phát fra
 Chức năng: mở nguồn (webcam/RTSP/ảnh relay/file lặp), chạy một thread đọc frame theo nhịp
            `target_fps`, giữ **frame mới nhất** trong bộ đệm 1 phần tử (client chậm thì bỏ
            frame cũ, không bao giờ chậm dần), và cung cấp luồng JPEG cho endpoint MJPEG.
-Input  : `make_source(source: str) -> FrameSource` (nhà máy được tiêm vào), target_fps.
+Input  : `make_source(source, mode, bbox) -> FrameSource` (nhà máy được tiêm vào), target_fps.
 Output : LiveStatus (trạng thái + số frame + FPS đo được) và luồng bytes JPEG.
 Lưu ý  : chỉ giữ frame MỚI NHẤT (không hàng đợi) — đây là quyết định thiết kế cho live:
          độ trễ thấp quan trọng hơn việc phát đủ mọi frame. Đừng đổi thành queue trừ khi
@@ -32,7 +32,7 @@ _MAX_OPEN_ERROR = "Không mở được {label}: {error}"
 class LiveStreamService:
     """Một phiên live tại một thời điểm (đủ cho đồ án; đa phiên sẽ cần kho theo id)."""
 
-    def __init__(self, make_source: Callable[[str], FrameSource], *, target_fps: int = 15) -> None:
+    def __init__(self, make_source: Callable[..., FrameSource], *, target_fps: int = 15) -> None:
         self._make_source = make_source
         self._interval = 1.0 / max(1, int(target_fps))
         self._lock = threading.Lock()
@@ -48,12 +48,18 @@ class LiveStreamService:
 
     # ------------------------------------------------------------------ lệnh
 
-    def start(self, source: str) -> LiveStatus:
-        """Mở nguồn và bắt đầu phát. Ném SourceUnavailable nếu không mở được."""
+    def start(self, source: str, *, mode: str = "raw", bbox=None,
+              image_size: int | None = None) -> LiveStatus:
+        """Mở nguồn và bắt đầu phát.
+
+        mode="raw"   : phát khung hình gốc (nhanh, không cần model).
+        mode="track" : chạy worker bám đối tượng ở tiến trình riêng (cần bbox), phát frame đã overlay.
+        Ném SourceUnavailable nếu không mở được nguồn/worker.
+        """
         with self._lock:
             self._stop_locked()
 
-        candidate = self._make_source(str(source))
+        candidate = self._make_source(str(source), mode, bbox, image_size)
         try:
             candidate.start()
         except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400
@@ -137,10 +143,15 @@ class LiveStreamService:
             data = source.read_jpeg() if source is not None else None
             if data is not None:
                 with self._lock:
-                    self._latest = data
-                    self._frames += 1
-                    self._stamps.append(started)
-                    self._trim_stamps_locked(started)
+                    # CHỈ đếm khi nội dung ĐỔI: với chế độ track, worker ghi frame chậm hơn nhịp
+                    # đọc rất nhiều (model 2,5 s/frame) — đếm theo lần đọc sẽ báo sai 15 FPS
+                    # trong khi thực tế 0,4 FPS (bug thật đo được 08-11).
+                    changed = data != self._latest
+                    if changed:
+                        self._latest = data
+                        self._frames += 1
+                        self._stamps.append(started)
+                        self._trim_stamps_locked(started)
             else:
                 time.sleep(_TICK_S)                   # nguồn chưa có frame (camera khởi động)
             remaining = self._interval - (time.perf_counter() - started)

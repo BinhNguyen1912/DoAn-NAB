@@ -20,6 +20,9 @@ CONDA_ACTIVATE = "source ~/miniconda3/etc/profile.d/conda.sh && conda activate s
 # vòng lặp tracking, để số liệu web đo ra trùng số liệu trong báo cáo.
 RUN_LIVE_REL = "tools/run_live.py"
 
+# Worker bám trực tiếp (Phase 4b) — chạy trong tiến trình riêng vì cần torch/SAM 2
+LIVE_WORKER_REL = "tools/live_worker.py"
+
 # Tên file cố định trong thư mục job (hợp đồng giữa pipeline ↔ storage ↔ API ↔ frontend)
 SOURCE_NAME = "source.mp4"
 OUT_NAME = "out.mp4"
@@ -68,5 +71,28 @@ def build_command(job_dir, *, params: dict, bbox, python_exe: str | None = None,
         if cue in _ALLOWED_CUES:
             args += ["--reid-cue", cue]
 
+    inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
+    return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]
+
+
+def build_live_worker_command(source: str, out_dir, *, image_size: int | None = None,
+                              max_fps: float = 15.0, python_exe: str | None = None,
+                              repo_root: Path | None = None) -> list[str]:
+    """Trả argv chạy worker bám trực tiếp (tools/live_worker.py) trong conda env.
+
+    Input  : source (0 | rtsp:// | http:// | đường dẫn video), out_dir (thư mục chia sẻ với API).
+    Output : ["bash", "-lc", "<lệnh đầy đủ>"] — giống build_command, dùng chung cách activate conda.
+    Lưu ý  : worker này NẠP MODEL (~20–60 s trên CPU) nên caller phải chờ frame đầu tiên với
+             timeout lớn (xem src/api/adapters/worker_source.py).
+    """
+    root = Path(repo_root).resolve() if repo_root is not None else Path(out_dir).resolve().parents[0]
+    args = [
+        LIVE_WORKER_REL,
+        "--source", str(source),
+        "--out-dir", str(Path(out_dir).resolve()),
+        "--max-fps", str(float(max_fps)),
+    ]
+    if image_size:
+        args += ["--image-size", str(int(image_size))]
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
     return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]

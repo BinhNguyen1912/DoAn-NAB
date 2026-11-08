@@ -218,7 +218,45 @@ async function waitJobState(page, wanted, timeout = 240000) {
   const liveText = await page.getByTestId('live-status').innerText()
   check('FPS live đo được > 0', /FPS đo được: [1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
 
-  await page.getByRole('button', { name: 'Dừng' }).click()
+  // 9b. UI chọn đối tượng trên LIVE: đóng băng frame → kéo chuột → gửi mode=track + bbox.
+  //      Chặn (route) lời gọi /api/live/start để KHÔNG phải nạp model 20–60 s trong E2E, nhưng
+  //      vẫn kiểm được payload thật mà UI gửi đi.
+  // Trang có 2 khối canvas (job + live) → phải SCOPE vào card live, nếu không sẽ kéo nhầm canvas
+  const liveCard = page.locator('section').filter({ hasText: 'Phát trực tiếp' })
+  await liveCard.getByRole('button', { name: 'Chọn đối tượng để bám' }).click()
+  await liveCard.locator('canvas').waitFor({ timeout: 20000 })
+  // BẮT BUỘC: page.mouse dùng toạ độ VIEWPORT — card live nằm dưới màn hình thì phải cuộn tới,
+  // nếu không chuột rơi ra ngoài canvas và không có sự kiện nào được bắn (bug gặp 08-11).
+  await liveCard.locator('canvas').scrollIntoViewIfNeeded()
+  const liveCanvas = await liveCard.locator('canvas').boundingBox()
+  await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.2, liveCanvas.y + liveCanvas.height * 0.3)
+  await page.mouse.down()
+  await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.5, liveCanvas.y + liveCanvas.height * 0.7, { steps: 5 })
+  await page.mouse.up()
+
+  let trackPayload = null
+  await page.route('**/api/live/start', async (route) => {
+    trackPayload = JSON.parse(route.request().postData() || '{}')
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+                             message: 'stub' }) })
+  })
+  await liveCard.getByRole('button', { name: 'Bám đối tượng' }).click()
+  await page.waitForTimeout(300)
+  await page.unroute('**/api/live/start')
+
+  check('UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"',
+    Boolean(trackPayload && trackPayload.mode === 'track' && trackPayload.bbox),
+    JSON.stringify(trackPayload))
+  if (trackPayload && trackPayload.bbox) {
+    const live = trackPayload.bbox
+    check('bbox gửi đi nằm trong khung video live',
+      live.w > 0 && live.h > 0 && live.x + live.w <= 160 && live.y + live.h <= 120,
+      JSON.stringify(live))
+  }
+
+  // quay lại "Dừng" để kiểm nhánh dừng (dùng lại nút ở panel live)
+  await liveCard.getByRole('button', { name: 'Dừng' }).click()
   await page.waitForFunction(
     () => {
       const el = document.querySelector('[data-testid="live-status"]')

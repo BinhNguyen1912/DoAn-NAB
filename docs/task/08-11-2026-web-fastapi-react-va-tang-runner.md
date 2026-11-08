@@ -287,3 +287,73 @@ ai "tối ưu" thành queue rồi làm tăng latency.
 
 **Next:** Phase 4b — bám đối tượng trên live (VOS ~10 FPS + LK 30 FPS theo `docs/research/09`),
 chọn bbox ngay trên luồng live, xuất quỹ đạo thời gian thực lên client.
+
+---
+
+## 🎯 PR #3 — Phase 4b: bám đối tượng trên luồng trực tiếp (worker tiến trình riêng)
+
+**Ràng buộc quyết định thiết kế:** API **không được** import torch/SAM 2 (ADR-0005 — API phải chạy
+được trên VPS 4 GB). Vì vậy bám live không thể chạy trong tiến trình API.
+
+**Kiến trúc:** worker riêng + trao đổi qua file trong tmpfs.
+
+```text
+tools/live_worker.py  ──(frame.jpg, status.json, bbox.json)──  /dev/shm/doan-live  ──►  API /api/live/stream
+   (torch + SAM 2)              ghi atomic bằng os.replace                        (chỉ đọc file)
+        ▲
+        └── khởi chạy bằng src/api/adapters/worker_source.py (FrameSource — cùng port với mode raw)
+```
+
+| Tầng | File | Nội dung |
+|---|---|---|
+| logic | `src/live_tracking.py` | `LiveTrackingSession`: đọc frame → chờ `bbox.json` (vẫn phát frame trơn để người dùng chọn) → bám → vẽ mask + ô bao + quỹ đạo → ghi `frame.jpg`/`status.json` |
+| CLI | `tools/live_worker.py` | nạp `TrackerEngine`, ghi status `loading` NGAY (model 20–60 s), SIGINT/SIGTERM dừng sạch |
+| port | `src/api/ports.py` → `FrameSource` (giữ nguyên) | adapter mới cùng chữ ký ⇒ **LiveStreamService không phải sửa** |
+| adapter | `src/api/adapters/worker_source.py` | `WorkerFrameSource`: dọn thư mục, ghi bbox, chạy worker, chờ frame đầu (timeout 240 s), dừng bằng `SIGTERM` cả process group |
+| lệnh | `src/worker/command.py` | `build_live_worker_command` (cùng cách activate conda) |
+| API | `schemas.LiveStartRequest` + `routes` | thêm `mode: raw|track`, `bbox`, `image_size` |
+| FE | `web/src/components/LivePanel.tsx` | bật/dừng, đóng băng `frame.jpg` → **kéo chuột chọn đối tượng** → gọi `mode=track` |
+
+**Bug thật tìm thấy khi kiểm tích hợp (quan trọng nhất phiên này):**
+
+API báo `measured_fps = 15,0` trong khi worker chỉ bám được **2 frame trong 6 s** (≈0,4 FPS).
+Nguyên nhân: `LiveStreamService._run()` đếm **mỗi lần đọc file**, kể cả khi nội dung không đổi.
+Sửa: chỉ đếm và phát khi `data != self._latest` (so sánh bytes — rẻ với ảnh JPEG vài chục KB).
+Đồng thời đặt **`image_size` mặc định 192** cho mode track (1024 = mặc định SAM 2 → 0,4 FPS,
+rất dễ tưởng là treo).
+
+**Kiểm chứng tích hợp thật (engine SAM 2 thật, không phải fake):**
+
+```text
+POST /api/live/start {"source":"data/e2e_web.mp4","mode":"track","bbox":{5,25,45,50}}
+→ trả về sau 4,5 s (worker nạp model nền)
+API  : frames=34  fps=10,8  state=running
+worker status.json: {"state":"tracking","frames":35,"measured_fps":10.6,
+                     "inference_ms":98.0,"lost_streak":0,"bbox":[68,31,72,51]}
+GET /api/live/frame → 200, JPEG hợp lệ
+POST /api/live/stop → state=stopped; `pgrep live_worker.py` → KHÔNG còn tiến trình (dọn sạch)
+```
+
+→ **10,6 FPS · 98 ms/frame @image_size 192** — khớp số đo CLI (~97 ms trong `docs/research/11`).
+
+**Kiểm chứng tự động:**
+
+```text
+./run lint     → All checks passed
+./run test     → 513 passed, 5 deselected (57,8 s)   (+13 test mới: live_tracking, lệnh worker, route)
+./run webtest  → 16 passed
+./run e2e      → PASS, thêm 2 bước:
+   ✓ UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"
+     — {"source":"data/e2e_web.mp4","mode":"track","bbox":{"x":32,"y":36,"w":48,"h":48}}
+   ✓ bbox gửi đi nằm trong khung video live
+```
+
+**Bài học cho E2E (ghi để lần sau không mất thời gian):**
+1. Trang có **2 canvas** (job + live) → phải **scope locator vào card** rồi mới kéo chuột.
+2. `page.mouse` dùng toạ độ **viewport** → phải `scrollIntoViewIfNeeded()` trước khi kéo, nếu không
+   chuột rơi ra ngoài canvas và không có sự kiện nào được bắn (mất 2 vòng sửa mới ra).
+3. Muốn kiểm UI gửi payload gì mà không phải nạp model 20–60 s → `page.route()` chặn
+   `/api/live/start` và đọc `postData()`.
+
+**Còn lại (chưa làm):** hybrid **VOS ~10 FPS + LK 30 FPS** (`docs/research/09`) — hiện mỗi frame
+hiển thị là 1 lần suy luận thật, nên HUD chỉ ~10 FPS chứ chưa mượt 30 FPS.

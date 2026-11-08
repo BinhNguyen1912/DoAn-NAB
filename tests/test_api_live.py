@@ -32,7 +32,7 @@ class TestLiveStreamService:
         assert status.state is LiveState.RUNNING
         assert status.source == "giả:0"
         assert _wait(lambda: live_service.status().frames >= 3)
-        assert live_service.latest_jpeg() == b"\xff\xd8fake-frame"
+        assert live_service.latest_jpeg().startswith(b"\xff\xd8fake-frame")
         assert live_service.status().measured_fps > 0
 
     def test_stop_dong_nguon_va_xoa_frame(self, live_service, make_frame_source):
@@ -78,11 +78,13 @@ class TestLiveStreamService:
     def test_luong_frames_sinh_ra_part_dung_dinh_dang_mjpeg(self, live_service):
         live_service.start("0")
         part = next(live_service.frames(idle_timeout=0.3))
-        jpeg = b"\xff\xd8fake-frame"
 
-        # Content-Length phải khớp độ dài thật của ảnh — sai thì trình duyệt treo
-        assert f"Content-Length: {len(jpeg)}".encode() in part
-        assert part.endswith(jpeg + b"\r\n")
+        header, _, payload = part.partition(b"\r\n\r\n")
+        assert header.startswith(b"--frame\r\nContent-Type: image/jpeg")
+        # Content-Length phải khớp độ dài THẬT của ảnh — lệch là trình duyệt treo
+        declared = int(header.split(b"Content-Length: ")[1].split(b"\r\n")[0])
+        assert declared == len(payload[:-2])            # payload kết thúc bằng CRLF
+        assert payload[:2] == b"\xff\xd8"
         live_service.stop()
 
 
@@ -123,7 +125,8 @@ class TestLiveRoutes:
         live_client.post("/api/live/stop")
 
     def test_nguon_sai_tra_400(self, live_client, monkeypatch, failing_source):
-        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda src: failing_source(src))
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *args, **kwargs: failing_source("0"))
 
         r = live_client.post("/api/live/start", json={"source": "0"})
         assert r.status_code == 400
