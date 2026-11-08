@@ -67,6 +67,7 @@ class TestSummarizeVaMasksGt:
         assert row["bbox_iou_trong"] == 0.8                 # frame 2,3
         assert row["bbox_iou_sau"] == 0.7                   # frame 4,5
         assert row["mask_miou_trong"] == 0.6
+        assert row["so_frame_gt_rong"] == 0
         assert row["so_frame_do_miou"] == 6
         assert row["mat_dau_trong_che"] == 1
         assert row["mat_dau_sau_che"] == 1
@@ -87,8 +88,39 @@ class TestSummarizeVaMasksGt:
 
         assert row["mask_miou_trong"] is None, "không có frame đo được ⇒ phải là None, không phải 1.0"
         assert row["so_frame_do_miou"] == 2
+        assert row["so_frame_gt_rong"] == 1
         assert row["mask_miou_truoc"] is None         # không có frame nào trước vùng che
         assert row["mask_miou_sau"] == 0.8
+
+    def test_model_tra_mask_rong_thi_tinh_0_khong_phai_bo_qua(self):
+        """P1 review: loại frame "model trả rỗng" khỏi mẫu ⇒ mIoU chỉ còn trung bình các frame
+        sống sót, luôn cao hơn thực tế. Model rỗng + GT có vật ⇒ 0,0."""
+        import numpy as np
+
+        from scripts.experiment_occlusion import _mask_iou_or_nan
+
+        gt = np.zeros((10, 10), bool)
+        gt[2:6, 2:6] = True
+        empty = np.zeros((10, 10), bool)
+
+        assert _mask_iou_or_nan(empty, gt) == 0.0, "bám sai phải là 0 điểm, không phải 'không đo được'"
+        assert np.isnan(_mask_iou_or_nan(empty, empty)), "GT rỗng ⇒ không có gì để chấm"
+
+    def test_cua_so_rong_tra_none_va_json_khong_co_nan(self):
+        """`start` vượt số frame: mọi khoá phải None (không phải NaN literal trong JSON)."""
+        import json
+
+        import numpy as np
+
+        from scripts.experiment_occlusion import summarize
+
+        row = summarize(np.array([1.0, 1.0, 1.0]), np.zeros(3, int),
+                        np.array([0.9, 0.9, 0.9]), np.zeros(3, bool), start=5, cover=2)
+
+        assert row["bbox_iou_trong"] is None
+        assert row["mask_miou_sau"] is None
+        assert row["so_frame_bi_che_trong_cua_so"] == 0
+        assert "NaN" not in json.dumps(row)
 
     def test_chay_khong_che_thi_miou_mask_bang_1_neu_mask_dung(self):
         """Fixture + mask GT: nếu "model" trả đúng GT thì mIoU phải = 1,0 ở mọi frame."""

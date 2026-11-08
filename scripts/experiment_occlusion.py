@@ -41,9 +41,16 @@ def iou(a, b):
 
 
 def _mask_iou_or_nan(pred, gt):
-    """mIoU 1 frame; NaN khi không đo được (một trong hai mask rỗng)."""
-    if gt is None or pred is None or not gt.any() or not pred.any():
+    """mIoU 1 frame. **GT rỗng ⇒ NaN** (không có gì để chấm), **model rỗng ⇒ 0,0**.
+
+    Phân biệt này quan trọng: nếu loại luôn cả frame model trả mask rỗng thì mIoU chỉ còn là
+    trung bình trên các frame "sống sót" — một lần bám sai sẽ được ghi là "không đo được" thay vì
+    0 điểm, và con số cuối cùng luôn cao hơn thực tế (review độc lập 08-11, P1).
+    """
+    if gt is None or not gt.any():
         return float("nan")
+    if pred is None or not pred.any():
+        return 0.0
     return mask_iou(pred, gt)
 
 
@@ -63,19 +70,23 @@ def summarize(ious, lost, mask_ious, occl, start, cover):
         return round(float(clean.mean()), 4) if clean.size else None
 
     return {
-        "bbox_iou_truoc": round(float(ious[1:a].mean()), 4) if a > 1 else None,
-        "bbox_iou_trong": round(float(ious[a:b].mean()), 4),
-        "bbox_iou_sau": round(float(ious[b:].mean()), 4),
+        "bbox_iou_truoc": _mean(ious[1:a]) if a > 1 else None,
+        "bbox_iou_trong": _mean(ious[a:b]),
+        "bbox_iou_sau": _mean(ious[b:]),
+        "so_frame_truoc": max(0, min(a, len(ious)) - 1),
         # NaN = frame không đo được (GT rỗng do bị che kín, hoặc model trả mask rỗng):
         # `mask_iou(rỗng, rỗng) = 1,0` nếu tính bừa sẽ biến "che kín" thành "phân đoạn hoàn hảo".
         "mask_miou_truoc": _mean(mask_ious[1:a]) if a > 1 else None,
         "mask_miou_trong": _mean(mask_ious[a:b]),
         "mask_miou_sau": _mean(mask_ious[b:]),
         "so_frame_do_miou": int(np.count_nonzero(~np.isnan(np.asarray(mask_ious, float)))),
+        "so_frame_gt_rong": int(np.count_nonzero(np.isnan(np.asarray(mask_ious, float)))),
         "mat_dau_trong_che": int(lost[a:b].sum()),
         "mat_dau_sau_che": int(lost[b:].sum()),
         "so_frame": int(len(ious)),
-        "so_lan_cap_nhat_mask_trong_che": int(min(cover, sum(int(x) for x in occl[a:b]))),
+        # Offline chạy VOS MỖI frame ⇒ số frame bị che ≡ số lần mask được cập nhật trong vùng đó.
+        # (Đừng trích con số này như "số lần cập nhật mask" của đường live — live có vos_every.)
+        "so_frame_bi_che_trong_cua_so": int(np.count_nonzero(occl[a:b])),
     }
 
 
@@ -151,12 +162,22 @@ def main():
     plt.close(fig)
     print(f"[done] biểu đồ: {png}")
 
+    import datetime
     import json
     import subprocess
 
+    def _git(*args):
+        return subprocess.run(["git", *args], capture_output=True, text=True,
+                              cwd=_ROOT).stdout.strip()
+
     artifact = {
-        "git_rev": subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
-                                  cwd=_ROOT).stdout.strip(),
+        "git_rev": _git("rev-parse", "HEAD"),
+        # có thay đổi chưa commit ⇒ số đo KHÔNG tái lập được từ git_rev ⇒ phải ghi rõ
+        "git_dirty": bool(_git("status", "--porcelain")),
+        "do_luc": datetime.datetime.now().isoformat(timespec="seconds"),
+        "lenh": ("python scripts/experiment_occlusion.py "
+                 f"--image-size {args.image_size} --frames {args.frames} --cover {args.cover} "
+                 f"--start {args.start} --fraction {args.fraction}"),
         "moi_truong": "CPU (không GPU rời), torch bản CPU",
         "image_size": args.image_size,
         "so_frame": args.frames,

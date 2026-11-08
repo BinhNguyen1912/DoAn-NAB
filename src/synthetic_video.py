@@ -51,6 +51,11 @@ def generate_tracking_sequence(
         (1.0 = che hoàn toàn — mặc định; 0.5 = che một nửa; 0.0 = không che).
         Dùng để đo "duy trì bám bắt khi bị **che khuất một phần**" (tên đề tài).
     """
+    if not 0.0 <= float(occlusion_fraction) <= 1.0:
+        raise ValueError(
+            f"occlusion_fraction phải trong [0, 1]; nhận {occlusion_fraction!r} "
+            "(1.0 = che kín, 0.0 = không che)"
+        )
     height, width = frame_size
     x, y = start
 

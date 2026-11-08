@@ -358,14 +358,19 @@ fixture có **GT mask giải tích** (`src/synthetic_video.py`), laptop CPU, `im
 
 | Kịch bản | bbox IoU (trong che) | **mask mIoU** | mất dấu | mIoU sau khi ra khỏi vật cản |
 |---|---|---|---|---|
-| không bị che | 0,973 | **0,956** | 0/12 | — |
-| che 50 % | 0,53 | **0,892** | 0/6 | 0,959 |
-| che 100 % | 0,00 | **None** (GT rỗng) | 6/6 | 0,962 |
+| trước khi bị che (khung 1–11) | 0,97 | **0,96** | 0/11 | — |
+| che 50 % (khung 12–17) | 0,53 | **0,89** | 0/6 | 0,96 |
+| che 100 % (khung 12–17) | 0,00 | **None** (GT rỗng) | 6/6 | 0,96 |
 
 > Đọc đúng: mask chỉ được tính trên phần **nhìn thấy**, nên khi bị che một nửa `bbox IoU` tụt còn
 > 0,53 trong khi `mIoU` vẫn 0,89 — phải báo **cả hai + tỷ lệ mất dấu**, đừng chọn số đẹp.
-> Số liệu: `data/occlusion_metrics_320_metrics.json`; lệnh: `./run occl`. **GT là giải tích trên
-> ảnh tổng hợp — không phải mIoU trên DAVIS/thật**, không được trích dẫn như vậy.
+> **Hàng 2 đo trên GT chỉ-phần-nhìn-thấy, không so trực tiếp với hàng 1 (GT đầy đủ).**
+> Số liệu: `data/occlusion_metrics_320_metrics.json`; lệnh: `./run occl`.
+>
+> ⚠️ **Đây là CẬN TRÊN, không phải độ chính xác phân đoạn thực tế**: GT mask chính là các pixel màu
+> của ô vuông trên **ảnh tổng hợp**, SAM 2 lại được khởi tạo bằng **đúng ô bao GT**, và một bộ
+> ngưỡng màu đơn giản cũng đạt 1,0 trên fixture này. Con số chứng minh **mask lan truyền không bị
+> trôi/hỏng**, không dùng để so với mIoU trên DAVIS hay video thật.
 
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"

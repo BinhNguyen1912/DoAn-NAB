@@ -162,9 +162,16 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **SAM 2 không tất định**: cùng seed, cùng video, hai lần chạy cho ô bao cuối khác nhau ⇒ chỉ so
   sánh chỉ số **trong cùng một lần chạy**.
 - **Chất lượng phân đoạn phải là mIoU mask vs GT, không phải IoU hộp bao.** Số hiện có (fixture
-  tổng hợp, image_size 320): mIoU **0,956** nền / **0,892** khi bị che 50 % / **None** khi che kín
-  (GT rỗng, 6/6 lần mất dấu) — `data/occlusion_metrics_320_metrics.json`. Quy tắc: metric IoU mà
-  một bên **rỗng** thì KHÔNG được tính là 1,0 (bẫy đã gặp 2 lần: `stability` và `mIoU`).
+  tổng hợp, image_size 320): mIoU **0,96** nền / **0,89** khi bị che 50 % / **None** khi che kín
+  (GT rỗng, 6/6 lần mất dấu) — `data/occlusion_metrics_320_metrics.json`. **Đây là CẬN TRÊN**
+  (GT ≡ pixel màu ô vuông trên ảnh tổng hợp, prompt là đúng bbox GT) — cấm trích như "mIoU trên
+  video thật/DAVIS".
+- **Metric IoU phải phân biệt "GT rỗng" với "model trả rỗng"**: GT rỗng ⇒ không chấm (NaN/None);
+  model rỗng mà GT có vật ⇒ **0,0**. Gộp cả hai thành "không đo được" sẽ thổi phồng mIoU (một lần
+  bám sai được ghi là không đo được). Bẫy `IoU(rỗng, rỗng) = 1,0` đã gặp 3 lần trong repo
+  (`stability`, `mIoU`, và một test).
+- **Artifact số đo phải có `git_rev` == commit code đang chạy, `git_dirty`, `lenh`, `do_luc`.**
+  Số đo trên working tree bẩn thì không tái lập được (review 08-11 bắt đúng lỗi này).
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo

@@ -55,6 +55,36 @@
 - Fixture hiện chỉ che **dải phình từ trái trên chính vật**, chưa có **vật cản đi ngang che kín rồi
   đi qua** (kịch bản khó nhất của đề cương). Đã ghi next step.
 
+## 🔁 Review độc lập (AGENTS §9.1) — "chưa merge được", đã đóng hết
+
+| Phát hiện | Mức | Đã xử lý |
+|---|---|---|
+| `_mask_iou_or_nan` loại **cả** frame "model trả mask rỗng" khỏi mẫu ⇒ mIoU chỉ còn trung bình các frame sống sót, **luôn cao hơn thực tế** (một lần bám sai bị ghi là "không đo được") | **P1** | Tách rõ: **GT rỗng ⇒ NaN** (không có gì để chấm), **model rỗng mà GT có vật ⇒ 0,0**; thêm `so_frame_gt_rong`; test `_mask_iou_or_nan(rỗng, gt) == 0.0` |
+| `git_rev` ghi **trước** khi commit code sinh ra số ⇒ chạy lại tại đúng rev đó sẽ `AttributeError: no attribute 'masks'`. Vi phạm ADR-0002 | **P1** | Artifact thêm `git_dirty`, `do_luc`, `lenh`; **commit code trước → chạy lại script → commit artifact** để `git_rev == HEAD` |
+| `bbox_iou_*` trả **NaN literal** (JSON không hợp lệ) khi cửa sổ rỗng; không nhất quán với `mask_miou_*` (None) | P2 | Dùng `_mean()` cho cả 6 cửa sổ; validate `--fraction/--cover/--start`; test `json.dumps` không chứa `NaN` |
+| README ghi dòng "**không bị che 0/12**" — không phải kịch bản của script (đó là cửa sổ `truoc` = **11** frame, và `mat_dau_truoc` không được tính) | P2 | Sửa nhãn thành "trước khi bị che (khung 1–11)", thêm `so_frame_truoc`, `so_frame_gt_rong` vào artifact |
+| **Nguy cơ overclaim**: 0,956 và 0,892 đo **hai định nghĩa GT khác nhau** (đầy đủ vs chỉ phần nhìn thấy); và trên fixture, một **ngưỡng màu** cũng đạt 1,0 ⇒ con số chỉ chứng minh "mask không trôi", không phải "chất lượng phân đoạn" | P2 | Thêm câu chữ trung thực vào README + log (mục dưới) |
+| `occlusion_fraction` không validate (âm ⇒ cờ "bị che" mà không che gì; >1 ⇒ che tràn) | P2 | `raise ValueError` trong `generate_tracking_sequence` + 2 test |
+| `so_lan_cap_nhat_mask_trong_che` đếm số frame bị che (offline chạy VOS mỗi frame ⇒ luôn = `cover`) ⇒ vô nghĩa | P3 | Đổi tên `so_frame_bi_che_trong_cua_so` + ghi chú |
+| Độ chính xác giả (4 chữ số trong khi chênh giữa hai lần chạy ~0,004) | P3 | Docs làm tròn 2 chữ số; artifact giữ 4 |
+| Test "GT khớp pixel màu" có thể pass rỗng (`mask_iou(rỗng,rỗng)=1,0`) | P3 | Thêm assert `thuc_te.sum() == 30*30`; parametrize 4 ca (size 39/41/41/40, fraction 0,3/0,5/0,999/1,0) |
+| Docstring `experiment_occlusion.py` ghi output CSV không tồn tại | P3 | Sửa docstring |
+
+**Đã kiểm, không phải lỗi** (reviewer bác đúng nghi vấn của mình): `cover_w` làm tròn **không** làm GT
+lỗi (frame và mask dùng **cùng** `cover_w` ⇒ GT ≡ pixel màu cam; size lẻ chỉ làm tỉ lệ đạt 0,488 thay
+vì 0,5); `occlusion_frames` ngoài khoảng bị bỏ qua an toàn; ô sát mép không off-by-one;
+`TrackingFixture.masks=None` hiện **không** có đường dùng nào chạm tới.
+
+### Câu chữ TRUNG THỰC để dùng trong báo cáo
+> Chất lượng phân đoạn được đo trên **ảnh tổng hợp** (ô vuông cam đặc trên nền phẳng, GT mask chính
+> là các pixel của ô), `image_size=320`, laptop CPU: **mIoU ≈ 0,96** ở các khung không bị che và
+> **≈ 0,89** khi bị che 50 % — mask chỉ được chấm trên phần đối tượng **còn nhìn thấy**. Đây là
+> **cận trên**, không phải độ chính xác phân đoạn thực tế: SAM 2 được khởi tạo bằng **đúng ô bao GT**
+> ở frame 0, và trên fixture này một bộ ngưỡng màu đơn giản cũng đạt 1,0, nên con số chỉ chứng minh
+> **lan truyền mask không bị trôi/hỏng**, không dùng để so với mIoU trên DAVIS hay video thật. Khi
+> vật bị che kín, GT rỗng nên **không đo được** (None; 6/6 khung mất dấu) — vì vậy phải báo **cả bbox
+> IoU, mIoU và tỉ lệ mất dấu**, không trích riêng con số đẹp.
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Thêm **vật cản đi ngang** (che kín 8–15 frame rồi đi qua) vào fixture; đo độ trễ nhận lại
       theo **số lần cập nhật mask** (không phải frame hình).
