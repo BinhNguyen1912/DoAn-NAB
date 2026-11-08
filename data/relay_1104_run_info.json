@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-11-04T21:09:34",
+  "git_rev": "7f5b2a3",
+  "source": "http://172.19.176.1:8090/video",
+  "image_size": 320,
+  "reanchor_every": null,
+  "max_frames": 4,
+  "reid": false,
+  "reid_cue": "face",
+  "reid_obj_threshold": 0.6,
+  "reid_obj_ncc_min": 0.0,
+  "lost_score_threshold": 0.0,
+  "reid_reacquire_confirm": null,
+  "reid_verify_frames": null
+}

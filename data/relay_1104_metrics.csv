@@ -1,0 +1,5 @@
+frame_idx,latency_ms,score,center_x,center_y,lost,state,reid_score,reacquired,ncc
+0,513.2,18.1655,316,244,0,,,,
+1,251.8,0.958367,305,240,0,,,,
+2,231.6,0.445044,308,266,0,,,,
+3,221.4,0.345965,299,258,0,,,,
