@@ -79,7 +79,10 @@ kết luận "tốt hơn/xấu hơn" đều có thể là nhiễu. Đã đưa th
 ## 📌 Việc tách ra ticket (không làm ngay)
 - [ ] `scripts/measure_live.py` + artifact JSON (việc 1) — 3 h
 - [ ] `lk_drift_iou`/`mask_age_ms` + `scripts/repeatability.py` (việc 2) — 5 h
-- [ ] Watchdog trong `LiveStreamService` + test (việc 3) — 2 h
+- [x] **Vòng đời phiên live** (làm ngay vì phá số đo): khoá `start` + 409, dừng-được-khi-đang-nạp,
+      reap worker mồ côi bằng pidfile (+ kiểm cmdline), `lifespan` shutdown — PR ngay sau plan này.
+- [ ] Watchdog **sau** khi start (worker chết giữa phiên): đọc `state`/heartbeat `ts` từ
+      `status.json` trong adapter ⇒ `LiveState.ERROR` ≤ 2 s + nút "Chạy lại” — 2–3 h
 - [ ] Transcode H.264 cho `--record` (việc 4) — 1 h
 - [ ] `scripts/label_bbox.py` + eval GT (việc 5) — 4 h + **người dùng gán nhãn**
 - [ ] Sơ đồ khối + bảng phần cứng (việc 6) — 1,5 h

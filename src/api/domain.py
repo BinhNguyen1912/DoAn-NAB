@@ -64,6 +64,10 @@ class PayloadTooLarge(DomainError):
     """Video vượt quá giới hạn dung lượng."""
 
 
+class LiveBusy(DomainError):
+    """Đang mở một phiên live khác (POST /api/live/start đồng thời) → 409, không chờ 240 s."""
+
+
 class SourceUnavailable(DomainError):
     """Không mở được nguồn frame live (webcam bận, RTSP sai địa chỉ, file không tồn tại)."""
 

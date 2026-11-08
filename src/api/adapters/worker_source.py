@@ -11,6 +11,7 @@ Lưu ý  : thư mục mặc định là `/dev/shm/doan-live` (tmpfs) — ghi 15�
          và kiểm tra `status.json` để báo lỗi sớm thay vì treo.
 """
 
+import logging
 import os
 import shutil
 import signal
@@ -22,11 +23,15 @@ from src.api.ports import FrameSource
 from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATUS_NAME
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
+logger = logging.getLogger("doan.api.worker_source")
+
 DEFAULT_LIVE_DIR = "/dev/shm/doan-live"
 LIVE_DIR_ENV = "DOAN_LIVE_DIR"
 
 # File do adapter quản lý trong thư mục live (dọn trước mỗi phiên để không đọc nhầm của phiên cũ)
-_OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, "status.json.tmp", "frame.jpg.tmp", LOG_NAME)
+PID_NAME = "worker.pid"
+_OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, PID_NAME, "status.json.tmp",
+                "frame.jpg.tmp", LOG_NAME)
 
 
 def live_dir() -> Path:
@@ -70,6 +75,10 @@ class WorkerFrameSource(FrameSource):
             python_exe=self._python, repo_root=REPO_ROOT,
         )
         self._proc = start_process(argv, log_path=self._log, cwd=REPO_ROOT)
+        try:
+            (self._out / PID_NAME).write_text(str(self._proc.pid), encoding="utf-8")
+        except OSError:                              # không ghi được pidfile thì vẫn chạy
+            logger.warning("không ghi được %s", PID_NAME)
         self._wait_first_frame()
 
     def read_jpeg(self):
@@ -116,9 +125,49 @@ class WorkerFrameSource(FrameSource):
     # ------------------------------------------------------------------ nội bộ
 
     def _prepare_dir(self) -> None:
+        """Reap worker của phiên TRƯỚC rồi mới dọn file.
+
+        Vì sao: `./run api` chạy uvicorn `--reload`, mỗi lần lưu file API chết nhưng worker SAM 2
+        (start_new_session) sống tiếp và **ghi đè frame.jpg** — phiên mới sẽ `_wait_first_frame`
+        thấy frame của worker cũ, báo "running" bằng ảnh của phiên trước, và hai worker cùng ghi
+        một file. Đã xác nhận bằng đọc mã (review độc lập 08-11).
+        """
         self._out.mkdir(parents=True, exist_ok=True)
+        self._reap_stale_worker()
         for name in _OWNED_FILES:
             (self._out / name).unlink(missing_ok=True)
+
+    def _reap_stale_worker(self) -> None:
+        """Kill worker cũ nếu pidfile còn sống và ĐÚNG là live_worker (chống pid reuse)."""
+        try:
+            pid = int((self._out / PID_NAME).read_text(encoding="utf-8").strip())
+        except (OSError, ValueError):
+            return
+        if pid <= 0 or pid == os.getpid():
+            return
+        try:
+            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+        except OSError:
+            return                                   # tiến trình đã chết hoặc không đọc được
+        if "live_worker" not in cmdline:
+            return                                   # pid bị tái sử dụng bởi tiến trình khác
+        logger.warning("dọn worker live còn sót của phiên trước: pid=%s", pid)
+        try:
+            os.killpg(os.getpgid(pid), signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                return
+        deadline = time.time() + 5.0
+        while time.time() < deadline:
+            if not Path(f"/proc/{pid}").exists():
+                return
+            time.sleep(0.1)
+        try:                                         # quá 5 s vẫn sống ⇒ kill cứng
+            os.killpg(os.getpgid(pid), signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
     def _write_bbox(self, bbox) -> None:
         import json

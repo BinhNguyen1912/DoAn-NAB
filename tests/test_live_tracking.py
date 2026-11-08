@@ -120,10 +120,13 @@ class TestLiveTrackingSession:
         LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
-        assert set(status) == {
+        bat_buoc = {
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
             "lost_streak", "bbox", "message"}
+        # SUPERSET (không ==): thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần;
+        # nhưng thiếu khoá bắt buộc thì phải đỏ (adapter/UI đọc theo tên).
+        assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
 
     def test_file_duoc_lap_lai_khi_chay_lien_tuc(self, video_source, tmp_path):
         """Video 6 frame nhưng chạy liên tục → phải lặp lại, không dừng ở frame 6."""
@@ -597,3 +600,77 @@ class TestCoLenhWorker:
         joined = " ".join(build_live_worker_command("0", tmp_path, repo_root=tmp_path))
         assert "--vos-every" not in joined
         assert "--mask-smoothing" not in joined
+
+
+class TestVeSinhWorkerCu:
+    """Worker mồ côi (uvicorn --reload) phải bị dọn trước khi mở phiên mới (review 08-11 vòng đời)."""
+
+    def _spawn_fake_worker(self, tmp_path):
+        """Tiến trình giả có 'live_worker' trong cmdline (đúng điều kiện nhận diện)."""
+        import subprocess
+        import sys
+
+        proc = subprocess.Popen(
+            [sys.executable, "-c", "import time; time.sleep(60)", "live_worker.py"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        return proc
+
+    def test_reap_worker_cu_con_song(self, tmp_path):
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        proc = self._spawn_fake_worker(tmp_path)
+        try:
+            (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
+            WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
+
+            assert proc.poll() is not None, "worker cũ còn sống phải bị dọn"
+            assert not (tmp_path / PID_NAME).exists()
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
+
+    def test_khong_giet_pid_bi_tai_su_dung(self, tmp_path):
+        """pidfile trỏ vào tiến trình KHÔNG phải live_worker (pid reuse) ⇒ không được kill."""
+        import subprocess
+        import sys
+
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)"],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        try:
+            (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
+            WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
+            assert proc.poll() is None, "không được giết tiến trình lạ trùng pid"
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    def test_pidfile_hong_thi_bo_qua(self, tmp_path):
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        (tmp_path / PID_NAME).write_text("không phải số", encoding="utf-8")
+        WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()      # không được ném
+
+
+class TestMaskLechKichThuoc:
+    """Nguồn đổi độ phân giải giữa phiên (relay snapshot, điện thoại xoay) ⇒ không IndexError."""
+
+    def test_annotate_bo_mask_sai_kich_thuoc(self):
+        from src.live_tracking import _FrameResult, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        cfg = LiveTrackConfig(source="x", out_dir="/tmp/khong-dung", vos_every=1)
+        session = LiveTrackingSession(_Noop(), cfg)
+        frame = np.zeros((48, 64, 3), np.uint8)
+        wrong = np.zeros((100, 100), bool)          # mask của độ phân giải khác
+        wrong[10:20, 10:20] = True
+
+        image = session._annotate(frame, _FrameResult(1, (10, 10, 20, 20), wrong, 1.0))
+        assert image.shape == frame.shape           # không ném, không vẽ mask sai

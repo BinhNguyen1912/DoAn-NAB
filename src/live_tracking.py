@@ -515,6 +515,10 @@ class LiveTrackingSession:
         """Tô mask + ô bao + quỹ đạo + HUD. Chữ HUD dùng ASCII vì font Hershey không có dấu."""
         img = frame.copy()
         mask = getattr(result, "mask", None)
+        if mask is not None and mask.shape != frame.shape[:2]:
+            # Nguồn đổi độ phân giải giữa phiên (relay /snapshot.jpg, điện thoại xoay máy) ⇒
+            # `tint[mask]` sẽ IndexError. Bỏ mask frame này, không làm chết phiên.
+            mask = None
         if mask is not None and mask.any():
             tint = img.copy()
             tint[mask] = _OVERLAY_COLOR_MASK

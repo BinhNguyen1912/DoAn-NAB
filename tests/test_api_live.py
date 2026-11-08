@@ -269,3 +269,135 @@ class TestNhipDocFrame:
         service = LiveStreamService(lambda *a, **k: None)
         assert LIVE_READ_FPS >= 30
         assert service._interval == pytest.approx(1.0 / LIVE_READ_FPS)
+
+
+from tests.conftest import FakeFrameSource  # noqa: E402 — dùng cho các nguồn giả bên dưới
+
+
+class _SlowStartSource(FakeFrameSource):
+    """Nguồn mô phỏng worker THẬT: `start()` mất thời gian (nạp model 20–60 s)."""
+
+    def __init__(self, source, *, delay=0.4, **kwargs):
+        super().__init__(source, **kwargs)
+        self._delay = delay
+        self.start_calls = 0
+        self.start_finished = False
+
+    def start(self):
+        import time
+
+        self.start_calls += 1
+        time.sleep(self._delay)
+        super().start()
+        self.start_finished = True
+
+
+class TestVongDoiPhienLive:
+    """Review độc lập 08-11 (vòng life-cycle): double-start, dừng khi đang nạp, shutdown."""
+
+    def test_start_dong_thoi_chi_mo_mot_nguon(self, live_service, monkeypatch):
+        """POST /api/live/start đồng thời (double-click, 2 tab) không được tạo 2 worker."""
+        import threading
+
+        from src.api.domain import LiveBusy
+
+        created = []
+
+        def factory(*args, **kwargs):
+            item = _SlowStartSource(str(args[0]))
+            created.append(item)
+            return item
+
+        monkeypatch.setattr(live_service, "_make_source", factory)
+        errors, results = [], []
+        threads = [
+            threading.Thread(target=lambda: _try(lambda: results.append(live_service.start("0")),
+                                                 errors))
+            for _ in range(4)
+        ]
+        for t in threads:
+            t.start()
+        for t in threads:
+            t.join(timeout=10)
+
+        assert len(created) == 1, "chỉ một nguồn được tạo (không có worker thứ hai)"
+        assert created[0].start_calls == 1
+        assert all(isinstance(err, LiveBusy) for err in errors), errors
+        assert len(results) == 1 and results[0].state is LiveState.RUNNING
+        live_service.stop()
+
+    def test_dung_trong_luc_nap_model_thi_khong_de_worker_mo_coi(self, live_service, monkeypatch):
+        """Bấm Dừng khi đang nạp model: phiên phải kết thúc 'stopped' và nguồn bị đóng."""
+        import threading
+        import time
+
+        created = []
+
+        def factory(*args, **kwargs):
+            item = _SlowStartSource(str(args[0]), delay=0.5)
+            created.append(item)
+            return item
+
+        monkeypatch.setattr(live_service, "_make_source", factory)
+        box = {}
+
+        def _start():
+            box["status"] = live_service.start("0")
+
+        worker = threading.Thread(target=_start)
+        worker.start()
+        time.sleep(0.1)
+        live_service.stop()                     # chen vào GIỮA lúc start()
+        worker.join(timeout=10)
+
+        assert box["status"].state is LiveState.STOPPED
+        assert created and created[0].stopped is True, "nguồn vừa mở phải bị đóng, không mồ côi"
+
+    def test_api_tra_409_khi_dang_mo_phien_khac(self, live_client, monkeypatch):
+        import threading
+        import time
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _SlowStartSource("0", delay=0.6))
+        codes = []
+
+        def _post():
+            codes.append(live_client.post("/api/live/start", json={"source": "0"}).status_code)
+
+        first = threading.Thread(target=_post)
+        first.start()
+        time.sleep(0.15)
+        second = live_client.post("/api/live/start", json={"source": "0"})
+        first.join(timeout=10)
+
+        assert second.status_code == 409
+        assert 200 in codes
+
+    def test_shutdown_dung_worker(self, service, api_settings):
+        """Thoát app (uvicorn --reload) phải dừng worker: trước đây worker mồ côi ghi đè frame.jpg."""
+        from fastapi.testclient import TestClient
+
+        from src.api.live import LiveStreamService
+        from src.api.main import create_app
+        from tests.conftest import FakeFrameSource
+
+        created = []
+
+        def factory(*args, **kwargs):
+            item = FakeFrameSource(str(args[0]))
+            created.append(item)
+            return item
+
+        live = LiveStreamService(factory)
+        app = create_app(settings=api_settings, service=service, live=live)
+        with TestClient(app) as client:
+            client.post("/api/live/start", json={"source": "0"})
+
+        assert created and created[0].stopped is True, "shutdown phải đóng nguồn"
+
+
+def _try(fn, errors):
+    try:
+        fn()
+    except Exception as exc:        # noqa: BLE001 — test cần bắt lỗi miền
+        errors.append(exc)

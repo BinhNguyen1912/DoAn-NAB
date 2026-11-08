@@ -18,7 +18,7 @@ import time
 from collections import deque
 from typing import Callable, Iterator
 
-from src.api.domain import LiveState, LiveStatus, SourceUnavailable
+from src.api.domain import LiveBusy, LiveState, LiveStatus, SourceUnavailable
 from src.api.ports import FrameSource, LiveTelemetrySource
 
 logger = logging.getLogger("doan.api.live")
@@ -40,6 +40,11 @@ class LiveStreamService:
         self._make_source = make_source
         self._interval = 1.0 / max(1, int(target_fps))
         self._lock = threading.Lock()
+        # Một lần `start()` tại một thời điểm: mở nguồn worker có thể mất 20–240 s (nạp model).
+        # Hai request đồng thời (double-click, 2 tab, curl) sẽ tạo 2 worker cùng ghi
+        # /dev/shm/doan-live ⇒ frame trộn của hai phiên, và worker thua bị mất tham chiếu (rò).
+        self._start_lock = threading.Lock()
+        self._pending: FrameSource | None = None    # nguồn đang mở (để stop() huỷ được)
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._source: FrameSource | None = None
@@ -59,42 +64,67 @@ class LiveStreamService:
 
         mode="raw"   : phát khung hình gốc (nhanh, không cần model).
         mode="track" : chạy worker bám đối tượng ở tiến trình riêng (cần bbox), phát frame đã overlay.
-        Ném SourceUnavailable nếu không mở được nguồn/worker.
+        Ném SourceUnavailable nếu không mở được nguồn/worker, LiveBusy nếu đang mở phiên khác.
         """
-        with self._lock:
-            self._stop_locked()
-
-        candidate = self._make_source(str(source), mode, bbox, image_size, vos_every,
-                                      mask_smoothing)
+        if not self._start_lock.acquire(blocking=False):
+            # KHÔNG chờ: nạp model có thể 20–240 s; chờ sẽ treo HTTP request và vẫn có thể
+            # tạo worker thứ hai nếu client kịp retry.
+            raise LiveBusy("đang mở một phiên live khác (nạp model) — chờ vài giây rồi thử lại")
         try:
-            candidate.start()
-        except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400
-            try:
-                candidate.stop()
-            finally:
-                message = _MAX_OPEN_ERROR.format(label=candidate.label, error=exc)
-                with self._lock:
-                    self._state = LiveState.ERROR
-                    self._label = candidate.label
-                    self._message = message
-                raise SourceUnavailable(message) from exc
+            with self._lock:
+                self._stop_locked()
+                self._stop.clear()          # xoá dấu stop cũ để phiên mới không tự huỷ
 
-        with self._lock:
-            self._source = candidate
-            self._latest = None
-            self._frames = 0
-            self._stamps.clear()
-            self._label = candidate.label
-            self._state = LiveState.RUNNING
-            self._message = f"Đang phát từ {candidate.label}"
-            self._stop.clear()
-            self._thread = threading.Thread(target=self._run, name="live-stream", daemon=True)
-            self._thread.start()
-        logger.info("bắt đầu live: %s", candidate.label)
-        return self.status()
+            candidate = self._make_source(str(source), mode, bbox, image_size, vos_every,
+                                          mask_smoothing)
+            with self._lock:                # công bố TRƯỚC khi mở → stop() huỷ được giữa chừng
+                self._pending = candidate
+                self._label = candidate.label
+                self._message = f"Đang mở {candidate.label}…"
+            try:
+                candidate.start()
+            except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400
+                with self._lock:
+                    self._pending = None
+                try:
+                    candidate.stop()
+                finally:
+                    message = _MAX_OPEN_ERROR.format(label=candidate.label, error=exc)
+                    with self._lock:
+                        self._state = LiveState.ERROR
+                        self._label = candidate.label
+                        self._message = message
+                    raise SourceUnavailable(message) from exc
+
+            with self._lock:
+                self._pending = None
+                cancelled = self._stop.is_set()      # stop() được gọi trong lúc nạp model
+                if not cancelled:
+                    self._source = candidate
+                    self._latest = None
+                    self._frames = 0
+                    self._stamps.clear()
+                    self._label = candidate.label
+                    self._state = LiveState.RUNNING
+                    self._message = f"Đang phát từ {candidate.label}"
+                    self._thread = threading.Thread(target=self._run, name="live-stream",
+                                                    daemon=True)
+                    self._thread.start()
+            if cancelled:
+                candidate.stop()                     # không để worker mồ côi
+                logger.info("huỷ phiên live vừa mở vì đã có lệnh dừng: %s", candidate.label)
+                return self.status()
+            logger.info("bắt đầu live: %s", candidate.label)
+            return self.status()
+        finally:
+            self._start_lock.release()
 
     def stop(self) -> LiveStatus:
-        """Dừng phát và đóng nguồn."""
+        """Dừng phát và đóng nguồn.
+
+        Gọi trong lúc `start()` đang nạp model: `self._stop` được set ⇒ sau khi `start()` xong,
+        nó tự đóng nguồn vừa mở thay vì để worker mồ côi chạy tiếp.
+        """
         with self._lock:
             self._stop_locked()
             self._message = "Đã dừng"
