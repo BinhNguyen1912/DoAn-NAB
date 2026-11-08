@@ -104,9 +104,11 @@ class LiveStatus:
     source: str = ""
     frames: int = 0
     measured_fps: float = 0.0
-    mask_fps: float = 0.0        # nhịp MASK MỚI (số lần model thật sự chạy/giây)
+    display_fps: float = 0.0    # FPS PHÁT do CHÍNH worker đo (nguồn gốc của mọi con số trong báo cáo)
+    mask_fps: float = 0.0       # nhịp MASK MỚI (số lần model thật sự chạy/giây)
     stability: float = 0.0      # IoU trung bình giữa hai mask liên tiếp (1,0 = không nhấp nháy)
     latency_ms: float = 0.0     # độ trễ suy luận gần nhất
+    empty_runs: int = 0         # số lần model trả mask RỖNG (mất dấu thật)
     message: str = ""
 
 
@@ -114,10 +116,12 @@ class LiveStatus:
 class LiveTelemetry:
     """Số liệu chi tiết do nguồn live báo về (worker ghi ra status.json)."""
 
+    display_fps: float = 0.0
     mask_fps: float = 0.0
     stability: float = 0.0
     latency_ms: float = 0.0
     lk_ms: float = 0.0
+    empty_runs: int = 0
 
 
 @dataclass(frozen=True)

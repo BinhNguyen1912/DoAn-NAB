@@ -134,9 +134,11 @@ def build_router(service: JobService, live) -> APIRouter:
             source=status.source,
             frames=status.frames,
             measured_fps=status.measured_fps,
+            display_fps=status.display_fps,
             mask_fps=status.mask_fps,
             stability=status.stability,
             latency_ms=status.latency_ms,
+            empty_runs=status.empty_runs,
             message=status.message,
         )
 

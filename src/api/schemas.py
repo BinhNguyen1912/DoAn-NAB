@@ -105,7 +105,7 @@ class LiveStartRequest(BaseModel):
         description="độ phân giải model cho mode=track (mặc định 192 ≈ 10 FPS trên CPU)",
     )
     mask_smoothing: Optional[float] = Field(
-        default=None, ge=0.0, le=1.0,
+        default=None, gt=0.0, le=1.0,
         description="mode=track: trọng số mask MỚI khi trộn theo thời gian; 1.0 = tắt (mặc định, "
                     "đo 10-11: bật không cải thiện độ êm mà thêm trễ)",
     )
@@ -123,10 +123,15 @@ class LiveStatusResponse(BaseModel):
     source: str
     frames: int = Field(ge=0, description="số frame đã đọc từ khi bắt đầu")
     measured_fps: float = Field(ge=0, description="FPS THỰC ĐO trong 2 giây gần nhất")
+    display_fps: float = Field(default=0, ge=0,
+                               description="FPS PHÁT do chính worker đo (nguồn gốc số trong báo cáo); "
+                                           "0 khi nguồn không báo")
     mask_fps: float = Field(default=0, ge=0,
                             description="nhịp MASK MỚI (số lần model chạy/giây) — nhỏ hơn "
                                         "measured_fps khi chạy hybrid VOS + LK")
     stability: float = Field(default=0, ge=0, le=1,
                              description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy)")
     latency_ms: float = Field(default=0, ge=0, description="độ trễ suy luận gần nhất (ms)")
+    empty_runs: int = Field(default=0, ge=0,
+                            description="số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên")
     message: str

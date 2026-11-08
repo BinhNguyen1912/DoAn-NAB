@@ -34,7 +34,7 @@ from src.api.domain import (
     SourceUnavailable,
     UnsupportedMedia,
 )
-from src.api.live import LiveStreamService
+from src.api.live import LIVE_READ_FPS, LiveStreamService
 from src.api.routes import APP_VERSION, build_router
 from src.api.service import JobService
 from src.worker import REPO_ROOT
@@ -82,7 +82,8 @@ def build_default_live() -> LiveStreamService:
                                      vos_every=vos_every, mask_smoothing=mask_smoothing)
         return OpenCvFrameSource(source)
 
-    return LiveStreamService(make_source, target_fps=15)
+    # 30 Hz khớp `--max-fps` mặc định của worker: đọc chậm hơn nhịp ghi sẽ báo FPS sai (trần = nhịp đọc)
+    return LiveStreamService(make_source, target_fps=LIVE_READ_FPS)
 
 
 def register_error_handlers(app: FastAPI) -> None:

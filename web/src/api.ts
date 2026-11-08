@@ -126,12 +126,16 @@ export interface LiveStatus {
   frames: number
   /** FPS PHÁT (frame hình/giây) — không phải nhịp mask */
   measured_fps: number
+  /** FPS phát do CHÍNH worker đo (0 khi nguồn không báo) — số dùng trong báo cáo */
+  display_fps: number
   /** nhịp MASK MỚI (số lần model chạy/giây); 0 khi chế độ raw hoặc nguồn không báo */
   mask_fps: number
   /** IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy); 0 khi không có */
   stability: number
   /** độ trễ suy luận gần nhất (ms) */
   latency_ms: number
+  /** số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên */
+  empty_runs: number
   message: string
 }
 

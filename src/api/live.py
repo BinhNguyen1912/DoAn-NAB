@@ -24,6 +24,10 @@ from src.api.ports import FrameSource, LiveTelemetrySource
 logger = logging.getLogger("doan.api.live")
 
 _TICK_S = 0.01          # nhịp chờ nhỏ khi nguồn chưa có frame / khi client chậm
+# Nhịp ĐỌC frame của API. Phải >= nhịp PHÁT của worker (`--max-fps` mặc định 30): đọc 15 Hz trong
+# khi worker ghi 30 Hz sẽ báo FPS trần 15 — lệch hẳn 29,9 của status.json (lỗi P2, review 08-11).
+LIVE_READ_FPS = 30
+
 _FPS_WINDOW_S = 2.0     # cửa sổ đo FPS thực
 _JPEG_BOUNDARY = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
 _MAX_OPEN_ERROR = "Không mở được {label}: {error}"
@@ -32,7 +36,7 @@ _MAX_OPEN_ERROR = "Không mở được {label}: {error}"
 class LiveStreamService:
     """Một phiên live tại một thời điểm (đủ cho đồ án; đa phiên sẽ cần kho theo id)."""
 
-    def __init__(self, make_source: Callable[..., FrameSource], *, target_fps: int = 15) -> None:
+    def __init__(self, make_source: Callable[..., FrameSource], *, target_fps: int = LIVE_READ_FPS) -> None:
         self._make_source = make_source
         self._interval = 1.0 / max(1, int(target_fps))
         self._lock = threading.Lock()
@@ -112,11 +116,15 @@ class LiveStreamService:
         if isinstance(source, LiveTelemetrySource):
             try:
                 detail = source.telemetry()
-            except Exception:                      # noqa: BLE001 — số liệu hỏng không được làm sập API
+            except Exception as exc:               # noqa: BLE001 — số liệu hỏng không được làm sập API
+                # NHƯNG không được im lặng: nuốt lỗi ở đây từng làm cả một trường số liệu mới
+                # "chết trong adapter" mà test vẫn xanh (bài học 08-11)
+                logger.warning("đọc số liệu từ nguồn live thất bại: %s", exc)
                 detail = None
             if detail is not None:
-                base.update(mask_fps=detail.mask_fps, stability=detail.stability,
-                            latency_ms=detail.latency_ms)
+                base.update(display_fps=detail.display_fps, mask_fps=detail.mask_fps,
+                            stability=detail.stability, latency_ms=detail.latency_ms,
+                            empty_runs=detail.empty_runs)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:
