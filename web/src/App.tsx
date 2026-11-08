@@ -10,6 +10,7 @@
 
 import { useEffect, useState } from 'react'
 import { createJob, health, previewUrl, selectObject, type BBox, type UploadOptions } from './api'
+import { LivePanel } from './components/LivePanel'
 import { ResultPanel } from './components/ResultPanel'
 import { SelectionCanvas } from './components/SelectionCanvas'
 import { UploadForm } from './components/UploadForm'
@@ -103,6 +104,8 @@ export default function App(): JSX.Element {
       )}
 
       {jobId && job && <ResultPanel jobId={jobId} job={job} />}
+
+      <LivePanel />
     </main>
   )
 }

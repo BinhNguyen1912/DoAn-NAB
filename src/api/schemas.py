@@ -79,3 +79,26 @@ class JobListItem(BaseModel):
     progress: int = Field(ge=0, le=100)
     message: str
     created_at: str
+
+
+# --------------------------------------------------------------------------- live
+
+
+class LiveStartRequest(BaseModel):
+    """Yêu cầu bắt đầu phát trực tiếp từ một nguồn frame."""
+
+    source: str = Field(
+        default="0",
+        description="0 = webcam | rtsp://IP:554/stream | http://.../snapshot.jpg | đường dẫn video",
+        min_length=1,
+    )
+
+
+class LiveStatusResponse(BaseModel):
+    """Trạng thái phiên phát trực tiếp (frontend poll mỗi giây để hiện FPS/trạng thái)."""
+
+    state: Literal["stopped", "running", "error"]
+    source: str
+    frames: int = Field(ge=0, description="số frame đã đọc từ khi bắt đầu")
+    measured_fps: float = Field(ge=0, description="FPS THỰC ĐO trong 2 giây gần nhất")
+    message: str

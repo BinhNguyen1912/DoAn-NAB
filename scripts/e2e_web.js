@@ -39,6 +39,9 @@ const BASE = process.env.BASE || 'http://localhost:8013'
 const VIDEO = process.env.VIDEO || path.join('data', 'e2e_web.mp4')
 const BAD_FILE = process.env.BAD_FILE || path.join('data', 'e2e_bad.txt')
 const SHOT = process.env.SHOT || path.join('data', 'e2e_web.png')
+// Nguồn cho chế độ live là đường dẫn PHÍA SERVER (Linux) → phải dùng dấu '/' .
+// (đường dẫn Windows chỉ dùng cho setInputFiles vì trình duyệt tự đọc file rồi upload)
+const LIVE_SOURCE = process.env.LIVE_SOURCE || 'data/e2e_web.mp4'
 
 // Kỳ vọng tính tay cho video 160×120 khi kéo chuột 10–40% ngang, 30–70% dọc
 const EXPECTED = { x: 16, y: 36, w: 48, h: 48 }
@@ -183,7 +186,50 @@ async function waitJobState(page, wanted, timeout = 240000) {
   const blocked = await page.request.get(`${BASE}/api/jobs/${jobId}/artifacts/job.json`)
   check('artifact ngoài whitelist bị chặn 404', blocked.status() === 404, String(blocked.status()))
 
-  // 9. log lỗi JS
+  // 9. live: dùng chính video file làm nguồn (backend lặp lại) — không cần webcam thật
+  await page.getByLabel('Nguồn frame').fill(LIVE_SOURCE)
+  await page.getByRole('button', { name: 'Bật phát' }).click()
+  try {
+    await page.getByTestId('live-status').waitFor({ timeout: 20000 })
+  } catch (err) {
+    const banner = await page.locator('p.error').last().innerText().catch(() => '(không có banner lỗi)')
+    throw new Error(`live không khởi động được — UI báo: ${banner}`)
+  }
+  const liveFrame = await page.evaluate(async () => {
+    const deadline = Date.now() + 15000
+    while (Date.now() < deadline) {
+      const img = document.querySelector('img.live-frame')
+      if (img && img.naturalWidth > 0) return { w: img.naturalWidth, h: img.naturalHeight }
+      await new Promise((resolve) => setTimeout(resolve, 100))
+    }
+    return null
+  })
+  check('luồng MJPEG hiện được frame trong trình duyệt', Boolean(liveFrame),
+    JSON.stringify(liveFrame))
+
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('[data-testid="live-status"]')
+      return el && /FPS đo được: [1-9]/.test(el.textContent)
+    },
+    null,
+    { timeout: 15000 },
+  )
+  const liveText = await page.getByTestId('live-status').innerText()
+  check('FPS live đo được > 0', /FPS đo được: [1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
+
+  await page.getByRole('button', { name: 'Dừng' }).click()
+  await page.waitForFunction(
+    () => {
+      const el = document.querySelector('[data-testid="live-status"]')
+      return el && el.textContent.includes('stopped')
+    },
+    null,
+    { timeout: 10000 },
+  )
+  check('dừng phát sạch (state=stopped)', true)
+
+  // 10. log lỗi JS
   check('không có lỗi JS trên trang', pageErrors.length === 0, pageErrors.join(' | '))
 
   await page.screenshot({ path: SHOT, fullPage: true })

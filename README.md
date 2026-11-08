@@ -294,6 +294,23 @@ Kiến trúc tách tầng (đo 08-11-2026): API **không import torch/SAM 2** �
 Nhờ vậy backend chạy được trên VPS 4 GB RAM, còn pipeline thật có thể đẩy sang GPU thuê
 theo giờ mà **không phải sửa API** (xem `docs/task/08-11-2026-*`).
 
+### Phát trực tiếp (Phase 4a — mới phát khung hình, chưa bám đối tượng)
+
+```bash
+# bật phát từ webcam / RTSP / ảnh relay / video file (backend tự lặp file)
+curl -X POST localhost:8000/api/live/start -H 'Content-Type: application/json' \
+     -d '{"source": "0"}'
+curl localhost:8000/api/live/status          # state, frames, measured_fps (FPS THỰC ĐO)
+# xem luồng: mở http://127.0.0.1:8000/ → mục "4. Phát trực tiếp", hoặc nhúng trực tiếp
+#            <img src="/api/live/stream">  (MJPEG multipart/x-mixed-replace)
+curl -X POST localhost:8000/api/live/stop
+```
+
+Thiết kế: thread đọc frame theo `target_fps` giữ **frame mới nhất** (không hàng đợi) → client chậm
+thì bỏ frame cũ, độ trễ không tăng dần. Đo trên máy này với nguồn video file 160×120:
+**14,9 FPS** (target 15) — E2E `./run e2e` kiểm cả luồng MJPEG lẫn FPS đo được.
+Bám đối tượng trên live (VOS 10 FPS + LK 30 FPS) là **Phase 4b**, chưa có.
+
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:

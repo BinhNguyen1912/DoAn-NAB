@@ -199,6 +199,12 @@ class TestHopDongOpenApi:
             "/api/jobs/{job_id}/preview",
             "/api/jobs/{job_id}/select",
             "/api/jobs/{job_id}/artifacts/{name}",
+            # live (Phase 4a)
+            "/api/live/start",
+            "/api/live/stop",
+            "/api/live/status",
+            "/api/live/frame",
+            "/api/live/stream",
         }
         assert "delete" in paths["/api/jobs/{job_id}"]
 

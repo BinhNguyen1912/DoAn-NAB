@@ -17,7 +17,12 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 
-from src.api.adapters import Cv2VideoProbe, FileSystemJobStore, SubprocessPipelineRunner
+from src.api.adapters import (
+    Cv2VideoProbe,
+    FileSystemJobStore,
+    OpenCvFrameSource,
+    SubprocessPipelineRunner,
+)
 from src.api.config import ApiSettings
 from src.api.domain import (
     InvalidBBox,
@@ -25,8 +30,10 @@ from src.api.domain import (
     JobNotFound,
     PayloadTooLarge,
     RunnerStartFailed,
+    SourceUnavailable,
     UnsupportedMedia,
 )
+from src.api.live import LiveStreamService
 from src.api.routes import APP_VERSION, build_router
 from src.api.service import JobService
 from src.worker import REPO_ROOT
@@ -44,6 +51,7 @@ _ERROR_MAP = (
     (UnsupportedMedia, 400, "Định dạng không được hỗ trợ"),
     (PayloadTooLarge, 413, "Video quá lớn"),
     (RunnerStartFailed, 500, "Không chạy được pipeline"),
+    (SourceUnavailable, 400, "Không mở được nguồn frame"),
 )
 
 
@@ -60,6 +68,11 @@ def build_default_service(settings: ApiSettings) -> JobService:
         probe=Cv2VideoProbe(),
         settings=settings,
     )
+
+
+def build_default_live() -> LiveStreamService:
+    """Lắp ghép phiên live mặc định: nguồn OpenCV (webcam/RTSP/snapshot/file lặp), 15 FPS."""
+    return LiveStreamService(lambda source: OpenCvFrameSource(source), target_fps=15)
 
 
 def register_error_handlers(app: FastAPI) -> None:
@@ -90,10 +103,12 @@ def mount_frontend(app: FastAPI) -> None:
 
 
 def create_app(settings: ApiSettings | None = None,
-                service: JobService | None = None) -> FastAPI:
+                service: JobService | None = None,
+                live: LiveStreamService | None = None) -> FastAPI:
     """Application factory: điểm lắp ghép phụ thuộc duy nhất của tầng API."""
     settings = settings or ApiSettings.from_env(REPO_ROOT)
     service = service or build_default_service(settings)
+    live = live or build_default_live()
 
     app = FastAPI(
         title="Camera AI Tracking API",
@@ -110,7 +125,8 @@ def create_app(settings: ApiSettings | None = None,
 
     app.state.settings = settings
     app.state.service = service
-    app.include_router(build_router(service))
+    app.state.live = live
+    app.include_router(build_router(service, live))
     register_error_handlers(app)
     mount_frontend(app)
     return app

@@ -82,3 +82,25 @@ class VideoProbe(Protocol):
 
     def frame_jpeg(self, path: Path, index: int = 0) -> bytes | None:
         """Ảnh JPEG của frame thứ `index`, None nếu không đọc được."""
+
+
+@runtime_checkable
+class FrameSource(Protocol):
+    """Nguồn frame trực tiếp cho chế độ live (hiện thực: OpenCvFrameSource).
+
+    Tách khỏi `VideoProbe` vì vòng đời khác hẳn: probe chỉ đọc 1 frame rồi đóng,
+    còn FrameSource mở liên tục và bị đọc theo nhịp từ thread phát sóng.
+    """
+
+    def start(self) -> None:
+        """Mở nguồn; ném lỗi nếu không kết nối được."""
+
+    def read_jpeg(self) -> bytes | None:
+        """Frame mới nhất dạng JPEG, None nếu chưa có."""
+
+    def stop(self) -> None:
+        """Đóng nguồn, giải phóng thiết bị."""
+
+    @property
+    def label(self) -> str:
+        """Mô tả nguồn để hiện trên UI."""
