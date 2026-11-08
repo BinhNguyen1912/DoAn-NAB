@@ -86,15 +86,16 @@ class LiveStreamService:
             except Exception as exc:                      # noqa: BLE001 — mọi lỗi mở nguồn là 400
                 with self._lock:
                     self._pending = None
-                try:
-                    candidate.stop()
-                finally:
-                    message = _MAX_OPEN_ERROR.format(label=candidate.label, error=exc)
-                    with self._lock:
-                        self._state = LiveState.ERROR
-                        self._label = candidate.label
-                        self._message = message
-                    raise SourceUnavailable(message) from exc
+                    cancelled = self._stop.is_set()
+                    self._state = LiveState.STOPPED if cancelled else LiveState.ERROR
+                    self._message = ("Đã dừng khi đang mở nguồn" if cancelled
+                                     else _MAX_OPEN_ERROR.format(label=candidate.label, error=exc))
+                    message = self._message
+                candidate.stop()
+                if cancelled:
+                    logger.info("huỷ mở nguồn theo lệnh dừng: %s", candidate.label)
+                    return self.status()
+                raise SourceUnavailable(message) from exc
 
             with self._lock:
                 self._pending = None
@@ -127,6 +128,7 @@ class LiveStreamService:
         """
         with self._lock:
             self._stop_locked()
+            self._state = LiveState.STOPPED     # kể cả phiên trước đang ERROR
             self._message = "Đã dừng"
         return self.status()
 
@@ -217,6 +219,14 @@ class LiveStreamService:
         self._stop.set()
         thread, self._thread = self._thread, None
         source, self._source = self._source, None
+        pending, self._pending = self._pending, None
+        if pending is not None and pending is not source:
+            # Nguồn đang NẠP (worker mở model 20–60 s): đóng luôn để `start()` không phải chờ
+            # hết `startup_timeout`, và để không có worker mồ côi.
+            try:
+                pending.stop()
+            except Exception:                   # noqa: BLE001 — đóng nguồn lỗi không được ném
+                logger.warning("đóng nguồn đang mở gặp lỗi", exc_info=True)
         if thread is not None and thread.is_alive():
             thread.join(timeout=2.0)
         if source is not None:

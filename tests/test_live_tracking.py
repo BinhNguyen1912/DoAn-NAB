@@ -124,9 +124,13 @@ class TestLiveTrackingSession:
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
             "lost_streak", "bbox", "message"}
-        # SUPERSET (không ==): thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần;
-        # nhưng thiếu khoá bắt buộc thì phải đỏ (adapter/UI đọc theo tên).
+        # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
+        # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
+        # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
+        cho_phep = bat_buoc | set()          # thêm khoá mới vào đây khi mở rộng status.json
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
+        la = set(status) - cho_phep
+        assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
 
     def test_file_duoc_lap_lai_khi_chay_lien_tuc(self, video_source, tmp_path):
         """Video 6 frame nhưng chạy liên tục → phải lặp lại, không dừng ở frame 6."""
@@ -610,8 +614,10 @@ class TestVeSinhWorkerCu:
         import subprocess
         import sys
 
+        # argv giống worker thật: có phần tử tên `live_worker.py` + cờ `--out-dir <dir>`
         proc = subprocess.Popen(
-            [sys.executable, "-c", "import time; time.sleep(60)", "live_worker.py"],
+            [sys.executable, "-c", "import time; time.sleep(60)", "live_worker.py",
+             "--out-dir", str(tmp_path)],
             stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
         )
         return proc
@@ -647,6 +653,64 @@ class TestVeSinhWorkerCu:
             assert proc.poll() is None, "không được giết tiến trình lạ trùng pid"
         finally:
             proc.kill()
+            proc.wait(timeout=5)
+
+    def test_khong_giet_tien_trinh_chi_khop_chuoi_live_worker(self, tmp_path):
+        """`grep live_worker` / `vim tools/live_worker.py` cũng khớp substring ⇒ phải bị chặn."""
+        import subprocess
+        import sys
+
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
+                                  "grep", "live_worker", "--out-dir", str(tmp_path)],
+                                 stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                 start_new_session=True)
+        try:
+            (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
+            WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
+            assert proc.poll() is None, "chỉ khớp CHUỖI 'live_worker' thì không được coi là worker"
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    def test_khong_giet_worker_cua_thu_muc_khac(self, tmp_path):
+        """Hai instance API dùng chung /dev/shm: không được giết worker của instance kia."""
+        import subprocess
+        import sys
+
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
+                                 "live_worker.py", "--out-dir", str(tmp_path / "khac")],
+                                stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                start_new_session=True)
+        try:
+            (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
+            WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
+            assert proc.poll() is None, "worker của thư mục KHÁC phải được để yên"
+        finally:
+            proc.kill()
+            proc.wait(timeout=5)
+
+    def test_reap_khong_cho_zombie_5_giay(self, tmp_path):
+        """Vòng chờ cũ coi zombie là 'còn sống' ⇒ luôn đợi đủ 5 s (review 08-11)."""
+        import time
+
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        proc = self._spawn_fake_worker(tmp_path)
+        try:
+            (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
+            began = time.perf_counter()
+            WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
+            elapsed = time.perf_counter() - began
+
+            assert proc.poll() is not None
+            assert elapsed < 3.0, f"reap mất {elapsed:.1f} s (>2 s là dấu hiệu chờ zombie)"
+        finally:
+            if proc.poll() is None:
+                proc.kill()
             proc.wait(timeout=5)
 
     def test_pidfile_hong_thi_bo_qua(self, tmp_path):

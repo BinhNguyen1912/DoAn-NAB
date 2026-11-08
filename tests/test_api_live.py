@@ -282,12 +282,14 @@ class _SlowStartSource(FakeFrameSource):
         self._delay = delay
         self.start_calls = 0
         self.start_finished = False
+        # Event để test đồng bộ KHÔNG dùng sleep: "đã vào start()" / "được phép mở xong"
+        self.entered = __import__("threading").Event()
+        self.release = __import__("threading").Event()
 
     def start(self):
-        import time
-
         self.start_calls += 1
-        time.sleep(self._delay)
+        self.entered.set()
+        self.release.wait(timeout=5)      # test mở; hết hạn thì vẫn chạy tiếp (không treo CI)
         super().start()
         self.start_finished = True
 
@@ -310,13 +312,21 @@ class TestVongDoiPhienLive:
 
         monkeypatch.setattr(live_service, "_make_source", factory)
         errors, results = [], []
-        threads = [
-            threading.Thread(target=lambda: _try(lambda: results.append(live_service.start("0")),
-                                                 errors))
-            for _ in range(4)
-        ]
+        barrier = threading.Barrier(4)        # 4 thread gọi start() CÙNG LÚC (không dựa vào sleep)
+
+        def _one():
+            barrier.wait(timeout=5)
+            _try(lambda: results.append(live_service.start("0")), errors)
+
+        threads = [threading.Thread(target=_one) for _ in range(4)]
         for t in threads:
             t.start()
+        # Chờ ĐIỀU KIỆN (3 lần LiveBusy) chứ không chờ thời gian cố định: nguồn thắng đang
+        # block trong start() nên phải thả nó ra sau khi 3 request kia đã bị từ chối.
+        deadline = time.monotonic() + 5
+        while len(errors) < 3 and time.monotonic() < deadline:
+            time.sleep(0.01)
+        created[0].release.set()
         for t in threads:
             t.join(timeout=10)
 
@@ -329,7 +339,6 @@ class TestVongDoiPhienLive:
     def test_dung_trong_luc_nap_model_thi_khong_de_worker_mo_coi(self, live_service, monkeypatch):
         """Bấm Dừng khi đang nạp model: phiên phải kết thúc 'stopped' và nguồn bị đóng."""
         import threading
-        import time
 
         created = []
 
@@ -346,8 +355,9 @@ class TestVongDoiPhienLive:
 
         worker = threading.Thread(target=_start)
         worker.start()
-        time.sleep(0.1)
-        live_service.stop()                     # chen vào GIỮA lúc start()
+        assert created[0].entered.wait(timeout=5), "start() chưa vào nguồn"
+        live_service.stop()                     # chen vào GIỮA lúc start() (đang nạp model)
+        created[0].release.set()
         worker.join(timeout=10)
 
         assert box["status"].state is LiveState.STOPPED
@@ -355,21 +365,31 @@ class TestVongDoiPhienLive:
 
     def test_api_tra_409_khi_dang_mo_phien_khac(self, live_client, monkeypatch):
         import threading
-        import time
 
-        monkeypatch.setattr(live_client.app.state.live, "_make_source",
-                            lambda *a, **k: _SlowStartSource("0", delay=0.6))
-        codes = []
+        created, made = [], threading.Event()
+
+        def factory(*args, **kwargs):
+            item = _SlowStartSource("0", delay=0.6)
+            created.append(item)
+            made.set()
+            return item
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
+        codes, errors = [], []
 
         def _post():
-            codes.append(live_client.post("/api/live/start", json={"source": "0"}).status_code)
+            _try(lambda: codes.append(
+                live_client.post("/api/live/start", json={"source": "0"}).status_code), errors)
 
         first = threading.Thread(target=_post)
         first.start()
-        time.sleep(0.15)
+        assert made.wait(timeout=5), "request đầu chưa tạo nguồn"
+        assert created[0].entered.wait(timeout=5), "request đầu chưa vào start()"
         second = live_client.post("/api/live/start", json={"source": "0"})
+        created[0].release.set()
         first.join(timeout=10)
 
+        assert not errors, f"request đầu ném lỗi: {errors}"
         assert second.status_code == 409
         assert 200 in codes
 

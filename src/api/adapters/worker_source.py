@@ -99,6 +99,8 @@ class WorkerFrameSource(FrameSource):
             proc.wait(timeout=5)
         except Exception:                 # noqa: BLE001 — không được treo khi dọn dẹp
             proc.kill()
+        finally:
+            (self._out / PID_NAME).unlink(missing_ok=True)
 
     @property
     def label(self) -> str:
@@ -138,34 +140,48 @@ class WorkerFrameSource(FrameSource):
             (self._out / name).unlink(missing_ok=True)
 
     def _reap_stale_worker(self) -> None:
-        """Kill worker cũ nếu pidfile còn sống và ĐÚNG là live_worker (chống pid reuse)."""
-        try:
-            pid = int((self._out / PID_NAME).read_text(encoding="utf-8").strip())
-        except (OSError, ValueError):
+        """Kill worker cũ nếu pidfile còn sống và ĐÚNG là worker live của CHÍNH thư mục này.
+
+        Chốt an toàn (review độc lập 08-11 chỉ ra bản đầu quá lỏng — `killpg` có thể giết cả
+        nhóm tiến trình của API):
+        1. bỏ qua pidfile hỏng/pid <= 0/pid của chính mình;
+        2. `/proc/<pid>/cmdline` phải có **một phần tử argv** đúng tên `live_worker.py`
+           (không dùng substring: `grep live_worker`, `vim tools/live_worker.py` cũng khớp);
+        3. argv phải chứa `--out-dir <self._out>` ⇒ không giết worker của instance khác;
+        4. pid phải là **session leader** (`getsid(pid) == pid`, nhờ `start_new_session=True`)
+           và **không** cùng process group với API ⇒ `killpg` không bao giờ chạm nhóm của mình.
+        """
+        pid = _read_pid(self._out / PID_NAME)
+        if pid is None or pid == os.getpid():
             return
-        if pid <= 0 or pid == os.getpid():
+        argv = _read_cmdline(pid)
+        if not argv or not _is_our_live_worker(argv, self._out):
             return
         try:
-            cmdline = Path(f"/proc/{pid}/cmdline").read_bytes().decode("utf-8", "replace")
+            if os.getsid(pid) != pid or os.getpgid(pid) == os.getpgid(0):
+                return                              # không phải session leader của riêng nó
         except OSError:
-            return                                   # tiến trình đã chết hoặc không đọc được
-        if "live_worker" not in cmdline:
-            return                                   # pid bị tái sử dụng bởi tiến trình khác
+            return
         logger.warning("dọn worker live còn sót của phiên trước: pid=%s", pid)
+        self._terminate_process(pid)
+
+    @staticmethod
+    def _terminate_process(pid: int) -> None:
+        """SIGTERM rồi SIGKILL sau 2 s (không chờ quá lâu: zombie cũng tính là đã chết)."""
         try:
-            os.killpg(os.getpgid(pid), signal.SIGTERM)
+            os.killpg(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
             try:
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 return
-        deadline = time.time() + 5.0
+        deadline = time.time() + 2.0
         while time.time() < deadline:
-            if not Path(f"/proc/{pid}").exists():
+            if not _pid_alive(pid):
                 return
-            time.sleep(0.1)
-        try:                                         # quá 5 s vẫn sống ⇒ kill cứng
-            os.killpg(os.getpgid(pid), signal.SIGKILL)
+            time.sleep(0.05)
+        try:
+            os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
 
@@ -194,6 +210,47 @@ class WorkerFrameSource(FrameSource):
         raise SourceUnavailable(
             f"worker không đưa được frame trong {self._startup_timeout:.0f}s — xem {self._log}"
         )
+
+
+def _read_pid(path: Path):
+    """Đọc pidfile; None nếu chưa có/hỏng."""
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _read_cmdline(pid: int) -> list[str]:
+    """argv của tiến trình (tách theo NUL); [] nếu không đọc được."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+
+
+def _is_our_live_worker(argv, out_dir: Path) -> bool:
+    """Đúng worker live của thư mục `out_dir`? (so khớp argv, KHÔNG dùng substring)."""
+    names = {Path(arg).name for arg in argv}
+    if "live_worker.py" not in names:
+        return False
+    for index, arg in enumerate(argv):
+        if arg == "--out-dir" and index + 1 < len(argv):
+            try:
+                return Path(argv[index + 1]).resolve() == Path(out_dir).resolve()
+            except OSError:
+                return False
+    return False
+
+
+def _pid_alive(pid: int) -> bool:
+    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state != "Z"
 
 
 def _read_status(path: Path) -> dict:

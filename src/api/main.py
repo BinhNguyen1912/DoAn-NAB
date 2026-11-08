@@ -10,6 +10,7 @@ Lưu ý  : đổi sang SQLite/S3/GPU worker chỉ cần sửa `build_default_ser
 """
 
 import logging
+import asyncio
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -129,7 +130,8 @@ def create_app(settings: ApiSettings | None = None,
         """Tắt API (kể cả `uvicorn --reload`) phải dừng worker model — không để nó mồ côi."""
         yield
         try:
-            live.stop()
+            # `live.stop()` là hàm blocking (join thread + killpg tới ~7 s) ⇒ chạy ngoài event loop
+            await asyncio.to_thread(live.stop)
         except Exception:                       # noqa: BLE001 — dọn dẹp không được ném
             logger.warning("dừng live khi shutdown gặp lỗi", exc_info=True)
 
