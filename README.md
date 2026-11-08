@@ -43,6 +43,11 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 ```
 Danh sách đầy đủ + giải thích từng lệnh: `docs/cheatsheet-lenh.md`.
 
+## 0a. Làm việc nhóm / với AI agent — quy trình Git
+
+`docs/quy-trinh-git.md`: mỗi nhiệm vụ một nhánh ngắn hạn → **PR** → người phụ trách merge; quy tắc
+hạn chế conflict (file "nóng", append thay vì chèn giữa, PR nhỏ); quy ước tag (tối đa 2 tag sống).
+
 ## 0b. Chưa biết thuật ngữ? Đọc file này trước
 
 **`docs/cheatsheet-lenh.md`** — mọi lệnh cần dùng, mỗi lệnh có giải thích "làm gì → kỳ vọng → khi nào dùng".
