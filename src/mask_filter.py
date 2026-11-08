@@ -8,7 +8,7 @@ Input  : mask bool (H, W) cho mỗi lần VOS; độ dịch (dx, dy) của ô ba
 Output : mask bool (H, W) đã làm mượt (`acc ≥ 0,5`) để vẽ.
 Lưu ý  : KHÔNG import torch. Đây là hậu xử lý hiển thị, **không** đổi vị trí đối tượng cũng như
          không thay VOS: nếu mask mới mất hẳn, bộ lọc chỉ giữ được ~1/alpha lần cập nhật rồi tắt.
-         Đo trên máy này: chi phí ~2–4 ms cho 1280×720 (xem docs/task/10-11-2026-*).
+         Đo trên máy này: chi phí ~2–4 ms cho 1280×720 (xem docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md).
 """
 
 import numpy as np
@@ -81,7 +81,7 @@ class MaskSmoother:
             self._hold += 1
             if self._hold <= self._max_hold:
                 self._holds += 1
-                return shown.copy()          # giữ mask cũ: model "chớp", chưa phải mất dấu thật
+                return shown          # đã là mảng mới (so sánh >= tạo bản mới), không cần copy          # giữ mask cũ: model "chớp", chưa phải mất dấu thật
             self._acc = current              # quá max_hold ⇒ mất dấu THẬT, chấp nhận mask rỗng
             self._hold = 0
             self._drops += 1

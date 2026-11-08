@@ -105,10 +105,12 @@ class WorkerFrameSource(FrameSource):
         """
         status = _read_status(self._out / STATUS_NAME)
         return LiveTelemetry(
+            display_fps=float(status.get("measured_fps") or 0.0),
             mask_fps=float(status.get("vos_fps") or 0.0),
             stability=float(status.get("stability") or 0.0),
             latency_ms=float(status.get("vos_ms") or 0.0),
             lk_ms=float(status.get("lk_ms") or 0.0),
+            empty_runs=int(status.get("empty_runs") or 0),
         )
 
     # ------------------------------------------------------------------ nội bộ

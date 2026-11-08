@@ -24,7 +24,7 @@ import os
 import threading
 import time
 from collections import deque
-from dataclasses import dataclass, field
+from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import cv2
@@ -57,10 +57,23 @@ class LiveTrackConfig:
     vos_every: int = 3            # 1 = chạy VOS mỗi frame (tắt LK, hình ~10 FPS @192)
     trajectory_len: int = 100
     mask_smoothing: float = 1.0   # 1.0 = TẮT làm mượt (mặc định: đo 10-11 thấy không cải
-                                  # thiện IoU hiển thị mà thêm trễ — xem docs/task/10-11-2026)
+                                  # thiện IoU hiển thị mà thêm trễ — xem docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md)
     jpeg_quality: int = 80
     loop_files: bool = True
     stop_after_frames: int | None = None      # cho test/thử nhanh
+
+    def __post_init__(self) -> None:
+        """Kiểm tra tham số ở MỘT chỗ — trước đây schema API cho 0.0 còn worker clamp 0.05,
+        hai bên hiểu khác nhau (lỗi P2, review 08-11)."""
+        if not 0.0 < float(self.mask_smoothing) <= 1.0:
+            raise ValueError(
+                f"mask_smoothing phải trong khoảng (0, 1]; nhận {self.mask_smoothing!r} "
+                "(1.0 = tắt làm mượt)"
+            )
+        if int(self.vos_every) < 1:
+            raise ValueError(f"vos_every phải >= 1; nhận {self.vos_every!r}")
+        if float(self.display_fps) <= 0:
+            raise ValueError(f"display_fps phải > 0; nhận {self.display_fps!r}")
 
 
 @dataclass
@@ -76,6 +89,7 @@ class LiveTrackStats:
     lk_ms: float = 0.0            # độ trễ LK gần nhất
     stability: float = 0.0        # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy)
     stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
+    empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật)
     mask_holds: int = 0           # số lần bộ lọc GIỮ mask cũ (model "chớp" mất vật)
     mask_drops: int = 0           # số lần mask hiển thị RỖNG (mất dấu thật)
     lost_streak: int = 0
@@ -122,10 +136,50 @@ def read_bbox(path: Path):
     return bbox if bbox[2] > 0 and bbox[3] > 0 else None
 
 
+def status_payload(stats: "LiveTrackStats") -> dict:
+    """Payload `status.json` — MỘT nguồn duy nhất cho cả trạng thái "loading" lẫn phiên đang chạy.
+
+    Trước đây `tools/live_worker.py` tự viết một dict 7 khoá, phiên chạy ghi 14 khoá ⇒ người đọc
+    file trong 20–60 s nạp model thấy schema khác (P3, review 08-11).
+    """
+    return {
+        "state": stats.state,
+        "frames": stats.frames,
+        "vos_runs": stats.vos_runs,
+        "measured_fps": stats.measured_fps,
+        "vos_fps": stats.vos_fps,
+        "vos_ms": stats.vos_ms,
+        "lk_ms": stats.lk_ms,
+        "stability": stats.stability,
+        "stability_shown": stats.stability_shown,
+        "empty_runs": stats.empty_runs,
+        "mask_holds": stats.mask_holds,
+        "mask_drops": stats.mask_drops,
+        "lost_streak": stats.lost_streak,
+        "bbox": stats.bbox,
+        "message": stats.message,
+    }
+
+
 def xyxy_to_xywh(bbox) -> tuple:
     """(x1,y1,x2,y2) → (x,y,w,h)."""
     x1, y1, x2, y2 = (int(v) for v in bbox)
     return (x1, y1, max(1, x2 - x1), max(1, y2 - y1))
+
+
+def _bbox_hop_le(bbox) -> bool:
+    """bbox (x1,y1,x2,y2) có dùng được để dịch mask? Engine trả (0,0,0,0) khi mask rỗng.
+
+    Cho phép bbox MỎNG 1 px (`x1 == x2`) vì mask 1 cột/hàng vẫn là đối tượng thật (vật ở xa);
+    chỉ loại hộp suy biến hoàn toàn `(0,0,0,0)` hoặc toạ độ âm/đảo.
+    """
+    try:
+        x1, y1, x2, y2 = (int(v) for v in bbox)
+    except (TypeError, ValueError):
+        return False
+    if x1 < 0 or y1 < 0:
+        return False
+    return x2 >= x1 and y2 >= y1 and (x2 > 0 or y2 > 0)
 
 
 def xywh_to_xyxy(bbox) -> tuple:
@@ -143,10 +197,11 @@ class _VosWorker(threading.Thread):
              Frame gửi sang là bản do luồng chính đọc ra; luồng chính chỉ COPY để vẽ nên không tranh chấp.
     """
 
-    def __init__(self, engine, on_result) -> None:
+    def __init__(self, engine, on_result, on_error=None) -> None:
         super().__init__(name="vos", daemon=True)
         self._engine = engine
         self._on_result = on_result
+        self._on_error = on_error
         self._lock = threading.Lock()
         self._pending = None
         self._wake = threading.Event()
@@ -172,7 +227,14 @@ class _VosWorker(threading.Thread):
             if item is None:
                 continue
             seq, frame, gray = item
-            self._on_result(seq, self._engine.process(frame), gray)
+            try:
+                # Bọc CẢ quá trình xử lý kết quả: lỗi trong `_store_vos`/`_smooth` (dữ liệu model
+                # bất thường) cũng phải thành `state=error`, không được để thread chết im lặng.
+                self._on_result(seq, self._engine.process(frame), gray)
+            except Exception as exc:          # noqa: BLE001 — lỗi model phải thành trạng thái error
+                if self._on_error is not None:
+                    self._on_error(exc)
+                return
 
 
 class LiveTrackingSession:
@@ -193,7 +255,8 @@ class LiveTrackingSession:
         self._prev_shown_mask = None
         self._prev_raw_mask = None
         self._prev_vos_bbox = None
-        self._lock = threading.Lock()
+        self._lock = threading.Lock()          # bảo vệ `_vos_state`
+        self._stats_lock = threading.Lock()    # bảo vệ `_stats` (luồng VOS ghi, luồng chính đọc)
         self._vos_state = None          # (seq, result, gray) của lần VOS gần nhất
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
@@ -201,6 +264,9 @@ class LiveTrackingSession:
         self._frame_index = 0
         self._source = None
         self._worker = None
+        self._error = None              # lỗi từ luồng VOS (không được nuốt im lặng)
+        # mốc an toàn: nếu vì lý do nào đó luồng chính đọc trước khi start() xong
+        self._interp_base_result = _FrameResult(0, (0, 0, 0, 0), None, 0.0)
         self._use_lk = config.vos_every > 1
 
     # ------------------------------------------------------------------ API công khai
@@ -227,7 +293,8 @@ class LiveTrackingSession:
                     # Trong lúc chờ, vẫn phát khung hình TRƠN để UI hiện luồng và người dùng chọn ô
                     bbox = read_bbox(out_dir / BBOX_NAME)
                     if bbox is None:
-                        self._stats.state = STATE_WAITING
+                        with self._stats_lock:
+                            self._stats.state = STATE_WAITING
                         self._publish_frame(out_dir, frame)
                         self._sleep(interval, began)
                         continue
@@ -237,8 +304,11 @@ class LiveTrackingSession:
                     self._after_vos(frame, result)
                     if self._use_lk:
                         self._start_worker(frame, self._gray(frame))
-                    self._stats.state = STATE_TRACKING
+                    with self._stats_lock:
+                        self._stats.state = STATE_TRACKING
                     started = True
+                elif self._error is not None:
+                    break                       # luồng VOS chết ⇒ dừng phiên, không phát mask cũ
                 elif self._use_lk:
                     result = self._result_threaded(frame)
                 else:
@@ -255,25 +325,34 @@ class LiveTrackingSession:
             self._stop_worker()
             if self._source is not None:
                 self._source.close()
-            self._stats.state = STATE_STOPPED
+            if self._error is None:             # giữ nguyên "error" nếu luồng VOS đã chết
+                with self._stats_lock:
+                    self._stats.state = STATE_STOPPED
             self._publish_status(out_dir)
         return self._stats
 
     # ------------------------------------------------------------------ luồng VOS + nội suy LK
 
     def _start_worker(self, frame, gray) -> None:
-        self._worker = _VosWorker(self._engine, self._store_vos)
+        with self._lock:                      # mốc nội suy ban đầu = frame start(), đặt TRƯỚC submit
+            self._vos_state = (0, self._interp_base_result, gray)
+        self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1
         self._worker.submit(self._seq, frame, gray)
-        with self._lock:                      # mốc nội suy ban đầu chính là frame start()
-            self._vos_state = (0, self._interp_base_result, gray)
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
             self._worker.stop()
             self._worker.join(timeout=5.0)
             self._worker = None
+
+    def _on_worker_error(self, exc) -> None:
+        """Lỗi trong luồng VOS: ghi trạng thái error để API/UI biết, KHÔNG phát mask đứng yên."""
+        self._error = exc
+        with self._stats_lock:
+            self._stats.state = STATE_ERROR
+            self._stats.message = f"model lỗi trong luồng VOS: {exc}"
 
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
@@ -335,20 +414,34 @@ class LiveTrackingSession:
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
 
     def _record_vos(self, result) -> None:
-        self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
-        self._stats.vos_runs += 1
-        self._vos_stamps.append(time.perf_counter())
-        self._trim(self._vos_stamps)
+        with self._stats_lock:
+            self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
+            self._stats.vos_runs += 1
+            self._vos_stamps.append(time.perf_counter())
+            self._trim(self._vos_stamps)
         self._measure_stability(result)
 
     def _measure_stability(self, result) -> None:
-        """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không"."""
+        """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không".
+
+        Mask RỖNG không vào mẫu: `mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn" thành
+        "độ ổn định 100 %" trên UI (lỗi P2, review 08-11). Mất dấu được đếm riêng ở `empty_runs`.
+        """
         raw = getattr(result, "mask", None)
         if raw is None:
             return
+        if not raw.any():
+            with self._stats_lock:
+                self._stats.empty_runs += 1
+                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định: đặt 0 (không giữ số cũ, không
+                # nối IoU xuyên qua khoảng mất dấu — mask trước và sau là hai chuyện khác nhau).
+                self._stats.stability = 0.0
+            self._prev_raw_mask = None
+            return
         if self._prev_raw_mask is not None:
             self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
-            self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
+            with self._stats_lock:
+                self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
         self._prev_raw_mask = raw
 
     def _smooth(self, result) -> None:
@@ -366,18 +459,31 @@ class LiveTrackingSession:
         smoother = self._smoother
         if smoother is not None:
             bbox = xyxy_to_xywh(result.bbox)
-            if self._prev_vos_bbox is not None:
-                smoother.shift(bbox[0] - self._prev_vos_bbox[0], bbox[1] - self._prev_vos_bbox[1])
-            self._prev_vos_bbox = bbox
+            # CHỈ dịch bộ tích luỹ khi bbox MỚI hợp lệ. Khi model mất vật, engine trả mask rỗng
+            # kèm bbox (0,0,0,0) (src/tracker_engine.py) ⇒ dịch theo nó sẽ "teleport" bộ tích luỹ
+            # về góc khung: hold không bao giờ chạy và mask cũ hiện ở SAI vị trí (lỗi P1, review
+            # 08-11). Không hợp lệ ⇒ coi là "model không thấy vật", giữ nguyên mốc cũ.
+            if _bbox_hop_le(result.bbox):
+                if self._prev_vos_bbox is not None:
+                    smoother.shift(bbox[0] - self._prev_vos_bbox[0], bbox[1] - self._prev_vos_bbox[1])
+                self._prev_vos_bbox = bbox
             shown = smoother.update(raw)
             result.mask = shown
-            self._stats.mask_holds = smoother.holds
-            self._stats.mask_drops = smoother.drops
+            with self._stats_lock:
+                self._stats.mask_holds = smoother.holds
+                self._stats.mask_drops = smoother.drops
 
+        if not shown.any():
+            # Cùng lý do như `stability`: màn hình trống mà báo IoU = 1,0 là số liệu sai.
+            with self._stats_lock:
+                self._stats.stability_shown = 0.0
+            self._prev_shown_mask = None
+            return
         if self._prev_shown_mask is not None:
             self._shown_iou_window.append(mask_iou(self._prev_shown_mask, shown))
-            self._stats.stability_shown = round(
-                sum(self._shown_iou_window) / len(self._shown_iou_window), 3)
+            with self._stats_lock:
+                self._stats.stability_shown = round(
+                    sum(self._shown_iou_window) / len(self._shown_iou_window), 3)
         self._prev_shown_mask = shown
 
     @staticmethod
@@ -386,6 +492,10 @@ class LiveTrackingSession:
     # ------------------------------------------------------------------ số liệu & vẽ
 
     def _update_stats(self, result) -> None:
+        with self._stats_lock:
+            self._update_stats_locked(result)
+
+    def _update_stats_locked(self, result) -> None:
         now = time.perf_counter()
         self._stats.frames += 1
         self._display_stamps.append(now)
@@ -436,22 +546,10 @@ class LiveTrackingSession:
             write_bytes_atomic(out_dir / FRAME_NAME, bytes(buffer))
 
     def _publish_status(self, out_dir: Path) -> None:
-        write_json_atomic(out_dir / STATUS_NAME, {
-            "state": self._stats.state,
-            "frames": self._stats.frames,
-            "vos_runs": self._stats.vos_runs,
-            "measured_fps": self._stats.measured_fps,
-            "vos_fps": self._stats.vos_fps,
-            "vos_ms": self._stats.vos_ms,
-            "lk_ms": self._stats.lk_ms,
-            "stability": self._stats.stability,
-            "stability_shown": self._stats.stability_shown,
-            "mask_holds": self._stats.mask_holds,
-            "mask_drops": self._stats.mask_drops,
-            "lost_streak": self._stats.lost_streak,
-            "bbox": self._stats.bbox,
-            "message": self._stats.message,
-        })
+        """Ghi ảnh chụp NHẤT QUÁN của `_stats` (không trộn số của hai thế hệ)."""
+        with self._stats_lock:
+            snapshot = replace(self._stats)
+        write_json_atomic(out_dir / STATUS_NAME, status_payload(snapshot))
 
     # ------------------------------------------------------------------ tiện ích
 

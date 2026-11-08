@@ -120,9 +120,10 @@ class TestLiveTrackingSession:
         LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
-        assert set(status) == {"state", "frames", "vos_runs", "measured_fps", "vos_fps",
-                               "vos_ms", "lk_ms", "stability", "stability_shown", "mask_holds",
-                               "mask_drops", "lost_streak", "bbox", "message"}
+        assert set(status) == {
+            "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+            "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
+            "lost_streak", "bbox", "message"}
 
     def test_file_duoc_lap_lai_khi_chay_lien_tuc(self, video_source, tmp_path):
         """Video 6 frame nhưng chạy liên tục → phải lặp lại, không dừng ở frame 6."""
@@ -365,6 +366,7 @@ class TestMaskStability:
         assert stats.stability < 1.0, "mask nhấp nháy ⇒ stability < 1"
 
     def test_status_co_do_on_dinh(self, textured_video, tmp_path):
+        """`stability` phải NẰM TRONG khoảng và > 0 ở ca bình thường (metric bị gut = 0.0 phải đỏ)."""
         out = tmp_path / "live"
         _pre_select(out)
         session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -374,3 +376,224 @@ class TestMaskStability:
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert 0.0 <= status["stability"] <= 1.0
+        assert status["stability"] > 0.5, (
+            "FakeEngine dịch mask 1 px/lần ⇒ IoU phải cao; = 0 nghĩa là metric không được tính")
+        assert status["empty_runs"] == 0
+
+
+class _LostObjectEngine(FakeEngine):
+    """Engine giả mô phỏng ĐÚNG hợp đồng thật: mất vật ⇒ mask rỗng + bbox (0,0,0,0).
+
+    Đây là ca làm lộ lỗi P1 (review độc lập 08-11): bộ lọc mask dịch bộ tích luỹ theo bbox
+    (0,0,0,0) nên "teleport" và hold không bao giờ chạy.
+    """
+
+    def __init__(self, *, lost_at=(2, 3, 6), cost_s=0.0):
+        super().__init__()
+        self._lost_at = set(lost_at)
+        self._cost_s = cost_s
+
+    def process(self, frame):
+        import time
+
+        if self._cost_s:
+            time.sleep(self._cost_s)
+        result = super().process(frame)
+        if self.processed in self._lost_at:
+            result.mask = np.zeros(frame.shape[:2], dtype=bool)
+            result.bbox = (0, 0, 0, 0)      # hợp đồng thật của src/tracker_engine.py
+        return result
+
+
+class TestLoiReviewDocLap:
+    """Test hồi quy cho các lỗi do review độc lập tìm ra (P1 + nhóm P2)."""
+
+    def test_p1_mask_rong_kem_bbox_0_khong_teleport_bo_loc(self, textured_video, tmp_path):
+        """P1: VOS trả mask rỗng + bbox (0,0,0,0) ⇒ hold phải GIỮ mask ở ĐÚNG vị trí cũ."""
+        engine = _LostObjectEngine(lost_at=(2,))
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=0.5))
+        drawn = []
+        session._annotate = lambda frame, result, _d=drawn: (
+            _d.append(getattr(result, "mask", None)), frame.copy())[1]
+        stats = session.run(stop_event=_StopAfter(10))
+
+        assert stats.mask_holds >= 1, "lần mask rỗng đầu tiên phải được GIỮ, không được tắt ngay"
+        assert stats.mask_drops == 0, "một lần chớp không được tính là mất dấu"
+        # KHÔNG được teleport: MỌI mask đã vẽ phải nằm quanh vị trí cũ, không nhảy về góc (0,0).
+        # (Quét toàn bộ thay vì `drawn[2]`: index phụ thuộc frame start() nên test cũ xanh cả khi
+        # revert fix — review lần 2 chỉ ra.)
+        for index, mask in enumerate(drawn):
+            assert mask is not None and mask.any(), f"frame {index}: mask bị tắt dù chưa quá max_hold"
+            ys, xs = np.nonzero(mask)
+            assert xs.min() > 5 and ys.min() > 5, (
+                f"frame {index}: mask nhảy về góc khung (x={xs.min()}, y={ys.min()}) — bộ lọc bị teleport")
+
+    def test_p1_mat_dau_lien_tuc_thi_van_tat_sau_max_hold(self, textured_video, tmp_path):
+        engine = _LostObjectEngine(lost_at=(2, 3, 4, 5, 6, 7))
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=0.5)).run(stop_event=_StopAfter(9))
+
+        assert stats.mask_drops >= 1, "mất dấu thật (nhiều lần liên tiếp) phải tắt mask"
+
+    def test_p2_duong_hybrid_that_su_co_lam_muot(self, textured_video, tmp_path):
+        """P2: bug cũ là `_store_vos` không gọi `_smooth` ⇒ hybrid KHÔNG hề làm mượt mà CI vẫn xanh."""
+        engine = _LostObjectEngine(lost_at=tuple(range(2, 9)), cost_s=0.01)
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            loop_files=True, mask_smoothing=0.5)).run(stop_event=_StopAfter(20))
+
+        assert stats.vos_runs > 1 and stats.frames > stats.vos_runs
+        assert stats.mask_holds >= 1, "đường hybrid phải áp dụng bộ lọc (nếu không là tái phát bug P2)"
+        assert stats.mask_drops >= 1
+
+    def test_p2_stability_khong_bao_100_phan_tram_khi_mat_dau(self, textured_video, tmp_path):
+        """P2: hai mask RỖNG liên tiếp có IoU = 1,0 ⇒ UI báo 'ổn định 100 %' khi mất dấu hoàn toàn."""
+        engine = _LostObjectEngine(lost_at=tuple(range(2, 30)))
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1, loop_files=True))
+        stats = session.run(stop_event=_StopAfter(12))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["empty_runs"] >= 2, "phải đếm số lần VOS trả mask rỗng"
+        assert status["stability"] < 0.999, "mất dấu mà báo stability = 1,0 là số liệu sai"
+        assert stats.empty_runs >= 2
+
+    def test_p2_loi_trong_luong_vos_phai_thanh_state_error(self, textured_video, tmp_path):
+        class _BrokenEngine(FakeEngine):
+            def process(self, frame):
+                if self.processed >= 2:
+                    raise RuntimeError("hết RAM (giả lập)")
+                return super().process(frame)
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(_BrokenEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            loop_files=True)).run(stop_event=_StopAfter(50))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["state"] == STATE_ERROR, "luồng VOS chết mà báo 'tracking' là phát mask chết"
+        assert "model lỗi" in status["message"]
+        assert stats.state == STATE_ERROR
+
+    def test_p2_loi_trong_callback_luong_vos_cung_phai_bao_error(self, textured_video, tmp_path):
+        """Lỗi ở `_store_vos`/`_smooth` (dữ liệu model bất thường) — không chỉ `process` — cũng phải
+        thành `state=error`; trước đây `_on_result` nằm NGOÀI try/except nên thread chết im lặng."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(_LostObjectEngine(lost_at=(1, 2, 3), cost_s=0.01),
+                                       LiveTrackConfig(source=textured_video, out_dir=out,
+                                                       display_fps=100, vos_every=2,
+                                                       loop_files=True))
+        calls = {"n": 0}
+        original = session._smooth
+
+        def exploding(result):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise RuntimeError("dữ liệu model bất thường (giả lập)")
+            return original(result)
+
+        session._smooth = exploding
+        stats = session.run(stop_event=_StopAfter(40))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["state"] == STATE_ERROR
+        assert "model lỗi" in status["message"]
+        assert stats.state == STATE_ERROR
+
+    def test_p2_stability_shown_khong_bao_100_phan_tram_khi_trong(self, textured_video, tmp_path):
+        """`stability_shown` là metric anh em của `stability` — phải cùng guard (review lần 2)."""
+        engine = _LostObjectEngine(lost_at=tuple(range(2, 30)))
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=0.5)).run(stop_event=_StopAfter(14))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["empty_runs"] >= 2
+        assert status["stability_shown"] < 0.999, "màn hình trống mà báo IoU 1,0 là số liệu sai"
+
+    def test_p3_o_bao_mong_1px_van_duoc_coi_la_hop_le(self):
+        from src.live_tracking import _bbox_hop_le
+
+        assert _bbox_hop_le((10, 10, 10, 40))     # mask 1 cột
+        assert _bbox_hop_le((10, 10, 40, 10))     # mask 1 hàng
+        assert not _bbox_hop_le((0, 0, 0, 0))     # mask rỗng
+        assert not _bbox_hop_le((5, 5, 3, 9))     # toạ độ đảo
+        assert not _bbox_hop_le(None)
+
+    def test_p2_mask_smoothing_0_bi_tu_choi_ro_rang(self, textured_video, tmp_path):
+        with pytest.raises(ValueError, match="mask_smoothing"):
+            LiveTrackConfig(source=textured_video, out_dir=tmp_path / "x", mask_smoothing=0.0)
+
+    def test_p2_vos_every_0_bi_tu_choi(self, textured_video, tmp_path):
+        with pytest.raises(ValueError, match="vos_every"):
+            LiveTrackConfig(source=textured_video, out_dir=tmp_path / "x", vos_every=0)
+
+    def test_p3_trang_thai_loading_cung_bo_khoa_voi_phien_chay(self, textured_video, tmp_path):
+        """P3: hai tác giả của status.json ⇒ người đọc trong lúc nạp model thấy schema khác."""
+        from src.live_tracking import LiveTrackStats, status_payload
+        from tools.live_worker import _write_loading
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        _write_loading(out, "Đang nạp model...")
+        loading = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+
+        assert set(loading) == set(status_payload(LiveTrackStats()))
+        assert loading["state"] == "loading"
+
+    def test_p3_lk_mat_dau_thi_tra_ve_o_bao_cu_khong_bia(self, textured_video, tmp_path):
+        """LK fail (nền phẳng) không được crash và không được bịa vị trí mới."""
+        from src.light_tracker import LkBoxTracker
+
+        class _FlatEngine(_LostObjectEngine):
+            def __init__(self):
+                super().__init__(lost_at=())
+
+        class _BlindLk(LkBoxTracker):
+            def update(self, gray):
+                return None, False
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        stats = LiveTrackingSession(_FlatEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True), lk_tracker=_BlindLk()).run(stop_event=_StopAfter(12))
+
+        assert stats.frames > 0
+        assert stats.bbox[2] > stats.bbox[0]        # ô bao vẫn hợp lệ (lấy từ lần VOS)
+
+
+class TestCoLenhWorker:
+    """`build_live_worker_command` phải chuyển đúng tham số hybrid xuống CLI (P2 review 08-11)."""
+
+    def test_truyen_vos_every_va_mask_smoothing(self, tmp_path):
+        from src.worker import build_live_worker_command
+
+        argv = build_live_worker_command("0", tmp_path, vos_every=3, mask_smoothing=0.5,
+                                         repo_root=tmp_path)
+        joined = " ".join(argv)
+        assert "--vos-every 3" in joined
+        assert "--mask-smoothing 0.5" in joined
+
+    def test_khong_truyen_thi_de_mac_dinh_cua_cli(self, tmp_path):
+        """None = để CLI quyết định (vos_every 3, mask_smoothing 1.0 = tắt) — không ghi đè."""
+        from src.worker import build_live_worker_command
+
+        joined = " ".join(build_live_worker_command("0", tmp_path, repo_root=tmp_path))
+        assert "--vos-every" not in joined
+        assert "--mask-smoothing" not in joined

@@ -24,17 +24,17 @@ if str(_REPO_ROOT) not in sys.path:
 from src.live_tracking import (  # noqa: E402
     STATE_LOADING,
     LiveTrackConfig,
+    LiveTrackStats,
     LiveTrackingSession,
+    status_payload,
     write_json_atomic,
 )
 
 
 def _write_loading(out_dir: Path, message: str = "Đang nạp model...") -> None:
-    write_json_atomic(out_dir / "status.json", {
-        "state": STATE_LOADING, "frames": 0, "vos_runs": 0, "measured_fps": 0.0,
-        "vos_fps": 0.0, "vos_ms": 0.0, "lk_ms": 0.0, "lost_streak": 0, "bbox": [],
-        "message": message,
-    })
+    """Ghi trạng thái "loading" bằng CHÍNH payload của phiên chạy (một nguồn schema)."""
+    write_json_atomic(out_dir / "status.json",
+                      status_payload(LiveTrackStats(state=STATE_LOADING, message=message)))
 
 
 def main() -> int:
@@ -57,6 +57,15 @@ def main() -> int:
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
     args = parser.parse_args()
+
+    # Validate ở cửa vào: trước đây CLI clamp im lặng 0.0 → 0.05 còn schema API lại cho 0.0
+    # (lỗi hợp đồng P2, review 08-11).
+    if not 0.0 < args.mask_smoothing <= 1.0:
+        parser.error("--mask-smoothing phải trong khoảng (0, 1]; 1.0 = tắt làm mượt")
+    if args.vos_every < 1:
+        parser.error("--vos-every phải >= 1")
+    if args.max_fps <= 0:
+        parser.error("--max-fps phải > 0")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -82,7 +91,7 @@ def main() -> int:
         out_dir=out_dir,
         display_fps=args.max_fps,
         vos_every=args.vos_every,
-        mask_smoothing=max(0.05, min(1.0, args.mask_smoothing)),
+        mask_smoothing=args.mask_smoothing,
         trajectory_len=args.trajectory_len,
         stop_after_frames=args.stop_after_frames,
     )

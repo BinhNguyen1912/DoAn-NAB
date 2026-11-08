@@ -20,7 +20,7 @@ import {
   type BBox,
   type LiveStatus,
 } from '../api'
-import { maskRhythmLine } from '../live'
+import { maskRhythmLine, shownFps } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
 const POLL_MS = 1000
@@ -111,6 +111,7 @@ export function LivePanel(): JSX.Element {
 
   const running = status?.state === 'running'
   const maskLine = maskRhythmLine(status)
+  const displayFps = shownFps(status)
 
   return (
     <section className="card">
@@ -152,7 +153,7 @@ export function LivePanel(): JSX.Element {
       {status && (
         <p className="hint" data-testid="live-status">
           Trạng thái: <strong>{status.state}</strong> · {status.message} · frame: {status.frames} · FPS
-          đo được: {status.measured_fps}
+          đo được: {displayFps}
         </p>
       )}
 

@@ -60,6 +60,7 @@ DOAN-NAB/
 │   ├── DoAnCameraAI.docx  # Đề cương đề tài gốc
 │   ├── adr/               # Quyết định kiến trúc (0001…0005)
 │   ├── agents/            # Cấu hình skill (issue-tracker, triage-labels, domain)
+│   ├── plan/              # 📁 Plan việc lớn: 3 ý kiến + tranh luận + quyết định + _template.md
 │   ├── samurai-setup.md   # Cơ chế hydra/checkpoint upstream (navigation)
 │   └── task/              # 📁 Log công việc theo ngày (BẮT BUỘC) + _template.md
 ├── src/                   # Source code chính của hệ thống
@@ -102,8 +103,10 @@ DOAN-NAB/
 1. Đọc yêu cầu từ người dùng + xem lại `docs/task/` gần nhất để nắm tiến độ. **Với việc liên quan
    hiệu năng / webcam / re-ID: đọc thêm AGENTS.md mục 6 trước khi sửa** (đó là các kết luận đã đo,
    tránh làm lại việc đã bị bác bỏ).
-2. Thực hiện code/thay đổi.
-3. Chạy kiểm tra trước khi kết thúc bằng **lệnh tắt của repo** (`run` tự chọn đúng môi trường Python):
+2. Thực hiện code/thay đổi. Việc lớn (> ~4 giờ, đổi kiến trúc/model/thuật toán) phải lập plan theo
+   **mục 9.2** (3 ý kiến tranh luận) trước khi code.
+3. **Review độc lập trước khi merge** theo **mục 9.1** (agent khác, không phải agent vừa code).
+4. Chạy kiểm tra trước khi kết thúc bằng **lệnh tắt của repo** (`run` tự chọn đúng môi trường Python):
    - **Lint:** `./run lint` — CI chạy đúng lệnh `ruff check .`; phải xanh.
    - **Làn nhanh** (UI/logic/config — ~30s): `./run test` — CI chạy `pytest -m "not slow"`.
    - **Full suite** (cần checkpoint SAM 2): `./run testall` — chỉ khi đụng
@@ -112,8 +115,8 @@ DOAN-NAB/
    - **E2E trình duyệt thật** (Chrome/Edge + Playwright, cần Windows): `./run e2e` — bắt buộc trước khi
      báo "xong" cho bất kỳ thay đổi nào ở UI/API (nó đã bắt được 3 bug thật ngày 08-11: canvas
      300×150, codec mp4v không phát được, và job báo `done` trước khi xuất H.264).
-4. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên.
-5. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
+5. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên. Log phải ghi cả **kết quả review độc lập** (mục 9.1) và **quyết định plan** (mục 9.2).
+6. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
 
 ---
 
@@ -197,3 +200,70 @@ Dùng 5 nhãn mặc định: `needs-triage`, `needs-info`, `ready-for-agent`, `r
 ### Domain docs
 
 Single-context: một `GLOSSARY.md` + `docs/adr/` ở root. Xem `docs/agents/domain.md`.
+
+---
+
+## 9. Hai quy trình BẮT BUỘC: review độc lập & plan 3 ý kiến
+
+> Hai bước này là **điều kiện hoàn thành**, không phải "nên làm". Thiếu bước nào thì việc đó coi như
+> chưa xong — kể cả khi test đã xanh.
+
+### 9.1. Review độc lập sau mỗi vấn đề (trước khi merge)
+
+**Khi nào:** mọi thay đổi chạm code/docs, ngay sau khi `./run lint` + `./run test` xanh và **trước**
+khi mở/merge PR. Không review thì không merge (kể cả khi tự merge).
+
+**Ai review:** một agent **độc lập** với agent đã viết code — dùng tool `task` với `agent_type:
+reviewer` (không có `reviewer` thì `general` với prompt "chỉ đọc, không sửa"). Cấm tự review bằng
+chính phiên đã code rồi coi là đã review.
+
+**Prompt review phải có:** `parent_context` (kiến trúc, ADR liên quan, số đo đã có, trạng thái
+lint/test) + `proposed_changes` (danh sách thay đổi kèm tiêu chí nghiệm thu) + phạm vi (commit/PR).
+Yêu cầu đầu ra: bảng `[P0 chặn merge | P1 sửa sớm | P2 nên sửa | P3 góp ý] · file:line · bằng chứng ·
+cách sửa + test nên thêm`, và **được phép nói "đã kiểm, không phải lỗi"**.
+
+**Xử lý kết quả:**
+- **P0**: sửa ngay trong cùng PR, thêm test bắt hồi quy, chạy lại review phần vừa sửa.
+- **P1**: sửa ngay nếu ≤ 1 giờ, không thì tạo ticket (`.scratch/<feature>/`) và ghi vào log.
+- **P2/P3**: tạo ticket hoặc ghi vào mục "Next steps" của log — **không im lặng bỏ qua**.
+- Ghi vào log ngày: ai review, phát hiện gì, đã sửa gì, còn nợ gì (kèm id ticket).
+
+### 9.2. Lập plan bằng 3 ý kiến tranh luận (trước khi làm việc lớn)
+
+**Khi nào:** việc ước lượng > ~4 giờ, hoặc đổi kiến trúc / model / thuật toán / hợp đồng API;
+hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ngày.
+
+**Cách làm (2 vòng, không gộp):**
+1. **Vòng 1 — độc lập:** gọi **3 agent song song**, mỗi agent một **góc nhìn khác nhau** và **không**
+   biết đề xuất của nhau. Ba góc nhìn mặc định:
+   - **Chất lượng & số đo** (tracking có thật sự tốt hơn? đo bằng gì?),
+   - **Sản phẩm & bằng chứng bảo vệ** (demo/báo cáo/hội đồng cần gì?),
+   - **Độ bền & hiệu năng** (race condition, tái lập số đo, test bắt hồi quy).
+   Mỗi agent phải trả: bảng `[việc | mục tiêu đo được | cách làm (file/hàm) | nghiệm thu CÓ SỐ | giờ |
+   rủi ro]`, **việc KHÔNG nên làm**, và "nếu chỉ chọn 1 việc".
+2. **Vòng 2 — phản biện:** gửi cho **cả 3** agent bản tóm tắt của cả 3 đề xuất, yêu cầu: chỉ ra chỗ
+   sai/thiếu của hai người kia, chỗ nào mình đổi ý, và **1 phương án hợp nhất**. Đây là bước tạo ra
+   tranh luận thật — không được bỏ để tiết kiệm thời gian.
+3. **Chốt:** người cha (agent chính) quyết định, nêu rõ **vì sao chọn**, **vì sao bác** phương án
+   còn lại (kèm số đo nếu có), và **tiêu chí nghiệm thu có số**.
+4. **Lưu:** `docs/plan/DD-MM-YYYY-<slug>.md` theo `docs/plan/_template.md`, gồm cả **điểm tranh chấp**
+   và **phương án bị bác kèm lý do** — để sau này không mở lại việc đã bác.
+
+### 9.3. Nếu tool agent báo lỗi
+
+- `Declared subagent skill(s) not found: <tên>` ⇒ frontmatter của agent (trong
+  `~/.pi/agent/npm/node_modules/@heyhuynhgiabuu/pi-task/agents/*.md`) khai báo skill **không tồn tại
+  trên máy này**. Sửa mapping sang skill đang có (`code-review`, `codebase-design`, `tdd`,
+  `verification-before-completion`, `memory`…) hoặc tạm dùng `agent_type: general` với prompt
+  "chỉ đọc". **Không được bỏ qua bước review/plan vì lỗi tool.**
+- Lỗi backend (`Failed to create herdr execution pane…`) ⇒ thử lại hoặc đổi `agent_type`; ghi lại
+  vào log nếu lặp lại nhiều lần.
+
+### 9.4. Checklist kết thúc phiên (đủ mới được báo "xong")
+
+- [ ] `./run lint` xanh
+- [ ] `./run test` xanh (và `./run webtest` + `npm run build` + `./run e2e` nếu đụng `web/`)
+- [ ] Review độc lập đã chạy (mục 9.1), P0 = 0, P1 có chủ
+- [ ] CI GitHub xanh trước khi merge
+- [ ] Log `docs/task/…` có kết quả review + quyết định plan
+- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo

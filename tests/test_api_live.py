@@ -43,12 +43,14 @@ class TestLiveStreamService:
 
         class _TelemetrySource(FakeFrameSource):
             def telemetry(self):
-                return LiveTelemetry(mask_fps=8.6, stability=0.96, latency_ms=108.0, lk_ms=4.6)
+                return LiveTelemetry(display_fps=29.9, mask_fps=8.6, stability=0.96,
+                                      latency_ms=108.0, lk_ms=4.6, empty_runs=2)
 
         monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _TelemetrySource("0"))
         live_service.start("0")
         status = live_service.status()
-        assert (status.mask_fps, status.stability, status.latency_ms) == (8.6, 0.96, 108.0)
+        assert (status.display_fps, status.mask_fps, status.stability,
+                status.latency_ms, status.empty_runs) == (29.9, 8.6, 0.96, 108.0, 2)
         live_service.stop()
 
     def test_nguon_khong_co_telemetry_thi_so_lieu_bang_0(self, live_service, make_frame_source):
@@ -117,8 +119,8 @@ class TestLiveRoutes:
         body = r.json()
         assert body["state"] == "running"
         assert body["source"] == "giả:0"
-        assert set(body) == {"state", "source", "frames", "measured_fps", "mask_fps",
-                             "stability", "latency_ms", "message"}
+        assert set(body) == {"state", "source", "frames", "measured_fps", "display_fps",
+                             "mask_fps", "stability", "latency_ms", "empty_runs", "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
         assert live_client.get("/api/live/status").json()["state"] == "running"
@@ -172,15 +174,22 @@ class TestLiveRoutes:
 
         monkeypatch.setattr(live_client.app.state.live, "_make_source", spy)
         r = live_client.post("/api/live/start",
-                             json={"source": "0", "mode": "track", "vos_every": 6})
+                             json={"source": "0", "mode": "track", "vos_every": 6,
+                                   "mask_smoothing": 0.6})
         assert r.status_code == 200
         assert seen == {"mode": "track", "image_size": None, "vos_every": 6,
-                        "mask_smoothing": None}
+                        "mask_smoothing": 0.6}
         live_client.post("/api/live/stop")
 
     @pytest.mark.parametrize("bad", [0, 31, "ba"])
     def test_vos_every_ngoai_khoang_tra_422(self, live_client, bad):
         r = live_client.post("/api/live/start", json={"source": "0", "vos_every": bad})
+        assert r.status_code == 422
+
+    @pytest.mark.parametrize("bad", [0, 0.0, 1.5, "x"])
+    def test_mask_smoothing_ngoai_khoang_tra_422(self, live_client, bad):
+        """0 không hợp lệ: `MaskSmoother` cần alpha > 0; trước đây schema cho 0 còn worker clamp 0.05."""
+        r = live_client.post("/api/live/start", json={"source": "0", "mask_smoothing": bad})
         assert r.status_code == 422
 
     def test_nguon_sai_tra_400(self, live_client, monkeypatch, failing_source):
@@ -220,3 +229,43 @@ class TestOpenCvFrameSource:
         source = OpenCvFrameSource(str(tmp_path / "khong-co.mp4"))
         with pytest.raises(Exception):
             source.start()
+
+
+class TestWorkerTelemetry:
+    """Seam `status.json → LiveTelemetry` — từng làm `empty_runs` "chết trong adapter" (review lần 2)."""
+
+    def test_doc_status_json_thanh_live_telemetry(self, tmp_path):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps({
+            "state": "tracking", "frames": 400, "measure_fps": 0, "measured_fps": 29.9,
+            "vos_fps": 8.6, "vos_ms": 100.0, "lk_ms": 2.7, "stability": 0.963,
+            "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4, "mask_drops": 2,
+            "bbox": [10, 10, 40, 60], "message": "",
+        }), encoding="utf-8")
+
+        detail = WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+        assert detail.display_fps == 29.9
+        assert detail.mask_fps == 8.6
+        assert detail.stability == 0.963
+        assert detail.latency_ms == 100.0
+        assert detail.empty_runs == 14
+
+    def test_status_json_hong_tra_so_0_khong_crash(self, tmp_path):
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text("không phải json", encoding="utf-8")
+        detail = WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+        assert (detail.display_fps, detail.mask_fps, detail.empty_runs) == (0.0, 0.0, 0)
+
+
+class TestNhipDocFrame:
+    def test_api_doc_frame_nhanh_bang_nhip_phat_cua_worker(self):
+        """`target_fps` mặc định 15 từng làm FPS của API trần 15 (lệch 29,9 của worker)."""
+        from src.api.live import LIVE_READ_FPS, LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: None)
+        assert LIVE_READ_FPS >= 30
+        assert service._interval == pytest.approx(1.0 / LIVE_READ_FPS)
