@@ -156,6 +156,20 @@ Cài đặt/cơ chế hydra `model_cfg` của SAMURAI trong repo này: `docs/sam
 
 ---
 
+## 7b. Quy trình Git — 1 nhánh/nhiệm vụ, vào `main` qua PR
+
+**Quy ước đầy đủ: `docs/quy-trinh-git.md`** (đọc trước khi bắt đầu phiên làm việc).
+
+- **Không commit thẳng lên `main`.** Mỗi nhiệm vụ = 1 nhánh ngắn hạn (`feat/…`, `fix/…`, `docs/…`,
+  `chore/…`) rẽ từ `origin/main`, rebase trước khi push, mở **PR** để người phụ trách review + merge.
+- **Hạn chế conflict:** không sửa cùng lúc các file "nóng" (`run`, `AGENTS.md`, `README.md`,
+  `requirements.txt`, `tests/conftest.py`, `web/package-lock.json`); thêm mục mới vào **cuối** file;
+  logic mới đặt trong **module mới** thay vì nhồi vào file lớn; **không reformat** file không liên quan;
+  PR < ~400 dòng diff.
+- **Tag:** chỉ tag mốc "demo chạy được", tối đa **2 tag sống** (CLI + web). Tag cũ bị thay thế thì xoá.
+- **Nhánh nháp:** tối đa một nhánh `demoip`; mỗi lần làm việc phải rebase lên `origin/main`,
+  không merge ngược `main` vào nháp.
+
 ## 8. Agent skills
 
 ### Issue tracker
