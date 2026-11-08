@@ -145,7 +145,7 @@ def build_router(service: JobService, live) -> APIRouter:
             bbox = (payload.bbox.x, payload.bbox.y, payload.bbox.w, payload.bbox.h)
         return _live_status(
             live.start(payload.source, mode=payload.mode, bbox=bbox,
-                       image_size=payload.image_size)
+                       image_size=payload.image_size, vos_every=payload.vos_every)
         )
 
     @router.post("/api/live/stop", response_model=LiveStatusResponse)

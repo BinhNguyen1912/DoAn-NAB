@@ -104,6 +104,11 @@ class LiveStartRequest(BaseModel):
         default=None, ge=64, le=1024,
         description="độ phân giải model cho mode=track (mặc định 192 ≈ 10 FPS trên CPU)",
     )
+    vos_every: Optional[int] = Field(
+        default=None, ge=1, le=30,
+        description="mode=track: chạy model mỗi N frame, các frame còn lại dùng LK (mặc định 3). "
+                    "1 = chạy model mọi frame (mask tươi nhất nhưng hình chậm)",
+    )
 
 
 class LiveStatusResponse(BaseModel):

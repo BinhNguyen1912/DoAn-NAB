@@ -124,6 +124,28 @@ class TestLiveRoutes:
 
         live_client.post("/api/live/stop")
 
+    def test_vos_every_duoc_truyen_xuong_nha_may_nguon(self, live_client, monkeypatch):
+        """Phase 4c: `vos_every` phải đi từ JSON request → service → nhà máy nguồn (worker)."""
+        seen = {}
+
+        def spy(source, mode="raw", bbox=None, image_size=None, vos_every=None):
+            from tests.conftest import FakeFrameSource
+
+            seen.update(mode=mode, image_size=image_size, vos_every=vos_every)
+            return FakeFrameSource(source)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", spy)
+        r = live_client.post("/api/live/start",
+                             json={"source": "0", "mode": "track", "vos_every": 6})
+        assert r.status_code == 200
+        assert seen == {"mode": "track", "image_size": None, "vos_every": 6}
+        live_client.post("/api/live/stop")
+
+    @pytest.mark.parametrize("bad", [0, 31, "ba"])
+    def test_vos_every_ngoai_khoang_tra_422(self, live_client, bad):
+        r = live_client.post("/api/live/start", json={"source": "0", "vos_every": bad})
+        assert r.status_code == 422
+
     def test_nguon_sai_tra_400(self, live_client, monkeypatch, failing_source):
         monkeypatch.setattr(live_client.app.state.live, "_make_source",
                             lambda *args, **kwargs: failing_source("0"))

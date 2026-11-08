@@ -1,19 +1,27 @@
 """
 LiveTrackingSession — vòng lặp bám đối tượng cho LUỒNG TRỰC TIẾP (chạy trong tiến trình worker).
 
-Chức năng: mở nguồn frame, chờ ô chọn đối tượng (hoặc nhận sẵn), bám bằng engine VOS, vẽ overlay
-           rồi ghi **frame mới nhất** + **trạng thái** ra thư mục chia sẻ để API đọc và phát.
-Input  : engine (TrackerEngine hoặc engine giả trong test), LiveTrackConfig (nguồn, thư mục ra, fps).
+Chức năng: mở nguồn frame, chờ ô chọn đối tượng (hoặc nhận sẵn), bám bằng engine VOS **cách quãng**
+           (mỗi `vos_every` frame) và dùng **LK optical flow** cho các frame còn lại; vẽ overlay và
+           ghi **frame mới nhất** + **trạng thái** ra thư mục chia sẻ để API đọc và phát.
+Input  : engine (TrackerEngine hoặc engine giả trong test), LiveTrackConfig.
 Output : `<out_dir>/frame.jpg` (JPEG mới nhất), `<out_dir>/status.json`, `<out_dir>/worker.log`.
 Lưu ý  : đây là phần CHẠY TRONG TIẾN TRÌNH RIÊNG (tools/live_worker.py) — nhờ vậy API vẫn không
-         import torch/SAM 2 (ADR-0005) và có thể nằm trên máy yếu, thậm chí VPS 4 GB.
-         Giao tiếp qua FILE trong /dev/shm (tmpfs): ghi atomic bằng os.replace, không dùng socket
-         để giữ đơn giản và để lần chạy lỗi vẫn còn dấu vết đọc được.
-         Chỉ giữ frame MỚI NHẤT (không hàng đợi) — độ trễ thấp quan trọng hơn phát đủ frame.
+         import torch/SAM 2 (ADR-0005).
+         **Kiến trúc hybrid (Phase 4c):** VOS (97 ms @image_size 192) không thể chạy mỗi frame
+         nếu muốn hình mượt; LK (2–3 ms, `docs/research/09`) lấp các frame giữa hai lần suy luận.
+         **Hai luồng:** model chạy trong LUỒNG RIÊNG (`_VosWorker`), luồng chính chỉ đọc frame +
+         LK + vẽ + ghi ⇒ model 78 ms không chặn nhịp phát. Đo trên máy này (192 px, binh1.mp4):
+         chạy đơn luồng chỉ được 18 FPS, tách luồng đạt ~30 FPS (xem docs/task/09-11-2026).
+         GIỚI HẠN PHẢI NÓI THẬT trong báo cáo: **mask chỉ được cập nhật ở nhịp VOS**
+         (`vos_fps` trong status), phần giữa hai lần là mask cũ được TỊNH TIẾN theo LK —
+         không phải mask mới. Vì vậy không được claim "mask 30 FPS".
+         Giao tiếp qua FILE trong /dev/shm (tmpfs), ghi atomic bằng os.replace.
 """
 
 import json
 import os
+import threading
 import time
 from collections import deque
 from dataclasses import dataclass, field
@@ -21,6 +29,7 @@ from pathlib import Path
 
 import cv2
 
+from src.light_tracker import LkBoxTracker, shift_mask
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
 from src.video_source import open_video_source
 
@@ -28,11 +37,13 @@ FRAME_NAME = "frame.jpg"
 STATUS_NAME = "status.json"
 BBOX_NAME = "bbox.json"
 
-STATE_LOADING = "loading"          # đang nạp model (20–60 s trên CPU)
+STATE_LOADING = "loading"            # đang nạp model (20–60 s trên CPU)
 STATE_WAITING = "waiting_selection"  # đã có khung hình, chờ người dùng chọn đối tượng
 STATE_TRACKING = "tracking"
 STATE_ERROR = "error"
 STATE_STOPPED = "stopped"
+
+_FPS_WINDOW_S = 2.0
 
 
 @dataclass
@@ -41,7 +52,8 @@ class LiveTrackConfig:
 
     source: str
     out_dir: Path
-    max_fps: float = 15.0
+    display_fps: float = 30.0     # nhịp PHÁT frame (LK/lặp frame), không phải nhịp VOS
+    vos_every: int = 3            # 1 = chạy VOS mỗi frame (tắt LK, hình ~10 FPS @192)
     trajectory_len: int = 100
     jpeg_quality: int = 80
     loop_files: bool = True
@@ -50,15 +62,28 @@ class LiveTrackConfig:
 
 @dataclass
 class LiveTrackStats:
-    """Số liệu đo được của phiên (ghi ra status.json mỗi frame)."""
+    """Số liệu đo được của phiên (ghi ra status.json mỗi frame đã phát)."""
 
     state: str = STATE_LOADING
-    frames: int = 0
-    measured_fps: float = 0.0
-    inference_ms: float = 0.0
+    frames: int = 0               # số frame ĐÃ PHÁT (nhịp display)
+    vos_runs: int = 0             # số lần CHẠY MODEL (mask mới)
+    measured_fps: float = 0.0     # FPS phát thực đo
+    vos_fps: float = 0.0          # FPS của VOS (nhịp mask thật)
+    vos_ms: float = 0.0           # độ trễ suy luận gần nhất
+    lk_ms: float = 0.0            # độ trễ LK gần nhất
     lost_streak: int = 0
     bbox: list = field(default_factory=list)
     message: str = ""
+
+
+@dataclass
+class _FrameResult:
+    """Kết quả một frame để vẽ overlay (giống `TrackingResult` nhưng không import tracker_engine)."""
+
+    frame_idx: int
+    bbox: tuple
+    mask: object
+    elapsed_ms: float
 
 
 def write_json_atomic(path: Path, data: dict) -> None:
@@ -90,16 +115,80 @@ def read_bbox(path: Path):
     return bbox if bbox[2] > 0 and bbox[3] > 0 else None
 
 
-class LiveTrackingSession:
-    """Một phiên bám trực tiếp: đọc frame → (chờ bbox) → bám → ghi ảnh/trạng thái."""
+def xyxy_to_xywh(bbox) -> tuple:
+    """(x1,y1,x2,y2) → (x,y,w,h)."""
+    x1, y1, x2, y2 = (int(v) for v in bbox)
+    return (x1, y1, max(1, x2 - x1), max(1, y2 - y1))
 
-    def __init__(self, engine, config: LiveTrackConfig) -> None:
+
+def xywh_to_xyxy(bbox) -> tuple:
+    """(x,y,w,h) → (x1,y1,x2,y2)."""
+    x, y, w, h = (int(v) for v in bbox)
+    return (x, y, x + w, y + h)
+
+
+class _VosWorker(threading.Thread):
+    """Chạy model ở LUỒNG RIÊNG để nó không chặn nhịp phát frame.
+
+    Chức năng: nhận frame mới nhất (chỉ giữ MỘT frame — frame cũ bị bỏ, không xếp hàng), chạy
+               `engine.process`, trả kết quả kèm frame xám đã xử lý cho luồng chính.
+    Lưu ý  : chỉ một luồng được gọi `engine.process` tại một thời điểm (engine không thread-safe).
+             Frame gửi sang là bản do luồng chính đọc ra; luồng chính chỉ COPY để vẽ nên không tranh chấp.
+    """
+
+    def __init__(self, engine, on_result) -> None:
+        super().__init__(name="vos", daemon=True)
+        self._engine = engine
+        self._on_result = on_result
+        self._lock = threading.Lock()
+        self._pending = None
+        self._wake = threading.Event()
+        self._stopping = threading.Event()
+
+    def submit(self, seq: int, frame, gray) -> None:
+        with self._lock:
+            self._pending = (seq, frame, gray)     # luôn là frame MỚI NHẤT
+        self._wake.set()
+
+    def stop(self) -> None:
+        self._stopping.set()
+        self._wake.set()
+
+    def run(self) -> None:
+        while not self._stopping.is_set():
+            self._wake.wait(0.2)
+            if self._stopping.is_set():
+                return
+            with self._lock:
+                item, self._pending = self._pending, None
+            self._wake.clear()
+            if item is None:
+                continue
+            seq, frame, gray = item
+            self._on_result(seq, self._engine.process(frame), gray)
+
+
+class LiveTrackingSession:
+    """Một phiên bám trực tiếp: đọc frame → (chờ bbox) → VOS (luồng riêng) + LK → ghi ảnh/trạng thái."""
+
+    def __init__(self, engine, config: LiveTrackConfig, *, lk_tracker=None) -> None:
         self._engine = engine
         self._cfg = config
+        self._lk = lk_tracker or LkBoxTracker()
+        self._interp = LkBoxTracker()      # nội suy từ frame VOS gần nhất → frame hiện tại
         self._stats = LiveTrackStats()
         self._trail: deque = deque(maxlen=config.trajectory_len)
-        self._frames_window: deque = deque()
+        self._display_stamps: deque = deque()
+        self._vos_stamps: deque = deque()
+        self._lock = threading.Lock()
+        self._vos_state = None          # (seq, result, gray) của lần VOS gần nhất
+        self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
+        self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
+        self._seq = 0
+        self._frame_index = 0
         self._source = None
+        self._worker = None
+        self._use_lk = config.vos_every > 1
 
     # ------------------------------------------------------------------ API công khai
 
@@ -110,8 +199,8 @@ class LiveTrackingSession:
         self._publish_status(out_dir)
 
         self._source = open_video_source(self._cfg.source).open()
-        interval = 1.0 / max(1.0, float(self._cfg.max_fps))
-        engine_started = False
+        interval = 1.0 / max(1.0, float(self._cfg.display_fps))
+        started = False
         try:
             while not (stop_event is not None and stop_event.is_set()):
                 began = time.perf_counter()
@@ -121,7 +210,7 @@ class LiveTrackingSession:
                     if frame is None:
                         break
 
-                if not engine_started:
+                if not started:
                     # Trong lúc chờ, vẫn phát khung hình TRƠN để UI hiện luồng và người dùng chọn ô
                     bbox = read_bbox(out_dir / BBOX_NAME)
                     if bbox is None:
@@ -129,11 +218,16 @@ class LiveTrackingSession:
                         self._publish_frame(out_dir, frame)
                         self._sleep(interval, began)
                         continue
-                    result = self._engine.start(frame, bbox)
+                    result = self._engine.start(frame, bbox)     # start() vẫn đồng bộ (1 lần)
+                    self._after_vos(frame, result)
+                    if self._use_lk:
+                        self._start_worker(frame, self._gray(frame))
                     self._stats.state = STATE_TRACKING
-                    engine_started = True
+                    started = True
+                elif self._use_lk:
+                    result = self._result_threaded(frame)
                 else:
-                    result = self._engine.process(frame)
+                    result = self._result_inline(frame)
 
                 self._update_stats(result)
                 self._publish_frame(out_dir, self._annotate(frame, result))
@@ -143,47 +237,112 @@ class LiveTrackingSession:
                     break
                 self._sleep(interval, began)
         finally:
+            self._stop_worker()
             if self._source is not None:
                 self._source.close()
             self._stats.state = STATE_STOPPED
             self._publish_status(out_dir)
         return self._stats
 
-    # ------------------------------------------------------------------ nội bộ
+    # ------------------------------------------------------------------ luồng VOS + nội suy LK
 
-    def _rewind(self):
-        """Mở lại file từ đầu (demo live bằng video); nguồn thật hoặc lỗi → None."""
-        if not self._cfg.loop_files:
-            return None
-        try:
-            source, self._source = self._source, None
-            if source is not None:
-                source.close()
-            self._source = open_video_source(self._cfg.source).open()
-            return self._source.read()
-        except (OSError, RuntimeError):
-            return None
+    def _start_worker(self, frame, gray) -> None:
+        self._worker = _VosWorker(self._engine, self._store_vos)
+        self._worker.start()
+        self._seq += 1
+        self._worker.submit(self._seq, frame, gray)
+        with self._lock:                      # mốc nội suy ban đầu chính là frame start()
+            self._vos_state = (0, self._interp_base_result, gray)
+
+    def _stop_worker(self) -> None:
+        if self._worker is not None:
+            self._worker.stop()
+            self._worker.join(timeout=5.0)
+            self._worker = None
+
+    def _store_vos(self, seq, result, gray) -> None:
+        """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
+        self._record_vos(result)
+        with self._lock:
+            self._vos_state = (seq, result, gray)
+
+    def _result_threaded(self, frame):
+        """Frame này: gửi cho VOS (nếu tới lượt) rồi vẽ bằng mask mới nhất + LK tới frame hiện tại."""
+        gray = self._gray(frame)
+        self._frame_index += 1
+        every = max(1, self._cfg.vos_every)
+        if self._frame_index % every == 0:
+            self._seq += 1
+            self._worker.submit(self._seq, frame, gray)
+
+        with self._lock:
+            state = self._vos_state
+        if state is None:
+            return self._interp_base_result
+
+        seq, base_result, base_gray = state
+        base_bbox = xyxy_to_xywh(base_result.bbox)
+        self._interp.reset(base_gray, base_bbox)      # mốc LUÔN là frame VOS → sai số không tích luỹ
+        began = time.perf_counter()
+        bbox, ok = self._interp.update(gray)
+        self._stats.lk_ms = round((time.perf_counter() - began) * 1000.0, 2)
+        if not ok:
+            # LK mất dấu: vẫn phát mask/ô bao của lần VOS gần nhất (không bịa vị trí mới)
+            return base_result
+
+        dx = bbox[0] - base_bbox[0]
+        dy = bbox[1] - base_bbox[1]
+        mask = getattr(base_result, "mask", None)
+        return _FrameResult(
+            frame_idx=self._frame_index,
+            bbox=xywh_to_xyxy(bbox),
+            mask=shift_mask(mask, dx, dy) if mask is not None else None,
+            elapsed_ms=self._stats.lk_ms,
+        )
+
+    # ------------------------------------------------------------------ đường đơn luồng
+
+    def _result_inline(self, frame):
+        """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
+        self._frame_index += 1
+        result = self._engine.process(frame)
+        self._after_vos(frame, result)
+        return result
+
+    def _after_vos(self, frame, result) -> None:
+        """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
+        self._record_vos(result)
+        self._interp_base_result = result
+        self._mask = getattr(result, "mask", None)
+        self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
+        self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
+
+    def _record_vos(self, result) -> None:
+        self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
+        self._stats.vos_runs += 1
+        self._vos_stamps.append(time.perf_counter())
+        self._trim(self._vos_stamps)
+
+    @staticmethod
+    def _gray(frame):
+        return cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+    # ------------------------------------------------------------------ số liệu & vẽ
 
     def _update_stats(self, result) -> None:
         now = time.perf_counter()
         self._stats.frames += 1
-        self._stats.inference_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
-        self._frames_window.append(now)
-        cutoff = now - 2.0
-        while self._frames_window and self._frames_window[0] < cutoff:
-            self._frames_window.popleft()
-        if len(self._frames_window) >= 2:
-            span = self._frames_window[-1] - self._frames_window[0]
-            if span > 0:
-                self._stats.measured_fps = round((len(self._frames_window) - 1) / span, 1)
+        self._display_stamps.append(now)
+        self._trim(self._display_stamps)
+        self._stats.measured_fps = self._rate(self._display_stamps)
+        self._stats.vos_fps = self._rate(self._vos_stamps)
 
         mask = getattr(result, "mask", None)
         lost = mask is None or not mask.any()
         self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
         self._stats.bbox = [int(v) for v in result.bbox]
         if not lost:
-            center = ((result.bbox[0] + result.bbox[2]) // 2, (result.bbox[1] + result.bbox[3]) // 2)
-            self._trail.append((int(center[0]), int(center[1])))
+            x1, y1, x2, y2 = result.bbox
+            self._trail.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
 
     def _annotate(self, frame, result):
         """Tô mask + ô bao + quỹ đạo + HUD. Chữ HUD dùng ASCII vì font Hershey không có dấu."""
@@ -202,12 +361,15 @@ class LiveTrackingSession:
         for index in range(1, len(points)):
             cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
 
-        hud = f"LIVE {self._stats.measured_fps:.1f} FPS | {self._stats.inference_ms:.0f} ms"
+        hud = (f"LIVE {self._stats.measured_fps:.1f}fps | VOS {self._stats.vos_fps:.1f}fps "
+               f"{self._stats.vos_ms:.0f}ms | LK {self._stats.lk_ms:.1f}ms")
         if self._stats.lost_streak:
-            hud += f" | MAT DAU {self._stats.lost_streak}"
+            hud += f" | LOST {self._stats.lost_streak}"
         # ASCII (không dấu) là BẮT BUỘC: cv2.putText/Hershey không render được dấu tiếng Việt
-        cv2.putText(img, hud, (8, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
+        cv2.putText(img, hud, (8, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 0, 255), 2)
         return img
+
+    # ------------------------------------------------------------------ ghi ra đĩa
 
     def _publish_frame(self, out_dir: Path, frame) -> None:
         ok, buffer = cv2.imencode(
@@ -220,12 +382,43 @@ class LiveTrackingSession:
         write_json_atomic(out_dir / STATUS_NAME, {
             "state": self._stats.state,
             "frames": self._stats.frames,
+            "vos_runs": self._stats.vos_runs,
             "measured_fps": self._stats.measured_fps,
-            "inference_ms": self._stats.inference_ms,
+            "vos_fps": self._stats.vos_fps,
+            "vos_ms": self._stats.vos_ms,
+            "lk_ms": self._stats.lk_ms,
             "lost_streak": self._stats.lost_streak,
             "bbox": self._stats.bbox,
             "message": self._stats.message,
         })
+
+    # ------------------------------------------------------------------ tiện ích
+
+    @staticmethod
+    def _trim(stamps: deque) -> None:
+        cutoff = time.perf_counter() - _FPS_WINDOW_S
+        while stamps and stamps[0] < cutoff:
+            stamps.popleft()
+
+    @staticmethod
+    def _rate(stamps: deque) -> float:
+        if len(stamps) < 2:
+            return 0.0
+        span = stamps[-1] - stamps[0]
+        return round((len(stamps) - 1) / span, 1) if span > 0 else 0.0
+
+    def _rewind(self):
+        """Mở lại file từ đầu (demo live bằng video); nguồn thật hoặc lỗi → None."""
+        if not self._cfg.loop_files:
+            return None
+        try:
+            source, self._source = self._source, None
+            if source is not None:
+                source.close()
+            self._source = open_video_source(self._cfg.source).open()
+            return self._source.read()
+        except (OSError, RuntimeError):
+            return None
 
     @staticmethod
     def _sleep(interval: float, began: float) -> None:

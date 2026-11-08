@@ -41,12 +41,13 @@ class WorkerFrameSource(FrameSource):
     """Frame có bám đối tượng: worker chạy model, adapter chỉ đọc file mới nhất."""
 
     def __init__(self, source: str, *, bbox=None, image_size: int | None = None,
-                 max_fps: float = 15.0, out_dir=None, python_exe: str | None = None,
-                 startup_timeout: float = 240.0) -> None:
+                 max_fps: float = 30.0, vos_every: int | None = None, out_dir=None,
+                 python_exe: str | None = None, startup_timeout: float = 240.0) -> None:
         self._source = str(source)
         self._bbox = tuple(int(v) for v in bbox) if bbox else None
         self._image_size = image_size
         self._max_fps = max_fps
+        self._vos_every = vos_every
         self._out = Path(out_dir) if out_dir is not None else live_dir()
         self._python = python_exe
         self._startup_timeout = startup_timeout
@@ -62,7 +63,8 @@ class WorkerFrameSource(FrameSource):
 
         argv = build_live_worker_command(
             self._source, self._out, image_size=self._image_size,
-            max_fps=self._max_fps, python_exe=self._python, repo_root=REPO_ROOT,
+            max_fps=self._max_fps, vos_every=self._vos_every,
+            python_exe=self._python, repo_root=REPO_ROOT,
         )
         self._proc = start_process(argv, log_path=self._log, cwd=REPO_ROOT)
         self._wait_first_frame()

@@ -74,10 +74,11 @@ def build_default_service(settings: ApiSettings) -> JobService:
 def build_default_live() -> LiveStreamService:
     """Lắp ghép phiên live: mode "raw" = OpenCV tại chỗ, mode "track" = worker model riêng."""
 
-    def make_source(source, mode="raw", bbox=None, image_size=None):
+    def make_source(source, mode="raw", bbox=None, image_size=None, vos_every=None):
         if mode == "track":
             # Mặc định 192: đo trên máy này 192 ≈ 10 FPS, 256 ≈ 6,5 FPS, 1024 ≈ 0,4 FPS.
-            return WorkerFrameSource(source, bbox=bbox, image_size=image_size or 192)
+            return WorkerFrameSource(source, bbox=bbox, image_size=image_size or 192,
+                                     vos_every=vos_every)
         return OpenCvFrameSource(source)
 
     return LiveStreamService(make_source, target_fps=15)

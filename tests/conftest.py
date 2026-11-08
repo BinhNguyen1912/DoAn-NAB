@@ -195,11 +195,12 @@ def make_frame_source():
     """Nhà máy FrameSource giả; giữ danh sách nguồn đã tạo để test kiểm tra đã đóng chưa."""
     created = []
 
-    def factory(source, mode="raw", bbox=None, image_size=None):
+    def factory(source, mode="raw", bbox=None, image_size=None, vos_every=None):
         item = FakeFrameSource(source)
         item.mode = mode
         item.bbox = bbox
         item.image_size = image_size
+        item.vos_every = vos_every
         created.append(item)
         return item
 
