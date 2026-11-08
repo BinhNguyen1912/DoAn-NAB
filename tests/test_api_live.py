@@ -112,20 +112,26 @@ class TestLiveRoutes:
         assert live_client.get("/api/live/frame").status_code == 404
         assert live_client.get("/api/live/stream").status_code == 409
 
-    def test_stream_tra_multipart_mjpeg(self, live_client):
+    def test_stream_tra_multipart_mjpeg(self, live_client, monkeypatch):
         """Chỉ kiểm HEADER của route stream.
 
-        Lưu ý (bug CI 08-11): đọc phần thân đầu tiên của MJPEG vô hạn qua `TestClient` treo trên
-        CI (starlette/httpx mới đệm cả body) — timeout 120 s. ĐỊNH DẠNG part đã được kiểm ở tầng
-        service (`test_luong_frames_sinh_ra_part_dung_dinh_dang_mjpeg`, có cả Content-Length),
-        nên ở đây chỉ cần route trả đúng content-type.
+        Lưu ý (bug CI 08-11): luồng MJPEG **vô hạn** qua `TestClient` treo trên CI (starlette/httpx
+        đệm body tới khi generator kết thúc) ⇒ timeout 120 s. Vì vậy ở đây thay generator của
+        service bằng bản **chỉ phát 1 part rồi kết thúc**: vẫn kiểm đủ route + HTTP + định dạng
+        part, mà test luôn kết thúc được. Định dạng part đầy đủ đã kiểm ở tầng service
+        (`test_luong_frames_sinh_ra_part_dung_dinh_dang_mjpeg`).
         """
         live_client.post("/api/live/start", json={"source": "0"})
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 1)
 
+        part = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: 2\r\n\r\n\xff\xd8\r\n"
+        service = live_client.app.state.live
+        monkeypatch.setattr(service, "frames", lambda **kwargs: iter([part]))
+
         with live_client.stream("GET", "/api/live/stream") as response:
             assert response.status_code == 200
             assert "multipart/x-mixed-replace" in response.headers["content-type"]
+            assert next(response.iter_raw()).startswith(b"--frame")
 
         live_client.post("/api/live/stop")
 
