@@ -28,6 +28,9 @@ DEFAULT_HIST_BINS = 8
 DEFAULT_MIN_SIDE = 8          # cạnh ngắn tối thiểu (px) — đủ để biết không phải ô rác
 DEFAULT_MIN_AREA = 600       # diện tích mask tối thiểu (px²) — dưới mức này đặc trưng quá nhiễu
 DEFAULT_MIN_FILL = 0.5
+# Dải sát mép khung (px) bị coi là "vùng rác": khi vật đi ra mép, SAM 2 vẽ mask thành dải
+# mỏng bám viền khung (đo 04-11: 71×10 px trong khi vật thật 220×204).
+EDGE_MARGIN = 4
 # Quét lưới khi mất dấu: bước = 0.5 cạnh vật, 3 tỉ lệ quanh kích thước đã biết.
 DEFAULT_STRIDE_FRAC = 0.5
 DEFAULT_SCALES: Tuple[float, ...] = (0.75, 1.0, 1.5)
@@ -51,6 +54,39 @@ def mask_to_bbox(mask: np.ndarray) -> Optional[Tuple[int, int, int, int]]:
     if xs.size == 0:
         return None
     return (int(xs.min()), int(ys.min()), int(xs.max()) + 1, int(ys.max()) + 1)
+
+
+def clip_mask_border(mask: np.ndarray, frame_w: int, frame_h: int,
+                    margin: int = EDGE_MARGIN):
+    """Cắt bỏ dải sát mép khung khỏi mask → (mask sạch, bbox) hoặc (None, None).
+
+    Vì sao cần (05-11-2026): vật nằm sát/ra mép khung là case bắt buộc phải bám được, nhưng
+    cổng `cham_mep` cũ bỏ TOÀN BỘ mẫu có mask chạm mép ⇒ `_obj_refs` rỗng vĩnh viễn ⇒ re-ID
+    không bao giờ nhận lại (bug thật `demoip_1105-131222`: mất dấu 85%).
+    Cách đúng: bỏ đúng **dải mép** (nơi sinh mask rác) rồi đánh giá chất lượng trên phần
+    còn thấy — vật bị cắt một nửa vẫn đủ đặc trưng, còn dải rác 3–4 px thì không còn gì.
+    """
+    m = np.asarray(mask).astype(bool).copy()
+    if m.ndim != 2 or m.size == 0:
+        return None, None
+    mg = max(0, int(margin))
+    if mg:
+        m[:mg, :] = False
+        m[max(0, m.shape[0] - mg):, :] = False
+        m[:, :mg] = False
+        m[:, max(0, m.shape[1] - mg):] = False
+    box = mask_to_bbox(m)
+    if box is None:
+        return None, None
+    # Kẹp ô bao vào trong khung (mask có thể do nguồn khác kích thước khung khai báo)
+    x1, y1, x2, y2 = box
+    x2, y2 = min(x2, int(frame_w)), min(y2, int(frame_h))
+    x1, y1 = max(0, min(x1, x2 - 1)), max(0, min(y1, y2 - 1))
+    # Trả mask ở TOẠ ĐỘ KHUNG (không crop) — `object_signature(frame, mask)` và
+    # `signature_quality_ok` đều index frame bằng mask full-frame.
+    if not m[y1:y2, x1:x2].any():
+        return None, None
+    return m, (x1, y1, x2, y2)
 
 
 def signature_quality_ok(bbox, mask, min_side: int = DEFAULT_MIN_SIDE,

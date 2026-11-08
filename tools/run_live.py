@@ -163,12 +163,20 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
 
 
 def _make_metrics(args):
-    """Tạo MetricsLogger nếu --metrics-csv; tắt thì trả None (không log)."""
+    """Tạo MetricsLogger nếu `--metrics-csv`; tắt thì trả None (không log).
+
+    Kèm `ResourceSampler` (yêu cầu 10 của GVHD: "mức sử dụng CPU/GPU") → lấy mẫu mỗi frame,
+    ghi vào `summary["resources"]`. Không đo được (thiếu /proc, không GPU) thì trường = None.
+    """
     if not args.metrics_csv:
         return None
     from src.metrics_logger import MetricsLogger
+    from src.resource_usage import ResourceSampler
+
+    sampler = ResourceSampler()
+    sampler.start()
     print(f"[pipeline] ghi metrics: {args.metrics_csv} (+summary JSON nếu --metrics-summary)")
-    return MetricsLogger()
+    return MetricsLogger(sampler=sampler)
 
 
 def _finish_metrics(metrics, args):
@@ -190,6 +198,14 @@ def _finish_metrics(metrics, args):
     print(f"[metrics] {s['total_frames']} frame | mean={s['mean_latency_ms']:.0f} ms | "
           f"p95={s['p95_latency_ms']:.0f} ms | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
+    res = s.get("resources") or {}
+    if res.get("cpu_percent_mean") is not None:
+        gpu = res.get("gpu") or {}
+        gpu_txt = (f" | GPU {gpu['gpu_name']} {gpu.get('gpu_mem_alloc_mb', 0):.0f} MB"
+                   if gpu else " | GPU: không có (CPU)")
+        print(f"[metrics] CPU {res['cpu_percent_mean']:.0f}% (1 lõi, "
+              f"≈{res['cpu_percent_of_machine_mean']:.0f}% máy) · đỉnh {res['cpu_percent_peak']:.0f}% "
+              f"| RAM đỉnh {res['rss_mb_peak']:.0f} MB{gpu_txt}")
 
 
 def _write_run_info(args):

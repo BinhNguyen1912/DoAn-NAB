@@ -20,6 +20,7 @@ Lưu ý  : RTSP/webcam là adapter mỏng — kiểm chứng thủ công; test t
 from abc import ABC, abstractmethod
 import os
 import sys
+import urllib.request
 
 import cv2
 import numpy as np
@@ -254,6 +255,91 @@ class HttpVideoSource(_CaptureSource):
         )
 
 
+def is_snapshot_url(url):
+    """URL http(s) là **ảnh JPEG rời** (không phải luồng MJPEG)?
+
+    Vì sao cần phân biệt: `cv2.VideoCapture` (đường MJPEG) tốn ~30 ms/frame vì FFMPEG phải
+    demux và chờ frame kế tiếp, trong khi lấy 1 ảnh JPEG + `cv2.imdecode` chỉ ~8 ms
+    (đo 05-11-2026 trên relay camera Windows 640x480 trong repo).
+    """
+    path = str(url).split("?", 1)[0].lower()
+    return path.endswith((".jpg", ".jpeg")) or "/snapshot" in path
+
+
+class HttpSnapshotSource(VideoSource):
+    """Nguồn camera IP/relay đọc **từng ảnh JPEG rời** (`.../snapshot.jpg`), không dùng MJPEG.
+
+    Dùng khi: relay của repo (`scripts/win_camera_relay.py`) — nó có cả `/video` (MJPEG) và
+    `/snapshot.jpg`. Ở nhịp suy luận ~5 FPS của CPU, hỏi từng ảnh rẻ và ít trễ hơn hẳn:
+    đo 05-11-2026 → MJPEG `read()` 30,2 ms/frame vs snapshot 8,4 ms/frame.
+
+    Ngữ nghĩa lỗi: nguồn live không được kết thúc pipeline vì một lần mạng chập chờn, nên
+    `read()` trả lại FRAME CUỐI khi lấy ảnh thất bại; chỉ trả None (hết nguồn) sau
+    `max_misses` lần hỏng liên tiếp.
+    """
+
+    def __init__(self, url, timeout_s=5.0, max_misses=20):
+        self._url = str(url)
+        self._timeout_s = float(timeout_s)
+        self._max_misses = int(max_misses)
+        self._size = None
+        self._last = None
+        self._misses = 0
+
+    def open(self):
+        frame = self._fetch(attempts=3)
+        if frame is None:
+            raise ConnectionError(
+                f"Không lấy được ảnh JPEG từ '{self._url}' (thử 3 lần). Kiểm tra: relay/camera "
+                f"đã chạy chưa, đúng IP:port chưa, và đường dẫn có phải ảnh JPEG "
+                f"(ví dụ http://<IP>:8090/snapshot.jpg)"
+            )
+        self._last = frame
+        self._size = (frame.shape[1], frame.shape[0])      # (W, H)
+        self._misses = 0
+        return self
+
+    @property
+    def frame_size(self):
+        if self._size is None:
+            raise RuntimeError("Gọi open() trước khi đọc thuộc tính nguồn")
+        return self._size
+
+    @property
+    def source_fps(self):
+        # Nguồn "kéo" — không có FPS cố định; pipeline tự đo FPS thực
+        return 0.0
+
+    def _fetch(self, attempts=1):
+        for _ in range(max(1, attempts)):
+            try:
+                with urllib.request.urlopen(self._url, timeout=self._timeout_s) as resp:
+                    data = resp.read()
+                frame = cv2.imdecode(np.frombuffer(data, np.uint8), cv2.IMREAD_COLOR)
+                if frame is not None:
+                    return frame
+            except Exception:
+                continue
+        return None
+
+    def read(self):
+        if self._last is None:
+            raise RuntimeError("Gọi open() trước khi read()")
+        frame = self._fetch(attempts=2)
+        if frame is not None:
+            self._last = frame
+            self._misses = 0
+            return frame
+        self._misses += 1
+        if self._misses >= self._max_misses:
+            return None                     # hỏng liên tục → kết thúc như hết nguồn
+        return self._last                   # giữ frame cuối, không làm chết demo
+
+    def close(self):
+        self._last = None
+        self._misses = 0
+
+
 class RtspVideoSource(_CaptureSource):
     """Camera rời/điện thoại qua RTSP — mở có timeout, lỗi nguồn báo rõ thay vì treo."""
 
@@ -282,8 +368,8 @@ class RtspVideoSource(_CaptureSource):
 
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:
-    """Factory duy nhất: int → webcam; rtsp:// → RTSP; http(s):// → nguồn mạng MJPEG;
-    thư mục → dãy ảnh (frames); còn lại → video file.
+    """Factory duy nhất: int → webcam; rtsp:// → RTSP; http(s):// → nguồn mạng MJPEG
+    (hoặc ảnh JPEG rời nếu URL là snapshot); thư mục → dãy ảnh (frames); còn lại → video file.
 
     Trả về instance CHƯA mở (lazy) — gọi .open() hoặc dùng `with`.
     """
@@ -294,6 +380,8 @@ def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEO
     if lower.startswith(("rtsp://", "rtspt://")):
         return RtspVideoSource(text, open_timeout_ms=open_timeout_ms)
     if lower.startswith(("http://", "https://")):
+        if is_snapshot_url(lower):
+            return HttpSnapshotSource(text)
         return HttpVideoSource(text, open_timeout_ms=open_timeout_ms)
     if os.path.isdir(text):                      # thư mục ảnh (định dạng SAM 2 gốc)
         return FramesVideoSource(text)

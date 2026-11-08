@@ -24,7 +24,7 @@ from typing import List, Optional, Sequence, Tuple
 import cv2
 import numpy as np
 
-from src.appearance import (candidate_boxes, mask_to_bbox, object_signature,
+from src.appearance import (candidate_boxes, clip_mask_border, mask_to_bbox, object_signature,
                             prefilter_candidates, signature_quality_ok)
 
 DEFAULT_DETECTOR_PATH = "models/face/face_detection_yunet_2023mar.onnx"
@@ -45,6 +45,10 @@ DEFAULT_OBJ_REF_MAX = 8           # số mẫu đặc trưng vật thể giữ l
 DEFAULT_OBJ_MIN_SIDE = 8          # cạnh ngắn tối thiểu (px) — để vật MẢNH (bút, thìa) vẫn lưu được mẫu.
 # Lưu ý: trước đây để 24 và nó ĐÈ mất hằng số trong appearance.py → bản sửa "vật mảnh" không có tác dụng.
 DEFAULT_OBJ_MIN_FILL = 0.5        # tỉ lệ mask/ô tối thiểu (chặn vật bị che phần lớn)
+# Tỉ lệ diện tích TỐI THIỂU của phần mask còn thấy (sau khi cắt dải mép) so với diện tích
+# kích thước THẬT (EMA), để vẫn học mẫu khi vật bị khung cắt. Đo: ca rác 71×10 px chỉ còn
+# 1,3% diện tích vật thật (220×204) — bị chặn; vật bị cắt nửa còn ~50% — được học.
+EDGE_MIN_AREA_FRAC = 0.35
 DEFAULT_OBJ_TOP_K = 20            # số ứng viên được chấm descriptor đắt mỗi frame lost
 # Cổng NCC cho vật ÍT TEXTURE-MÀU (chai đen...): đo thật 27-10, hai vật đen KHÁC nhau cho
 # cosine 1,000 (mù) nhưng NCC 0,897, còn cùng vật thì NCC 1,000. Đặt 0.0 = TẮT cổng (mặc định),
@@ -55,6 +59,15 @@ DEFAULT_OBJ_NCC_MIN = 0.0         # cổng PHỤ (mẫu ảnh) — TẮT mặc �
 #   4 lần "nhận lại" SAI của người dùng (bám vào bóng đèn thay vì cái ly) ncc = 0,48–0,62
 #   → cosine một mình không đủ (li 0,78–0,99 mà vẫn sai), phải có cổng NCC.
 DEFAULT_SEARCH_GROW_FRAMES = 12    # số frame lost tìm trong vùng hẹp quanh vị trí cũ trước khi mở rộng
+# Nạp template NCC ĐỊNH KỲ: mỗi N frame khi đang bám. Không nạp mỗi frame (bug 29-10: tay/che
+# khuất lọt vào mẫu → trôi), nhưng cũng KHÔNG chỉ lần đầu (bug 04-11: vật đổi tư thế/góc →
+# NCC của template cũ rơi bằng NCC của vật khác → cascade chọn sai). Đo: MULTi-template +
+# multi-signature cho choice 0,94–0,86 trên đúng vật, trong khi 1-template chỉ 0,70 (nền ngưỡng 0,6).
+DEFAULT_TEMPLATE_EVERY = 10
+DEFAULT_OBJ_TEMPLATES_MAX = 4
+# Lưu ý: mẫu tham chiếu (`_obj_refs`) và template NCC (`_obj_templates`) đều phải qua cổng
+# "không chạm mép" — mask rác của SAM 2 (đo 04-11: 71×10 / 117×46) làm cos sai lệch
+# không lọc được ở tầng chấm điểm (cos(bbox-rác vs vùng-nền) = 0,798!)
 DEFAULT_SEARCH_GROW_STEP = 0.25    # bán kính tìm = max(w,h) × (0,75 + 0,25 × số frame lost)
 # TỰ PHỤC HỒI (không cần người dùng bấm r): nếu ô bao NHẢY BẤT THƯỜNG giữa 2 frame (dấu hiệu bám
 # sang vật khác), hệ thống tự reset engine + về trạng thái tìm lại, GIỮ ký ức vật (mẫu tham chiếu)
@@ -64,6 +77,17 @@ DEFAULT_RECOVER_COOLDOWN = 3       # số frame tối thiểu giữa 2 lần t�
 DEFAULT_LOST_SCORE_THRESHOLD = 0.0   # score ≤ 0 → coi như KHÔNG thấy vật (mask hay bị "tưởng tượng")
 DEFAULT_REACQUIRE_CONFIRM = 2         # số frame liên tiếp phải khớp cùng một chỗ mới nhận lại
 DEFAULT_VERIFY_FRAMES = 2             # số frame kiểm chứng sau khi bám lại (chống bám nhầm nền)
+
+# Cảnh báo khi KHÔNG lưu được mẫu đặc trưng nào cho vật. Trước 05-11 hệ thống im lặng nên người
+# dùng tưởng "re-ID dở" trong khi thật ra chưa hề có mẫu nào để so. Ca thật `demoip_1105-131222`:
+# ô chọn y2 = 479/480 suốt 48 frame, mask sụp thành dải mỏng sát đáy → `reid_score = -1` ở cả
+# 325 frame, mất dấu 85%, "dơ lại vật mà không dính lại".
+# Vật nằm sát mép KHÔNG còn bị chặn tuyệt đối (xem `_collect_reference` + `clip_mask_border`).
+HINT_CHAM_MEP = (
+    "[re-ID] CẢNH BÁO: KHÔNG lưu được mẫu đặc trưng nào cho vật (mask bị khung cắt quá nhiều "
+    "hoặc quá nhỏ) ⇒ mất dấu sẽ KHÔNG tự nhận lại được.\n"
+    "        → bấm r rồi kéo ô bao TRỌN vật, chừa mép khung (đừng để cạnh ô dính sát biên ảnh)."
+)
 
 STATE_TRACKING = "tracking"
 STATE_LOST = "lost"
@@ -88,6 +112,19 @@ class LostResult:
     bbox: Tuple[int, int, int, int] = (0, 0, 0, 0)
     score: float = 0.0
     elapsed_ms: float = 0.0
+
+
+def touches_frame_edge(bbox, frame_w, frame_h, margin=2) -> bool:
+    """Ô bao có chạm mép khung không (cùng ngưỡng với cổng `cham_mep` khi lưu mẫu).
+
+    Tách thành hàm thuần để test + để cảnh báo sớm lúc NGƯỜI DÙNG CHỌN, thay vì để họ
+    mất dấu rồi mới biết hệ thống không thể học đặc trưng của vật.
+    """
+    if bbox is None:
+        return False
+    x1, y1, x2, y2 = [int(v) for v in bbox]
+    return (x1 <= 1 or y1 <= 1
+            or x2 >= int(frame_w) - margin or y2 >= int(frame_h) - margin)
 
 
 @dataclass
@@ -279,6 +316,22 @@ class ReIdSession:
         self._verify_left = 0
         self._lost_age = 0          # đã mất dấu bao nhiêu frame (để mở rộng vùng tìm dần)
         self._last_center = None    # tâm vật ở lần thấy cuối (mốc để giới hạn vùng tìm)
+        # KÍCH THƯỚC TRUNG BÌNH (EMA) của vật — mốc để tính bán kính vùng tìm.
+        # Vì sao cần: `_last_obj_size` là bbox frame CUỐI trước khi mất dấu; khi vật RỜI KHUNG
+        # SAM 2 co mask về mép (bằng chứng 04-11: 71×10 px mà size thật 220×204) → radius co
+        # lại 53–89 px trong khi ô đúng cách chỗ cũ ~300 px ⇒ vật đưa vào lại KHÔNG BAO GIỜ
+        # nằm trong vùng tìm ⇒ "mất dấu đưa vào lại không nhận được" (lỗi người dùng báo).
+        # Đo thật trên `demoip_1104-212328.mp4`: EMA qua các frame "không chạm mép" giữ 250×233
+        # (đúng size vật) trong khi snapshot cuối là 71×10 (rác).
+        self._size_ema = None       # (w, h) trung bình trượt; None = chưa có
+        # TẬP TEMPLATE NCC (nhiều tư thế) — bug 04-11: vật đổi góc/tư thế trong khi bám
+        # thì template DUY NHẤT (lần đầu chọn) lệch dần → NCC của vùng đúng rơi cùng tầm
+        # NCC của ô sai. Đo trên `demoip_1104-214048.mp4` (NCC với vùng ĐÚNG f52):
+        #   tpl f0 (duy nhất) = 0,757 · tpl f10 = 0,857 · tpl f20 = 0,911 · tpl f30 = 0,918
+        # → template gần nhất luôn mạnh nhất phải có trong tập. Deque tự rơi mẫu cũ khi đủ.
+        self._obj_templates = deque(maxlen=DEFAULT_OBJ_TEMPLATES_MAX)
+        self._last_template_frame = -1
+
         # Cue mặt cần embedder; cue vật thể thì không → có thể chạy không có model mặt.
         self.face_on = bool(enabled) and embedder is not None and self.cue in (CUE_FACE, CUE_BOTH)
         self.object_on = bool(enabled) and self.cue in (CUE_OBJECT, CUE_BOTH)
@@ -316,7 +369,10 @@ class ReIdSession:
         self._refs.clear()
         self._obj_refs.clear()
         self._obj_template = None
+        self._obj_templates.clear()
+        self._last_template_frame = -1
         self._last_obj_size = None
+        self._size_ema = None
         self._state = STATE_TRACKING
         self._lost_streak = 0
         self._confirm_count = 0
@@ -340,6 +396,8 @@ class ReIdSession:
         self._state = STATE_TRACKING
         self._lost_streak = 0
         self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
+        if self.object_on and not self._obj_refs and not self._obj_templates:
+            print(HINT_CHAM_MEP)
         return result
 
     def step(self, frame) -> Step:
@@ -495,7 +553,13 @@ class ReIdSession:
             return pairs
         if self._lost_age > self.search_grow_frames:
             return pairs                      # đã tìm đủ lâu → cho phép quét toàn khung
-        base = max(int(self._last_obj_size[0]), int(self._last_obj_size[1]), 1)
+        # Bán kính theo MAX của EMA kích thước (!, không phải snapshot frame cuối): nếu vật rời
+        # khung thì bbox cuối là rác (mép khung), EMA vẫn giữ size thật (đo 04-11: 250×233
+        # vs 71×10). Chỉ dùng `_last_obj_size` khi chưa thu được lần EMA nào (chọn 1 frame rồi mất).
+        if self._size_ema is not None:
+            base = max(int(self._size_ema[0]), int(self._size_ema[1]), 1)
+        else:
+            base = max(int(self._last_obj_size[0]), int(self._last_obj_size[1]), 1)
         # Nở CHẬM: đo thật 29-10 — cả 3 lần bám nhầm đều nhảy 216–295 px chỉ sau 2–3 frame mất dấu.
         # 12 frame đầu bán kính chỉ ~0,75–1,75 lần cạnh vật → chặn kiểu "nhảy sang vật ở góc phòng".
         radius = base * (0.75 + self.search_grow_step * (self._lost_age - 1))
@@ -547,14 +611,26 @@ class ReIdSession:
         if scales:
             kwargs["scales"] = scales
         pairs = []
-        if self._obj_template is not None:
-            pairs = prefilter_candidates(frame, self._obj_template, **kwargs)
-        if not pairs and self._last_obj_size:
-            # Không có template (hoặc NCC thất bại) → quét lưới quanh kích thước đã biết
+        if self._obj_templates:
+            # Chạy prefilter trên TẤT CẢ template rồi GỐP: mỗi template một tư thế, vật quay đi
+            # thì tư thế khác khớp (đo 04-11: f42 có tpl1 = 0,932 · tpl0 chỉ 0,891 — template cũ
+            # TỰ NHIÊN mạnh hơn trên tư thế ngược). Gộp rồi `_filter_by_radius` lọc một lần.
+            merged = {}
+            for tpl in self._obj_templates:
+                for box, ncc in prefilter_candidates(frame, tpl, **kwargs):
+                    if box not in merged or ncc > merged[box]:
+                        merged[box] = ncc
+            pairs = sorted(merged.items(), key=lambda kv: -kv[1])[: self.obj_top_k]
+        if not pairs and (self._size_ema or self._last_obj_size):
+            # Không có template (hoặc NCC thất bại) → quét lưới quanh kích thước vật.
+            # Dùng EMA kích thước (không phải bbox frame cuối): khi vật đã chui khỏi khung,
+            # bbox cuối là rác đè mép (đo 04-11: 71×10 so với size thật 220×204) — dựng lưới
+            # theo nó thì lưới toàn ô 8×40 px, chấm descriptor vào ô rác thì cosine vô nghĩa.
+            size_grid = self._size_ema or self._last_obj_size
             grid_kwargs = {"stride_frac": 0.5}
             if scales:
                 grid_kwargs["scales"] = scales
-            boxes = candidate_boxes(frame.shape[:2], self._last_obj_size, **grid_kwargs)
+            boxes = candidate_boxes(frame.shape[:2], size_grid, **grid_kwargs)
             pairs = [(b, -1.0) for b in boxes[: self.obj_top_k]]
 
         # Vùng tìm nở DẦN: mấy frame đầu chỉ tìm quanh chỗ cũ → không nhảy sang vật khác
@@ -571,7 +647,9 @@ class ReIdSession:
         best_box = None
         best_choice = -1.0
         height, width = frame.shape[:2]
-        target_area = (self._last_obj_size[0] * self._last_obj_size[1]) if self._last_obj_size else None
+        # Diện tích chống sai lệch — dùng EMA (size thật) không phải bbox frame cuối (rác mép).
+        size_ref = self._size_ema or self._last_obj_size
+        target_area = (size_ref[0] * size_ref[1]) if size_ref else None
         for (x1, y1, x2, y2), ncc in pairs:
             if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
                 if ncc > best_ncc:
@@ -623,15 +701,57 @@ class ReIdSession:
             if obj_box is None or not signature_quality_ok(obj_box, mask, self.obj_min_side,
                                                            self.obj_min_fill):
                 return
+            x1, y1, x2, y2 = obj_box
+            h_frame, w_frame = frame.shape[:2]
+            # MỐC TÌM CẬP NHẬT TRƯỚC (cả khi chạm mép): vật rời khung ở đâu thì vùng tìm neo ở đó.
+            self._last_obj_size = (int(x2 - x1), int(y2 - y1))
+            self._last_center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)
+            # Chạm mép = SAM 2 co mask rác (đo 04-11: 71×10 / 117×46 khi vật đã ra ngoài khung).
+            # Sample này không phải "góc nhìn mới của vật" mà là NỀN + mép: nạp vào `_obj_refs`
+            # sẽ cho cos ~0,80 với vùng nền/khuôn — "nhận lại" thành công TRÊN VÙNG SAI
+            # (bug thật f102 trong `demoip_1104-214922.mp4`: reacquired=True trên vùng TAY).
+            #
+            # MỚI 05-11-2026: KHÔNG bỏ ngay toàn bộ. Vật nằm sát/ra mép khung là case BẮT BUỘC
+            # phải bám được (bug thật `demoip_1105-131222`: ô chọn có y2=479/480 suốt 48 frame →
+            # `_obj_refs` rỗng ⇒ `reid_score = -1` ở cả 325 frame, mất dấu 85%, không bao giờ
+            # nhận lại). Cách đúng: bỏ đúng **dải mép** rồi đánh giá chất lượng trên phần CÒN THẤY:
+            # vật bị cắt nửa vẫn đủ đặc trưng; dải rác 3-4 px thì không còn gì để học.
+            clipped = False
+            if touches_frame_edge(obj_box, w_frame, h_frame):
+                mask_sach, box_sach = clip_mask_border(mask, w_frame, h_frame)
+                if mask_sach is None or not signature_quality_ok(
+                        box_sach, mask_sach, self.obj_min_side, self.obj_min_fill):
+                    return
+                if self._size_ema is not None:
+                    # Phần thấy phải còn đủ lớn so với kích thước THẬT của vật (EMA) — chặn
+                    # đúng ca mask sụp thành dải mỏng khi vật đã ra khỏi khung.
+                    ema_area = max(1.0, float(self._size_ema[0]) * float(self._size_ema[1]))
+                    if float(np.count_nonzero(mask_sach)) < EDGE_MIN_AREA_FRAC * ema_area:
+                        return
+                mask, obj_box = mask_sach, box_sach
+                x1, y1, x2, y2 = obj_box
+                clipped = True
             sig = object_signature(frame, mask)
             if sig is None:
                 return
             self._obj_refs.append(sig)
-            x1, y1, x2, y2 = obj_box
-            # Template CHỈ lấy Ở LẦN ĐẦU (khung người dùng tự chọn = mẫu sạch nhất).
-            # Đo thật 29-10: nếu ghi đè mỗi frame thì tay/che khuất lọt vào mẫu → mẫu trôi dần
-            # và "tay" khớp mẫu (NCC tay 0,69 trong khi ly 0,78 → chọn sai).
-            if self._obj_template is None:
-                self._obj_template = np.array(frame[y1:y2, x1:x2], copy=True)
-            self._last_obj_size = (int(x2 - x1), int(y2 - y1))
-            self._last_center = ((x1 + x2) / 2.0, (y1 + y2) / 2.0)   # mốc cho vùng tìm nở dần
+            # Nạp template NCC ĐỊNH KỲ (không mỗi frame — bug 29-10; không chỉ lần đầu — bug 04-11):
+            # nạp khi (1) chưa có template nào, HOẶC (2) ≥ DEFAULT_TEMPLATE_EVERY frame kể từ lần
+            # nạp trước. Bbox ở đây ĐÃ sạch mép (đã cắt dải mép ở trên) nên template không chứa
+            # pixel viền khung.
+            du_nap_lan_nay = (not self._obj_templates
+                              or (self._frame_idx - self._last_template_frame) >= DEFAULT_TEMPLATE_EVERY)
+            if du_nap_lan_nay:
+                tpl = np.array(frame[y1:y2, x1:x2], copy=True)
+                self._obj_templates.append(tpl)
+                self._last_template_frame = self._frame_idx
+            # Cập nhật EMA kích thước — CHỈ khi mask không bị khung cắt (kích thước bị cắt nhỏ hơn
+            # thật, đưa vào EMA sẽ làm hẹp vùng tìm và hạ cổng diện tích của các frame sau).
+            if not clipped:
+                size = (float(x2 - x1), float(y2 - y1))
+                if self._size_ema is None:
+                    self._size_ema = size
+                else:
+                    a = 0.2
+                    self._size_ema = (a * size[0] + (1 - a) * self._size_ema[0],
+                                      a * size[1] + (1 - a) * self._size_ema[1])

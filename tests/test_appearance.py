@@ -194,3 +194,42 @@ class TestVatDaiManh:
         assert signature_quality_ok(tiny, _mask(tiny)) is True
         tiny2 = (100, 100, 140, 106)        # 40×6 → cạnh 6 < 8
         assert signature_quality_ok(tiny2, _mask(tiny2)) is False
+
+
+class TestCatDaiMepKhung:
+    """05-11-2026: vật bị khung cắt vẫn phải học được đặc trưng (case "vật ở mép biên").
+
+    Bối cảnh: cổng `cham_mep` bỏ MỌI mẫu có mask chạm mép (đặt 04-11 để chặn mask rác 71×10 px),
+    nhưng hệ quả là nếu người dùng chọn vật nằm sát/ra mép khung thì `_obj_refs` rỗng vĩnh viễn
+    → re-ID không bao giờ nhận lại. Cách sửa: **cắt bỏ dải mép** (nơi SAM 2 vẽ mask rác) rồi
+    đánh giá chất lượng trên phần còn thấy.
+    """
+
+    @staticmethod
+    def _mask(shape, x1, y1, x2, y2):
+        m = np.zeros(shape, dtype=bool)
+        m[y1:y2, x1:x2] = True
+        return m
+
+    def test_cat_bo_dai_mep_va_tra_o_bao_phan_con_lai(self):
+        from src.appearance import clip_mask_border
+
+        m = self._mask((480, 640), 100, 300, 400, 480)      # chạm đáy khung
+        clean, box = clip_mask_border(m, 640, 480, margin=4)
+        assert clean is not None
+        assert box == (100, 300, 400, 476)                  # mất đúng 4 px sát đáy
+        assert not clean[476:, :].any()
+
+    def test_mask_chi_la_dai_mep_tra_none(self):
+        """Mask rác kiểu SAM 2 khi vật đã ra khỏi khung: chỉ còn dải sát mép → không có gì để học."""
+        from src.appearance import clip_mask_border
+
+        m = self._mask((480, 640), 434, 477, 505, 480)       # dải 3 px sát đáy
+        clean, box = clip_mask_border(m, 640, 480, margin=4)
+        assert clean is None and box is None
+
+    def test_mask_rong_tra_none(self):
+        from src.appearance import clip_mask_border
+
+        clean, box = clip_mask_border(np.zeros((480, 640), bool), 640, 480)
+        assert clean is None and box is None

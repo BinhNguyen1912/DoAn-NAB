@@ -18,6 +18,7 @@ Lưu ý  : `reset()` xoá quỹ đạo + số liệu trượt khi người dùng
 """
 import os
 from collections import deque
+from functools import lru_cache
 
 import cv2
 import numpy as np
@@ -149,7 +150,9 @@ class Visualizer:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.
             thr = getattr(self, "reid_threshold", None)
             if reid_score is None or reid_score < 0:
-                detail = " (chua co ung vien)"
+                # "không có ứng viên" thường vì CHƯA CÓ MẪU ĐẶC TRƯNG (ô chọn chạm mép khung —
+                # xem src/reid.py HINT_CHAM_MEP); nói thẳng để người xem/demo không đoán mò.
+                detail = " (chua co ung vien — kiem tra vat chon co cham mep khung)"
             elif thr:
                 detail = f" (khop {reid_score:.2f} / can {float(thr):.2f})"
             else:
@@ -270,20 +273,59 @@ class Visualizer:
 
 
 def _pil_put_text(img_bgr, text, org, font_path, size, color_bgr):
-    """Vẽ text tiếng Việt bằng PIL lên ndarray BGR tại chỗ (in-place)."""
+    """Vẽ text tiếng Việt bằng PIL lên ndarray BGR tại chỗ (in-place).
+
+    Tối ưu 05-11-2026: glyph được render MỘT lần cho mỗi (text, font, cỡ, màu) vào canvas nhỏ
+    (lru_cache) rồi alpha-blend vào ĐÚNG vùng chữ. Cách cũ chuyển CẢ khung (640x480) sang PIL
+    rồi chuyển lại cho MỖI dòng chữ — đo được 2,4 ms/dòng, 16,5 ms cho một lần render đủ
+    HUD + banner; chế độ mượt vẽ 30 FPS nên riêng phần chữ đã đốt ~50% một lõi CPU.
+    """
     try:
-        from PIL import Image, ImageDraw, ImageFont
+        from PIL import ImageFont  # noqa: F401 — chỉ để phát hiện thiếu PIL
     except ImportError:  # không có PIL — hạ xuống cv2.putText ASCII
         cv2.putText(img_bgr, text, org, cv2.FONT_HERSHEY_SIMPLEX, 0.6,
                     color_bgr, 2, cv2.LINE_AA)
         return
-    pil_img = Image.fromarray(cv2.cvtColor(img_bgr, cv2.COLOR_BGR2RGB))
-    draw = ImageDraw.Draw(pil_img)
-    font = ImageFont.truetype(font_path, size)
-    x, y = org
-    # BGR → RGB cho fill (PIL dùng RGB)
-    draw.text((x, y), text, font=font, fill=(color_bgr[2], color_bgr[1], color_bgr[0]))
-    img_bgr[:] = cv2.cvtColor(np.array(pil_img), cv2.COLOR_RGB2BGR)
+    glyph = _glyph_bgr(text, font_path, int(size), tuple(color_bgr))
+    if glyph is None:  # font lỗi → giữ hành vi cũ: không vẽ gì
+        return
+    patch, alpha, left, top = glyph
+    h, w = patch.shape[:2]
+    x0, y0 = int(org[0]) + left, int(org[1]) + top
+    # Cắt phần chữ nằm ngoài khung (HUD sát mép phải/dưới)
+    sx0, sy0 = max(0, -x0), max(0, -y0)
+    ex, ey = min(w, img_bgr.shape[1] - x0), min(h, img_bgr.shape[0] - y0)
+    if ex <= sx0 or ey <= sy0:
+        return
+    dst = img_bgr[y0 + sy0:y0 + ey, x0 + sx0:x0 + ex]
+    src = patch[sy0:ey, sx0:ex]
+    a = alpha[sy0:ey, sx0:ex, None]
+    dst[:] = (src * a + dst * (1.0 - a)).astype(np.uint8)
+
+
+@lru_cache(maxsize=256)
+def _glyph_bgr(text, font_path, size, color_bgr):
+    """Render 1 dòng chữ thành (patch BGR, alpha 0..1, offset_left, offset_top) đã cache.
+
+    Trả None nếu không render được (thiếu font) — hàm gọi fallback im lặng.
+    Patch có kích thước đúng bằng hộp mực của chữ (`font.getbbox`), nên chi phí ~vùng chữ
+    thay vì cả khung hình.
+    """
+    try:
+        from PIL import Image, ImageDraw, ImageFont
+        font = ImageFont.truetype(font_path, size)
+        left, top, right, bottom = font.getbbox(text)
+        w, h = max(1, right - left), max(1, bottom - top)
+        canvas = Image.new("RGBA", (w, h), (0, 0, 0, 0))
+        # color_bgr truyền vào là BGR, PIL cần RGB
+        ImageDraw.Draw(canvas).text((-left, -top), text, font=font,
+                                    fill=(color_bgr[2], color_bgr[1], color_bgr[0], 255))
+        arr = np.array(canvas)
+        patch = np.ascontiguousarray(arr[:, :, [2, 1, 0]])       # RGB → BGR
+        alpha = arr[:, :, 3].astype(np.float32) / 255.0
+        return patch, alpha, left, top
+    except Exception:  # font không đọc được / PIL lỗi → không vẽ, không crash pipeline
+        return None
 
 def _centered_org(img, text, font_path, size):
     """Toạ độ để text căn giữa ngang + giữa dọc khung (đo bằng font TTF thật)."""

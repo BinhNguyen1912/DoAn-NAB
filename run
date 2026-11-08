@@ -50,6 +50,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
     phone           Quét LAN tìm URL camera điện thoại
     cam             Hướng dẫn cấp lại webcam cho WSL (usbipd, chạy trên Windows)
+    relay           Bật camera relay Windows→WSL (khi usbipd kẹt "Device busy (exported)")
+    demoip          Demo bám VẬT bằng webcam qua relay (không cần usbipd)
 
   TÁI NHẬN DIỆN VẬT THỂ (ticket 10)
     reid <video> <x,y,w,h> [--max-frames N]
@@ -67,7 +69,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     raw [giây]      Ghi video GỐC (không HUD, không model) để phân tích offline
                     → data/raw_<mốc-giờ>.mp4
     charts [csv…]   Vẽ biểu đồ từ CSV (mặc định data/smooth_metrics.csv)
-    summary         In tóm tắt các file *_summary.json đang có
+    light [khung]   Thí nghiệm ĐỔI ÁNH SÁNG: IoU theo mức sáng (yêu cầu 11) → data/charts/
+    occl  [khung]   Thí nghiệm BỊ CHE KHUẤT: IoU theo khung → data/charts/
+    summary         In tóm tắt các file *_summary.json đang có (kèm CPU/RAM)
     gpu             In link Colab + lệnh chạy GPU
 
   KHÁC
@@ -119,6 +123,28 @@ EOF
     video="${1:-data/_gui_test.mp4}"
     shift || true
     exec "$PYTHON" tools/run_live.py --source "$video" --display --smooth --reid --image-size 384 "$@"
+    ;;
+  relay)
+    # Relay webcam Windows → WSL qua HTTP MJPEG: cứu cánh khi usbipd kẹt "exported"
+    bash scripts/cam_relay.sh "${1:-start}" "${@:2}"
+    ;;
+  demoip)
+    activate_env
+    bash scripts/cam_relay.sh start
+    # Dùng ẢNH JPEG RỜI thay vì luồng MJPEG: đo 05-11-2026 → MJPEG read() 30,2 ms/frame
+    # vs snapshot 8,4 ms/frame (cùng relay, cùng 640x480).
+    _url="$(bash scripts/cam_relay.sh snapurl)"
+    echo "[demoip] nguồn: ${_url} (ảnh JPEG rời — rẻ hơn MJPEG ~22 ms/frame)"
+    if ! bash scripts/cam_relay.sh status >/dev/null 2>&1; then
+      echo "[demoip] relay chưa sẵn sàng — xem hướng dẫn ở trên (./run relay start)."
+      exit 1
+    fi
+    _stamp="$(date +%m%d-%H%M%S)"
+    exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
+      --reid-cue object --image-size 320 \
+      --record "data/demoip_${_stamp}.mp4" \
+      --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
+      --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"
     ;;
   fast)
     activate_env
@@ -184,8 +210,12 @@ Cấp webcam cho WSL — tự tìm BUSID (BUSID ĐỔI sau mỗi lần khởi đ
   ./run cam attach        # tự dò BUSID hiện tại rồi attach (không cần Admin)
   ./run cam status        # xem bảng thiết bị usbipd
 
-Nếu báo 'Device busy (exported)' (cổng USB/IP trong Linux bị kẹt):
-  (PowerShell) wsl --shutdown   → mở lại Ubuntu → ./run cam attach
+Nếu báo 'Device busy (exported)' — kẹt ở DRIVER usbipd-win, KHÔNG phải WSL:
+  reset WSL (wsl --shutdown) hay reboot đều đã thử và không khỏi (đo 04-11-2026) ⇒ đừng mò lại.
+  Dùng đường chắc chạy, webcam Windows → WSL qua HTTP:
+    ./run relay           # bật relay, in URL MJPEG
+    ./run demoip          # demo bám VẬT bằng webcam qua relay (tự ghi mp4 + metrics)
+  Muốn quay lại USB/IP: (Admin) usbipd unbind --busid <BUSID> → reboot → usbipd bind → ./run cam attach
 Trước khi tắt máy/WSL, nhớ nhả camera: (PowerShell) usbipd detach --busid <BUSID>
 EOF
     fi
@@ -219,6 +249,21 @@ EOF
     fi
     exec "$PYTHON" scripts/plot_metrics.py "$@"
     ;;
+  light)
+    activate_env
+    # Tham số đầu là SỐ KHUNG khi nó không phải cờ (cùng lỗi cần tránh với `./run fast`)
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      exec "$PYTHON" -m scripts.experiment_lighting --frames "$1" "${@:2}"
+    fi
+    exec "$PYTHON" -m scripts.experiment_lighting "$@"
+    ;;
+  occl)
+    activate_env
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      exec "$PYTHON" -m scripts.experiment_occlusion --frames "$1" "${@:2}"
+    fi
+    exec "$PYTHON" -m scripts.experiment_occlusion "$@"
+    ;;
   summary)
     activate_env
     "$PYTHON" - <<'PY'
@@ -228,9 +273,16 @@ if not files:
     print("Chưa có file *_summary.json — chạy ./run demo hoặc ./run video trước.")
 for f in files:
     d = json.load(open(f, encoding="utf-8"))
+    # Chỉ file summary của PHIÊN ĐO (có total_frames); file kết quả thí nghiệm khác bỏ qua
+    if "total_frames" not in d:
+        continue
+    res = d.get("resources") or {}
+    extra = ""
+    if res.get("cpu_percent_mean") is not None:
+        extra = f" | CPU {res['cpu_percent_mean']:.0f}% (1 lõi) RAM {res['rss_mb_peak']:.0f} MB"
     print(f"{os.path.basename(f):28} {d.get('total_frames','?'):>4} frame | "
           f"mean={d.get('mean_latency_ms',0):7.0f} ms | p95={d.get('p95_latency_ms',0):7.0f} | "
-          f"FPS={d.get('effective_fps',0):5.2f} | mất dấu={d.get('lost_count',0)}")
+          f"FPS={d.get('effective_fps',0):5.2f} | mất dấu={d.get('lost_count',0)}{extra}")
 PY
     ;;
   gpu)

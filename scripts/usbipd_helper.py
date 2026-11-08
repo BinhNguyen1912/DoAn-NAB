@@ -90,8 +90,14 @@ def main():
         got = os.path.exists("/dev/video0")
         print(f"[cam] /dev/video0: {'CÓ' if got else 'CHƯA có'}")
         if not got:
-            print("[cam] nếu báo 'Device busy (exported)': reset WSL rồi attach lại "
-                  "→ (PowerShell) wsl --shutdown → mở Ubuntu → ./run cam attach")
+            print("[cam] USB/IP không gắn được (thường kèm 'Device busy (exported)').")
+            print("      Đây là trạng thái kẹt ở DRIVER usbipd-win, không phải do WSL: đã đo 04-11-2026")
+            print("      thì 'wsl --shutdown' và cả reboot đều KHÔNG khỏi ⇒ đừng mò lại.")
+            print("      Đường chắc chạy — webcam qua HTTP relay (Windows → WSL):")
+            print("        ./run relay      # bật relay, in URL MJPEG")
+            print("        ./run demoip     # demo bám VẬT bằng webcam qua relay")
+            print(f"      Muốn thử lại USB/IP: (Admin) usbipd unbind --busid {busid} → reboot → "
+                  "usbipd bind --busid %s → ./run cam attach" % busid)
         return 0 if (ok and got) else 3
 
     return 0

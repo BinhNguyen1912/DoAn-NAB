@@ -288,3 +288,86 @@ class TestCameraBuffer:
         monkeypatch.setattr(vs.sys, "platform", "linux")
         vs.CameraVideoSource(0)._create_capture()
         assert sets[cv2.CAP_PROP_BUFFERSIZE] == 1
+
+
+class TestHttpSnapshotSource:
+    """Nguồn ảnh JPEG rời (`/snapshot.jpg`) — thay MJPEG để giảm chi phí decode.
+
+    Vì sao có: 05-11-2026 đo trên relay camera của repo → `cv2.VideoCapture` (MJPEG)
+    tốn 30,2 ms/frame, còn hỏi từng ảnh + `cv2.imdecode` chỉ 8,4 ms/frame.
+    """
+
+    URL = "http://192.168.1.25:8090/snapshot.jpg"
+
+    def test_url_snapshot_duoc_dinh_tuyen_sang_nguon_anh_roi(self):
+        from src.video_source import HttpSnapshotSource, open_video_source
+
+        assert isinstance(open_video_source(self.URL), HttpSnapshotSource)
+        assert isinstance(open_video_source("http://cam.local/snapshot"), HttpSnapshotSource)
+        # `/video` vẫn là MJPEG (hành vi cũ không đổi)
+        from src.video_source import HttpVideoSource
+
+        assert isinstance(open_video_source("http://cam.local/video"), HttpVideoSource)
+
+    def test_open_loi_bao_duong_dan_anh_jpeg(self, monkeypatch):
+        import src.video_source as vs
+
+        monkeypatch.setattr(vs.HttpSnapshotSource, "_fetch", lambda self, attempts=1: None)
+        with pytest.raises(ConnectionError) as err:
+            vs.HttpSnapshotSource(self.URL).open()
+        assert "snapshot.jpg" in str(err.value)
+
+    def test_read_giai_ma_jpeg_that(self, monkeypatch):
+        import cv2
+
+        import src.video_source as vs
+
+        ok, buf = cv2.imencode(".jpg", np.full((48, 64, 3), 90, dtype=np.uint8))
+        assert ok
+        payload = buf.tobytes()
+
+        class FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                return payload
+
+        monkeypatch.setattr(vs.urllib.request, "urlopen", lambda *a, **k: FakeResp())
+        src = vs.HttpSnapshotSource(self.URL).open()
+        assert src.frame_size == (64, 48)
+        frame = src.read()
+        assert frame.shape == (48, 64, 3)
+
+    def test_loi_tam_thoi_tra_frame_cu_va_het_nguon_sau_nhieu_lan_hong(self, monkeypatch):
+        """Nguồn live không được chết vì mạng chập chờn: giữ frame cuối, chỉ kết thúc sau
+        `max_misses` lần hỏng liên tiếp."""
+        import cv2
+
+        import src.video_source as vs
+
+        ok, buf = cv2.imencode(".jpg", np.full((8, 8, 3), 10, dtype=np.uint8))
+        payload = buf.tobytes()
+        calls = {"n": 0}
+
+        class FakeResp:
+            def __enter__(self):
+                return self
+
+            def __exit__(self, *a):
+                return False
+
+            def read(self):
+                calls["n"] += 1
+                if calls["n"] > 1:
+                    raise OSError("mất mạng")
+                return payload
+
+        monkeypatch.setattr(vs.urllib.request, "urlopen", lambda *a, **k: FakeResp())
+        src = vs.HttpSnapshotSource(self.URL, max_misses=3).open()
+        assert src.read() is not None          # lần 1 OK, sau đó hỏng → trả frame cũ
+        assert src.read() is not None
+        assert src.read() is None              # đủ 3 lần hỏng liên tiếp → hết nguồn

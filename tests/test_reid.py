@@ -565,3 +565,187 @@ class TestCauHinhMacDinh:
 
     def test_bat_tu_phuc_hoi_mac_dinh(self):
         assert ReIdSession(engine=None, embedder=None, cue="object").auto_recover is True
+
+
+class TestKichThuocEma:
+    """Kích thước vật dùng cho vùng tìm phải là EMA, không phải bbox frame cuối (bug 04-11).
+
+    Bug thật (`demoip_1104-212328.mp4`): vật rời khung thì SAM 2 co mask về mép (71×10 px trong
+    khi vật thật 220×204) ⇒ `_last_obj_size` thành rác ⇒ radius vùng tìm 89–248 px trong khi ô
+    đúng cách chỗ mất ~300 px ⇒ "mất dấu đưa vào lại KHÔNG nhận được".
+    """
+
+    SHAPE = (480, 640)
+
+    @staticmethod
+    def _frame(color=(10, 90, 200)):
+        return np.full((TestKichThuocEma.SHAPE[0], TestKichThuocEma.SHAPE[1], 3), color, dtype=np.uint8)
+
+    @staticmethod
+    def _mask(x1, y1, x2, y2):
+        m = np.zeros(TestKichThuocEma.SHAPE, dtype=bool)
+        m[y1:y2, x1:x2] = True
+        return m
+
+    def _session(self, **kw):
+        over = {"obj_threshold": 0.6, "reacquire_confirm": 2, "verify_frames": 2}
+        over.update(kw)
+        return ReIdSession(engine=None, embedder=None, cue="object", **over)
+
+    def test_mask_trong_khung_thi_ema_bang_kich_thuoc_that(self):
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        assert s._size_ema == pytest.approx((220.0, 204.0))
+        assert s._last_obj_size == (220, 204)
+
+    def test_mask_cham_mep_khong_cap_nhat_ema(self):
+        """Cốt lõi của fix: bbox 71×10 chạm đáy (rác) không được kéo EMA xuống.
+
+        Bug thật f102 của `demoip_1104-214922.mp4`: mask rác chạm mép bị NẠP vào `_obj_refs`
+        (cos 0,798 với vùng nền) → "nhận lại" thành công trên vùng TAY người — bám nhầm.
+        """
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        ema_truoc = s._size_ema
+        ref_count_truoc = s.object_ref_count
+        s._collect_reference(self._frame(), (434, 469, 505, 479), self._mask(434, 469, 505, 479))
+        assert s._size_ema == ema_truoc, "bbox chạm mép (mask rác) không được sửa EMA"
+        assert s.object_ref_count == ref_count_truoc, (
+            "mask chạm mép KHÔNG được nạp vào `_obj_refs` — nạp vào sẽ ô nhiễm ký ức"
+        )
+        assert s._last_obj_size == (71, 10), "vẫn ghi `_last_obj_size` để tìm quanh vùng đó"
+        assert s._last_center == ((434 + 505) / 2, (469 + 479) / 2)
+
+    def test_radius_dung_ema_khong_dung_bbox_cuoi(self):
+        """Vùng tìm phải rộng theo size THẬT (EMA) — là chỗ bug chặn không nhận lại."""
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        assert s._size_ema == pytest.approx((220.0, 204.0))
+        s._collect_reference(self._frame(), (434, 469, 505, 479), self._mask(434, 469, 505, 479))
+        s._lost_age = 5
+        # radius với EMA 220×204 (base=220): age5 = 385 px; nếu theo bbox cuối 71: chỉ 124 px
+        # (bằng chứng thật: ô đúng cách chỗ mất ~300 px — 124 là KHÔNG đủ, 385 là đủ)
+        pairs = [((290, 190, 510, 394), -1.0)]          # ô đúng cách ~195 px
+        kept = s._filter_by_radius(pairs, self.SHAPE)
+        assert kept, "ô đúng phải nằm trong vùng tìm khi radius theo EMA (điều này tự vạc mình nếu "
+        "dùng bbox rác cuối: chỉ 124 px)"
+
+
+class TestCanhBaoVatChamMep:
+    """Bug thật 05-11-2026 (`demoip_1105-131222`): người dùng kéo ô có `y2 = 479/480` suốt
+    48 frame đang bám → mask luôn chạm mép → `_collect_reference` không lưu mẫu nào →
+    `reid_score = -1` ở cả 325 frame, mất dấu 85%, "dơ lại vật mà không dính lại".
+    Hệ thống cũ IM LẶNG ⇒ phải cảnh báo ngay lúc chọn.
+    """
+
+    def test_ham_nhan_dien_o_cham_mep(self):
+        from src.reid import touches_frame_edge
+
+        assert touches_frame_edge((10, 10, 300, 479), 640, 480)      # chạm đáy
+        assert touches_frame_edge((350, 226, 519, 479), 640, 480)    # đúng ca đã gặp
+        assert touches_frame_edge((0, 20, 200, 300), 640, 480)       # chạm trái
+        assert touches_frame_edge((10, 10, 639, 300), 640, 480)      # chạm phải
+        assert not touches_frame_edge((100, 100, 400, 400), 640, 480)  # bao trọn trong khung
+        assert not touches_frame_edge(None, 640, 480)
+
+    def test_start_canh_bao_khi_engine_tra_o_cham_mep(self, capsys):
+        from src.reid import HINT_CHAM_MEP, touches_frame_edge
+
+        class EngineChamMep(FakeEngine):
+            def _result(self, frame_idx, mask, bbox=(10, 10, 50, 50)):
+                return super()._result(frame_idx, mask, bbox=(20, 20, 300, 479))
+
+        session = ReIdSession(engine=EngineChamMep([]), embedder=None, cue="object")
+        frame = np.zeros((480, 640, 3), np.uint8)
+        session.start(frame, (20, 20, 300, 479))
+        out = capsys.readouterr().out
+        assert HINT_CHAM_MEP.splitlines()[0] in out
+        assert "KHÔNG lưu được mẫu đặc trưng" in out
+        # và đúng là không có mẫu nào được lưu (nguyên nhân gốc)
+        assert session.object_ref_count == 0
+        assert touches_frame_edge((20, 20, 300, 479), 640, 480)
+
+    def test_start_khong_canh_bao_khi_hoc_duoc_mau(self, capsys):
+        class EngineSach(FakeEngine):
+            def _result(self, frame_idx, mask, bbox=(10, 10, 50, 50)):
+                m = np.zeros((480, 640), bool)
+                m[100:300, 100:300] = True
+                return super()._result(frame_idx, m, bbox=(100, 100, 300, 300))
+
+        session = ReIdSession(engine=EngineSach([]), embedder=None, cue="object")
+        session.start(np.zeros((480, 640, 3), np.uint8), (100, 100, 300, 300))
+        assert "KHÔNG lưu được mẫu" not in capsys.readouterr().out
+        assert session.object_ref_count > 0
+
+
+class TestVatOMepBienVanHocDuocMau:
+    """05-11-2026: vật bị khung cắt một phần PHẢI học được đặc trưng (case "vật ở mép biên").
+
+    Trước đây `_collect_reference` bỏ TOÀN BỘ mẫu khi mask chạm mép ⇒ chọn vật sát mép là
+    `_obj_refs` rỗng vĩnh viễn ⇒ re-ID không bao giờ nhận lại (bug `demoip_1105-131222`).
+    Nay: cắt dải mép (`clip_mask_border`) → nếu phần CÒN THẤY đủ lớn thì vẫn học.
+    """
+
+    SHAPE = (480, 640)
+
+    @staticmethod
+    def _frame():
+        rng = np.random.default_rng(7)
+        return rng.integers(0, 255, (480, 640, 3), dtype=np.uint8)
+
+    @staticmethod
+    def _mask(x1, y1, x2, y2):
+        m = np.zeros((480, 640), dtype=bool)
+        m[y1:y2, x1:x2] = True
+        return m
+
+    def _session(self):
+        return ReIdSession(engine=None, embedder=None, cue="object")
+
+    def test_vat_bi_cat_day_khung_van_luu_duoc_mau(self):
+        """Vật to bị khung cắt đáy (bbox y2 = 480 = mép) → vẫn phải có mẫu."""
+        s = self._session()
+        # vật thật 220×204 đã có trong ký ức (EMA), rồi bị khung cắt đáy
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        truoc = s.object_ref_count
+        s._collect_reference(self._frame(), (60, 300, 280, 479), self._mask(60, 300, 280, 479))
+        assert s.object_ref_count > truoc, (
+            "vật bị khung cắt nhưng phần thấy ~180×175 px vẫn phải học được mẫu"
+        )
+
+    def test_vat_bi_cat_ben_hong_van_luu_duoc_mau(self):
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        truoc = s.object_ref_count
+        s._collect_reference(self._frame(), (0, 100, 200, 304), self._mask(0, 100, 200, 304))
+        assert s.object_ref_count > truoc
+
+    def test_dai_rac_sat_mep_van_bi_chan(self):
+        """Chống hồi quy 04-11: mask sụp thành dải 71×10 sát mép (vật đã ra khỏi khung) → KHÔNG học."""
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        truoc = s.object_ref_count
+        ema = s._size_ema
+        s._collect_reference(self._frame(), (434, 469, 505, 479), self._mask(434, 469, 505, 479))
+        assert s.object_ref_count == truoc, "dải rác sát mép không được nạp vào ký ức"
+        assert s._size_ema == ema, "và không được kéo EMA theo"
+
+    def test_mau_cat_mep_khong_lam_hong_ema(self):
+        """Mẫu học từ vật bị cắt (kích thước nhỏ hơn thật) không được đưa vào EMA."""
+        s = self._session()
+        s._collect_reference(self._frame(), (50, 50, 270, 254), self._mask(50, 50, 270, 254))
+        ema = s._size_ema
+        s._collect_reference(self._frame(), (60, 300, 280, 479), self._mask(60, 300, 280, 479))
+        assert s._size_ema == ema
+
+    def test_nhan_lai_duoc_sau_khi_hoc_tu_vat_o_mep(self):
+        """End-to-end: học mẫu từ vật bị cắt mép → khi mất dấu, ứng viên cùng vật được chấp nhận."""
+        frame = self._frame()
+        mask_day = self._mask(60, 300, 280, 479)                 # vật bị cắt đáy
+        s = self._session()
+        s._collect_reference(frame, (60, 300, 280, 479), mask_day)
+        assert s.object_ref_count > 0, "phải có mẫu để so"
+        sig = s._obj_refs[0]
+        from src.reid import best_match
+
+        assert best_match(s._obj_refs, sig) == pytest.approx(1.0), "tự so với chính mẫu phải = 1,0"

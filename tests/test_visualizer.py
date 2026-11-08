@@ -293,3 +293,39 @@ class TestTrangThaiTaiNhanDien:
         frame = np.zeros((240, 320, 3), np.uint8)
         img = vis.update(frame, self._result())
         assert img.shape == frame.shape
+
+
+class TestToiUuVeChu:
+    """Tối ưu 05-11-2026: chữ HUD render vào canvas nhỏ + cache, không chuyển cả khung sang PIL.
+
+    Vì sao có test: cách cũ tốn 2,4 ms/dòng (tới 16,5 ms/render đủ HUD+banner) vì mỗi dòng
+    phải `cvtColor` cả khung 640x480 sang PIL rồi chuyển lại. Test này khoá lại 2 tính chất
+    quan trọng: (1) cùng một dòng chữ chỉ render glyph MỘT lần (cache hit), (2) chữ vẫn vẽ
+    đúng chỗ và đúng màu như trước.
+    """
+
+    def test_cung_dong_chu_chi_render_glyph_mot_lan(self):
+        from src import visualizer as vz
+
+        font = find_vietnamese_font()
+        if font is None:
+            pytest.skip("máy không có font TTF phổ biến")
+        vz._glyph_bgr.cache_clear()
+        img = _frame()
+        visualizer = Visualizer(font_path=font)
+        visualizer._put_text(img, "Độ trễ: 223 ms/frame", (8, 20))
+        hit_after_first = vz._glyph_bgr.cache_info()
+        visualizer._put_text(img, "Độ trễ: 223 ms/frame", (8, 20))
+        after_second = vz._glyph_bgr.cache_info()
+        assert hit_after_first.misses == 1
+        assert after_second.hits == 1
+
+    def test_chu_ve_dung_mau_trang_o_dung_toa_do(self):
+        """Chữ trắng trên nền tối: phải có pixel sáng trong vùng vẽ, ngoài vùng thì không."""
+        font = find_vietnamese_font()
+        if font is None:
+            pytest.skip("máy không có font TTF phổ biến")
+        img = _frame()
+        Visualizer(font_path=font)._put_text(img, "Độ trễ: 223 ms/frame", (8, 20))
+        assert img[20:40, 8:200].max() > 150          # có chữ
+        assert np.array_equal(img[200:, :], _frame()[200:, :])   # không lem ra toàn khung

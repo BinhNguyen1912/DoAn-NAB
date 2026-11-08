@@ -6,7 +6,8 @@ Chức năng: thuần chức năng — nhận `FrameRecord` mỗi frame (thời 
 cậy mask, toạ độ tâm đối tượng, cờ mất dấu) rồi:
   - `write_csv(path)`  : CSV từng frame — tâm (x, y) ghi đủ để vẽ biểu đồ quỹ đạo;
   - `summary()`        : dict tổng hợp — mean/p95 latency, FPS hiệu dụng, tổng frame,
-                         số/tỷ lệ frame mất dấu (mask rỗng hoặc điểm tin cậy dưới ngưỡng);
+                         số/tỷ lệ frame mất dấu (mask rỗng hoặc điểm tin cậy dưới ngưỡng),
+                         và `resources` (CPU/RAM/GPU) nếu truyền `sampler` (yêu cầu 10);
   - `write_summary_json(path)`: dump summary ra JSON để báo cáo/đọc lại.
 
 Input  : FrameRecord (frame_idx, latency_ms, score, center, lost=None — None thì tự suy
@@ -67,17 +68,32 @@ def is_frozen(record: FrameRecord) -> bool:
 
 
 class MetricsLogger:
-    """Thu thập FrameRecord từng frame; xuất CSV + summary — thuần, test không cần model."""
+    """Thu thập FrameRecord từng frame; xuất CSV + summary — thuần, test không cần model.
 
-    def __init__(self):
+    `sampler` (tuỳ chọn, `src.resource_usage.ResourceSampler`): mỗi lần `log()` sẽ lấy 1 mẫu
+    CPU/RAM/GPU → `summary()["resources"]`. Không truyền → summary **không đổi** (giữ nguyên
+    hành vi cũ, mọi test cũ xanh).
+    """
+
+    def __init__(self, sampler=None):
         self.records = []
+        self.sampler = sampler
 
     def log(self, record: FrameRecord) -> None:
         """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame)."""
         self.records.append(record)
+        if self.sampler is not None:
+            self.sampler.sample()
 
     def summary(self) -> dict:
-        """Thống kê tổng hợp: mean/p95 latency, FPS hiệu dụng, số/tỷ lệ mất dấu."""
+        """Thống kê tổng hợp: mean/p95 latency, FPS hiệu dụng, số/tỷ lệ mất dấu (+ tài nguyên)."""
+        data = self._summary_core()
+        if self.sampler is not None:
+            data["resources"] = self.sampler.stats()
+        return data
+
+    def _summary_core(self) -> dict:
+        """Phần thống kê thuần từ records (không phụ thuộc sampler → test được độc lập)."""
         if not self.records:
             return {
                 "total_frames": 0,
