@@ -77,3 +77,50 @@
 - `docs/research/05-ket-qua-benchmark-prototype-sam2-tiny.md` (encoder 1,6 s @1024; INT8 chỉ nhanh 19 %)
 - `docs/task/05-11-2026-tang-toc-256-toi-uu-hud-va-nguon-snapshot.md` (trần 175 ms @256)
 - Số đo mới: `data/sweep_*`, `data/qs_*`, `data/lighting_iou_160|192_summary.json`
+
+---
+
+## 🔬 Bổ sung cuối ngày (cùng ngày 08-11): 3 nhánh research + đo quyết định cho "realtime thật"
+
+**Yêu cầu người dùng:** "bài toán của tôi phải là realtime thật" → cần biết có đường nào đạt 25–30 FPS
+hay không, thay vì 5–9 FPS hiện tại.
+
+### Đã đo (thêm)
+
+| Phép đo | Kết quả | Script |
+|---|---|---|
+| Chi phí từng tầng SAM 2 | @192: encoder **90,0 ms (70 %)** + memory_attention 22,6 + decoder 9,4 + memory_encoder 8,0 = 127,7 ms | `scripts/profile_stages.py` |
+| Dùng lại đặc trưng encoder K frame | K=2: 13,3 FPS nhưng IoU 0,966→0,840; K=4: 15,9 FPS, IoU 0,667 ⇒ **đường cụt** | `scripts/exp_encoder_reuse.py` |
+| **Encoder RepViT (EdgeTAM) trên CPU này** | 34,7 / 35,6 / 50,9 ms @160/192/256 vs Hiera-T 75,2 / 90,0 / 164,2 ⇒ **nhanh 2,17–3,22×** | `/tmp/time_repvit.py` (clone EdgeTAM, `sam2/edgetam.yaml`) |
+| **Tracker nhẹ dưới tải** (VOS vắt 3,4/4 lõi) | **LK 3,19 ms** ✅ · MIL 51,05 ms ❌ · KCF/CSRT **không còn trong OpenCV 5.0 pip** | `scripts/benchmark_light_trackers.py` |
+
+### Kết luận
+
+- **Trần thật của máy này cho lớp AI là ~18–22 FPS** (thay encoder + nén memory @160), **không đạt
+  30 FPS mask-mỗi-frame** — kể cả khi encoder miễn phí cũng chỉ còn 19–38 ms @192.
+- **Hiển thị 30 FPS thật thì khả thi**: LK 3,19 ms dưới tải = 10 % ngân sách 33 ms.
+- Số EdgeTAM công bố (16 FPS) là trên **iPhone NPU**; **issue #24** của repo cho thấy bước encode ảnh
+  nằm **ngoài** vòng đo FPS của họ ⇒ không được trích như số per-frame.
+
+### File mới
+
+- `docs/research/08-real-time-25fps-tren-cpu-igpu.md` — bảng so sánh 11 model VOS + bổ sung số đo
+  encoder RepViT (đóng câu hỏi "EdgeTAM trên CPU x86").
+- `docs/research/09-kien-truc-hybrid-vos-cham-tracker-nhe-30fps.md` — kiến trúc hybrid, tiền lệ
+  DEVA/ByteTrack, chi phí tracker đo thật, cách diễn đạt trung thực.
+- `docs/research/10-tang-toc-runtime-iris-xe-va-knob-sam2.md` — xếp hạng đòn runtime; đọc mã nguồn:
+  cache encoder chỉ giữ 1 frame, `torch.compile` bị cấm cho HieraT, selection memory của SAMURAI
+  là knob **chất lượng** không phải tốc độ.
+- `docs/research/11-do-encoder-repvit-tren-cpu-va-tran-realtime.md` — phép đo quyết định.
+- `scripts/profile_stages.py`, `scripts/exp_encoder_reuse.py`, `scripts/benchmark_light_trackers.py`.
+
+Commit: `82e345f`, `6578bf0`, `308ae76`, và commit research 08.
+
+### Next steps (ưu tiên mới)
+
+- [ ] **Triển khai hybrid** (đường duy nhất cho 30 FPS thật): `src/light_tracker.py` (LK + test
+      fixture) → chèn vào `smooth_display` (mask tịnh tiến + IoU-reset) → HUD hiển thị **2 số FPS +
+      tuổi mask**.
+- [ ] `scripts/experiment_gap_quality.py` — đo chất lượng mask theo gap 2/3/5 (SAM 2 paper không có
+      ablation này → đóng góp thực nghiệm cho báo cáo).
+- [ ] Nếu còn ≥1 tuần: đo full video predictor EdgeTAM (cần tải checkpoint) để chốt 13,6–18,2 FPS.
