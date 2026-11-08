@@ -168,6 +168,7 @@ class FakeFrameSource:
         self._fail = fail_on_start
         self.started = False
         self.stopped = False
+        self._seq = 0
 
     def start(self):
         if self._fail:
@@ -175,7 +176,11 @@ class FakeFrameSource:
         self.started = True
 
     def read_jpeg(self):
-        return self._jpeg if self.started else None
+        """Mỗi lần đọc trả frame KHÁC nhau (giống camera) — service chỉ đếm frame MỚI."""
+        if not self.started:
+            return None
+        self._seq += 1
+        return self._jpeg + b"#" + str(self._seq).encode()
 
     def stop(self):
         self.stopped = True
@@ -190,8 +195,11 @@ def make_frame_source():
     """Nhà máy FrameSource giả; giữ danh sách nguồn đã tạo để test kiểm tra đã đóng chưa."""
     created = []
 
-    def factory(source):
+    def factory(source, mode="raw", bbox=None, image_size=None):
         item = FakeFrameSource(source)
+        item.mode = mode
+        item.bbox = bbox
+        item.image_size = image_size
         created.append(item)
         return item
 
@@ -220,7 +228,7 @@ def live_client(service, live_service, api_settings):
 def failing_source():
     """Nhà máy trả về nguồn LUÔN lỗi khi start — test nhánh lỗi mở nguồn."""
 
-    def factory(source="0"):
+    def factory(source="0", *args, **kwargs):
         return FakeFrameSource(source, fail_on_start=True)
 
     return factory

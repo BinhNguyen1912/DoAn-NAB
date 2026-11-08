@@ -128,12 +128,19 @@ export interface LiveStatus {
   message: string
 }
 
+export interface LiveStartOptions {
+  /** raw = chỉ phát khung hình · track = bám đối tượng bằng model (cần bbox) */
+  mode?: 'raw' | 'track'
+  bbox?: BBox
+  image_size?: number
+}
+
 /** Bắt đầu phát trực tiếp từ nguồn frame (webcam/RTSP/snapshot/video file). */
-export async function startLive(source: string): Promise<LiveStatus> {
+export async function startLive(source: string, options: LiveStartOptions = {}): Promise<LiveStatus> {
   const res = await fetch('/api/live/start', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ source }),
+    body: JSON.stringify({ source, ...options }),
   })
   if (!res.ok) await _error(res)
   return (await res.json()) as LiveStatus
@@ -155,3 +162,6 @@ export async function getLiveStatus(): Promise<LiveStatus> {
 
 /** Luồng MJPEG — dùng trực tiếp trong <img src>. */
 export const LIVE_STREAM_URL = '/api/live/stream'
+
+/** Frame JPEG mới nhất — dùng để đóng băng ảnh và kéo chuột chọn đối tượng. */
+export const LIVE_FRAME_URL = '/api/live/frame'

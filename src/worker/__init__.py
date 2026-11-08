@@ -24,6 +24,7 @@ from src.worker.artifacts import (
     read_progress,
 )
 from src.worker.command import (
+    LIVE_WORKER_REL,
     LOG_NAME,
     METRICS_NAME,
     OUT_NAME,
@@ -34,6 +35,7 @@ from src.worker.command import (
     SUMMARY_NAME,
     WEB_NAME,
     build_command,
+    build_live_worker_command,
 )
 from src.worker.process import is_running, notify_on_exit, start
 from src.worker.web_export import find_ffmpeg, transcode_for_web
@@ -53,7 +55,9 @@ __all__ = [
     "SUMMARY_NAME",
     "WEB_NAME",
     "artifact_path",
+    "LIVE_WORKER_REL",
     "build_command",
+    "build_live_worker_command",
     "find_ffmpeg",
     "is_running",
     "load_metrics",

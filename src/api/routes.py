@@ -140,7 +140,13 @@ def build_router(service: JobService, live) -> APIRouter:
     @router.post("/api/live/start", response_model=LiveStatusResponse)
     def start_live(payload: LiveStartRequest) -> LiveStatusResponse:
         """Mở nguồn frame và bắt đầu phát (nguồn lỗi → 400 qua lỗi miền SourceUnavailable)."""
-        return _live_status(live.start(payload.source))
+        bbox = None
+        if payload.bbox is not None:
+            bbox = (payload.bbox.x, payload.bbox.y, payload.bbox.w, payload.bbox.h)
+        return _live_status(
+            live.start(payload.source, mode=payload.mode, bbox=bbox,
+                       image_size=payload.image_size)
+        )
 
     @router.post("/api/live/stop", response_model=LiveStatusResponse)
     def stop_live() -> LiveStatusResponse:

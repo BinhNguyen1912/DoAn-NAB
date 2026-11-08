@@ -92,6 +92,18 @@ class LiveStartRequest(BaseModel):
         description="0 = webcam | rtsp://IP:554/stream | http://.../snapshot.jpg | đường dẫn video",
         min_length=1,
     )
+    mode: Literal["raw", "track"] = Field(
+        default="raw",
+        description="raw = chỉ phát khung hình | track = bám đối tượng bằng model (cần bbox)",
+    )
+    bbox: Optional[BBox] = Field(
+        default=None,
+        description="ô chọn đối tượng cho mode=track (bắt buộc khi track)",
+    )
+    image_size: Optional[int] = Field(
+        default=None, ge=64, le=1024,
+        description="độ phân giải model cho mode=track (mặc định 192 ≈ 10 FPS trên CPU)",
+    )
 
 
 class LiveStatusResponse(BaseModel):

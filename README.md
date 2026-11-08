@@ -294,22 +294,37 @@ Kiến trúc tách tầng (đo 08-11-2026): API **không import torch/SAM 2** �
 Nhờ vậy backend chạy được trên VPS 4 GB RAM, còn pipeline thật có thể đẩy sang GPU thuê
 theo giờ mà **không phải sửa API** (xem `docs/task/08-11-2026-*`).
 
-### Phát trực tiếp (Phase 4a — mới phát khung hình, chưa bám đối tượng)
+### Phát trực tiếp + bám đối tượng trên live (Phase 4)
 
 ```bash
-# bật phát từ webcam / RTSP / ảnh relay / video file (backend tự lặp file)
+# chế độ raw: chỉ phát khung hình (nhẹ, không cần model)
 curl -X POST localhost:8000/api/live/start -H 'Content-Type: application/json' \
      -d '{"source": "0"}'
-curl localhost:8000/api/live/status          # state, frames, measured_fps (FPS THỰC ĐO)
-# xem luồng: mở http://127.0.0.1:8000/ → mục "4. Phát trực tiếp", hoặc nhúng trực tiếp
-#            <img src="/api/live/stream">  (MJPEG multipart/x-mixed-replace)
+
+# chế độ track: BÁM ĐỐI TƯỢNG — chạy worker model ở TIẾN TRÌNH RIÊNG (API vẫn không import torch)
+curl -X POST localhost:8000/api/live/start -H 'Content-Type: application/json' \
+     -d '{"source": "data/video.mp4", "mode": "track",
+          "bbox": {"x": 120, "y": 80, "w": 60, "h": 60}, "image_size": 192}'
+
+curl localhost:8000/api/live/status     # state, frames, measured_fps (FPS THỰC ĐO)
+curl localhost:8000/api/live/frame      # 1 frame JPEG (để đóng băng & kéo chuột chọn đối tượng)
 curl -X POST localhost:8000/api/live/stop
 ```
 
-Thiết kế: thread đọc frame theo `target_fps` giữ **frame mới nhất** (không hàng đợi) → client chậm
-thì bỏ frame cũ, độ trễ không tăng dần. Đo trên máy này với nguồn video file 160×120:
-**14,9 FPS** (target 15) — E2E `./run e2e` kiểm cả luồng MJPEG lẫn FPS đo được.
-Bám đối tượng trên live (VOS 10 FPS + LK 30 FPS) là **Phase 4b**, chưa có.
+Trên giao diện: mục **4. Phát trực tiếp** → nhập nguồn → *Bật phát* → *Chọn đối tượng để bám* →
+kéo chuột → *Bám đối tượng*.
+
+**Số đo trên máy này** (video 160×120, `image_size=192`): **10,6 FPS · 98 ms/frame**, `lost_streak=0`
+— khớp số đo CLI (~97 ms). `image_size` mặc định cho live là **192**; để 1024 (mặc định SAM 2) chỉ
+còn **~0,4 FPS** (đo 08-11: 2 frame trong 6 s) nên rất dễ tưởng là treo.
+
+Nguyên tắc đã giữ:
+- **API không import torch/SAM 2**: worker (`tools/live_worker.py`) chạy ở tiến trình riêng, ghi
+  `frame.jpg` + `status.json` vào `/dev/shm/doan-live` (tmpfs), API chỉ đọc file mới nhất.
+- **FPS báo cáo = frame MỚI thực sự**, không phải số lần đọc file (bug thật 08-11: API báo 15 FPS
+  trong khi worker bám được 0,4 FPS).
+- Hybrid **VOS ~10 FPS + LK 30 FPS** (ADR-nghiên cứu `docs/research/09`) là bước tiếp theo, **chưa có**:
+  hiện tại mỗi frame hiển thị đều là 1 lần suy luận thật.
 
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
