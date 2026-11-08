@@ -229,3 +229,43 @@ class TestOpenCvFrameSource:
         source = OpenCvFrameSource(str(tmp_path / "khong-co.mp4"))
         with pytest.raises(Exception):
             source.start()
+
+
+class TestWorkerTelemetry:
+    """Seam `status.json → LiveTelemetry` — từng làm `empty_runs` "chết trong adapter" (review lần 2)."""
+
+    def test_doc_status_json_thanh_live_telemetry(self, tmp_path):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps({
+            "state": "tracking", "frames": 400, "measure_fps": 0, "measured_fps": 29.9,
+            "vos_fps": 8.6, "vos_ms": 100.0, "lk_ms": 2.7, "stability": 0.963,
+            "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4, "mask_drops": 2,
+            "bbox": [10, 10, 40, 60], "message": "",
+        }), encoding="utf-8")
+
+        detail = WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+        assert detail.display_fps == 29.9
+        assert detail.mask_fps == 8.6
+        assert detail.stability == 0.963
+        assert detail.latency_ms == 100.0
+        assert detail.empty_runs == 14
+
+    def test_status_json_hong_tra_so_0_khong_crash(self, tmp_path):
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text("không phải json", encoding="utf-8")
+        detail = WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+        assert (detail.display_fps, detail.mask_fps, detail.empty_runs) == (0.0, 0.0, 0)
+
+
+class TestNhipDocFrame:
+    def test_api_doc_frame_nhanh_bang_nhip_phat_cua_worker(self):
+        """`target_fps` mặc định 15 từng làm FPS của API trần 15 (lệch 29,9 của worker)."""
+        from src.api.live import LIVE_READ_FPS, LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: None)
+        assert LIVE_READ_FPS >= 30
+        assert service._interval == pytest.approx(1.0 / LIVE_READ_FPS)

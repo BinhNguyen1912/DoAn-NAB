@@ -168,9 +168,18 @@ def xyxy_to_xywh(bbox) -> tuple:
 
 
 def _bbox_hop_le(bbox) -> bool:
-    """bbox (x1,y1,x2,y2) có diện tích dương? Engine trả (0,0,0,0) khi mask rỗng."""
-    x1, y1, x2, y2 = (int(v) for v in bbox)
-    return x2 > x1 and y2 > y1
+    """bbox (x1,y1,x2,y2) có dùng được để dịch mask? Engine trả (0,0,0,0) khi mask rỗng.
+
+    Cho phép bbox MỎNG 1 px (`x1 == x2`) vì mask 1 cột/hàng vẫn là đối tượng thật (vật ở xa);
+    chỉ loại hộp suy biến hoàn toàn `(0,0,0,0)` hoặc toạ độ âm/đảo.
+    """
+    try:
+        x1, y1, x2, y2 = (int(v) for v in bbox)
+    except (TypeError, ValueError):
+        return False
+    if x1 < 0 or y1 < 0:
+        return False
+    return x2 >= x1 and y2 >= y1 and (x2 > 0 or y2 > 0)
 
 
 def xywh_to_xyxy(bbox) -> tuple:
@@ -219,12 +228,13 @@ class _VosWorker(threading.Thread):
                 continue
             seq, frame, gray = item
             try:
-                result = self._engine.process(frame)
+                # Bọc CẢ quá trình xử lý kết quả: lỗi trong `_store_vos`/`_smooth` (dữ liệu model
+                # bất thường) cũng phải thành `state=error`, không được để thread chết im lặng.
+                self._on_result(seq, self._engine.process(frame), gray)
             except Exception as exc:          # noqa: BLE001 — lỗi model phải thành trạng thái error
                 if self._on_error is not None:
                     self._on_error(exc)
                 return
-            self._on_result(seq, result, gray)
 
 
 class LiveTrackingSession:
@@ -423,6 +433,10 @@ class LiveTrackingSession:
         if not raw.any():
             with self._stats_lock:
                 self._stats.empty_runs += 1
+                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định: đặt 0 (không giữ số cũ, không
+                # nối IoU xuyên qua khoảng mất dấu — mask trước và sau là hai chuyện khác nhau).
+                self._stats.stability = 0.0
+            self._prev_raw_mask = None
             return
         if self._prev_raw_mask is not None:
             self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
@@ -459,6 +473,12 @@ class LiveTrackingSession:
                 self._stats.mask_holds = smoother.holds
                 self._stats.mask_drops = smoother.drops
 
+        if not shown.any():
+            # Cùng lý do như `stability`: màn hình trống mà báo IoU = 1,0 là số liệu sai.
+            with self._stats_lock:
+                self._stats.stability_shown = 0.0
+            self._prev_shown_mask = None
+            return
         if self._prev_shown_mask is not None:
             self._shown_iou_window.append(mask_iou(self._prev_shown_mask, shown))
             with self._stats_lock:

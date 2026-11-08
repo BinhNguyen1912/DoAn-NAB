@@ -121,7 +121,8 @@ class LiveStatusResponse(BaseModel):
 
     state: Literal["stopped", "running", "error"]
     source: str
-    frames: int = Field(ge=0, description="số frame đã đọc từ khi bắt đầu")
+    frames: int = Field(ge=0, description="số frame MỚI đã đọc từ khi bắt đầu (chỉ đếm khi nội "
+                                           "dung đổi — cảnh tĩnh thì con số đứng yên)")
     measured_fps: float = Field(ge=0, description="FPS THỰC ĐO trong 2 giây gần nhất")
     display_fps: float = Field(default=0, ge=0,
                                description="FPS PHÁT do chính worker đo (nguồn gốc số trong báo cáo); "

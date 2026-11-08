@@ -366,6 +366,7 @@ class TestMaskStability:
         assert stats.stability < 1.0, "mask nhấp nháy ⇒ stability < 1"
 
     def test_status_co_do_on_dinh(self, textured_video, tmp_path):
+        """`stability` phải NẰM TRONG khoảng và > 0 ở ca bình thường (metric bị gut = 0.0 phải đỏ)."""
         out = tmp_path / "live"
         _pre_select(out)
         session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -375,6 +376,9 @@ class TestMaskStability:
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert 0.0 <= status["stability"] <= 1.0
+        assert status["stability"] > 0.5, (
+            "FakeEngine dịch mask 1 px/lần ⇒ IoU phải cao; = 0 nghĩa là metric không được tính")
+        assert status["empty_runs"] == 0
 
 
 class _LostObjectEngine(FakeEngine):
@@ -418,11 +422,15 @@ class TestLoiReviewDocLap:
         stats = session.run(stop_event=_StopAfter(10))
 
         assert stats.mask_holds >= 1, "lần mask rỗng đầu tiên phải được GIỮ, không được tắt ngay"
-        kept = drawn[2]                                   # frame thứ 3 = lần VOS "mất vật"
-        assert kept is not None and kept.any(), "mask bị tắt dù chưa quá max_hold"
-        # KHÔNG được teleport: mask giữ lại phải nằm quanh vị trí cũ, không nhảy về góc (0,0)
-        ys, xs = np.nonzero(kept)
-        assert xs.min() > 5 and ys.min() > 5, f"mask nhảy về góc khung: x={xs.min()}, y={ys.min()}"
+        assert stats.mask_drops == 0, "một lần chớp không được tính là mất dấu"
+        # KHÔNG được teleport: MỌI mask đã vẽ phải nằm quanh vị trí cũ, không nhảy về góc (0,0).
+        # (Quét toàn bộ thay vì `drawn[2]`: index phụ thuộc frame start() nên test cũ xanh cả khi
+        # revert fix — review lần 2 chỉ ra.)
+        for index, mask in enumerate(drawn):
+            assert mask is not None and mask.any(), f"frame {index}: mask bị tắt dù chưa quá max_hold"
+            ys, xs = np.nonzero(mask)
+            assert xs.min() > 5 and ys.min() > 5, (
+                f"frame {index}: mask nhảy về góc khung (x={xs.min()}, y={ys.min()}) — bộ lọc bị teleport")
 
     def test_p1_mat_dau_lien_tuc_thi_van_tat_sau_max_hold(self, textured_video, tmp_path):
         engine = _LostObjectEngine(lost_at=(2, 3, 4, 5, 6, 7))
@@ -478,6 +486,54 @@ class TestLoiReviewDocLap:
         assert status["state"] == STATE_ERROR, "luồng VOS chết mà báo 'tracking' là phát mask chết"
         assert "model lỗi" in status["message"]
         assert stats.state == STATE_ERROR
+
+    def test_p2_loi_trong_callback_luong_vos_cung_phai_bao_error(self, textured_video, tmp_path):
+        """Lỗi ở `_store_vos`/`_smooth` (dữ liệu model bất thường) — không chỉ `process` — cũng phải
+        thành `state=error`; trước đây `_on_result` nằm NGOÀI try/except nên thread chết im lặng."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(_LostObjectEngine(lost_at=(1, 2, 3), cost_s=0.01),
+                                       LiveTrackConfig(source=textured_video, out_dir=out,
+                                                       display_fps=100, vos_every=2,
+                                                       loop_files=True))
+        calls = {"n": 0}
+        original = session._smooth
+
+        def exploding(result):
+            calls["n"] += 1
+            if calls["n"] >= 2:
+                raise RuntimeError("dữ liệu model bất thường (giả lập)")
+            return original(result)
+
+        session._smooth = exploding
+        stats = session.run(stop_event=_StopAfter(40))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["state"] == STATE_ERROR
+        assert "model lỗi" in status["message"]
+        assert stats.state == STATE_ERROR
+
+    def test_p2_stability_shown_khong_bao_100_phan_tram_khi_trong(self, textured_video, tmp_path):
+        """`stability_shown` là metric anh em của `stability` — phải cùng guard (review lần 2)."""
+        engine = _LostObjectEngine(lost_at=tuple(range(2, 30)))
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True, mask_smoothing=0.5)).run(stop_event=_StopAfter(14))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["empty_runs"] >= 2
+        assert status["stability_shown"] < 0.999, "màn hình trống mà báo IoU 1,0 là số liệu sai"
+
+    def test_p3_o_bao_mong_1px_van_duoc_coi_la_hop_le(self):
+        from src.live_tracking import _bbox_hop_le
+
+        assert _bbox_hop_le((10, 10, 10, 40))     # mask 1 cột
+        assert _bbox_hop_le((10, 10, 40, 10))     # mask 1 hàng
+        assert not _bbox_hop_le((0, 0, 0, 0))     # mask rỗng
+        assert not _bbox_hop_le((5, 5, 3, 9))     # toạ độ đảo
+        assert not _bbox_hop_le(None)
 
     def test_p2_mask_smoothing_0_bi_tu_choi_ro_rang(self, textured_video, tmp_path):
         with pytest.raises(ValueError, match="mask_smoothing"):

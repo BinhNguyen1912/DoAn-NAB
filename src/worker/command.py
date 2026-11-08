@@ -96,8 +96,9 @@ def build_live_worker_command(source: str, out_dir, *, image_size: int | None = 
     ]
     if image_size:
         args += ["--image-size", str(int(image_size))]
-    if vos_every:
-        args += ["--vos-every", str(max(1, int(vos_every)))]
+    if vos_every is not None:
+        # KHÔNG clamp im lặng: để CLI của worker báo lỗi rõ (cùng hợp đồng với schema/__post_init__)
+        args += ["--vos-every", str(int(vos_every))]
     if mask_smoothing is not None:
         args += ["--mask-smoothing", repr(float(mask_smoothing))]
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
