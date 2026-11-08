@@ -1,0 +1,114 @@
+{
+  "do_luc": "2026-11-08T15:16:30",
+  "git_rev": "191347852838ce6f89f7c0a864afb62a4926267f",
+  "git_dirty": true,
+  "lenh": "python tools/live_worker.py --source <clip> --out-dir <tmp> --image-size 192 --max-fps 30 --vos-every <1|3|6> --mask-smoothing 1.0 --stop-after-frames 600",
+  "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch bản CPU, SAM 2.1 tiny",
+  "nguong_dang_ky_truoc": {
+    "dieu_kien": "binh1 @ vos_every=3: drift_iou_p05 >= 0.70, drift_iou (mean) >= 0.85, mask_age_p95 <= 150 ms",
+    "ket_qua": "ĐẠT ở cả 3 lần chạy (p05 0,804/0,779/0,773; mean 0,928/0,925/0,926; p95 111,5/116,8/114,9 ms) ⇒ giữ vos_every mặc định = 3"
+  },
+  "nguong_nhieu_3_lan_cung_cau_hinh": {
+    "drift_iou": {
+      "spread": 0.003,
+      "rel_spread": 0.0032
+    },
+    "vos_fps": {
+      "spread": 0.6,
+      "rel_spread": 0.073
+    },
+    "measured_fps": {
+      "spread": 1.0,
+      "rel_spread": 0.034
+    },
+    "mask_age_p95_ms": {
+      "spread": 5.3,
+      "rel_spread": 0.046
+    },
+    "ghi_chu": "chênh lệch nhỏ hơn các mức này giữa hai cấu hình là NHIỄU, không phải cải thiện"
+  },
+  "ket_qua": {
+    "binh1_vos3": {
+      "clip": "data/binh1.mp4",
+      "vos_every": 3,
+      "fps": 29.3,
+      "mask_fps": 8.3,
+      "drift_iou": 0.928,
+      "drift_iou_p05": 0.804,
+      "mask_age_ms": 114.2,
+      "mask_age_p95": 111.5,
+      "empty_runs": 0
+    },
+    "binh1_vos1": {
+      "clip": "data/binh1.mp4",
+      "vos_every": 1,
+      "fps": 9.3,
+      "mask_fps": 9.3,
+      "drift_iou": 0.962,
+      "drift_iou_p05": 0.891,
+      "mask_age_ms": 0.0,
+      "mask_age_p95": 0.0,
+      "empty_runs": 0
+    },
+    "binh1_vos6": {
+      "clip": "data/binh1.mp4",
+      "vos_every": 6,
+      "fps": 29.4,
+      "mask_fps": 4.9,
+      "drift_iou": 0.897,
+      "drift_iou_p05": 0.731,
+      "mask_age_ms": 40.1,
+      "mask_age_p95": 184.3,
+      "empty_runs": 0
+    },
+    "loss_vos3": {
+      "clip": "data/binh1_simloss.mp4",
+      "vos_every": 3,
+      "fps": 29.3,
+      "mask_fps": 8.4,
+      "drift_iou": 0.918,
+      "drift_iou_p05": 0.783,
+      "mask_age_ms": 42.1,
+      "mask_age_p95": 114.6,
+      "empty_runs": 13
+    },
+    "binh2_vos3": {
+      "clip": "data/binh2.mp4",
+      "vos_every": 3,
+      "fps": 29.3,
+      "mask_fps": 8.4,
+      "drift_iou": 0.647,
+      "drift_iou_p05": 0.0,
+      "mask_age_ms": 36.8,
+      "mask_age_p95": 115.4,
+      "empty_runs": 22
+    },
+    "binh1_vos3_lan2": {
+      "clip": "data/binh1.mp4",
+      "vos_every": 3,
+      "fps": 29.9,
+      "mask_fps": 8.2,
+      "drift_iou": 0.925,
+      "drift_iou_p05": 0.779,
+      "mask_age_ms": 50.2,
+      "mask_age_p95": 116.8,
+      "empty_runs": 0
+    },
+    "binh1_vos3_lan3": {
+      "clip": "data/binh1.mp4",
+      "vos_every": 3,
+      "fps": 28.9,
+      "mask_fps": 7.7,
+      "drift_iou": 0.926,
+      "drift_iou_p05": 0.773,
+      "mask_age_ms": 32.3,
+      "mask_age_p95": 114.9,
+      "empty_runs": 0
+    }
+  },
+  "phat_hien": [
+    "binh2 @ vos_every=3: drift mean 0,647 / p05 0,000 với 22 lần mask rỗng ⇒ nội suy LK MẤT dấu trên clip này. Tuyên bố 'hybrid giữ được ô bao' chỉ đúng cho binh1/binh1_simloss.",
+    "vos_every=6: mask_age_p95 = 184 ms > ngân sách 150 ms ⇒ mask cũ quá lâu, không dùng mặc định.",
+    "vos_every=1 (tắt LK): drift 0,962 và p05 0,891 — cao nhất, nhưng hình chỉ 9,3 FPS."
+  ]
+}

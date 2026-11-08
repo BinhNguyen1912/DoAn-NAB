@@ -28,6 +28,7 @@ from dataclasses import dataclass, field, replace
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 from src.light_tracker import LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
@@ -89,6 +90,10 @@ class LiveTrackStats:
     lk_ms: float = 0.0            # độ trễ LK gần nhất
     stability: float = 0.0        # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy)
     stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
+    drift_iou: float = 0.0        # IoU giữa ô bao ĐANG HIỂN THỊ và ô bao của lần VOS kế tiếp
+    drift_iou_p05: float = 0.0    # phân vị 5 % của drift (đuôi xấu: lúc nội suy lệch nhất)
+    mask_age_ms: float = 0.0      # tuổi của mask đang hiển thị (ms) — mask cũ bao lâu
+    mask_age_p95: float = 0.0     # phân vị 95 % của tuổi mask trong cửa sổ gần nhất
     empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật)
     mask_holds: int = 0           # số lần bộ lọc GIỮ mask cũ (model "chớp" mất vật)
     mask_drops: int = 0           # số lần mask hiển thị RỖNG (mất dấu thật)
@@ -150,6 +155,10 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "vos_fps": stats.vos_fps,
         "vos_ms": stats.vos_ms,
         "lk_ms": stats.lk_ms,
+        "drift_iou": stats.drift_iou,
+        "drift_iou_p05": stats.drift_iou_p05,
+        "mask_age_ms": stats.mask_age_ms,
+        "mask_age_p95": stats.mask_age_p95,
         "stability": stats.stability,
         "stability_shown": stats.stability_shown,
         "empty_runs": stats.empty_runs,
@@ -165,6 +174,17 @@ def xyxy_to_xywh(bbox) -> tuple:
     """(x1,y1,x2,y2) → (x,y,w,h)."""
     x1, y1, x2, y2 = (int(v) for v in bbox)
     return (x1, y1, max(1, x2 - x1), max(1, y2 - y1))
+
+
+def _bbox_iou(a, b) -> float:
+    """IoU hai ô bao (x1,y1,x2,y2) — dùng để đo độ lệch của nội suy LK."""
+    ax1, ay1, ax2, ay2 = (float(v) for v in a)
+    bx1, by1, bx2, by2 = (float(v) for v in b)
+    ix = max(0.0, min(ax2, bx2) - max(ax1, bx1))
+    iy = max(0.0, min(ay2, by2) - max(ay1, by1))
+    inter = ix * iy
+    union = (ax2 - ax1) * (ay2 - ay1) + (bx2 - bx1) * (by2 - by1) - inter
+    return inter / union if union > 0 else 0.0
 
 
 def _bbox_hop_le(bbox) -> bool:
@@ -250,6 +270,9 @@ class LiveTrackingSession:
         self._display_stamps: deque = deque()
         self._vos_stamps: deque = deque()
         self._smoother = MaskSmoother(config.mask_smoothing) if config.mask_smoothing < 1.0 else None
+        self._drift_window: deque = deque(maxlen=200)   # đủ mẫu để lấy p05
+        self._age_window: deque = deque(maxlen=200)
+        self._last_display_bbox = None   # ô bao đã phát ở frame gần nhất (để đo drift)
         self._iou_window: deque = deque(maxlen=10)
         self._shown_iou_window: deque = deque(maxlen=10)
         self._prev_shown_mask = None
@@ -335,7 +358,7 @@ class LiveTrackingSession:
 
     def _start_worker(self, frame, gray) -> None:
         with self._lock:                      # mốc nội suy ban đầu = frame start(), đặt TRƯỚC submit
-            self._vos_state = (0, self._interp_base_result, gray)
+            self._vos_state = (0, self._interp_base_result, gray, time.perf_counter())
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1
@@ -357,9 +380,10 @@ class LiveTrackingSession:
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
         self._record_vos(result)
+        self._measure_drift(result)    # nội suy LK đã lệch bao nhiêu so với lần VOS này
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         with self._lock:
-            self._vos_state = (seq, result, gray)
+            self._vos_state = (seq, result, gray, time.perf_counter())
 
     def _result_threaded(self, frame):
         """Frame này: gửi cho VOS (nếu tới lượt) rồi vẽ bằng mask mới nhất + LK tới frame hiện tại."""
@@ -375,7 +399,8 @@ class LiveTrackingSession:
         if state is None:
             return self._interp_base_result
 
-        seq, base_result, base_gray = state
+        seq, base_result, base_gray, produced_at = state
+        self._note_mask_age(time.perf_counter() - produced_at)
         base_bbox = xyxy_to_xywh(base_result.bbox)
         self._interp.reset(base_gray, base_bbox)      # mốc LUÔN là frame VOS → sai số không tích luỹ
         began = time.perf_counter()
@@ -407,6 +432,7 @@ class LiveTrackingSession:
     def _after_vos(self, frame, result) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
         self._record_vos(result)
+        self._measure_drift(result)
         self._smooth(result)
         self._interp_base_result = result
         self._mask = getattr(result, "mask", None)
@@ -420,6 +446,38 @@ class LiveTrackingSession:
             self._vos_stamps.append(time.perf_counter())
             self._trim(self._vos_stamps)
         self._measure_stability(result)
+
+    def _measure_drift(self, result) -> None:
+        """LK nội suy lệch bao nhiêu so với ô bao của lần VOS **kế tiếp**?
+
+        Đây là câu hỏi mà cả kiến trúc hybrid đứng trên, và trước đây repo **chưa đo lần nào**:
+        `stability` chỉ nói mask có nhấp nháy không, không nói nội suy có bám đúng không.
+        Chỉ so khi cả hai ô bao đều hợp lệ (mask rỗng ⇒ bbox `(0,0,0,0)` ⇒ không có gì để so).
+        """
+        shown = self._last_display_bbox
+        fresh = getattr(result, "bbox", None)
+        if shown is None or fresh is None:
+            return
+        if not (_bbox_hop_le(shown) and _bbox_hop_le(fresh)):
+            return
+        self._drift_window.append(_bbox_iou(shown, fresh))
+        values = np.fromiter(self._drift_window, dtype=float)
+        with self._stats_lock:
+            self._stats.drift_iou = round(float(values.mean()), 3)
+            self._stats.drift_iou_p05 = round(float(np.percentile(values, 5)), 3)
+
+    def _note_mask_age(self, seconds: float) -> None:
+        """Ghi tuổi mask đang hiển thị (ms) + p95 trong cửa sổ gần nhất."""
+        age_ms = max(0.0, float(seconds) * 1000.0)
+        self._age_window.append(age_ms)
+        if len(self._age_window) < 5:              # chưa đủ mẫu: chỉ báo giá trị tức thời
+            with self._stats_lock:
+                self._stats.mask_age_ms = round(age_ms, 1)
+            return
+        values = np.fromiter(self._age_window, dtype=float)
+        with self._stats_lock:
+            self._stats.mask_age_ms = round(age_ms, 1)
+            self._stats.mask_age_p95 = round(float(np.percentile(values, 95)), 1)
 
     def _measure_stability(self, result) -> None:
         """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không".
@@ -504,6 +562,7 @@ class LiveTrackingSession:
         self._stats.vos_fps = self._rate(self._vos_stamps)
 
         mask = getattr(result, "mask", None)
+        self._last_display_bbox = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
         lost = mask is None or not mask.any()
         self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
         self._stats.bbox = [int(v) for v in result.bbox]

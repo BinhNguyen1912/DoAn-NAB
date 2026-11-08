@@ -123,6 +123,7 @@ class TestLiveTrackingSession:
         bat_buoc = {
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
+            "drift_iou", "drift_iou_p05", "mask_age_ms", "mask_age_p95",
             "lost_streak", "bbox", "message"}
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
@@ -738,3 +739,50 @@ class TestMaskLechKichThuoc:
 
         image = session._annotate(frame, _FrameResult(1, (10, 10, 20, 20), wrong, 1.0))
         assert image.shape == frame.shape           # không ném, không vẽ mask sai
+
+
+class TestDriftVaTuoiMask:
+    """`drift_iou` (LK nội suy lệch bao nhiêu) + `mask_age_ms` — câu hỏi nền của kiến trúc hybrid."""
+
+    def test_iou_bbox(self):
+        from src.live_tracking import _bbox_iou
+
+        assert _bbox_iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
+        assert _bbox_iou((0, 0, 10, 10), (10, 10, 20, 20)) == 0.0
+        assert _bbox_iou((0, 0, 10, 10), (5, 0, 15, 10)) == pytest.approx(50 / 150)
+
+    def test_o_bao_rong_khong_duoc_tinh_drift(self):
+        """Mask rỗng ⇒ bbox (0,0,0,0): không có gì để so, KHÔNG được coi là lệch 0."""
+        from src.live_tracking import _bbox_hop_le
+
+        assert not _bbox_hop_le((0, 0, 0, 0))
+        assert _bbox_hop_le((5, 5, 15, 15))
+
+    def test_drift_duoc_do_khi_vos_moi_ve(self, textured_video, tmp_path):
+        engine = FakeEngine()
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(engine, LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3, loop_files=True))
+        stats = session.run(stop_event=_StopAfter(20))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        # FakeEngine dịch mask 1 px mỗi lần ⇒ nội suy gần như khớp ⇒ drift phải CAO và NẰM TRONG [0,1]
+        assert 0.0 < status["drift_iou"] <= 1.0, f"drift vô lý: {status['drift_iou']}"
+        assert 0.0 < status["drift_iou_p05"] <= 1.0
+        assert stats.drift_iou > 0.5, "LK nội suy 1 px/lần mà lệch nhiều là sai"
+
+    def test_mask_age_tang_theo_nhip_vos(self, textured_video, tmp_path):
+        """Mask cũ bao lâu: với vos_every=1 tuổi ~0, với vos_every lớn hơn thì phải lớn hơn."""
+        def _age(every):
+            out = tmp_path / f"live{every}"
+            _pre_select(out)
+            LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+                source=textured_video, out_dir=out, display_fps=100, vos_every=every,
+                loop_files=True)).run(stop_event=_StopAfter(25))
+            return json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+
+        nhanh = _age(1)
+        cham = _age(6)
+        assert nhanh["mask_age_ms"] <= cham["mask_age_ms"] + 1e-6
+        assert cham["mask_age_p95"] >= cham["mask_age_ms"] * 0.5
