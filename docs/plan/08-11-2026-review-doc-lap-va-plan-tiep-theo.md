@@ -84,6 +84,10 @@ kết luận "tốt hơn/xấu hơn" đều có thể là nhiễu. Đã đưa th
 - [ ] Watchdog **sau** khi start (worker chết giữa phiên): đọc `state`/heartbeat `ts` từ
       `status.json` trong adapter ⇒ `LiveState.ERROR` ≤ 2 s + nút "Chạy lại” — 2–3 h
 - [ ] Transcode H.264 cho `--record` (việc 4) — 1 h
+- [x] **mIoU mask vs GT trên fixture** (vá lỗ hổng "không có số về chất lượng phân đoạn"): GT mask
+      giải tích + `summarize()` + artifact `data/occlusion_metrics_320_metrics.json`.
+      Kết quả: mIoU **0,956** (không che) / **0,892** (che 50 %) / **None** (che kín, 6/6 mất dấu).
+      Còn lại: vật cản **đi ngang che kín rồi đi qua** + nhãn người trên video thật.
 - [ ] `scripts/label_bbox.py` + eval GT (việc 5) — 4 h + **người dùng gán nhãn**
 - [ ] Sơ đồ khối + bảng phần cứng (việc 6) — 1,5 h
 - [ ] **Người dùng:** quay 2 clip (vật bị che một phần; vật ra khỏi khung rồi vào lại)

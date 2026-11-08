@@ -45,6 +45,10 @@ class LiveStreamService:
         # /dev/shm/doan-live ⇒ frame trộn của hai phiên, và worker thua bị mất tham chiếu (rò).
         self._start_lock = threading.Lock()
         self._pending: FrameSource | None = None    # nguồn đang mở (để stop() huỷ được)
+        # "Thế hệ" phiên: thread đọc của phiên CŨ không được ghi `_latest` sau khi phiên mới/stop
+        # đã dọn. Không có nó, `stop()` xoá `_latest` rồi thread (vừa quá join(2s)) ghi lại ⇒ test
+        # `latest_jpeg() is None` chập chờn (gặp thật 08-11).
+        self._generation = 0
         self._stop = threading.Event()
         self._thread: threading.Thread | None = None
         self._source: FrameSource | None = None
@@ -108,8 +112,9 @@ class LiveStreamService:
                     self._label = candidate.label
                     self._state = LiveState.RUNNING
                     self._message = f"Đang phát từ {candidate.label}"
-                    self._thread = threading.Thread(target=self._run, name="live-stream",
-                                                    daemon=True)
+                    self._generation += 1
+                    self._thread = threading.Thread(target=self._run, args=(self._generation,),
+                                                    name="live-stream", daemon=True)
                     self._thread.start()
             if cancelled:
                 candidate.stop()                     # không để worker mồ côi
@@ -187,15 +192,23 @@ class LiveStreamService:
 
     # ------------------------------------------------------------------ nội bộ
 
-    def _run(self) -> None:
-        """Thread đọc frame: luôn giữ frame mới nhất, bỏ frame cũ khi client chậm."""
+    def _run(self, generation: int) -> None:
+        """Thread đọc frame: luôn giữ frame mới nhất, bỏ frame cũ khi client chậm.
+
+        `generation` là thế hệ phiên: thread của phiên cũ tự thoát và **không ghi** `_latest`,
+        kể cả khi `stop()` đã join timeout và nó còn sống thêm một nhịp.
+        """
         while not self._stop.is_set():
             started = time.perf_counter()
             with self._lock:
+                if generation != self._generation:
+                    return
                 source = self._source
             data = source.read_jpeg() if source is not None else None
             if data is not None:
                 with self._lock:
+                    if generation != self._generation:
+                        return
                     # CHỈ đếm khi nội dung ĐỔI: với chế độ track, worker ghi frame chậm hơn nhịp
                     # đọc rất nhiều (model 2,5 s/frame) — đếm theo lần đọc sẽ báo sai 15 FPS
                     # trong khi thực tế 0,4 FPS (bug thật đo được 08-11).
@@ -217,6 +230,7 @@ class LiveStreamService:
         Lưu ý: KHÔNG được gọi `self.status()` ở đây (nó cũng cần `_lock` → deadlock).
         """
         self._stop.set()
+        self._generation += 1        # vô hiệu hoá thread cũ: nó không được ghi `_latest` nữa
         thread, self._thread = self._thread, None
         source, self._source = self._source, None
         pending, self._pending = self._pending, None

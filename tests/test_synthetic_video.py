@@ -100,3 +100,68 @@ class TestCheMotPhan:
                                         start=(20, 20), occlusion_frames=(1,),
                                         occlusion_fraction=0.0)
         assert self._dem_pixel_doi_tuong(fx.frames[1], fx.bboxes[1]) == 1600
+
+
+class TestMaskGroundTruth:
+    """GT mask theo pixel — thiếu nó thì mọi "chất lượng phân đoạn" chỉ là IoU hộp bao."""
+
+    def test_mask_gt_khop_dung_pixel_mau_o_vuong(self):
+        from src.mask_filter import mask_iou
+        from src.synthetic_video import SQUARE_COLOR, generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=5, frame_size=(120, 160), square_size=30,
+                                        start=(10, 10), velocity=(5, 0))
+        for index, frame in enumerate(fx.frames):
+            thuc_te = (frame == SQUARE_COLOR).all(axis=2)
+            assert thuc_te.sum() == 30 * 30, "test phải có pixel thật (IoU rỗng-rỗng cũng bằng 1,0!)"
+            assert mask_iou(fx.masks[index], thuc_te) == 1.0, f"frame {index}"
+
+    def test_mask_gt_tru_dung_phan_bi_che(self):
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=6, frame_size=(120, 160), square_size=40,
+                                        start=(10, 10), velocity=(0, 0),
+                                        occlusion_frames=(2,), occlusion_fraction=0.5)
+        assert fx.masks[1].sum() == 40 * 40                  # không che
+        assert fx.masks[2].sum() == 40 * 20                  # che một nửa theo chiều ngang
+        assert fx.occluded[2] and not fx.occluded[1]
+
+    def test_che_hoan_toan_thi_mask_gt_rong(self):
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=4, frame_size=(120, 160), square_size=20,
+                                        start=(10, 10), velocity=(0, 0),
+                                        occlusion_frames=(1,), occlusion_fraction=1.0)
+        assert not fx.masks[1].any(), "che kín ⇒ không còn pixel nào nhìn thấy được"
+        assert fx.occluded[1]
+
+    @pytest.mark.parametrize("size,fraction", [(39, 0.3), (41, 0.5), (41, 0.999), (40, 1.0)])
+    def test_mask_gt_khop_pixel_mau_ke_ca_khi_bi_che(self, size, fraction):
+        """Bằng chứng ĐỘC LẬP: GT mask phải bằng đúng tập pixel còn màu ô vuông."""
+        from src.mask_filter import mask_iou
+        from src.synthetic_video import SQUARE_COLOR, generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=4, frame_size=(160, 200), square_size=size,
+                                        start=(20, 20), velocity=(0, 0),
+                                        occlusion_frames=(1, 2), occlusion_fraction=fraction)
+        for index in (1, 2):
+            thuc_te = (fx.frames[index] == SQUARE_COLOR).all(axis=2)
+            assert fx.masks[index].sum() == thuc_te.sum(), f"size={size}, frac={fraction}"
+            assert mask_iou(fx.masks[index], thuc_te) == 1.0
+
+    def test_occlusion_fraction_ngoai_khoang_bao_loi(self):
+        from src.synthetic_video import generate_tracking_sequence
+
+        with pytest.raises(ValueError, match="occlusion_fraction"):
+            generate_tracking_sequence(num_frames=2, occlusion_fraction=1.5)
+        with pytest.raises(ValueError, match="occlusion_fraction"):
+            generate_tracking_sequence(num_frames=2, occlusion_fraction=-0.5)
+
+    def test_bbox_gt_van_giu_vi_tri_khi_bi_che(self):
+        """Ô bao lý thuyết không đổi khi bị che (dùng để nói rõ GT bbox ≠ GT mask)."""
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=3, frame_size=(120, 160), square_size=20,
+                                        start=(10, 10), velocity=(2, 0),
+                                        occlusion_frames=(1,), occlusion_fraction=1.0)
+        assert fx.bboxes[1] == (12, 10, 32, 30)

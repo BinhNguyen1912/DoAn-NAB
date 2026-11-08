@@ -1,0 +1,46 @@
+{
+  "git_rev": "835e8a55af3e6e9b0634f1fb46cd4e2c31609c1d",
+  "git_dirty": false,
+  "do_luc": "2026-11-08T14:59:47",
+  "lenh": "python scripts/experiment_occlusion.py --image-size 320 --frames 30 --cover 6 --start 12 --fraction 0.5",
+  "moi_truong": "CPU (không GPU rời), torch bản CPU",
+  "image_size": 320,
+  "so_frame": 30,
+  "khung_bi_che": [
+    12,
+    18
+  ],
+  "ket_qua": {
+    "che 50%": {
+      "bbox_iou_truoc": 0.9734,
+      "bbox_iou_trong": 0.5305,
+      "bbox_iou_sau": 0.9769,
+      "so_frame_truoc": 11,
+      "mask_miou_truoc": 0.9557,
+      "mask_miou_trong": 0.8922,
+      "mask_miou_sau": 0.9588,
+      "so_frame_do_miou": 30,
+      "so_frame_gt_rong": 0,
+      "mat_dau_trong_che": 0,
+      "mat_dau_sau_che": 0,
+      "so_frame": 30,
+      "so_frame_bi_che_trong_cua_so": 6
+    },
+    "che 100%": {
+      "bbox_iou_truoc": 0.9777,
+      "bbox_iou_trong": 0.0,
+      "bbox_iou_sau": 0.9809,
+      "so_frame_truoc": 11,
+      "mask_miou_truoc": 0.9562,
+      "mask_miou_trong": null,
+      "mask_miou_sau": 0.9623,
+      "so_frame_do_miou": 24,
+      "so_frame_gt_rong": 6,
+      "mat_dau_trong_che": 6,
+      "mat_dau_sau_che": 0,
+      "so_frame": 30,
+      "so_frame_bi_che_trong_cua_so": 6
+    }
+  },
+  "ghi_chu": "GT mask là GIẢI TÍCH (ô vuông trừ dải bị che) trên fixture tổng hợp — KHÔNG phải mIoU trên dataset thật; không được trích dẫn như số liệu DAVIS."
+}

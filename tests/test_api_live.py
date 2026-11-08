@@ -421,3 +421,26 @@ def _try(fn, errors):
         fn()
     except Exception as exc:        # noqa: BLE001 — test cần bắt lỗi miền
         errors.append(exc)
+
+
+class TestTheHePhien:
+    """Thread đọc của phiên CŨ không được ghi `_latest` sau khi stop()/phiên mới dọn (race thật)."""
+
+    def test_thread_cu_khong_ghi_de_frame_sau_khi_stop(self, live_service, monkeypatch):
+        import time
+
+        from tests.conftest import FakeFrameSource
+
+        class _SlowSource(FakeFrameSource):
+            def read_jpeg(self):
+                time.sleep(0.15)          # đọc chậm ⇒ stop() join(2s) có thể timeout
+                return super().read_jpeg()
+
+        monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _SlowSource("0"))
+        live_service.start("0")
+        assert _wait(lambda: live_service.latest_jpeg() is not None)
+        live_service.stop()
+
+        assert live_service.latest_jpeg() is None
+        time.sleep(0.5)                  # đủ để thread cũ (nếu còn sống) ghi lại
+        assert live_service.latest_jpeg() is None, "thread của phiên cũ ghi lại frame sau khi dừng"

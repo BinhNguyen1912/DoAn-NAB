@@ -351,6 +351,27 @@ Nguyên tắc đã giữ:
   `binh1_simloss` cho `empty_runs=14, mask_holds=4, mask_drops=2` — số liệu ở
   `data/live_2026-11-08_vos3_smoothing05_metrics.json` (có `git_rev` + lệnh chạy).
 
+### Chất lượng phân đoạn (mIoU mask vs ground-truth)
+
+Trước 08-11 repo **không có** con số nào về độ chính xác của mask (chỉ có IoU hộp bao). Đo trên
+fixture có **GT mask giải tích** (`src/synthetic_video.py`), laptop CPU, `image_size=320`:
+
+| Kịch bản | bbox IoU (trong che) | **mask mIoU** | mất dấu | mIoU sau khi ra khỏi vật cản |
+|---|---|---|---|---|
+| trước khi bị che (khung 1–11) | 0,97 | **0,96** | 0/11 | — |
+| che 50 % (khung 12–17) | 0,53 | **0,89** | 0/6 | 0,96 |
+| che 100 % (khung 12–17) | 0,00 | **None** (GT rỗng) | 6/6 | 0,96 |
+
+> Đọc đúng: mask chỉ được tính trên phần **nhìn thấy**, nên khi bị che một nửa `bbox IoU` tụt còn
+> 0,53 trong khi `mIoU` vẫn 0,89 — phải báo **cả hai + tỷ lệ mất dấu**, đừng chọn số đẹp.
+> **Hàng 2 đo trên GT chỉ-phần-nhìn-thấy, không so trực tiếp với hàng 1 (GT đầy đủ).**
+> Số liệu: `data/occlusion_metrics_320_metrics.json`; lệnh: `./run occl`.
+>
+> ⚠️ **Đây là CẬN TRÊN, không phải độ chính xác phân đoạn thực tế**: GT mask chính là các pixel màu
+> của ô vuông trên **ảnh tổng hợp**, SAM 2 lại được khởi tạo bằng **đúng ô bao GT**, và một bộ
+> ngưỡng màu đơn giản cũng đạt 1,0 trên fixture này. Con số chứng minh **mask lan truyền không bị
+> trôi/hỏng**, không dùng để so với mIoU trên DAVIS hay video thật.
+
 ## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:
