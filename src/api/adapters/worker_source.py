@@ -17,7 +17,7 @@ import signal
 import time
 from pathlib import Path
 
-from src.api.domain import SourceUnavailable
+from src.api.domain import LiveTelemetry, SourceUnavailable
 from src.api.ports import FrameSource
 from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATUS_NAME
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
@@ -41,13 +41,15 @@ class WorkerFrameSource(FrameSource):
     """Frame có bám đối tượng: worker chạy model, adapter chỉ đọc file mới nhất."""
 
     def __init__(self, source: str, *, bbox=None, image_size: int | None = None,
-                 max_fps: float = 30.0, vos_every: int | None = None, out_dir=None,
+                 max_fps: float = 30.0, vos_every: int | None = None,
+                 mask_smoothing: float | None = None, out_dir=None,
                  python_exe: str | None = None, startup_timeout: float = 240.0) -> None:
         self._source = str(source)
         self._bbox = tuple(int(v) for v in bbox) if bbox else None
         self._image_size = image_size
         self._max_fps = max_fps
         self._vos_every = vos_every
+        self._mask_smoothing = mask_smoothing
         self._out = Path(out_dir) if out_dir is not None else live_dir()
         self._python = python_exe
         self._startup_timeout = startup_timeout
@@ -64,6 +66,7 @@ class WorkerFrameSource(FrameSource):
         argv = build_live_worker_command(
             self._source, self._out, image_size=self._image_size,
             max_fps=self._max_fps, vos_every=self._vos_every,
+            mask_smoothing=self._mask_smoothing,
             python_exe=self._python, repo_root=REPO_ROOT,
         )
         self._proc = start_process(argv, log_path=self._log, cwd=REPO_ROOT)
@@ -91,6 +94,22 @@ class WorkerFrameSource(FrameSource):
     @property
     def label(self) -> str:
         return f"bám-đối-tượng:{self._source}"
+
+    # ------------------------------------------------------------------ LiveTelemetrySource
+
+    def telemetry(self) -> LiveTelemetry:
+        """Số liệu worker ghi ra status.json: nhịp mask thật + độ ổn định + độ trễ.
+
+        Vì sao cần: FPS phát (30) không nói gì về việc **mask có mới hay không** — worker chạy
+        model ~8,5 lần/giây và nội suy phần còn lại. UI phải hiện đúng hai con số này.
+        """
+        status = _read_status(self._out / STATUS_NAME)
+        return LiveTelemetry(
+            mask_fps=float(status.get("vos_fps") or 0.0),
+            stability=float(status.get("stability") or 0.0),
+            latency_ms=float(status.get("vos_ms") or 0.0),
+            lk_ms=float(status.get("lk_ms") or 0.0),
+        )
 
     # ------------------------------------------------------------------ nội bộ
 

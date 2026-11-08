@@ -134,6 +134,9 @@ def build_router(service: JobService, live) -> APIRouter:
             source=status.source,
             frames=status.frames,
             measured_fps=status.measured_fps,
+            mask_fps=status.mask_fps,
+            stability=status.stability,
+            latency_ms=status.latency_ms,
             message=status.message,
         )
 
@@ -145,7 +148,8 @@ def build_router(service: JobService, live) -> APIRouter:
             bbox = (payload.bbox.x, payload.bbox.y, payload.bbox.w, payload.bbox.h)
         return _live_status(
             live.start(payload.source, mode=payload.mode, bbox=bbox,
-                       image_size=payload.image_size, vos_every=payload.vos_every)
+                       image_size=payload.image_size, vos_every=payload.vos_every,
+                       mask_smoothing=payload.mask_smoothing)
         )
 
     @router.post("/api/live/stop", response_model=LiveStatusResponse)

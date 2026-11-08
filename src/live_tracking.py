@@ -12,7 +12,7 @@ Lưu ý  : đây là phần CHẠY TRONG TIẾN TRÌNH RIÊNG (tools/live_worker
          nếu muốn hình mượt; LK (2–3 ms, `docs/research/09`) lấp các frame giữa hai lần suy luận.
          **Hai luồng:** model chạy trong LUỒNG RIÊNG (`_VosWorker`), luồng chính chỉ đọc frame +
          LK + vẽ + ghi ⇒ model 78 ms không chặn nhịp phát. Đo trên máy này (192 px, binh1.mp4):
-         chạy đơn luồng chỉ được 18 FPS, tách luồng đạt ~30 FPS (xem docs/task/09-11-2026).
+         chạy đơn luồng chỉ được 18 FPS, tách luồng đạt ~30 FPS (xem docs/task/08-11-2026).
          GIỚI HẠN PHẢI NÓI THẬT trong báo cáo: **mask chỉ được cập nhật ở nhịp VOS**
          (`vos_fps` trong status), phần giữa hai lần là mask cũ được TỊNH TIẾN theo LK —
          không phải mask mới. Vì vậy không được claim "mask 30 FPS".
@@ -30,6 +30,7 @@ from pathlib import Path
 import cv2
 
 from src.light_tracker import LkBoxTracker, shift_mask
+from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
 from src.video_source import open_video_source
 
@@ -55,6 +56,8 @@ class LiveTrackConfig:
     display_fps: float = 30.0     # nhịp PHÁT frame (LK/lặp frame), không phải nhịp VOS
     vos_every: int = 3            # 1 = chạy VOS mỗi frame (tắt LK, hình ~10 FPS @192)
     trajectory_len: int = 100
+    mask_smoothing: float = 1.0   # 1.0 = TẮT làm mượt (mặc định: đo 10-11 thấy không cải
+                                  # thiện IoU hiển thị mà thêm trễ — xem docs/task/10-11-2026)
     jpeg_quality: int = 80
     loop_files: bool = True
     stop_after_frames: int | None = None      # cho test/thử nhanh
@@ -71,6 +74,10 @@ class LiveTrackStats:
     vos_fps: float = 0.0          # FPS của VOS (nhịp mask thật)
     vos_ms: float = 0.0           # độ trễ suy luận gần nhất
     lk_ms: float = 0.0            # độ trễ LK gần nhất
+    stability: float = 0.0        # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy)
+    stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
+    mask_holds: int = 0           # số lần bộ lọc GIỮ mask cũ (model "chớp" mất vật)
+    mask_drops: int = 0           # số lần mask hiển thị RỖNG (mất dấu thật)
     lost_streak: int = 0
     bbox: list = field(default_factory=list)
     message: str = ""
@@ -180,6 +187,12 @@ class LiveTrackingSession:
         self._trail: deque = deque(maxlen=config.trajectory_len)
         self._display_stamps: deque = deque()
         self._vos_stamps: deque = deque()
+        self._smoother = MaskSmoother(config.mask_smoothing) if config.mask_smoothing < 1.0 else None
+        self._iou_window: deque = deque(maxlen=10)
+        self._shown_iou_window: deque = deque(maxlen=10)
+        self._prev_shown_mask = None
+        self._prev_raw_mask = None
+        self._prev_vos_bbox = None
         self._lock = threading.Lock()
         self._vos_state = None          # (seq, result, gray) của lần VOS gần nhất
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
@@ -218,7 +231,9 @@ class LiveTrackingSession:
                         self._publish_frame(out_dir, frame)
                         self._sleep(interval, began)
                         continue
-                    result = self._engine.start(frame, bbox)     # start() vẫn đồng bộ (1 lần)
+                    # bbox.json là (x, y, w, h); SAM 2 nhận box (x1, y1, x2, y2) — BUG thật 10-11:
+                    # trước đây truyền thẳng nên hộp chọn trên live bị seed sai (w,h thành x2,y2)
+                    result = self._engine.start(frame, xywh_to_xyxy(bbox))
                     self._after_vos(frame, result)
                     if self._use_lk:
                         self._start_worker(frame, self._gray(frame))
@@ -263,6 +278,7 @@ class LiveTrackingSession:
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
         self._record_vos(result)
+        self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         with self._lock:
             self._vos_state = (seq, result, gray)
 
@@ -312,6 +328,7 @@ class LiveTrackingSession:
     def _after_vos(self, frame, result) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
         self._record_vos(result)
+        self._smooth(result)
         self._interp_base_result = result
         self._mask = getattr(result, "mask", None)
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
@@ -322,6 +339,46 @@ class LiveTrackingSession:
         self._stats.vos_runs += 1
         self._vos_stamps.append(time.perf_counter())
         self._trim(self._vos_stamps)
+        self._measure_stability(result)
+
+    def _measure_stability(self, result) -> None:
+        """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không"."""
+        raw = getattr(result, "mask", None)
+        if raw is None:
+            return
+        if self._prev_raw_mask is not None:
+            self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
+            self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
+        self._prev_raw_mask = raw
+
+    def _smooth(self, result) -> None:
+        """Làm mượt mask của kết quả VOS (nếu bật) và ĐO độ êm của mask HIỂN THỊ.
+
+        `stability` = IoU của mask VOS thô (model ổn định không), `stability_shown` = IoU của mask
+        đã làm mượt (mắt thấy êm không). Hai số tách nhau để không tự lừa mình: làm mượt làm IoU
+        hiển thị TĂNG nhưng cái giá là mask trễ hình dạng thật.
+        """
+        raw = getattr(result, "mask", None)
+        if raw is None:
+            return
+
+        shown = raw
+        smoother = self._smoother
+        if smoother is not None:
+            bbox = xyxy_to_xywh(result.bbox)
+            if self._prev_vos_bbox is not None:
+                smoother.shift(bbox[0] - self._prev_vos_bbox[0], bbox[1] - self._prev_vos_bbox[1])
+            self._prev_vos_bbox = bbox
+            shown = smoother.update(raw)
+            result.mask = shown
+            self._stats.mask_holds = smoother.holds
+            self._stats.mask_drops = smoother.drops
+
+        if self._prev_shown_mask is not None:
+            self._shown_iou_window.append(mask_iou(self._prev_shown_mask, shown))
+            self._stats.stability_shown = round(
+                sum(self._shown_iou_window) / len(self._shown_iou_window), 3)
+        self._prev_shown_mask = shown
 
     @staticmethod
     def _gray(frame):
@@ -387,6 +444,10 @@ class LiveTrackingSession:
             "vos_fps": self._stats.vos_fps,
             "vos_ms": self._stats.vos_ms,
             "lk_ms": self._stats.lk_ms,
+            "stability": self._stats.stability,
+            "stability_shown": self._stats.stability_shown,
+            "mask_holds": self._stats.mask_holds,
+            "mask_drops": self._stats.mask_drops,
             "lost_streak": self._stats.lost_streak,
             "bbox": self._stats.bbox,
             "message": self._stats.message,

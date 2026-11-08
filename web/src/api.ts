@@ -124,7 +124,14 @@ export interface LiveStatus {
   state: LiveState
   source: string
   frames: number
+  /** FPS PHÁT (frame hình/giây) — không phải nhịp mask */
   measured_fps: number
+  /** nhịp MASK MỚI (số lần model chạy/giây); 0 khi chế độ raw hoặc nguồn không báo */
+  mask_fps: number
+  /** IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy); 0 khi không có */
+  stability: number
+  /** độ trễ suy luận gần nhất (ms) */
+  latency_ms: number
   message: string
 }
 
@@ -133,6 +140,8 @@ export interface LiveStartOptions {
   mode?: 'raw' | 'track'
   bbox?: BBox
   image_size?: number
+  /** chạy model mỗi N frame; phần còn lại nội suy bằng LK (mặc định worker: 3) */
+  vos_every?: number
 }
 
 /** Bắt đầu phát trực tiếp từ nguồn frame (webcam/RTSP/snapshot/video file). */

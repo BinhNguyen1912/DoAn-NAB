@@ -148,7 +148,16 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `_VosWorker` trong `src/live_tracking.py`). Đo thật: đơn luồng **18 FPS**, tách luồng **29,8 FPS**
   (`vos_every=3`, VOS 8,5 lần/giây). Đừng "tối ưu" bằng cách tăng `vos_every` — hình đã chạm trần
   30 FPS, chỉ mask cũ đi. **Mask vẫn ~8,5 FPS**, cấm claim 30 FPS cho mask.
-  Chi tiết: `docs/task/09-11-2026-hybrid-vos-lk-30fps-live.md`.
+  Chi tiết: `docs/task/08-11-2026-hybrid-vos-lk-live-30fps.md`.
+- **Ô chọn trên live: `(x,y,w,h)` ≠ `(x1,y1,x2,y2)`.** `bbox.json` (UI/API) dùng `(x,y,w,h)`, SAM 2
+  nhận `(x1,y1,x2,y2)` ⇒ phải qua `xywh_to_xyxy()` trước `engine.start()`. Bug này đã làm **toàn bộ
+  số Phase 4c đo bằng ô chọn sai** (hộp cao âm, ô bao trôi). Số đúng (đo lại 08-11): 8,8 FPS
+  (`vos_every=1`) → **29,9 FPS** (`vos_every=3`, mask 8,6 lần/giây).
+- **Chống nhấp nháy mask mặc định TẮT**: đo 3 clip, `holds = 0` trên 2 clip, và trên `binh2` IoU
+  hiển thị không cao hơn (0,681 vs 0,706) ⇒ bật là thêm trễ vô ích. Chỉ bật `--mask-smoothing 0.5`
+  khi có clip bị che thật sự chứng minh được lợi ích.
+- **SAM 2 không tất định**: cùng seed, cùng video, hai lần chạy cho ô bao cuối khác nhau ⇒ chỉ so
+  sánh chỉ số **trong cùng một lần chạy**.
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo

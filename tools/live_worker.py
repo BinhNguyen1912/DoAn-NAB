@@ -50,6 +50,9 @@ def main() -> int:
                         help="nhịp PHÁT frame (display). VOS có thể chậm hơn — LK lấp phần giữa")
     parser.add_argument("--vos-every", type=int, default=3,
                         help="chạy VOS mỗi N frame (1 = VOS mỗi frame, tắt LK; mask mới ở nhịp 1/N)")
+    parser.add_argument("--mask-smoothing", type=float, default=1.0,
+                        help="trọng số mask MỚI khi trộn theo thời gian (0-1]; 1.0 = tắt (mặc định, "
+                             "đo 10-11: bật không cải thiện độ êm mà thêm trễ)")
     parser.add_argument("--trajectory-len", type=int, default=100)
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
@@ -79,6 +82,7 @@ def main() -> int:
         out_dir=out_dir,
         display_fps=args.max_fps,
         vos_every=args.vos_every,
+        mask_smoothing=max(0.05, min(1.0, args.mask_smoothing)),
         trajectory_len=args.trajectory_len,
         stop_after_frames=args.stop_after_frames,
     )
