@@ -1,0 +1,15 @@
+{
+  "timestamp": "2026-11-08T10:48:48",
+  "git_rev": "fc044f2",
+  "source": "data/binh1.mp4",
+  "image_size": 256,
+  "reanchor_every": null,
+  "max_frames": 8,
+  "reid": false,
+  "reid_cue": "face",
+  "reid_obj_threshold": 0.6,
+  "reid_obj_ncc_min": 0.0,
+  "lost_score_threshold": 0.0,
+  "reid_reacquire_confirm": null,
+  "reid_verify_frames": null
+}

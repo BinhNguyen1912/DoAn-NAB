@@ -1,0 +1,40 @@
+{
+  "experiment": "do-i-anh-sang",
+  "rows": [
+    {
+      "gain": 1.0,
+      "frames": 12,
+      "mean_iou": 0.9033797267762654,
+      "min_iou": 0.8395522388059702,
+      "lost_frames": 0
+    },
+    {
+      "gain": 0.6,
+      "frames": 12,
+      "mean_iou": 0.9176340494486147,
+      "min_iou": 0.8528784648187633,
+      "lost_frames": 0
+    },
+    {
+      "gain": 0.35,
+      "frames": 12,
+      "mean_iou": 0.9292358792185066,
+      "min_iou": 0.8658008658008658,
+      "lost_frames": 0
+    },
+    {
+      "gain": 0.2,
+      "frames": 12,
+      "mean_iou": 0.9402461854634684,
+      "min_iou": 0.8941877794336811,
+      "lost_frames": 0
+    },
+    {
+      "gain": 0.1,
+      "frames": 12,
+      "mean_iou": 0.9339039020720367,
+      "min_iou": 0.8808416931734768,
+      "lost_frames": 0
+    }
+  ]
+}
