@@ -327,6 +327,13 @@ kéo chuột → *Bám đối tượng*.
 | **3 (mặc định)** | **29,9** | 8,6 | 100 | 2,7 | 0,963 |
 | 6 | 29,8 | 5,1 | 88 | 3,2 | 0,921 |
 
+> **Nội suy LK giữ ô bao tốt đến đâu (đo 08-11, 600 frame/cấu hình):** `drift_iou` = IoU giữa ô
+> bao **đang hiển thị** và ô bao của **lần VOS kế tiếp** — binh1: **0,93** (p05 0,80), simloss: 0,92
+> (p05 0,78); `mask_age` p95 **≈115 ms**. ⚠️ Trên `binh2` drift p05 = **0,00** (22 lần mask rỗng) ⇒
+> nội suy **mất dấu** ở clip đó: tuyên bố "hybrid giữ được ô bao" **không đúng cho mọi clip**.
+> Ngưỡng nhiễu giữa các lần chạy: drift ±0,003, `vos_fps` ±7 %, `mask_age_p95` ±5 %.
+> Số liệu: `data/drift_2026-11-08_metrics.json`.
+
 > Số **đo lại ngày 08-11** sau khi sửa bug ô chọn `(x,y,w,h)` → `(x1,y1,x2,y2)` (xem
 > `docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md`). Bảng cũ (10,1 FPS) đo bằng ô chọn
 > SAI nên chỉ giữ làm mốc lịch sử.

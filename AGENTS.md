@@ -172,6 +172,15 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   (`stability`, `mIoU`, và một test).
 - **Artifact số đo phải có `git_rev` == commit code đang chạy, `git_dirty`, `lenh`, `do_luc`.**
   Số đo trên working tree bẩn thì không tái lập được (review 08-11 bắt đúng lỗi này).
+- **`stability` KHÔNG phải thước đo độ chính xác.** Thước đo độ chính xác là **mIoU mask vs GT**
+  (hiện chỉ có trên fixture) và **`drift_iou`** (LK nội suy lệch bao nhiêu so với lần VOS kế tiếp).
+  `stability` chỉ nói mask có nhấp nháy không — mask sai mà ổn định vẫn 0,96.
+- **Mọi so sánh A/B phải nêu ngưỡng nhiễu** (`scripts/repeatability.py`). Đo 3 lần cùng cấu hình
+  (08-11): `drift_iou` ±0,003; `vos_fps` ±7,3 %; `measured_fps` ±3,4 %; `mask_age_p95` ±4,6 %.
+  Chênh lệch nhỏ hơn các mức đó ⇒ phải viết **"không phân biệt được"**, không được viết "tốt hơn".
+- **Hybrid chỉ giữ được ô bao trên một số clip**: binh1 drift 0,93 (p05 0,80), simloss 0,92 (p05 0,78),
+  **binh2 p05 = 0,00 (LK mất dấu, 22 lần mask rỗng)**. Cấm phát biểu "hybrid luôn bám được" — phải
+  nêu clip + drift đo được.
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 
 ## 7. Các repo/model tham khảo
