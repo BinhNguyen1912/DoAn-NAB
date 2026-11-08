@@ -36,6 +36,8 @@ VideoSource ──► TrackerEngine ──► Visualizer (HUD)
 ```bash
 ./run demo      # demo webcam mượt + ghi video/số liệu (tự bật môi trường conda)
 ./run test      # test nhanh ~10 giây
+./run api       # backend FastAPI + giao diện (mở http://127.0.0.1:8000/docs)
+./run web       # build frontend React vào web/dist để API phục vụ luôn ở "/"
 ./run help      # xem tất cả lệnh tắt
 ./run aliases --install   # (tuỳ chọn) tạo alias ngắn hơn: demo, testfast, charts…
 ```
@@ -234,8 +236,46 @@ record_enabled: true                                         # bật ghi khi ch�
 python tools/run_live.py --config configs/my.yaml            # CLI flag vẫn đè được YAML
 ```
 
-## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
+## 2b. Web app — upload video → chọn đối tượng → xem kết quả
 
+Backend FastAPI + frontend React, **không cần GPU, không cần database** (job lưu trên filesystem).
+
+```bash
+# lần đầu: cài frontend rồi build vào web/dist
+./run web
+# chạy backend, API tự phục vụ luôn giao diện đã build
+./run api
+# → mở http://127.0.0.1:8000/            (giao diện)
+#   mở http://127.0.0.1:8000/docs       (thử API trực tiếp)
+```
+
+Chế độ dev frontend (sửa code là tự reload, cần backend chạy song song ở terminal khác):
+
+```bash
+./run api          # terminal 1
+./run webdev       # terminal 2 → http://127.0.0.1:5173
+```
+
+Luồng xử lý:
+
+```text
+upload video → POST /api/jobs (lưu theo từng 1 MB, không nạp vào RAM)
+     ↓
+preview frame đầu → GET /api/jobs/{id}/preview  (vẽ canvas kéo chuột chọn bbox)
+     ↓
+chọn đối tượng → POST /api/jobs/{id}/select     (khởi chạy pipeline ở NỀN)
+     ↓
+poll 1 s/lần → GET /api/jobs/{id}               (state + progress thật từ progress.json)
+     ↓
+done → GET /api/jobs/{id}/artifacts/out.mp4     (+ metrics.csv, summary.json)
+```
+
+Kiến trúc tách tầng (đo 08-11-2026): API **không import torch/SAM 2** — xử lý nặng nằm ở
+`tools/run_live.py` do `src/worker/runner.py` khởi chạy bằng subprocess trong conda env.
+Nhờ vậy backend chạy được trên VPS 4 GB RAM, còn pipeline thật có thể đẩy sang GPU thuê
+theo giờ mà **không phải sửa API** (xem `docs/task/08-11-2026-*`).
+
+## 3. Colab GPU — video minh hoạ tốc độ thật (ADR-0002)
 Máy laptop CPU không đủ để demo FPS cao; theo **ADR-0002** phần "video minh hoạ 15–25 FPS"
 chạy offline trên **Colab GPU** bằng chính lệnh headless trên:
 

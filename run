@@ -65,6 +65,11 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     testall         Toàn bộ test (~2 phút, cần checkpoint)
     lint            ruff check .
 
+  WEB (API + giao diện)
+    api [cổng]     Chạy backend FastAPI (mặc định 8000) → /docs để thử API
+    web            Build frontend React → API tự phục vụ ở "/" (một lệnh là có demo)
+    webdev         Chạy Vite dev server (cần ./run api ở terminal khác)
+
   SỐ LIỆU & BÁO CÁO
     raw [giây]      Ghi video GỐC (không HUD, không model) để phân tích offline
                     → data/raw_<mốc-giờ>.mp4
@@ -231,6 +236,30 @@ EOF
   lint)
     activate_env
     exec "$PYTHON" -m ruff check . "$@"
+    ;;
+  api)
+    activate_env
+    port="${1:-8000}"
+    echo "[api] thử API: http://127.0.0.1:${port}/docs   (Ctrl+C để dừng)"
+    echo "[api] nếu đã chạy ./run web thì mở luôn giao diện: http://127.0.0.1:${port}/"
+    exec "$PYTHON" -m uvicorn src.api.main:app --host 127.0.0.1 --port "$port" --reload
+    ;;
+  webdev)
+    # Frontend dev (Vite). Backend phải chạy song song: ./run api
+    cd "$ROOT/web" 2>/dev/null || { echo "[LOI] chưa có thư mục web/"; exit 1; }
+    [ -d node_modules ] || npm install
+    exec npm run dev
+    ;;
+  web)
+    # Build frontend rồi để API phục vụ luôn ở "/" (khỏi cần CORS/2 server khi demo)
+    cd "$ROOT/web" 2>/dev/null || { echo "[LOI] chưa có thư mục web/"; exit 1; }
+    if [ ! -d node_modules ]; then
+      # npm sẽ tự thay symlink bằng thư mục thật, nên cứ để node_modules trong web/.
+      # Đo 08-11: cài 67 gói trong 16 s trên /mnt/d (9p) — chấp nhận được, không cần mẹo symlink.
+      npm install || exit 1
+    fi
+    npm run build || exit 1
+    echo "[web] đã build web/dist → chạy: ./run api   rồi mở http://127.0.0.1:8000/"
     ;;
   raw)
     activate_env

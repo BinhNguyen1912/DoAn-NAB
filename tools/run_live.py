@@ -20,9 +20,11 @@ Phím trong cửa sổ (--display):
 Số FPS/latency in ra console là THỰC ĐO trên máy (ADR-0002 — trung thực).
 """
 import argparse
+import json
 import os
 import subprocess
 import sys
+import time
 
 import cv2
 
@@ -50,6 +52,72 @@ from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
+
+# Cờ cảnh báo ghi progress: chỉ in MỘT lần để không spam console mỗi frame
+_PROGRESS_WARNED = [False]
+
+
+def _write_progress(path, frames, total=None):
+    """Ghi tiến trình xử lý ra JSON để backend web hiển thị progress bar thật.
+
+    Chức năng: dựng dict {"frames", "total", "updated_at"} rồi ghi ATOMIC ra `path`
+               (file tạm + os.replace) — backend đọc không bao giờ thấy file dở.
+    Input  : path (str|None — None thì bỏ qua, dùng cho đường chạy cũ),
+             frames (int — số frame ĐÃ xử lý xong), total (int|None — tổng dự kiến).
+    Output : None.
+    Lưu ý  : lỗi ghi (đĩa đầy/quyền) chỉ cảnh báo một lần rồi thôi — không được làm
+             chết pipeline chỉ vì file tiến trình.
+    """
+    if not path:
+        return
+    payload = {"frames": int(frames), "total": (None if total is None else int(total)),
+               "updated_at": time.time()}
+    tmp = f"{path}.tmp"
+    try:
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(payload, f)
+        os.replace(tmp, path)
+    except OSError as exc:
+        if not _PROGRESS_WARNED[0]:
+            _PROGRESS_WARNED[0] = True
+            print(f"[canh bao] không ghi được progress JSON ({exc}) — bỏ qua bước này")
+
+
+def _total_frames_hint(source):
+    """Tổng số frame dự kiến của nguồn (chỉ biết chắc với FILE video).
+
+    Input  : source (int webcam | str đường dẫn file | str rtsp/http).
+    Output : int (>0) hoặc None khi không xác định được (webcam/stream).
+    Lưu ý  : webcam/RTSP trả về rác (0 hoặc số vô nghĩa) → phải lọc, nếu không
+             thanh tiến trình sẽ nhảy sai. Chỉ tin khi là file thật trên đĩa.
+    """
+    if not isinstance(source, str) or not os.path.isfile(source):
+        return None
+    cap = cv2.VideoCapture(source)
+    try:
+        total = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    finally:
+        cap.release()
+    return total if total > 0 else None
+
+
+def _progress_callback(path, total, every=5):
+    """Tạo callback `on_frame` ghi progress mỗi `every` frame; luôn trả True (không dừng).
+
+    Input  : path (str|None), total (int|None), every (int ≥ 1).
+    Output : hàm callback(img, result) -> True; hoặc None khi không cần ghi progress.
+    Lưu ý  : trả False sẽ làm run_tracking DỪNG vòng lặp — nên tuyệt đối không trả False.
+    """
+    if not path:
+        return None
+
+    def _cb(_img, result):
+        frames = getattr(result, "frame_idx", 0) + 1
+        if frames % every == 0 or (total is not None and frames >= total):
+            _write_progress(path, frames, total)
+        return True
+
+    return _cb
 
 
 def _git_rev() -> str:
@@ -358,6 +426,8 @@ def _run_headless(engine, args):
     """Chế độ mặc định (không --display): chạy hết nguồn, in số liệu console."""
     viz = None
     metrics = None
+    summary = None
+    progress_total = None
     interrupted = False
     try:
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
@@ -377,6 +447,8 @@ def _run_headless(engine, args):
         print("[pipeline] bắt đầu tracking... (headless)")
         metrics = _make_metrics(args)
         reid_session = _make_reid_session(engine, args)
+        # Tổng frame dự kiến để backend vẽ progress bar (biết chắc khi nguồn là FILE)
+        progress_total = args.max_frames or _total_frames_hint(args.source)
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -386,6 +458,7 @@ def _run_headless(engine, args):
             metrics=metrics,
             reanchor_every=args.reanchor_every,
             reid_session=reid_session,
+            on_frame=_progress_callback(args.progress_json, progress_total),
         )
     except KeyboardInterrupt:
         interrupted = True
@@ -396,6 +469,9 @@ def _run_headless(engine, args):
             viz.close_recorder()
         if metrics is not None:
             _finish_metrics(metrics, args)
+        # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
+        frames_done = summary.total_frames if summary is not None else 0
+        _write_progress(args.progress_json, frames_done, progress_total)
 
     if interrupted:
         raise SystemExit(0)
@@ -474,6 +550,9 @@ def main():
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
                     help="ghi summary JSON (mean/p95/tỷ lệ mất dấu) — cần --metrics-csv")
+    ap.add_argument("--progress-json", default=None,
+                    help="ghi tiến trình từng frame ra JSON ({\"frames\",\"total\"}) — backend "
+                         "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
     args = ap.parse_args()
 

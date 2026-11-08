@@ -41,3 +41,116 @@ def samurai_engine():
         yield TrackerEngine.build_default()
     finally:
         vp.tqdm = real_tqdm
+
+
+# ---------------------------------------------------------------------------
+# Adapter GIẢ cho tầng API — chứng minh service chỉ phụ thuộc port (DIP).
+# Không dùng model SAM 2, không chạy subprocess, không cần video thật.
+# ---------------------------------------------------------------------------
+
+
+class FakeRunner:
+    """Hiện thực `PipelineRunner` trong bộ nhớ, cho phép test điều khiển "pipeline" kết thúc."""
+
+    def __init__(self):
+        self.started = []          # [(job_id, params, bbox)]
+        self.running = set()       # job_id đang "chạy"
+        self.progress = {}         # {job_id: {"frames", "total"}}
+        self.summaries = {}        # {job_id: dict}
+        self._on_exit = {}         # {job_id: callback}
+        self.fail_start = False
+
+    def start(self, job_id, job_dir, *, params, bbox, on_exit=None):
+        if self.fail_start:
+            raise OSError("không chạy được bash")
+        self.started.append((job_id, dict(params), tuple(bbox)))
+        self.running.add(job_id)
+        if on_exit is not None:
+            self._on_exit[job_id] = on_exit
+        return object()
+
+    def complete(self, job_id, code=0, summary=None):
+        """Giả lập pipeline kết thúc: chạy callback như adapter thật."""
+        if summary is not None:
+            self.summaries[job_id] = summary
+        self.running.discard(job_id)
+        callback = self._on_exit.pop(job_id, None)
+        if callback is not None:
+            callback(code)
+
+    def is_running(self, job_id):
+        return job_id in self.running
+
+    def artifact_names(self):
+        return ("out.mp4", "metrics.csv", "summary.json", "run_info.json", "worker.log")
+
+    def read_progress(self, job_dir):
+        return self.progress.get(os.path.basename(str(job_dir)))
+
+    def load_summary(self, job_dir):
+        return self.summaries.get(os.path.basename(str(job_dir)))
+
+    def artifact_path(self, job_dir, name):
+        if name not in self.artifact_names() or "/" in name or ".." in name:
+            return None
+        path = os.path.join(str(job_dir), name)
+        return path if os.path.isfile(path) else None
+
+
+class FakeProbe:
+    """Hiện thực `VideoProbe` cố định — không cần OpenCV."""
+
+    def __init__(self, size=(64, 48), jpeg=b"\xff\xd8fake-jpeg"):
+        self.size = size
+        self.jpeg = jpeg
+        self.requests = []
+
+    def probe_size(self, job_dir):
+        return self.size
+
+    def frame_jpeg(self, job_dir, index=0):
+        self.requests.append((str(job_dir), index))
+        return self.jpeg
+
+
+@pytest.fixture
+def api_settings(tmp_path):
+    """Cấu hình API trỏ vào tmp_path — không bao giờ ghi vào data/jobs thật."""
+    from src.api.config import ApiSettings
+
+    return ApiSettings(jobs_root=tmp_path / "jobs")
+
+
+@pytest.fixture
+def fs_store(api_settings):
+    from src.api.adapters import FileSystemJobStore
+
+    return FileSystemJobStore(
+        api_settings.jobs_root,
+        max_upload_bytes=api_settings.max_upload_bytes,
+        chunk_bytes=api_settings.chunk_bytes,
+    )
+
+
+@pytest.fixture
+def fake_runner():
+    return FakeRunner()
+
+
+@pytest.fixture
+def fake_probe():
+    return FakeProbe()
+
+
+@pytest.fixture
+def make_probe():
+    """Trả về LỚP FakeProbe để test tạo biến thể (VD jpeg=None)."""
+    return FakeProbe
+
+
+@pytest.fixture
+def service(fs_store, fake_runner, fake_probe, api_settings):
+    """JobService lắp bằng adapter giả — chứng minh service không phụ thuộc hạ tầng."""
+    from src.api.service import JobService
+
+    return JobService(fs_store, fake_runner, fake_probe, api_settings)

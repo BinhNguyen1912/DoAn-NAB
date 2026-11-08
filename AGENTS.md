@@ -58,11 +58,21 @@ DOAN-NAB/
 ├── README.md              # Giới thiệu dự án + cài đặt từ clone mới
 ├── docs/
 │   ├── DoAnCameraAI.docx  # Đề cương đề tài gốc
-│   ├── adr/               # Quyết định kiến trúc (0001, 0002)
+│   ├── adr/               # Quyết định kiến trúc (0001…0005)
 │   ├── agents/            # Cấu hình skill (issue-tracker, triage-labels, domain)
 │   ├── samurai-setup.md   # Cơ chế hydra/checkpoint upstream (navigation)
 │   └── task/              # 📁 Log công việc theo ngày (BẮT BUỘC) + _template.md
 ├── src/                   # Source code chính của hệ thống
+│   ├── api/               # Backend FastAPI theo ports & adapters (ADR-0005) → chạy VPS
+│   │   ├── domain.py      # JobState/Job/JobStatus + quy tắc + lỗi miền (không I/O)
+│   │   ├── ports.py       # Protocol: JobStore / PipelineRunner / VideoProbe
+│   │   ├── service.py     # JobService — use case, chỉ phụ thuộc port
+│   │   ├── adapters/      # FileSystemJobStore, SubprocessPipelineRunner, Cv2VideoProbe
+│   │   ├── routes.py      # HTTP mỏng: parse → service → DTO
+│   │   └── main.py        # create_app() = composition root
+│   ├── worker/            # command (dựng lệnh) · artifacts (đọc kết quả) · process (subprocess)
+│   └── *.py               # Pipeline lõi: tracker_engine, live_pipeline, reid, metrics_logger...
+├── web/                   # Frontend React + Vite: api.ts · hooks/ · components/ · App.tsx
 ├── tools/                 # CLI chạy (run_live.py), benchmark, demo
 ├── tests/                 # pytest (fixture synthetic, không commit dữ liệu nặng)
 ├── configs/               # Cấu hình (default.yaml — checkpoint/nguồn/ghi/metrics)

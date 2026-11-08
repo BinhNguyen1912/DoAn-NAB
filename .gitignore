@@ -36,3 +36,7 @@ Thumbs.db
 # ===== File tạm của Office / LibreOffice =====
 ~$*
 .~lock.*
+# ===== Web (React + Vite): thư mục sinh tự động, cài lại bằng `npm install` =====
+web/node_modules/
+web/dist/
+web/.vite/
