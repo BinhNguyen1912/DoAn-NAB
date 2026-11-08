@@ -10,6 +10,8 @@ Lưu ý  : đổi sang SQLite/S3/GPU worker chỉ cần sửa `build_default_ser
 """
 
 import logging
+import asyncio
+from contextlib import asynccontextmanager
 from pathlib import Path
 
 from fastapi import FastAPI, Request
@@ -26,6 +28,7 @@ from src.api.adapters import (
 )
 from src.api.config import ApiSettings
 from src.api.domain import (
+    LiveBusy,
     InvalidBBox,
     JobConflict,
     JobNotFound,
@@ -53,6 +56,7 @@ _ERROR_MAP = (
     (PayloadTooLarge, 413, "Video quá lớn"),
     (RunnerStartFailed, 500, "Không chạy được pipeline"),
     (SourceUnavailable, 400, "Không mở được nguồn frame"),
+    (LiveBusy, 409, "Đang mở một phiên live khác — chờ vài giây rồi thử lại"),
 )
 
 
@@ -121,7 +125,18 @@ def create_app(settings: ApiSettings | None = None,
     service = service or build_default_service(settings)
     live = live or build_default_live()
 
+    @asynccontextmanager
+    async def _lifespan(_app: FastAPI):
+        """Tắt API (kể cả `uvicorn --reload`) phải dừng worker model — không để nó mồ côi."""
+        yield
+        try:
+            # `live.stop()` là hàm blocking (join thread + killpg tới ~7 s) ⇒ chạy ngoài event loop
+            await asyncio.to_thread(live.stop)
+        except Exception:                       # noqa: BLE001 — dọn dẹp không được ném
+            logger.warning("dừng live khi shutdown gặp lỗi", exc_info=True)
+
     app = FastAPI(
+        lifespan=_lifespan,
         title="Camera AI Tracking API",
         version=APP_VERSION,
         description="Nhận video → chọn đối tượng → bám bằng SAM 2 (VOS) → trả mask, quỹ đạo, số liệu.",
@@ -140,6 +155,7 @@ def create_app(settings: ApiSettings | None = None,
     app.include_router(build_router(service, live))
     register_error_handlers(app)
     mount_frontend(app)
+
     return app
 
 

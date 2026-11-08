@@ -131,6 +131,40 @@ trùng frame) — tức không bịa lỗi.
 - Chưa đo chi phí CPU khi `LIVE_READ_FPS` 15→30 ở chế độ **raw** (`OpenCvFrameSource` decode+encode
   mỗi tick).
 
+## 🔁 Cố vấn C (mở lại sau lỗi 429) — bắt được lỗi VÒNG ĐỜI PHIÊN LIVE (đã fix)
+
+Cố vấn C trả lời muộn (task đầu chết vì `429 GoUsageLimitError`, đã mở lại) nhưng tìm ra nhóm lỗi
+**không ai khác thấy** — và nó đang *chủ động phá số đo trên chính máy này*:
+
+| Lỗi | Bằng chứng | Đã fix |
+|---|---|---|
+| **POST `/api/live/start` đồng thời sinh 2 worker** ghi chung `/dev/shm/doan-live`; worker thua bị mất tham chiếu = rò tiến trình | `start()` thả khoá rồi mới `candidate.start()` (chờ tới 240 s), `_source` chỉ gán sau đó | `_start_lock` không-chờ + lỗi miền mới `LiveBusy` → **409** (không treo request 240 s) |
+| **Bấm Dừng trong lúc nạp model là no-op** ⇒ phiên vẫn bật sau đó | `stop()` chỉ nhìn `_source`, mà `_source` chưa được gán | công bố `_pending` **trước** `candidate.start()`; `_stop_locked()` đóng luôn `_pending` (worker đang nạp bị kill ⇒ `_wait_first_frame` báo lỗi ngay, không phải chờ hết `startup_timeout` 240 s); `start()` sau đó thấy `_stop` đã set ⇒ trả `stopped` (không phải `error`) |
+| **Worker mồ côi sau `uvicorn --reload`** ghi đè `frame.jpg` ⇒ phiên mới `_wait_first_frame` thấy frame của phiên CŨ, báo "running" bằng ảnh trước, hai worker cùng ghi một file | `worker/process.py` dùng `start_new_session=True`, **không có lifespan/shutdown** ở đâu, `run:248` chạy `--reload` | `PID_NAME` + `_reap_stale_worker()` (kiểm `/proc/<pid>/cmdline` chứa `live_worker` để **chống pid reuse**, SIGTERM rồi SIGKILL sau 5 s) + `lifespan` gọi `live.stop()` khi API tắt |
+| `_annotate` `tint[mask]` không kiểm kích thước ⇒ `IndexError` nếu nguồn đổi độ phân giải giữa phiên (relay `/snapshot.jpg`, điện thoại xoay máy) | `live_tracking.py` `_annotate` | Bỏ mask khi `mask.shape != frame.shape[:2]`. **Phạm vi thật (review lần 3 chỉ ra):** đây chỉ là *belt-and-braces* — ca đổi độ phân giải thực tế chết SỚM HƠN (`TrackerEngine.process` ném `ValueError`, hoặc LK `calcOpticalFlowPyrLK` assert vì 2 ảnh khác kích thước) và phiên dừng với `state=error` + message rõ, chứ không "sống tiếp". Muốn sống tiếp phải reset engine — chưa làm, đã ghi next step |
+| Test khoá schema bằng **tập khoá tuyệt đối** ⇒ mỗi lần thêm chỉ số phải sửa tay | `assert set(status) == {...}` (đã phải sửa 2 lần trong ngày) | Đổi sang **superset + danh sách khoá bắt buộc** |
+
+**Test mới (4) — đã kiểm chứng bằng cách revert từng fix, cả 4 đều ĐỎ:** double-start chỉ tạo 1 nguồn
++ 3 lần nhận `LiveBusy`; dừng giữa lúc nạp ⇒ `stopped` + nguồn bị đóng; reap worker cũ (pid giả có
+`live_worker` trong cmdline) và **không** giết tiến trình lạ trùng pid; `_annotate` bỏ mask sai
+kích thước. Thêm 2 test: pidfile hỏng không ném; shutdown đóng nguồn (`with TestClient(app)`).
+
+**Review lần 3 (commit vòng đời) — 0 P0/0 P1, đã đóng 3 P2 + 3 test flaky:**
+- `_reap_stale_worker` siết guard: phần tử argv phải **đúng tên** `live_worker.py` (không dùng
+  substring — `grep live_worker` cũng khớp), phải có `--out-dir <thư mục này>` (không giết worker
+  của instance API khác), pid phải là **session leader** và **khác process group của API**
+  (không để `killpg` chạm nhóm của mình); `stop()` xoá pidfile.
+- Vòng chờ reap coi **zombie** là đã chết (`/proc/<pid>/stat` field 3 = `Z`) ⇒ 2 s thay vì luôn
+  đủ 5 s (test reap: 0,13 s thay vì 5,0 s).
+- `_pending` **giờ dùng thật** (đóng worker đang nạp) thay vì chỉ ghi rồi bỏ; lifespan dùng
+  `await asyncio.to_thread(live.stop)` (không chặn event loop ~7 s); `stop()` luôn về `STOPPED`.
+- 3 test timing đổi sang `Barrier`/`Event` (không còn `sleep` làm đồng bộ ⇒ hết flaky-fail);
+  test schema đổi sang superset **+ allowlist** (bắt được khoá lạ/typo).
+
+**Còn nợ (đã ghi vào plan):** worker chết **sau** khi start (OOM/segfault) vẫn chưa được phơi ra —
+API không đọc `state`/heartbeat từ `status.json` ⇒ UI "running" tới khi stream timeout. Đây là việc
+"watchdog" (2–3 h) trong `docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md`.
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Thực hiện 6 việc đã chốt trong `docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md`
       (bắt đầu: `scripts/measure_live.py` ghi artifact có `git_rev`).

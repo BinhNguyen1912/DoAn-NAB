@@ -11,6 +11,7 @@ Lưu ý  : thư mục mặc định là `/dev/shm/doan-live` (tmpfs) — ghi 15�
          và kiểm tra `status.json` để báo lỗi sớm thay vì treo.
 """
 
+import logging
 import os
 import shutil
 import signal
@@ -22,11 +23,15 @@ from src.api.ports import FrameSource
 from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATUS_NAME
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
+logger = logging.getLogger("doan.api.worker_source")
+
 DEFAULT_LIVE_DIR = "/dev/shm/doan-live"
 LIVE_DIR_ENV = "DOAN_LIVE_DIR"
 
 # File do adapter quản lý trong thư mục live (dọn trước mỗi phiên để không đọc nhầm của phiên cũ)
-_OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, "status.json.tmp", "frame.jpg.tmp", LOG_NAME)
+PID_NAME = "worker.pid"
+_OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, PID_NAME, "status.json.tmp",
+                "frame.jpg.tmp", LOG_NAME)
 
 
 def live_dir() -> Path:
@@ -70,6 +75,10 @@ class WorkerFrameSource(FrameSource):
             python_exe=self._python, repo_root=REPO_ROOT,
         )
         self._proc = start_process(argv, log_path=self._log, cwd=REPO_ROOT)
+        try:
+            (self._out / PID_NAME).write_text(str(self._proc.pid), encoding="utf-8")
+        except OSError:                              # không ghi được pidfile thì vẫn chạy
+            logger.warning("không ghi được %s", PID_NAME)
         self._wait_first_frame()
 
     def read_jpeg(self):
@@ -90,6 +99,8 @@ class WorkerFrameSource(FrameSource):
             proc.wait(timeout=5)
         except Exception:                 # noqa: BLE001 — không được treo khi dọn dẹp
             proc.kill()
+        finally:
+            (self._out / PID_NAME).unlink(missing_ok=True)
 
     @property
     def label(self) -> str:
@@ -116,9 +127,63 @@ class WorkerFrameSource(FrameSource):
     # ------------------------------------------------------------------ nội bộ
 
     def _prepare_dir(self) -> None:
+        """Reap worker của phiên TRƯỚC rồi mới dọn file.
+
+        Vì sao: `./run api` chạy uvicorn `--reload`, mỗi lần lưu file API chết nhưng worker SAM 2
+        (start_new_session) sống tiếp và **ghi đè frame.jpg** — phiên mới sẽ `_wait_first_frame`
+        thấy frame của worker cũ, báo "running" bằng ảnh của phiên trước, và hai worker cùng ghi
+        một file. Đã xác nhận bằng đọc mã (review độc lập 08-11).
+        """
         self._out.mkdir(parents=True, exist_ok=True)
+        self._reap_stale_worker()
         for name in _OWNED_FILES:
             (self._out / name).unlink(missing_ok=True)
+
+    def _reap_stale_worker(self) -> None:
+        """Kill worker cũ nếu pidfile còn sống và ĐÚNG là worker live của CHÍNH thư mục này.
+
+        Chốt an toàn (review độc lập 08-11 chỉ ra bản đầu quá lỏng — `killpg` có thể giết cả
+        nhóm tiến trình của API):
+        1. bỏ qua pidfile hỏng/pid <= 0/pid của chính mình;
+        2. `/proc/<pid>/cmdline` phải có **một phần tử argv** đúng tên `live_worker.py`
+           (không dùng substring: `grep live_worker`, `vim tools/live_worker.py` cũng khớp);
+        3. argv phải chứa `--out-dir <self._out>` ⇒ không giết worker của instance khác;
+        4. pid phải là **session leader** (`getsid(pid) == pid`, nhờ `start_new_session=True`)
+           và **không** cùng process group với API ⇒ `killpg` không bao giờ chạm nhóm của mình.
+        """
+        pid = _read_pid(self._out / PID_NAME)
+        if pid is None or pid == os.getpid():
+            return
+        argv = _read_cmdline(pid)
+        if not argv or not _is_our_live_worker(argv, self._out):
+            return
+        try:
+            if os.getsid(pid) != pid or os.getpgid(pid) == os.getpgid(0):
+                return                              # không phải session leader của riêng nó
+        except OSError:
+            return
+        logger.warning("dọn worker live còn sót của phiên trước: pid=%s", pid)
+        self._terminate_process(pid)
+
+    @staticmethod
+    def _terminate_process(pid: int) -> None:
+        """SIGTERM rồi SIGKILL sau 2 s (không chờ quá lâu: zombie cũng tính là đã chết)."""
+        try:
+            os.killpg(pid, signal.SIGTERM)
+        except (ProcessLookupError, PermissionError):
+            try:
+                os.kill(pid, signal.SIGTERM)
+            except OSError:
+                return
+        deadline = time.time() + 2.0
+        while time.time() < deadline:
+            if not _pid_alive(pid):
+                return
+            time.sleep(0.05)
+        try:
+            os.killpg(pid, signal.SIGKILL)
+        except (ProcessLookupError, PermissionError):
+            pass
 
     def _write_bbox(self, bbox) -> None:
         import json
@@ -145,6 +210,47 @@ class WorkerFrameSource(FrameSource):
         raise SourceUnavailable(
             f"worker không đưa được frame trong {self._startup_timeout:.0f}s — xem {self._log}"
         )
+
+
+def _read_pid(path: Path):
+    """Đọc pidfile; None nếu chưa có/hỏng."""
+    try:
+        pid = int(path.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    return pid if pid > 0 else None
+
+
+def _read_cmdline(pid: int) -> list[str]:
+    """argv của tiến trình (tách theo NUL); [] nếu không đọc được."""
+    try:
+        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
+    except OSError:
+        return []
+    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
+
+
+def _is_our_live_worker(argv, out_dir: Path) -> bool:
+    """Đúng worker live của thư mục `out_dir`? (so khớp argv, KHÔNG dùng substring)."""
+    names = {Path(arg).name for arg in argv}
+    if "live_worker.py" not in names:
+        return False
+    for index, arg in enumerate(argv):
+        if arg == "--out-dir" and index + 1 < len(argv):
+            try:
+                return Path(argv[index + 1]).resolve() == Path(out_dir).resolve()
+            except OSError:
+                return False
+    return False
+
+
+def _pid_alive(pid: int) -> bool:
+    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state != "Z"
 
 
 def _read_status(path: Path) -> dict:
