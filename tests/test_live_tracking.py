@@ -123,6 +123,8 @@ class TestLiveTrackingSession:
         bat_buoc = {
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
+            "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
+            "mask_age_p95", "age_n",
             "lost_streak", "bbox", "message"}
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
@@ -738,3 +740,122 @@ class TestMaskLechKichThuoc:
 
         image = session._annotate(frame, _FrameResult(1, (10, 10, 20, 20), wrong, 1.0))
         assert image.shape == frame.shape           # không ném, không vẽ mask sai
+
+
+class TestDriftVaTuoiMask:
+    """`drift_iou` (nội suy LK lệch bao nhiêu) + `mask_age` — câu hỏi nền của kiến trúc hybrid.
+
+    Các test dưới đây cố tình khoá bằng **số literal / số đếm mẫu**, không so hai lần chạy với
+    nhau: bản trước so `vos_every=1` với `vos_every=6` nên vẫn XANH khi xoá sạch tính năng (cả hai
+    vế đều 0,0) — review 08-11 bắt đúng lỗi đó.
+    """
+
+    def test_iou_bbox_toa_do_bao_gom(self):
+        from src.live_tracking import _bbox_iou
+
+        assert _bbox_iou((0, 0, 10, 10), (0, 0, 10, 10)) == 1.0
+        assert _bbox_iou((0, 0, 10, 10), (11, 11, 21, 21)) == 0.0
+        # (0,0)-(10,10) ∩ (5,0)-(15,10): 6 cột × 11 hàng = 66; mỗi hộp 121 ⇒ 66/176
+        assert _bbox_iou((0, 0, 10, 10), (5, 0, 15, 10)) == pytest.approx(66 / 176)
+
+    def test_o_bao_suy_bien_tra_none_khong_tra_0(self):
+        """Toạ độ bao gồm ⇒ hộp 1 px rộng vẫn CÓ diện tích (IoU 1,0 khi trùng nhau).
+
+        Còn hộp đảo (`x2 < x1`) thì không đủ tin để chấm ⇒ trả `None` cho bên gọi BỎ mẫu, thay vì
+        trả 0,0 (0,0 sẽ bị tính là "nội suy lệch hoàn toàn").
+        """
+        from src.live_tracking import _bbox_iou
+
+        assert _bbox_iou((10, 10, 10, 40), (10, 10, 10, 40)) == 1.0
+        assert _bbox_iou((10, 10, 5, 5), (10, 10, 5, 5)) is None
+
+    def test_measure_drift_bang_iou_tinh_tay(self, tmp_path):
+        """Đo drift = IoU(ô bao ĐÃ PHÁT ở frame đó, ô bao VOS sửa lại) — sai 1 đơn vị là đỏ."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        session._shown_by_frame.append((7, (0, 0, 10, 10)))
+        session._measure_drift(7, _Result(0, (5, 0, 15, 10), None))
+
+        assert session._stats.drift_n == 1
+        assert session._stats.drift_iou == pytest.approx(66 / 176, abs=1e-3)
+
+    def test_drift_bo_qua_khi_frame_khong_co_trong_lich_su(self, tmp_path):
+        """Không có ô bao đã phát ở frame đó ⇒ KHÔNG có mẫu (không suy ra từ frame khác)."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        session._shown_by_frame.append((7, (0, 0, 10, 10)))
+        session._measure_drift(8, _Result(0, (5, 0, 15, 10), None))
+
+        assert session._stats.drift_n == 0
+        assert session._stats.drift_iou is None
+
+    def test_mask_rong_khong_vao_mau_drift(self, tmp_path):
+        """Mask rỗng ⇒ bbox (0,0,0,0): bỏ mẫu, KHÔNG ghi điểm 0."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        session._shown_by_frame.append((1, None))
+        session._measure_drift(1, _Result(0, (0, 0, 0, 0), None))
+        session._shown_by_frame.append((2, (5, 5, 15, 15)))
+        session._measure_drift(2, _Result(0, (0, 0, 0, 0), None))
+
+        assert session._stats.drift_n == 0
+
+    def test_tat_lk_thi_khong_do_drift(self, tmp_path):
+        """`vos_every=1`: không có nội suy ⇒ không được gọi đó là drift (nếu không "tắt LK" trông tốt hơn)."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=1))
+        session._shown_by_frame.append((3, (0, 0, 10, 10)))
+        session._measure_drift(3, _Result(0, (5, 0, 15, 10), None))
+
+        assert session._stats.drift_n == 0
+        assert session._stats.drift_iou is None
+
+    def test_tuoi_mask_literal_va_gom_ca_vos_ms(self, tmp_path):
+        """10 mẫu 100 ms, `vos_ms=100` ⇒ age 100,0 ms, total 200,0 ms, p95 = 200,0 ms."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        for _ in range(10):
+            session._note_mask_age(0.100, vos_ms=100.0)
+
+        assert session._stats.age_n == 10
+        assert session._stats.mask_age_ms == pytest.approx(100.0)
+        assert session._stats.mask_age_total_ms == pytest.approx(200.0)
+        assert session._stats.mask_age_p95 == pytest.approx(200.0)
+
+    def test_tuoi_mask_chua_du_mau_thi_p95_la_none(self, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        session._note_mask_age(0.050, vos_ms=10.0)
+
+        assert session._stats.age_n == 1
+        assert session._stats.mask_age_p95 is None       # 1 mẫu chưa đủ để nói p95
+
+    @pytest.mark.parametrize("every, phai_do", [(1, False), (6, True)])
+    def test_age_n_phan_biet_chua_do_voi_do_duoc(self, textured_video, tmp_path, every, phai_do):
+        """`age_n = 0` ⇒ CHƯA ĐO. Xoá tính năng thì `vos_every=6` cũng ra 0 ⇒ test này đỏ."""
+        out = tmp_path / f"live{every}"
+        _pre_select(out)
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=every,
+            loop_files=True)).run(stop_event=_StopAfter(25))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        if phai_do:
+            assert status["age_n"] > 0, "vos_every=6 phải đo được tuổi mask"
+            assert status["mask_age_ms"] > 0
+            assert 0 <= status["drift_iou"] <= 1
+        else:
+            assert status["age_n"] == 0 and status["mask_age_ms"] is None
+            assert status["drift_n"] == 0 and status["drift_iou"] is None
