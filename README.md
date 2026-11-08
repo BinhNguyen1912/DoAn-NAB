@@ -47,6 +47,8 @@ Danh sách đầy đủ + giải thích từng lệnh: `docs/cheatsheet-lenh.md`
 **`docs/giai-thich-do-an.md`** — giải thích toàn bộ đồ án bằng ngôn ngữ đời thường: từ điển thuật ngữ
 (AI, mô hình, mask, FPS, GPU…), hệ thống hoạt động ra sao, Colab là gì và vì sao cần, thiết bị của bạn
 mạnh/yếu chỗ nào, bảng "bị gì → cần gì → đã làm gì", và 8 câu trả lời mẫu cho hội đồng.
+**`docs/doi-chieu-yeu-cau-gvhd.md`** — đối chiếu **12 yêu cầu của GVHD** với file + số đo cụ thể
+(dùng thẳng làm phụ lục báo cáo: mỗi yêu cầu một dòng, kèm chỗ còn thiếu).
 
 ## 1. Cài đặt từ clone mới (tái tạo được)
 
@@ -110,6 +112,45 @@ python tools/run_live.py --source rtsp://IP:554/stream --display   # camera đi�
 
 Kéo chuột vẽ ô quanh đối tượng → thả chuột → bám; **r** chọn lại trên frame hiện tại,
 **q/ESC** thoát.
+
+### Webcam laptop khi usbipd kẹt `Device busy (exported)` — relay qua HTTP
+
+USB/IP chuyển *nguyên thiết bị* vào WSL, nhưng khi driver kẹt trạng thái `exported` thì `attach`
+không vào nữa (đã gặp 04-11: unbind/bind lại, dừng `FrameServer`, kill ZaloCall, restart service,
+**reboot** — vẫn lỗi). Cách khác, không cần Admin và không phải reboot: **để Windows mở webcam rồi
+phát MJPEG**, WSL đọc như một *camera IP*.
+
+```bash
+# 1 lần trên Windows (PowerShell, KHÔNG cần Admin) — tạo venv riêng + cài opencv (~40 MB)
+powershell -ExecutionPolicy Bypass -File D:\DOAN-NAB\tools\setup_cam_relay.ps1
+
+# (WSL) bật relay + in URL
+./run relay                 # → http://<IP-Windows>:8090/video
+./run relay status          # đang chạy? độ phân giải/fps
+./run relay stop            # tắt
+
+# (WSL) demo bám VẬT bằng webcam qua relay (tự bật relay)
+./run demoip                # = relay + run_live --display --smooth --reid --reid-cue object
+                                 # tự ghi data/demoip_<mốc>.mp4 + metrics + summary
+```
+
+Kiểm tra nhanh bằng trình duyệt: `http://<IP-Windows>:8090/` (có ảnh live). Snapshot 1 khung:
+`curl -o s.jpg http://<IP-Windows>:8090/snapshot.jpg`.
+
+**Pipeline đọc `/snapshot.jpg` (ảnh JPEG rời), không đọc `/video` (MJPEG)** — từ 05-11-2026.
+Lý do: hỏi từng ảnh theo nhịp suy luận (~5 FPS) không phải chờ FFMPEG demux/buffer; `HttpSnapshotSource`
+tự nhận URL `.jpg`/`/snapshot`. Đo trong pipeline (12 frame, `image_size 256`, headless): MJPEG 176 ms
+vs snapshot **171 ms**/frame — đo riêng lẻ thì 30,2 ms vs 8,4 ms, nhưng phần lớn 30 ms là *chờ* relay
+phát 20 fps chứ không phải decode. Xem URL snapshot: `bash scripts/cam_relay.sh snapurl`.
+
+**Đo thật 04-11-2026** (relay + pipeline, `image_size 320`): luồng MJPEG **640×480 @ ~21 fps**,
+pipeline đọc 4 frame OK, **0/4 mất dấu**, 305 ms/frame ≈ 3,3 FPS, CPU 321 %, RAM 593 MB.
+
+**Hai lỗi đã gặp và đã sửa (để không mất buổi demo):**
+- Console Windows cp1252 → in chữ Việt là `UnicodeEncodeError` chết cả relay ⇒ ép `stdout` sang UTF-8.
+- `send_error(503, "chưa có khung hình")` → status line HTTP chỉ nhận **latin-1** ⇒ dùng thông điệp **ASCII**.
+- Khởi động bằng `powershell Start-Process -RedirectStandardOutput` **giữ pipe** làm lệnh trong WSL treo
+  vô hạn (đo: >90 s) ⇒ đổi sang `Invoke-CimMethod Win32_Process` (trả về sau 1,3 s).
 
 ### Camera điện thoại (iPhone / Android) — nguồn mạng
 
@@ -439,6 +480,25 @@ Lưu ý: webcam qua WSL đọc chỉ ~14 FPS (66,9 ms/frame) → trần "mượt
 - Ngưỡng 0,6 là **số khởi điểm**, chưa hiệu chỉnh trên clip vật thật (ticket 11 còn 1 criteria).
 - Chi tiết + số đo đầy đủ: `docs/research/06` và `docs/task/27-10-2026-*`.
 
+### Vật rời khung thì bbox "co rác" của mép — EMA kích thước (04-11)
+
+Lỗi thật (`demoip_1104-212328.mp4`, 62 frame): vật (người) chui xuống rồi ra khỏi khung ở f31,
+về lại f38 — **không bao giờ tự nhận lại**, phải bấm `r`. Phỏng lại bằng chính video đó:
+
+| Thử | Kết quả |
+|---|---|
+| bbox CUỐI trước khi mất (f30) | **71×10 px** chạm mép khung — trong khi vật thật ~220×204 |
+| bán kính vùng tìm theo size đó | **53–248 px** (chỉ vượt 300 px sau 12 frame) |
+| ô đúng trong video, cách chỗ mất | **~300 px** ⇒ luôn RA NGOÀI vùng tìm |
+
+Ba sửa trong `src/reid.py` (mặc định BẬT, không đổi key config):
+1. `_size_ema` — kích thước vật trung bình trượt (α=0,2, đo: giữ 250×233 đúng, không bị bbox rác kéo đi).
+2. bbox **chạm mép khung không được cập nhật EMA** (chạm mép = dấu hiệu "SAM 2 co mask rác").
+3. `_filter_by_radius` + `_match_object` dùng EMA thay `_last_obj_size` (dựng lưới kích thước cũng dùng EMA).
+
+Verify headless trên chính video đó (60 frame): mất dấu **0/60**, không còn "bám nhầm rồi đổi vật" gây tự reset;
+4 test trong `tests/test_reid.py` khoá hành vi EMA.
+
 ### Hiệu chỉnh ngưỡng nhận lại trên clip có nhãn (retro 01-11)
 
 Thay vì chỉnh tay bằng cảm nhận (đã đổi **6 lần trong 3 ngày**), đo trên CSV đã ghi —
@@ -464,12 +524,44 @@ nhất **0,415**, và **6/17** ca có `ncc < 0,70` → cổng NCC 0,70 sẽ **ch
 ### Thí nghiệm che khuất một phần (bằng chứng cho tên đề tài)
 
 ```bash
-python scripts/experiment_occlusion.py --image-size 320   # → data/charts/occlusion_iou_320.png
+./run occl 30          # → data/charts/occlusion_iou_320.png (hoặc python scripts/experiment_occlusion.py)
 ```
 Đo IoU theo từng khung khi đối tượng bị che **50%** và **100%** (khung 12–17), rồi hiện lại:
 -che 50%: IoU 0,97 → **0,53** (không mất dấu) → **0,967 ngay khung đầu sau che**
 -che 100%: IoU 0,98 → 0,00 (mất dấu 6/6) → **0,984 ngay khung đầu sau che**, mất dấu 0/12
 Chi tiết: `docs/giai-thich-do-an.md` mục 13.
+
+### Thí nghiệm đổi ánh sáng (yêu cầu 11 của GVHD)
+
+```bash
+./run light 12         # → data/charts/lighting_iou_320.png + data/lighting_iou_320_summary.json
+```
+
+Làm tối khung hình theo hệ số `gain` (1,0 = gốc → 0,1 = gần như tối) rồi đo **IoU** với đáp án,
+`image_size 320`, 12 khung, engine SAMURAI thật (02-11-2026):
+
+| gain | 1,00 | 0,60 | 0,35 | 0,20 | 0,10 |
+|---|---|---|---|---|---|
+| IoU trung bình | **0,974** | 0,974 | 0,969 | 0,964 | **0,942** |
+| IoU thấp nhất | 0,952 | 0,967 | 0,952 | 0,937 | 0,921 |
+| khung mất dấu | 0/12 | 0/12 | 0/12 | 0/12 | 0/12 |
+
+→ Tối 90% ánh sáng chỉ mất **0,032 IoU**, không mất dấu: bộ nhớ + lan truyền của SAMURAI dựa vào
+đặc trưng nên khá bền với sáng yếu. **Trung thực:** fixture là ô vuông cam trên nền xám (tương phản cao)
+— cảnh thật còn nhiễu màu/đổi sáng cục bộ, phải quay clip thật mới kết luận được.
+
+### Mức sử dụng CPU / RAM / GPU (yêu cầu 10 của GVHD)
+
+`src/resource_usage.py` (02-11) lấy mẫu mỗi frame; `MetricsLogger(sampler=...)` ghi vào
+`summary.json` mục `resources` — **không thêm dependency** (đọc `/proc`, thiếu thì trả `null`):
+
+| Chạy trên | CPU | RAM | GPU |
+|---|---|---|---|
+| i7-1195G7, `binh1.mp4` 6 frame, `image_size 320` | **342 % của 1 lõi ≈ 43 % máy 8 lõi** (đỉnh 390 %) | **620,7 MB** TB / **632,3 MB** đỉnh | không có → `"gpu": null` |
+
+Nguồn: `data/res_1102_summary.json`. Đọc lại bảng mọi lần chạy: `./run summary`.
+**Giới hạn đã biết:** `%` tính theo **1 lõi** như `psutil`/`top` (nên 342 % là bình thường, không phải lỗi);
+PyTorch **không có API đọc % nhân GPU** → trên máy có GPU, trường `gpu_util_percent` vẫn `null`.
 
 ### Biểu đồ cho báo cáo (từ CSV của MetricsLogger)
 
@@ -533,4 +625,5 @@ Muốn 15–25 FPS thật → chạy headless trên **Colab GPU** (mục 3).
 - **SAMURAI**: https://github.com/yangchris11/samurai (motion-aware memory + Kalman)
 - **SAM 2**: https://github.com/facebookresearch/sam2 (streaming memory propagation)
 - ADR: `docs/adr/0001` (chọn backbone SAM 2.1 + tự tối ưu), `docs/adr/0002`
-  (demo live CPU trung thực, job nặng qua Colab GPU).
+  (demo live CPU trung thực, job nặng qua Colab GPU), `docs/adr/0003` (tái nhận diện khuôn mặt),
+  `docs/adr/0004` (mở rộng tái nhận diện sang vật thể + 3 cổng chống bám nhầm).

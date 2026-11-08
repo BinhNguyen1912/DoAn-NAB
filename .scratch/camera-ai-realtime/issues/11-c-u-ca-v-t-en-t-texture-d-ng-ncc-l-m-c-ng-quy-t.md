@@ -12,11 +12,18 @@ Không làm: đổi backbone, thêm model.
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** ready-for-human
+
+> **Ghi chú 02-11-2026:** 5/6 tiêu chí xong. Tiêu chí còn lại cần **clip THẬT có chai đen** —
+> chỉ người dùng quay được, agent không tự tạo. Số hiện có (`data/reid_2clip_calib.json`,
+> 17 ca đúng + 1 ca sai): cosine **không tách được** (sai 0,899 > đúng 0,770), NCC tách được
+> (sai ≤ 0,279 < đúng ≥ 0,415) → tạm đặt `reid_obj_ncc_min = 0.35`. Đó là số của clip **ly**,
+> chưa phải chai đen → giữ mở đến khi có clip chai đen.
 
 - [x] `prefilter_candidates` trả kèm điểm NCC (tham số tuỳ chọn, không đổi hành vi mặc định)
 - [x] `ReIdSession._match_object` dùng NCC như cổng/trọng số phụ khi vật ít texture-màu (đo: cùng vật NCC=1,000 vs vật đen khác NCC=0,897)
 - [ ] Ngưỡng `reid_obj_ncc_min` hiệu chuẩn trên clip THẬT có chai đen (không dùng số synthetic)
+      → tạm có 0,35 từ 2 clip thật (ly); **chờ clip chai đen** để chốt
 - [x] Ghi `ncc` vào CSV metrics để hiệu chuẩn (thêm cột, không phá cột cũ)
 - [x] Test: vật đen đặc khác hình dạng phải bị loại (cosine hiện tại cho 1,000 nên phải nhờ NCC)
 - [x] `pytest -m "not slow"` + `ruff check .` xanh; ghi số đo vào log

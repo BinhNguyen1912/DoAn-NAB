@@ -25,9 +25,10 @@ tổng **2 424 dòng code** và **131 test tự động**.
 | 8 | **Fixture giả lập** (test không cần dữ liệu nặng) | — | **Tự viết**: sinh chuỗi frame ô vuông di chuyển + **chế độ che khuất** + bbox đáp án | `src/synthetic_video.py` (73), `tests/test_synthetic_video.py` (5), commit `f11233e` |
 | 9 | **Tool phụ trợ** | — | **Tự viết**: `check_video_source.py` (kiểm nguồn nhanh), `find_phone_camera.py` (quét LAN tìm camera điện thoại, sửa nhận diện subnet WSL), `scripts/demo_webcam.sh` | `tools/` (409 dòng), `tests/test_find_phone_camera.py` (3) |
 | 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: 131 test, `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
-| 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001/0002, spec, 8 ticket + tracker, **12 file log theo ngày**, README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
+| 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001→0004, spec, **13 ticket** + tracker, **28 file log theo ngày**, README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | 12 | **Số liệu đánh giá** | đo trên máy thật | **Tự đo & phân tích**: latency/FPS CPU, độ trễ tăng theo memory, đánh đổi `image_size` (1024/768/512/384/256), `reanchor`, độ phân giải camera, thread; phát hiện SAM 2 luôn trả mask với vùng nền | Bảng trong `README.md` mục "Đánh giá hiệu năng"/"Tối ưu tốc độ", `docs/task/18-10-2026-*.md`, `data/*_summary.json` |
 | 13 | **`ReIdSession` — tái nhận diện khuôn mặt** (mất dấu → đóng băng → tự bám lại đúng người) | YuNet + SFace của OpenCV Zoo (model có sẵn) | **Tự viết toàn bộ cơ chế**: máy trạng thái `tracking/lost/reacquiring`, **chặn bám sang người khác** bằng cách ngừng `engine.process`, **tập embedding tham chiếu** (chỉ lấy mặt nằm trong ô đang bám + cổng chất lượng), **max cosine**, ngưỡng hiệu chỉnh bằng số đo thật, cột metrics `state/reid_score/reacquired` | `src/reid.py`, `tests/test_reid.py` (16 test), `docs/adr/0003`, `configs/default.yaml` |
+| 14 | **Tái nhận diện VẬT THỂ** (vật không có mặt: remote, ly, chén, bút) — ticket 10/11/13 | — (đặc trưng thủ công, **không dùng model nào**) | **Tự viết**: đặc trưng `covariance 5×5 [x,y,B,G,R]` + `HSV hist 8×8` ghép L2 (bù trừ: 0,061 vs 0,382), **cascade tìm lại** (NCC thu nhỏ 4× → top-20 → descriptor: 845 ms → 23,8 ms), **3 cổng chống kẹt** (score âm = mất dấu, xác nhận 2 frame, kiểm chứng 2 frame), **tách vai cổng cosine/NCC**, `scripts/calibrate_reid.py` đo ngưỡng từ CSV có nhãn | `src/appearance.py`, `src/reid.py`, `tests/test_appearance.py` (25), `tests/test_calibrate_reid.py` (9), `docs/adr/0004`, `data/reid_2clip_calib.json` |
 
 ## 3. Thành phần **không** tự viết (và vì sao hợp lệ)
 
@@ -67,7 +68,7 @@ python -m pytest                 # 131 test (gồm test model thật, cần chec
 ruff check .                      # lint sạch
 docs/task/16-10-2026-*.md         # 8 log phiên implement ticket 01–08
 docs/task/18-10-2026-*.md         # log kiểm thủ công + các bug tìm được & cách sửa
-docs/adr/0001, 0002               # quyết định kỹ thuật (backbone, CPU/Colab)
+docs/adr/0001, 0002, 0003, 0004   # quyết định kỹ thuật (backbone, CPU/Colab, re-ID mặt, re-ID vật)
 ```
 
 ## 6. Nếu được hỏi "vậy em đóng góp gì?"

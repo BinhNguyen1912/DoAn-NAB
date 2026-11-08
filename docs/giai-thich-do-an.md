@@ -306,7 +306,7 @@ python scripts/plot_metrics.py data/smooth_metrics.csv --out data/charts
 | Muốn xem | Mở file |
 |---|---|
 | Đóng góp cá nhân vs phần có sẵn | `docs/team-contribution.md` |
-| Quyết định kỹ thuật & lý do | `docs/adr/0001`, `docs/adr/0002` |
+| Quyết định kỹ thuật & lý do | `docs/adr/0001`, `docs/adr/0002`, `docs/adr/0003`, `docs/adr/0004` |
 | Cách chạy Colab | `docs/colab-gpu.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | Cài đặt từ máy mới | `README.md` mục 1 |
 | Nhật ký từng phiên làm việc | `docs/task/*.md` |

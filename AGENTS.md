@@ -89,7 +89,9 @@ DOAN-NAB/
 
 ## 5. Quy trình làm việc của agent trong mỗi phiên
 
-1. Đọc yêu cầu từ người dùng + xem lại `docs/task/` gần nhất để nắm tiến độ.
+1. Đọc yêu cầu từ người dùng + xem lại `docs/task/` gần nhất để nắm tiến độ. **Với việc liên quan
+   hiệu năng / webcam / re-ID: đọc thêm AGENTS.md mục 6 trước khi sửa** (đó là các kết luận đã đo,
+   tránh làm lại việc đã bị bác bỏ).
 2. Thực hiện code/thay đổi.
 3. Chạy kiểm tra trước khi kết thúc bằng **lệnh tắt của repo** (`run` tự chọn đúng môi trường Python):
    - **Lint:** `./run lint` — CI chạy đúng lệnh `ruff check .`; phải xanh.
@@ -101,7 +103,36 @@ DOAN-NAB/
 
 ---
 
-## 6. Các repo/model tham khảo
+## 6. Kinh nghiệm đã đo — đọc trước khi sửa (để không mò lại từ đầu)
+
+Mỗi dòng là một kết luận **đã đo trên máy này**. Đọc mục này trước khi (a) đề xuất tối ưu/đổi
+model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
+
+- **Đo trước, hứa sau.** Đề xuất tối ưu/đổi model phải kèm số đo trên chính máy này *trước* khi
+  đưa ra phương án nhiều ngày. Ngày 05-11 hai đề xuất đã bị số đo bác bỏ: ONNX INT8 cho encoder
+  chậm hơn PyTorch ở `image_size 320` (196 vs 166 ms), và `--reanchor-every` bị pipeline tự tắt
+  khi bật re-ID. Bảng số: `docs/task/05-11-2026-tang-toc-256-toi-uu-hud-va-nguon-snapshot.md`.
+- **Máy này không có GPU rời** (chỉ Iris Xe; `torch` bản CPU; OpenVINO chỉ thấy device `CPU`).
+  Trần pipeline SAM 2.1 tiny @256 là **~175 ms/frame (5,7 FPS)** và model chiếm 168/175 ms ⇒ tối ưu
+  code quanh đó chỉ còn ~20 ms. Số GPU (Colab T4 49,6 ms = 20,15 FPS):
+  `docs/task/22-10-2026-colab-gpu-so-lieu-va-fix.md`.
+- **Demo trên CPU dùng `image_size 256`** (155 ms ⇒ ~6,5 FPS); 320 chỉ khi cần chi tiết vật nhỏ.
+  Bảng đo: `docs/research/03-kha-nang-real-time-tren-laptop-cpu-igpu.md`.
+- **Đo nguồn live ở đúng nhịp tiêu thụ.** Benchmark đọc liên tục từ webcam/relay cho số sai:
+  30 ms "decode" MJPEG thực chất là *chờ* relay phát 20 fps; trong pipeline chỉ chênh ~5 ms.
+- **Webcam WSL: `Device busy (exported)` là cờ kẹt ở DRIVER usbipd-win**, không phải WSL.
+  `wsl --shutdown`, reboot, unbind/bind, restart service đều đã thử và không khỏi ⇒ đi đường relay:
+  `./run relay` rồi `./run demoip` (pipeline đọc `/snapshot.jpg`). Chi tiết:
+  `docs/task/04-11-2026-cuu-webcam-relay-http.md` +
+  `docs/task/05-11-2026-webcam-usbipd-ket-o-driver-khong-phai-wsl.md`.
+- **Re-ID: vật chạm mép khung vẫn phải học được mẫu** (case "vật ra/vào khung" của đề cương).
+  `_collect_reference()` cắt dải mép (`clip_mask_border`, 4 px) rồi nhận mẫu khi phần thấy ≥
+  `EDGE_MIN_AREA_FRAC` (0,35) diện tích EMA; dải rác sát mép vẫn bị chặn. `HINT_CHAM_MEP` chỉ in
+  khi **không lưu được mẫu nào**. Chi tiết:
+  `docs/task/05-11-2026-tang-toc-256-toi-uu-hud-va-nguon-snapshot.md` (mục "Bổ sung 14:00").
+- **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
+
+## 7. Các repo/model tham khảo
 
 - SAM 2: https://github.com/facebookresearch/sam2
 - SAMURAI: https://github.com/yangchris11/samurai
@@ -111,7 +142,7 @@ Cài đặt/cơ chế hydra `model_cfg` của SAMURAI trong repo này: `docs/sam
 
 ---
 
-## 7. Agent skills
+## 8. Agent skills
 
 ### Issue tracker
 

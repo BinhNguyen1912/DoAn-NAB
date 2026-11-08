@@ -12,6 +12,13 @@ Cơ chế: máy trạng thái TRACKING → LOST (ngừng gọi engine.process) �
 
 **Status:** claimed
 
+> **Ghi chú 02-11-2026 (quét lại source):** 9/10 tiêu chí đã xong và đang chạy thật
+> (`reid_cue: face` là mặc định trong `configs/default.yaml`). Tiêu chí còn lại — **đo trên video
+> 2 người** — chưa có dữ liệu: các lần đo đến nay là **cue=object** trên clip vật (17 ca đúng/
+> 1 ca sai, `data/reid_2clip_calib.json`) và số cosine mặt trên webcam 1 người (ADR-0003).
+> Cần: 1 clip 2 người (A rời khung → B vào → A quay lại) rồi chạy
+> `./run fast --reid --reid-cue face` để đếm nhận-lại-đúng / nhận-nhầm. Chưa làm được vì thiếu clip.
+
 - [x] `src/reid.py`: hàm thuần tách được khỏi OpenCV để test — `embed_faces(frame)` (detect+align+feature) và `best_match(ref_embs, emb)` trả cosine lớn nhất; ngưỡng/cổng chất lượng là tham số
 - [x] Máy trạng thái TRACKING→LOST→REACQUIRING trong `live_pipeline.py`: khi LOST KHÔNG gọi `engine.process()` nữa (test mock khẳng định không có lệnh process sau khi mất dấu)
 - [x] Khớp ngưỡng → gọi `engine.start(frame, bbox_mặt)` và quay lại TRACKING (test mock)
@@ -20,4 +27,5 @@ Cơ chế: máy trạng thái TRACKING → LOST (ngừng gọi engine.process) �
 - [x] `Visualizer` hiện trạng thái đang tìm lại + điểm khớp (smoke test, ảnh đúng kích thước)
 - [x] `src/config.py` + `configs/default.yaml`: `reid_enabled`, `reid_detector_model`, `reid_recognizer_model`, `reid_threshold`, `lost_after_frames`, `reid_min_face_px`, `reid_min_detect_score`, `reid_ref_max` (test config)
 - [ ] Đo trên video 2 người: tỉ lệ nhận lại đúng / nhận nhầm, ngưỡng đã chọn, ghi số vào docs/task
+      → **cần người quay clip** (xem ghi chú đầu file), không phải việc code
 - [x] `ruff check .` + `pytest -m "not slow"` + full `pytest` đều xanh

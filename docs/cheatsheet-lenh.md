@@ -87,11 +87,15 @@ Mặc định demo dùng cue **mặt**. Với vật thì phải nói rõ cue:
 | `./run phone` | Quét LAN tìm URL camera điện thoại |
 | `./run cam` | Xem trạng thái webcam + **BUSID hiện tại** (BUSID đổi sau mỗi lần khởi động lại!) |
 | `./run cam attach` | **Tự dò BUSID rồi gắn webcam vào WSL** (không cần Admin) |
-| `./run test` | Test nhanh (~10 giây, 140+ test) |
-| `./run testall` | Toàn bộ test (~2 phút, cần checkpoint) |
+| `./run relay` | **Webcam qua HTTP relay** khi usbipd kẹt `Device busy (exported)` → in URL MJPEG (`/snapshot.jpg` cho pipeline) |
+| `./run demoip` | Demo bám **VẬT** bằng webcam qua relay (tự bật relay, tự ghi mp4+metrics) |
+| `./run test` | Test nhanh (~21 giây, 336 test) |
+| `./run testall` | Toàn bộ test (~2,5 phút, 341 test — cần checkpoint) |
 | `./run lint` | `ruff check .` |
 | `./run charts [csv…]` | Vẽ biểu đồ báo cáo (mặc định `data/smooth_metrics.csv`) |
-| `./run summary` | In tóm tắt mọi file `*_summary.json` |
+| `./run light [khung]` | **Thí nghiệm đổi ánh sáng** (yêu cầu 11): IoU theo mức sáng → `data/charts/lighting_iou_320.png` |
+| `./run occl [khung]` | **Thí nghiệm bị che khuất**: IoU theo khung → `data/charts/occlusion_iou_320.png` |
+| `./run summary` | In tóm tắt mọi file `*_summary.json` (kèm CPU/RAM/GPU của phiên đo) |
 | `./run gpu` | In link Colab + cách đo GPU |
 | `./run env` | In trạng thái: python, torch, opencv, webcam, GUI |
 | `./run help` | Bảng lệnh |
@@ -302,13 +306,13 @@ ls /dev/video0                     # phải thấy mới dùng được webcam t
 | `python: command not found` | chưa bật môi trường | `source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai` |
 | `ModuleNotFoundError: No module named 'sam2'` | chưa cài sam2 | `pip install -e samurai/sam2` |
 | `ModuleNotFoundError: No module named 'loguru'` | thiếu phụ thuộc SAMURAI | `pip install loguru` |
-| `Không mở được camera index 0` | WSL chưa thấy webcam / Windows đang giữ | Windows: `usbipd attach --wsl --busid 1-8`; đóng Teams/Camera app |
+| `Không mở được camera index 0` | WSL chưa thấy webcam / Windows đang giữ | Windows: `usbipd attach --wsl --busid <BUSID>`; đóng Teams/Camera app |
 | Cửa sổ không hiện / process abort | thiếu 2 thư viện Qt | `sudo apt install -y libice6 libsm6` |
 | HUD hiện ô `?` thay vì dấu tiếng Việt | không tìm được font | `export CAMAI_FONT_PATH=/usr/share/fonts/truetype/dejavu/DejaVuSans.ttf` |
 | Lệnh dài bị `expected one argument` | copy-paste làm vỡ dòng | dùng `./run demo` thay vì gõ tay |
-| `RuntimeError: Không mở được camera index 0` | webcam chưa `attach` vào WSL (thường sau khi khởi động lại) | (Windows, Admin) `usbipd attach --wsl --busid 1-8` → `./run check 0` |
+| `RuntimeError: Không mở được camera index 0` | webcam chưa `attach` vào WSL (thường sau khi khởi động lại) | (Windows, Admin) `usbipd attach --wsl --busid <BUSID>` → `./run check 0`; kẹt `Device busy` thì `./run relay` |
 | Demo không có webcam mà vẫn muốn thử | — | `./run video` (chạy trên video file) |
 | Ô bao **nhảy sang người/vật khác** (banner `NGHI NGO DOI TUONG`) | bộ nhớ bám sang vật thể giống nhất khi đối tượng gốc bị che — giới hạn của tracking, không phải lỗi | bấm **`r`** chọn lại; đừng bật `--reanchor-every` khi demo 2 người |
-| `usbipd: error: Failed to attach ... Device busy (exported)` (lặp lại dù đã `--force`) | Cổng USB/IP trong kernel Linux kẹt ở trạng thái lỗi. Kiểm: `cat /sys/devices/platform/vhci_hcd.0/status` → các port `sta 004` | Reset hẳn WSL: (PowerShell) `wsl --shutdown` → mở Ubuntu → `usbipd attach --wsl --busid 1-8` |
-| Muốn tránh lỗi trên lần sau | Tắt WSL khi camera còn attach sẽ để lại trạng thái kẹt | Trước khi tắt máy/`wsl --shutdown`: (PowerShell) `usbipd detach --busid 1-8` |
+| `usbipd: error: Failed to attach ... Device busy (exported)` (lặp lại dù đã `--force`) | Cờ **exported kẹt ở driver usbipd-win**, không phải WSL: đo 05-11 thì `cat /sys/devices/platform/vhci_hcd.0/status` → mọi port `sta 004` (trống) và `usbipd state` không export thiết bị nào, vẫn lỗi | Đừng reset WSL/reboot (đã thử 04-11: không khỏi). Dùng `./run relay` → `./run demoip` |
+| Muốn tránh lỗi trên lần sau | Tắt WSL khi camera còn attach sẽ để lại trạng thái kẹt | Trước khi tắt máy/`wsl --shutdown`: (PowerShell) `usbipd detach --busid <BUSID>` |
 | Mất số liệu khi tắt máy | tắt WSL đột ngột | bấm `q` trong cửa sổ trước khi `wsl --shutdown` |
