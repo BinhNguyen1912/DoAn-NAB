@@ -114,3 +114,44 @@ export async function health(): Promise<boolean> {
     return false
   }
 }
+
+
+// --------------------------------------------------------------------------- live
+
+export type LiveState = 'stopped' | 'running' | 'error'
+
+export interface LiveStatus {
+  state: LiveState
+  source: string
+  frames: number
+  measured_fps: number
+  message: string
+}
+
+/** Bắt đầu phát trực tiếp từ nguồn frame (webcam/RTSP/snapshot/video file). */
+export async function startLive(source: string): Promise<LiveStatus> {
+  const res = await fetch('/api/live/start', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ source }),
+  })
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/** Dừng phát và giải phóng nguồn (webcam). */
+export async function stopLive(): Promise<LiveStatus> {
+  const res = await fetch('/api/live/stop', { method: 'POST' })
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/** Trạng thái phiên live (số frame + FPS thực đo). */
+export async function getLiveStatus(): Promise<LiveStatus> {
+  const res = await fetch('/api/live/status')
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/** Luồng MJPEG — dùng trực tiếp trong <img src>. */
+export const LIVE_STREAM_URL = '/api/live/stream'

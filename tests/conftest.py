@@ -157,3 +157,70 @@ def service(fs_store, fake_runner, fake_probe, api_settings):
     from src.api.service import JobService
 
     return JobService(fs_store, fake_runner, fake_probe, api_settings)
+
+
+class FakeFrameSource:
+    """Hiện thực `FrameSource` trong bộ nhớ — không cần webcam, không cần OpenCV."""
+
+    def __init__(self, source, *, jpeg=b"\xff\xd8fake-frame", fail_on_start=False):
+        self.source = source
+        self._jpeg = jpeg
+        self._fail = fail_on_start
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        if self._fail:
+            raise OSError("nguồn đang bận (giả lập)")
+        self.started = True
+
+    def read_jpeg(self):
+        return self._jpeg if self.started else None
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+@pytest.fixture
+def make_frame_source():
+    """Nhà máy FrameSource giả; giữ danh sách nguồn đã tạo để test kiểm tra đã đóng chưa."""
+    created = []
+
+    def factory(source):
+        item = FakeFrameSource(source)
+        created.append(item)
+        return item
+
+    factory.created = created
+    return factory
+
+
+@pytest.fixture
+def live_service(make_frame_source):
+    from src.api.live import LiveStreamService
+
+    return LiveStreamService(make_frame_source, target_fps=50)
+
+
+@pytest.fixture
+def live_client(service, live_service, api_settings):
+    """TestClient có cả JobService giả và LiveStreamService giả."""
+    from fastapi.testclient import TestClient
+
+    from src.api.main import create_app
+
+    return TestClient(create_app(settings=api_settings, service=service, live=live_service))
+
+
+@pytest.fixture
+def failing_source():
+    """Nhà máy trả về nguồn LUÔN lỗi khi start — test nhánh lỗi mở nguồn."""
+
+    def factory(source="0"):
+        return FakeFrameSource(source, fail_on_start=True)
+
+    return factory

@@ -26,6 +26,14 @@ class JobState(str, Enum):
     ERROR = "error"
 
 
+class LiveState(str, Enum):
+    """Trạng thái của một phiên phát trực tiếp."""
+
+    STOPPED = "stopped"
+    RUNNING = "running"
+    ERROR = "error"
+
+
 # Trạng thái đang chiếm tài nguyên (không cho chọn lại/xoá)
 ACTIVE_STATES = frozenset({JobState.QUEUED, JobState.RUNNING})
 
@@ -56,6 +64,10 @@ class PayloadTooLarge(DomainError):
     """Video vượt quá giới hạn dung lượng."""
 
 
+class SourceUnavailable(DomainError):
+    """Không mở được nguồn frame live (webcam bận, RTSP sai địa chỉ, file không tồn tại)."""
+
+
 class RunnerStartFailed(DomainError):
     """Không khởi chạy được tiến trình pipeline."""
 
@@ -82,6 +94,17 @@ class JobStatus:
     progress: int = 0
     message: str = ""
     updated_at: float = 0.0
+
+
+@dataclass(frozen=True)
+class LiveStatus:
+    """Trạng thái quan sát được của phiên phát trực tiếp."""
+
+    state: LiveState
+    source: str = ""
+    frames: int = 0
+    measured_fps: float = 0.0
+    message: str = ""
 
 
 @dataclass(frozen=True)

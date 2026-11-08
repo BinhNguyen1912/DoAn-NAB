@@ -196,3 +196,21 @@ video {
   font-weight: 500;
   width: 55%;
 }
+
+.live-frame {
+  width: 100%;
+  border-radius: 8px;
+  border: 1px solid var(--line);
+  background: #000;
+  margin-top: 12px;
+  display: block;
+}
+
+input[type='text'] {
+  background: #10131a;
+  color: var(--text);
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  padding: 8px;
+  font-size: 0.95rem;
+}

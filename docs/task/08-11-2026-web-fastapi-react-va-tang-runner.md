@@ -241,3 +241,49 @@ KẾT LUẬN: PASS
 
 **Tổng kiểm chứng sau khi thêm web_export:** `./run lint` xanh · `./run test` → **487 passed**
 (38,52 s) · `./run webtest` → **16 passed** · `./run e2e` → **PASS**.
+
+---
+
+## 📡 PR #2 — Phase 4a: phát trực tiếp (MJPEG) trên kiến trúc ports & adapters
+
+**Mục tiêu:** có luồng camera trực tiếp trên web **trước khi** làm bám đối tượng live (4b), để
+đo được độ trễ/khung hình thật và tách rủi ro: sai nguồn/đường dẫn khác hoàn toàn sai tracker.
+
+**Đã thêm (đúng khuôn kiến trúc cũ, không sửa service/route cũ):**
+
+| Tầng | File | Nội dung |
+|---|---|---|
+| port | `src/api/ports.py` | `FrameSource` (start / read_jpeg / stop / label) — tách khỏi `VideoProbe` vì vòng đời khác |
+| miền | `src/api/domain.py` | `LiveState`, `LiveStatus`, lỗi miền `SourceUnavailable` (→ 400) |
+| service | `src/api/live.py` | `LiveStreamService`: thread đọc frame, **chỉ giữ frame mới nhất**, đo FPS thật, MJPEG generator có `idle_timeout` |
+| adapter | `src/api/adapters/opencv_source.py` | `OpenCvFrameSource` — **tái dùng** `src/video_source.open_video_source` (webcam/RTSP/snapshot/file), tự **lặp file** để demo không cần webcam |
+| API | `src/api/routes.py` | `POST /api/live/start|stop`, `GET /api/live/status|frame|stream` |
+| FE | `web/src/components/LivePanel.tsx` | bật/dừng, `<img>` MJPEG (đổi `key` mỗi phiên), poll trạng thái 1 s |
+| test | `tests/test_api_live.py` | 13 test: service (thread, lặp, lỗi, generator thoát), routes, và 1 test adapter OpenCV thật |
+
+**Quyết định thiết kế đáng ghi:** giữ **1 frame mới nhất** thay vì hàng đợi — với live, độ trễ thấp
+quan trọng hơn phát đủ frame; client chậm thì bỏ frame cũ. Ghi rõ trong docstring để lần sau không
+ai "tối ưu" thành queue rồi làm tăng latency.
+
+**Lỗi gặp phải & cách xử lý**
+
+| Lỗi | Nguyên nhân | Xử lý |
+|---|---|---|
+| E2E `live-status` timeout | script gửi `data\\e2e_web.mp4` (path Windows) xuống server **Linux** → không mở được file | nguồn live phải là path **phía server** (`data/e2e_web.mp4`); thêm hằng `LIVE_SOURCE` + in banner lỗi của UI khi fail |
+| deadlock tiềm ẩn | `_stop_locked()` gọi `self.status()` khi đang giữ `_lock` | bỏ gọi lồng; chỉ `stop()` công khai mới gọi `status()` sau khi nhả lock |
+| test OpenAPI đỏ | thêm 5 endpoint live | cập nhật danh sách endpoint trong `TestHopDongOpenApi` |
+
+**Kiểm chứng**
+
+```text
+./run lint     → All checks passed
+./run test     → 500 passed, 5 deselected (62,7 s)
+./run webtest  → 16 passed
+./run e2e      → PASS, gồm 3 bước live:
+   ✓ luồng MJPEG hiện được frame trong trình duyệt — {"w":160,"h":120}
+   ✓ FPS live đo được > 0 — "frame: 16 · FPS đo được: 14.9"
+   ✓ dừng phát sạch (state=stopped)
+```
+
+**Next:** Phase 4b — bám đối tượng trên live (VOS ~10 FPS + LK 30 FPS theo `docs/research/09`),
+chọn bbox ngay trên luồng live, xuất quỹ đạo thời gian thực lên client.

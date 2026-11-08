@@ -10,13 +10,15 @@ Lưu ý  : lỗi miền (JobNotFound, JobConflict, ...) do `main.register_error_
 """
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse, Response, StreamingResponse
 
 from src.api.domain import JobView
 from src.api.schemas import (
     JobCreateResponse,
     JobListItem,
     JobStatusResponse,
+    LiveStartRequest,
+    LiveStatusResponse,
     ReidCue,
     SelectRequest,
     TrackParams,
@@ -50,8 +52,8 @@ def _to_list_item(view: JobView) -> JobListItem:
     )
 
 
-def build_router(service: JobService) -> APIRouter:
-    """Dựng router với service được tiêm vào (composition root gọi hàm này)."""
+def build_router(service: JobService, live) -> APIRouter:
+    """Dựng router với service + live service được tiêm vào (composition root gọi hàm này)."""
     router = APIRouter()
 
     @router.get("/health")
@@ -124,5 +126,49 @@ def build_router(service: JobService) -> APIRouter:
         """Xoá job (từ chối khi pipeline đang chạy)."""
         service.delete(job_id)
         return Response(status_code=204)
+
+    # ------------------------------------------------------------------ live (Phase 4a)
+    def _live_status(status) -> LiveStatusResponse:
+        return LiveStatusResponse(
+            state=status.state.value,
+            source=status.source,
+            frames=status.frames,
+            measured_fps=status.measured_fps,
+            message=status.message,
+        )
+
+    @router.post("/api/live/start", response_model=LiveStatusResponse)
+    def start_live(payload: LiveStartRequest) -> LiveStatusResponse:
+        """Mở nguồn frame và bắt đầu phát (nguồn lỗi → 400 qua lỗi miền SourceUnavailable)."""
+        return _live_status(live.start(payload.source))
+
+    @router.post("/api/live/stop", response_model=LiveStatusResponse)
+    def stop_live() -> LiveStatusResponse:
+        """Dừng phát và đóng nguồn (giải phóng webcam)."""
+        return _live_status(live.stop())
+
+    @router.get("/api/live/status", response_model=LiveStatusResponse)
+    def live_status() -> LiveStatusResponse:
+        """Trạng thái + số frame + FPS thực đo của phiên live."""
+        return _live_status(live.status())
+
+    @router.get("/api/live/frame")
+    def live_frame() -> Response:
+        """Một frame JPEG mới nhất (dùng để chụp ảnh/chọn đối tượng trên live)."""
+        data = live.latest_jpeg()
+        if data is None:
+            raise HTTPException(status_code=404, detail="Chưa có frame nào — hãy bật phát trước")
+        return Response(content=data, media_type="image/jpeg")
+
+    @router.get("/api/live/stream")
+    def live_stream() -> StreamingResponse:
+        """Luồng MJPEG (multipart/x-mixed-replace) — hiện trực tiếp bằng <img src>."""
+        if live.status().state.value != "running":
+            raise HTTPException(status_code=409, detail="Chưa có phiên live nào đang chạy")
+        return StreamingResponse(
+            live.frames(),
+            media_type="multipart/x-mixed-replace; boundary=frame",
+            headers={"Cache-Control": "no-store"},
+        )
 
     return router
