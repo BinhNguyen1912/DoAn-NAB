@@ -27,7 +27,9 @@
    1. `proc.poll()` — đã thoát thì phân biệt `stopped` (kết thúc bình thường: hết video,
       `stop_after_frames`) với lỗi, kèm **mã thoát** + đường dẫn `worker.log`;
    2. `status.json == error` — giữ nguyên message worker tự viết (model lỗi, nguồn đọc lỗi);
-   3. **tuổi `frame.jpg` > 2 s** — còn tiến trình mà frame đứng ⇒ treo (deadlock model).
+   3. **tuổi `frame.jpg` quá `max(15 s, 4 × vos_ms)`** — còn tiến trình mà frame đứng ⇒ treo
+      (deadlock model). Ngưỡng phải rộng: nhịp ghi frame hợp lệ có thể ~4 s/frame (xem P1-1 ở mục
+      Review); ca `kill -9` không dùng ngưỡng này mà bắt bằng `proc.poll()`.
 3. **Service** kiểm mỗi **0,2 s** (không phải mỗi frame), lỗi đọc tín hiệu **không** tính là chết (chỉ
    log warning). Phát hiện chết ⇒ `error`/`stopped` + message, thread đọc thoát ⇒ `frames()` đóng luồng,
    và **đóng nguồn ngay** để worker treo không giữ webcam (nếu không, lần "Bật phát" sau sẽ không mở
@@ -51,19 +53,21 @@
 ## 📤 Output / Kết quả
 
 ### Số đo thật (worker thật, `kill -9` giữa phiên, 3 lần)
-`data/watchdog_2026-11-09_metrics.json` — `git_rev = ab46ef8`, `git_dirty = false`,
+`data/watchdog_2026-11-09_metrics.json` — `git_rev = 6e3ea04`, `git_dirty = false`
+(đo lại SAU khi sửa P1 của review, để `git_rev` đúng là commit chứa code),
 lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `image_size 192`,
 `vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
 
 | Lần | nạp phiên | state sau kill | **báo `error`** | **đóng luồng MJPEG** | message |
 |---|---|---|---|---|---|
-| 1 | 5,2 s | `error` | **98,2 ms** | 96,9 ms | worker đã dừng (mã -9) — xem worker.log |
-| 2 | 5,0 s | `error` | **117,7 ms** | 105,7 ms | worker đã dừng (mã -9) — xem worker.log |
-| 3 | 5,2 s | `error` | **117,1 ms** | 100,1 ms | worker đã dừng (mã -9) — xem worker.log |
+| 1 | 4,7 s | `error` | **95,7 ms** | 94,7 ms | worker đã dừng (mã -9) — xem worker.log |
+| 2 | 3,1 s | `error` | **111,3 ms** | 109,8 ms | worker đã dừng (mã -9) — xem worker.log |
+| 3 | 3,6 s | `error` | **114,2 ms** | 104,8 ms | worker đã dừng (mã -9) — xem worker.log |
 
-**Ngưỡng đăng ký trước ≤ 2 000 ms: ĐẠT** (chậm nhất 117,7 ms, 0/3 lần vượt), 3/3 lần luồng đóng
-(0/3 lần treo). Đây là phép đo **ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản
-98–118 ms là độ trễ kiểm tra 0,2 s + nhịp poll 0,02 s.
+**Ngưỡng đăng ký trước: ĐẠT** — cả hai mốc plan ghi (mục nghiệm thu **≤ 5 s**, dòng ticket
+**≤ 2 s**): chậm nhất 114,2 ms, 0/3 lần vượt 2 s; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
+**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 96–114 ms là độ trễ kiểm tra 0,2 s
+cộng nhịp poll 0,02 s.
 
 ### H.264 (CLI, chạy thật)
 `python tools/run_live.py --source data/binh1.mp4 --bbox 104,308,209,287 --max-frames 40
@@ -80,7 +84,9 @@ lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `im
 - `./run test` (làn nhanh) → **xanh**, chạy **2 lần liên tiếp** để soi test chập chờn
 - `./run webtest` → 24 test xanh; `npm run build` → xong
 - `./run e2e` (Chrome/Edge thật) → **PASS 23/23**, gồm `trình duyệt GIẢI MÃ được video kết quả (H.264)`
-  và `luồng MJPEG hiện được frame trong trình duyệt`
+  và `luồng MJPEG hiện được frame trong trình duyệt`. **Phạm vi:** e2e phủ bản H.264 của **đường API
+  job** (`out_web.mp4`); bản `_web.mp4` của **CLI** phủ bằng test thật `test_that_su_ra_h264…`
+  (tag codec) + kiểm tay `ffmpeg -i` ở bảng trên.
 
 ### File thay đổi
 - `src/api/domain.py` — `SourceHealth`
@@ -95,6 +101,41 @@ lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `im
 - `scripts/measure_watchdog.py` — **mới**, đo phản ứng API khi `kill -9` worker
 - `data/watchdog_2026-11-09_metrics.json` — **mới**, artifact số đo
 - `README.md` (mục codec), `AGENTS.md` §6 (quy tắc: heartbeat là `frame.jpg`, không phải `status.json`)
+
+## 🔍 Review độc lập (AGENTS §9.1)
+- **Ai:** agent `reviewer` (phiên riêng, chỉ đọc), phạm vi `git diff origin/main..HEAD`.
+- **Kết quả vòng 1:** 0 **P0**, **2 P1**, 3 P2, 6 P3. Không có P0 ⇒ không chặn merge; cả 2 P1 đều
+  sửa được trong < 30 phút nên sửa ngay trong PR này.
+  - **P1-1 (nặng, đúng):** ngưỡng treo **2 s** giả định worker ghi ≥ 0,5 frame/s — sai với cấu hình
+    hợp lệ: `image_size 1024` ≈ 4 s/frame, `vos_every=1` (tắt LK) ⇒ nhịp ghi = nhịp model, và
+    `engine.start()` chạy **inline** trước frame đầu ⇒ watchdog sẽ **giết phiên khoẻ**. Sửa: ngưỡng
+    `max(15 s, 4 × vos_ms)`; ca `kill -9` vẫn ≤ 2 s vì bắt bằng `proc.poll()`, không dùng ngưỡng này
+    (số đo lại ở trên không đổi: 96–114 ms). Thêm 3 test canh false-positive.
+  - **P1-2 (nặng, đúng):** `_finish_recording` (ffmpeg chạy **im lặng**, timeout 300 s) được gọi
+    **trước** `_finish_metrics`; Ctrl+C lần hai lúc chờ ffmpeg (`KeyboardInterrupt ⊄ Exception`) ⇒
+    **mất CSV/summary** — tái phạm bảo đảm "Ctrl+C không mất metrics" (18-10). Sửa: `_finish_outputs`
+    (số liệu trước, video sau), bắt cả `KeyboardInterrupt`, in dòng báo trước khi gọi ffmpeg; có test
+    `test_ctrl_c_trong_khi_chuyen_ma_van_giu_metrics`.
+  - **P2 đã sửa:** (a) `stop()` phiên cũ xoá nhầm `worker.pid` của phiên mới (watchdog đóng nguồn
+    trong luồng nền) ⇒ chỉ xoá nếu pidfile vẫn là của mình + test; (b) message đổ mọi thất bại chuyển
+    mã thành "không có ffmpeg" ⇒ phân biệt bằng `find_ffmpeg()`, và chỉ chuyển mã khi `viz.recording`
+    (tránh chuyển mã **file cũ** rồi báo "phát được trên Chrome" — thành công giả) + 2 test;
+    (c) `_web_record_path` giữ đuôi nguồn (`demo.avi` → `demo_web.avi` = Chrome vẫn không phát) ⇒
+    luôn `.mp4` + test.
+  - **P3 đã sửa:** assert lỏng `"mã 1" in msg or "1" in msg` (luôn đúng); 3 test "không báo lỗi giả"
+    chỉ `sleep(0,2–0,3)` rồi assert ⇒ nay đếm số lần `health()` được gọi (`_wait`); test thứ tự
+    đóng-recorder nay đọc lại file bằng `cv2` để chứng minh moov đã ghi.
+  - **P3 → Next steps (không sửa trong PR này):** (i) mode `raw` dùng `OpenCvFrameSource` **không** có
+    `health()` ⇒ webcam chết giữa phiên raw vẫn báo `running` (cùng lớp lỗi, khác adapter — ticket
+    riêng); (ii) `/api/live/stream` trả 409 với cùng một câu cho cả `error` và "chưa bật";
+    (iii) worker nên `_publish_status` **trước** `_stop_worker()` khi kết thúc để cửa sổ "chưa kịp
+    ghi `stopped`" không bị đọc thành treo (hiện đã an toàn vì ngưỡng 15 s > join 5 s).
+- **Đã kiểm, không phải lỗi** (reviewer xác nhận): `_generation` chặn đúng thread cũ ghi đè phiên
+  mới; không deadlock dù `_check_health` gọi `source.stop()` ngoài lock; `kill` hai lần vô hại;
+  `waiting_selection` thật sự khoẻ (test dùng mtime `status.json` cũ 2 phút nên bản cài đặt dùng
+  `ts` sẽ đỏ); port/domain không phá ADR-0005; artifact `git_rev`/`git_dirty` nhất quán; số trong
+  docs khớp artifact.
+- **Nợ lại có chủ:** 3 P3 ở trên đã ghi vào Next steps (không im lặng bỏ qua).
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Định giết phiên khoẻ oan**: bản nháp định thêm `ts` vào `status.json` rồi lấy đó làm heartbeat
@@ -122,6 +163,12 @@ lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `im
 - [ ] Sơ đồ khối + bảng phần cứng cho báo cáo.
 - [ ] Muốn mask tươi hơn 0,2 s: đo **encoder nhẹ hơn / GPU** (nút thật, không phải `vos_every`).
 - [ ] **Người dùng**: quay 2 clip (vật bị che một phần; vật ra khỏi khung rồi vào lại).
+- [ ] (P3 review) `OpenCvFrameSource` cài `HealthReportingSource` — mode `raw` cũng phải báo lỗi khi
+      webcam chết giữa phiên.
+- [ ] (P3 review) `/api/live/stream` trả message theo `state` (409 hiện dùng chung một câu cho `error`
+      và "chưa bật").
+- [ ] (P3 review) Worker `_publish_status` **trước** `_stop_worker()` khi kết thúc phiên (hiện an toàn
+      nhờ ngưỡng 15 s > join 5 s, nhưng đúng thứ tự thì rõ nghĩa hơn).
 
 ## 📚 Tài liệu tham khảo
 - `docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md` — thứ tự việc + tiêu chí ≤ 2 s (viết trước).
