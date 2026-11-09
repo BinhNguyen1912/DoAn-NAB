@@ -19,7 +19,7 @@ from collections import deque
 from typing import Callable, Iterator
 
 from src.api.domain import LiveBusy, LiveState, LiveStatus, SourceUnavailable
-from src.api.ports import FrameSource, LiveTelemetrySource
+from src.api.ports import FrameSource, HealthReportingSource, LiveTelemetrySource
 
 logger = logging.getLogger("doan.api.live")
 
@@ -29,6 +29,10 @@ _TICK_S = 0.01          # nhịp chờ nhỏ khi nguồn chưa có frame / khi c
 LIVE_READ_FPS = 30
 
 _FPS_WINDOW_S = 2.0     # cửa sổ đo FPS thực
+# Nhịp KIỂM TRA SỨC SỐNG của nguồn. Không kiểm mỗi frame (30 lần/giây): mỗi lần kiểm là một lần
+# `proc.poll()` + đọc `status.json` + `stat(frame.jpg)`. 0,2 s đủ nhanh để UI báo lỗi trong ≤ 1 s
+# (mục tiêu của plan là ≤ 2 s) mà không đụng tới đường đọc frame nóng.
+_HEALTH_EVERY_S = 0.2
 _JPEG_BOUNDARY = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
 _MAX_OPEN_ERROR = "Không mở được {label}: {error}"
 
@@ -197,13 +201,22 @@ class LiveStreamService:
 
         `generation` là thế hệ phiên: thread của phiên cũ tự thoát và **không ghi** `_latest`,
         kể cả khi `stop()` đã join timeout và nó còn sống thêm một nhịp.
+
+        Watchdog: mỗi `_HEALTH_EVERY_S`, hỏi nguồn (nếu nó tự khai được sức sống) một câu. Nguồn
+        chết/treo ⇒ `Error`/`Stopped` + message, thread thoát ⇒ `frames()` đóng luồng MJPEG thay vì
+        treo client. KHÔNG xoá `_latest`: ảnh cuối vẫn còn cho `/api/live/frame` vài giây cuối.
         """
+        next_health = 0.0
         while not self._stop.is_set():
             started = time.perf_counter()
             with self._lock:
                 if generation != self._generation:
                     return
                 source = self._source
+            if source is not None and started >= next_health:
+                next_health = started + _HEALTH_EVERY_S
+                if self._check_health(source, generation):
+                    return
             data = source.read_jpeg() if source is not None else None
             if data is not None:
                 with self._lock:
@@ -223,6 +236,43 @@ class LiveStreamService:
             remaining = self._interval - (time.perf_counter() - started)
             if remaining > 0:
                 self._stop.wait(remaining)
+
+    def _check_health(self, source: FrameSource, generation: int) -> bool:
+        """Nguồn đã chết/treo/kết thúc? True = thread đọc phải dừng.
+
+        Lỗi trong lúc kiểm tra KHÔNG phải bằng chứng nguồn chết (đọc file có thể hỏng tạm thời):
+        ghi cảnh báo rồi đi tiếp. Nuốt im lặng thì không được — chính lỗi "chết trong adapter" đã
+        làm một trường số liệu ngừng chạy mà test vẫn xanh (review 08-11).
+        """
+        if not isinstance(source, HealthReportingSource):
+            return False
+        try:
+            health = source.health()
+        except Exception as exc:                       # noqa: BLE001 — không được làm sập thread
+            logger.warning("kiểm tra sức sống nguồn live thất bại: %s", exc)
+            return False
+        if health is None:
+            return False
+        with self._lock:
+            if generation != self._generation:
+                return True                            # phiên đã bị thay thế: chỉ cần thoát
+            if self._state is not LiveState.RUNNING:
+                return True
+            self._state = health.state
+            self._message = health.message or "nguồn đã dừng"
+            label = self._label
+        if health.state is LiveState.ERROR:
+            logger.error("nguồn live lỗi (%s): %s", label, health.message)
+        else:
+            logger.info("nguồn live kết thúc (%s): %s", label, health.message)
+        # Dọn nguồn ngay: worker TREO mà còn sống thì vẫn giữ webcam/GPU, và lần "Bật phát" sau sẽ
+        # không mở được nguồn. Gọi NGOÀI `_lock` (stop() có thể chờ SIGTERM tới 2 s); stop() lần
+        # hai từ request `stop()` là vô hại (adapter đã đặt `_proc = None`).
+        try:
+            source.stop()
+        except Exception:                          # noqa: BLE001 — dọn dẹp lỗi không được ném
+            logger.warning("đóng nguồn live sau khi phát hiện lỗi gặp lỗi", exc_info=True)
+        return True
 
     def _stop_locked(self) -> None:
         """Dừng thread + đóng nguồn. Caller phải giữ `_lock`.

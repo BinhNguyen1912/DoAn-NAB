@@ -12,7 +12,7 @@ Lưu ý  : KHÔNG import adapter cụ thể ở đây. Đổi filesystem → SQL
 from pathlib import Path
 from typing import Any, BinaryIO, Callable, Protocol, runtime_checkable
 
-from src.api.domain import Job, JobStatus, LiveTelemetry
+from src.api.domain import Job, JobStatus, LiveTelemetry, SourceHealth
 
 
 @runtime_checkable
@@ -116,3 +116,16 @@ class LiveTelemetrySource(Protocol):
 
     def telemetry(self) -> "LiveTelemetry":
         """Số liệu mới nhất của nguồn (rỗng/0 nếu worker chưa ghi)."""
+
+
+@runtime_checkable
+class HealthReportingSource(Protocol):
+    """Nguồn frame có khả năng TỰ KHAI mình đã chết/treo (hiện thực: WorkerFrameSource).
+
+    Tách thành port riêng như `LiveTelemetrySource`: webcam/file không có khái niệm "worker chết",
+    service kiểm `isinstance` để quyết định có gọi `health()` hay không. Xem AGENTS §6 — kiểu
+    "hỏng mà trông như đang chạy" là lỗi đắt nhất lúc demo.
+    """
+
+    def health(self) -> SourceHealth | None:
+        """None nếu nguồn còn khoẻ; SourceHealth kèm lý do nếu đã chết/treo/kết thúc."""

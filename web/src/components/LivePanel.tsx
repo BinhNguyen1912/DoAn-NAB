@@ -151,7 +151,10 @@ export function LivePanel(): JSX.Element {
       {error && <p className="error">Lỗi: {error}</p>}
 
       {status && (
-        <p className="hint" data-testid="live-status">
+        // `error`: worker chết/treo giữa phiên (watchdog ở backend) — dòng chữ này là thứ DUY NHẤT
+        // nói cho người vận hành biết ảnh đang đứng vì lỗi, không phải vì camera chậm.
+        <p className={status.state === 'error' ? 'error' : 'hint'} data-testid="live-status"
+           role={status.state === 'error' ? 'alert' : undefined}>
           Trạng thái: <strong>{status.state}</strong> · {status.message} · frame: {status.frames} · FPS
           đo được: {displayFps}
         </p>

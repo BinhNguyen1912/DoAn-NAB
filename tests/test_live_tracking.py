@@ -859,3 +859,38 @@ class TestDriftVaTuoiMask:
         else:
             assert status["age_n"] == 0 and status["mask_age_ms"] is None
             assert status["drift_n"] == 0 and status["drift_iou"] is None
+
+
+class TestDonWorkerCuPhaiChoChetThat:
+    """`_terminate_process` phải trả về khi tiến trình ĐÃ chết, không phải ngay sau `kill`.
+
+    Vì sao: lần chạy full suite 08-11 có test `test_reap_worker_cu_con_song` chập chờn — bản cũ
+    gửi SIGKILL rồi `return` ngay, dưới tải tiến trình còn sống thêm vài chục ms ⇒ test (và
+    `_reap_stale_worker`) thấy "vẫn sống" dù lệnh giết đã gửi. Test này khoá lại thứ tự đó bằng
+    một tiến trình **bỏ qua SIGTERM** (buộc phải đi nhánh SIGKILL).
+    """
+
+    def test_tien_trinh_bo_qua_sigterm_van_bi_don_xong_truoc_khi_tra_ve(
+            self, tmp_path, monkeypatch):
+        import subprocess
+        import sys
+
+        from src.api.adapters import worker_source
+
+        monkeypatch.setattr(worker_source, "TERM_WAIT_S", 0.2)   # giữ test nhanh
+        proc = subprocess.Popen(
+            [sys.executable, "-c",
+             "import signal, time; signal.signal(signal.SIGTERM, signal.SIG_IGN); time.sleep(60)"],
+            stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL, start_new_session=True,
+        )
+        try:
+            import time as _time
+
+            _time.sleep(0.3)                     # để tiến trình kịp đăng ký handler SIG_IGN
+            worker_source.WorkerFrameSource._terminate_process(proc.pid)
+
+            assert proc.poll() is not None, "trả về khi tiến trình còn sống — caller sẽ đọc dở"
+        finally:
+            if proc.poll() is None:
+                proc.kill()
+            proc.wait(timeout=5)
