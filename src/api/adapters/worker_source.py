@@ -27,9 +27,15 @@ logger = logging.getLogger("doan.api.worker_source")
 
 DEFAULT_LIVE_DIR = "/dev/shm/doan-live"
 LIVE_DIR_ENV = "DOAN_LIVE_DIR"
-# `frame.jpg` đứng quá lâu ⇒ worker treo (đang ghi 30 ảnh/giây khi khoẻ). 2 s = 60 frame lỡ:
-# đủ rộng để không báo oan khi máy nghẽn, đủ hẹp để sân khấu thấy lỗi ngay.
-FRAME_STALE_S = 2.0
+# `frame.jpg` đứng bao lâu thì coi là TREO (chỉ dùng cho ca "tiến trình còn sống nhưng đứng im"):
+# **15 s**, không phải 2 s. Vì sao: nhịp ghi frame HỢP LỆ có thể rất chậm — `engine.start()` chạy
+# inline trước frame tracking đầu tiên (`live_tracking.py:348`), `--vos-every 1` tắt nội suy LK nên
+# nhịp ghi = nhịp model, và `image_size 1024` ≈ 4 s/frame (README). Ngưỡng 2 s sẽ giết phiên KHOẺ.
+# Còn ca `kill -9` (ca cần ≤ 2 s) được bắt bằng `proc.poll()`, không phụ thuộc hằng số này.
+FRAME_STALE_S = 15.0
+# Nhưng nếu worker tự báo độ trễ model (`vos_ms`) thì ngưỡng phải co theo: 4 × độ trễ gần nhất.
+# (worker đang chạy 4 s/frame mà 15 s không có frame mới = đã lỡ 4 frame ⇒ mới đáng ngờ).
+FRAME_STALE_CYCLES = 4
 
 # Dọn worker cũ: chờ SIGTERM rồi SIGKILL, và **chờ tới khi nó chết thật** sau SIGKILL.
 # Thiếu bước chờ cuối cùng ⇒ hàm trả về khi tiến trình còn sống nửa nhịp, test `proc.poll()`
@@ -109,7 +115,13 @@ class WorkerFrameSource(FrameSource):
         except Exception:                 # noqa: BLE001 — không được treo khi dọn dẹp
             proc.kill()
         finally:
-            (self._out / PID_NAME).unlink(missing_ok=True)
+            # Chỉ xoá pidfile NẾU nó vẫn là của mình: `stop()` có thể chạy sau khi phiên mới đã
+            # spawn worker và ghi pidfile mới (watchdog đóng nguồn trong luồng riêng) ⇒ xoá mù
+            # sẽ làm mất pidfile của phiên mới, và lần `uvicorn --reload` sau không reap được
+            # worker mồ côi (bug đã sửa ở PR vòng đời 08-11).
+            pidfile = self._out / PID_NAME
+            if _read_pid(pidfile) in (None, proc.pid):
+                pidfile.unlink(missing_ok=True)
 
     @property
     def label(self) -> str:
@@ -142,7 +154,9 @@ class WorkerFrameSource(FrameSource):
         1. **tiến trình** (`proc.poll()`): đã thoát ⇒ phân biệt "kết thúc bình thường"
            (`status.state == stopped`, ví dụ hết video/`stop_after_frames`) với lỗi thật;
         2. **status.json**: worker tự báo `error` (model lỗi, nguồn frame đọc lỗi) ⇒ giữ message của nó;
-        3. **tuổi `frame.jpg`**: còn tiến trình nhưng frame đứng ⇒ treo (deadlock trong model).
+        3. **tuổi `frame.jpg`** quá `_stale_limit_s` (15 s, co theo `vos_ms` worker tự báo):
+           còn tiến trình nhưng frame đứng ⇒ treo (deadlock trong model). Không dùng ngưỡng nhỏ:
+           nhịp ghi frame hợp lệ có thể là 4 s/frame (`image_size 1024`, `vos_every=1`).
 
         Vì sao heartbeat là mtime của `frame.jpg` chứ KHÔNG phải `ts` trong `status.json`: trong giai
         đoạn chờ người dùng kéo ô chọn, vòng lặp ghi frame mỗi vòng nhưng **không** gọi
@@ -169,7 +183,8 @@ class WorkerFrameSource(FrameSource):
             return SourceHealth(LiveState.ERROR,
                                 str(status.get("message") or f"worker báo lỗi — xem {self._log}"))
         age = _age_s(self._out / FRAME_NAME)
-        if age is not None and age > FRAME_STALE_S:
+        limit = _stale_limit_s(status)
+        if age is not None and age > limit:
             return SourceHealth(
                 LiveState.ERROR,
                 f"worker không ghi frame mới trong {age:.0f} s (treo?) — xem {self._log}",
@@ -265,6 +280,20 @@ class WorkerFrameSource(FrameSource):
         raise SourceUnavailable(
             f"worker không đưa được frame trong {self._startup_timeout:.0f}s — xem {self._log}"
         )
+
+
+def _stale_limit_s(status: dict) -> float:
+    """Ngưỡng "frame đứng bao lâu là treo", co theo độ trễ model mà worker TỰ BÁO.
+
+    Vì sao không dùng một số cố định: nhịp ghi frame hợp lệ = nhịp model khi `vos_every=1` (tắt LK)
+    hoặc trong lúc `engine.start()` chạy inline; `image_size 1024` ≈ 4 s/frame. Ngưỡng cứng 2 s sẽ
+    giết phiên khoẻ (review độc lập 09-11, P1).
+    """
+    try:
+        vos_ms = float(status.get("vos_ms") or 0.0)
+    except (TypeError, ValueError):
+        vos_ms = 0.0
+    return max(FRAME_STALE_S, FRAME_STALE_CYCLES * vos_ms / 1000.0)
 
 
 def _wait_pid_gone(pid: int, timeout: float) -> bool:

@@ -51,7 +51,7 @@ from src.config import REPO_ROOT, load_config, merge_cli_overrides, resolve_chec
 from src.metrics_logger import run_info_path_for, write_run_info  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
-from src.worker import transcode_for_web                     # noqa: E402
+from src.worker import find_ffmpeg, transcode_for_web          # noqa: E402
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
 
@@ -233,9 +233,13 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
 
 
 def _web_record_path(path):
-    """Bản H.264 cạnh file ghi gốc: `demo.mp4` → `demo_web.mp4` (không bao giờ ghi đè bản gốc)."""
+    """Bản H.264 cạnh file ghi gốc: `demo.mp4` → `demo_web.mp4` (không bao giờ ghi đè bản gốc).
+
+    Đuôi LUÔN là `.mp4`: `--record demo.avi` cho ra `demo_web.mp4` — H.264 nhét trong AVI thì Chrome
+    vẫn không phát được, mà console lại báo "phát được" (review độc lập 09-11, P3).
+    """
     source = Path(path)
-    return source.with_name(f"{source.stem}_web{source.suffix}")
+    return source.with_name(f"{source.stem}_web.mp4")
 
 
 def _export_web_record(args):
@@ -245,31 +249,54 @@ def _export_web_record(args):
     `videoWidth = 0` ⇒ mở video demo bằng trình duyệt ra màn hình đen. Dùng lại
     `src/worker/web_export.py` (libx264 + yuv420p + faststart) mà API đã dùng cho job.
 
-    KHÔNG BAO GIỜ ném lỗi: bản ghi gốc đã xong, thiếu ffmpeg chỉ là cảnh báo.
+    KHÔNG BAO GIỜ ném lỗi: bản ghi gốc đã xong, thiếu ffmpeg chỉ là cảnh báo. Bắt cả
+    `KeyboardInterrupt` — người vẫn hay bấm Ctrl+C lần hai khi thấy CLI "đứng" lúc chuyển mã
+    (ffmpeg chạy im lặng, `capture_output`); Ctrl+C không được làm mất CSV/summary (18-10).
     """
     recorded = getattr(args, "record", None)
     if not recorded or not Path(recorded).is_file():
         return None
     target = _web_record_path(recorded)
+    print(f"[pipeline] đang xuất bản H.264: {target}", flush=True)
     try:
         web = transcode_for_web(recorded, str(target))
-    except Exception as exc:                    # noqa: BLE001 — xuất bản phụ không được làm sập CLI
+    except (Exception, KeyboardInterrupt) as exc:   # noqa: BLE001 — xuất bản phụ không được làm sập CLI
         print(f"[canh bao] không xuất được bản H.264: {exc}")
         return None
     if web:
         print(f"[pipeline] bản H.264 phát được trên Chrome/Edge: {web}")
         return web
-    print(f"[canh bao] không có ffmpeg (cài `pip install imageio-ffmpeg`) — "
-          f"{Path(recorded).name} là mp4v, Chrome/Edge KHÔNG phát được")
+    # `transcode_for_web` trả None vì 5 lý do khác nhau (thiếu ffmpeg, ffmpeg lỗi, đích rỗng,
+    # lỗi OS, timeout) ⇒ phải phân biệt, không được đổ hết cho "thiếu ffmpeg".
+    if find_ffmpeg() is None:
+        print(f"[canh bao] không có ffmpeg (cài `pip install imageio-ffmpeg`) — "
+              f"{Path(recorded).name} là mp4v, Chrome/Edge KHÔNG phát được")
+    else:
+        print(f"[canh bao] chuyển mã H.264 thất bại (ffmpeg trả lỗi) — "
+              f"{Path(recorded).name} vẫn là mp4v, Chrome/Edge KHÔNG phát được")
     return None
 
 
 def _finish_recording(viz, args):
-    """Đóng recorder rồi xuất bản H.264 (thứ tự quan trọng: chưa đóng thì file còn dở)."""
+    """Đóng recorder rồi (chỉ khi đã ghi thật) xuất bản H.264.
+
+    Thứ tự quan trọng: chưa đóng thì moov box chưa ghi, file còn dở. Còn việc có xuất hay không
+    phải hỏi `viz.recording` TRƯỚC khi đóng: nếu `--record` mở ra lỗi mà file cùng tên từ lần chạy
+    trước còn đó thì chuyển mã bản CŨ rồi in "phát được trên Chrome" — thành công giả (review 09-11).
+    """
     if viz is None:
         return
+    recorded = bool(getattr(viz, "recording", False))
     viz.close_recorder()
-    _export_web_record(args)
+    if recorded:
+        _export_web_record(args)
+
+
+def _finish_outputs(viz, metrics, args):
+    """Chốt số liệu TRƯỚC, xuất video SAU — Ctrl+C trong lúc chuyển mã không được làm mất CSV."""
+    if metrics is not None:
+        _finish_metrics(metrics, args)
+    _finish_recording(viz, args)
 
 
 def _make_metrics(args):
@@ -448,10 +475,10 @@ def _run_display(engine, args):
         interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
-        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (demo hay dừng kiểu này)
-        _finish_recording(viz, args)
-        if metrics is not None:
-            _finish_metrics(metrics, args)
+        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (demo hay dừng kiểu này).
+        # Thứ tự: SỐ LIỆU trước, chuyển mã video sau (ffmpeg im lặng — người dùng hay bấm Ctrl+C
+        # lần hai; số liệu không được phụ thuộc vào bước phụ này).
+        _finish_outputs(viz, metrics, args)
         cv2.destroyAllWindows()
 
     if interrupted:
@@ -505,10 +532,8 @@ def _run_headless(engine, args):
         interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
-        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi
-        _finish_recording(viz, args)
-        if metrics is not None:
-            _finish_metrics(metrics, args)
+        # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (số liệu trước, chuyển mã sau)
+        _finish_outputs(viz, metrics, args)
         # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
         frames_done = summary.total_frames if summary is not None else 0
         _write_progress(args.progress_json, frames_done, progress_total)

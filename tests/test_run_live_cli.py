@@ -255,6 +255,30 @@ class TestCtrlCFlush:
         assert len(rows) == 3, "header + 2 frame đã track trước khi ngắt"
         assert js_out.is_file()
 
+    def test_ctrl_c_trong_khi_chuyen_ma_van_giu_metrics(
+            self, tmp_path, video, interrupting_engine, monkeypatch, capsys):
+        """P1 review 09-11: Ctrl+C lần hai lúc ffmpeg đang chạy (im lặng) không được làm mất CSV."""
+        csv_out = tmp_path / "m.csv"
+        js_out = tmp_path / "s.json"
+        rec = tmp_path / "demo.mp4"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {rec}
+metrics_csv: {csv_out}
+metrics_summary: {js_out}
+""")
+        monkeypatch.setattr(run_live, "transcode_for_web",
+                            lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+
+        with pytest.raises(SystemExit):
+            run_live.main()
+
+        assert csv_out.is_file(), "Ctrl+C lúc chuyển mã KHÔNG được làm mất CSV"
+        assert js_out.is_file()
+
     def test_display_ctrl_c_van_ghi_metrics_csv(self, tmp_path, video, interrupting_engine,
                                                 monkeypatch):
         """Đường --display: Ctrl+C vẫn ghi CSV/JSON + đóng recorder trong finally."""
@@ -336,6 +360,13 @@ class TestXuatBanWeb:
 
         def fake_transcode(src, dst=None, **kwargs):
             calls["src"], calls["dst"] = str(src), str(dst)
+            # Recorder phải được ĐÓNG trước khi chuyển mã, nếu không moov box chưa ghi xong và
+            # `cv2.VideoCapture` không đọc nổi frame nào. Đây là bằng chứng cho "thứ tự quan trọng".
+            probe = cv2.VideoCapture(str(src))
+            try:
+                calls["doc_duoc_frame"] = probe.read()[0]
+            finally:
+                probe.release()
             with open(dst, "wb") as handle:
                 handle.write(b"h264")
             return str(dst)
@@ -355,10 +386,12 @@ max_frames: 2
         assert calls["dst"] == str(tmp_path / "demo_web.mp4")
         assert (tmp_path / "demo_web.mp4").is_file()
         assert rec.is_file(), "file gốc phải còn (bản web chỉ là bản chuyển mã thêm)"
+        assert calls["doc_duoc_frame"] is True, "phải đóng recorder trước khi chuyển mã"
 
     def test_khong_co_ffmpeg_thi_canh_bao_ro_rang_ma_khong_no(self, tmp_path, video, fake_engine,
                                                             monkeypatch, capsys):
         monkeypatch.setattr(run_live, "transcode_for_web", lambda *a, **k: None)
+        monkeypatch.setattr(run_live, "find_ffmpeg", lambda: None)   # máy này CÓ ffmpeg — phải giả lập
         rec = tmp_path / "demo.mp4"
         cfg = _write_cfg(tmp_path, f"""
 checkpoint: {video}
@@ -373,6 +406,48 @@ max_frames: 2
         out = capsys.readouterr().out
         assert "không có ffmpeg" in out and "imageio-ffmpeg" in out
         assert rec.is_file()
+
+    def test_chuyen_ma_that_bai_ma_co_ffmpeg_thi_khong_do_loi_cho_thieu_ffmpeg(
+            self, tmp_path, video, fake_engine, monkeypatch, capsys):
+        """`transcode_for_web` trả None vì 5 lý do — chỉ lý do "không có ffmpeg" mới được báo là thiếu."""
+        monkeypatch.setattr(run_live, "transcode_for_web", lambda *a, **k: None)
+        monkeypatch.setattr(run_live, "find_ffmpeg", lambda: "/usr/bin/ffmpeg")
+        rec = tmp_path / "demo.mp4"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {rec}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+
+        out = capsys.readouterr().out
+        assert "chuyển mã H.264 thất bại" in out
+        assert "không có ffmpeg" not in out
+
+    def test_duong_dan_ban_web_luon_la_mp4_va_khong_phai_file_goc(self):
+        """`--record demo.avi` ⇒ `demo_web.mp4`: H.264 trong AVI thì Chrome vẫn không phát được."""
+        from tools.run_live import _web_record_path
+
+        assert _web_record_path("demo.avi").name == "demo_web.mp4"
+        assert _web_record_path("data/x.mkv").name == "x_web.mp4"
+        assert str(_web_record_path("demo.mp4")) != "demo.mp4"
+
+    def test_recorder_khong_mo_duoc_thi_khong_chuyen_ma(
+            self, tmp_path, monkeypatch, capsys):
+        """P2 review 09-11: `--record` mở lỗi + file cùng tên từ lần trước còn đó ⇒ không được
+        chuyển mã bản CŨ rồi báo "phát được trên Chrome" (thành công giả)."""
+        called = []
+        monkeypatch.setattr(run_live, "transcode_for_web", lambda *a, **k: called.append(a) or None)
+        viz = run_live._make_visualizer(type("A", (), {"record": str(tmp_path / "x.mp4"),
+                                                      "max_trajectory": 10,
+                                                      "show_trajectory": True})())
+        assert viz.recording is False          # chưa ghi frame nào ⇒ chưa mở writer
+
+        run_live._finish_recording(viz, type("A", (), {"record": str(tmp_path / "x.mp4")})())
+        assert called == [], "không được chuyển mã khi chưa ghi được frame nào"
 
     def test_khong_bat_ghi_thi_khong_goi_chuyen_ma(self, tmp_path, video, fake_engine, monkeypatch):
         called = []

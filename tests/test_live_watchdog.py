@@ -93,7 +93,8 @@ class TestWorkerHealth:
 
         assert health is not None
         assert health.state is LiveState.ERROR
-        assert "mã 1" in health.message or "1" in health.message
+        assert "(mã 1)" in health.message, health.message
+        assert "worker.log" in health.message, health.message
 
     def test_worker_bao_error_trong_status_thi_message_cua_worker_duoc_giu(self, tmp_path):
         _write_status(tmp_path, state="error", message="model lỗi trong luồng VOS: CUDA OOM")
@@ -114,14 +115,43 @@ class TestWorkerHealth:
         assert health is not None and health.state is LiveState.STOPPED
 
     def test_worker_treo_khong_ghi_frame_thi_bao_error(self, tmp_path):
-        """Còn tiến trình nhưng `frame.jpg` đứng 5 s ⇒ treo (deadlock model), phải báo lỗi."""
+        """Còn tiến trình nhưng `frame.jpg` đứng 40 s ⇒ treo thật (deadlock model), phải báo lỗi."""
         _write_status(tmp_path, state="tracking")
-        _touch_frame(tmp_path, age_s=5.0)
+        _touch_frame(tmp_path, age_s=40.0)
 
         health = self._source(tmp_path, _LiveProc()).health()
 
         assert health is not None and health.state is LiveState.ERROR
         assert "frame" in health.message.lower()
+
+    def test_ghi_cham_hop_le_khong_bi_coi_la_treo(self, tmp_path):
+        """P1 review 09-11: nhịp ghi HỢP LỆ có thể là 4 s/frame.
+
+        `image_size 1024` ≈ 4 s/frame (README) và `vos_every=1` tắt nội suy LK ⇒ nhịp ghi frame =
+        nhịp model. `engine.start()` cũng chạy inline trước frame tracking đầu tiên
+        (`live_tracking.py:348`). Ngưỡng cứng 2 s sẽ GIẾT phiên khoẻ — đây là test canh điều đó.
+        """
+        _write_status(tmp_path, state="tracking", vos_ms=4000.0)
+        _touch_frame(tmp_path, age_s=5.0)            # 5 s không có frame mới, nhưng model 4 s/frame
+
+        assert self._source(tmp_path, _LiveProc()).health() is None
+
+    def test_nguong_treo_co_theo_do_tre_model_tu_bao(self, tmp_path):
+        """Ngưỡng = max(15 s, 4 × `vos_ms`) — `vos_ms` lớn thì cho phép frame cũ lâu hơn."""
+        _touch_frame(tmp_path, age_s=13.0)                                # 13 s: dưới sàn 15 s
+        _write_status(tmp_path, state="tracking", vos_ms=100.0)
+        assert self._source(tmp_path, _LiveProc()).health() is None
+
+        _touch_frame(tmp_path, age_s=20.0)                                # 20 s > sàn 15 s
+        _write_status(tmp_path, state="tracking", vos_ms=6000.0)          # ngưỡng = 4 × 6 s = 24 s
+        assert self._source(tmp_path, _LiveProc()).health() is None
+
+    def test_treo_that_thi_van_bao_loi_du_model_cham(self, tmp_path):
+        _write_status(tmp_path, state="tracking", vos_ms=3000.0)           # ngưỡng = 15 s
+        _touch_frame(tmp_path, age_s=20.0)
+
+        health = self._source(tmp_path, _LiveProc()).health()
+        assert health is not None and health.state is LiveState.ERROR
 
     def test_dang_cho_chon_doi_tuong_van_khoe_neu_frame_con_moi(self, tmp_path):
         """`waiting_selection`: status.json KHÔNG được ghi lại mỗi frame (chỉ frame.jpg được ghi)
@@ -146,6 +176,7 @@ class _DyingSource:
         self._state = state
         self._message = message
         self._raises = health_raises
+        self.calls = 0                # số lần `health()` được gọi (bằng chứng watchdog CÓ chạy)
         self._seq = 0
         self.started = False
         self.stopped = False
@@ -167,6 +198,7 @@ class _DyingSource:
         return f"giả:{self.source}"
 
     def health(self):
+        self.calls += 1
         if self._raises:
             raise OSError("không đọc được status.json")
         if self._left > 0:
@@ -240,10 +272,12 @@ class TestServicePhatHienNguonChet:
     def test_nguon_khoe_thi_khong_bao_loi_gia(self):
         from src.api.live import LiveStreamService
 
-        service = LiveStreamService(
-            lambda *a, **k: _DyingSource(frames_before_death=10_000), target_fps=50)
+        source = _DyingSource(frames_before_death=10_000)
+        service = LiveStreamService(lambda *a, **k: source, target_fps=50)
         service.start("0")
-        time.sleep(0.3)                                  # ~30 lần health check
+        # Đếm hành vi, không `sleep`: trên CI chậm, sleep 0,3 s có thể chưa đủ một vòng health ⇒
+        # test xanh mà không chứng minh gì ("pass rỗng" — P3 review 09-11).
+        assert _wait(lambda: source.calls >= 3, timeout=3.0), source.calls
         assert service.status().state is LiveState.RUNNING
         service.stop()
 
@@ -251,10 +285,10 @@ class TestServicePhatHienNguonChet:
         """Lỗi đọc status.json là lỗi TẠM THỜI, không phải bằng chứng worker chết."""
         from src.api.live import LiveStreamService
 
-        service = LiveStreamService(
-            lambda *a, **k: _DyingSource(health_raises=True), target_fps=50)
+        source = _DyingSource(health_raises=True)
+        service = LiveStreamService(lambda *a, **k: source, target_fps=50)
         service.start("0")
-        time.sleep(0.3)
+        assert _wait(lambda: source.calls >= 3, timeout=3.0), source.calls
         assert service.status().state is LiveState.RUNNING
         service.stop()
 
@@ -299,3 +333,44 @@ class TestDongBoVoiWorkerThat:
         health = source.health()
         assert health is not None and health.state is LiveState.ERROR
         assert "nguồn frame đọc lỗi" in health.message
+
+
+class _ProcForStop:
+    """Tiến trình giả đủ hợp đồng cho `WorkerFrameSource.stop()`."""
+
+    def __init__(self, pid):
+        self.pid = pid
+        self.killed = False
+
+    def wait(self, timeout=None):
+        return 0
+
+    def terminate(self):
+        self.killed = True
+
+    def kill(self):
+        self.killed = True
+
+
+class TestPidfileKhongBiXoaNham:
+    """P2 review 09-11: `stop()` của phiên CŨ không được xoá pidfile của phiên MỚI.
+
+    Ca thật: watchdog phát hiện worker treo ⇒ gọi `source.stop()` trong luồng nền (có thể chờ
+    `proc.wait(timeout=5)`); trong lúc đó người dùng bấm "Bật phát" ⇒ phiên mới spawn worker và ghi
+    `worker.pid` mới ⇒ `finally: unlink(PID_NAME)` của luồng cũ xoá mất pidfile ⇒ lần `uvicorn
+    --reload` sau không reap được worker mồ côi (bug đã sửa ở PR vòng đời 08-11).
+    """
+
+    def test_stop_phien_cu_khong_xoa_pidfile_cua_phien_moi(self, tmp_path):
+        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+
+        pidfile = tmp_path / PID_NAME
+        pidfile.write_text("111", encoding="utf-8")
+
+        old = WorkerFrameSource("0", out_dir=tmp_path)
+        old._proc = _ProcForStop(111)          # phiên cũ, pid 111
+        pidfile.write_text("222", encoding="utf-8")   # phiên MỚI đã ghi pidfile của nó
+
+        old.stop()
+
+        assert pidfile.read_text(encoding="utf-8") == "222", "pidfile của phiên mới bị xoá nhầm"

@@ -201,6 +201,16 @@ class Visualizer:
         self._pending_recorder = (str(path), float(fps))
         return True
 
+    @property
+    def recording(self):
+        """Đang/đã mở được VideoWriter chưa (False khi chưa mở, hoặc mở ra lỗi).
+
+        Dùng để quyết định có chuyển mã bản H.264 hay không: file cùng tên của lần chạy TRƯỚC còn
+        trên đĩa thì không được coi là "đã ghi xong" (review độc lập 09-11, P2).
+        """
+        # `_writer` chỉ được đặt khi VideoWriter mở được VÀ đã ghi frame đầu tiên
+        return self._writer is not None
+
     def close_recorder(self):
         """Đóng recorder nếu đang mở (an toàn khi chưa mở)."""
         if self._writer is not None:
