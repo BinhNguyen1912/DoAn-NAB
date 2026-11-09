@@ -160,16 +160,25 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   hiển thị không cao hơn (0,681 vs 0,706) ⇒ bật là thêm trễ vô ích. Chỉ bật `--mask-smoothing 0.5`
   khi có clip bị che thật sự chứng minh được lợi ích.
 - **Watchdog live phải đọc `frame.jpg` chứ không phải `status.json`.** Worker chết ⇒ API từng báo
-  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **91–111 ms** + message nêu mã thoát,
-  luồng MJPEG đóng sau **93–105 ms** (`data/watchdog_2026-11-09_metrics.json`). Con số đó chỉ đúng cho
-  ca **tiến trình chết**; ca **sống mà treo** mất **~15 s** (ngưỡng `max(15 s, 4 × vos_ms)`, trần
-  120 s) — cấm trích "0,1 s" cho ca treo. **Ngưỡng "frame đứng"
-  là `max(15 s, 4 × vos_ms)`, đừng hạ về 2 s**: nhịp ghi frame hợp lệ có thể ~4 s/frame
-  (`image_size 1024`, `vos_every=1`) và `engine.start()` chạy inline — ngưỡng 2 s giết phiên khoẻ
-  (review độc lập 09-11 bắt đúng). Ca `kill -9` không dùng ngưỡng đó (bắt bằng `proc.poll()`). Nhưng lúc
-  `waiting_selection` worker **không** ghi `status.json` (`live_tracking.py:342-348`) ⇒ nếu lấy `ts`
-  trong đó làm heartbeat thì phiên khoẻ sẽ bị giết oan khi người dùng chờ chọn ô. `status.json`
-  **không có** field `ts`; đừng thêm rồi dùng nó làm heartbeat.
+  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **110–111 ms** + message nêu mã
+  thoát, luồng MJPEG đóng sau **100–108 ms** (`data/watchdog_2026-11-09_metrics.json`).
+  **Ngưỡng "frame đứng" là `max(15 s, 4 × vos_ms)`, trần 120 s — đừng hạ về 2 s**: nhịp ghi frame hợp
+  lệ có thể ~4 s/frame (`image_size 1024`, `vos_every=1`) và `engine.start()` chạy inline ⇒ ngưỡng
+  2 s giết phiên khoẻ (review độc lập 09-11 bắt đúng). Ca `kill -9` **không** dùng ngưỡng đó (bắt
+  bằng `proc.poll()`) nên vẫn ~0,1 s; ca **sống mà treo** mất **~15 s** — cấm trích "0,1 s" cho ca treo.
+  Nhưng lúc `waiting_selection` worker **không** ghi `status.json` (`live_tracking.py:342-348`) ⇒ nếu
+  lấy `ts` trong đó làm heartbeat thì phiên khoẻ sẽ bị giết oan khi người dùng chờ chọn ô.
+  `status.json` **không có** field `ts`; đừng thêm rồi dùng nó làm heartbeat.
+- **Watchdog mode `raw` (webcam/relay) chậm hơn hẳn mode `track` — đừng trộn hai số.** Không có
+  `proc.poll()` để hỏi, chỉ biết qua "không có frame" ⇒ `OpenCvFrameSource` chờ **3 s** (`STALE_S`)
+  mới kết luận. Đo 09-11 trên relay ảnh JPEG localhost: **3,73–3,76 s** để `error`, luồng MJPEG đóng
+  cùng lúc (`data/watchdog_raw_2026-11-09_metrics.json`, 3 lần) — **chưa đo trên webcam/RTSP thật**.
+  Với `HttpSnapshotSource` (relay): nguồn giữ frame cuối `max_misses=20` lần rồi mới trả None ⇒ đồng
+  hồ 3 s chỉ bắt đầu **sau** đó; mạng "black-hole" (mỗi lần hỏng chờ hết timeout 5 s) có thể làm ảnh
+  đứng hàng phút trước khi báo lỗi. Đừng nói "raw phát hiện trong 3 s" cho mọi kiểu mất mạng.
+- **`read()` treo vô hạn thì watchdog không cứu được**: `health()` chạy **cùng thread** với `read()`
+  (`live.py`) nên không có nhịp kiểm nào trong lúc `read()` block (V4L2/RTSP không có read-timeout).
+  Chỉ ca `read()` trả None hoặc **ném** lỗi là được xử lý (nay không làm chết thread đọc).
 - **SAM 2 không tất định**: cùng seed, cùng video, hai lần chạy cho ô bao cuối khác nhau ⇒ chỉ so
   sánh chỉ số **trong cùng một lần chạy**.
 - **Chất lượng phân đoạn phải là mIoU mask vs GT, không phải IoU hộp bao.** Số hiện có (fixture
@@ -183,6 +192,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   (`stability`, `mIoU`, và một test).
 - **Artifact số đo phải có `git_rev` == commit code đang chạy, `git_dirty`, `lenh`, `do_luc`.**
   Số đo trên working tree bẩn thì không tái lập được (review 08-11 bắt đúng lỗi này).
+  Artifact sinh bằng `scripts/measure_watchdog.py` có thêm **`git_dirty_code`** = bẩn **bỏ qua
+  `data/`** — đo lại lần hai thì chính file artifact bị sửa nên `git_dirty` luôn `true` một cách vô
+  nghĩa; tái lập được ⇔ **`git_dirty_code == false`**.
 - **`stability` KHÔNG phải thước đo độ chính xác.** `drift_iou` cũng KHÔNG: nó là **độ tự nhất quán**
   của ô đang hiển thị so với lần VOS kế tiếp (VOS bám lệch hệ thống mà ổn định thì drift vẫn cao).
   Độ chính xác chỉ có **mIoU mask vs GT**. `stability` chỉ nói mask có nhấp nháy không.

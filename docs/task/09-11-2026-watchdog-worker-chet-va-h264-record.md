@@ -194,23 +194,50 @@ Làm 3 P3 mà vòng review 09-11 đã đẩy sang Next steps (không để nợ 
    `http.server` trên localhost) + ngưỡng đăng ký trước tách theo mode (worker 2 s, raw 5 s) +
    tách `git_dirty_code` (bỏ `data/`) để đo lại artifact không bị coi là "code bẩn".
 
-### Số đo thật (2 mode, mỗi mode 3 lần, `git_rev = 18a007a`, `git_dirty_code = false`)
+### Số đo thật (2 mode, mỗi mode 3 lần, `git_rev = 4e9248c`, `git_dirty_code = false`)
 
 | Mode | Nguồn bị giết | báo `error` | đóng luồng MJPEG | ngưỡng đăng ký trước | đạt? |
 |---|---|---|---|---|---|
-| `worker` (`proc.poll()`) | `kill -9` worker SAM 2 | **114,5 / 117,1 / 114,3 ms** | 105–109 ms | ≤ 2 s | ✅ 3/3 |
-| `raw` (không có frame) | tắt relay ảnh HTTP | **3750 / 3752 / 3747 ms** | 3742–3750 ms | ≤ 5 s | ✅ 3/3 |
+| `worker` (`proc.poll()`) | `kill -9` worker SAM 2 | **110,3 / 110,5 / 110,0 ms** | 100–108 ms | ≤ 2 s | ✅ 3/3 |
+| `raw` (không có frame) | tắt relay ảnh HTTP | **3734 / 3758 / 3744 ms** | 3734–3751 ms | ≤ 5 s | ✅ 3/3 |
 
 - Artifact: `data/watchdog_2026-11-09_metrics.json` + `data/watchdog_raw_2026-11-09_metrics.json`.
 - **Cấm trộn hai số**: mode `worker` bắt bằng `proc.poll()` nên ~0,1 s; mode `raw` chỉ biết qua
   "không có frame" nên phải chờ `STALE_S` 3 s (cộng ~0,7 s do nguồn snapshot giữ frame cuối
   `max_misses=20` lần trước khi trả None). Đừng trích "watchdog phản ứng 0,1 s" cho webcam.
+- **Số `raw` chỉ đúng cho ca "connection refused" trên localhost.** Với `HttpSnapshotSource` thật:
+  đồng hồ 3 s chỉ bắt đầu SAU `max_misses=20` lần hỏng liên tiếp; mạng "black-hole" (mỗi lần hỏng
+  chờ hết timeout 5 s) ⇒ ảnh có thể đứng **hàng phút** trước khi báo lỗi. **Chưa đo trên
+  webcam/RTSP thật** (máy này webcam WSL kẹt usbipd — xem AGENTS §6).
+- **Giới hạn còn lại**: `health()` chạy cùng thread với `read()` ⇒ `read()` **treo vô hạn** thì
+  không nhịp kiểm nào chạy (V4L2/RTSP không có read-timeout). Đã xử lý ca `read()` trả None hoặc
+  ném lỗi; ca treo hẳn phải xử lý ở tầng đọc (đưa vào Next steps).
 
 ### Kiểm tra
 - `./run lint` ✓ · `./run test` ✓ · `./run testall` **663 passed** · `./run webtest` 24 ✓ ·
-  `./run e2e` **PASS** (e2e đi qua `/api/live/stream` + mode `raw` nên phủ đúng đường vừa sửa).
-- **Test có răng**: `test_status_da_la_stopped_trong_luc_dang_join_worker` đã được kiểm bằng cách
-  checkout lại `src/live_tracking.py` cũ → **đỏ**, rồi phục hồi → xanh.
+  `./run e2e` **PASS**. **Phạm vi e2e**: phủ mode `raw` + nhánh 200 của `/api/live/stream`; nhánh
+  **409** phủ bằng test (`TestLuongMjpegBaoDungLyDo`), không phải e2e.
+- **Test có răng**: `test_status_da_la_stopped_trong_luc_dang_join_worker` và
+  `test_read_jpeg_nem_loi_khong_lam_chet_thread_doc` đã được kiểm bằng cách checkout lại code cũ →
+  **đỏ**, rồi phục hồi → xanh.
+
+### Review độc lập (nhánh này)
+- **Vòng 1:** 0 P0, **1 P1**, 3 P2, 5 P3. Đã sửa hết P1/P2 + 4 P3 trong cùng nhánh:
+  - **P1**: `AGENTS.md` §6 vẫn trích số cũ (91–111 ms) trong khi PR này **ghi đè** artifact thành
+    110–111 ms, và §6 **chưa có** số của mode `raw` ⇒ nguy cơ trích "0,1 s" cho webcam. Đã sửa số +
+    thêm bullet `raw` (3,73–3,76 s) kèm cảnh báo cấm trộn và giới hạn `max_misses`.
+  - **P2a**: `_looks_like_file` không nhận **thư mục ảnh** ⇒ chuỗi ảnh (`data/demo_input_frames`) bị
+    coi là camera: không lặp lại được khi hết, và báo `ERROR "không trả frame"` cho phiên kết thúc
+    bình thường. Sửa + 2 test với thư mục ảnh thật.
+  - **P2b**: `git_dirty_code` chỉ được gán trong `try` ⇒ nhánh **git lỗi** ném `UnboundLocalError`
+    **sau khi đo xong** (nuốt cả 3 lần đo). Tách `_git_provenance()`/`_is_dirty_outside_data()` +
+    `tests/test_measure_watchdog.py` (gồm cả file code mới chưa track).
+  - **P2c**: ghi rõ giới hạn `max_misses × timeout` ở trên (docs, không cần đổi logic).
+  - **P3**: `read_jpeg()` ném lỗi làm **chết thread đọc** (state kẹt `running`) ⇒ `_read_safely()` +
+    test; `run()` trả bản sao `_stats`; comment "watchdog đọc ra treo?" bớt claim (thực tế cửa sổ
+    join 5 s < ngưỡng 15 s nên chưa từng xảy ra — giữ code vì đúng thứ tự); test 409 bỏ assertion
+    tautology; câu "UI chỉ thấy câu chung" **sai** (UI đọc `status.message` qua `/api/live/status`,
+    `<img>` không render JSON) — đã sửa lại: 409 hữu ích cho API client/e2e.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Tự hạ cấp/cảnh báo khi drift xấu** (`p05 < 0,2` như `binh2`): hiện mới đo, chưa hành động.
