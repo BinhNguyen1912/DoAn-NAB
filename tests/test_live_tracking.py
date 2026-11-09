@@ -1150,7 +1150,10 @@ class TestDriftWindowChiMotNguonGhiTrongLock:
                         total = 0.0
                         for value in session._drift_window:
                             total += value
-                    session._apply_drift_locked()
+                        # `_apply_drift_locked()` PHẢI gọi trong lock (hàm tự mô tả như vậy):
+                        # gọi ngoài lock thì chính test vi phạm bất biến nó đang kiểm, và có thể
+                        # đỏ oan khi numpy duyệt deque trong lúc writer append (review 10-11, P2).
+                        session._apply_drift_locked()
                     assert total >= 0.0
             except Exception as exc:                  # noqa: BLE001
                 errors.append(f"reader: {type(exc).__name__}: {exc}")

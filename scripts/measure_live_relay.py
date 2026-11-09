@@ -135,7 +135,8 @@ def _worker_telemetry(out_dir) -> dict:
         return {}
     keys = ("state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
-            "mask_age_p95", "age_n", "stability", "empty_runs", "mask_holds", "mask_drops",
+            "mask_age_p95", "age_n", "stability", "stability_n", "empty_runs", "mask_holds",
+            "mask_drops",
             "lost_streak")
     return {key: data.get(key) for key in keys if key in data}
 

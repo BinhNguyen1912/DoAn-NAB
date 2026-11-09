@@ -174,6 +174,10 @@ def build_router(service: JobService, live) -> APIRouter:
         """Một frame JPEG mới nhất (dùng để chụp ảnh/chọn đối tượng trên live)."""
         data = live.latest_jpeg()
         if data is None:
+            # Đang nạp nguồn thì "hãy bật phát trước" là câu SAI ngữ cảnh (đã bật rồi) — ticket 16.
+            if live.status().state.value == "loading":
+                raise HTTPException(status_code=404,
+                                    detail="Đang mở phiên live — chưa có frame")
             raise HTTPException(status_code=404, detail="Chưa có frame nào — hãy bật phát trước")
         return Response(content=data, media_type="image/jpeg")
 

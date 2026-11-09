@@ -103,6 +103,9 @@ Hay làm việc khác trước?
       `data/empty_window_2026-11-10_metrics.json`.
 - [x] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
       + UI hiện "chưa đo được", không hiện "tốt".
+      > **Cập nhật 10-11 (ticket 18)**: `stability` cũng có encoding "chưa đo" như `drift_p05`
+      > (`stability = null` + `stability_n = 0`); UI chuyển từ suy luận `stability <= 0` sang
+      > `stability_n > 0`. Dòng mô tả cũ ở trên giữ nguyên làm lịch sử.
 - [x] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.
 - [x] `./run lint`, `./run test`, `./run testall`, `./run webtest`, `./run e2e` xanh; review độc lập
       (§9.1) P0 = 0 — vòng 1 bắt **1 P1** (nhãn "nhấp nháy" bị **đảo chiều số**: in `stability × 100`

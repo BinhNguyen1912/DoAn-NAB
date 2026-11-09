@@ -471,7 +471,8 @@ class TestWorkerTelemetry:
         (tmp_path / "status.json").write_text(json.dumps({
             "state": "tracking", "frames": 400, "measure_fps": 0, "measured_fps": 29.9,
             "vos_fps": 8.6, "vos_ms": 100.0, "lk_ms": 2.7, "stability": 0.963,
-            "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4, "mask_drops": 2,
+            "stability_n": 200, "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4,
+            "mask_drops": 2,
             "bbox": [10, 10, 40, 60], "message": "",
         }), encoding="utf-8")
 
@@ -479,8 +480,34 @@ class TestWorkerTelemetry:
         assert detail.display_fps == 29.9
         assert detail.mask_fps == 8.6
         assert detail.stability == 0.963
+        assert detail.stability_n == 200
         assert detail.latency_ms == 100.0
         assert detail.empty_runs == 14
+
+    def test_seam_stability_none_va_0_0(self, tmp_path):
+        """Seam `status.json → LiveTelemetry` phải giữ `None` (chưa đo) — nếu ai đổi
+        `_so_hoac_none` thành `float(x or 0.0)` thì bài này đỏ (review 10-11, P2)."""
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        chua_do = tmp_path / "chua_do"
+        chua_do.mkdir()
+        (chua_do / "status.json").write_text(json.dumps({
+            "state": "tracking", "vos_fps": 8.0, "stability": None, "stability_n": 0,
+        }), encoding="utf-8")
+        detail = WorkerFrameSource("0", out_dir=chua_do).telemetry()
+        assert detail.stability is None, "`None` (chưa đo) không được thành 0,0"
+        assert detail.stability_n == 0
+
+        do_duoc = tmp_path / "do_duoc"
+        do_duoc.mkdir()
+        (do_duoc / "status.json").write_text(json.dumps({
+            "state": "tracking", "vos_fps": 8.0, "stability": 0.0, "stability_n": 150,
+        }), encoding="utf-8")
+        detail = WorkerFrameSource("0", out_dir=do_duoc).telemetry()
+        assert detail.stability == 0.0 and detail.stability_n == 150, \
+            "0,0 ĐO ĐƯỢC không được biến thành None"
 
     def test_status_json_hong_tra_so_0_khong_crash(self, tmp_path):
         from src.api.adapters.worker_source import WorkerFrameSource

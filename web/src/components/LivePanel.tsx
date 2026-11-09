@@ -110,6 +110,10 @@ export function LivePanel(): JSX.Element {
   }
 
   const running = status?.state === 'running'
+  // Đang nạp nguồn (worker `track` 20–240 s): nút "Dừng" PHẢI bấm được (backend huỷ được giữa lúc
+  // nạp — `src/api/live.py`), và "Bật phát" phải tắt (bấm nữa chỉ nhận 409 `LiveBusy`, hiện banner
+  // lỗi trong lúc đang nạp bình thường — ticket 16).
+  const loading = status?.state === 'loading'
   const maskLine = maskRhythmLine(status)
   const driftText = driftLine(status)
   const displayFps = shownFps(status)
@@ -129,11 +133,12 @@ export function LivePanel(): JSX.Element {
             type="text"
             value={source}
             onChange={(event) => setSource(event.target.value)}
-            disabled={running || picking}
+            disabled={running || loading || picking}
             style={{ minWidth: '320px' }}
           />
         </label>
-        <button type="button" onClick={() => void onStart()} disabled={running || picking || !source.trim()}>
+        <button type="button" onClick={() => void onStart()}
+                disabled={running || loading || picking || !source.trim()}>
           Bật phát
         </button>
         <button
@@ -144,7 +149,8 @@ export function LivePanel(): JSX.Element {
         >
           Chọn đối tượng để bám
         </button>
-        <button type="button" className="button ghost" onClick={() => void onStop()} disabled={!running && !picking}>
+        <button type="button" className="button ghost" onClick={() => void onStop()}
+                disabled={!running && !picking && !loading}>
           Dừng
         </button>
       </div>

@@ -130,7 +130,6 @@ export interface LiveStatus {
   display_fps: number
   /** nhịp MASK MỚI (số lần model chạy/giây); 0 khi chế độ raw hoặc nguồn không báo */
   mask_fps: number
-  /** IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy); 0 khi không có */
   /** `null` = CHƯA ĐO (xem `stability_n`), khác `0` = đo được 0 / đang mất dấu */
   stability: number | null
   stability_n: number
