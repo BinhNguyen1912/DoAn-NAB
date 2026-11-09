@@ -1,0 +1,97 @@
+{
+  "do_luc": "2026-11-09T22:58:29",
+  "git_rev": "bb3f1140015f639ae7234b2237e972d2f00e9f7a",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu": "`empty_runs` = bộ đếm TRỌN ĐỜI (không giảm); `empty_frac_window` = tỉ lệ lần VOS trả mask rỗng trong 200 lần GẦN NHẤT (None = chưa đủ mẫu). `drift_iou_p05` là ĐỘ TỰ NHẤT QUÁN, không phải độ chính xác. Ô chọn (bbox) là đầu vào của phép đo.",
+  "lenh": "python scripts/measure_empty_window.py --clip binh1=data/binh1.mp4:104,308,209,287 --clip binh2=data/binh2.mp4:200,400,300,500 --expect-lost binh2 --frames 900",
+  "moi_truong": "WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny",
+  "thiet_lap": {
+    "image_size": 192,
+    "vos_every": 3,
+    "frames": 900
+  },
+  "ket_qua": [
+    {
+      "clip": "binh1",
+      "path": "data/binh1.mp4",
+      "bbox_xywh": [
+        104,
+        308,
+        209,
+        287
+      ],
+      "state": "stopped",
+      "frames": 900,
+      "vos_runs": 234,
+      "measured_fps": 29.9,
+      "vos_fps": 7.5,
+      "vos_ms": 111.4,
+      "lk_ms": 2.29,
+      "empty_runs": 0,
+      "empty_frac_window": 0.0,
+      "empty_window_n": 200,
+      "mask_drops": 0,
+      "lost_streak": 0,
+      "drift_iou": 0.884,
+      "drift_iou_p05": 0.653,
+      "drift_n": 200,
+      "mask_age_p95": 228.0,
+      "age_n": 200
+    },
+    {
+      "clip": "binh2",
+      "path": "data/binh2.mp4",
+      "bbox_xywh": [
+        200,
+        400,
+        300,
+        500
+      ],
+      "state": "stopped",
+      "frames": 900,
+      "vos_runs": 231,
+      "measured_fps": 29.9,
+      "vos_fps": 7.5,
+      "vos_ms": 105.2,
+      "lk_ms": 3.55,
+      "empty_runs": 28,
+      "empty_frac_window": 0.14,
+      "empty_window_n": 200,
+      "mask_drops": 0,
+      "lost_streak": 0,
+      "drift_iou": 0.509,
+      "drift_iou_p05": 0.0,
+      "drift_n": 193,
+      "mask_age_p95": 232.8,
+      "age_n": 200
+    }
+  ],
+  "tom_tat": {
+    "binh1": {
+      "empty_runs": 0,
+      "empty_frac_window": 0.0,
+      "empty_window_n": 200,
+      "drift_iou_p05": 0.653,
+      "drift_n": 200,
+      "mask_age_p95": 228.0,
+      "dang_mat_dau": false
+    },
+    "binh2": {
+      "empty_runs": 28,
+      "empty_frac_window": 0.14,
+      "empty_window_n": 200,
+      "drift_iou_p05": 0.0,
+      "drift_n": 193,
+      "mask_age_p95": 232.8,
+      "dang_mat_dau": true
+    }
+  },
+  "ky_vong": {
+    "binh2": true,
+    "binh1": false
+  },
+  "ly_do_khong_dat": [],
+  "loi": []
+}

@@ -54,8 +54,10 @@ Tiêu chí đăng ký trước (ghi trong plan, không sửa sau khi thấy số
 | `binh1` (104,308,209,287) | **0** | **0,00** (200 mẫu) | 0,653–0,675 (200) | 229–239 ms |
 | `binh2` (200,400,300,500) | 24–40 | **0,12 / 0,13 / 0,17 / 0,20** | **0,000** (183–200) | 238–244 ms |
 
-- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` (`git_rev` = commit chứa code của nhánh
-  này, `git_dirty_code = false`, `git_loi = null`), lệnh ghi trong file.
+- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = bb3f114`,
+  `git_dirty = true` (chính file artifact đang được ghi), `git_dirty_code = **false**`, `git_loi =
+  null`; lần đo trong artifact: `binh1` **0,00** (0/200, p05 0,653 n=200, `mask_age_p95` 228 ms),
+  `binh2` **0,14** (28 mất dấu trọn đời, p05 **0,000** n=193, 232,8 ms). Lệnh ghi trong file.
 - **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,20** và
   `p05 = 0,000` ⇒ hai lớp **tách rời hoàn toàn**, không phụ thuộc ngưỡng nhiễu (đây là phép **đếm sự
   kiện**, không phải phân vị).
