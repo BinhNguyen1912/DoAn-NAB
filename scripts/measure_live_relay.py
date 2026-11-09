@@ -7,7 +7,9 @@ Chức năng: dựng API (uvicorn) + mở phiên live `mode=track` trên nguồn
            có `git_rev` + `lenh` + `do_luc` và bảng tóm tắt ra stdout.
 Input  : --source (URL snapshot của relay), --bbox x,y,w,h (ô chọn đối tượng), --image-size,
          --vos-every, --seconds, --port, --out, --frame-dir.
-Output : `data/live_web_relay_<ngày>.json` + ảnh `data/live_web_relay_<ngày>_frame*.jpg`.
+Output : `data/live_web_relay_<ngày>_metrics.json` (đuôi `_metrics.json` để `.gitignore` cho qua, đúng
+         quy ước artifact của repo) + ảnh `data/live_web_relay_<ngày>/frame*.jpg` (**không** commit ảnh:
+         repo không giữ binary trong `data/`).
 Lưu ý  : đây là **bằng chứng "camera thật đã chạy"**, không phải benchmark chất lượng bám.
          Số `drift_iou` ở đây là độ tự nhất quán của ô bao (xem AGENTS §6) — cấm gọi là độ chính xác.
          Bbox do người chọn tay trên ảnh camera; nếu khung cảnh không có vật rõ thì SAM 2 vẫn bám
@@ -160,7 +162,7 @@ def main() -> int:
 
     stamp = datetime.now()
     out = Path(args.out) if args.out else (
-        _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d}.json")
+        _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d}_metrics.json")
     frame_dir = Path(args.frame_dir) if args.frame_dir else out.parent / f"live_web_relay_{stamp:%Y-%m-%d}"
     base = f"http://127.0.0.1:{args.port}"
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
