@@ -74,8 +74,8 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-10_metrics.js
   trích một con số lẻ như "12 %" cho báo cáo.
 
 ### Kiểm tra tự động
-- `./run lint` ✓ · `./run test` **719 passed** (5 deselected, ~59 s) · `./run testall` **724 passed**
-  (~183 s) · `./run webtest` **30 passed** · `npm --prefix web run build` OK · `./run e2e` **PASS**
+- `./run lint` ✓ · `./run test` **722 passed** (5 deselected, ~59 s) · `./run testall` **727 passed**
+  (~182 s) · `./run webtest` **31 passed** · `npm --prefix web run build` OK · `./run e2e` **PASS**
   (chạy ở repo chính: worktree không chạy được e2e vì node Windows không resolve symlink
   `web/node_modules`)
 - Test mới: 4 test đếm theo cửa sổ (1,0 → 0,5 → 0,0 trong khi bộ đếm trọn đời đứng yên; 200 mẫu có
