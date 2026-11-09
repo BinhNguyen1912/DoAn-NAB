@@ -16,7 +16,8 @@ type Rhythm = Pick<LiveStatus, 'mask_fps' | 'stability' | 'stability_n' | 'laten
  *  - Nhãn "nhấp nháy N%" mà in thẳng `stability × 100` là **ĐẢO CHIỀU SỐ**: `stability = 1.0` mới là
  *    *không* nhấp nháy, nên phải in `100 − stability`. Tệ hơn, `stability = 0` vừa là "chưa đo"
  *    (default) vừa bị gán 0 khi mask RỖNG ⇒ in "nhấp nháy 0 %" = "êm tuyệt đối" đúng lúc model rơi
- *    vật. Vì vậy khi `stability <= 0` thì **không công bố số**, nói rõ chưa đo.
+ *    vật. Từ 10-11 backend phân biệt được (`stability = null` + `stability_n = 0` = chưa đo;
+ *    `0,0` + `stability_n > 0` = ĐO ĐƯỢC), nên UI chỉ in số khi `stability_n > 0`.
  *  - "mất dấu: N lần" ⇒ `empty_runs` là bộ đếm **trọn đời, không bao giờ giảm**; ưu tiên tỉ lệ theo
  *    **cửa sổ 200 lần chạy gần nhất** (`empty_frac_window`).
  */
