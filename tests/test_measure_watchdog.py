@@ -27,6 +27,17 @@ class TestDirtyOutsideData:
     def test_sach_thi_false(self):
         assert measure._is_dirty_outside_data("") is False
 
+    def test_path_co_khoang_trang_duoc_quote(self):
+        """Porcelain quote path có khoảng trắng: `?? "data/a b.json"` vẫn là data, không phải code."""
+        assert measure._is_dirty_outside_data('?? "data/a b.json"\n') is False
+        assert measure._is_dirty_outside_data('?? "src/a b.py"\n') is True
+
+    def test_rename_phai_xet_ca_hai_dau(self):
+        """`R  data/old -> src/new.py` là ĐỔI CODE (bản cũ chỉ đọc path đầu ⇒ coi là sạch)."""
+        assert measure._is_dirty_outside_data("R  data/old.json -> src/new.py\n") is True
+        assert measure._is_dirty_outside_data("R  src/old.py -> data/new.json\n") is True
+        assert measure._is_dirty_outside_data("R  data/a.json -> data/b.json\n") is False
+
 
 class TestGitProvenance:
     def test_thieu_git_thi_tra_rong_kem_ly_do_chu_khong_nem(self, monkeypatch):
@@ -162,3 +173,9 @@ def test_git_status_tra_ma_loi_thi_bao_khong_co_provenance(monkeypatch):
 
     rev, _, _, loi = measure._git_provenance()
     assert rev is None and loi and "CalledProcessError" in loi
+
+
+def test_wait_s_theo_mode_phai_khop_docs():
+    """Thông báo `[THAT BAI]` và vòng poll dùng chung `WAIT_S`; hardcode lại 15 s cho mode `worker`
+    (10 s) là loại lỗi đã bị review vòng 3 bắt."""
+    assert measure.WAIT_S == {"worker": 10.0, "raw": 15.0}

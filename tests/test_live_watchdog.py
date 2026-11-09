@@ -587,6 +587,60 @@ class TestBoDemLoiDocTheoPhien:
         finally:
             service.stop()
 
+    def test_bo_dem_ve_0_ngay_ca_khi_phien_moi_loi_dung_mot_lan(self, monkeypatch):
+        """`_read_errors = 0` trong `start()` phải được GHIM (review vòng 4, P3-4).
+
+        Nguồn phiên B lỗi **đúng một lần** rồi không trả frame nữa: nếu bộ đếm rò từ phiên A (đã có
+        ≥ 1 lần lỗi) thì con số sau lần lỗi đầu tiên của B là **≥ 2**, còn đúng phải là **1**. Không
+        dùng nguồn "không bao giờ lỗi" vì `_read_safely` tự reset khi đọc THÀNH CÔNG ⇒ test sẽ xanh
+        vô nghĩa.
+        """
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        class _MotLanRoiIm:
+            def __init__(self, *args, **kwargs):
+                self.da = 0
+                self.stopped = False
+
+            def start(self):
+                pass
+
+            def read_jpeg(self):
+                self.da += 1
+                if self.da == 1:
+                    raise RuntimeError("lỗi tạm thời")
+                # Chặn (như `read()` của V4L2 đang chờ) để KHÔNG có lần đọc thành công nào ⇒ bộ đếm
+                # không được reset bởi đường khác, chỉ có `start()` mới reset được nó.
+                time.sleep(2.0)
+                return None
+
+            def stop(self):
+                self.stopped = True
+
+            @property
+            def label(self):
+                return "giả:một-lần"
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        service = LiveStreamService(lambda *a, **k: _AlwaysFailingSource(), target_fps=50)
+        service.start("0")
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0)
+        service.stop()
+        assert service._read_errors >= 1
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 5.0)
+        dich = _MotLanRoiIm()
+        service._make_source = lambda *a, **k: dich       # noqa: SLF001 — nguồn giả
+        service.start("0")
+        try:
+            assert _wait(lambda: dich.da >= 1, timeout=3.0)
+            assert _wait(lambda: service._read_errors >= 1, timeout=2.0)
+            assert service._read_errors == 1, (
+                f"bộ đếm lỗi đọc rò từ phiên trước: {service._read_errors} (đúng phải là 1)")
+        finally:
+            service.stop()
+
     def test_give_up_dong_nguon_de_lan_sau_mo_duoc(self, monkeypatch):
         """Đóng nguồn ngay khi give-up (như `_check_health`) — nếu không, thiết bị bị giữ."""
         from src.api import live as live_module

@@ -27,8 +27,9 @@ logger = logging.getLogger("doan.api.opencv_source")
 # Đuôi file được coi là video (để quyết định có lặp lại hay không)
 _FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
 
-# Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. Ngưỡng 3 s nghĩa là một lần im lặng
-# **> 3 s** là kết luận (chịu được nguồn ≥ ~0,34 frame/giây; chậm hơn thế thì coi là chết).
+# Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. Kết luận cần ĐỒNG THỜI quá `STALE_S`
+# **và** ≥ `MISS_MIN` lần trượt liên tiếp (xem hằng số dưới) — **một** lần im lặng > 3 s KHÔNG đủ
+# (read-timeout của nguồn là 5 s, lớn hơn 3 s: kết luận ngay sẽ giết phiên khoẻ).
 # So sánh: chế độ `track` đo được 110–111 ms cho ca worker chết (`proc.poll()`, đo 09-11), còn đây
 # là "không có tín hiệu" — phải chờ mới biết chắc.
 # ⚠️ Đo 09-11 mới làm trên relay ảnh JPEG localhost (~3,75 s); **chưa đo trên webcam/RTSP thật**, và

@@ -8,8 +8,10 @@ Output : JSON (`data/watchdog_<ngày>_metrics.json` cho `worker`, `data/watchdog
          `raw`) có `git_rev`, `git_dirty`, `lenh`, `do_luc` + từng lần chạy; in bảng tóm tắt.
 Lưu ý  : hai ca có bản chất khác nhau, ĐỪNG trộn số:
          - `worker` (mode `track`): `kill -9` tiến trình worker ⇒ bắt bằng `proc.poll()`, **~0,1 s**;
-         - `raw` (webcam/relay): tắt server ảnh ⇒ chỉ biết qua "không có frame", nên chờ ngưỡng
-           `STALE_S` của `OpenCvFrameSource` (**~3 s**) mới kết luận.
+         - `raw` (webcam/relay): tắt server ảnh ⇒ chỉ biết qua "không có frame", nên phải chờ
+           `STALE_S` 3 s **cộng** `max_misses` của nguồn (đo được **~3,75 s**, xem artifact; đừng nói
+           "báo lỗi sau ~3 s" — với nguồn có read-timeout 5 s thì `MISS_MIN` làm ca mất mạng hẳn
+           tốn thêm ~15 s).
          Script CHẠY worker thật (cần torch + checkpoint SAM 2) ở mode `worker`, nhưng chỉ kiểm tra
          **phản ứng của API**, không đánh giá chất lượng bám — không được trích FPS/mIoU từ file này.
 """
@@ -190,9 +192,15 @@ def _is_dirty_outside_data(porcelain: str) -> bool:
     "bẩn" một cách vô nghĩa. File code MỚI chưa track vẫn được tính (là code, không phải data).
     """
     for line in porcelain.splitlines():
-        path = line[3:].strip()
-        if path and not path.startswith("data/"):
-            return True
+        if len(line) < 4:
+            continue
+        # Porcelain có hai dạng khó: rename `R  old -> new` (phải xét CẢ HAI path) và path được
+        # quote khi có khoảng trắng (`?? "data/a b.json"`). Bản cũ cắt `line[3:]` nên phân loại sai
+        # cả hai (review vòng 4, note): rename data→code bị coi là "sạch", path quote bị coi là code.
+        for path in line[3:].split(" -> "):
+            path = path.strip().strip('"')
+            if path and not path.startswith("data/"):
+                return True
     return False
 
 

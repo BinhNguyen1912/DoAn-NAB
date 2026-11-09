@@ -57,6 +57,9 @@
 lệnh: `python scripts/measure_watchdog.py --mode worker --lan 3`, clip `data/binh1.mp4`,
 `image_size 192`, `vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
 
+Bảng số **duy nhất** của nhánh này là bảng ở mục "Bổ sung 22:40" và "Bổ sung 23:30" (hai mục cùng
+một bộ số: 115,9/116,0/116,5 ms — bản dưới đây giữ để đọc tuần tự, số đúng là bản cuối).
+
 | Lần | nạp phiên | state sau kill | **báo `error`** | **đóng luồng MJPEG** | message |
 |---|---|---|---|---|---|
 | 1 | 3,1 s | `error` | **115,9 ms** | 94,6 ms | worker đã dừng (mã -9) — xem worker.log |
@@ -345,9 +348,9 @@ có từ trước); chưa đo trên webcam/RTSP thật.
 | `worker` (`proc.poll()`) | **115,9 / 116,0 / 116,5 ms** | 94,6–110,0 ms | ≤ 2 s | ✅ 3/3 |
 | `raw` (không có frame) | **3751,9 / 3763,4 / 3747,2 ms** | 3740–3753 ms | ≤ 5 s | ✅ 3/3 |
 
-- Hai lần đo liên tiếp trên code khác nhau lệch 94→116 ms (worker) và 3758→3752 ms (raw) — cùng
-  cơ chế, độ tản **giữa các lần chạy**, không phải "cải thiện/thoái hoá"; cả hai đều cách ngưỡng rất
-  xa nên không có gì để so sánh A/B ở đây.
+- Lần đo hiện tại là bộ số duy nhất còn đúng: worker **115,9–116,5 ms** (đóng luồng MJPEG
+  94,6–110,0 ms — **hai đại lượng khác nhau**, đừng trộn), raw **3747,2–3763,4 ms**. Các lần đo
+  trước đã bị ghi đè, **không trích**; không so A/B hai lần chạy vì cả hai đều cách ngưỡng rất xa.
 - `so_lan_khong_phat_hien = 0` và `git_loi = null` ở cả hai artifact (đúng thứ vòng 3 bắt phải có).
 
 ### Kiểm tra
@@ -356,6 +359,38 @@ có từ trước); chưa đo trên webcam/RTSP thật.
 - **Test có răng (kiểm bằng cách làm hỏng code, không chỉ tin assertion):** bỏ 2 dòng reset bộ đếm ⇒
   `test_bo_dem_loi_doc_khong_ro_tu_phien_truoc` **đỏ** (message "lỗi liên tiếp 30 s"); bỏ đếm ở nhánh
   `read()` ném và trả lại thứ tự cũ của `imencode` ⇒ 2 test `TestCaptureNemLoi` **đỏ**.
+
+## ➕ Bổ sung 24:10 — review vòng 4: **merge được** (0 P0/P1/P2) + sửa 5 P3 + 2 note
+
+Review vòng 4 (agent `reviewer`, chỉ đọc, phạm vi HEAD `3cbf670`) kết luận **merge được**, 0 P0/P1/P2.
+Nó kiểm lại từng bản sửa vòng 3 bằng code + assertion + `.git/logs` (thời điểm đo so với commit code)
+và xác nhận: reset bộ đếm nằm đúng trong `_lock` trước khi tạo thread; `source.stop()` khi give-up gọi
+ngoài lock, stop hai lần vô hại; đảo thứ tự `imencode` không đổi nghĩa ngoài ý muốn; `WAIT_S`/
+`--nguong-s` nhất quán với artifact; provenance khớp `013e0a7`; **không còn** chuỗi `110–111 ms` /
+`94–115 ms` trong toàn repo.
+
+Đã sửa các P3 (tất cả trong nhánh này, không nới phạm vi):
+
+| P3 | Vấn đề | Sửa |
+|---|---|---|
+| P3-1 | Comment đầu `opencv_source.py` vẫn nói "một lần im lặng > 3 s là kết luận" — đúng cái P1 vòng 2 đã bác, và mâu thuẫn với `MISS_MIN` | Nói rõ kết luận cần **cả** `age > STALE_S` **và** `_misses >= MISS_MIN`; một lần trượt > 3 s **không** đủ |
+| P3-2 | Docstring script đo ghi raw "~3 s"; artifact là 3,75 s | Ghi "`STALE_S` 3 s + `max_misses` của nguồn (~3,75 s, xem artifact)" + cảnh báo ca mất mạng hẳn tốn thêm ~15 s |
+| P3-3 | Test `imencode` chỉ ghim `_misses`; ai half-revert (vẫn `_misses += 1` nhưng cập nhật mốc **trước** encode) thì test vẫn xanh | Ghim thêm: encode hỏng ⇒ `_last_frame_at` **không đổi**, `_got_frame` vẫn `False`. Đã kiểm: half-revert ⇒ **đỏ** |
+| P3-4 | Dòng `self._read_errors = 0` trong `start()` chưa được ghim (test assert sau một lần đọc **thành công**, mà đường đó tự reset) | Test mới: phiên B lỗi **đúng một lần** rồi `read()` **chặn** (không có lần đọc thành công nào) ⇒ `_read_errors` phải là **1**; bỏ dòng reset ⇒ **đỏ** (đã kiểm) |
+| P3-5 | Log còn câu so sánh "94→116 ms (worker) và 3758→3752 ms (raw)" — số cũ đã bị ghi đè, và 94,6 ms là **thời gian đóng luồng**, không phải thời gian báo lỗi | Thay bằng bộ số hiện tại + ghi rõ hai đại lượng khác nhau, cấm trộn |
+| P3-7 | `WAIT_S` không có test ⇒ ai hardcode lại 15 s cho mode `worker` (10 s) thì test vẫn xanh | Thêm test ghim `WAIT_S` |
+| note | `_is_dirty_outside_data` cắt `line[3:]` ⇒ phân loại sai path có quote (`?? "data/a b.json"`) và rename (`R  data/old -> src/new.py` bị coi là **sạch**) | Sửa: xét **cả hai** đầu của rename + strip quote; thêm 2 test (đã xác nhận hành vi cũ sai: rename data→code trả `False`) |
+
+**Không sửa, mở ticket (có từ trước, không do nhánh này):** P3-6 — phiên trước đang `error` thì
+`start()` **giữ** `state=error` trong suốt thời gian mở nguồn (mode `track` nạp worker 20–240 s) ⇒
+`/api/live/status` trả `error` + "Đang mở …", `/api/live/stream` 409 "… vì lỗi: Đang mở …", UI hiện
+`role="alert"`. Reviewer đề nghị ticket riêng để không nới phạm vi PR.
+
+### Kiểm tra sau khi sửa
+- `./run lint` ✓ · `./run test` **696 passed** (5 deselected, ~60 s)
+- Hai test siết lại được kiểm "có răng" bằng cách **half-revert** đúng như reviewer mô tả: P3-3 (cập
+  nhật mốc trước `imencode`) ⇒ `test_imencode_hong_thi_khong_coi_la_co_frame` **đỏ**; P3-4 (bỏ
+  `_read_errors = 0`) ⇒ test mới **đỏ**.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Tự hạ cấp/cảnh báo khi drift xấu** (`p05 < 0,2` như `binh2`): hiện mới đo, chưa hành động.

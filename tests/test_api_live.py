@@ -712,7 +712,11 @@ class TestCaptureNemLoi:
         monkeypatch.setattr(opencv_source.cv2, "imencode", lambda *a, **k: (False, None))
         source = OpenCvFrameSource("0")
         source.start()
-        for _ in range(opencv_source.MISS_MIN):
+        truoc = source._last_frame_at
+        assert source.read_jpeg() is None                 # encode hỏng ≠ "đã có frame"
+        assert source._last_frame_at == truoc, "encode hỏng mà vẫn cập nhật mốc frame ⇒ health báo khoẻ"
+        assert source._got_frame is False
+        for _ in range(opencv_source.MISS_MIN - 1):
             assert source.read_jpeg() is None
         source._last_frame_at -= (opencv_source.WARMUP_S + 1.0)
 
