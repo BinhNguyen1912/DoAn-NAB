@@ -293,10 +293,17 @@ def _finish_recording(viz, args):
 
 
 def _finish_outputs(viz, metrics, args):
-    """Chốt số liệu TRƯỚC, xuất video SAU — Ctrl+C trong lúc chuyển mã không được làm mất CSV."""
-    if metrics is not None:
-        _finish_metrics(metrics, args)
-    _finish_recording(viz, args)
+    """Chốt số liệu TRƯỚC, xuất video SAU — nhưng video PHẢI luôn được đóng/xuất.
+
+    `try/finally` là bắt buộc (review vòng 2, P2): `_finish_metrics` có thể ném (đĩa đầy, git không
+    chạy được, Ctrl+C lần hai). Nếu không có `finally` thì recorder không được đóng TƯỜNG MINH và
+    `demo_web.mp4` (bản duy nhất Chrome phát được) không bao giờ được tạo — đúng thứ PR này muốn có.
+    """
+    try:
+        if metrics is not None:
+            _finish_metrics(metrics, args)
+    finally:
+        _finish_recording(viz, args)
 
 
 def _make_metrics(args):

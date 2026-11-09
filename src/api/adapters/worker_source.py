@@ -36,6 +36,9 @@ FRAME_STALE_S = 15.0
 # Nhưng nếu worker tự báo độ trễ model (`vos_ms`) thì ngưỡng phải co theo: 4 × độ trễ gần nhất.
 # (worker đang chạy 4 s/frame mà 15 s không có frame mới = đã lỡ 4 frame ⇒ mới đáng ngờ).
 FRAME_STALE_CYCLES = 4
+# Trần: một mẫu `vos_ms` bất thường (model khựng 60 s) không được nới ngưỡng lên 4 phút — quá lâu
+# để phát hiện treo thật. 120 s là mức "chắc chắn treo" cho đồ án.
+FRAME_STALE_MAX_S = 120.0
 
 # Dọn worker cũ: chờ SIGTERM rồi SIGKILL, và **chờ tới khi nó chết thật** sau SIGKILL.
 # Thiếu bước chờ cuối cùng ⇒ hàm trả về khi tiến trình còn sống nửa nhịp, test `proc.poll()`
@@ -120,7 +123,7 @@ class WorkerFrameSource(FrameSource):
             # sẽ làm mất pidfile của phiên mới, và lần `uvicorn --reload` sau không reap được
             # worker mồ côi (bug đã sửa ở PR vòng đời 08-11).
             pidfile = self._out / PID_NAME
-            if _read_pid(pidfile) in (None, proc.pid):
+            if _read_pid(pidfile) == proc.pid:
                 pidfile.unlink(missing_ok=True)
 
     @property
@@ -293,7 +296,8 @@ def _stale_limit_s(status: dict) -> float:
         vos_ms = float(status.get("vos_ms") or 0.0)
     except (TypeError, ValueError):
         vos_ms = 0.0
-    return max(FRAME_STALE_S, FRAME_STALE_CYCLES * vos_ms / 1000.0)
+    limit = max(FRAME_STALE_S, FRAME_STALE_CYCLES * vos_ms / 1000.0)
+    return min(limit, FRAME_STALE_MAX_S)
 
 
 def _wait_pid_gone(pid: int, timeout: float) -> bool:

@@ -269,13 +269,24 @@ record_path: {rec}
 metrics_csv: {csv_out}
 metrics_summary: {js_out}
 """)
-        monkeypatch.setattr(run_live, "transcode_for_web",
-                            lambda *a, **k: (_ for _ in ()).throw(KeyboardInterrupt()))
+        seen = {}
+
+        def _transcode_luc_nay(*args, **kwargs):
+            # Kiểm THỨ TỰ, không chỉ kiểm "có bắt KeyboardInterrupt": phải thấy CSV/JSON ĐÃ CÓ
+            # tại thời điểm chuyển mã (review vòng 2, P3 — nếu đảo thứ tự mà vẫn catch thì test
+            # kiểu cũ vẫn xanh).
+            seen["csv"] = csv_out.is_file()
+            seen["summary"] = js_out.is_file()
+            raise KeyboardInterrupt
+
+        monkeypatch.setattr(run_live, "transcode_for_web", _transcode_luc_nay)
         monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
 
         with pytest.raises(SystemExit):
             run_live.main()
 
+        assert seen["csv"] is True, "số liệu phải được ghi TRƯỚC khi chuyển mã"
+        assert seen["summary"] is True
         assert csv_out.is_file(), "Ctrl+C lúc chuyển mã KHÔNG được làm mất CSV"
         assert js_out.is_file()
 

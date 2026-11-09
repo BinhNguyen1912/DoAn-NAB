@@ -14,6 +14,7 @@ Hai tầng được kiểm:
 
 import json
 import os
+import sys
 import time
 
 import pytest
@@ -292,10 +293,17 @@ class TestServicePhatHienNguonChet:
         assert service.status().state is LiveState.RUNNING
         service.stop()
 
-    def test_nguon_khong_co_health_thi_giu_nguyen_hanh_vi_cu(self, live_service):
-        """`FakeFrameSource` (webcam/file) không có `health()` ⇒ không được kiểm tra gì."""
+    def test_nguon_khong_co_health_thi_giu_nguyen_hanh_vi_cu(self, live_service,
+                                                             make_frame_source):
+        """`FakeFrameSource` (webcam/file) không có `health()` ⇒ không bị đụng tới.
+
+        Bằng chứng phải là **vòng đọc vẫn chạy** (số frame của nguồn tăng), không phải `sleep`:
+        nếu ai đó gọi `health()` vô điều kiện, `AttributeError` bị `_check_health` nuốt và test
+        `sleep + assert RUNNING` vẫn xanh ⇒ "pass rỗng" (P3 review vòng 2).
+        """
         live_service.start("0")
-        time.sleep(0.2)
+        source = make_frame_source.created[-1]
+        assert _wait(lambda: source._seq >= 3, timeout=3.0), source._seq
         assert live_service.status().state is LiveState.RUNNING
         live_service.stop()
 
@@ -336,20 +344,29 @@ class TestDongBoVoiWorkerThat:
 
 
 class _ProcForStop:
-    """Tiến trình giả đủ hợp đồng cho `WorkerFrameSource.stop()`."""
+    """Tiến trình THẬT (sleep) bọc qua `Popen` thật — KHÔNG bịa pid.
 
-    def __init__(self, pid):
-        self.pid = pid
-        self.killed = False
+    Vì sao: `stop()` gọi `os.killpg(os.getpgid(pid), SIGTERM)`. Dùng pid giả (vd 111) thì trên máy/CI
+    có tiến trình thật trùng pid, test sẽ gửi SIGTERM vào process group của người khác (P3 review
+    vòng 2).
+    """
+
+    def __init__(self):
+        import subprocess
+
+        self._proc = subprocess.Popen([sys.executable, "-c", "import time; time.sleep(30)"],
+                                      stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL,
+                                      start_new_session=True)
+        self.pid = self._proc.pid
 
     def wait(self, timeout=None):
-        return 0
+        return self._proc.wait(timeout=timeout)
 
     def terminate(self):
-        self.killed = True
+        self._proc.terminate()
 
     def kill(self):
-        self.killed = True
+        self._proc.kill()
 
 
 class TestPidfileKhongBiXoaNham:
@@ -367,10 +384,13 @@ class TestPidfileKhongBiXoaNham:
         pidfile = tmp_path / PID_NAME
         pidfile.write_text("111", encoding="utf-8")
 
+        proc = _ProcForStop()
+        pidfile.write_text(str(proc.pid), encoding="utf-8")
         old = WorkerFrameSource("0", out_dir=tmp_path)
-        old._proc = _ProcForStop(111)          # phiên cũ, pid 111
+        old._proc = proc                        # phiên cũ (tiến trình thật)
         pidfile.write_text("222", encoding="utf-8")   # phiên MỚI đã ghi pidfile của nó
 
         old.stop()
 
         assert pidfile.read_text(encoding="utf-8") == "222", "pidfile của phiên mới bị xoá nhầm"
+        assert proc.wait(timeout=5) is not None, "worker cũ phải bị dừng thật"

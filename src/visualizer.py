@@ -80,6 +80,7 @@ class Visualizer:
         # Ngưỡng nhận lại (do run_live set) — chỉ để HUD hiện "khop X / can Y" cho minh bach.
         self.reid_threshold = None
         self._writer = None      # cv2.VideoWriter khi ghi video
+        self._frames_written = 0 # số frame ĐÃ ghi thật (để `recording` không nói dối khi 0 frame)
         self._pending_recorder = None  # (path, fps) chờ frame đầu để biết kích thước
         self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
         self.consecutive_lost = 0  # số frame mất dấu liền tiếp (hiện tại)
@@ -203,13 +204,13 @@ class Visualizer:
 
     @property
     def recording(self):
-        """Đang/đã mở được VideoWriter chưa (False khi chưa mở, hoặc mở ra lỗi).
+        """Đã ghi được ít nhất 1 frame chưa (dùng để quyết định có chuyển mã bản H.264).
 
-        Dùng để quyết định có chuyển mã bản H.264 hay không: file cùng tên của lần chạy TRƯỚC còn
-        trên đĩa thì không được coi là "đã ghi xong" (review độc lập 09-11, P2).
+        Phải là "đã ghi frame", không phải "writer đã mở": nhánh `frame_size=None` (live) mở writer
+        ở `update()` đầu, nên chỉ cần mở cũng có thể là file rỗng. Và `False` cũng đúng khi mở
+        writer ra lỗi ⇒ không chuyển mã file CŨ cùng tên thành công giả (review 09-11).
         """
-        # `_writer` chỉ được đặt khi VideoWriter mở được VÀ đã ghi frame đầu tiên
-        return self._writer is not None
+        return self._writer is not None and self._frames_written > 0
 
     def close_recorder(self):
         """Đóng recorder nếu đang mở (an toàn khi chưa mở)."""
@@ -226,6 +227,7 @@ class Visualizer:
             print(f"[visualizer] KHONG ghi duoc video: {path} (codec/thu muc khong hop le)")
             return False
         self._writer = writer
+        self._frames_written = 0
         return True
 
     def _write(self, img):
@@ -235,6 +237,7 @@ class Visualizer:
             self._open_writer(path, fps, (img.shape[1], img.shape[0]))
         if self._writer is not None:
             self._writer.write(img)
+            self._frames_written += 1
 
     # ---------- HUD text ----------
 
