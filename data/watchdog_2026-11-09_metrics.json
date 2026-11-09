@@ -1,0 +1,74 @@
+{
+  "do_luc": "2026-11-09T20:18:25",
+  "git_rev": "ab46ef8c6c863dbc79cb2b46f24d245712587397",
+  "git_dirty": false,
+  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi trên file ĐÃ THEO DÕI so với commit đó (file artifact mới chưa track không tính — chính nó là thứ đang được ghi).",
+  "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, image_size 192",
+  "lenh": "python scripts/measure_watchdog.py --lan 3",
+  "nguong_dang_ky_truoc": {
+    "nguon": "docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md (viết TRƯỚC khi chạy)",
+    "dieu_kien": "kill -9 worker giữa phiên ⇒ /api/live/status trả `error` ≤ 2 s, message nêu lý do, luồng MJPEG đóng"
+  },
+  "thiet_lap": {
+    "clip": "data/binh1.mp4",
+    "bbox_xywh": [
+      104,
+      308,
+      209,
+      287
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "so_lan": 3
+  },
+  "ket_qua": [
+    {
+      "load_s": 5.2,
+      "pid": 1025,
+      "frames_truoc_khi_giet": 1,
+      "byte_luong_truoc_khi_giet": 1204224,
+      "state_sau_khi_giet": "error",
+      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
+      "tg_bao_error_ms": 98.2,
+      "tg_dong_luong_ms": 96.9,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 5.0,
+      "pid": 1092,
+      "frames_truoc_khi_giet": 1,
+      "byte_luong_truoc_khi_giet": 1126400,
+      "state_sau_khi_giet": "error",
+      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
+      "tg_bao_error_ms": 117.7,
+      "tg_dong_luong_ms": 105.7,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 5.2,
+      "pid": 1160,
+      "frames_truoc_khi_giet": 1,
+      "byte_luong_truoc_khi_giet": 1126400,
+      "state_sau_khi_giet": "error",
+      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
+      "tg_bao_error_ms": 117.1,
+      "tg_dong_luong_ms": 100.1,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    }
+  ],
+  "tom_tat": {
+    "n": 3,
+    "tg_bao_error_ms": {
+      "min": 98.2,
+      "max": 117.7,
+      "mean": 111.0
+    },
+    "so_lan_vuot_nguong": 0,
+    "so_lan_luong_khong_dong": 0,
+    "message_mau": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log"
+  },
+  "loi": null
+}

@@ -267,6 +267,8 @@ Kiểm thử tự động:
 > `canPlayType('video/mp4; codecs="mp4v.20.9"')` trả `""`, `videoWidth = 0`). Vì vậy sau khi pipeline
 > xong, `src/worker/web_export.py` chuyển sang **`out_web.mp4` (H.264 + faststart)** bằng
 > `imageio-ffmpeg` (cài qua pip, không cần sudo) và UI phát bản đó; bản gốc vẫn để tải về xem bằng VLC.
+> CLI `--record demo.mp4` cũng vậy (từ 09-11): ghi xong tự xuất thêm **`demo_web.mp4`** H.264 — đo thật
+> trên `data/h264_check.mp4`: bản gốc `mpeg4 (mp4v)`, bản web `h264 (High) (avc1)`, yuv420p.
 
 Chế độ dev frontend (sửa code là tự reload, cần backend chạy song song ở terminal khác):
 
