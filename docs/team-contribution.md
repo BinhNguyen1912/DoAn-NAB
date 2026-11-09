@@ -10,8 +10,11 @@
 phần **em tự xây là toàn bộ hệ thống** chạy quanh model: streaming per-frame, chọn đối tượng, HUD
 tiếng Việt, quỹ đạo, đo hiệu năng, cấu hình, chế độ headless, chế độ hiển thị mượt, **live hybrid
 VOS+LK**, **API (ports & adapters) + web React**, test + CI. Số hiện tại: **7 175 dòng Python** trong
-`src/` (+ **1 343 dòng** `web/src/`), **659 hàm test** (692 test chạy ở làn nhanh, 697 full), **164
-commit**, **5 ADR**, 44 log trong `docs/task/` (đếm bằng `git ls-files` + `grep -c 'def test_'`).
+`src/` (+ **1 343 dòng** `web/src/`), **663 hàm test** (704 test chạy ở làn nhanh trên nhánh này),
+**167 commit**, **5 ADR**, **44 log** trong `docs/task/`. Các số đếm **tính đến 09-11-2026**; đếm lại
+bằng: `git rev-list --count HEAD`, `find src -name '*.py' | xargs wc -l | tail -1`,
+`grep -rc 'def test_' tests/*.py | awk -F: '{s+=$2} END {print s}'` (số sẽ tăng sau mỗi PR — trích
+khoảng "hơn 660 hàm test" an toàn hơn số tuyệt đối).
 
 ## 2. Bảng đóng góp
 
@@ -26,7 +29,7 @@ commit**, **5 ADR**, 44 log trong `docs/task/` (đếm bằng `git ls-files` + `
 | 7 | **Config YAML + CLI** | PyYAML | **Tự viết**: defaults < YAML < CLI, validate kiểu, `resolve_checkpoint` lỗi thân thiện, `--device cuda` cho Colab, `--image-size`, `--smooth` | `src/config.py` (95), `tools/run_live.py` (337), `configs/default.yaml`, `tests/test_config.py` (21), `tests/test_run_live_cli.py` (9), commits `db8ad09`, `1244638` |
 | 8 | **Fixture giả lập** (test không cần dữ liệu nặng) | — | **Tự viết**: sinh chuỗi frame ô vuông di chuyển + **chế độ che khuất** + bbox đáp án | `src/synthetic_video.py` (73), `tests/test_synthetic_video.py` (5), commit `f11233e` |
 | 9 | **Tool phụ trợ** | — | **Tự viết**: `check_video_source.py` (kiểm nguồn nhanh), `find_phone_camera.py` (quét LAN tìm camera điện thoại, sửa nhận diện subnet WSL), `scripts/demo_webcam.sh` | `tools/` (409 dòng), `tests/test_find_phone_camera.py` (3) |
-| 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: 659 hàm test (692 test ở làn nhanh, 697 full), `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
+| 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: 663 hàm test (704 test ở làn nhanh trên nhánh này), `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
 | 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001→0004, spec, **13 ticket** + tracker, **28 file log theo ngày**, README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | 12 | **Số liệu đánh giá** | đo trên máy thật | **Tự đo & phân tích**: latency/FPS CPU, độ trễ tăng theo memory, đánh đổi `image_size` (1024/768/512/384/256), `reanchor`, độ phân giải camera, thread; phát hiện SAM 2 luôn trả mask với vùng nền | Bảng trong `README.md` mục "Đánh giá hiệu năng"/"Tối ưu tốc độ", `docs/task/18-10-2026-*.md`, `data/*_summary.json` |
 | 13 | **`ReIdSession` — tái nhận diện khuôn mặt** (mất dấu → đóng băng → tự bám lại đúng người) | YuNet + SFace của OpenCV Zoo (model có sẵn) | **Tự viết toàn bộ cơ chế**: máy trạng thái `tracking/lost/reacquiring`, **chặn bám sang người khác** bằng cách ngừng `engine.process`, **tập embedding tham chiếu** (chỉ lấy mặt nằm trong ô đang bám + cổng chất lượng), **max cosine**, ngưỡng hiệu chỉnh bằng số đo thật, cột metrics `state/reid_score/reacquired` | `src/reid.py`, `tests/test_reid.py` (16 test), `docs/adr/0003`, `configs/default.yaml` |

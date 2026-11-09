@@ -20,7 +20,7 @@
 | 9 | **Tích hợp** 3 thành phần + xử lý **mất dấu** + **tái nhận diện** | `src/reid.py` 3 cổng chống "bám nhầm nền rồi kẹt" (ticket 13): `lost_score_threshold`, xác nhận 2 frame, kiểm chứng 2 frame · đo: ca bám nhầm nền (mask 782 px, score +19,40 giả) bị loại, khung 19 bám lại đúng với `reid=0,94` · ngưỡng hiệu chỉnh bằng 2 clip thật (`data/reid_2clip_calib.json`) | ✅ |
 | 10 | **Tối ưu real-time** + đánh giá **FPS, độ trễ, CPU/GPU, độ chính xác** | **live hybrid VOS+LK** (worker riêng + Lucas–Kanade): HUD **29,9 FPS**, mask **8,6 lần/giây**, tuổi dữ liệu ảnh p95 **210 ms** (clip `binh1`, `data/drift_2026-11-08_metrics.json`); **độ tự nhất quán ô bao** `drift_iou` 0,885–0,889 / p05 0,663–0,720 (binh1), 0,873 / 0,644 (simloss), 0,528 / **0,000** (binh2 — VOS trả mask rỗng 26 lần); **watchdog**: worker chết ⇒ API `error` sau **116–117 ms** (`data/watchdog_2026-11-09_metrics.json`), nguồn camera mất frame ⇒ **3,75 s** (`data/watchdog_raw_2026-11-09_metrics.json`) · `src/metrics_logger.py` (CSV từng frame + summary mean/p95/FPS/tỉ lệ mất dấu) · **`src/resource_usage.py` (mới 02-11)**: CPU %, RAM, GPU (đo thật: **CPU 342 % ≈ 43 % máy 8 lõi, RAM đỉnh 632 MB**, không GPU — `data/res_1102_summary.json`) · tối ưu: `image_size` 1024→256 (`docs/research/03`,`05`), `--reanchor-every`, thread đọc camera | ✅ (GPU: chỉ có số trên Colab, xem `docs/colab-gpu.md`) |
 | 11 | **Tích hợp, kiểm thử, hoàn thiện UI** + kiểm thử **chuyển động / che khuất / ánh sáng** | UI: `src/visualizer.py` (mask alpha + ô bao + quỹ đạo + HUD tiếng Việt + banner MẤT DẤU) · **UI web**: `web/src/components/LivePanel.tsx` (chọn ô, phát MJPEG, dòng "nhịp mask" nói rõ FPS phát ≠ nhịp mask) + `./run e2e` **PASS** trên Chrome/Edge thật (23 kiểm, gồm "trình duyệt GIẢI MÃ được video kết quả H.264") · **video demo xuất H.264** phát được trên web (`tools/run_live.py` + `src/worker/web_export.py`) · chuyển động: fixture ô vuông (`src/synthetic_video.py`) · che khuất: `experiment_occlusion` · **ánh sáng (mới 02-11)**: `scripts/experiment_lighting.py` → đo thật 5 mức sáng, **IoU 0,974 → 0,942**, 0/12 khung mất dấu (`data/lighting_iou_320_summary.json`) | ✅ (ánh sáng: fixture tổng hợp, độ tương phản cao — cần clip thật để kết luận về cảnh thật) |
-| 12 | **Báo cáo: tổng quan + cơ sở lý thuyết** | `docs/tom-tat-do-an.md` (bản tóm tắt có số) · `docs/research/02` (lý thuyết SAM 2/SAMURAI), `docs/research/04` (giải thích cho người mới + dàn ý báo cáo) · `docs/adr/0001…0004` (quyết định + lý do) · `docs/team-contribution.md` (phần nào tự làm) · **44 file log** trong `docs/task/` | 🟡 nội dung đủ, **chưa ghép thành file báo cáo theo mẫu của trường** |
+| 12 | **Báo cáo: tổng quan + cơ sở lý thuyết** | `docs/tom-tat-do-an.md` (bản tóm tắt có số) · `docs/research/02` (lý thuyết SAM 2/SAMURAI), `docs/research/04` (giải thích cho người mới + dàn ý báo cáo) · `docs/adr/0001…0004` (quyết định + lý do) · `docs/team-contribution.md` (phần nào tự làm) · **44 file log** trong `docs/task/` (tính đến 09-11-2026) | 🟡 nội dung đủ, **chưa ghép thành file báo cáo theo mẫu của trường** |
 
 ## Số liệu dùng được ngay trong báo cáo
 
@@ -55,8 +55,9 @@
 ## Cách tái tạo số liệu
 
 ```bash
-./run test                                   # 692 test làn nhanh (~58 s), không cần checkpoint
-./run testall                                # 697 test (gồm 5 test cần checkpoint SAM 2, ~180 s)
+./run test                                   # 704 test làn nhanh (~58 s), không cần checkpoint
+./run testall                                # 709 test trong checkout CHÍNH (có checkpoint SAM 2, ~180 s);
+                                             # thiếu checkpoint ⇒ 5 test đó `skip` (704 passed, 5 skipped)
 ./run webtest && ./run e2e                   # 24 test vitest + e2e Playwright trên Chrome/Edge thật
 python scripts/measure_live_relay.py --source "$(bash scripts/cam_relay.sh snapurl)" \
     --bbox 110,35,95,110 --image-size 192 --vos-every 3 --seconds 25   # bằng chứng camera THẬT
