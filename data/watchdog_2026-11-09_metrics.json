@@ -1,9 +1,10 @@
 {
-  "do_luc": "2026-11-09T21:39:54",
-  "git_rev": "4e9248c850f4f774aaf957b298286e59c669fece",
-  "git_dirty": false,
+  "do_luc": "2026-11-09T22:21:37",
+  "git_rev": "09e622cdea654b5fe0b4bb0526aa155a465a3b23",
+  "git_dirty": true,
   "git_dirty_code": false,
-  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
+  "git_loi": null,
+  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance (artifact không được trích).",
   "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, image_size 192",
   "lenh": "python scripts/measure_watchdog.py --mode worker --lan 3",
   "nguong_dang_ky_truoc": {
@@ -24,50 +25,54 @@
   },
   "ket_qua": [
     {
-      "load_s": 3.4,
-      "pid": 3870,
-      "frames_truoc_khi_giet": 1,
-      "byte_luong_truoc_khi_giet": 1052672,
-      "state_sau_khi_giet": "error",
-      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 110.3,
-      "tg_dong_luong_ms": 101.0,
-      "luong_dong_kieu": "EOF (server đóng kết nối)",
-      "vuot_nguong": false
-    },
-    {
-      "load_s": 3.3,
-      "pid": 3935,
+      "load_s": 4.0,
+      "pid": 5053,
       "frames_truoc_khi_giet": 1,
       "byte_luong_truoc_khi_giet": 1204224,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 110.5,
-      "tg_dong_luong_ms": 100.2,
+      "tg_bao_error_ms": 94.2,
+      "tg_dong_luong_ms": 101.2,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "that_bai": false,
       "vuot_nguong": false
     },
     {
-      "load_s": 3.4,
-      "pid": 4001,
+      "load_s": 2.9,
+      "pid": 5120,
       "frames_truoc_khi_giet": 1,
       "byte_luong_truoc_khi_giet": 1126400,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 110.0,
-      "tg_dong_luong_ms": 107.5,
+      "tg_bao_error_ms": 114.8,
+      "tg_dong_luong_ms": 103.9,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "that_bai": false,
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 3.1,
+      "pid": 5186,
+      "frames_truoc_khi_giet": 1,
+      "byte_luong_truoc_khi_giet": 901120,
+      "state_sau_khi_giet": "error",
+      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
+      "tg_bao_error_ms": 115.1,
+      "tg_dong_luong_ms": 109.3,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "that_bai": false,
       "vuot_nguong": false
     }
   ],
   "tom_tat": {
     "n": 3,
     "tg_bao_error_ms": {
-      "min": 110.0,
-      "max": 110.5,
-      "mean": 110.3
+      "min": 94.2,
+      "max": 115.1,
+      "mean": 108.0
     },
     "so_lan_vuot_nguong": 0,
+    "so_lan_khong_phat_hien": 0,
     "so_lan_luong_khong_dong": 0,
     "message_mau": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log"
   },

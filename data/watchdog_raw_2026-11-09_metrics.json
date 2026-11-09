@@ -1,9 +1,10 @@
 {
-  "do_luc": "2026-11-09T21:40:08",
-  "git_rev": "4e9248c850f4f774aaf957b298286e59c669fece",
+  "do_luc": "2026-11-09T22:21:17",
+  "git_rev": "09e622cdea654b5fe0b4bb0526aa155a465a3b23",
   "git_dirty": true,
   "git_dirty_code": false,
-  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
+  "git_loi": null,
+  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance (artifact không được trích).",
   "moi_truong": "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",
   "lenh": "python scripts/measure_watchdog.py --mode raw --lan 3",
   "nguong_dang_ky_truoc": {
@@ -20,10 +21,12 @@
       "frames_truoc_khi_giet": 0,
       "byte_luong_truoc_khi_giet": 147456,
       "state_sau_khi_giet": "error",
-      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
-      "tg_bao_error_ms": 3734.3,
-      "tg_dong_luong_ms": 3733.9,
+      "message": "camera/luồng không trả frame trong 3 s (91 lần liên tiếp) — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3758.1,
+      "tg_dong_luong_ms": 3746.3,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "ghi_chu_frames": "frames đếm khung hình ĐỔI nội dung; relay phục vụ 1 ảnh tĩnh ⇒ 0 là bình thường, KHÔNG phải 'nguồn không ra frame'",
+      "that_bai": false,
       "vuot_nguong": false
     },
     {
@@ -31,10 +34,12 @@
       "frames_truoc_khi_giet": 0,
       "byte_luong_truoc_khi_giet": 147456,
       "state_sau_khi_giet": "error",
-      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
-      "tg_bao_error_ms": 3757.6,
-      "tg_dong_luong_ms": 3750.5,
+      "message": "camera/luồng không trả frame trong 3 s (92 lần liên tiếp) — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3770.0,
+      "tg_dong_luong_ms": 3755.6,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "ghi_chu_frames": "frames đếm khung hình ĐỔI nội dung; relay phục vụ 1 ảnh tĩnh ⇒ 0 là bình thường, KHÔNG phải 'nguồn không ra frame'",
+      "that_bai": false,
       "vuot_nguong": false
     },
     {
@@ -42,23 +47,26 @@
       "frames_truoc_khi_giet": 0,
       "byte_luong_truoc_khi_giet": 147456,
       "state_sau_khi_giet": "error",
-      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
-      "tg_bao_error_ms": 3744.0,
-      "tg_dong_luong_ms": 3741.9,
+      "message": "camera/luồng không trả frame trong 3 s (92 lần liên tiếp) — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3764.9,
+      "tg_dong_luong_ms": 3751.8,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "ghi_chu_frames": "frames đếm khung hình ĐỔI nội dung; relay phục vụ 1 ảnh tĩnh ⇒ 0 là bình thường, KHÔNG phải 'nguồn không ra frame'",
+      "that_bai": false,
       "vuot_nguong": false
     }
   ],
   "tom_tat": {
     "n": 3,
     "tg_bao_error_ms": {
-      "min": 3734.3,
-      "max": 3757.6,
-      "mean": 3745.3
+      "min": 3758.1,
+      "max": 3770.0,
+      "mean": 3764.3
     },
     "so_lan_vuot_nguong": 0,
+    "so_lan_khong_phat_hien": 0,
     "so_lan_luong_khong_dong": 0,
-    "message_mau": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối"
+    "message_mau": "camera/luồng không trả frame trong 3 s (91 lần liên tiếp) — kiểm tra nguồn/kết nối"
   },
   "loi": null
 }
