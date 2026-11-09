@@ -604,8 +604,10 @@ class LiveTrackingSession:
             self._prev_raw_mask = None
             return
         if self._prev_raw_mask is not None:
-            self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
+            # `append` + `sum()` trong CÙNG lock — cùng lý do như `_vos_lost_window` ở trên (review
+            # 09-11 vòng 3: comment cấm append ngoài lock mà 16 dòng dưới lại làm đúng thế).
             with self._stats_lock:
+                self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
                 self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
         self._prev_raw_mask = raw
 

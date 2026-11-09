@@ -5,9 +5,12 @@ Chức năng: chạy `tools/live_worker.py` cho từng clip + ô chọn, đọc 
            `git_rev`/`git_dirty_code`/`lenh`/`do_luc` + bảng tóm tắt ra stdout.
 Input  : --clip (nhiều lần): `tên=đường_dẫn:x,y,w,h`; --image-size, --vos-every, --frames, --out.
 Output : `data/empty_window_<ngày>_metrics.json`.
-`--expect-lost <clip>`: khai clip KỲ VỌNG có mất dấu. Clip không khai ⇒ kỳ vọng **KHÔNG** mất dấu
-         (mặc định an toàn: không bao giờ false-pass). Mỗi lần chạy ghi đè cùng một file artifact —
-         muốn giữ nhiều lần thì truyền `--out data/empty_window_<ngày>_run<N>.json`.
+`--expect-lost <clip>`: khai clip KỲ VỌNG có mất dấu — CHỈ clip được khai mới bị chấm đạt/không đạt
+         (tiêu chí đăng ký trước). Clip không khai: in số, ghi `ky_vong: "không đặt"`, **không** bị
+         coi là hỏng (thực tế khác giả định chưa nói không phải lỗi đo). Không khai clip nào ⇒ lần
+         chạy là **CHỈ ĐO**, artifact ghi `ket_luan = "chỉ đo…"` + in cảnh báo, để không ai đọc
+         artifact thành "đã đạt". Mỗi lần chạy ghi đè cùng một file artifact — muốn giữ nhiều lần thì
+         truyền `--out data/empty_window_<ngày>_run<N>.json`.
 Lưu ý  : ô chọn (bbox) là **đầu vào của phép đo** — sai bbox thì số vô nghĩa (đo 09-11: `binh2` dùng
          bbox của `binh1` cho `empty_frac_window = 0`, đúng bbox của `binh2` cho **0,17**).
          Đây là phép **đếm sự kiện**, không phải phân vị: `empty_runs` là bộ đếm trọn đời (không
@@ -44,6 +47,16 @@ def parse_clip(spec: str) -> tuple[str, str, tuple[int, int, int, int]]:
     return name, path, (x, y, w, h)
 
 
+def _row_from_status(status: dict, name: str, path: str, bbox) -> dict:
+    """Dựng dòng số từ `status.json`. `co_truong_empty_window` phải tính từ **status THÔ**: nếu
+    tính từ `row` (sau `row.update`) thì khoá luôn TỒN TẠI với giá trị `None` ⇒ nhánh "worker bản cũ
+    không ghi khoá" không bao giờ chạy (review 09-11 vòng 3, P2)."""
+    row = {"clip": name, "path": path, "bbox_xywh": list(bbox),
+           "co_truong_empty_window": "empty_frac_window" in status}
+    row.update({key: status.get(key) for key in FIELDS})
+    return row
+
+
 def summarize(rows: list) -> dict:
     """Tóm tắt thuần (test headless): mỗi clip lấy dòng số + kết luận có/không mất dấu THEO CỬA SỔ.
 
@@ -54,7 +67,9 @@ def summarize(rows: list) -> dict:
         name = row["clip"]
         frac = row.get("empty_frac_window")
         per_clip[name] = {
-            "co_truong_empty_window": "empty_frac_window" in row,
+            # `row.get(...)` = dòng dựng tay (test) vẫn suy ra được từ chính nó.
+            "co_truong_empty_window": row.get("co_truong_empty_window",
+                                              "empty_frac_window" in row),
             "empty_runs": row.get("empty_runs"),
             "empty_frac_window": frac,
             "empty_window_n": row.get("empty_window_n"),
@@ -64,6 +79,17 @@ def summarize(rows: list) -> dict:
             "dang_mat_dau": (None if frac is None else frac > 0),
         }
     return per_clip
+
+
+def _ket_luan(problems: list, expect: dict) -> str:
+    """Một dòng kết luận ghi vào artifact — để không ai đọc "không có lý do hỏng" thành "đã đạt"
+    khi chưa hề khai tiêu chí nào."""
+    if problems:
+        return "KHÔNG ĐẠT: " + " | ".join(problems)
+    if not expect:
+        return ("CHỈ ĐO — không khai `--expect-lost` nào ⇒ lần chạy này KHÔNG kiểm chứng gì, "
+                "chỉ có số")
+    return "đạt"
 
 
 def _verdict(per_clip: dict, expect: dict) -> list:
@@ -99,8 +125,9 @@ def main() -> int:
     parser.add_argument("--vos-every", type=int, default=3)
     parser.add_argument("--frames", type=int, default=900)
     parser.add_argument("--expect-lost", action="append", default=[],
-                        help="tên clip KỲ VỌNG có mất dấu (dùng để tự kiểm phép đo). Clip không khai "
-                             "⇒ kỳ vọng KHÔNG mất dấu")
+                        help="tên clip KỲ VỌNG có mất dấu (tiêu chí đăng ký trước). CHỈ clip được "
+                             "khai mới bị chấm; clip không khai chỉ in số. Không khai clip nào ⇒ "
+                             "lần chạy là CHỈ ĐO (không kiểm chứng gì)")
     parser.add_argument("--timeout-s", type=float, default=900.0,
                         help="giới hạn thời gian mỗi lần chạy worker")
     parser.add_argument("--out", default="")
@@ -136,9 +163,7 @@ def main() -> int:
             # Ghi lỗi rồi ĐI TIẾP để artifact vẫn là bằng chứng của lần hỏng (không traceback).
             errors.append(f"{name}: không đọc được status.json ({type(exc).__name__}: {exc})")
             continue
-        row = {"clip": name, "path": path, "bbox_xywh": list(bbox)}
-        row.update({key: status.get(key) for key in FIELDS})
-        rows.append(row)
+        rows.append(_row_from_status(status, name, path, bbox))
 
     per_clip = summarize(rows)
     # Chỉ clip ĐƯỢC KHAI mới có kỳ vọng; clip khác in số và ghi "không đặt".
@@ -147,6 +172,9 @@ def main() -> int:
         if name not in expect:
             per_clip[name]["ky_vong"] = "không đặt"
     problems = _verdict(per_clip, expect)
+    ket_luan = _ket_luan(problems, expect)
+    if ket_luan != "đạt":
+        print(f"⚠ {ket_luan}", flush=True)
 
     # P3: một lần chạy "sạch" nhưng NGẮN (nguồn chết giữa đường) không được coi là hoàn tất.
     for row in rows:
@@ -170,6 +198,7 @@ def main() -> int:
         "moi_truong": "WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny",
         "thiet_lap": {"image_size": args.image_size, "vos_every": args.vos_every,
                       "frames": args.frames},
+        "ket_luan": ket_luan,
         "ket_qua": rows,
         "tom_tat": per_clip,
         "ky_vong": expect,

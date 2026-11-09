@@ -71,3 +71,21 @@ def test_clip_khong_khai_ky_vong_thi_khong_bi_cham():
         {"clip": "xau", "empty_runs": 41, "empty_frac_window": 0.205, "empty_window_n": 200},
     ])
     assert measure._verdict(per_clip, {}) == []
+
+
+def test_ket_luan_phan_biet_chi_do_voi_dat():
+    """Không khai `--expect-lost` ⇒ artifact phải ghi **"CHỈ ĐO"**, không phải "đạt" — để không ai
+    trích một lần đo làm bằng chứng "đã đạt tiêu chí" (review 09-11 vòng 3, P1)."""
+    assert measure._ket_luan([], {}) .startswith("CHỈ ĐO")
+    assert measure._ket_luan([], {"binh2": True}) == "đạt"
+    assert measure._ket_luan(["binh2: chưa đủ mẫu"], {"binh2": True}).startswith("KHÔNG ĐẠT")
+
+
+def test_co_truong_empty_window_lay_tu_status_tho():
+    """`co_truong_empty_window` phải phản ánh `status.json` THÔ: nếu tính từ dòng đã `update` thì khoá
+    luôn tồn tại (giá trị None) và nhánh "worker bản cũ không ghi khoá" không bao giờ chạy."""
+    for status, want in (({}, False),
+                         ({"empty_frac_window": None}, True),
+                         ({"empty_frac_window": 0.0}, True)):
+        row = measure._row_from_status(status, "x", "p.mp4", (1, 2, 3, 4))
+        assert measure.summarize([row])["x"]["co_truong_empty_window"] is want, status

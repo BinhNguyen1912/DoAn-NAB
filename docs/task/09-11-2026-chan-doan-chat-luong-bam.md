@@ -65,11 +65,11 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
   (commit chứa code đang review), `git_dirty = false`,
   `git_dirty_code = **false**`, `git_loi = null`.
   Lệnh ghi trong file.
-- **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,20** và
+- **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,205** và
   `p05 = 0,000` ⇒ hai lớp **tách rời hoàn toàn**, không phụ thuộc ngưỡng nhiễu (đây là phép **đếm sự
   kiện**, không phải phân vị).
-- **Độ tản phải nói rõ:** tỉ lệ của `binh2` dao động **0,12–0,20 qua 4 lần chạy** (SAM 2 không tất
-  định — AGENTS §6). Chỉ nên trích **"0,00 vs > 0"** (phân biệt nhị phân, 4/4 lần đúng), **không**
+- **Độ tản phải nói rõ:** tỉ lệ của `binh2` dao động **0,12–0,205 qua 7 lần chạy** (SAM 2 không tất
+  định — AGENTS §6). Chỉ nên trích **"0,00 vs > 0"** (phân biệt nhị phân, 7/7 lần đúng), **không**
   trích một con số lẻ như "12 %" cho báo cáo.
 
 ### Kiểm tra tự động

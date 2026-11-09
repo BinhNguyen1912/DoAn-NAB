@@ -22,6 +22,20 @@ describe('maskRhythmLine', () => {
     })).toBeNull()
   })
 
+  it('stability thiếu/NaN/rỗng đều là "chưa đo", không phải "êm tuyệt đối"', () => {
+    // `stability` không có encoding "chưa đo" ở backend (`?? 0`), nên UI phải chặn cả ba ca:
+    // thiếu trường, NaN (chia 0 trong numpy), và 0 (= vừa mất dấu hoặc chưa đo).
+    for (const stability of [undefined, NaN, 0, -0.2, null] as any[]) {
+      const line = maskRhythmLine({
+        mask_fps: 8, stability, latency_ms: 1, empty_runs: 0,
+        empty_frac_window: null, empty_window_n: 0,
+      } as any)
+      expect(line).toContain('nhấp nháy mask: chưa đo')
+      expect(line).not.toContain('nhấp nháy mask: 0%')
+      expect(line).not.toMatch(/NaN/)
+    }
+  })
+
   it('ưu tiên tỉ lệ theo CỬA SỔ thay vì bộ đếm trọn đời (không giấu số xấu)', () => {
     const line = maskRhythmLine({
       mask_fps: 8.6, stability: 0.7, latency_ms: 100,
