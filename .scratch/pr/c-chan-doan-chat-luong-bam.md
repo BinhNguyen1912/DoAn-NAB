@@ -4,16 +4,16 @@ Nhánh này trả lời đúng một câu hỏi: **khi mask rơi vật, HUD/API 
 
 ### Bằng chứng trước khi sửa
 
-`data/empty_window_2026-11-10_metrics.json` (900 frame mỗi clip, `image_size 192`, `vos_every 3`; `git_rev = 80ac72b`, `ket_luan = "đạt"`, `git_dirty_code = false`, `git_loi = None`):
+`data/empty_window_2026-11-10_metrics.json` (900 frame mỗi clip, `image_size 192`, `vos_every 3`; `git_rev = eb008e3`, `ket_luan = "đạt"`, `git_dirty_code = false`, `git_loi = None`):
 
 | Clip (ô chọn) | `empty_runs` (trọn đời) | `empty_frac_window` (200 mẫu gần nhất) | `drift_iou_p05` (`drift_n`) | `mask_age_p95` |
 |---|---|---|---|---|
-| `binh1` (104,308,209,287) | 0 | **0.0** (200 mẫu) | 0.674 (200) | 237.1 ms |
-| `binh2` (200,400,300,500) | 42 | **0.21** (200 mẫu) | **0.0** (190) | 232.0 ms |
+| `binh1` (104,308,209,287) | 0 | **0.0** (200 mẫu) | 0.661 (200) | 236.0 ms |
+| `binh2` (200,400,300,500) | 32 | **0.16** (200 mẫu) | **0.0** (196) | 229.8 ms |
 
-`binh2` có **42 lần model trả mask rỗng** (KHÔNG phải LK mất dấu: `mask_drops`/`lost_streak` = 0) ⇒ `drift_iou_p05 = 0,000`. Trước PR, UI in `LK lệch p05: 0.00` — đọc thành "lệch 0,00 = không lệch", tức **mất dấu được trình bày như bám hoàn hảo**. Đồng thời `stability = 0` (vừa là mặc định "chưa đo" vừa là giá trị bị đặt khi mask rỗng) làm nhãn `nhấp nháy mask: 0%` = "êm tuyệt đối".
+`binh2` có **32 lần model trả mask rỗng** (KHÔNG phải LK mất dấu: `mask_drops`/`lost_streak` = 0) ⇒ `drift_iou_p05 = 0,000`. Trước PR, UI in `LK lệch p05: 0.00` — đọc thành "lệch 0,00 = không lệch", tức **mất dấu được trình bày như bám hoàn hảo**. Đồng thời `stability = 0` (vừa là mặc định "chưa đo" vừa là giá trị bị đặt khi mask rỗng) làm nhãn `nhấp nháy mask: 0%` = "êm tuyệt đối".
 
-`binh2` dao động **0,12–0,21 qua 8 lần chạy**, p05 = **0,000 cả 8 lần**; `binh1` = **0,00 cả 8 lần** ⇒ tín hiệu phân biệt được (0,00 vs > 0), nhưng **không** phải "chất lượng bám" theo nghĩa mIoU.
+`binh2` dao động **0,12–0,21 qua 9 lần chạy**, p05 = **0,000 cả 9 lần**; `binh1` = **0,00 cả 9 lần** ⇒ tín hiệu phân biệt được (0,00 vs > 0), nhưng **không** phải "chất lượng bám" theo nghĩa mIoU.
 
 ### Thay đổi
 
@@ -29,7 +29,7 @@ Nhánh này trả lời đúng một câu hỏi: **khi mask rơi vật, HUD/API 
 
 ### Kiểm tra
 
-- `./run lint` ✓ · `./run test` → **722 passed** · `./run testall` → **727 passed** · `./run webtest` → **31 passed** · `npm --prefix web run build` OK · `./run e2e` → **PASS**
+- `./run lint` ✓ · `./run test` → **725 passed** · `./run testall` → **730 passed** · `./run webtest` → **31 passed** · `npm --prefix web run build` OK · `./run e2e` → **PASS**
 - "Có răng": đảo `100 − stability` ⇒ 2 test vitest đỏ; append hai lần vào cửa sổ ⇒ 2 test session-level đỏ.
 
 ### Review độc lập (§9.1) — 3 vòng
@@ -39,6 +39,8 @@ Nhánh này trả lời đúng một câu hỏi: **khi mask rơi vật, HUD/API 
 | 1 | **P1**: nhãn `nhấp nháy` **đảo chiều số** ⇒ in "0 %" đúng lúc mất dấu; P2: hằng số 30 nhân bản ở UI, chữ "LK lệch", log chép tay | `100 − Math.round(...)` + 2 test; UI bỏ hằng số; log chép từ artifact |
 | 2 | P2: `--expect-lost` vắng ⇒ clip xấu thoát mã 1; log mô tả copy UI cũ + số test cũ; P3: docstring "mask rỗng không vào mẫu", 2 khối lock, test chỉ gọi hàm phụ, `frames` ngắn không bị chấm | Sửa cả 5; thêm 2 test **session-level** `empty_window_n == min(200, vos_runs)` |
 | 3 | **P1**: `--help` hứa "clip không khai ⇒ kỳ vọng KHÔNG mất dấu" nhưng code chỉ chấm clip được khai (3 chỗ chữ, 2 nghĩa); P2: `co_truong_empty_window` luôn `True`, artifact sinh bằng bản script cũ, log còn "qua 4 lần"; P3: `_iou_window.append` ngoài lock, UI "chưa đo" lúc mất dấu, thiếu test `stability` NaN | `_ket_luan()` (đạt/KHÔNG ĐẠT/**CHỈ ĐO**); `_row_from_status()` tính cờ từ status THÔ; `ky_vong` cho mọi clip; đo lại artifact; append vào lock; +1 test vitest; `stability_n` → **ticket 18** |
+
+| 4 | **P1** (tài liệu): plan chép số của artifact **đã bị ghi đè** trong khi nguồn dẫn file khác. P2: clip **không khai** kỳ vọng mà `empty_frac_window = None` vẫn exit 0. P3: `live_worker.py` **luôn** trả 0 kể cả khi luồng VOS chết (`state=error` không ai đọc); stderr rỗng in repr list; `--expect-lost` chỉ khai được clip xấu; test session-level dùng 12 frame ⇒ đúng 5 mẫu = ngưỡng ⇒ **flaky**; README thiếu 4 trường | Chép lại số từ artifact; `_chua_du_mau()` + `_frame_shortfall()` (có test); đọc `state == "error"`; **`--expect-keep`**; 30 frame; README liệt kê `empty_frac_window`/`empty_window_n`/`drift_p05`/`drift_n` |
 
 Race `_drift_window` (2 luồng ghi, một ngoài lock — có từ 08-11) → **ticket 17**, không nới phạm vi PR.
 
