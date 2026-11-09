@@ -352,7 +352,7 @@ có từ trước); chưa đo trên webcam/RTSP thật.
 
 ### Kiểm tra
 - `./run lint` ✓ · `./run test` **692 passed**, 5 deselected (~58 s)
-- `./run testall` → **695 passed** · `./run e2e` → **PASS**
+- `./run testall` → **697 passed** · `./run e2e` → **PASS**
 - **Test có răng (kiểm bằng cách làm hỏng code, không chỉ tin assertion):** bỏ 2 dòng reset bộ đếm ⇒
   `test_bo_dem_loi_doc_khong_ro_tu_phien_truoc` **đỏ** (message "lỗi liên tiếp 30 s"); bỏ đếm ở nhánh
   `read()` ném và trả lại thứ tự cũ của `imencode` ⇒ 2 test `TestCaptureNemLoi` **đỏ**.
