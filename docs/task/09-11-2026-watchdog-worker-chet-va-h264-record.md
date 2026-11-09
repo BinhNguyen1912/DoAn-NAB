@@ -297,6 +297,9 @@ connection-refused trên localhost.
 
 ### Kiểm tra
 - `./run lint` ✓ · `./run test` **686 passed**, 5 deselected (~54 s)
+- `./run testall` (full, có checkpoint SAM 2) → **691 passed** trong 175 s
+- `./run e2e` (Chrome/Edge thật) → **PASS**, gồm "luồng MJPEG hiện được frame trong trình duyệt"
+  (160×120, FPS live 29,7) và "dừng phát sạch (state=stopped)" — đúng phần API/live vừa sửa
 - **Test có răng đã kiểm bằng cách làm hỏng code**: bỏ điều kiện `_misses >= MISS_MIN` ⇒
   `test_mot_lan_truot_chua_du_ket_luan_chet` + `test_truot_lien_tiep_du_so_lan_thi_error` **đỏ**, phục
   hồi ⇒ xanh.
