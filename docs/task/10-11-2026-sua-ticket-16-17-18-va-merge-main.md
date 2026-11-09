@@ -55,17 +55,23 @@
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **731 passed** (5 deselected, ~61 s) |
-| `./run testall` | **736 passed** (~181 s) |
+| `./run test` | **741 passed** (5 deselected, ~63 s) — trên `main` sau merge 3 nhánh |
+| `./run testall` | **746 passed** (~184 s) |
 | `./run webtest` | **32 passed** |
 | `npm --prefix web run build` | ✓ |
 | `./run e2e` | **PASS** |
 | Ticket 16/17/18 | ✅ done (tiêu chí đã tick trong `.scratch/…/issues/`) |
 
-Merge: `fix/health-mode-raw-va-message-409` → `main` (`--no-ff`), rồi `feat/bang-chung-camera-that`
-và `feat/chan-doan-chat-luong-bam` rebase lên `main` mới và merge — lý do: B và C cùng rẽ từ nhánh A
-nên phải merge **tuần tự**; `.gitignore`/`docs/*` là file "nóng" (AGENTS §7b) nên xung đột được xử lý
-bằng cách giữ **cả hai** vế.
+Merge (máy không có `gh` nên làm bằng lệnh, có ghi ở đây để tái lập):
+1. `git merge --no-ff fix/health-mode-raw-va-message-409` → `main` (16 commit, 15 file).
+2. `git rebase main feat/bang-chung-camera-that` (7 commit, **không xung đột**) → merge `--no-ff`.
+3. `git rebase main feat/chan-doan-chat-luong-bam` (25 commit, **không xung đột**) → merge `--no-ff`.
+   B và C cùng rẽ từ nhánh A nên phải merge **tuần tự**; sau mỗi bước chạy `./run lint` + `./run test`.
+4. Kiểm tra trên `main` sau cả 3 merge: lint ✓ · test **741** · testall **746** · webtest **32** ·
+   build ✓ · e2e **PASS**.
+
+Bài học: giữ `.gitignore`/`docs/*` chỉ thêm ở **cuối** file (AGENTS §7b) nên 3 nhánh không xung đột
+— lần này `git rebase` chạy 25 commit mà không phải sửa tay dòng nào.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test stress đầu tiên xanh cả khi có lỗi**: nguyên nhân là GIL switch interval 5 ms; cách xử lý ở
