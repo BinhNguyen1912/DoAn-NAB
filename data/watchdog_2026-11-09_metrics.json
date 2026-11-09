@@ -1,6 +1,6 @@
 {
-  "do_luc": "2026-11-09T22:21:37",
-  "git_rev": "09e622cdea654b5fe0b4bb0526aa155a465a3b23",
+  "do_luc": "2026-11-09T22:30:37",
+  "git_rev": "013e0a7683a19516210cc3a37779b76d064f1415",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
@@ -25,40 +25,40 @@
   },
   "ket_qua": [
     {
-      "load_s": 4.0,
-      "pid": 5053,
+      "load_s": 3.1,
+      "pid": 4312,
       "frames_truoc_khi_giet": 1,
-      "byte_luong_truoc_khi_giet": 1204224,
+      "byte_luong_truoc_khi_giet": 1126400,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 94.2,
-      "tg_dong_luong_ms": 101.2,
+      "tg_bao_error_ms": 115.9,
+      "tg_dong_luong_ms": 94.6,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
       "that_bai": false,
       "vuot_nguong": false
     },
     {
       "load_s": 2.9,
-      "pid": 5120,
+      "pid": 4377,
       "frames_truoc_khi_giet": 1,
       "byte_luong_truoc_khi_giet": 1126400,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 114.8,
-      "tg_dong_luong_ms": 103.9,
+      "tg_bao_error_ms": 116.0,
+      "tg_dong_luong_ms": 110.0,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
       "that_bai": false,
       "vuot_nguong": false
     },
     {
-      "load_s": 3.1,
-      "pid": 5186,
+      "load_s": 2.9,
+      "pid": 4445,
       "frames_truoc_khi_giet": 1,
-      "byte_luong_truoc_khi_giet": 901120,
+      "byte_luong_truoc_khi_giet": 1126400,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 115.1,
-      "tg_dong_luong_ms": 109.3,
+      "tg_bao_error_ms": 116.5,
+      "tg_dong_luong_ms": 109.8,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
       "that_bai": false,
       "vuot_nguong": false
@@ -67,9 +67,9 @@
   "tom_tat": {
     "n": 3,
     "tg_bao_error_ms": {
-      "min": 94.2,
-      "max": 115.1,
-      "mean": 108.0
+      "min": 115.9,
+      "max": 116.5,
+      "mean": 116.1
     },
     "so_lan_vuot_nguong": 0,
     "so_lan_khong_phat_hien": 0,

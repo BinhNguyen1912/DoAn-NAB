@@ -160,9 +160,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   hiển thị không cao hơn (0,681 vs 0,706) ⇒ bật là thêm trễ vô ích. Chỉ bật `--mask-smoothing 0.5`
   khi có clip bị che thật sự chứng minh được lợi ích.
 - **Watchdog live phải đọc `frame.jpg` chứ không phải `status.json`.** Worker chết ⇒ API từng báo
-  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **94–115 ms** + message nêu mã
-  thoát, luồng MJPEG đóng sau **101–109 ms** (`data/watchdog_2026-11-09_metrics.json`, 3 lần,
-  `git_rev = 09e622c`).
+  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **116–117 ms** + message nêu mã
+  thoát, luồng MJPEG đóng sau **95–110 ms** (`data/watchdog_2026-11-09_metrics.json`, 3 lần,
+  `git_rev = 013e0a7`).
   **Ngưỡng "frame đứng" là `max(15 s, 4 × vos_ms)`, trần 120 s — đừng hạ về 2 s**: nhịp ghi frame hợp
   lệ có thể ~4 s/frame (`image_size 1024`, `vos_every=1`) và `engine.start()` chạy inline ⇒ ngưỡng
   2 s giết phiên khoẻ (review độc lập 09-11 bắt đúng). Ca `kill -9` **không** dùng ngưỡng đó (bắt
@@ -175,9 +175,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   **và ≥ 3 lần đọc trượt liên tiếp** (`MISS_MIN`) mới kết luận. **Dung sai "một lần trượt" là bắt
   buộc, đừng bỏ**: read-timeout của `HttpVideoSource`/`RtspVideoSource` là 5 s > `STALE_S`, nên nếu
   kết luận ngay ở lần trượt đầu thì một cú chập mạng giết phiên khoẻ (review độc lập vòng 2, P1).
-  Ân hạn frame đầu là `WARMUP_S` 10 s. Đo 09-11 trên relay ảnh JPEG localhost: **3,76–3,77 s** để
+  Ân hạn frame đầu là `WARMUP_S` 10 s. Đo 09-11 trên relay ảnh JPEG localhost: **3,75–3,76 s** để
   `error`, luồng MJPEG đóng cùng lúc (`data/watchdog_raw_2026-11-09_metrics.json`, 3 lần,
-  `git_rev = 09e622c`) — **chưa đo trên webcam/RTSP thật**. Với nguồn có read-timeout 5 s
+  `git_rev = 013e0a7`) — **chưa đo trên webcam/RTSP thật**. Với nguồn có read-timeout 5 s
   (`HttpVideoSource`/`RtspVideoSource`), `MISS_MIN = 3` khiến ca "mất mạng hẳn" mất thêm ~15 s
   (3 × 5 s) — đó là **giá phải trả** để không giết phiên khoẻ khi mạng chập; đừng trích "raw báo lỗi
   sau ~3 s" cho mọi kiểu mất mạng.

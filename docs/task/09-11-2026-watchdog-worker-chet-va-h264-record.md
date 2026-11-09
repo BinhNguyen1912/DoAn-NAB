@@ -53,24 +53,23 @@
 ## 📤 Output / Kết quả
 
 ### Số đo thật (worker thật, `kill -9` giữa phiên, 3 lần)
-`data/watchdog_2026-11-09_metrics.json` — `git_rev = 09e622c`, `git_dirty_code = false`,
+`data/watchdog_2026-11-09_metrics.json` — `git_rev = 013e0a7`, `git_dirty_code = false`,
 lệnh: `python scripts/measure_watchdog.py --mode worker --lan 3`, clip `data/binh1.mp4`,
 `image_size 192`, `vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
 
 | Lần | nạp phiên | state sau kill | **báo `error`** | **đóng luồng MJPEG** | message |
 |---|---|---|---|---|---|
-| 1 | 4,0 s | `error` | **94,2 ms** | 101,2 ms | worker đã dừng (mã -9) — xem worker.log |
-| 2 | 2,9 s | `error` | **114,8 ms** | 103,9 ms | worker đã dừng (mã -9) — xem worker.log |
-| 3 | 3,1 s | `error` | **115,1 ms** | 109,3 ms | worker đã dừng (mã -9) — xem worker.log |
+| 1 | 3,1 s | `error` | **115,9 ms** | 94,6 ms | worker đã dừng (mã -9) — xem worker.log |
+| 2 | 2,9 s | `error` | **116,0 ms** | 110,0 ms | worker đã dừng (mã -9) — xem worker.log |
+| 3 | 2,9 s | `error` | **116,5 ms** | 109,8 ms | worker đã dừng (mã -9) — xem worker.log |
 
-> ⚠️ Bảng này **thay thế** hai bảng trước đó (91,3/111,2/110,4 ms trên `cdcd1f5` và
-> 110,3/110,5/110,0 ms trên `4e9248c`): artifact luôn bị ghi đè khi đo lại ⇒ **chỉ trích bảng này**
-> (và bảng ở mục "Bổ sung 22:40" cho mode `raw`).
+> ⚠️ Bảng này **thay thế mọi bảng trước đó** trong file (mỗi lần đo lại là artifact bị ghi đè) ⇒
+> **chỉ trích bảng này**, và bảng ở mục "Bổ sung 22:40" cho mode `raw`.
 
 **Ngưỡng đăng ký trước: ĐẠT** — cả hai mốc plan ghi (mục nghiệm thu **≤ 5 s**, dòng ticket
-**≤ 2 s**): chậm nhất 115,1 ms, 0/3 lần vượt; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
-**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 94–115 ms là độ trễ kiểm tra
-0,2 s cộng nhịp poll 0,02 s (chạy lại trên `09e622c` — xem "Bổ sung 22:40").
+**≤ 2 s**): chậm nhất 116,5 ms, 0/3 lần vượt; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
+**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 116–117 ms là độ trễ kiểm tra
+0,2 s cộng nhịp poll 0,02 s (chạy lại trên `013e0a7` — xem "Bổ sung 23:30").
 
 ⚠️ **Con số này CHỈ đúng cho ca "tiến trình chết"** (bắt bằng `proc.poll()`). Ca khác — worker **còn
 sống nhưng treo** (deadlock model) — phát hiện chậm hơn nhiều: **~15 s** (ngưỡng `max(15 s, 4 ×
@@ -200,9 +199,9 @@ Làm 3 P3 mà vòng review 09-11 đã đẩy sang Next steps (không để nợ 
 
 ### Số đo thật (2 mode, mỗi mode 3 lần)
 
-> Số **cuối cùng** của cả hai mode nằm ở mục "Bổ sung 22:40" (chạy lại sau khi sửa review vòng 2,
-> `git_rev = 09e622c`). Bảng của lần đo cũ trên `4e9248c` đã bị gỡ để trong file chỉ còn MỘT bộ số —
-> artifact bị ghi đè mỗi lần đo nên hai bộ số trong cùng file là bẫy trích dẫn.
+> Số **cuối cùng** của cả hai mode nằm ở mục "Bổ sung 22:40" (`git_rev = 013e0a7`). Các bảng của
+> lần đo cũ đã được gỡ để trong file chỉ còn MỘT bộ số — artifact bị ghi đè mỗi lần đo nên hai bộ số
+> trong cùng file là bẫy trích dẫn.
 
 | Mode | Nguồn bị giết | ngưỡng đăng ký trước | kết quả |
 |---|---|---|---|
@@ -280,21 +279,21 @@ trong Next steps + AGENTS §6); (c) `stop()` từ thread request có thể `rele
 trong lúc thread đọc đang `read()` — race ở tầng C++, có từ trước PR này; (d) số `raw` chỉ đúng cho ca
 connection-refused trên localhost.
 
-### Số đo lại (sau khi sửa, cả hai mode) — `git_rev = 09e622c`, `git_dirty_code = false`
+### Số đo lại (sau khi sửa, cả hai mode) — `git_rev = 013e0a7`, `git_dirty_code = false`
 
 | Mode | Nguồn bị giết | báo `error` (3 lần) | đóng luồng MJPEG | ngưỡng đăng ký trước | đạt? |
 |---|---|---|---|---|---|
-| `worker` (`proc.poll()`) | `kill -9` worker SAM 2 | **94,2 / 114,8 / 115,1 ms** | 101–109 ms | ≤ 2 s | ✅ 3/3 |
-| `raw` (không có frame) | tắt relay ảnh HTTP | **3758 / 3770 / 3765 ms** | 3746–3756 ms | ≤ 5 s | ✅ 3/3 |
+| `worker` (`proc.poll()`) | `kill -9` worker SAM 2 | **115,9 / 116,0 / 116,5 ms** | 95–110 ms | ≤ 2 s | ✅ 3/3 |
+| `raw` (không có frame) | tắt relay ảnh HTTP | **3752 / 3763 / 3747 ms** | 3740–3753 ms | ≤ 5 s | ✅ 3/3 |
 
 - Artifact: `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` —
-  cả hai có `git_rev = 09e622c`, `git_dirty_code = false`, `git_loi = null`,
-  `so_lan_khong_phat_hien = 0`.
-- Mode `raw` nay là **3,76–3,77 s** (lần đo cũ trên code trước khi sửa review vòng 2 đã bị ghi đè —
-  đừng trích số cũ); nguyên nhân chậm hơn ~0,7 s so với `STALE_S` hiển thị ngay trong message:
+  cả hai có `git_rev = 013e0a7`, `git_dirty_code = false`, `git_loi = null`,
+  `so_lan_khong_phat_hien = 0`. Số được đo lại **sau** bản sửa review vòng 3 (`013e0a7`).
+- Mode `raw` nay là **3,75–3,76 s** (các lần đo cũ đã bị ghi đè — đừng trích số cũ); nguyên nhân
+  chậm hơn ~0,7 s so với `STALE_S` hiển thị ngay trong message:
   `91–92 lần liên tiếp` không ra frame, tức là `MISS_MIN` không phải nút chặn ở ca relay (đồng hồ
   `STALE_S` mới là nút chặn). Đừng trích "3 s" — số đúng là **~3,76 s** gồm `max_misses` của nguồn.
-- Mode `worker` tản 94–115 ms (3 lần) — cùng cơ chế (độ trễ kiểm tra 0,2 s + poll 0,02 s), chênh
+- Mode `worker` tản 116–117 ms (3 lần) — cùng cơ chế (độ trễ kiểm tra 0,2 s + poll 0,02 s), chênh
   lệch nằm trong độ tản giữa các lần chạy; mọi lần đều ≪ ngưỡng 2 s.
 
 ### Kiểm tra
@@ -307,6 +306,56 @@ connection-refused trên localhost.
   hồi ⇒ xanh.
 - Bug thật gặp khi chạy đo: `**tuple` ⇒ `TypeError: 'tuple' object is not a mapping` (nuốt cả 3 lần
   đo trước khi ghi artifact) ⇒ tách `_verdict_dict()` + test.
+
+## ➕ Bổ sung 23:30 — review vòng 3 (1 P1 + 1 P2 + 8 P3) + đo lại lần cuối
+
+### Review độc lập vòng 3 (agent `reviewer`, chỉ đọc, phạm vi HEAD `e3826c6`)
+Kết luận: **merge được sau khi sửa P1**. Vòng 3 xác nhận 4 bản sửa vòng 2 **đóng đúng lỗ hổng**
+(không chỉ làm test xanh): nó tự kiểm lại "test có răng" bằng cách đọc assertion (thay vì tin log) và
+tái lập cơ chế 3,7 s từ code (20 miss × 2 fetch ≈ 0,7 s + `STALE_S` 3 s). Nhưng chính bản sửa vòng 2
+sinh ra **1 P1 mới**.
+
+| Mức | Vấn đề | Xử lý |
+|---|---|---|
+| **P1** | `_read_errors`/`_read_error_since` chỉ khởi tạo ở `__init__`, `start()` không reset ⇒ **rò qua phiên**: phiên A give-up để lại bộ đếm > 0 + mốc cũ; phiên B trượt **một** lần thấy `stuck_s` = hàng chục giây ⇒ `error` + `_stop.set()` giết phiên khoẻ (message vô nghĩa "lỗi liên tiếp 620 s"), và lời hứa "log lần 1" cũng sai | Reset cả hai trong `start()` (cạnh `_frames = 0`). Test mới **tua đồng hồ 30 s** giữa hai phiên: bỏ fix ⇒ **đỏ**, có fix ⇒ xanh |
+| **P2** | `git rev-parse` có `check=True` còn `git status --porcelain` **không** ⇒ `status` lỗi (index.lock/quyền) cho `stdout=""` ⇒ `git_dirty=False`, `git_loi=None`, exit 0: artifact "trông tái lập được" | Thêm `check=True` + test `CalledProcessError` cho lệnh status |
+| **P3** | Hệ quả mới của `_misses >= MISS_MIN`: `capture.read()` **ném** (cv2.error) không tăng `_misses` ⇒ `health()` không bao giờ báo lỗi ca này (trước vòng 2 thì `age > STALE_S` vẫn bắt) | Đếm cả ca ném + test capture giả ném lỗi |
+| **P3** | Give-up không đóng nguồn (giữ webcam tới lần `stop()` sau) trong khi `_check_health` đóng ngay | `source.stop()` **ngoài** `_lock` khi give-up + test `source.stopped` |
+| **P3** | `_exit_code([], None, None) == 0` ⇒ `--lan 0` sinh artifact `n=0` (mọi số null) mà vẫn "đạt" | `if not runs: return 1` + test |
+| **P3** | Thông báo `[THAT BAI] … trong 15 s` hardcode, nhưng mode `worker` chỉ chờ **10 s** | `WAIT_S = {worker: 10, raw: 15}` dùng cho cả vòng poll lẫn thông báo |
+| **P3** | `--nguong-s` bị bỏ qua ở mode `worker` (`_one_run` hardcode 2 s) trong khi artifact khai ngưỡng theo `args.nguong_s` | Truyền `args.nguong_s` vào `_one_run` |
+| **P3** | `imencode` hỏng mà `_last_frame_at` đã cập nhật ⇒ `health()` báo khoẻ trong khi 0 frame (có từ trước) | Chỉ tính "có frame" sau khi encode thành công + test |
+| **P3** | `return 0` chết sau `return _exit_code(...)` | Xoá |
+| **P3** | Log còn 3 chỗ trích bộ số đã bị ghi đè | Gỡ hết, chỉ còn MỘT bộ số khớp artifact |
+
+**Đã kiểm, không phải lỗi (vòng 3 xác nhận):** P1 vòng 2 đóng thật; `_stop.set()` không phá vòng đời
+(`start()` clear sau `_stop_locked()` + generation chặn thread cũ); không deadlock mới; `_verdict`/
+`_verdict_dict`/`_exit_code` đủ 5 nhánh có test; `_git_provenance` không còn `UnboundLocalError`;
+số trong docs/AGENTS khớp từng dòng JSON; `WorkerFrameSource.read_jpeg` nuốt `OSError` ⇒ đường give-up
+5 s không chạm mode `track`.
+
+**Nợ còn lại (không chặn merge):** chưa có test tự động ở seam adapter↔service cho mode `raw`;
+`read()` treo vô hạn vẫn không cứu được; race `release()` `VideoCapture` trong lúc `read()` (tầng C++,
+có từ trước); chưa đo trên webcam/RTSP thật.
+
+### Số đo lại lần cuối — `git_rev = 013e0a7`, `git_dirty_code = false`, `git_loi = null`
+
+| Mode | báo `error` (3 lần) | đóng luồng MJPEG | ngưỡng đăng ký trước | đạt? |
+|---|---|---|---|---|
+| `worker` (`proc.poll()`) | **115,9 / 116,0 / 116,5 ms** | 94,6–110,0 ms | ≤ 2 s | ✅ 3/3 |
+| `raw` (không có frame) | **3751,9 / 3763,4 / 3747,2 ms** | 3740–3753 ms | ≤ 5 s | ✅ 3/3 |
+
+- Hai lần đo liên tiếp trên code khác nhau lệch 94→116 ms (worker) và 3758→3752 ms (raw) — cùng
+  cơ chế, độ tản **giữa các lần chạy**, không phải "cải thiện/thoái hoá"; cả hai đều cách ngưỡng rất
+  xa nên không có gì để so sánh A/B ở đây.
+- `so_lan_khong_phat_hien = 0` và `git_loi = null` ở cả hai artifact (đúng thứ vòng 3 bắt phải có).
+
+### Kiểm tra
+- `./run lint` ✓ · `./run test` **692 passed**, 5 deselected (~58 s)
+- `./run testall` → **695 passed** · `./run e2e` → **PASS**
+- **Test có răng (kiểm bằng cách làm hỏng code, không chỉ tin assertion):** bỏ 2 dòng reset bộ đếm ⇒
+  `test_bo_dem_loi_doc_khong_ro_tu_phien_truoc` **đỏ** (message "lỗi liên tiếp 30 s"); bỏ đếm ở nhánh
+  `read()` ném và trả lại thứ tự cũ của `imencode` ⇒ 2 test `TestCaptureNemLoi` **đỏ**.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Tự hạ cấp/cảnh báo khi drift xấu** (`p05 < 0,2` như `binh2`): hiện mới đo, chưa hành động.
