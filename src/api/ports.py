@@ -120,11 +120,15 @@ class LiveTelemetrySource(Protocol):
 
 @runtime_checkable
 class HealthReportingSource(Protocol):
-    """Nguồn frame có khả năng TỰ KHAI mình đã chết/treo (hiện thực: WorkerFrameSource).
+    """Nguồn frame có khả năng TỰ KHAI mình đã chết/treo (hiện thực: `WorkerFrameSource`,
+    `OpenCvFrameSource`).
 
-    Tách thành port riêng như `LiveTelemetrySource`: webcam/file không có khái niệm "worker chết",
-    service kiểm `isinstance` để quyết định có gọi `health()` hay không. Xem AGENTS §6 — kiểu
-    "hỏng mà trông như đang chạy" là lỗi đắt nhất lúc demo.
+    Tách thành port riêng như `LiveTelemetrySource`: không phải nguồn nào cũng biết mình chết thế
+    nào (`WorkerFrameSource` dựa vào tiến trình worker + tuổi `frame.jpg`; `OpenCvFrameSource` dựa
+    vào số lần liên tiếp không đọc được frame). Service kiểm `isinstance` để quyết định có gọi
+    `health()` hay không; adapter nào chưa cài thì `_read_safely` chỉ chặn thread đọc chết chứ
+    không kết luận được nguồn hỏng. Xem AGENTS §6 — kiểu "hỏng mà trông như đang chạy" là lỗi đắt
+    nhất lúc demo.
     """
 
     def health(self) -> SourceHealth | None:

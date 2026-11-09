@@ -394,3 +394,263 @@ class TestPidfileKhongBiXoaNham:
 
         assert pidfile.read_text(encoding="utf-8") == "222", "pidfile của phiên mới bị xoá nhầm"
         assert proc.wait(timeout=5) is not None, "worker cũ phải bị dừng thật"
+
+
+class TestLuongMjpegBaoDungLyDo:
+    """P3 review 09-11: `/api/live/stream` trả cùng một câu 409 cho cả `error` và "chưa bật".
+
+    Khi watchdog báo worker chết, client chỉ thấy "Chưa có phiên live nào đang chạy" ⇒ mất đúng
+    thông tin vừa có được.
+    """
+
+    def test_phien_loi_thi_409_kem_ly_do_cua_watchdog(self, live_client, monkeypatch):
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _DyingSource())
+        live_client.post("/api/live/start", json={"source": "0"})
+        assert _wait(lambda: live_client.get("/api/live/status").json()["state"] == "error",
+                     timeout=2.0)
+
+        response = live_client.get("/api/live/stream")
+        assert response.status_code == 409
+        detail = response.json()["detail"]
+        assert detail.startswith("Phiên live đã dừng vì lỗi: ")
+        assert "worker đã dừng" in detail        # lý do của watchdog phải đi vào HTTP
+        live_client.post("/api/live/stop")
+
+    def test_chua_bat_thi_409_cau_cu(self, live_client):
+        response = live_client.get("/api/live/stream")
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Chưa có phiên live nào đang chạy"
+
+
+class _RaisingSource:
+    """Nguồn ném lỗi ở N lần đọc đầu rồi mới chạy bình thường (capture hỏng tạm thời)."""
+
+    def __init__(self, source="0", *, raises=5):
+        self.source = source
+        self._left = raises
+        self._seq = 0
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        self.started = True
+
+    def read_jpeg(self):
+        if self._left > 0:
+            self._left -= 1
+            raise RuntimeError("capture hỏng")
+        self._seq += 1
+        return b"\xff\xd8fake#" + str(self._seq).encode()
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestDocFrameNemLoi:
+    def test_read_jpeg_nem_loi_khong_lam_chet_thread_doc(self):
+        """Lỗi đọc là lỗi TẠM THỜI: thread đọc phải sống tiếp, không để `_state` kẹt `running` mà
+        không còn frame nào (đúng lớp lỗi "hỏng mà trông như đang chạy").
+
+        Bằng chứng: nguồn ném lỗi 5 lần đầu rồi mới trả frame — nếu ngoại lệ thoát khỏi `_run` thì
+        thread chết và `frames` mãi = 0 ⇒ test đỏ.
+        """
+        from src.api.live import LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: _RaisingSource(raises=5), target_fps=50)
+        service.start("0")
+
+        assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+        service.stop()
+        assert service.status().state is LiveState.STOPPED
+
+
+class _AlwaysFailingSource:
+    """Nguồn ném lỗi Ở MỌI lần đọc và KHÔNG tự khai sức sống (không có `health()`).
+
+    Đây là tấm chắn cuối của service: adapter `FrameSource` trơn mà đọc lỗi mãi thì `_read_safely`
+    nuốt lỗi ⇒ phiên kẹt `running` với 0 frame (review độc lập 09-11 vòng 2, P3).
+    """
+
+    def __init__(self, source="0"):
+        self.source = source
+        self.reads = 0
+        self.stopped = False
+
+    def start(self):
+        pass
+
+    def read_jpeg(self):
+        self.reads += 1
+        raise RuntimeError("capture hỏng vĩnh viễn")
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestDocFrameLoiLienTuc:
+    def test_loi_lien_tuc_qua_nguong_thi_error_chu_khong_running_mai(self, monkeypatch):
+        """Nguồn không có `health()`: nếu `read_jpeg()` ném mãi thì phải thành `error` có message."""
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        service = LiveStreamService(lambda *a, **k: _AlwaysFailingSource(), target_fps=50)
+        service.start("0")
+
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0), service.status()
+        status = service.status()
+        assert "lỗi liên tiếp" in status.message
+        assert _wait(lambda: service._read_errors >= 1, timeout=2.0)
+        service.stop()
+
+    def test_doc_lai_duoc_thi_xoa_chuoi_loi(self):
+        """Lỗi TẠM THỜI (vài lần) không được tích thành `error`: đọc lại được là reset bộ đếm."""
+        from src.api.live import LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: _RaisingSource(raises=5), target_fps=50)
+        service.start("0")
+        try:
+            assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+            assert service.status().state is LiveState.RUNNING
+            assert service._read_errors == 0
+        finally:
+            service.stop()
+
+
+class _FailThenWorkSource:
+    """Ném lỗi đúng `raises` lần rồi trả frame — dùng để kiểm bộ đếm lỗi có reset theo phiên."""
+
+    def __init__(self, source="0", *, raises=1):
+        self.source = source
+        self._left = raises
+        self.stopped = False
+        self._seq = 0
+
+    def start(self):
+        pass
+
+    def read_jpeg(self):
+        if self._left > 0:
+            self._left -= 1
+            raise RuntimeError("capture hỏng")
+        self._seq += 1
+        return b"\xff\xd8ok#" + str(self._seq).encode()
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestBoDemLoiDocTheoPhien:
+    def test_bo_dem_loi_doc_khong_ro_tu_phien_truoc(self, monkeypatch):
+        """P1 vòng 3: `_read_errors`/`_read_error_since` để rò qua `start()` ⇒ lần đọc lỗi ĐẦU TIÊN
+        của phiên mới thấy `stuck_s` hàng chục giây ⇒ give-up ngay, giết phiên khoẻ.
+
+        Kịch bản thật: phiên A chết vì give-up (lần đọc cuối luôn ném ⇒ `_read_errors ≥ 1`), người
+        dùng bật lại (phiên B) và nguồn trượt MỘT lần ⇒ nếu không reset, B bị `error` oan.
+        """
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        dying = _AlwaysFailingSource()
+        service = LiveStreamService(lambda *a, **k: dying, target_fps=50)
+        service.start("0")
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0)
+        service.stop()
+        # Tua đồng hồ: người dùng thật bật lại sau vài chục giây, không phải sau 10 ms. Không tua
+        # thì test vô nghĩa (mốc rò cũ cách hiện tại ~0 s < mọi ngưỡng).
+        service._read_error_since = time.monotonic() - 30.0
+
+        # Phiên B: nguồn chỉ trượt 1 lần rồi chạy bình thường — phải KHỎE. Ngưỡng give-up trả về
+        # mặc định để test đo đúng thứ cần đo (rò `_read_error_since`), không phải ngưỡng 0.
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 5.0)
+        healthy = _FailThenWorkSource(raises=1)
+        service._make_source = lambda *a, **k: healthy      # noqa: SLF001 — test bơm nguồn giả
+        service.start("0")
+        try:
+            assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+            assert service.status().state is LiveState.RUNNING
+            assert service._read_errors == 0
+        finally:
+            service.stop()
+
+    def test_bo_dem_ve_0_ngay_ca_khi_phien_moi_loi_dung_mot_lan(self, monkeypatch):
+        """`_read_errors = 0` trong `start()` phải được GHIM (review vòng 4, P3-4).
+
+        Nguồn phiên B lỗi **đúng một lần** rồi không trả frame nữa: nếu bộ đếm rò từ phiên A (đã có
+        ≥ 1 lần lỗi) thì con số sau lần lỗi đầu tiên của B là **≥ 2**, còn đúng phải là **1**. Không
+        dùng nguồn "không bao giờ lỗi" vì `_read_safely` tự reset khi đọc THÀNH CÔNG ⇒ test sẽ xanh
+        vô nghĩa.
+        """
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        class _MotLanRoiIm:
+            def __init__(self, *args, **kwargs):
+                self.da = 0
+                self.stopped = False
+
+            def start(self):
+                pass
+
+            def read_jpeg(self):
+                self.da += 1
+                if self.da == 1:
+                    raise RuntimeError("lỗi tạm thời")
+                # Chặn (như `read()` của V4L2 đang chờ) để KHÔNG có lần đọc thành công nào ⇒ bộ đếm
+                # không được reset bởi đường khác, chỉ có `start()` mới reset được nó.
+                time.sleep(2.0)
+                return None
+
+            def stop(self):
+                self.stopped = True
+
+            @property
+            def label(self):
+                return "giả:một-lần"
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        service = LiveStreamService(lambda *a, **k: _AlwaysFailingSource(), target_fps=50)
+        service.start("0")
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0)
+        service.stop()
+        assert service._read_errors >= 1
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 5.0)
+        dich = _MotLanRoiIm()
+        service._make_source = lambda *a, **k: dich       # noqa: SLF001 — nguồn giả
+        service.start("0")
+        try:
+            assert _wait(lambda: dich.da >= 1, timeout=3.0)
+            assert _wait(lambda: service._read_errors >= 1, timeout=2.0)
+            assert service._read_errors == 1, (
+                f"bộ đếm lỗi đọc rò từ phiên trước: {service._read_errors} (đúng phải là 1)")
+        finally:
+            service.stop()
+
+    def test_give_up_dong_nguon_de_lan_sau_mo_duoc(self, monkeypatch):
+        """Đóng nguồn ngay khi give-up (như `_check_health`) — nếu không, thiết bị bị giữ."""
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        source = _AlwaysFailingSource()
+        service = LiveStreamService(lambda *a, **k: source, target_fps=50)
+        service.start("0")
+        try:
+            assert _wait(lambda: source.stopped, timeout=3.0), "give-up phải đóng nguồn"
+        finally:
+            service.stop()

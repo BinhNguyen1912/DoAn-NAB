@@ -33,6 +33,11 @@ _FPS_WINDOW_S = 2.0     # cửa sổ đo FPS thực
 # `proc.poll()` + đọc `status.json` + `stat(frame.jpg)`. 0,2 s đủ nhanh để UI báo lỗi trong ≤ 1 s
 # (mục tiêu của plan là ≤ 2 s) mà không đụng tới đường đọc frame nóng.
 _HEALTH_EVERY_S = 0.2
+# Tấm chắn cuối cho nguồn KHÔNG tự khai sức sống (`FrameSource` không phải `HealthReportingSource`):
+# `read_jpeg()` ném lỗi liên tục quá lâu thì phiên coi như chết, thay vì `running` mãi mà 0 frame.
+_READ_ERROR_GIVE_UP_S = 5.0
+# Log lần đầu + mỗi 100 lần: nhịp đọc 30 Hz ⇒ log từng lần là ~1.800 dòng/phút, che mất log thật.
+_READ_ERROR_LOG_EVERY = 100
 _JPEG_BOUNDARY = b"--frame\r\nContent-Type: image/jpeg\r\nContent-Length: "
 _MAX_OPEN_ERROR = "Không mở được {label}: {error}"
 
@@ -62,6 +67,9 @@ class LiveStreamService:
         self._state = LiveState.STOPPED
         self._label = ""
         self._message = "Chưa phát"
+        # Đếm lỗi đọc liên tiếp (xem `_note_read_error`); mốc thời gian đầu chuỗi lỗi
+        self._read_errors = 0
+        self._read_error_since: float | None = None
 
     # ------------------------------------------------------------------ lệnh
 
@@ -113,6 +121,11 @@ class LiveStreamService:
                     self._latest = None
                     self._frames = 0
                     self._stamps.clear()
+                    # PHẢI reset bộ đếm lỗi đọc theo TỪNG phiên: để rò từ phiên trước thì lần đọc
+                    # lỗi ĐẦU TIÊN của phiên mới thấy `stuck_s` = hàng chục giây ⇒ give-up ngay và
+                    # giết phiên khoẻ sau một lỗi tạm thời (review độc lập vòng 3, P1).
+                    self._read_errors = 0
+                    self._read_error_since = None
                     self._label = candidate.label
                     self._state = LiveState.RUNNING
                     self._message = f"Đang phát từ {candidate.label}"
@@ -217,7 +230,7 @@ class LiveStreamService:
                 next_health = started + _HEALTH_EVERY_S
                 if self._check_health(source, generation):
                     return
-            data = source.read_jpeg() if source is not None else None
+            data = self._read_safely(source, generation)
             if data is not None:
                 with self._lock:
                     if generation != self._generation:
@@ -236,6 +249,61 @@ class LiveStreamService:
             remaining = self._interval - (time.perf_counter() - started)
             if remaining > 0:
                 self._stop.wait(remaining)
+
+    def _read_safely(self, source: FrameSource | None, generation: int) -> bytes | None:
+        """`read_jpeg()` không được phép làm CHẾT thread đọc.
+
+        Nếu adapter ném (capture hỏng, codec lạ), thread sẽ chết mà `_state` vẫn `running` — đúng
+        lớp lỗi "hỏng mà trông như đang chạy" mà watchdog này sinh ra để xoá (review 09-11, P3).
+        Coi như "frame này không có": watchdog/sức sống của nguồn sẽ quyết định sau.
+        """
+        if source is None:
+            return None
+        try:
+            data = source.read_jpeg()
+        except Exception as exc:                       # noqa: BLE001 — không được làm sập thread
+            self._note_read_error(source, generation, exc)
+            return None
+        if self._read_errors:
+            with self._lock:
+                if generation == self._generation:
+                    self._read_errors = 0
+                    self._read_error_since = None
+        return data
+
+    def _note_read_error(self, source: FrameSource, generation: int, exc: BaseException) -> None:
+        """Ghi nhận một lần `read_jpeg()` ném lỗi — có đếm, có ngưỡng, không xả log 30 Hz.
+
+        Vì sao cần ngưỡng: `_read_safely` nuốt lỗi để thread không chết, nhưng nếu nguồn *không*
+        tự khai được sức sống (`FrameSource` trơn) thì nuốt lỗi = `running` vĩnh viễn mà 0 frame.
+        Lỗi liên tiếp quá `_READ_ERROR_GIVE_UP_S` ⇒ `error` + message (review 09-11 vòng 2, P3).
+        """
+        should_fail = False
+        with self._lock:
+            if generation != self._generation:
+                return
+            self._read_errors += 1
+            if self._read_error_since is None:
+                self._read_error_since = time.monotonic()
+            count = self._read_errors
+            stuck_s = time.monotonic() - self._read_error_since
+            label = self._label
+            if stuck_s > _READ_ERROR_GIVE_UP_S and self._state is LiveState.RUNNING:
+                self._state = LiveState.ERROR
+                self._message = f"đọc frame từ {label} lỗi liên tiếp {stuck_s:.0f} s: {exc}"
+                # Đánh dấu dừng để thread đọc thoát (nguồn sẽ được đóng ở `stop()`/`start()` sau)
+                self._stop.set()
+                should_fail = True
+        if count == 1 or count % _READ_ERROR_LOG_EVERY == 0:
+            logger.warning("đọc frame từ %s thất bại %d lần liên tiếp: %s", label, count, exc)
+        if should_fail:
+            logger.error("nguồn live lỗi (%s): %s", label, self._message)
+            # Đóng nguồn ngay (NGOÀI `_lock`): nguồn còn giữ webcam/thiết bị thì lần "Bật phát"
+            # sau sẽ không mở được. Cùng lý do như `_check_health` (review vòng 3, P3).
+            try:
+                source.stop()
+            except Exception:                          # noqa: BLE001 — dọn dẹp lỗi không được ném
+                logger.warning("đóng nguồn live sau khi give-up gặp lỗi", exc_info=True)
 
     def _check_health(self, source: FrameSource, generation: int) -> bool:
         """Nguồn đã chết/treo/kết thúc? True = thread đọc phải dừng.
