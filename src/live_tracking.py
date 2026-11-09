@@ -47,7 +47,14 @@ STATE_STOPPED = "stopped"
 
 _FPS_WINDOW_S = 2.0
 _STAT_WINDOW = 200        # số mẫu giữ để lấy phân vị (p05/p95); 200 ⇒ p05 có nghĩa
-_STAT_MIN_SAMPLES = 5     # dưới mức này chưa báo phân vị (1 mẫu không có "p95")
+# Số mẫu TỐI THIỂU để được phép công bố phân vị. Phải >= 30, không phải 5: với n = 5,
+# `np.percentile(values, 5)` lấy CHỈ SỐ 0,2 ⇒ nằm giữa **min** và phần tử nhỏ thứ 2 (tức "một mẫu
+# xui"), công bố nó thành "p05" là lỗi trung thực — một phiên 0,7 s có thể hiện "p05 = 0,0".
+# n = 30 ⇒ chỉ số 1,45 (vẫn gần min), nên CỜ chẩn đoán (nếu có) phải đòi >= 100 mẫu
+# (xem docs/plan/09-11-2026-chan-doan-chat-luong-bam.md).
+_STAT_MIN_SAMPLES = 30
+# Số mẫu tối thiểu để công bố TỈ LỆ (không phải phân vị) — 5 mẫu đã đủ nói "1/5 lần mất dấu".
+_EMPTY_WINDOW_MIN = 5
 _SHOWN_HISTORY = 90       # số frame giữ ô bao đã phát, để tra đúng frame VOS đã thấy
 
 
@@ -91,7 +98,11 @@ class LiveTrackStats:
     vos_fps: float = 0.0          # FPS của VOS (nhịp mask thật)
     vos_ms: float = 0.0           # độ trễ suy luận gần nhất
     lk_ms: float = 0.0            # độ trễ LK gần nhất
-    stability: float = 0.0        # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy)
+    # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy). `None` = CHƯA ĐO (cửa sổ
+    # rỗng) — `0,0` là số ĐO ĐƯỢC (hai mask rời nhau hoàn toàn) hoặc "đang mất dấu"; `stability_n`
+    # cho biết cửa sổ có bao nhiêu mẫu (ticket 18: trước đây `0` mang cả hai nghĩa).
+    stability: float | None = None
+    stability_n: int = 0          # số mẫu của cửa sổ IoU (0 ⇒ `stability is None`)
     stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
     drift_iou: float | None = None        # IoU(ô bao đã phát, ô bao VOS sửa lại) — độ tự nhất quán
     drift_iou_p05: float | None = None    # phân vị 5 % (đuôi xấu: lúc nội suy lệch nhất)
@@ -100,7 +111,12 @@ class LiveTrackStats:
     mask_age_total_ms: float | None = None  # + vos_ms ⇒ tuổi dữ liệu ảnh người xem thực thấy
     mask_age_p95: float | None = None     # phân vị 95 % của mask_age_total_ms
     age_n: int = 0                        # số mẫu tuổi mask (0 ⇒ CHƯA ĐO)
-    empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật)
+    empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
+    # Cùng sự kiện nhưng đếm trong `_STAT_WINDOW` lần VOS GẦN NHẤT: `empty_runs` không bao giờ
+    # giảm nên UI in "mất dấu 26 lần" cho một sự việc đã qua; tỉ lệ theo cửa sổ thì trở về 0 khi
+    # model bám lại được. `None` = chưa đủ mẫu (`empty_window_n` cho biết còn thiếu bao nhiêu).
+    empty_frac_window: float | None = None
+    empty_window_n: int = 0
     mask_holds: int = 0           # số lần bộ lọc GIỮ mask cũ (model "chớp" mất vật)
     mask_drops: int = 0           # số lần mask hiển thị RỖNG (mất dấu thật)
     lost_streak: int = 0
@@ -169,8 +185,11 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "mask_age_p95": stats.mask_age_p95,
         "age_n": stats.age_n,
         "stability": stats.stability,
+        "stability_n": stats.stability_n,
         "stability_shown": stats.stability_shown,
         "empty_runs": stats.empty_runs,
+        "empty_frac_window": stats.empty_frac_window,
+        "empty_window_n": stats.empty_window_n,
         "mask_holds": stats.mask_holds,
         "mask_drops": stats.mask_drops,
         "lost_streak": stats.lost_streak,
@@ -289,6 +308,10 @@ class LiveTrackingSession:
         self._vos_stamps: deque = deque()
         self._smoother = MaskSmoother(config.mask_smoothing) if config.mask_smoothing < 1.0 else None
         self._drift_window: deque = deque(maxlen=_STAT_WINDOW)   # đủ mẫu để lấy p05
+        # Cửa sổ ĐẾM SỰ KIỆN cho mask rỗng. Để RIÊNG khỏi `_iou_window` (10 mẫu, dùng cho độ ổn
+        # định): đây là đại lượng đếm, không phải phân vị, nên cửa sổ ngắn vẫn dùng được — tần suất
+        # nền của "VOS trả mask rỗng" trên clip khoẻ đo được là 0/798 lần chạy (binh1).
+        self._vos_lost_window: deque = deque(maxlen=_STAT_WINDOW)
         self._age_window: deque = deque(maxlen=_STAT_WINDOW)
         # Ô bao ĐÃ PHÁT theo từng frame: nhờ vậy đo drift đúng frame mà VOS đã thấy, không lệch
         # một khoảng bằng độ trễ suy luận (review 08-11 chỉ ra phép so cũ lệch ~3 frame).
@@ -516,11 +539,18 @@ class LiveTrackingSession:
         self._record_drift(_bbox_iou(shown, fresh))
 
     def _record_drift(self, value) -> None:
-        """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm)."""
+        """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
+
+        `append` PHẢI trong `_stats_lock`: `_apply_drift_locked()` duyệt deque bằng `np.fromiter`
+        trong lúc giữ lock, còn `_update_stats_locked()` (luồng chính) cũng append trong lock ⇒ nếu
+        nguồn ghi này ở ngoài lock thì deque bị sửa giữa lúc duyệt ⇒
+        `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết ⇒ `state=error`
+        (ticket 17; test stress bắt được trước khi sửa).
+        """
         if value is None:
             return
-        self._drift_window.append(value)
         with self._stats_lock:
+            self._drift_window.append(value)
             self._apply_drift_locked()
 
     def _apply_drift_locked(self) -> None:
@@ -556,24 +586,44 @@ class LiveTrackingSession:
     def _measure_stability(self, result) -> None:
         """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không".
 
-        Mask RỖNG không vào mẫu: `mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn" thành
-        "độ ổn định 100 %" trên UI (lỗi P2, review 08-11). Mất dấu được đếm riêng ở `empty_runs`.
+        Mask RỖNG không vào cửa sổ IoU (`mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn"
+        thành "độ ổn định 100 %" trên UI — lỗi P2, review 08-11), nhưng chúng **ĐƯỢC ĐẾM** trong
+        `_vos_lost_window` (⇒ `empty_frac_window`) và `empty_runs`.
         """
         raw = getattr(result, "mask", None)
         if raw is None:
             return
-        if not raw.any():
-            with self._stats_lock:
+        # Đẩy ĐÚNG MỘT mẫu cho MỖI lần VOS trả kết quả: có vật (False) hay rỗng (True). Nếu chỉ
+        # đẩy khi rỗng thì tỉ lệ không bao giờ giảm sau khi model bám lại (đúng lỗi mà đại lượng
+        # này sinh ra để sửa).
+        # MỘT khối lock cho cả cửa sổ + bộ đếm + stability: nếu tách hai khối thì một snapshot
+        # `status.json` có thể thấy `empty_frac_window` đã tính mẫu rỗng MỚI trong khi `empty_runs`
+        # còn là số cũ (review 09-11 vòng 2, P3).
+        with self._stats_lock:
+            # `append` PHẢI trong lock cùng với `sum()`: giữ bất biến "deque chỉ bị sửa khi giữ
+            # `_stats_lock`" (hôm nay chỉ một luồng gọi, nhưng mẫu code sai sẽ bị copy).
+            self._vos_lost_window.append(not raw.any())
+            self._stats.empty_window_n = len(self._vos_lost_window)
+            self._stats.empty_frac_window = (
+                round(sum(self._vos_lost_window) / len(self._vos_lost_window), 3)
+                if len(self._vos_lost_window) >= _EMPTY_WINDOW_MIN else None)
+            if not raw.any():
                 self._stats.empty_runs += 1
-                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định: đặt 0 (không giữ số cũ, không
-                # nối IoU xuyên qua khoảng mất dấu — mask trước và sau là hai chuyện khác nhau).
-                self._stats.stability = 0.0
+                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định hiện tại: không giữ số cũ, không nối
+                # IoU xuyên qua khoảng mất dấu (mask trước và sau là hai chuyện khác nhau).
+                # Chưa có mẫu nào ⇒ `None` (CHƯA ĐO); đã có mẫu ⇒ `0,0` (số đo được: mask đang rỗng).
+                self._stats.stability = 0.0 if self._iou_window else None
+            self._stats.stability_n = len(self._iou_window)
+        if not raw.any():
             self._prev_raw_mask = None
             return
         if self._prev_raw_mask is not None:
-            self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
+            # `append` + `sum()` trong CÙNG lock — cùng lý do như `_vos_lost_window` ở trên (review
+            # 09-11 vòng 3: comment cấm append ngoài lock mà 16 dòng dưới lại làm đúng thế).
             with self._stats_lock:
+                self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
                 self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
+                self._stats.stability_n = len(self._iou_window)
         self._prev_raw_mask = raw
 
     def _smooth(self, result) -> None:

@@ -8,9 +8,13 @@ Cách sửa nhỏ nhất: khi công bố `_message = "Đang mở …"` cũng đ�
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Trong lúc mở nguồn sau một phiên `error`, `/api/live/status` KHÔNG trả `error` (test: nguồn giả có `start()` ngủ 0,3 s, phiên A cho give-up, `start()` B ở thread phụ, assert state != error)
-- [ ] `/api/live/stream` không trả 409 "Phiên live đã dừng vì lỗi: Đang mở …" trong cùng cửa sổ đó
-- [ ] UI không hiện `role="alert"` khi đang nạp phiên mới
-- [ ] `./run test`, `./run webtest`, `./run e2e` xanh
+- [x] Trong lúc mở nguồn sau một phiên `error`, `/api/live/status` KHÔNG trả `error` (test: nguồn giả có `start()` ngủ 0,3 s, phiên A cho give-up, `start()` B ở thread phụ, assert state != error)
+- [x] `/api/live/stream` không trả 409 "Phiên live đã dừng vì lỗi: Đang mở …" trong cùng cửa sổ đó
+- [x] UI không hiện `role="alert"` khi đang nạp phiên mới
+- [x] `./run test`, `./run webtest`, `./run e2e` xanh
+
+
+## Đã làm (10-11-2026)
+- Nhánh `feat/chan-doan-chat-luong-bam`: sửa + test bắt hồi quy (xem mục tick ở trên).

@@ -20,7 +20,7 @@ import {
   type BBox,
   type LiveStatus,
 } from '../api'
-import { maskRhythmLine, shownFps } from '../live'
+import { driftLine, maskRhythmLine, shownFps } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
 const POLL_MS = 1000
@@ -111,6 +111,7 @@ export function LivePanel(): JSX.Element {
 
   const running = status?.state === 'running'
   const maskLine = maskRhythmLine(status)
+  const driftText = driftLine(status)
   const displayFps = shownFps(status)
 
   return (
@@ -155,8 +156,9 @@ export function LivePanel(): JSX.Element {
         // nói cho người vận hành biết ảnh đang đứng vì lỗi, không phải vì camera chậm.
         <p className={status.state === 'error' ? 'error' : 'hint'} data-testid="live-status"
            role={status.state === 'error' ? 'alert' : undefined}>
-          Trạng thái: <strong>{status.state}</strong> · {status.message} · frame: {status.frames} · FPS
-          đo được: {displayFps}
+          Trạng thái:{' '}
+          <strong>{status.state === 'loading' ? 'đang mở…' : status.state}</strong> · {status.message} ·
+          frame: {status.frames} · FPS đo được: {displayFps}
         </p>
       )}
 
@@ -165,6 +167,14 @@ export function LivePanel(): JSX.Element {
         // Hiện cả hai để không ai đọc nhầm "30 FPS" thành "mask 30 FPS".
         <p className="hint" data-testid="mask-rhythm">
           {maskLine}
+        </p>
+      )}
+
+      {driftText && (
+        // Chẩn đoán, KHÔNG phải cảnh báo đỏ: hiện cả số nền (số mẫu) để người xem biết đây là
+        // dụng cụ đo; "chưa đo được" không bao giờ được hiện thành "tốt".
+        <p className="hint" data-testid="drift-line">
+          {driftText}
         </p>
       )}
 

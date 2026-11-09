@@ -137,8 +137,13 @@ def build_router(service: JobService, live) -> APIRouter:
             display_fps=status.display_fps,
             mask_fps=status.mask_fps,
             stability=status.stability,
+            stability_n=status.stability_n,
             latency_ms=status.latency_ms,
             empty_runs=status.empty_runs,
+            empty_frac_window=status.empty_frac_window,
+            empty_window_n=status.empty_window_n,
+            drift_p05=status.drift_p05,
+            drift_n=status.drift_n,
             message=status.message,
         )
 
@@ -184,6 +189,11 @@ def build_router(service: JobService, live) -> APIRouter:
                     status_code=409,
                     detail=f"Phiên live đã dừng vì lỗi: {status.message or 'không rõ nguyên nhân'}",
                 )
+            if status.state.value == "loading":
+                # Đang nạp nguồn (worker `track` 20–240 s): KHÔNG phải lỗi — câu này không được
+                # đọc thành "phiên đã chết" (ticket 16).
+                raise HTTPException(status_code=409,
+                                    detail=f"Đang mở phiên live — chưa có frame: {status.message or ''}".strip())
             raise HTTPException(status_code=409, detail="Chưa có phiên live nào đang chạy")
         return StreamingResponse(
             live.frames(),

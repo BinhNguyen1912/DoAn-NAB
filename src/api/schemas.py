@@ -119,7 +119,7 @@ class LiveStartRequest(BaseModel):
 class LiveStatusResponse(BaseModel):
     """Trạng thái phiên phát trực tiếp (frontend poll mỗi giây để hiện FPS/trạng thái)."""
 
-    state: Literal["stopped", "running", "error"]
+    state: Literal["stopped", "loading", "running", "error"]
     source: str
     frames: int = Field(ge=0, description="số frame MỚI đã đọc từ khi bắt đầu (chỉ đếm khi nội "
                                            "dung đổi — cảnh tĩnh thì con số đứng yên)")
@@ -130,9 +130,25 @@ class LiveStatusResponse(BaseModel):
     mask_fps: float = Field(default=0, ge=0,
                             description="nhịp MASK MỚI (số lần model chạy/giây) — nhỏ hơn "
                                         "measured_fps khi chạy hybrid VOS + LK")
-    stability: float = Field(default=0, ge=0, le=1,
-                             description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy)")
+    stability: float | None = Field(
+        default=None, ge=0, le=1,
+        description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy). `null` = CHƯA ĐO "
+                    "(xem `stability_n`), KHÁC với `0` = đo được 0 / đang mất dấu")
+    stability_n: int = Field(default=0, ge=0,
+                             description="số mẫu của cửa sổ IoU độ ổn định (0 ⇒ `stability` là null)")
     latency_ms: float = Field(default=0, ge=0, description="độ trễ suy luận gần nhất (ms)")
     empty_runs: int = Field(default=0, ge=0,
-                            description="số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên")
+                            description="số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên "
+                                        "— bộ đếm TRỌN ĐỜI, không bao giờ giảm")
+    empty_frac_window: float | None = Field(
+        default=None, ge=0, le=1,
+        description="tỉ lệ lần model trả mask RỖNG trong 200 lần chạy GẦN NHẤT (null = chưa đủ mẫu). "
+                    "Đây mới là số nói 'hiện tại có đang mất dấu không'")
+    empty_window_n: int = Field(default=0, ge=0, description="số mẫu của cửa sổ trên (0 = chưa có)")
+    drift_p05: float | None = Field(
+        default=None, ge=0, le=1,
+        description="phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên tối đa 200 MẪU "
+                    "DRIFT gần nhất (mẫu bị bỏ khi hộp VOS suy biến, nên `drift_n` có thể nhỏ hơn "
+                    "`vos_runs`) — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
+    drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
     message: str

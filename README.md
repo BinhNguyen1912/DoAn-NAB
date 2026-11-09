@@ -358,7 +358,10 @@ Nguyên tắc đã giữ:
   của model chặn nhịp phát; tách luồng mới đạt 29,8 FPS.
 - **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,6 lần/giây với `vos_every=3`); giữa hai
   lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS". UI hiện đúng hai nhịp
-  (`/api/live/status` có `mask_fps`, `stability`, `latency_ms`), nguồn không có model thì ẩn dòng.
+  (`/api/live/status` có `mask_fps`, `stability`, `latency_ms`, và hai chỉ số **chẩn đoán**:
+  `empty_frac_window`/`empty_window_n` = tỉ lệ lần VOS trả mask rỗng trong 200 lần gần nhất,
+  `drift_p05`/`drift_n` = IoU **tự nhất quán** giữa ô đang hiển thị và lần VOS kế tiếp — `null` =
+  **chưa đo**, không phải 0), nguồn không có model thì ẩn dòng.
 - **Chống nhấp nháy mask (`--mask-smoothing`, mặc định 1.0 = TẮT):** đo trên 3 clip cho thấy **không
   phân biệt được** trong nhiễu giữa hai lần chạy (0,681 vs 0,706 — SAM 2 không tất định) ⇒ để tắt
   mặc định. Sau khi sửa lỗi P1 (bộ lọc bị "teleport" bởi `bbox=(0,0,0,0)`), cùng cấu hình trên

@@ -142,10 +142,18 @@ class WorkerFrameSource(FrameSource):
         return LiveTelemetry(
             display_fps=float(status.get("measured_fps") or 0.0),
             mask_fps=float(status.get("vos_fps") or 0.0),
-            stability=float(status.get("stability") or 0.0),
+            # `None` = CHƯA ĐO (khác `0,0` = đo được 0 / đang mất dấu) — ticket 18.
+            stability=_so_hoac_none(status.get("stability")),
+            stability_n=int(status.get("stability_n") or 0),
             latency_ms=float(status.get("vos_ms") or 0.0),
             lk_ms=float(status.get("lk_ms") or 0.0),
             empty_runs=int(status.get("empty_runs") or 0),
+            # `None` phải giữ nguyên `None`: `float(... or 0.0)` biến "chưa đo" thành "đo được 0"
+            # (AGENTS §6 — bẫy đã gặp 3 lần trong repo).
+            empty_frac_window=_so_hoac_none(status.get("empty_frac_window")),
+            empty_window_n=int(status.get("empty_window_n") or 0),
+            drift_p05=_so_hoac_none(status.get("drift_iou_p05")),
+            drift_n=int(status.get("drift_n") or 0),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource
@@ -357,6 +365,14 @@ def _pid_alive(pid: int) -> bool:
     except (OSError, IndexError):
         return False
     return state != "Z"
+
+
+def _so_hoac_none(value) -> float | None:
+    """Số từ `status.json`; `None` nếu thiếu/không đọc được. KHÔNG đổi `None` thành `0.0`."""
+    try:
+        return None if value is None else float(value)
+    except (TypeError, ValueError):
+        return None
 
 
 def _read_status(path: Path) -> dict:
