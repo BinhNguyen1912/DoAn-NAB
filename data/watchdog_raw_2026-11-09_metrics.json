@@ -1,0 +1,63 @@
+{
+  "do_luc": "2026-11-09T21:24:45",
+  "git_rev": "9bef96059ed6a7b6c30132c25cc59496f9065498",
+  "git_dirty": true,
+  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi trên file ĐÃ THEO DÕI so với commit đó (file artifact mới chưa track không tính — chính nó là thứ đang được ghi).",
+  "moi_truong": "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",
+  "lenh": "python scripts/measure_watchdog.py --mode raw --lan 3",
+  "nguong_dang_ky_truoc": {
+    "nguon": "review 09-11 P3: mode `raw` phải tự báo lỗi; ngưỡng chọn trước là 5 s vì chỉ biết qua 'không có frame' (STALE_S = 3 s)",
+    "dieu_kien": "giết nguồn giữa phiên (mode raw) ⇒ /api/live/status trả `error` ≤ 5 s, message nêu lý do, luồng MJPEG đóng"
+  },
+  "thiet_lap": {
+    "snapshot": "data/demo_input_frames/00000.jpg",
+    "so_lan": 3
+  },
+  "ket_qua": [
+    {
+      "load_s": 0.0,
+      "frames_truoc_khi_giet": 0,
+      "byte_luong_truoc_khi_giet": 147456,
+      "state_sau_khi_giet": "error",
+      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3732.3,
+      "tg_dong_luong_ms": 3732.6,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 0.0,
+      "frames_truoc_khi_giet": 0,
+      "byte_luong_truoc_khi_giet": 147456,
+      "state_sau_khi_giet": "error",
+      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3754.2,
+      "tg_dong_luong_ms": 3740.2,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 0.0,
+      "frames_truoc_khi_giet": 0,
+      "byte_luong_truoc_khi_giet": 147456,
+      "state_sau_khi_giet": "error",
+      "message": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối",
+      "tg_bao_error_ms": 3741.8,
+      "tg_dong_luong_ms": 3739.8,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    }
+  ],
+  "tom_tat": {
+    "n": 3,
+    "tg_bao_error_ms": {
+      "min": 3732.3,
+      "max": 3754.2,
+      "mean": 3742.8
+    },
+    "so_lan_vuot_nguong": 0,
+    "so_lan_luong_khong_dong": 0,
+    "message_mau": "camera/luồng không trả frame trong 3 s — kiểm tra nguồn/kết nối"
+  },
+  "loi": null
+}

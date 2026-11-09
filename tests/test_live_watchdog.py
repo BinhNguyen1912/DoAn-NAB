@@ -394,3 +394,29 @@ class TestPidfileKhongBiXoaNham:
 
         assert pidfile.read_text(encoding="utf-8") == "222", "pidfile của phiên mới bị xoá nhầm"
         assert proc.wait(timeout=5) is not None, "worker cũ phải bị dừng thật"
+
+
+class TestLuongMjpegBaoDungLyDo:
+    """P3 review 09-11: `/api/live/stream` trả cùng một câu 409 cho cả `error` và "chưa bật".
+
+    Khi watchdog báo worker chết, client chỉ thấy "Chưa có phiên live nào đang chạy" ⇒ mất đúng
+    thông tin vừa có được.
+    """
+
+    def test_phien_loi_thi_409_kem_ly_do_cua_watchdog(self, live_client, monkeypatch):
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _DyingSource())
+        live_client.post("/api/live/start", json={"source": "0"})
+        assert _wait(lambda: live_client.get("/api/live/status").json()["state"] == "error",
+                     timeout=2.0)
+
+        response = live_client.get("/api/live/stream")
+        assert response.status_code == 409
+        assert "lỗi" in response.json()["detail"]
+        assert "worker đã dừng" in response.json()["detail"]
+        live_client.post("/api/live/stop")
+
+    def test_chua_bat_thi_409_cau_cu(self, live_client):
+        response = live_client.get("/api/live/stream")
+        assert response.status_code == 409
+        assert response.json()["detail"] == "Chưa có phiên live nào đang chạy"

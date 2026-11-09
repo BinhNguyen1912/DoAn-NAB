@@ -175,7 +175,15 @@ def build_router(service: JobService, live) -> APIRouter:
     @router.get("/api/live/stream")
     def live_stream() -> StreamingResponse:
         """Luồng MJPEG (multipart/x-mixed-replace) — hiện trực tiếp bằng <img src>."""
-        if live.status().state.value != "running":
+        status = live.status()
+        if status.state.value != "running":
+            # Phân biệt "phiên lỗi" với "chưa bật": trước đây cả hai cùng một câu ⇒ khi watchdog báo
+            # worker chết, client chỉ thấy "Chưa có phiên live nào đang chạy" (review 09-11, P3).
+            if status.state.value == "error":
+                raise HTTPException(
+                    status_code=409,
+                    detail=f"Phiên live đã dừng vì lỗi: {status.message or 'không rõ nguyên nhân'}",
+                )
             raise HTTPException(status_code=409, detail="Chưa có phiên live nào đang chạy")
         return StreamingResponse(
             live.frames(),

@@ -1,19 +1,22 @@
 """
-Đo WATCHDOG phiên live bằng WORKER THẬT: `kill -9` worker giữa phiên thì API mất bao lâu để báo lỗi?
+Đo WATCHDOG phiên live: nguồn chết giữa phiên thì API mất bao lâu để báo lỗi?
 
-Chức năng: dựng API (uvicorn) + phiên live mode=track trên clip thật, chờ `running`, `kill -9` tiến
-           trình worker, rồi đo 3 thứ: thời gian tới `state=error`, message người dùng thấy, và thời
-           gian luồng MJPEG đóng (client không bị treo).
-Input  : --clip, --bbox, --image-size, --lan (số lần chạy), --port.
-Output : JSON (mặc định `data/watchdog_<ngày>_metrics.json`) có `git_rev`, `git_dirty`, `lenh`,
-         `do_luc` + từng lần chạy; in bảng tóm tắt ra console.
-Lưu ý  : script CHẠY worker thật (cần torch + checkpoint SAM 2) nhưng chỉ để kiểm tra **phản ứng của
-         API**, không đánh giá chất lượng bám — không được trích FPS/mIoU từ file này.
-         Trước khi sửa watchdog (08-11), worker chết ⇒ API vẫn báo `running` mãi và luồng chỉ đóng
-         sau `idle_timeout` 5 s; đó là lý do phép đo này tồn tại.
+Chức năng: dựng API (uvicorn) + một phiên live thật, chờ `running`, rồi **giết nguồn** và đo 3 thứ:
+           thời gian tới `state=error`, message người dùng thấy, thời gian luồng MJPEG đóng.
+Input  : --mode (worker | raw), --clip/--bbox/--image-size (worker), --snapshot (raw), --lan, --port.
+Output : JSON (`data/watchdog_<ngày>_metrics.json` cho `worker`, `data/watchdog_raw_<ngày>_…` cho
+         `raw`) có `git_rev`, `git_dirty`, `lenh`, `do_luc` + từng lần chạy; in bảng tóm tắt.
+Lưu ý  : hai ca có bản chất khác nhau, ĐỪNG trộn số:
+         - `worker` (mode `track`): `kill -9` tiến trình worker ⇒ bắt bằng `proc.poll()`, **~0,1 s**;
+         - `raw` (webcam/relay): tắt server ảnh ⇒ chỉ biết qua "không có frame", nên chờ ngưỡng
+           `STALE_S` của `OpenCvFrameSource` (**~3 s**) mới kết luận.
+         Script CHẠY worker thật (cần torch + checkpoint SAM 2) ở mode `worker`, nhưng chỉ kiểm tra
+         **phản ứng của API**, không đánh giá chất lượng bám — không được trích FPS/mIoU từ file này.
 """
 
 import argparse
+import functools
+import http.server
 import json
 import os
 import signal
@@ -157,8 +160,83 @@ def _one_run(base, args, live_dir):
     }
 
 
+class _SnapshotServer:
+    """Server tĩnh phục vụ `snapshot.jpg` (giả lập relay camera `scripts/win_camera_relay.py`).
+
+    Vì sao cần: để đo watchdog của mode `raw` bằng nguồn THẬT qua mạng — tắt server là "rút camera",
+    đúng ca mà `OpenCvFrameSource.health()` phải phát hiện.
+    """
+
+    def __init__(self, directory, port):
+        handler = functools.partial(http.server.SimpleHTTPRequestHandler, directory=str(directory))
+        self._server = http.server.ThreadingHTTPServer(("127.0.0.1", port), handler)
+        self._thread = threading.Thread(target=self._server.serve_forever, daemon=True)
+
+    def start(self):
+        self._thread.start()
+        return self
+
+    def stop(self):
+        self._server.shutdown()
+        self._server.server_close()
+        self._thread.join(timeout=5)
+
+
+def _one_run_raw(base, args, snapshot_port):
+    """Một lần thí nghiệm mode `raw`: mở phiên từ relay ảnh → TẮT relay → đo phản ứng của API."""
+    url = f"http://127.0.0.1:{snapshot_port}/{Path(args.snapshot).name}"
+    server = _SnapshotServer(Path(args.snapshot).parent, snapshot_port).start()
+    try:
+        started_at = time.perf_counter()
+        _post(base, "/api/live/start", {"source": url, "mode": "raw"})
+        running = _wait_running(base)
+        load_s = round(time.perf_counter() - started_at, 1)
+
+        probe = _StreamProbe(base, time.perf_counter())
+        probe.start()
+        time.sleep(0.5)
+        bytes_before = probe.bytes
+
+        killed_at = time.perf_counter()
+        server.stop()                       # "rút camera": từ đây nguồn không trả frame nữa
+
+        error_at, message = None, ""
+        while time.perf_counter() - killed_at < 15.0:
+            status = _get(base, "/api/live/status")
+            if status.get("state") != "running":
+                error_at = time.perf_counter()
+                message = status.get("message", "")
+                break
+            time.sleep(POLL_S)
+        probe.join(timeout=20.0)
+        _post(base, "/api/live/stop", {})
+    finally:
+        server.stop()
+
+    return {
+        "load_s": load_s,
+        "frames_truoc_khi_giet": running.get("frames"),
+        "byte_luong_truoc_khi_giet": bytes_before,
+        "state_sau_khi_giet": status.get("state"),
+        "message": message,
+        "tg_bao_error_ms": round((error_at - killed_at) * 1000, 1) if error_at else None,
+        "tg_dong_luong_ms": (round((probe.closed_at - killed_at) * 1000, 1)
+                             if probe.closed_at else None),
+        "luong_dong_kieu": probe.error or "EOF (server đóng kết nối)",
+        # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
+        "vuot_nguong": bool(error_at and (error_at - killed_at) > args.nguong_s),
+    }
+
+
 def main() -> int:
-    parser = argparse.ArgumentParser(description="Đo phản ứng của API khi worker live chết (watchdog)")
+    parser = argparse.ArgumentParser(
+        description="Đo phản ứng của API khi nguồn live chết (watchdog)")
+    parser.add_argument("--mode", choices=("worker", "raw"), default="worker",
+                        help="worker = kill -9 worker (mode track) · raw = tắt relay ảnh (mode raw)")
+    parser.add_argument("--nguong-s", type=float, default=None,
+                        help="ngưỡng đăng ký trước (mặc định 2 s cho worker, 5 s cho raw)")
+    parser.add_argument("--snapshot", default="data/demo_input_frames/00000.jpg",
+                        help="ảnh JPEG để làm relay (mode raw)")
     parser.add_argument("--clip", default="data/binh1.mp4")
     parser.add_argument("--bbox", default="104,308,209,287",
                         help="x,y,w,h trong khung gốc (mặc định: ô của binh1 trong ./run reid)")
@@ -172,9 +250,17 @@ def main() -> int:
     args.bbox = tuple(int(v) for v in args.bbox.split(","))
     if len(args.bbox) != 4:
         parser.error("--bbox phải là x,y,w,h")
+    if args.nguong_s is None:
+        # worker: `proc.poll()` nên phải nhanh (plan 08-11 ghi ≤ 2 s). raw: chỉ biết qua "không có
+        # frame" ⇒ ngưỡng là STALE_S 3 s (+ chờ mạng), đăng ký trước 5 s.
+        args.nguong_s = 2.0 if args.mode == "worker" else 5.0
+    snapshot_port = args.port + 1
 
-    out = Path(args.out) if args.out else (
-        _REPO_ROOT / "data" / f"watchdog_{datetime.now():%Y-%m-%d}_metrics.json")
+    if args.out:
+        out = Path(args.out)
+    else:
+        kind = "watchdog" if args.mode == "worker" else "watchdog_raw"
+        out = _REPO_ROOT / "data" / f"{kind}_{datetime.now():%Y-%m-%d}_metrics.json"
     base = f"http://127.0.0.1:{args.port}"
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
     env = dict(os.environ, DOAN_LIVE_DIR=args.out_dir)
@@ -190,8 +276,12 @@ def main() -> int:
         if not _wait_up(base):
             raise RuntimeError("API không khởi động được (xem data/watchdog_api.log)")
         for index in range(args.lan):
-            print(f"[{index + 1}/{args.lan}] kill -9 worker rồi đo…", flush=True)
-            runs.append(_one_run(base, args, args.out_dir))
+            viet = "kill -9 worker" if args.mode == "worker" else "tắt relay ảnh"
+            print(f"[{index + 1}/{args.lan}] {viet} rồi đo…", flush=True)
+            if args.mode == "worker":
+                runs.append(_one_run(base, args, args.out_dir))
+            else:
+                runs.append(_one_run_raw(base, args, snapshot_port))
     except Exception as exc:                          # noqa: BLE001 — ghi lỗi vào artifact
         error = f"{type(exc).__name__}: {exc}"
     finally:
@@ -220,16 +310,21 @@ def main() -> int:
                            "trên file ĐÃ THEO DÕI so với commit đó (file artifact mới chưa track "
                            "không tính — chính nó là thứ đang được ghi).",
         "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, "
-                      f"image_size {args.image_size}",
+                      f"image_size {args.image_size}" if args.mode == "worker" else
+                      "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",
         "lenh": "python scripts/measure_watchdog.py " + " ".join(sys.argv[1:]),
         "nguong_dang_ky_truoc": {
-            "nguon": "docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md (viết TRƯỚC khi chạy)",
-            "dieu_kien": f"kill -9 worker giữa phiên ⇒ /api/live/status trả `error` ≤ "
-                         f"{NGUONG_DANG_KY_TRUOC_S:.0f} s, message nêu lý do, luồng MJPEG đóng",
+            "nguon": ("docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md (≤ 2 s cho worker)"
+                      if args.mode == "worker" else
+                      "review 09-11 P3: mode `raw` phải tự báo lỗi; ngưỡng chọn trước là 5 s vì chỉ "
+                      "biết qua 'không có frame' (STALE_S = 3 s)"),
+            "dieu_kien": f"giết nguồn giữa phiên (mode {args.mode}) ⇒ /api/live/status trả `error` ≤ "
+                         f"{args.nguong_s:.0f} s, message nêu lý do, luồng MJPEG đóng",
         },
-        "thiet_lap": {"clip": args.clip, "bbox_xywh": list(args.bbox),
-                      "image_size": args.image_size, "vos_every": args.vos_every,
-                      "so_lan": args.lan},
+        "thiet_lap": ({"clip": args.clip, "bbox_xywh": list(args.bbox),
+                       "image_size": args.image_size, "vos_every": args.vos_every,
+                       "so_lan": args.lan} if args.mode == "worker" else
+                      {"snapshot": args.snapshot, "so_lan": args.lan}),
         "ket_qua": runs,
         "tom_tat": {
             "n": len(runs),
@@ -245,7 +340,8 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(result, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print("\n| lần | nạp | state | báo error | đóng luồng | message |")
+    print(f"\nmode {args.mode} · ngưỡng đăng ký trước {args.nguong_s:.0f} s")
+    print("| lần | nạp | state | báo error | đóng luồng | message |")
     print("|---|---|---|---|---|---|")
     for index, run in enumerate(runs, 1):
         print(f"| {index} | {run['load_s']}s | {run['state_sau_khi_giet']} | "

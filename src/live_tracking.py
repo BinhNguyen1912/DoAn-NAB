@@ -367,12 +367,17 @@ class LiveTrackingSession:
                     break
                 self._sleep(interval, began)
         finally:
-            self._stop_worker()
-            if self._source is not None:
-                self._source.close()
+            # Công bố `stopped` TRƯỚC khi join luồng VOS: `_stop_worker()` có thể chờ tới 5 s (inference
+            # đang chạy). Trong cửa sổ đó worker còn sống, `status.json` vẫn `tracking` và `frame.jpg`
+            # đứng ⇒ watchdog đọc ra "treo?" thay vì "phiên kết thúc" (review 09-11, P2).
             if self._error is None:             # giữ nguyên "error" nếu luồng VOS đã chết
                 with self._stats_lock:
                     self._stats.state = STATE_STOPPED
+            self._publish_status(out_dir)
+            self._stop_worker()
+            if self._source is not None:
+                self._source.close()
+            # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
             self._publish_status(out_dir)
         return self._stats
 

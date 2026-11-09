@@ -231,6 +231,123 @@ class TestOpenCvFrameSource:
             source.start()
 
 
+class TestOpenCvSourceHealth:
+    """Watchdog cho mode `raw` (webcam/RTSP/file): trước 09-11 rút webcam vẫn báo `running`.
+
+    Dùng `capture` GIẢ (monkeypatch `open_video_source`) — không cần webcam thật, và điều khiển được
+    chính xác lúc nào nguồn "không trả frame".
+    """
+
+    class _Capture:
+        """`cv2.VideoCapture` giả: trả lần lượt các frame trong hàng đợi, cạn thì None."""
+
+        def __init__(self, frames=()):
+            self.frames = list(frames)
+            self.closed = False
+
+        def read(self):
+            return self.frames.pop(0) if self.frames else None
+
+        def close(self):
+            self.closed = True
+
+    @staticmethod
+    def _patch(monkeypatch, *captures):
+        """Ghép chuỗi capture: lần `open()` thứ i trả `captures[i]` (đuôi dùng lại cái cuối)."""
+        from src.api.adapters import opencv_source
+
+        queue = list(captures)
+
+        class _Opener:
+            def open(self):
+                if len(queue) > 1:
+                    return queue.pop(0)
+                return queue[0]
+
+        monkeypatch.setattr(opencv_source, "open_video_source", lambda *a, **k: _Opener())
+
+    @staticmethod
+    def _frame():
+        import numpy as np
+
+        return np.full((16, 16, 3), 90, np.uint8)
+
+    def test_chua_start_thi_khoe(self):
+        from src.api.adapters import OpenCvFrameSource
+
+        assert OpenCvFrameSource("0").health() is None
+
+    def test_dang_ra_frame_thi_khoe(self, monkeypatch):
+        from src.api.adapters import OpenCvFrameSource
+
+        capture = self._Capture([self._frame()])
+        self._patch(monkeypatch, capture)
+        source = OpenCvFrameSource("0")
+        source.start()
+
+        assert source.read_jpeg() is not None
+        assert source.health() is None
+
+    def test_camera_khong_tra_frame_qua_lau_thi_error(self, monkeypatch):
+        """Rút webcam: `read()` trả None mãi ⇒ sau `STALE_S` phải là ERROR (không im lặng)."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        self._patch(monkeypatch, self._Capture())            # capture rỗng = không có frame
+        source = OpenCvFrameSource("0")
+        source.start()
+        source._last_frame_at -= (opencv_source.STALE_S + 1.0)   # tua đồng hồ, không sleep
+
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR
+        assert "không trả frame" in health.message
+
+    def test_file_het_ma_khong_lap_thi_stopped_chu_khong_phai_error(self, monkeypatch):
+        """Hết video (file, `loop_files=False`) là phiên KẾT THÚC bình thường — không phải lỗi."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        self._patch(monkeypatch, self._Capture())
+        source = OpenCvFrameSource("video.mp4", loop_files=False)   # đuôi file ⇒ `_is_file`
+        source.start()
+        source._last_frame_at -= (opencv_source.STALE_S + 5.0)
+
+        assert source.read_jpeg() is None                    # capture rỗng, không lặp
+        health = source.health()
+        assert health is not None and health.state is LiveState.STOPPED
+        assert "hết" in health.message
+
+    def test_da_stop_theo_lenh_thi_khong_bao_loi(self, monkeypatch):
+        """`stop()` là chủ động — không được biến thành `error` sau khi đã dừng."""
+        from src.api.adapters import OpenCvFrameSource
+
+        self._patch(monkeypatch, self._Capture())
+        source = OpenCvFrameSource("0")
+        source.start()
+        source.stop()
+
+        assert source.health() is None
+
+    def test_mo_lai_file_that_bai_thi_error_khong_im_lang(self, monkeypatch):
+        """`_rewind()` lỗi (file bị xoá) ⇒ mất capture ⇒ ERROR, không phải 'khoẻ'."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        calls = {"n": 0}
+
+        class _Opener:
+            def open(self):
+                calls["n"] += 1
+                if calls["n"] > 1:
+                    raise OSError("file đã bị xoá")
+                return TestOpenCvSourceHealth._Capture()
+
+        monkeypatch.setattr(opencv_source, "open_video_source", lambda *a, **k: _Opener())
+        source = OpenCvFrameSource("video.mp4", loop_files=True)
+        source.start()
+        assert source.read_jpeg() is None          # capture cạn ⇒ thử rewind ⇒ lỗi
+
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR
+
+
 class TestWorkerTelemetry:
     """Seam `status.json → LiveTelemetry` — từng làm `empty_runs` "chết trong adapter" (review lần 2)."""
 

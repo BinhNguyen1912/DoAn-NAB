@@ -894,3 +894,49 @@ class TestDonWorkerCuPhaiChoChetThat:
             if proc.poll() is None:
                 proc.kill()
             proc.wait(timeout=5)
+
+
+class TestCongBoStoppedTruocKhiJoinWorker:
+    """P2 review 09-11: `stopped` phải được ghi TRƯỚC khi join luồng VOS.
+
+    Cửa sổ nguy hiểm: `_stop_worker()` join tới 5 s (inference đang chạy). Trong lúc đó worker còn
+    sống, `status.json` vẫn `tracking`, `frame.jpg` đứng ⇒ watchdog đọc ra "treo?" thay vì
+    "phiên kết thúc" (báo lỗi sai cho một phiên kết thúc hoàn toàn bình thường).
+    """
+
+    def test_status_da_la_stopped_trong_luc_dang_join_worker(self, video_source, tmp_path,
+                                                             monkeypatch):
+        import threading
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}),
+                                     encoding="utf-8")
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
+                                                            stop_after_frames=2))
+        dang_join = threading.Event()
+        cho_doc = threading.Event()
+        trang_thai_luc_join = {}
+
+        that = session._stop_worker
+
+        def _stop_worker_cham():
+            that()
+            trang_thai_luc_join["state"] = json.loads(
+                (out / STATUS_NAME).read_text(encoding="utf-8"))["state"]
+            dang_join.set()
+            cho_doc.wait(timeout=5)             # giữ "cửa sổ join" cho test đọc kịp
+
+        monkeypatch.setattr(session, "_stop_worker", _stop_worker_cham)
+
+        def _run():
+            session.run()
+
+        thread = threading.Thread(target=_run)
+        thread.start()
+        assert dang_join.wait(timeout=10), "không tới được nhánh finally"
+        cho_doc.set()
+        thread.join(timeout=10)
+
+        assert trang_thai_luc_join["state"] == STATE_STOPPED, (
+            "status.json vẫn chưa `stopped` khi đang join worker ⇒ watchdog sẽ báo 'treo?'")
