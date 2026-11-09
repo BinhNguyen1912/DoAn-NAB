@@ -89,3 +89,12 @@ def test_co_truong_empty_window_lay_tu_status_tho():
                          ({"empty_frac_window": 0.0}, True)):
         row = measure._row_from_status(status, "x", "p.mp4", (1, 2, 3, 4))
         assert measure.summarize([row])["x"]["co_truong_empty_window"] is want, status
+
+
+def test_moi_clip_deu_co_truong_ky_vong():
+    """Hình dạng `tom_tat` phải ỔN ĐỊNH: clip nào cũng có `ky_vong` (`True` nếu được khai, chuỗi
+    `"không đặt"` nếu không) — trước đây clip ĐƯỢC KHAI thiếu hẳn khoá, script đọc artifact sẽ
+    `KeyError` (review 09-11 vòng 3, P2)."""
+    per_clip = measure.summarize([{"clip": "a"}, {"clip": "b"}])
+    measure._gan_ky_vong(per_clip, {"a": True})
+    assert {k: v["ky_vong"] for k, v in per_clip.items()} == {"a": True, "b": "không đặt"}

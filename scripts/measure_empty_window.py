@@ -81,6 +81,15 @@ def summarize(rows: list) -> dict:
     return per_clip
 
 
+def _gan_ky_vong(per_clip: dict, expect: dict) -> dict:
+    """Ghi `ky_vong` cho MỌI clip (`True` nếu được khai bằng `--expect-lost`, chuỗi `"không đặt"`
+    nếu không) để hình dạng artifact ổn định — clip được khai mà thiếu khoá sẽ làm script đọc
+    artifact `KeyError`."""
+    for name in per_clip:
+        per_clip[name]["ky_vong"] = True if name in expect else "không đặt"
+    return per_clip
+
+
 def _ket_luan(problems: list, expect: dict) -> str:
     """Một dòng kết luận ghi vào artifact — để không ai đọc "không có lý do hỏng" thành "đã đạt"
     khi chưa hề khai tiêu chí nào."""
@@ -168,9 +177,7 @@ def main() -> int:
     per_clip = summarize(rows)
     # Chỉ clip ĐƯỢC KHAI mới có kỳ vọng; clip khác in số và ghi "không đặt".
     expect = {name: True for name in args.expect_lost}
-    for name in per_clip:
-        if name not in expect:
-            per_clip[name]["ky_vong"] = "không đặt"
+    per_clip = _gan_ky_vong(per_clip, expect)
     problems = _verdict(per_clip, expect)
     ket_luan = _ket_luan(problems, expect)
     if ket_luan != "đạt":
