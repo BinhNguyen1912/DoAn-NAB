@@ -66,7 +66,10 @@ Tiêu chí đăng ký trước (ghi trong plan, không sửa sau khi thấy số
   trích một con số lẻ như "12 %" cho báo cáo.
 
 ### Kiểm tra tự động
-- `./run lint` ✓ · `./run test` **711 passed** (5 deselected, ~62 s) · `./run webtest` **28 passed**
+- `./run lint` ✓ · `./run test` **715 passed** (5 deselected, ~58 s) · `./run testall` **720 passed**
+  (~181 s) · `./run webtest` **28 passed** · `npm --prefix web run build` OK · `./run e2e` **PASS**
+  (chạy ở repo chính: worktree không chạy được e2e vì node Windows không resolve symlink
+  `web/node_modules`)
 - Test mới: 4 test đếm theo cửa sổ (1,0 → 0,5 → 0,0 trong khi bộ đếm trọn đời đứng yên; 200 mẫu có
   vật ⇒ về 0; < 5 mẫu ⇒ `None` chứ không phải 0), 2 test ngưỡng phân vị (n = 5 thì "p05" là mẫu xui),
   4 test adapter/API (`None` ≠ 0,0; ca `binh2` p05 = 0,0 vẫn là **0,0**), 8 test vitest (2 nhãn mới +
