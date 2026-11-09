@@ -53,21 +53,25 @@
 ## 📤 Output / Kết quả
 
 ### Số đo thật (worker thật, `kill -9` giữa phiên, 3 lần)
-`data/watchdog_2026-11-09_metrics.json` — `git_rev = 6e3ea04`, `git_dirty = false`
-(đo lại SAU khi sửa P1 của review, để `git_rev` đúng là commit chứa code),
+`data/watchdog_2026-11-09_metrics.json` — `git_rev = cdcd1f5`, `git_dirty = false`
+(đo lại SAU **cả hai vòng** review, để `git_rev` đúng là commit chứa code),
 lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `image_size 192`,
 `vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
 
 | Lần | nạp phiên | state sau kill | **báo `error`** | **đóng luồng MJPEG** | message |
 |---|---|---|---|---|---|
-| 1 | 4,7 s | `error` | **95,7 ms** | 94,7 ms | worker đã dừng (mã -9) — xem worker.log |
-| 2 | 3,1 s | `error` | **111,3 ms** | 109,8 ms | worker đã dừng (mã -9) — xem worker.log |
-| 3 | 3,6 s | `error` | **114,2 ms** | 104,8 ms | worker đã dừng (mã -9) — xem worker.log |
+| 1 | 4,2 s | `error` | **91,3 ms** | 92,6 ms | worker đã dừng (mã -9) — xem worker.log |
+| 2 | 4,3 s | `error` | **111,2 ms** | 105,4 ms | worker đã dừng (mã -9) — xem worker.log |
+| 3 | 4,2 s | `error` | **110,4 ms** | 96,9 ms | worker đã dừng (mã -9) — xem worker.log |
 
 **Ngưỡng đăng ký trước: ĐẠT** — cả hai mốc plan ghi (mục nghiệm thu **≤ 5 s**, dòng ticket
-**≤ 2 s**): chậm nhất 114,2 ms, 0/3 lần vượt 2 s; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
-**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 96–114 ms là độ trễ kiểm tra 0,2 s
+**≤ 2 s**): chậm nhất 111,2 ms, 0/3 lần vượt; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
+**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 91–111 ms là độ trễ kiểm tra 0,2 s
 cộng nhịp poll 0,02 s.
+
+⚠️ **Con số này CHỈ đúng cho ca "tiến trình chết"** (bắt bằng `proc.poll()`). Ca khác — worker **còn
+sống nhưng treo** (deadlock model) — phát hiện chậm hơn nhiều: **~15 s** (ngưỡng `max(15 s, 4 ×
+vos_ms)`, trần 120 s). Cấm trích "watchdog phản ứng trong 0,1 s" cho ca treo.
 
 ### H.264 (CLI, chạy thật)
 `python tools/run_live.py --source data/binh1.mp4 --bbox 104,308,209,287 --max-frames 40
@@ -81,7 +85,8 @@ cộng nhịp poll 0,02 s.
 
 ### Kiểm tra tự động
 - `./run lint` → **All checks passed**
-- `./run test` (làn nhanh) → **xanh**, chạy **2 lần liên tiếp** để soi test chập chờn
+- `./run test` (làn nhanh) → **xanh**, chạy **3 lần liên tiếp** để soi test chập chờn
+- `./run testall` (full, có checkpoint SAM 2) → **654 passed** trong 211 s (đụng `visualizer`/CLI)
 - `./run webtest` → 24 test xanh; `npm run build` → xong
 - `./run e2e` (Chrome/Edge thật) → **PASS 23/23**, gồm `trình duyệt GIẢI MÃ được video kết quả (H.264)`
   và `luồng MJPEG hiện được frame trong trình duyệt`. **Phạm vi:** e2e phủ bản H.264 của **đường API
@@ -135,7 +140,21 @@ cộng nhịp poll 0,02 s.
   `waiting_selection` thật sự khoẻ (test dùng mtime `status.json` cũ 2 phút nên bản cài đặt dùng
   `ts` sẽ đỏ); port/domain không phá ADR-0005; artifact `git_rev`/`git_dirty` nhất quán; số trong
   docs khớp artifact.
-- **Nợ lại có chủ:** 3 P3 ở trên đã ghi vào Next steps (không im lặng bỏ qua).
+- **Vòng 2 (review phần vừa sửa):** kết luận **merge được**, 0 P0/P1 mới, nhưng bắt **1 P2 do chính
+  bản sửa sinh ra**: `_finish_outputs` gọi `_finish_metrics` trước mà **không có `try/finally`** ⇒ nếu
+  ghi số liệu ném (đĩa đầy, `git` lỗi, Ctrl+C lần hai) thì recorder không được đóng và `demo_web.mp4`
+  **không được tạo** — đúng thứ PR này muốn có. Đã sửa (`try/finally`), thêm 3 P3: pidfile chỉ xoá
+  khi `_read_pid() == proc.pid` (file rỗng không bị coi là "không phải của mình"), chặn trần ngưỡng
+  treo **120 s** (một mẫu `vos_ms` khó tin không được nới ngưỡng lên 4 phút), `Visualizer.recording`
+  nay là "**đã ghi frame**" (đếm `_frames_written`) thay vì "writer đã mở". Ba test được siết lại:
+  test "không có `health()`" chứng minh bằng **số frame thật** (không `sleep`), test pidfile dùng
+  **tiến trình thật** thay pid bịa `111` (tránh gửi SIGTERM vào process group của người khác), test
+  Ctrl+C kiểm **thứ tự** (CSV phải tồn tại ngay lúc chuyển mã).
+- **Nợ lại có chủ:** 3 P3 ở trên đã ghi vào Next steps (không im lặng bỏ qua). Ngoài ra vòng 2 ghi
+  nhận 2 điểm đã biết, chưa sửa: (a) `vos_ms` là **mẫu cuối** nên máy suy giảm > 4× đột ngột vẫn có
+  thể false-positive (nếu cần chắc: đòi 2 lần vi phạm cách nhau ≥ 5 s); (b) API job chuyển mã **hai
+  lần** (CLI xuất `out_web.mp4`, rồi `subprocess_runner` xoá và làm lại) — tốn gấp đôi thời gian hậu
+  kỳ trên VPS 4 GB, có từ trước PR này.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Định giết phiên khoẻ oan**: bản nháp định thêm `ts` vào `status.json` rồi lấy đó làm heartbeat

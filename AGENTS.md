@@ -160,8 +160,10 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   hiển thị không cao hơn (0,681 vs 0,706) ⇒ bật là thêm trễ vô ích. Chỉ bật `--mask-smoothing 0.5`
   khi có clip bị che thật sự chứng minh được lợi ích.
 - **Watchdog live phải đọc `frame.jpg` chứ không phải `status.json`.** Worker chết ⇒ API từng báo
-  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **96–114 ms** + message nêu mã thoát,
-  luồng MJPEG đóng sau **95–110 ms** (`data/watchdog_2026-11-09_metrics.json`). **Ngưỡng "frame đứng"
+  `running` mãi (đo 09-11, `kill -9` worker thật): nay `error` sau **91–111 ms** + message nêu mã thoát,
+  luồng MJPEG đóng sau **93–105 ms** (`data/watchdog_2026-11-09_metrics.json`). Con số đó chỉ đúng cho
+  ca **tiến trình chết**; ca **sống mà treo** mất **~15 s** (ngưỡng `max(15 s, 4 × vos_ms)`, trần
+  120 s) — cấm trích "0,1 s" cho ca treo. **Ngưỡng "frame đứng"
   là `max(15 s, 4 × vos_ms)`, đừng hạ về 2 s**: nhịp ghi frame hợp lệ có thể ~4 s/frame
   (`image_size 1024`, `vos_every=1`) và `engine.start()` chạy inline — ngưỡng 2 s giết phiên khoẻ
   (review độc lập 09-11 bắt đúng). Ca `kill -9` không dùng ngưỡng đó (bắt bằng `proc.poll()`). Nhưng lúc
