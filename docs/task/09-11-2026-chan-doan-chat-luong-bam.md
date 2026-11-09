@@ -54,14 +54,14 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
 
 | Clip (ô chọn) | `empty_runs` (trọn đời) | **`empty_frac_window`** (200 mẫu gần nhất) | `drift_iou_p05` (`drift_n`) | `mask_age_p95` |
 |---|---|---|---|---|
-| `binh1` (104,308,209,287) | **0** | **0.0** (200 mẫu) | 0.647 (200) | 234.5 ms |
-| `binh2` (200,400,300,500) | 41 | **0.205** (200 mẫu) | **0.0** (174) | 255.2 ms |
+| `binh1` (104,308,209,287) | **0** | **0.0** (200 mẫu) | 0.651 (200) | 236.5 ms |
+| `binh2` (200,400,300,500) | 33 | **0.165** (200 mẫu) | **0.0** (193) | 240.5 ms |
 
-> Năm lần chạy trước đó (mỗi lần ghi đè **cùng** một file) cho `binh2` **0,12 / 0,13 / 0,17 / 0,20 /
-> 0,205** và `drift_p05 = 0,000` **cả 5 lần**; `binh1` **0,00** cả 5 lần. Vì mọi lần ghi cùng một tên
-> file nên chỉ lần cuối còn chứng cứ — muốn giữ nhiều lần thì truyền `--out …_run<N>.json`.
+> Bảy lần chạy (mỗi lần ghi đè **cùng** một file) cho `binh2` **0,12 / 0,13 / 0,14 / 0,165 / 0,17 /
+> 0,20 / 0,205** và `drift_p05 = 0,000` **cả 7 lần**; `binh1` **0,00** cả 7 lần. Muốn giữ nhiều lần
+> thì truyền `--out …_run<N>.json` — vì mọi lần ghi cùng một tên file nên chỉ lần cuối còn chứng cứ.
 
-- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = d73d4b6`
+- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = af84285`
   (commit chứa code đang review), `git_dirty = false`,
   `git_dirty_code = **false**`, `git_loi = null`.
   Lệnh ghi trong file.
