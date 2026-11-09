@@ -160,6 +160,35 @@ def _one_run(base, args, live_dir):
     }
 
 
+def _is_dirty_outside_data(porcelain: str) -> bool:
+    """Có file nào khác `data/` bị đổi so với commit không? (tái lập số ⇔ False)
+
+    Bỏ `data/` vì chính file artifact là thứ đang được ghi lại — nếu tính nó thì lần đo nào cũng
+    "bẩn" một cách vô nghĩa. File code MỚI chưa track vẫn được tính (là code, không phải data).
+    """
+    for line in porcelain.splitlines():
+        path = line[3:].strip()
+        if path and not path.startswith("data/"):
+            return True
+    return False
+
+
+def _git_provenance():
+    """(git_rev, git_dirty, git_dirty_code) — KHÔNG ném khi thiếu git/hỏng repo.
+
+    Vì sao tách hàm: nhánh lỗi từng làm `git_dirty_code` không được gán ⇒ `UnboundLocalError` nuốt
+    mất cả 3 lần đo ngay trước khi ghi artifact (review độc lập 09-11, P2). Có test riêng.
+    """
+    try:
+        rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO_ROOT),
+                             capture_output=True, text=True, check=True).stdout.strip()
+        changed = subprocess.run(["git", "status", "--porcelain"], cwd=str(_REPO_ROOT),
+                                 capture_output=True, text=True).stdout
+    except (OSError, subprocess.CalledProcessError):
+        return "", None, None
+    return rev, bool(changed.strip()), _is_dirty_outside_data(changed)
+
+
 class _SnapshotServer:
     """Server tĩnh phục vụ `snapshot.jpg` (giả lập relay camera `scripts/win_camera_relay.py`).
 
@@ -291,21 +320,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             server.kill()
 
-    try:
-        git_rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO_ROOT),
-                                 capture_output=True, text=True, check=True).stdout.strip()
-        changed = subprocess.run(
-            ["git", "status", "--porcelain", "--untracked-files=no"],
-            cwd=str(_REPO_ROOT), capture_output=True, text=True).stdout
-        git_dirty = bool(changed.strip())
-        # Tái lập được hay không là câu hỏi về **CODE**, không phải về chính file artifact (mỗi lần
-        # đo lại là file artifact bị sửa ⇒ `git_dirty` luôn true một cách vô nghĩa).
-        git_dirty_code = any(
-            line[3:].strip() and not line[3:].strip().startswith("data/")
-            for line in changed.splitlines()
-        )
-    except (OSError, subprocess.CalledProcessError):
-        git_rev, git_dirty = "", None
+    git_rev, git_dirty, git_dirty_code = _git_provenance()
 
     errors = [r["tg_bao_error_ms"] for r in runs if r["tg_bao_error_ms"] is not None]
     result = {
@@ -314,10 +329,10 @@ def main() -> int:
         "git_dirty": git_dirty,
         "git_dirty_code": git_dirty_code,
         "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau "
-                           "đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi "
-                           "trên file ĐÃ THEO DÕI so với commit đó; `git_dirty_code` = như trên NHƯNG "
-                           "bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải "
-                           "code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
+                           "đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào "
+                           "khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên "
+                           "NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — "
+                           "không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
         "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, "
                       f"image_size {args.image_size}" if args.mode == "worker" else
                       "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",

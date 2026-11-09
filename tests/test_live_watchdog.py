@@ -412,11 +412,58 @@ class TestLuongMjpegBaoDungLyDo:
 
         response = live_client.get("/api/live/stream")
         assert response.status_code == 409
-        assert "lỗi" in response.json()["detail"]
-        assert "worker đã dừng" in response.json()["detail"]
+        detail = response.json()["detail"]
+        assert detail.startswith("Phiên live đã dừng vì lỗi: ")
+        assert "worker đã dừng" in detail        # lý do của watchdog phải đi vào HTTP
         live_client.post("/api/live/stop")
 
     def test_chua_bat_thi_409_cau_cu(self, live_client):
         response = live_client.get("/api/live/stream")
         assert response.status_code == 409
         assert response.json()["detail"] == "Chưa có phiên live nào đang chạy"
+
+
+class _RaisingSource:
+    """Nguồn ném lỗi ở N lần đọc đầu rồi mới chạy bình thường (capture hỏng tạm thời)."""
+
+    def __init__(self, source="0", *, raises=5):
+        self.source = source
+        self._left = raises
+        self._seq = 0
+        self.started = False
+        self.stopped = False
+
+    def start(self):
+        self.started = True
+
+    def read_jpeg(self):
+        if self._left > 0:
+            self._left -= 1
+            raise RuntimeError("capture hỏng")
+        self._seq += 1
+        return b"\xff\xd8fake#" + str(self._seq).encode()
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestDocFrameNemLoi:
+    def test_read_jpeg_nem_loi_khong_lam_chet_thread_doc(self):
+        """Lỗi đọc là lỗi TẠM THỜI: thread đọc phải sống tiếp, không để `_state` kẹt `running` mà
+        không còn frame nào (đúng lớp lỗi "hỏng mà trông như đang chạy").
+
+        Bằng chứng: nguồn ném lỗi 5 lần đầu rồi mới trả frame — nếu ngoại lệ thoát khỏi `_run` thì
+        thread chết và `frames` mãi = 0 ⇒ test đỏ.
+        """
+        from src.api.live import LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: _RaisingSource(raises=5), target_fps=50)
+        service.start("0")
+
+        assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+        service.stop()
+        assert service.status().state is LiveState.STOPPED

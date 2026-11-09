@@ -326,6 +326,52 @@ class TestOpenCvSourceHealth:
 
         assert source.health() is None
 
+    def test_thu_muc_anh_het_thi_stopped_va_lap_lai_duoc(self, tmp_path):
+        """Chuỗi ảnh (`FramesVideoSource`) là FILE, không phải camera (P2 review 09-11).
+
+        `_looks_like_file` thiếu `is_dir()` ⇒ nguồn bị coi là camera: hết ảnh thì báo `ERROR
+        "không trả frame"` (sai — phải là "nguồn đã hết") và `loop_files=True` không lặp lại được.
+        """
+        import cv2
+        import numpy as np
+
+        from src.api.adapters import OpenCvFrameSource
+
+        frames_dir = tmp_path / "frames"
+        frames_dir.mkdir()
+        for index in range(2):
+            cv2.imwrite(str(frames_dir / f"{index:05d}.jpg"),
+                        np.full((16, 16, 3), 90 + index, np.uint8))
+
+        source = OpenCvFrameSource(str(frames_dir))          # loop_files mặc định True
+        source.start()
+        try:
+            for _ in range(5):                              # nhiều hơn số ảnh ⇒ phải lặp lại
+                assert source.read_jpeg() is not None
+            assert source.health() is None
+        finally:
+            source.stop()
+
+    def test_thu_muc_anh_het_ma_khong_lap_thi_stopped(self, tmp_path):
+        import cv2
+        import numpy as np
+
+        from src.api.adapters import OpenCvFrameSource
+
+        frames_dir = tmp_path / "frames2"
+        frames_dir.mkdir()
+        cv2.imwrite(str(frames_dir / "00000.jpg"), np.full((16, 16, 3), 90, np.uint8))
+
+        source = OpenCvFrameSource(str(frames_dir), loop_files=False)
+        source.start()
+        try:
+            assert source.read_jpeg() is not None
+            assert source.read_jpeg() is None               # cạn ảnh, không lặp
+            health = source.health()
+            assert health is not None and health.state is LiveState.STOPPED
+        finally:
+            source.stop()
+
     def test_mo_lai_file_that_bai_thi_error_khong_im_lang(self, monkeypatch):
         """`_rewind()` lỗi (file bị xoá) ⇒ mất capture ⇒ ERROR, không phải 'khoẻ'."""
         from src.api.adapters import OpenCvFrameSource, opencv_source

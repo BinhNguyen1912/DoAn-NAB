@@ -217,7 +217,7 @@ class LiveStreamService:
                 next_health = started + _HEALTH_EVERY_S
                 if self._check_health(source, generation):
                     return
-            data = source.read_jpeg() if source is not None else None
+            data = self._read_safely(source, generation)
             if data is not None:
                 with self._lock:
                     if generation != self._generation:
@@ -236,6 +236,25 @@ class LiveStreamService:
             remaining = self._interval - (time.perf_counter() - started)
             if remaining > 0:
                 self._stop.wait(remaining)
+
+    def _read_safely(self, source: FrameSource | None, generation: int) -> bytes | None:
+        """`read_jpeg()` không được phép làm CHẾT thread đọc.
+
+        Nếu adapter ném (capture hỏng, codec lạ), thread sẽ chết mà `_state` vẫn `running` — đúng
+        lớp lỗi "hỏng mà trông như đang chạy" mà watchdog này sinh ra để xoá (review 09-11, P3).
+        Coi như "frame này không có": watchdog/sức sống của nguồn sẽ quyết định sau.
+        """
+        if source is None:
+            return None
+        try:
+            return source.read_jpeg()
+        except Exception as exc:                       # noqa: BLE001 — không được làm sập thread
+            with self._lock:
+                if generation != self._generation:
+                    return None
+                label = self._label
+            logger.warning("đọc frame từ %s thất bại: %s", label, exc)
+            return None
 
     def _check_health(self, source: FrameSource, generation: int) -> bool:
         """Nguồn đã chết/treo/kết thúc? True = thread đọc phải dừng.

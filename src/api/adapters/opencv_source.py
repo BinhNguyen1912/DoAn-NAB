@@ -24,10 +24,13 @@ from src.video_source import open_video_source
 # Đuôi file được coi là video (để quyết định có lặp lại hay không)
 _FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
 
-# Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. 3 s là rộng cho camera chậm
-# (0,3 frame/giây vẫn kịp) và đủ nhanh để người vận hành thấy lỗi khi rút webcam.
-# So sánh: chế độ `track` đo được 91–111 ms cho ca worker chết (`proc.poll()`), còn đây là
-# "không có tín hiệu" — phải chờ mới biết chắc.
+# Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. Ngưỡng 3 s nghĩa là một lần im lặng
+# **> 3 s** là kết luận (chịu được nguồn ≥ ~0,34 frame/giây; chậm hơn thế thì coi là chết).
+# So sánh: chế độ `track` đo được 114–117 ms cho ca worker chết (`proc.poll()`, đo 09-11), còn đây
+# là "không có tín hiệu" — phải chờ mới biết chắc.
+# ⚠️ Đo 09-11 mới làm trên relay ảnh JPEG localhost (~3,75 s); **chưa đo trên webcam/RTSP thật**, và
+# với `HttpSnapshotSource` đồng hồ 3 s chỉ bắt đầu SAU `max_misses` lần hỏng liên tiếp (nguồn giữ
+# frame cuối) — mạng "black-hole" × timeout 5 s có thể làm ảnh đứng hàng phút trước khi báo lỗi.
 STALE_S = 3.0
 
 
@@ -129,6 +132,13 @@ class OpenCvFrameSource:
 
     @staticmethod
     def _looks_like_file(source: str) -> bool:
+        """Nguồn có "hết" được rồi lặp lại được không: file video HOẶC thư mục ảnh (`FramesVideoSource`).
+
+        Thiếu `is_dir()` thì chuỗi ảnh (`data/demo_input_frames`) bị coi là camera: không lặp lại khi
+        hết, và `health()` báo `ERROR "không trả frame"` cho một phiên kết thúc bình thường — đáng lẽ
+        `STOPPED "nguồn đã hết"` (review độc lập 09-11, P2).
+        """
         if not isinstance(source, str):
             return False
-        return Path(source).suffix.lower() in _FILE_SUFFIXES or Path(source).is_file()
+        path = Path(source)
+        return path.suffix.lower() in _FILE_SUFFIXES or path.is_file() or path.is_dir()
