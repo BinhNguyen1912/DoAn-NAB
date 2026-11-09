@@ -26,7 +26,8 @@ Hay làm việc khác trước?
 
 ### B. Chất lượng & số đo trung thực (góc "chất lượng")
 - Chọn **(b) bản thu hẹp**: **bỏ phần "phán nguyên nhân"** ("LK nội suy lệch"). Lý do có bảng: trên
-  cả 3 clip, `p05` và `empty%` **đi cùng nhau 1:1** (binh1 0/798 = 0 % → p05 0,663–0,720;
+  cả 3 clip, `p05` và `empty%` **đi cùng nhau 1:1** (binh1 0/798 = 0 % → p05 0,663–0,720; [tỉ lệ
+  trọn đời, xem chú thích mục quyết định]
   simloss 16/233 = 6,9 % → 0,644; binh2 26/233 = 11,2 % → **0,000**) ⇒ **không có clip nào p05 thấp
   mà empty ≈ 0** ⇒ cờ "nội suy lệch" là **claim chưa kiểm chứng được**.
 - Phát hiện thêm (đều là lỗi trung thực đang tồn tại):
@@ -71,6 +72,8 @@ Hay làm việc khác trước?
    VOS trả mask rỗng trong 200 lần chạy gần nhất**. Vì sao: `empty_runs` là bộ đếm **trọn đời, không
    bao giờ giảm** ⇒ UI đang in "mất dấu: 26 lần" cho một sự việc **đã qua**. Số nền đo được: clip khoẻ
    **0/798 = 0 %**, `binh2` **26/233 = 11,2 %** ⇒ phân biệt được, ngưỡng nhiễu không cần.
+   *(Hai tỉ lệ này là số **TRỌN ĐỜI** lấy từ artifact 08-11 — 798/233 là số lần VOS cả phiên, không
+   phải cửa sổ 200; tỉ lệ **theo cửa sổ** chỉ có từ 09-11: 0,00 vs 0,12–0,205.)*
 2. **Nâng `_STAT_MIN_SAMPLES` 5 → 30** cho `drift_iou_p05`/`mask_age_p95`: ở n = 5, "p05" **là min của
    5 mẫu**; dưới 30 mẫu phải trả `None` (vẫn công bố `drift_n`/`age_n`). Giữ `p05` ở cửa sổ **200**
    (p05@30 lấy chỉ số 1,45 ≈ min — xem B).
@@ -88,13 +91,14 @@ Hay làm việc khác trước?
 - Đối chứng **cảnh tĩnh**: `drift_iou ≥ 0,99` khi vật đứng yên (loại nghi ngờ "0,88 là sàn giả tạo").
 
 **Tiêu chí nghiệm thu (có SỐ):**
-- [x] Test: đẩy 200 mẫu VOS rỗng rồi 200 mẫu có vật ⇒ `empty_frac_window` đi **1,0 → 0,0**, trong khi
-      `empty_runs` **đứng ở 200** (chứng minh hai đại lượng khác nhau) —
-      `tests/test_live_tracking.py::TestDemMatDauTheoCuaSo`.
-- [x] `binh1` (clip khoẻ): `empty_frac_window = **0,00**` (0/200 mẫu cửa sổ); `binh2`: **0,14**
-      (28 lần VOS rỗng **trọn đời** trên 244 lần chạy = 11,5 % — **tỉ lệ trọn đời**, KHÔNG phải
-      `empty_frac_window`; cửa sổ dao động 0,12–0,20 qua 4 lần chạy). Nguồn:
-      `data/empty_window_2026-11-09_metrics.json`.
+- [x] Test: đẩy 5 mẫu rỗng ⇒ `empty_frac_window` **1,0**; thêm 5 mẫu có vật ⇒ **0,5** trong khi
+      `empty_runs` **đứng ở 5**; đẩy thêm 200 mẫu có vật ⇒ **0,0**; < 5 mẫu ⇒ `None`; và 2 test
+      session-level kiểm `empty_window_n == min(200, vos_runs)` qua đường thật
+      (`tests/test_live_tracking.py::TestDemMatDauTheoCuaSo`, `::TestMotMauMoiLanVos`).
+- [x] `binh1` (clip khoẻ): `empty_frac_window = **0.0**` (0/200
+      mẫu cửa sổ); `binh2`: **0.205** — và `empty_runs` **trọn đời** = 41/226
+      lần chạy (tỉ lệ trọn đời, KHÔNG phải `empty_frac_window`; cửa sổ dao động 0,12–0,205 qua 5 lần
+      chạy). Nguồn: `data/empty_window_2026-11-09_metrics.json`.
 - [x] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
       + UI hiện "chưa đo được", không hiện "tốt".
 - [x] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.

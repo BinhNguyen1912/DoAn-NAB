@@ -1060,3 +1060,32 @@ class TestPhanViCanDuMau:
             session._record_drift(value)
         assert session._stats.drift_n == 35
         assert session._stats.drift_iou_p05 == 0.9
+
+
+class TestMotMauMoiLanVos:
+    """`empty_window_n` phải = **số lần VOS đã chạy** (trần 200) — kiểm qua ĐƯỜNG THẬT, không
+    gọi thẳng `_measure_stability` (bản trước chỉ test hàm phụ, nên double-push vẫn xanh — review
+    09-11 vòng 2, P3)."""
+
+    @pytest.mark.parametrize("vos_every", [1, 3])
+    def test_so_mau_bang_so_lan_vos(self, video_source, tmp_path, vos_every):
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}),
+                                     encoding="utf-8")
+        frames = 12
+        # `_config` đã đặt vos_every=1; tự dựng config để tham số hoá được
+        from src.live_tracking import LiveTrackConfig
+
+        config = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100,
+                                 vos_every=vos_every, stop_after_frames=frames)
+        LiveTrackingSession(FakeEngine(), config).run()
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+
+        assert status["vos_runs"] > 0
+        assert status["empty_window_n"] == min(200, status["vos_runs"]), (
+            f"empty_window_n={status['empty_window_n']} khác vos_runs={status['vos_runs']} "
+            "⇒ có lần VOS không được đếm hoặc bị đếm hai lần")
+        # Engine giả luôn trả mask có vật ⇒ không có mẫu rỗng nào trong cửa sổ.
+        assert status["empty_frac_window"] == 0.0
+        assert status["empty_runs"] == 0

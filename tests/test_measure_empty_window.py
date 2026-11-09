@@ -62,3 +62,12 @@ def test_thieu_han_truong_khac_voi_chua_du_mau():
     assert per_clip["a"]["co_truong_empty_window"] is False
     problems = measure._verdict(per_clip, {"a": False})
     assert problems and "KHÔNG ghi" in problems[0]
+
+
+def test_clip_khong_khai_ky_vong_thi_khong_bi_cham():
+    """Chạy không khai `--expect-lost`: `_verdict(per_clip, {})` phải rỗng (đo xong là đạt) —
+    trước đây mọi clip bị mặc định `False` nên clip mất dấu thật vẫn thoát mã 1 (review vòng 2, P2)."""
+    per_clip = measure.summarize([
+        {"clip": "xau", "empty_runs": 41, "empty_frac_window": 0.205, "empty_window_n": 200},
+    ])
+    assert measure._verdict(per_clip, {}) == []

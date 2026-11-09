@@ -39,8 +39,9 @@ Tiêu chí đăng ký trước (ghi trong plan, không sửa sau khi thấy số
    `0.0`** (bẫy AGENTS §6).
 4. **UI** (`web/src/live.ts`): "độ ổn định" → "**nhấp nháy mask**"; "mất dấu: N lần" → "**P% của N
    lần chạy gần nhất**" (rơi về số trọn phiên khi chưa đủ mẫu). Thêm `driftLine()`: hiện
-   `LK lệch p05: 0.65 · 200 mẫu gần nhất · IoU tự nhất quán (không phải độ chính xác)`, hoặc
-   `LK: chưa đo được (12/30 mẫu) — không kết luận`.
+   `IoU tự nhất quán p05 (LK↔VOS): 0.65 · 200 mẫu gần nhất · không phải độ chính xác`, hoặc
+   `IoU tự nhất quán (LK↔VOS): chưa đo được (12 mẫu) — không kết luận` (ngưỡng mẫu do **backend**
+   quyết qua `drift_p05 == null`, UI không nhân bản hằng số).
 5. **`scripts/measure_empty_window.py`** (+ `tests/test_measure_empty_window.py`): chạy worker cho
    từng clip + ô chọn, ghi artifact có `git_rev`/`git_dirty_code`/`lenh`/`do_luc`, có `--expect-lost`
    để **tự kiểm phép đo** (kỳ vọng sai ⇒ thoát mã 1).
@@ -78,8 +79,10 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
   `web/node_modules`)
 - Test mới: 4 test đếm theo cửa sổ (1,0 → 0,5 → 0,0 trong khi bộ đếm trọn đời đứng yên; 200 mẫu có
   vật ⇒ về 0; < 5 mẫu ⇒ `None` chứ không phải 0), 2 test ngưỡng phân vị (n = 5 thì "p05" là mẫu xui),
-  4 test adapter/API (`None` ≠ 0,0; ca `binh2` p05 = 0,0 vẫn là **0,0**), 8 test vitest (2 nhãn mới +
-  `driftLine`), 8 test cho script đo.
+  4 test adapter/API (`None` ≠ 0,0; ca `binh2` p05 = 0,0 vẫn là **0,0**), **14 test vitest** (nhãn
+  nhấp nháy đúng chiều + `driftLine` + ngưỡng mẫu lấy từ backend), **11 test** cho script đo, và
+  2 test session-level kiểm `empty_window_n == min(200, vos_runs)` qua **đường thật** (double-push
+  sẽ làm đỏ).
 - **Test cũ phải sửa (có lý do, không phải "sửa cho xanh")**: `test_status_duoc_ghi_moi_frame` thêm 2
   khoá vào allowlist; `test_tuoi_mask_literal_va_gom_ca_vos_ms` trước kiểm `mask_age_p95` với **10
   mẫu** — đúng loại lỗi vừa sửa, nên đổi thành: 10 mẫu ⇒ `None`, 30 mẫu ⇒ có số.

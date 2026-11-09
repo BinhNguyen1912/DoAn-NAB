@@ -67,7 +67,13 @@ def summarize(rows: list) -> dict:
 
 
 def _verdict(per_clip: dict, expect: dict) -> list:
-    """Danh sách lý do KHÔNG đạt — `expect` = {tên_clip: True/False} "có mất dấu hay không"."""
+    """Danh sách lý do KHÔNG đạt — `expect` = {tên_clip: True/False} "có mất dấu hay không".
+
+    CHỈ xét clip có trong `expect` (tức clip người chạy đã khai bằng `--expect-lost`). Clip không
+    khai là "kỳ vọng KHÔNG ĐẶT": đo xong in số, **không** biến "thực tế khác giả định chưa nói" thành
+    lỗi đo (review 09-11 vòng 2, P2 — cùng lớp bẫy "0/None ≠ đã đo" nhưng ngược chiều).
+    Vẫn là lỗi đo: worker thoát mã ≠ 0, thiếu `status.json`, clip không có số, chưa đủ mẫu.
+    """
     problems = []
     for name, want in expect.items():
         got = per_clip.get(name)
@@ -135,10 +141,18 @@ def main() -> int:
         rows.append(row)
 
     per_clip = summarize(rows)
+    # Chỉ clip ĐƯỢC KHAI mới có kỳ vọng; clip khác in số và ghi "không đặt".
     expect = {name: True for name in args.expect_lost}
-    for row in rows:
-        expect.setdefault(row["clip"], False)
+    for name in per_clip:
+        if name not in expect:
+            per_clip[name]["ky_vong"] = "không đặt"
     problems = _verdict(per_clip, expect)
+
+    # P3: một lần chạy "sạch" nhưng NGẮN (nguồn chết giữa đường) không được coi là hoàn tất.
+    for row in rows:
+        if (row.get("frames") or 0) < args.frames:
+            problems.append(f"{row['clip']}: chỉ chạy được {row.get('frames')}/{args.frames} frame "
+                            "(nguồn ngắn/chết giữa đường) — không phải phép đo hoàn tất")
 
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
     artifact = {
@@ -147,7 +161,9 @@ def main() -> int:
         "git_dirty": git_dirty,
         "git_dirty_code": git_dirty_code,
         "git_loi": git_loi,
-        "ghi_chu": "`empty_runs` = bộ đếm TRỌN ĐỜI (không giảm); `empty_frac_window` = tỉ lệ lần VOS "
+        "ghi_chu": "`mask_drops`/`mask_holds` ≡ 0 khi `mask_smoothing = 1.0` (mặc định của script "
+                   "này) — KHÔNG suy ra được gì từ chúng. `empty_runs` = bộ đếm TRỌN ĐỜI (không "
+                   "giảm); `empty_frac_window` = tỉ lệ lần VOS "
                    "trả mask rỗng trong 200 lần GẦN NHẤT (None = chưa đủ mẫu). `drift_iou_p05` là "
                    "ĐỘ TỰ NHẤT QUÁN, không phải độ chính xác. Ô chọn (bbox) là đầu vào của phép đo.",
         "lenh": "python scripts/measure_empty_window.py " + " ".join(sys.argv[1:]),

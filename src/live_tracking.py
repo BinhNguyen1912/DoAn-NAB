@@ -574,8 +574,9 @@ class LiveTrackingSession:
     def _measure_stability(self, result) -> None:
         """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không".
 
-        Mask RỖNG không vào mẫu: `mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn" thành
-        "độ ổn định 100 %" trên UI (lỗi P2, review 08-11). Mất dấu được đếm riêng ở `empty_runs`.
+        Mask RỖNG không vào cửa sổ IoU (`mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn"
+        thành "độ ổn định 100 %" trên UI — lỗi P2, review 08-11), nhưng chúng **ĐƯỢC ĐẾM** trong
+        `_vos_lost_window` (⇒ `empty_frac_window`) và `empty_runs`.
         """
         raw = getattr(result, "mask", None)
         if raw is None:
@@ -583,21 +584,23 @@ class LiveTrackingSession:
         # Đẩy ĐÚNG MỘT mẫu cho MỖI lần VOS trả kết quả: có vật (False) hay rỗng (True). Nếu chỉ
         # đẩy khi rỗng thì tỉ lệ không bao giờ giảm sau khi model bám lại (đúng lỗi mà đại lượng
         # này sinh ra để sửa).
+        # MỘT khối lock cho cả cửa sổ + bộ đếm + stability: nếu tách hai khối thì một snapshot
+        # `status.json` có thể thấy `empty_frac_window` đã tính mẫu rỗng MỚI trong khi `empty_runs`
+        # còn là số cũ (review 09-11 vòng 2, P3).
         with self._stats_lock:
-            # `append` PHẢI trong lock cùng với `sum()` bên dưới: giữ bất biến "deque chỉ bị sửa khi
-            # giữ `_stats_lock`" (hôm nay chỉ một luồng gọi, nhưng mẫu code sai sẽ bị copy — review
-            # 09-11, P3).
+            # `append` PHẢI trong lock cùng với `sum()`: giữ bất biến "deque chỉ bị sửa khi giữ
+            # `_stats_lock`" (hôm nay chỉ một luồng gọi, nhưng mẫu code sai sẽ bị copy).
             self._vos_lost_window.append(not raw.any())
             self._stats.empty_window_n = len(self._vos_lost_window)
             self._stats.empty_frac_window = (
                 round(sum(self._vos_lost_window) / len(self._vos_lost_window), 3)
                 if len(self._vos_lost_window) >= _EMPTY_WINDOW_MIN else None)
-        if not raw.any():
-            with self._stats_lock:
+            if not raw.any():
                 self._stats.empty_runs += 1
                 # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định: đặt 0 (không giữ số cũ, không
                 # nối IoU xuyên qua khoảng mất dấu — mask trước và sau là hai chuyện khác nhau).
                 self._stats.stability = 0.0
+        if not raw.any():
             self._prev_raw_mask = None
             return
         if self._prev_raw_mask is not None:
