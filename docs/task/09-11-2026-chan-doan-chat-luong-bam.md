@@ -50,26 +50,27 @@ Tiêu chí đăng ký trước (ghi trong plan, không sửa sau khi thấy số
 
 ### Số đo thật (mỗi clip 900 frame, `image_size 192`, `vos_every 3`)
 
-Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.json`), không chép từ trí nhớ:
+Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-10_metrics.json`), không chép từ trí nhớ:
 
 | Clip (ô chọn) | `empty_runs` (trọn đời) | **`empty_frac_window`** (200 mẫu gần nhất) | `drift_iou_p05` (`drift_n`) | `mask_age_p95` |
 |---|---|---|---|---|
-| `binh1` (104,308,209,287) | **0** | **0.0** (200 mẫu) | 0.651 (200) | 236.5 ms |
-| `binh2` (200,400,300,500) | 33 | **0.165** (200 mẫu) | **0.0** (193) | 240.5 ms |
+| `binh1` (104,308,209,287) | **0** | **0.0** (200 mẫu) | 0.674 (200) | 237.1 ms |
+| `binh2` (200,400,300,500) | 42 | **0.21** (200 mẫu) | **0.0** (190) | 232.0 ms |
 
-> Bảy lần chạy (mỗi lần ghi đè **cùng** một file) cho `binh2` **0,12 / 0,13 / 0,14 / 0,165 / 0,17 /
-> 0,20 / 0,205** và `drift_p05 = 0,000` **cả 7 lần**; `binh1` **0,00** cả 7 lần. Muốn giữ nhiều lần
+> Tám lần chạy (mỗi lần ghi đè **cùng** một file) cho `binh2` **0,12 / 0,13 / 0,14 / 0,15 / 0,165 /
+> 0,17 / 0,20 / 0,205 / 0,21** và `drift_p05 = 0,000` **cả 8 lần**; `binh1` **0,00** cả 8 lần. Muốn giữ nhiều lần
 > thì truyền `--out …_run<N>.json` — vì mọi lần ghi cùng một tên file nên chỉ lần cuối còn chứng cứ.
 
-- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = af84285`
-  (commit chứa code đang review), `git_dirty = false`,
-  `git_dirty_code = **false**`, `git_loi = null`.
+- Artifact cuối: `data/empty_window_2026-11-10_metrics.json` — `git_rev = 80ac72b`
+  (commit chứa code đang review), `do_luc = 2026-11-10T00:03:47` (**đồng hồ máy đã sang 10-11** khi đo
+  lại sau vòng review 3), `ket_luan = "đạt"`, `git_dirty = true` (chỉ do chính file
+  artifact đang đổi), **`git_dirty_code = false`**, `git_loi = null`.
   Lệnh ghi trong file.
-- **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,205** và
+- **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,21** và
   `p05 = 0,000` ⇒ hai lớp **tách rời hoàn toàn**, không phụ thuộc ngưỡng nhiễu (đây là phép **đếm sự
   kiện**, không phải phân vị).
-- **Độ tản phải nói rõ:** tỉ lệ của `binh2` dao động **0,12–0,205 qua 7 lần chạy** (SAM 2 không tất
-  định — AGENTS §6). Chỉ nên trích **"0,00 vs > 0"** (phân biệt nhị phân, 7/7 lần đúng), **không**
+- **Độ tản phải nói rõ:** tỉ lệ của `binh2` dao động **0,12–0,21 qua 8 lần chạy** (SAM 2 không tất
+  định — AGENTS §6). Chỉ nên trích **"0,00 vs > 0"** (phân biệt nhị phân, 8/8 lần đúng), **không**
   trích một con số lẻ như "12 %" cho báo cáo.
 
 ### Kiểm tra tự động
@@ -93,7 +94,7 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
 |---|---|---|---|
 | 1 | subagent `reviewer` (đọc-only) | **P1**: nhãn UI `nhấp nháy mask: N%` in `stability × 100` — **đảo chiều** (`stability = 1,0` là *êm*), và `stability = 0` vừa là "chưa đo" vừa là giá trị bị đặt khi mask rỗng ⇒ in "0 %" đúng lúc mất dấu. P2: hằng số 30 nhân bản ở UI; chữ "LK lệch" đọc thành "không lệch"; log chép tay thay vì chép từ artifact | Sửa `100 − Math.round(...)` + 2 test (đảo lại ⇒ **đỏ**); UI bỏ hằng số, ngưỡng do backend; đổi wording; log chép lại từ artifact |
 | 2 | subagent `reviewer` | P1 trên (đọc bản **trước** khi commit nên tưởng còn) + P2: `--expect-lost` vắng ⇒ clip xấu đo thành công vẫn thoát mã 1; log mô tả copy UI cũ + số test cũ; P3: docstring "mask rỗng không vào mẫu", 2 khối `_stats_lock` liền nhau, test chỉ gọi hàm phụ (`_feed`) nên double-push vẫn xanh, `frames` ngắn không bị chấm, `mask_drops ≡ 0` không ghi chú, `git_rev` artifact (pre-rebase) không reachable | Sửa hết: chỉ chấm clip được khai + `frames` ngắn là lỗi đo; gộp 1 khối lock; docstring rõ; thêm 2 test **session-level** `empty_window_n == min(200, vos_runs)` (append 2 lần ⇒ **đỏ**); ghi chú `mask_drops`; **đo lại** artifact tại `af84285` |
-| 3 | subagent `reviewer` | (kết quả ghi ở mục "Việc cần làm tiếp" nếu còn P1/P2) | — |
+| 3 | subagent `reviewer` | **P1**: `--help`/docstring hứa "clip không khai ⇒ kỳ vọng KHÔNG mất dấu" nhưng code chỉ chấm clip được khai ⇒ chạy trơn không `--expect-lost` thoát 0 trên clip mất dấu (bản thân chữ nghĩa mâu thuẫn — 3 chỗ, 2 nghĩa). P2: `co_truong_empty_window` luôn `True` (tính từ dòng đã `update`); artifact cũ sinh bởi bản script trước; log còn "0,12–0,20 qua 4 lần". P3: `_iou_window.append` ngoài lock (16 dòng dưới comment cấm đúng điều đó); UI in "chưa đo" lúc vừa mất dấu; thiếu test `stability` NaN/thiếu | Sửa hết: `_ket_luan()` ghi **"đạt" / "KHÔNG ĐẠT" / "CHỈ ĐO"**; `_row_from_status()` tính cờ từ status THÔ; đo lại artifact tại `80ac72b`; sửa số trong log; append vào lock; thêm 1 test vitest (31); `stability_n` → **ticket 18** |
 
 Race `_drift_window` (2 luồng ghi, một ngoài lock — có từ 08-11) → **ticket 17**, không nới phạm vi PR.
 
