@@ -949,6 +949,8 @@ class TestCongBoStoppedTruocKhiJoinWorker:
 
         assert trang_thai_luc_join["state"] == STATE_STOPPED, (
             "status.json vẫn chưa `stopped` khi đang join worker ⇒ watchdog sẽ báo 'treo?'")
+
+
 class TestDemMatDauTheoCuaSo:
     """`empty_frac_window` — tỉ lệ lần VOS trả mask RỖNG trong 200 lần chạy GẦN NHẤT.
 
@@ -1073,7 +1075,10 @@ class TestMotMauMoiLanVos:
         out.mkdir(parents=True, exist_ok=True)
         (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}),
                                      encoding="utf-8")
-        frames = 12
+        # 30 frame (11 lần VOS ở vos_every=3) — KHÔNG dùng 12: `_VosWorker.submit` là
+        # last-writer-wins nên 1 lần bị gộp là rơi xuống dưới ngưỡng 5 mẫu ⇒ test flaky (review
+        # 09-11 vòng 3, P3).
+        frames = 30
         # `_config` đã đặt vos_every=1; tự dựng config để tham số hoá được
         from src.live_tracking import LiveTrackConfig
 

@@ -11,6 +11,7 @@ Output : `data/empty_window_<ngày>_metrics.json`.
          chạy là **CHỈ ĐO**, artifact ghi `ket_luan = "chỉ đo…"` + in cảnh báo, để không ai đọc
          artifact thành "đã đạt". Mỗi lần chạy ghi đè cùng một file artifact — muốn giữ nhiều lần thì
          truyền `--out data/empty_window_<ngày>_run<N>.json`.
+`--expect-keep <clip>`: ngược lại — clip PHẢI **không** mất dấu (`empty_frac_window = 0`).
 Lưu ý  : ô chọn (bbox) là **đầu vào của phép đo** — sai bbox thì số vô nghĩa (đo 09-11: `binh2` dùng
          bbox của `binh1` cho `empty_frac_window = 0`, đúng bbox của `binh2` cho **0,17**).
          Đây là phép **đếm sự kiện**, không phải phân vị: `empty_runs` là bộ đếm trọn đời (không
@@ -29,6 +30,9 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.measure_watchdog import _git_provenance  # noqa: E402 — provenance đã có test riêng
+
+# Ngưỡng số mẫu cửa sổ: dưới mức này tỉ lệ **chưa đo được** (None), không phải 0.
+_EMPTY_WINDOW_MIN = 5
 
 # Các trường lấy từ `status.json` — giữ cả `None` (chưa đo) để không biến thành 0,0.
 FIELDS = ("state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
@@ -90,6 +94,22 @@ def _gan_ky_vong(per_clip: dict, expect: dict) -> dict:
     return per_clip
 
 
+def _chua_du_mau(per_clip: dict) -> list:
+    """Clip nào `empty_frac_window is None` ⇒ **chưa đủ mẫu** = phép đo KHÔNG hoàn tất, kể cả clip
+    không khai kỳ vọng. (Bản trước chỉ bắt ca này cho clip được khai ⇒ `--frames 3 --vos-every 3`
+    cho 2 lần VOS, `empty_frac_window = None` mà vẫn exit 0 — review 09-11 vòng 3, P2.)"""
+    return [f"{name}: chưa đủ mẫu cửa sổ (`empty_window_n` = "
+            f"{(per_clip[name].get('empty_window_n') or 0)} < {_EMPTY_WINDOW_MIN}) — chưa đo được"
+            for name in per_clip if per_clip[name]["empty_frac_window"] is None]
+
+
+def _frame_shortfall(rows: list, frames: int) -> list:
+    """Lần chạy "sạch" nhưng NGẮN (nguồn chết giữa đường) không phải phép đo hoàn tất."""
+    return [f"{row['clip']}: chỉ chạy được {row.get('frames')}/{frames} frame "
+            "(nguồn ngắn/chết giữa đường) — không phải phép đo hoàn tất"
+            for row in rows if (row.get("frames") or 0) < frames]
+
+
 def _ket_luan(problems: list, expect: dict) -> str:
     """Một dòng kết luận ghi vào artifact — để không ai đọc "không có lý do hỏng" thành "đã đạt"
     khi chưa hề khai tiêu chí nào."""
@@ -137,6 +157,9 @@ def main() -> int:
                         help="tên clip KỲ VỌNG có mất dấu (tiêu chí đăng ký trước). CHỈ clip được "
                              "khai mới bị chấm; clip không khai chỉ in số. Không khai clip nào ⇒ "
                              "lần chạy là CHỈ ĐO (không kiểm chứng gì)")
+    parser.add_argument("--expect-keep", action="append", default=[],
+                        help="tên clip PHẢI KHÔNG mất dấu (`empty_frac_window` = 0) — để khẳng định "
+                             "clip khoẻ vẫn khoẻ, không chỉ khai clip xấu")
     parser.add_argument("--timeout-s", type=float, default=900.0,
                         help="giới hạn thời gian mỗi lần chạy worker")
     parser.add_argument("--out", default="")
@@ -163,8 +186,8 @@ def main() -> int:
             errors.append(f"{name}: worker quá {args.timeout_s:.0f} s chưa xong")
             continue
         if result.returncode != 0:
-            errors.append(f"{name}: worker thoát mã {result.returncode} — "
-                          f"{(result.stderr or '').strip().splitlines()[-1:]}")
+            lines = (result.stderr or "").strip().splitlines() or ["(không có stderr)"]
+            errors.append(f"{name}: worker thoát mã {result.returncode} — {lines[-1]}")
             continue
         try:
             status = json.loads((out_dir / "status.json").read_text(encoding="utf-8"))
@@ -172,22 +195,24 @@ def main() -> int:
             # Ghi lỗi rồi ĐI TIẾP để artifact vẫn là bằng chứng của lần hỏng (không traceback).
             errors.append(f"{name}: không đọc được status.json ({type(exc).__name__}: {exc})")
             continue
+        if status.get("state") == "error":
+            # `tools/live_worker.py` trả 0 kể cả khi luồng VOS chết ⇒ mã thoát KHÔNG đủ.
+            errors.append(f"{name}: worker ghi `state=error` — "
+                          f"{status.get('message') or '(không có message)'}")
+            continue
         rows.append(_row_from_status(status, name, path, bbox))
 
     per_clip = summarize(rows)
     # Chỉ clip ĐƯỢC KHAI mới có kỳ vọng; clip khác in số và ghi "không đặt".
     expect = {name: True for name in args.expect_lost}
+    expect.update({name: False for name in args.expect_keep})
     per_clip = _gan_ky_vong(per_clip, expect)
     problems = _verdict(per_clip, expect)
     ket_luan = _ket_luan(problems, expect)
     if ket_luan != "đạt":
         print(f"⚠ {ket_luan}", flush=True)
 
-    # P3: một lần chạy "sạch" nhưng NGẮN (nguồn chết giữa đường) không được coi là hoàn tất.
-    for row in rows:
-        if (row.get("frames") or 0) < args.frames:
-            problems.append(f"{row['clip']}: chỉ chạy được {row.get('frames')}/{args.frames} frame "
-                            "(nguồn ngắn/chết giữa đường) — không phải phép đo hoàn tất")
+    problems += _chua_du_mau(per_clip) + _frame_shortfall(rows, args.frames)
 
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
     artifact = {

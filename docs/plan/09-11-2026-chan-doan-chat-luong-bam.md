@@ -92,13 +92,14 @@ Hay làm việc khác trước?
 
 **Tiêu chí nghiệm thu (có SỐ):**
 - [x] Test: đẩy 5 mẫu rỗng ⇒ `empty_frac_window` **1,0**; thêm 5 mẫu có vật ⇒ **0,5** trong khi
-      `empty_runs` **đứng ở 5**; đẩy thêm 200 mẫu có vật ⇒ **0,0**; < 5 mẫu ⇒ `None`; và 2 test
-      session-level kiểm `empty_window_n == min(200, vos_runs)` qua đường thật
-      (`tests/test_live_tracking.py::TestDemMatDauTheoCuaSo`, `::TestMotMauMoiLanVos`).
-- [x] `binh1` (clip khoẻ): `empty_frac_window = **0.0**` (0/200
-      mẫu cửa sổ); `binh2`: **0.205** — và `empty_runs` **trọn đời** = 41/226
-      lần chạy (tỉ lệ trọn đời, KHÔNG phải `empty_frac_window`; cửa sổ dao động 0,12–0,205 qua 5 lần
-      chạy). Nguồn: `data/empty_window_2026-11-09_metrics.json`.
+      `empty_runs` **đứng ở 5**; đẩy thêm 200 mẫu có vật ⇒ **0,0**; < 5 mẫu ⇒ `None`
+      (`::TestDemMatDauTheoCuaSo`, **unit-level**: gọi `_measure_stability` trực tiếp). Thêm 2 ca
+      **session-level** `::TestMotMauMoiLanVos` (30 frame, `vos_every` 1 và 3) kiểm
+      `empty_window_n == min(200, vos_runs)` đi qua `_record_vos` thật.
+- [x] `binh1` (clip khoẻ): `empty_frac_window = **0,00**` (0/200
+      mẫu cửa sổ); `binh2`: **0,21** — `empty_runs` **trọn đời** = 42/243
+      lần chạy (tỉ lệ trọn đời, KHÔNG phải `empty_frac_window`; cửa sổ dao động **0,12–0,21 qua 8 lần
+      chạy**, p05 = **0,000 cả 8 lần**). Nguồn: `data/empty_window_2026-11-10_metrics.json`.
 - [x] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
       + UI hiện "chưa đo được", không hiện "tốt".
 - [x] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.

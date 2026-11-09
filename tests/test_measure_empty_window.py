@@ -98,3 +98,32 @@ def test_moi_clip_deu_co_truong_ky_vong():
     per_clip = measure.summarize([{"clip": "a"}, {"clip": "b"}])
     measure._gan_ky_vong(per_clip, {"a": True})
     assert {k: v["ky_vong"] for k, v in per_clip.items()} == {"a": True, "b": "không đặt"}
+
+
+def test_chua_du_mau_la_loi_do_ke_ca_clip_khong_khai():
+    """Clip KHÔNG khai `--expect-lost` mà `empty_frac_window = None` vẫn là **lỗi đo**: chạy
+    `--frames 3 --vos-every 3` cho 2 lần VOS, trước đây exit 0 với `ly_do_khong_dat: []` (review
+    09-11 vòng 3, P2)."""
+    per_clip = measure.summarize([{"clip": "x", "empty_frac_window": None, "empty_window_n": 2}])
+    problems = measure._chua_du_mau(per_clip)
+    assert len(problems) == 1 and "chưa đủ mẫu" in problems[0]
+    # Có đủ mẫu ⇒ không phát sinh lý do nào.
+    ok = measure.summarize([{"clip": "x", "empty_frac_window": 0.0, "empty_window_n": 200}])
+    assert measure._chua_du_mau(ok) == []
+
+
+def test_frame_shortfall_la_loi_do():
+    """`frames` < `--frames` ⇒ phép đo chưa hoàn tất (nguồn chết giữa đường)."""
+    rows = [{"clip": "a", "frames": 900}, {"clip": "b", "frames": 12}]
+    problems = measure._frame_shortfall(rows, 900)
+    assert len(problems) == 1 and problems[0].startswith("b: chỉ chạy được 12/900")
+
+
+def test_expect_keep_khang_dinh_clip_khoe():
+    """`--expect-keep` cho phép khẳng định "clip khoẻ PHẢI ở 0,00" (trước đây chỉ khai được clip
+    xấu, mất khả năng bắt hồi quy "khoẻ mà bắt đầu mất dấu").`"""
+    khoe = measure.summarize([{"clip": "x", "empty_frac_window": 0.0, "empty_window_n": 200}])
+    assert measure._verdict(khoe, {"x": False}) == []              # 0,00 ⇒ đúng kỳ vọng khoẻ
+    assert measure._verdict(khoe, {"x": True}) != []               # 0,00 mà khai "có mất dấu" ⇒ sai
+    xau = measure.summarize([{"clip": "x", "empty_frac_window": 0.05, "empty_window_n": 200}])
+    assert measure._verdict(xau, {"x": False}) != []               # đang mất dấu ⇒ vi phạm "phải khoẻ"
