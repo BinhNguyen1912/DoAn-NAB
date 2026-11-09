@@ -10,8 +10,8 @@
 phần **em tự xây là toàn bộ hệ thống** chạy quanh model: streaming per-frame, chọn đối tượng, HUD
 tiếng Việt, quỹ đạo, đo hiệu năng, cấu hình, chế độ headless, chế độ hiển thị mượt, **live hybrid
 VOS+LK**, **API (ports & adapters) + web React**, test + CI. Số hiện tại: **7 175 dòng Python** trong
-`src/` (+ **1 343 dòng** `web/src/`), **663 hàm test** (704 test chạy ở làn nhanh trên nhánh này),
-**167 commit**, **5 ADR**, **44 log** trong `docs/task/`. Các số đếm **tính đến 09-11-2026**; đếm lại
+`src/` (+ **1 343 dòng** `web/src/`), **hơn 660 hàm test** (**706 test** chạy ở làn nhanh, đếm 10-11),
+**~170 commit**, **5 ADR**, **44 log** trong `docs/task/`. Các số đếm **tính đến 09-11-2026**; đếm lại
 bằng: `git rev-list --count HEAD`, `find src -name '*.py' | xargs wc -l | tail -1`,
 `grep -rc 'def test_' tests/*.py | awk -F: '{s+=$2} END {print s}'` (số sẽ tăng sau mỗi PR — trích
 khoảng "hơn 660 hàm test" an toàn hơn số tuyệt đối).
@@ -29,8 +29,8 @@ khoảng "hơn 660 hàm test" an toàn hơn số tuyệt đối).
 | 7 | **Config YAML + CLI** | PyYAML | **Tự viết**: defaults < YAML < CLI, validate kiểu, `resolve_checkpoint` lỗi thân thiện, `--device cuda` cho Colab, `--image-size`, `--smooth` | `src/config.py` (95), `tools/run_live.py` (337), `configs/default.yaml`, `tests/test_config.py` (21), `tests/test_run_live_cli.py` (9), commits `db8ad09`, `1244638` |
 | 8 | **Fixture giả lập** (test không cần dữ liệu nặng) | — | **Tự viết**: sinh chuỗi frame ô vuông di chuyển + **chế độ che khuất** + bbox đáp án | `src/synthetic_video.py` (73), `tests/test_synthetic_video.py` (5), commit `f11233e` |
 | 9 | **Tool phụ trợ** | — | **Tự viết**: `check_video_source.py` (kiểm nguồn nhanh), `find_phone_camera.py` (quét LAN tìm camera điện thoại, sửa nhận diện subnet WSL), `scripts/demo_webcam.sh` | `tools/` (409 dòng), `tests/test_find_phone_camera.py` (3) |
-| 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: 663 hàm test (704 test ở làn nhanh trên nhánh này), `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
-| 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001→0004, spec, **13 ticket** + tracker, **28 file log theo ngày**, README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
+| 10 | **Guardrail kỹ thuật** | — | **Tự dựng**: hơn 660 hàm test (706 test ở làn nhanh), `pytest-timeout`, `ruff.toml` ghim rule, **CI GitHub Actions** (ruff + test làn nhanh), `CODING_STANDARDS.md` | `.github/workflows/checks.yml`, `pytest.ini`, `ruff.toml`, commits `284cfee`, `50f9491` |
+| 11 | **Tài liệu & quyết định** | — | **Tự viết**: ADR-0001→0005, spec, **18 ticket** + tracker, **44 file log theo ngày** (43 log + 1 template), README cài đặt tái tạo được, `docs/colab-gpu.md`, notebook Colab | `docs/adr/`, `docs/task/`, `.scratch/`, `README.md`, `notebooks/colab_gpu_evaluation.ipynb` |
 | 12 | **Số liệu đánh giá** | đo trên máy thật | **Tự đo & phân tích**: latency/FPS CPU, độ trễ tăng theo memory, đánh đổi `image_size` (1024/768/512/384/256), `reanchor`, độ phân giải camera, thread; phát hiện SAM 2 luôn trả mask với vùng nền | Bảng trong `README.md` mục "Đánh giá hiệu năng"/"Tối ưu tốc độ", `docs/task/18-10-2026-*.md`, `data/*_summary.json` |
 | 13 | **`ReIdSession` — tái nhận diện khuôn mặt** (mất dấu → đóng băng → tự bám lại đúng người) | YuNet + SFace của OpenCV Zoo (model có sẵn) | **Tự viết toàn bộ cơ chế**: máy trạng thái `tracking/lost/reacquiring`, **chặn bám sang người khác** bằng cách ngừng `engine.process`, **tập embedding tham chiếu** (chỉ lấy mặt nằm trong ô đang bám + cổng chất lượng), **max cosine**, ngưỡng hiệu chỉnh bằng số đo thật, cột metrics `state/reid_score/reacquired` | `src/reid.py`, `tests/test_reid.py` (16 test), `docs/adr/0003`, `configs/default.yaml` |
 | 14 | **Tái nhận diện VẬT THỂ** (vật không có mặt: remote, ly, chén, bút) — ticket 10/11/13 | — (đặc trưng thủ công, **không dùng model nào**) | **Tự viết**: đặc trưng `covariance 5×5 [x,y,B,G,R]` + `HSV hist 8×8` ghép L2 (bù trừ: 0,061 vs 0,382), **cascade tìm lại** (NCC thu nhỏ 4× → top-20 → descriptor: 845 ms → 23,8 ms), **3 cổng chống kẹt** (score âm = mất dấu, xác nhận 2 frame, kiểm chứng 2 frame), **tách vai cổng cosine/NCC**, `scripts/calibrate_reid.py` đo ngưỡng từ CSV có nhãn | `src/appearance.py`, `src/reid.py`, `tests/test_appearance.py` (25), `tests/test_calibrate_reid.py` (9), `docs/adr/0004`, `data/reid_2clip_calib.json` |
@@ -72,9 +72,9 @@ khoảng "hơn 660 hàm test" an toàn hơn số tuyệt đối).
 ## 5. Cách hội đồng tự kiểm chứng (không cần tin lời)
 
 ```bash
-git log --oneline                 # 164 commit, mỗi commit là một phần việc
-python -m pytest -m "not slow"    # 692 test làn nhanh (không cần model) — dùng ./run test
-python -m pytest                  # 697 test (gồm test model thật, cần checkpoint) — dùng ./run testall
+git log --oneline                 # ~170 commit, mỗi commit là một phần việc
+python -m pytest -m "not slow"    # 706 test làn nhanh (không cần model) — dùng ./run test
+python -m pytest                  # 711 test (gồm test model thật, cần checkpoint) — dùng ./run testall
 npm --prefix web test             # 24 test web (vitest) — dùng ./run webtest
 node scripts/e2e_web.js           # e2e Playwright trên Chrome/Edge thật — dùng ./run e2e
 ruff check .                      # lint sạch
@@ -89,5 +89,5 @@ docs/adr/0001, 0002, 0003, 0004   # quyết định kỹ thuật (backbone, CPU/
 > "Em dùng SAM 2.1 + SAMURAI làm backbone theo đúng đề cương/ADR-0001, và **em xây toàn bộ hệ thống
 > quanh nó**: adapt predictor sang streaming per-frame để nhận webcam trực tiếp, module chọn đối
 > tượng bằng chuột, HUD + quỹ đạo + mặt nạ tiếng Việt, module đo FPS/độ trễ/độ ổn định, cấu hình
-> YAML, chế độ headless cho Colab, chế độ hiển thị mượt, cùng 131 test tự động và CI. Em cũng tự đo
+> YAML, chế độ headless cho Colab, chế độ hiển thị mượt, cùng **hơn 700 test tự động** và CI. Em cũng tự đo
 > và công bố giới hạn thật của laptop CPU theo ADR-0002."

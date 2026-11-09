@@ -21,6 +21,10 @@ Trả lời bằng **file mở được** (không bằng lời) ba câu hội đ
   viên, camera 640×480 @ ~21 fps.
 - API live: `src/api/live.py` + adapter `OpenCvFrameSource` (nguồn `mode=track` spawn worker SAM 2).
 - Trạng thái worker: `status.json` (schema ở `src/live_tracking.py:151-179`).
+- **File thay đổi**: `scripts/measure_live_relay.py` (mới), `tests/test_measure_live_relay.py` (mới),
+  `docs/task/09-11-2026-bang-chung-duong-camera-that.md` (mới), `docs/tom-tat-do-an.md`,
+  `docs/doi-chieu-yeu-cau-gvhd.md`, `docs/team-contribution.md` (sửa số cũ), `.gitignore`
+  (chặn symlink worktree), `data/live_web_relay_2026-11-10_metrics.json` (artifact).
 - Trước việc này: **chưa có artifact nào** chứng minh relay → API live → worker SAM 2 → mask.
 
 ## 🔨 Công việc đã thực hiện
@@ -40,42 +44,52 @@ Trả lời bằng **file mở được** (không bằng lời) ba câu hội đ
 
 ## 📤 Output / Kết quả
 
-### Số đo thật — `data/live_web_relay_2026-11-09_metrics.json`
-`git_rev = e54439f`, `git_dirty = false`, `git_dirty_code = false`, `git_loi = null`
-lệnh: `python scripts/measure_live_relay.py --source http://172.19.176.1:8090/snapshot.jpg
---bbox 110,35,95,110 --image-size 192 --vos-every 3 --seconds 25`
+### Số đo thật — `data/live_web_relay_2026-11-10_metrics.json`
+`git_rev = da1d671`, `git_dirty = true` (chỉ do chính file
+artifact đang được ghi), **`git_dirty_code = false**`, `git_loi = null`,
+`ket_qua = true` · `do_luc = 2026-11-10T00:21:20`
+lệnh: `python scripts/measure_live_relay.py --source http://172.19.176.1:8090/snapshot.jpg --bbox 110,35,95,110 --image-size 192 --vos-every 3 --seconds 25 --port 8015 --out data/live_web_relay_2026-11-10_metrics.json`
 môi trường: WSL laptop CPU (Iris Xe, torch CPU), SAM 2.1 tiny, nguồn = **camera thật qua relay**:
 
 | Chỉ số | Giá trị | Nguồn |
 |---|---|---|
 | `state_cuoi` | **running** (kết thúc bằng `stop()` của script) | `/api/live/status` |
-| `frames` | 1 → **694** trong 25 s (đếm frame *đổi nội dung*) | `/api/live/status` |
-| `measured_fps` max | **29,9** | `/api/live/status` |
-| `mask_fps` max | **8,6** (worker tự báo `vos_fps` 7,4 ở mẫu cuối) | `/api/live/status` + `status.json` |
-| `vos_ms` | 155,4 | `status.json` |
-| `lk_ms` | 2,1 | `status.json` |
-| `drift_iou` / `p05` / `drift_n` | **0,952 / 0,904 / 182** | `status.json` |
-| `mask_age_total_ms` / `p95` | 238,5 / **272,4** (`age_n` 200) | `status.json` |
+| `frames` | 1 → **681** trong 25 s (frame *đổi nội dung*) | `/api/live/status` |
+| `measured_fps` max | **29.9** | `/api/live/status` |
+| `display_fps` max / cuối | **30.1** / 29.9 (nhịp HUD, nhờ LK lặp frame) | `/api/live/status` |
+| `mask_fps` max / cuối | **8.4** / 6.6 | `/api/live/status` |
+| `vos_ms` / `lk_ms` | 99.2 / **1.56** | `status.json` |
+| `vos_fps` / `vos_runs` | 6.7 / 173 | `status.json` |
+| `drift_iou` / `p05` / `drift_n` | **0.965 / 0.933 / 171** | `status.json` |
+| `mask_age_total_ms` / `p95` | 259.7 / **281.6** (`age_n` 200) | `status.json` |
+| `stability` | 0.976 | `status.json` |
 | `empty_runs` / `mask_drops` / `lost_streak` | **0 / 0 / 0** | `status.json` |
-| Ảnh overlay | `data/live_web_relay_2026-11-09/frame{1,2,3}.jpg` | `/api/live/frame` |
+| Ảnh overlay | `data/live_web_relay_2026-11-10/frame{1,2,3}.jpg` | `/api/live/frame` |
 
 **Kết luận: ĐẠT** cả 4 điều kiện đăng ký trước (0 lý do không đạt).
+
+> **Frame 694 (lần đo 09-11) / 681 (lần này) không phải "FPS thấp hơn HUD".**
+> `frames` đếm frame **đổi nội dung**; relay phát lại khung hình cuối (`/snapshot.jpg`) nên `frames`
+> thấp hơn `display_fps`. Hai số đo hai thứ khác nhau — đừng chia `frames / 25 s` rồi so với HUD.
 
 ### Ảnh bằng chứng
 > Ảnh **không** được commit: repo không giữ binary trong `data/` (`.gitignore` chỉ cho
 > `*_metrics.json`, `*_summary.json`, `*_metrics.csv`…). Muốn đưa vào báo cáo thì copy 3 file này sang
 > thư mục tài liệu/hình của báo cáo.
 
-`data/live_web_relay_2026-11-09/frame2.jpg`: khung hình camera thật + **mask màu cam** trong hộp đỏ +
-HUD `LIVE 29,5 fps | VOS 8,6 fps 102 ms | LK 1,0 ms`. Đây là ảnh trả lời trực tiếp câu "mask có thật
-sự chạy khi dùng camera không".
+`data/live_web_relay_2026-11-10/frame2.jpg` (mở được trên máy demo): khung hình camera thật + **mask
+màu cam** trong hộp đỏ + HUD `LIVE 29.8fps | VOS 8.4fps 182ms | LK 1.4ms`. Đây là ảnh trả lời trực
+tiếp câu "mask có thật sự chạy khi dùng camera không".
+> Ảnh **chỉ có trên máy đã chạy phép đo** — KHÔNG nằm trong repo (quy ước không giữ binary trong
+> `data/`). Bằng chứng trong repo là **artifact JSON**; muốn ảnh trong báo cáo thì copy sang thư mục
+> hình của báo cáo.
 
 ### Điều ảnh/số này KHÔNG nói
 - **Không** nói "bám đúng vật": ô chọn do người chọn tay, SAM 2 bám đúng *vùng đó*; khung cảnh (gác
   lửng, giá treo) không phải cảnh demo đẹp.
 - **Không** phải benchmark chất lượng: `drift_iou` 0,952 là **độ tự nhất quán** của ô bao, KHÔNG phải
   độ chính xác (AGENTS §6). Chất lượng phân đoạn vẫn chỉ có cận trên trên fixture tổng hợp.
-- **`mask_age_p95` 272 ms ở cấu hình này** (nguồn snapshot qua relay, `image_size 192`, `vos_every 3`)
+- **`mask_age_p95` 281,6 ms ở cấu hình này** (nguồn snapshot qua relay, `image_size 192`, `vos_every 3`)
   — cao hơn dải 210–250 ms đã đo trên clip `binh1`; **khác nguồn** nên đừng trộn hai số.
 - Chưa chạy phần **kéo chuột chọn đối tượng trên UI web** với camera thật (e2e phủ thao tác đó bằng
   nguồn video 160×120 tự sinh); việc này cần trình duyệt + camera cùng lúc.
@@ -89,6 +103,15 @@ sự chạy khi dùng camera không".
   từ nay mọi commit message có backtick đều phải dùng `-F`.
 - **`_read_safely`/health không liên quan**: đường relay ở đây dùng `OpenCvFrameSource` **đã** có
   watchdog (nhánh `fix/health-mode-raw-va-message-409`); nhánh này dựa trên nó.
+
+### Review độc lập (§9.1)
+
+| Vòng | Phát hiện | Xử lý |
+|---|---|---|
+| 1 | **P1**: `git_rev = e54439f` **không phải tổ tiên của HEAD** (nhánh đã rebase sau khi đo) ⇒ clone mới không `git show` được; **P1**: số đếm mâu thuẫn ngay trong 3 trang được sửa (164 vs 167 commit, 692/697 vs 704, "28 file log" vs 44, ADR 0001→0004 vs 5, còn sót "131 test"); P2: `ket_qua: true` kèm `loi`; `summarize` đọc `drift_*` mà API **không có** (luôn `None`); `status.json` cũ của lần trước có thể bị gán cho lần này; ảnh bằng chứng không có trong repo; log thiếu mục review + danh sách file | **Chạy lại phép đo trên HEAD** (`da1d671`, camera sống) ⇒ `git_rev` hợp lệ, số mới; cảnh báo tự động khi `git_rev` không phải tổ tiên của HEAD; dọn số đếm 3 trang; `ket_qua` gộp `loi`/`git_loi`; `summarize` bỏ khoá API không có + thêm `display_fps`; xoá `status.json` trước khi `Popen`; ghi rõ ảnh không có trong repo; thêm mục review + danh sách file |
+
+Nợ lại (không chặn merge): đưa 3 lỗi **trước `try`** trong `main()` (mkdir/Popen/open log) vào
+`try` để mọi nhánh đều ghi artifact; bước CI `grep` cấm số đếm cũ trong `docs/`.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Chạy lại đúng đường này **trong trình duyệt** (kéo chuột trên khung ảnh camera) và chụp màn hình

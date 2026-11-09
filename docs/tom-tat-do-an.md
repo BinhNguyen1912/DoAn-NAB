@@ -53,7 +53,7 @@ Phụ trợ: `src/config.py` (YAML: checkpoint, nguồn, ngưỡng), `src/smooth
 | Toàn bộ pipeline, chọn đối tượng, HUD, quỹ đạo, metrics, config | **SAMURAI** — Kalman filter + motion-aware memory bank (mình chỉ bọc, không viết lại) |
 | Chế độ hiển thị mượt 3 luồng (capture / inference / display) | **YuNet + SFace** (OpenCV Zoo) — phát hiện mặt + embedding cho tái nhận diện |
 | **Cơ chế đóng băng khi mất dấu + tái nhận diện** (ngưỡng, tập mẫu, cổng chất lượng) | OpenCV, PyTorch, NumPy… — hạ tầng |
-| **659 hàm test** + CI + 5 ADR + **web (React)** + **API (FastAPI, ports & adapters)** | |
+| **Hơn 660 hàm test** + CI + 5 ADR + **web (React)** + **API (FastAPI, ports & adapters)** | |
 
 Nguyên tắc (ADR-0001): **không huấn luyện lại model** — đóng góp nằm ở hệ thống + tối ưu + đánh giá.
 
@@ -150,7 +150,7 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 - Che khuất **100%**: mất dấu 6/6 → hết che thì **0,984** ngay, mất dấu **0/12**.
 - GPU T4 nhanh hơn CPU **13×** (cùng độ phân giải) → **~9×** (khi so cấu hình tối ưu hai bên:
   49,6 ms vs 445 ms). Số GPU mới nhất: `data/gpu_summary.json` (git `8d64d59`).
-- Test: **692 pass** làn nhanh, **697** full (5 test cần checkpoint SAM 2), ruff sạch; **24 test web**
+- Test: **706 pass** làn nhanh, **711** full (5 test cần checkpoint SAM 2), ruff sạch; **31 test web**
   (`./run webtest`) + **e2e Playwright PASS** trên Chrome/Edge thật (`./run e2e`).
 
 **Live trên LAPTOP (hybrid VOS + Lucas–Kanade — số mới nhất, 08-11):**
@@ -161,11 +161,11 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 | Nhịp **mask mới** (model chạy) | **8,6–8,7 lần/giây** — **KHÔNG phải 30** | nt. |
 | Tuổi dữ liệu ảnh người xem thấy (p95) | **210 ms** | nt. |
 | Độ tự nhất quán ô bao (`drift_iou` / p05) | 0,887 / 0,663–0,720 (`binh1`); 0,873 / 0,644 (`simloss`); 0,528 / **0,000** (`binh2`) | nt. |
-| **Camera THẬT** (relay Windows→WSL) | 29,9 FPS phát · mask 8,6 lần/giây · drift p05 **0,904** (`drift_n` 182) · 0 mất dấu | `data/live_web_relay_2026-11-09_metrics.json` |
+| **Camera THẬT** (relay Windows→WSL) | HUD **30.1 FPS** · frame đổi nội dung **681**/25 s · mask **6.6–8.4 lần/giây (cao nhất 8.4)** · drift p05 **0.933** (`drift_n` 171) · 0 mất dấu · tuổi ảnh p95 **281.6 ms** (`age_n` 200) | `data/live_web_relay_2026-11-10_metrics.json` |
 | Watchdog khi nguồn chết | worker `kill -9` ⇒ API `error` sau **116–117 ms**; camera mất frame ⇒ **3,75 s** | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
 
 > Cách nói trước hội đồng: *"HUD 30 FPS là nhờ nội suy LK giữa hai lần chạy model; **mask lấy từ model
-> cũ ~0,2 s**, model chạy ~8,6 lần/giây. Em không nói 'mask 30 FPS'."*
+> cũ ~0,2 s**, model chạy ~8.4 lần/giây. Em không nói 'mask 30 FPS'."*
 > `drift_iou` là **độ tự nhất quán**, không phải độ chính xác; chất lượng phân đoạn chỉ có mIoU trên
 > fixture (`data/occlusion_metrics_320_metrics.json`: 0,956 / 0,892 khi che 50 % / `null` khi che kín —
 > **cận trên** vì GT là hình giải tích).
@@ -176,7 +176,7 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 
 1. **Mask không real-time trên laptop**: suy luận 1,5–6,5 FPS tuỳ `image_size` (không GPU rời; trần
    ~175 ms/frame @256). **HUD thì 29,9 FPS** nhờ nội suy LK giữa hai lần chạy model, nhưng **mask lấy
-   từ model cũ ~0,2 s** và model chỉ chạy **8,6 lần/giây** — đừng nói "mask 30 FPS". Muốn mask tươi
+   từ model cũ ~0,2 s** và model chỉ chạy **~8 lần/giây** — đừng nói "mask 30 FPS". Muốn mask tươi
    hơn phải GPU/encoder nhẹ hơn (đã đo: ONNX INT8 và OpenVINO đều **chậm hơn** trên máy này).
 2. **Không nhận lại được nếu không thấy mặt** (quay lưng, che kín, xa/mờ) — giới hạn phương pháp.
 3. **Vật giống y hệt** / **vật đặc một màu (chai đen)**: mọi cue ngoại hình cho cosine ≈ 1,0
@@ -188,7 +188,7 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 6. **Web đã có** (React + FastAPI, ADR-0005): chọn ô bằng chuột, phát MJPEG, hiện FPS/nhịp mask/độ trễ;
    e2e Playwright **PASS**. Còn thiếu: video/ảnh chụp UI **với camera thật trong trình duyệt** (cần
    người ngồi trước máy để kéo chuột) — bằng chứng hiện có là API + camera thật
-   (`data/live_web_relay_2026-11-09_metrics.json`) và e2e với nguồn video.
+   (`data/live_web_relay_2026-11-10_metrics.json`) và e2e với nguồn video.
 7. Độ trễ **tăng dần** khi chạy lâu (3,4 s → 8,3 s) vì memory SAM 2 phình ra.
 8. **`binh2` là ca xấu nhất đã đo**: `drift_iou_p05 = 0,000` do VOS trả mask rỗng **26 lần**
    (`empty_runs`, `mask_drops = 0`) — lỗi ở model, không phải LK; đã ghi rõ trong báo cáo thay vì giấu.
@@ -214,6 +214,6 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 | "Sao chọn SAM 2/SAMURAI?" | `docs/adr/0001` ; "Sao không real-time?" → `docs/adr/0002` |
 | "Tái nhận diện làm sao?" | `docs/adr/0003` |
 | "Dùng model gì, của ai, license gì?" | **file này mục 4b** + `docs/adr/0003` |
-| "Hệ thống chạy thật chưa?" | `data/live_web_relay_2026-11-09_metrics.json` + `docs/task/09-11-2026-bang-chung-duong-camera-that.md` |
+| "Hệ thống chạy thật chưa?" | `data/live_web_relay_2026-11-10_metrics.json` + `docs/task/09-11-2026-bang-chung-duong-camera-that.md` |
 | "Hỏng thì biết không?" | `data/watchdog_2026-11-09_metrics.json` (116–117 ms) + `data/watchdog_raw_2026-11-09_metrics.json` (3,75 s) |
 | "Hôm qua làm gì?" | file mới nhất trong `docs/task/` (09-11: watchdog, H.264, bằng chứng camera thật) |
