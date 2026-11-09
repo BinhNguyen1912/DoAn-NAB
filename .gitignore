@@ -44,3 +44,9 @@ web/.vite/
 
 # Fixture E2E web (sinh lại bằng scripts/make_e2e_video.py — không commit)
 data/e2e_*
+
+# Worktree dùng SYMLINK `samurai`/`models` tới bản dùng chung (không có dấu `/` nên `samurai/` ở
+# trên KHÔNG khớp) — nếu không chặn, symlink bị tính là "code bẩn" trong `git_dirty_code` của
+# artifact đo (gặp khi đo lại bằng camera thật cho nhánh này).
+/samurai
+/models
