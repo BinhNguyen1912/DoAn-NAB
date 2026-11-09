@@ -129,3 +129,13 @@ class TestExitCode:
 ])
 def test_ket_hop_voi_artifact(porcelain, expected):
     assert measure._is_dirty_outside_data(porcelain) is expected
+
+
+def test_verdict_dict_trai_duoc_vao_ban_ghi_artifact():
+    """`**_verdict_dict(...)` là cách dùng trong `_one_run*`, không phải `**tuple` (TypeError thật
+    gặp khi chạy lần đầu: `TypeError: 'tuple' object is not a mapping`)."""
+    record = {"load_s": 0.1, **measure._verdict_dict(None, 100.0, 5.0)}
+    assert record["that_bai"] is True and record["vuot_nguong"] is True
+
+    record = {"load_s": 0.1, **measure._verdict_dict(101.0, 100.0, 5.0)}
+    assert record["that_bai"] is False and record["vuot_nguong"] is False

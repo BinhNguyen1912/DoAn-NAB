@@ -157,8 +157,14 @@ def _one_run(base, args, live_dir):
                              if probe.closed_at else None),
         "luong_dong_kieu": probe.error or "EOF (server đóng kết nối)",
         # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
-        **_verdict(error_at, killed_at, NGUONG_DANG_KY_TRUOC_S),
+        **_verdict_dict(error_at, killed_at, NGUONG_DANG_KY_TRUOC_S),
     }
+
+
+def _verdict_dict(error_at, killed_at, nguong_s) -> dict:
+    """`_verdict` dạng dict để trải vào bản ghi artifact (`**_verdict_dict(...)`)."""
+    that_bai, vuot_nguong = _verdict(error_at, killed_at, nguong_s)
+    return {"that_bai": that_bai, "vuot_nguong": vuot_nguong}
 
 
 def _verdict(error_at, killed_at, nguong_s):
@@ -277,7 +283,7 @@ def _one_run_raw(base, args, snapshot_port):
         "ghi_chu_frames": "frames đếm khung hình ĐỔI nội dung; relay phục vụ 1 ảnh tĩnh ⇒ 0 là bình "
                           "thường, KHÔNG phải 'nguồn không ra frame'",
         # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
-        **_verdict(error_at, killed_at, args.nguong_s),
+        **_verdict_dict(error_at, killed_at, args.nguong_s),
     }
 
 
