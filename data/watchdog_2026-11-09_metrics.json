@@ -1,8 +1,9 @@
 {
-  "do_luc": "2026-11-09T21:26:07",
-  "git_rev": "4dccc4456edb2509485a7b49271711369b8a0834",
+  "do_luc": "2026-11-09T21:27:25",
+  "git_rev": "18a007ac02c769d24683b350d12ff86d724d3232",
   "git_dirty": false,
-  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi trên file ĐÃ THEO DÕI so với commit đó (file artifact mới chưa track không tính — chính nó là thứ đang được ghi).",
+  "git_dirty_code": false,
+  "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi trên file ĐÃ THEO DÕI so với commit đó; `git_dirty_code` = như trên NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
   "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, image_size 192",
   "lenh": "python scripts/measure_watchdog.py --mode worker --lan 3",
   "nguong_dang_ky_truoc": {
@@ -23,38 +24,38 @@
   },
   "ket_qua": [
     {
-      "load_s": 3.4,
-      "pid": 4357,
-      "frames_truoc_khi_giet": 1,
-      "byte_luong_truoc_khi_giet": 1200128,
-      "state_sau_khi_giet": "error",
-      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 114.2,
-      "tg_dong_luong_ms": 96.7,
-      "luong_dong_kieu": "EOF (server đóng kết nối)",
-      "vuot_nguong": false
-    },
-    {
-      "load_s": 3.2,
-      "pid": 4424,
+      "load_s": 3.0,
+      "pid": 4867,
       "frames_truoc_khi_giet": 1,
       "byte_luong_truoc_khi_giet": 1126400,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 112.1,
+      "tg_bao_error_ms": 114.5,
       "tg_dong_luong_ms": 105.4,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
       "vuot_nguong": false
     },
     {
-      "load_s": 3.4,
-      "pid": 4490,
+      "load_s": 3.0,
+      "pid": 4936,
       "frames_truoc_khi_giet": 1,
-      "byte_luong_truoc_khi_giet": 1122304,
+      "byte_luong_truoc_khi_giet": 823296,
       "state_sau_khi_giet": "error",
       "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
-      "tg_bao_error_ms": 113.0,
-      "tg_dong_luong_ms": 105.7,
+      "tg_bao_error_ms": 117.1,
+      "tg_dong_luong_ms": 107.7,
+      "luong_dong_kieu": "EOF (server đóng kết nối)",
+      "vuot_nguong": false
+    },
+    {
+      "load_s": 3.0,
+      "pid": 5000,
+      "frames_truoc_khi_giet": 1,
+      "byte_luong_truoc_khi_giet": 1048576,
+      "state_sau_khi_giet": "error",
+      "message": "worker đã dừng (mã -9) — xem /dev/shm/doan-live-watchdog/worker.log",
+      "tg_bao_error_ms": 114.3,
+      "tg_dong_luong_ms": 109.3,
       "luong_dong_kieu": "EOF (server đóng kết nối)",
       "vuot_nguong": false
     }
@@ -62,9 +63,9 @@
   "tom_tat": {
     "n": 3,
     "tg_bao_error_ms": {
-      "min": 112.1,
-      "max": 114.2,
-      "mean": 113.1
+      "min": 114.3,
+      "max": 117.1,
+      "mean": 115.3
     },
     "so_lan_vuot_nguong": 0,
     "so_lan_luong_khong_dong": 0,

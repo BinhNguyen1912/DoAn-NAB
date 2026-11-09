@@ -175,6 +175,43 @@ vos_ms)`, trần 120 s). Cấm trích "watchdog phản ứng trong 0,1 s" cho ca
 - **`.venv` (python 3.14) không có `imageio-ffmpeg`** ⇒ 3 test mới lúc đầu không tìm được ffmpeg;
   chạy bằng env `samurai` (python 3.11) thì có, và test thật tự `skip` nếu máy thiếu ffmpeg.
 
+## ➕ Bổ sung 21:30 — watchdog cho mode `raw` + 409 nêu lý do + thứ tự publish `stopped`
+
+Làm 3 P3 mà vòng review 09-11 đã đẩy sang Next steps (không để nợ treo).
+
+### Đã làm
+1. **`OpenCvFrameSource` cài `HealthReportingSource`** (`src/api/adapters/opencv_source.py`): chế độ
+   `raw` trước đây **không có watchdog** — rút webcam/relay chết thì `read_jpeg()` trả None mãi, API
+   vẫn `running`, ảnh đứng. `health()` phân biệt 3 ca: (a) chưa start/đã stop theo lệnh ⇒ `None`;
+   (b) file hết mà **không lặp** ⇒ `STOPPED`; (c) camera/luồng không trả frame > `STALE_S = 3 s`
+   (hoặc mất `capture` vì mở lại file thất bại) ⇒ `ERROR`. `_rewind()` không còn gọi `stop()`
+   (`stop()` đánh dấu "chủ động đóng" ⇒ health sẽ im lặng coi là khoẻ).
+2. **`/api/live/stream`**: 409 kèm lý do của watchdog khi `state == error` (trước: câu chung "Chưa có
+   phiên live nào đang chạy" cho cả hai ca).
+3. **`LiveTrackingSession.run()`**: công bố `stopped` **trước** `_stop_worker()`; vẫn publish lần cuối
+   sau join để nếu luồng VOS báo lỗi thì state thành `error`.
+4. **`scripts/measure_watchdog.py`**: thêm `--mode raw` (tắt relay ảnh THẬT bằng
+   `http.server` trên localhost) + ngưỡng đăng ký trước tách theo mode (worker 2 s, raw 5 s) +
+   tách `git_dirty_code` (bỏ `data/`) để đo lại artifact không bị coi là "code bẩn".
+
+### Số đo thật (2 mode, mỗi mode 3 lần, `git_rev = 18a007a`, `git_dirty_code = false`)
+
+| Mode | Nguồn bị giết | báo `error` | đóng luồng MJPEG | ngưỡng đăng ký trước | đạt? |
+|---|---|---|---|---|---|
+| `worker` (`proc.poll()`) | `kill -9` worker SAM 2 | **114,5 / 117,1 / 114,3 ms** | 105–109 ms | ≤ 2 s | ✅ 3/3 |
+| `raw` (không có frame) | tắt relay ảnh HTTP | **3750 / 3752 / 3747 ms** | 3742–3750 ms | ≤ 5 s | ✅ 3/3 |
+
+- Artifact: `data/watchdog_2026-11-09_metrics.json` + `data/watchdog_raw_2026-11-09_metrics.json`.
+- **Cấm trộn hai số**: mode `worker` bắt bằng `proc.poll()` nên ~0,1 s; mode `raw` chỉ biết qua
+  "không có frame" nên phải chờ `STALE_S` 3 s (cộng ~0,7 s do nguồn snapshot giữ frame cuối
+  `max_misses=20` lần trước khi trả None). Đừng trích "watchdog phản ứng 0,1 s" cho webcam.
+
+### Kiểm tra
+- `./run lint` ✓ · `./run test` ✓ · `./run testall` **663 passed** · `./run webtest` 24 ✓ ·
+  `./run e2e` **PASS** (e2e đi qua `/api/live/stream` + mode `raw` nên phủ đúng đường vừa sửa).
+- **Test có răng**: `test_status_da_la_stopped_trong_luc_dang_join_worker` đã được kiểm bằng cách
+  checkout lại `src/live_tracking.py` cũ → **đỏ**, rồi phục hồi → xanh.
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Tự hạ cấp/cảnh báo khi drift xấu** (`p05 < 0,2` như `binh2`): hiện mới đo, chưa hành động.
 - [ ] Đo drift cho **clip vật cản đi ngang che kín** (dự đoán LK trôi qua vật cản) — cần người quay.
@@ -182,12 +219,10 @@ vos_ms)`, trần 120 s). Cấm trích "watchdog phản ứng trong 0,1 s" cho ca
 - [ ] Sơ đồ khối + bảng phần cứng cho báo cáo.
 - [ ] Muốn mask tươi hơn 0,2 s: đo **encoder nhẹ hơn / GPU** (nút thật, không phải `vos_every`).
 - [ ] **Người dùng**: quay 2 clip (vật bị che một phần; vật ra khỏi khung rồi vào lại).
-- [ ] (P3 review) `OpenCvFrameSource` cài `HealthReportingSource` — mode `raw` cũng phải báo lỗi khi
-      webcam chết giữa phiên.
-- [ ] (P3 review) `/api/live/stream` trả message theo `state` (409 hiện dùng chung một câu cho `error`
-      và "chưa bật").
-- [ ] (P3 review) Worker `_publish_status` **trước** `_stop_worker()` khi kết thúc phiên (hiện an toàn
-      nhờ ngưỡng 15 s > join 5 s, nhưng đúng thứ tự thì rõ nghĩa hơn).
+- [x] (P3 review) `OpenCvFrameSource` cài `HealthReportingSource` — mode `raw` cũng báo lỗi khi
+      webcam chết giữa phiên (mục "Bổ sung 21:30").
+- [x] (P3 review) `/api/live/stream` trả message theo `state`.
+- [x] (P3 review) Worker `_publish_status` **trước** `_stop_worker()` khi kết thúc phiên.
 
 ## 📚 Tài liệu tham khảo
 - `docs/plan/08-11-2026-review-doc-lap-va-plan-tiep-theo.md` — thứ tự việc + tiêu chí ≤ 2 s (viết trước).
