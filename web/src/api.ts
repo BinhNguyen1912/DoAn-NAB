@@ -134,8 +134,16 @@ export interface LiveStatus {
   stability: number
   /** độ trễ suy luận gần nhất (ms) */
   latency_ms: number
-  /** số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên */
+  /** số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên — bộ đếm TRỌN ĐỜI, không giảm */
   empty_runs: number
+  /** tỉ lệ mất dấu trong 200 lần chạy GẦN NHẤT (null = chưa đủ mẫu) */
+  empty_frac_window: number | null
+  /** số mẫu của cửa sổ trên (0 = chưa có số) */
+  empty_window_n: number
+  /** phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) — ĐỘ TỰ NHẤT QUÁN, không phải độ chính xác */
+  drift_p05: number | null
+  /** số mẫu drift (0 ⇒ chưa đo, KHÔNG phải "drift = 0") */
+  drift_n: number
   message: string
 }
 

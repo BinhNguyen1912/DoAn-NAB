@@ -47,7 +47,14 @@ STATE_STOPPED = "stopped"
 
 _FPS_WINDOW_S = 2.0
 _STAT_WINDOW = 200        # số mẫu giữ để lấy phân vị (p05/p95); 200 ⇒ p05 có nghĩa
-_STAT_MIN_SAMPLES = 5     # dưới mức này chưa báo phân vị (1 mẫu không có "p95")
+# Số mẫu TỐI THIỂU để được phép công bố phân vị. Phải >= 30, không phải 5: với n = 5,
+# `np.percentile(values, 5)` lấy CHỈ SỐ 0,2 ⇒ nằm giữa **min** và phần tử nhỏ thứ 2 (tức "một mẫu
+# xui"), công bố nó thành "p05" là lỗi trung thực — một phiên 0,7 s có thể hiện "p05 = 0,0".
+# n = 30 ⇒ chỉ số 1,45 (vẫn gần min), nên CỜ chẩn đoán (nếu có) phải đòi >= 100 mẫu
+# (xem docs/plan/09-11-2026-chan-doan-chat-luong-bam.md).
+_STAT_MIN_SAMPLES = 30
+# Số mẫu tối thiểu để công bố TỈ LỆ (không phải phân vị) — 5 mẫu đã đủ nói "1/5 lần mất dấu".
+_EMPTY_WINDOW_MIN = 5
 _SHOWN_HISTORY = 90       # số frame giữ ô bao đã phát, để tra đúng frame VOS đã thấy
 
 
@@ -100,7 +107,12 @@ class LiveTrackStats:
     mask_age_total_ms: float | None = None  # + vos_ms ⇒ tuổi dữ liệu ảnh người xem thực thấy
     mask_age_p95: float | None = None     # phân vị 95 % của mask_age_total_ms
     age_n: int = 0                        # số mẫu tuổi mask (0 ⇒ CHƯA ĐO)
-    empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật)
+    empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
+    # Cùng sự kiện nhưng đếm trong `_STAT_WINDOW` lần VOS GẦN NHẤT: `empty_runs` không bao giờ
+    # giảm nên UI in "mất dấu 26 lần" cho một sự việc đã qua; tỉ lệ theo cửa sổ thì trở về 0 khi
+    # model bám lại được. `None` = chưa đủ mẫu (`empty_window_n` cho biết còn thiếu bao nhiêu).
+    empty_frac_window: float | None = None
+    empty_window_n: int = 0
     mask_holds: int = 0           # số lần bộ lọc GIỮ mask cũ (model "chớp" mất vật)
     mask_drops: int = 0           # số lần mask hiển thị RỖNG (mất dấu thật)
     lost_streak: int = 0
@@ -171,6 +183,8 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "stability": stats.stability,
         "stability_shown": stats.stability_shown,
         "empty_runs": stats.empty_runs,
+        "empty_frac_window": stats.empty_frac_window,
+        "empty_window_n": stats.empty_window_n,
         "mask_holds": stats.mask_holds,
         "mask_drops": stats.mask_drops,
         "lost_streak": stats.lost_streak,
@@ -289,6 +303,10 @@ class LiveTrackingSession:
         self._vos_stamps: deque = deque()
         self._smoother = MaskSmoother(config.mask_smoothing) if config.mask_smoothing < 1.0 else None
         self._drift_window: deque = deque(maxlen=_STAT_WINDOW)   # đủ mẫu để lấy p05
+        # Cửa sổ ĐẾM SỰ KIỆN cho mask rỗng. Để RIÊNG khỏi `_iou_window` (10 mẫu, dùng cho độ ổn
+        # định): đây là đại lượng đếm, không phải phân vị, nên cửa sổ ngắn vẫn dùng được — tần suất
+        # nền của "VOS trả mask rỗng" trên clip khoẻ đo được là 0/798 lần chạy (binh1).
+        self._vos_lost_window: deque = deque(maxlen=_STAT_WINDOW)
         self._age_window: deque = deque(maxlen=_STAT_WINDOW)
         # Ô bao ĐÃ PHÁT theo từng frame: nhờ vậy đo drift đúng frame mà VOS đã thấy, không lệch
         # một khoảng bằng độ trễ suy luận (review 08-11 chỉ ra phép so cũ lệch ~3 frame).
@@ -562,6 +580,15 @@ class LiveTrackingSession:
         raw = getattr(result, "mask", None)
         if raw is None:
             return
+        # Đẩy ĐÚNG MỘT mẫu cho MỖI lần VOS trả kết quả: có vật (False) hay rỗng (True). Nếu chỉ
+        # đẩy khi rỗng thì tỉ lệ không bao giờ giảm sau khi model bám lại (đúng lỗi mà đại lượng
+        # này sinh ra để sửa).
+        self._vos_lost_window.append(not raw.any())
+        with self._stats_lock:
+            self._stats.empty_window_n = len(self._vos_lost_window)
+            self._stats.empty_frac_window = (
+                round(sum(self._vos_lost_window) / len(self._vos_lost_window), 3)
+                if len(self._vos_lost_window) >= _EMPTY_WINDOW_MIN else None)
         if not raw.any():
             with self._stats_lock:
                 self._stats.empty_runs += 1

@@ -112,7 +112,13 @@ class LiveStatus:
     mask_fps: float = 0.0       # nhịp MASK MỚI (số lần model thật sự chạy/giây)
     stability: float = 0.0      # IoU trung bình giữa hai mask liên tiếp (1,0 = không nhấp nháy)
     latency_ms: float = 0.0     # độ trễ suy luận gần nhất
-    empty_runs: int = 0         # số lần model trả mask RỖNG (mất dấu thật)
+    empty_runs: int = 0         # số lần model trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
+    empty_frac_window: float | None = None  # tỉ lệ mất dấu trong 200 lần VOS gần nhất (None = chưa đủ)
+    empty_window_n: int = 0     # số mẫu của cửa sổ đó (0 ⇒ chưa có số)
+    # `drift_p05` = phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên 200 lần VOS gần
+    # nhất. Đây là **độ tự nhất quán**, KHÔNG phải độ chính xác (AGENTS §6). `drift_n` < 30 ⇒ None.
+    drift_p05: float | None = None
+    drift_n: int = 0
     message: str = ""
 
 
@@ -126,6 +132,10 @@ class LiveTelemetry:
     latency_ms: float = 0.0
     lk_ms: float = 0.0
     empty_runs: int = 0
+    empty_frac_window: float | None = None
+    empty_window_n: int = 0
+    drift_p05: float | None = None
+    drift_n: int = 0
 
 
 @dataclass(frozen=True)

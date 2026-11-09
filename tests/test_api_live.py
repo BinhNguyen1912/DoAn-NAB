@@ -120,6 +120,8 @@ class TestLiveRoutes:
         assert body["state"] == "running"
         assert body["source"] == "giả:0"
         assert set(body) == {"state", "source", "frames", "measured_fps", "display_fps",
+                             # 4 trường chẩn đoán (09-11): drift + tỉ lệ mất dấu theo cửa sổ
+                             "drift_p05", "drift_n", "empty_frac_window", "empty_window_n",
                              "mask_fps", "stability", "latency_ms", "empty_runs", "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -722,3 +724,81 @@ class TestCaptureNemLoi:
 
         health = source.health()
         assert health is not None and health.state is LiveState.ERROR
+class TestChanDoanChatLuongBam:
+    """/api/live/status: `drift_*` và `empty_frac_window` phải đi qua NGUYÊN VẸN, `None` không thành 0.
+
+    Vì sao có (review 09-11): adapter cũ dùng `float(status.get("drift_iou") or 0.0)` ⇒ "chưa đo"
+    thành "đo được 0", và UI sẽ hiện drift 0,00 như thể LK hỏng hoàn toàn. Ở chiều ngược lại, không
+    có cửa sổ thì UI in "mất dấu 26 lần" từ bộ đếm trọn đời cho một sự việc đã qua.
+    """
+
+    def _telemetry(self, tmp_path, **fields):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps(fields), encoding="utf-8")
+        return WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+
+    def test_chua_do_drift_thi_none_va_drift_n_0(self, tmp_path):
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.6, empty_runs=0)
+        assert detail.drift_p05 is None            # KHÔNG phải 0.0
+        assert detail.drift_n == 0
+        assert detail.empty_frac_window is None
+        assert detail.empty_window_n == 0
+
+    def test_drift_0_0_do_duoc_van_la_0_0(self, tmp_path):
+        """Ca xấu nhất của binh2 (p05 = 0,000) phải đi qua thành số 0, KHÔNG thành None."""
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=7.4,
+                                 drift_iou_p05=0.0, drift_n=198,
+                                 empty_frac_window=0.112, empty_window_n=200)
+        assert detail.drift_p05 == 0.0
+        assert detail.drift_n == 198
+        assert detail.empty_frac_window == pytest.approx(0.112)
+        assert detail.empty_window_n == 200
+
+    def test_vos_every_1_khong_do_duoc_drift(self, tmp_path):
+        """Phiên `vos_every=1` (tắt LK) ⇒ `drift_iou_p05 = null` trong status.json."""
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.0,
+                                 drift_iou=None, drift_iou_p05=None, drift_n=0)
+        assert detail.drift_p05 is None and detail.drift_n == 0
+
+
+class _TelemetrySource:
+    """Nguồn giả CÓ `telemetry()` (port `LiveTelemetrySource`) — không cần worker thật."""
+
+    def __init__(self, *args, **kwargs):
+        self.stopped = False
+
+    def start(self):
+        pass
+
+    def read_jpeg(self):
+        return b"\xff\xd8fake"
+
+    def stop(self):
+        self.stopped = True
+
+    def telemetry(self):
+        from src.api.domain import LiveTelemetry
+
+        return LiveTelemetry(mask_fps=8.6, drift_p05=None, drift_n=0,
+                             empty_frac_window=0.112, empty_window_n=200)
+
+    @property
+    def label(self):
+        return "giả:telemetry"
+
+
+class TestLiveStatusChanDoanQuaApi:
+    def test_status_tra_hai_truong_moi_kem_null_trung_thuc(self, live_client, monkeypatch):
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _TelemetrySource())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["drift_p05"] is None            # null, không phải 0.0
+        assert body["drift_n"] == 0
+        assert body["empty_frac_window"] == pytest.approx(0.112)
+        assert body["empty_window_n"] == 200

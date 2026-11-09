@@ -139,6 +139,10 @@ def build_router(service: JobService, live) -> APIRouter:
             stability=status.stability,
             latency_ms=status.latency_ms,
             empty_runs=status.empty_runs,
+            empty_frac_window=status.empty_frac_window,
+            empty_window_n=status.empty_window_n,
+            drift_p05=status.drift_p05,
+            drift_n=status.drift_n,
             message=status.message,
         )
 

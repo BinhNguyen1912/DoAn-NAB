@@ -124,7 +124,7 @@ class TestLiveTrackingSession:
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_shown", "empty_runs", "mask_holds", "mask_drops",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
-            "mask_age_p95", "age_n",
+            "mask_age_p95", "age_n", "empty_frac_window", "empty_window_n",
             "lost_streak", "bbox", "message"}
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
@@ -819,7 +819,11 @@ class TestDriftVaTuoiMask:
         assert session._stats.drift_iou is None
 
     def test_tuoi_mask_literal_va_gom_ca_vos_ms(self, tmp_path):
-        """10 mẫu 100 ms, `vos_ms=100` ⇒ age 100,0 ms, total 200,0 ms, p95 = 200,0 ms."""
+        """Mẫu 100 ms, `vos_ms=100` ⇒ age 100,0 ms, total 200,0 ms, p95 = 200,0 ms.
+
+        Số mẫu phải >= `_STAT_MIN_SAMPLES` (30): với n = 10, `np.percentile(v, 95)` lấy chỉ số 8,55
+        ⇒ gần như **max** của 10 mẫu, công bố nó thành "p95" là lỗi trung thực (review 09-11).
+        """
         out = tmp_path / "live"
         _pre_select(out)
         session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -830,6 +834,11 @@ class TestDriftVaTuoiMask:
         assert session._stats.age_n == 10
         assert session._stats.mask_age_ms == pytest.approx(100.0)
         assert session._stats.mask_age_total_ms == pytest.approx(200.0)
+        assert session._stats.mask_age_p95 is None       # 10 < 30 mẫu ⇒ chưa công bố phân vị
+
+        for _ in range(20):
+            session._note_mask_age(0.100, vos_ms=100.0)
+        assert session._stats.age_n == 30
         assert session._stats.mask_age_p95 == pytest.approx(200.0)
 
     def test_tuoi_mask_chua_du_mau_thi_p95_la_none(self, tmp_path):
@@ -940,3 +949,114 @@ class TestCongBoStoppedTruocKhiJoinWorker:
 
         assert trang_thai_luc_join["state"] == STATE_STOPPED, (
             "status.json vẫn chưa `stopped` khi đang join worker ⇒ watchdog sẽ báo 'treo?'")
+class TestDemMatDauTheoCuaSo:
+    """`empty_frac_window` — tỉ lệ lần VOS trả mask RỖNG trong 200 lần chạy GẦN NHẤT.
+
+    Vì sao có: `empty_runs` là bộ đếm **trọn đời, không bao giờ giảm** ⇒ UI từng in "mất dấu: 26 lần"
+    cho một sự việc đã qua (review 09-11, góc "chất lượng & số đo trung thực"). Tỉ lệ theo cửa sổ
+    trở về 0 khi model bám lại được — đó mới là con số nói "hiện tại".
+    """
+
+    @staticmethod
+    def _stats():
+        from src.live_tracking import LiveTrackStats
+
+        return LiveTrackStats()
+
+    def _feed(self, session, empties, with_object):
+        """Đẩy `empties` mẫu rỗng rồi `with_object` mẫu CÓ vật qua `_measure_stability`."""
+        import numpy as np
+
+        class _KetQua:
+            def __init__(self, mask):
+                self.mask = mask
+
+        empty_mask = np.zeros((16, 16), bool)
+        full_mask = np.ones((16, 16), bool)
+        for _ in range(empties):
+            session._measure_stability(_KetQua(empty_mask))
+        for _ in range(with_object):
+            session._measure_stability(_KetQua(full_mask))
+
+    def _session(self, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        return LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+
+    def test_ti_le_cua_so_tro_ve_0_con_bo_dem_tron_doi_dung_yen(self, tmp_path):
+        session = self._session(tmp_path)
+        self._feed(session, empties=5, with_object=0)
+        stats = session._stats
+        assert stats.empty_runs == 5
+        assert stats.empty_frac_window == 1.0            # 5/5
+        assert stats.empty_window_n == 5
+
+        # Model bám lại: 5 lần VOS CÓ vật ⇒ tỉ lệ GIẢM (5/10) trong khi bộ đếm trọn đời vẫn 5.
+        self._feed(session, empties=0, with_object=5)
+        stats = session._stats
+        assert stats.empty_runs == 5                     # trọn đời: không giảm
+        assert stats.empty_frac_window == 0.5            # cửa sổ: 5 rỗng / 10 lần gần nhất
+        assert stats.empty_window_n == 10
+
+    def test_ti_le_phan_anh_200_lan_gan_nhat(self, tmp_path):
+        """Cửa sổ là `_STAT_WINDOW` = 200: mẫu cũ bị đẩy ra nên 200 lần có vật ⇒ về 0 tuyệt đối."""
+        session = self._session(tmp_path)
+        self._feed(session, empties=3, with_object=0)
+        self._feed(session, empties=0, with_object=200)
+        stats = session._stats
+        assert stats.empty_runs == 3
+        assert stats.empty_window_n == 200
+        assert stats.empty_frac_window == 0.0
+
+    def test_chua_du_5_mau_thi_none_chu_khong_phai_0(self, tmp_path):
+        session = self._session(tmp_path)
+        self._feed(session, empties=2, with_object=0)
+        stats = session._stats
+        assert stats.empty_window_n == 2
+        assert stats.empty_frac_window is None           # "chưa đủ mẫu" ≠ "0 %"
+
+    def test_payload_co_hai_truong_moi(self, tmp_path):
+        from src.live_tracking import status_payload
+
+        session = self._session(tmp_path)
+        self._feed(session, empties=5, with_object=0)
+        payload = status_payload(session._stats)
+        assert payload["empty_frac_window"] == 1.0
+        assert payload["empty_window_n"] == 5
+
+
+class TestPhanViCanDuMau:
+    """`_STAT_MIN_SAMPLES` = 30: với n = 5, "p05" là **min của 5 mẫu**, không phải phân vị."""
+
+    def test_nguong_mau_cho_phan_vi_phai_la_30(self):
+        """n = 5 thì `percentile(v, 5)` lấy chỉ số 0,2 ⇒ chính là MIN của 5 mẫu, không phải p05."""
+        import numpy as np
+
+        from src.live_tracking import _STAT_MIN_SAMPLES
+
+        assert _STAT_MIN_SAMPLES >= 30
+        # Chứng minh bằng số: p05 của 5 mẫu nằm GIỮA min và phần tử nhỏ thứ 2 (chỉ số 0,2) ⇒ nó chỉ
+        # là "một mẫu xui", không phải phân vị. Với n = 200, p05 ≈ phần tử nhỏ thứ 10.
+        values = [0.0, 0.5, 0.8, 0.9, 0.95]
+        assert np.percentile(values, 5) < values[1]
+        assert 9 <= np.percentile(list(range(200)), 5) <= 11
+
+    def test_drift_p05_none_khi_it_mau_va_co_so_khi_du_mau(self, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        for value in (0.9, 0.9, 0.9, 0.9, 0.9):
+            session._record_drift(value)
+        assert session._stats.drift_n == 5
+        assert session._stats.drift_iou_p05 is None      # 5 mẫu: "p05" sẽ là min ⇒ không công bố
+
+        for value in [0.9] * 30:
+            session._record_drift(value)
+        assert session._stats.drift_n == 35
+        assert session._stats.drift_iou_p05 == 0.9

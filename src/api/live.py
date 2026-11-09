@@ -178,7 +178,10 @@ class LiveStreamService:
             if detail is not None:
                 base.update(display_fps=detail.display_fps, mask_fps=detail.mask_fps,
                             stability=detail.stability, latency_ms=detail.latency_ms,
-                            empty_runs=detail.empty_runs)
+                            empty_runs=detail.empty_runs,
+                            empty_frac_window=detail.empty_frac_window,
+                            empty_window_n=detail.empty_window_n,
+                            drift_p05=detail.drift_p05, drift_n=detail.drift_n)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

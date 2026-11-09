@@ -134,5 +134,16 @@ class LiveStatusResponse(BaseModel):
                              description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy)")
     latency_ms: float = Field(default=0, ge=0, description="độ trễ suy luận gần nhất (ms)")
     empty_runs: int = Field(default=0, ge=0,
-                            description="số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên")
+                            description="số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên "
+                                        "— bộ đếm TRỌN ĐỜI, không bao giờ giảm")
+    empty_frac_window: float | None = Field(
+        default=None, ge=0, le=1,
+        description="tỉ lệ lần model trả mask RỖNG trong 200 lần chạy GẦN NHẤT (null = chưa đủ mẫu). "
+                    "Đây mới là số nói 'hiện tại có đang mất dấu không'")
+    empty_window_n: int = Field(default=0, ge=0, description="số mẫu của cửa sổ trên (0 = chưa có)")
+    drift_p05: float | None = Field(
+        default=None, ge=0, le=1,
+        description="phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên 200 lần VOS gần "
+                    "nhất — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
+    drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
     message: str
