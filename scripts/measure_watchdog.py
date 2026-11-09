@@ -294,9 +294,16 @@ def main() -> int:
     try:
         git_rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO_ROOT),
                                  capture_output=True, text=True, check=True).stdout.strip()
-        git_dirty = bool(subprocess.run(
+        changed = subprocess.run(
             ["git", "status", "--porcelain", "--untracked-files=no"],
-            cwd=str(_REPO_ROOT), capture_output=True, text=True).stdout.strip())
+            cwd=str(_REPO_ROOT), capture_output=True, text=True).stdout
+        git_dirty = bool(changed.strip())
+        # Tái lập được hay không là câu hỏi về **CODE**, không phải về chính file artifact (mỗi lần
+        # đo lại là file artifact bị sửa ⇒ `git_dirty` luôn true một cách vô nghĩa).
+        git_dirty_code = any(
+            line[3:].strip() and not line[3:].strip().startswith("data/")
+            for line in changed.splitlines()
+        )
     except (OSError, subprocess.CalledProcessError):
         git_rev, git_dirty = "", None
 
@@ -305,10 +312,12 @@ def main() -> int:
         "do_luc": datetime.now().isoformat(timespec="seconds"),
         "git_rev": git_rev,
         "git_dirty": git_dirty,
+        "git_dirty_code": git_dirty_code,
         "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau "
                            "đó (không sửa code) thì số mới tái lập được. `git_dirty` = có thay đổi "
-                           "trên file ĐÃ THEO DÕI so với commit đó (file artifact mới chưa track "
-                           "không tính — chính nó là thứ đang được ghi).",
+                           "trên file ĐÃ THEO DÕI so với commit đó; `git_dirty_code` = như trên NHƯNG "
+                           "bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — không phải "
+                           "code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
         "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, "
                       f"image_size {args.image_size}" if args.mode == "worker" else
                       "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",
