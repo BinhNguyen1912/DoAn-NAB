@@ -47,17 +47,23 @@ Tiêu chí đăng ký trước (ghi trong plan, không sửa sau khi thấy số
 
 ## 📤 Output / Kết quả
 
-### Số đo thật (4 lần chạy liên tiếp, mỗi clip 900 frame, `image_size 192`, `vos_every 3`)
+### Số đo thật (mỗi clip 900 frame, `image_size 192`, `vos_every 3`)
 
-| Clip (ô chọn) | `empty_runs` (trọn đời) | **`empty_frac_window`** (200 lần gần nhất) | `drift_iou_p05` (`drift_n`) | `mask_age_p95` |
+Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.json`), không chép từ trí nhớ:
+
+| Clip (ô chọn) | `empty_runs` (trọn đời) | **`empty_frac_window`** (200 mẫu gần nhất) | `drift_iou_p05` (`drift_n`) | `mask_age_p95` |
 |---|---|---|---|---|
-| `binh1` (104,308,209,287) | **0** | **0,00** (200 mẫu) | 0,653–0,675 (200) | 229–239 ms |
-| `binh2` (200,400,300,500) | 24–40 | **0,12 / 0,13 / 0,17 / 0,20** | **0,000** (183–200) | 238–244 ms |
+| `binh1` (104,308,209,287) | **0** | **0.0** (200 mẫu) | 0.647 (200) | 234.5 ms |
+| `binh2` (200,400,300,500) | 41 | **0.205** (200 mẫu) | **0.0** (174) | 255.2 ms |
 
-- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = bb3f114`,
-  `git_dirty = true` (chính file artifact đang được ghi), `git_dirty_code = **false**`, `git_loi =
-  null`; lần đo trong artifact: `binh1` **0,00** (0/200, p05 0,653 n=200, `mask_age_p95` 228 ms),
-  `binh2` **0,14** (28 mất dấu trọn đời, p05 **0,000** n=193, 232,8 ms). Lệnh ghi trong file.
+> Năm lần chạy trước đó (mỗi lần ghi đè **cùng** một file) cho `binh2` **0,12 / 0,13 / 0,17 / 0,20 /
+> 0,205** và `drift_p05 = 0,000` **cả 5 lần**; `binh1` **0,00** cả 5 lần. Vì mọi lần ghi cùng một tên
+> file nên chỉ lần cuối còn chứng cứ — muốn giữ nhiều lần thì truyền `--out …_run<N>.json`.
+
+- Artifact cuối: `data/empty_window_2026-11-09_metrics.json` — `git_rev = d73d4b6`
+  (commit chứa code đang review), `git_dirty = false`,
+  `git_dirty_code = **false**`, `git_loi = null`.
+  Lệnh ghi trong file.
 - **Kết luận có số:** clip khoẻ cho **0/200 lần VOS mất dấu (0,00)**; clip xấu cho **0,12–0,20** và
   `p05 = 0,000` ⇒ hai lớp **tách rời hoàn toàn**, không phụ thuộc ngưỡng nhiễu (đây là phép **đếm sự
   kiện**, không phải phân vị).
