@@ -295,11 +295,72 @@ class TestOpenCvSourceHealth:
         self._patch(monkeypatch, self._Capture())            # capture rỗng = không có frame
         source = OpenCvFrameSource("0")
         source.start()
+        source._got_frame = True                             # đã từng hiện frame ⇒ dùng `STALE_S`
+        for _ in range(opencv_source.MISS_MIN):
+            assert source.read_jpeg() is None
         source._last_frame_at -= (opencv_source.STALE_S + 1.0)   # tua đồng hồ, không sleep
 
         health = source.health()
         assert health is not None and health.state is LiveState.ERROR
         assert "không trả frame" in health.message
+
+    def test_mot_lan_truot_chua_du_ket_luan_chet(self, monkeypatch):
+        """Read-timeout của nguồn (5 s) LỚN HƠN `STALE_S` ⇒ một lần trượt không được giết phiên khoẻ.
+
+        Đây là P1 của review vòng 2: `age > STALE_S` một mình thì một cú chập mạng duy nhất (hoặc
+        `read()` chạm timeout 5 s) đã làm `health()` báo `error`, `_check_health` gọi `stop()` và
+        người dùng phải bật lại phiên.
+        """
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        self._patch(monkeypatch, self._Capture([self._frame()]))
+        source = OpenCvFrameSource("0")
+        source.start()
+        assert source.read_jpeg() is not None                 # đã có frame ⇒ `_got_frame`
+        assert source.read_jpeg() is None                     # MỘT lần trượt (misses = 1)
+        source._last_frame_at -= (opencv_source.STALE_S + 2.0)
+
+        assert source.health() is None                         # chưa đủ bằng chứng
+
+        # ... rồi nguồn cấp frame trở lại ⇒ vẫn khoẻ và bộ đếm được xoá
+        source._capture.frames = [self._frame()]
+        assert source.read_jpeg() is not None
+        assert source._misses == 0
+        assert source.health() is None
+
+    def test_truot_lien_tiep_du_so_lan_thi_error(self, monkeypatch):
+        """Trượt `MISS_MIN` lần liên tiếp + quá `STALE_S` ⇒ kết luận chết (không chờ vô hạn)."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        self._patch(monkeypatch, self._Capture([self._frame()]))
+        source = OpenCvFrameSource("0")
+        source.start()
+        assert source.read_jpeg() is not None
+        for _ in range(opencv_source.MISS_MIN - 1):
+            assert source.read_jpeg() is None
+            source._last_frame_at -= (opencv_source.STALE_S + 1.0)
+            assert source.health() is None                  # còn thiếu 1 lần trượt
+        assert source.read_jpeg() is None
+
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR
+        assert f"{opencv_source.MISS_MIN} lần liên tiếp" in health.message
+
+    def test_chua_co_frame_nao_thi_dung_an_han_warmup(self, monkeypatch):
+        """Camera mới mở nhận frame chậm: dùng `WARMUP_S` cho lần đầu, không phải `STALE_S`."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        self._patch(monkeypatch, self._Capture())
+        source = OpenCvFrameSource("0")
+        source.start()
+        for _ in range(opencv_source.MISS_MIN):
+            assert source.read_jpeg() is None
+        source._last_frame_at -= (opencv_source.STALE_S + 1.0)
+        assert source.health() is None                          # vẫn trong ân hạn khởi động
+
+        source._last_frame_at -= (opencv_source.WARMUP_S + 1.0)
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR
 
     def test_file_het_ma_khong_lap_thi_stopped_chu_khong_phai_error(self, monkeypatch):
         """Hết video (file, `loop_files=False`) là phiên KẾT THÚC bình thường — không phải lỗi."""

@@ -26,12 +26,23 @@ _FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
 
 # Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. Ngưỡng 3 s nghĩa là một lần im lặng
 # **> 3 s** là kết luận (chịu được nguồn ≥ ~0,34 frame/giây; chậm hơn thế thì coi là chết).
-# So sánh: chế độ `track` đo được 114–117 ms cho ca worker chết (`proc.poll()`, đo 09-11), còn đây
+# So sánh: chế độ `track` đo được 110–111 ms cho ca worker chết (`proc.poll()`, đo 09-11), còn đây
 # là "không có tín hiệu" — phải chờ mới biết chắc.
 # ⚠️ Đo 09-11 mới làm trên relay ảnh JPEG localhost (~3,75 s); **chưa đo trên webcam/RTSP thật**, và
 # với `HttpSnapshotSource` đồng hồ 3 s chỉ bắt đầu SAU `max_misses` lần hỏng liên tiếp (nguồn giữ
 # frame cuối) — mạng "black-hole" × timeout 5 s có thể làm ảnh đứng hàng phút trước khi báo lỗi.
 STALE_S = 3.0
+
+# PHẢI có thêm dung sai "một lần trượt": `HttpVideoSource`/`RtspVideoSource` đặt read-timeout 5 s
+# (`src/video_source.py`), LỚN HƠN `STALE_S` ⇒ chỉ cần MỘT lần `read()` chạm timeout là `age` đã vượt
+# 3 s và kết luận ngay sẽ giết một phiên hoàn toàn khoẻ (review độc lập 09-11 vòng 2, P1). Vì vậy
+# chỉ kết luận khi `age > ngưỡng` **VÀ** đã trượt `MISS_MIN` lần liên tiếp — nguồn 30 Hz trượt 3 lần
+# là ~0,1 s, còn nguồn có read-timeout 5 s thì 3 lần ≈ 15 s (chấp nhận được cho một lần mạng chập).
+MISS_MIN = 3
+
+# Ân hạn cho frame ĐẦU: V4L2/RTSP có thể trả False vài giây trong lúc thiết bị chưa sẵn sàng; kết
+# luận theo `STALE_S` ngay từ giây thứ 3 sẽ báo lỗi trước khi phiên kịp hiện frame nào.
+WARMUP_S = 10.0
 
 
 class OpenCvFrameSource:
@@ -47,6 +58,9 @@ class OpenCvFrameSource:
         self._last_frame_at = None
         self._closed = False
         self._exhausted = False
+        # Dung sai "một lần trượt": số lần liên tiếp KHÔNG ra frame + đã từng có frame chưa
+        self._misses = 0
+        self._got_frame = False
 
     def start(self) -> None:
         """Mở nguồn. Ném lỗi của video_source nếu không kết nối được."""
@@ -54,6 +68,8 @@ class OpenCvFrameSource:
         self._last_frame_at = time.monotonic()
         self._closed = False
         self._exhausted = False
+        self._misses = 0
+        self._got_frame = False
 
     def read_jpeg(self) -> bytes | None:
         """Đọc 1 frame và nén JPEG; None nếu nguồn đã cạn (file không lặp) hoặc lỗi tạm thời."""
@@ -65,7 +81,10 @@ class OpenCvFrameSource:
         if frame is None:
             if self._is_file and not self._loop:
                 self._exhausted = True          # hết video, không lặp ⇒ phiên KẾT THÚC, không phải lỗi
+            self._misses += 1                   # để `health()` có dung sai "một lần trượt"
             return None
+        self._misses = 0
+        self._got_frame = True
         self._last_frame_at = time.monotonic()
         ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self._quality])
         return bytes(buffer) if ok else None
@@ -91,10 +110,16 @@ class OpenCvFrameSource:
         Ba ca, phân biệt rõ vì ba cách xử lý khác nhau ở service:
         1. chưa `start()` hoặc đã `stop()` theo lệnh ⇒ None (không phải lỗi của phiên);
         2. **file hết mà không lặp** ⇒ `STOPPED` ("nguồn đã hết") — phiên kết thúc bình thường;
-        3. **camera/RTSP/file không trả frame > `STALE_S`** hoặc mất `capture` ⇒ `ERROR`.
+        3. **camera/RTSP/file không trả frame quá lâu** (quá `WARMUP_S` nếu chưa có frame nào, quá
+           `STALE_S` nếu đã có) **và đã trượt ≥ `MISS_MIN` lần liên tiếp** hoặc mất `capture` ⇒
+           `ERROR`.
 
         Vì sao cần: chế độ `raw` trước đây không có watchdog — rút webcam (hoặc relay chết) thì
         `read_jpeg()` trả None mãi, API vẫn `running`, ảnh đứng trên UI (review 09-11, P3).
+
+        Vì sao có dung sai: read-timeout của `HttpVideoSource`/`RtspVideoSource` là **5 s**, lớn hơn
+        `STALE_S` ⇒ nếu kết luận ngay ở lần trượt đầu thì một cú chập mạng duy nhất giết phiên khoẻ
+        (review vòng 2, P1). Đổi lại, ca "mất mạng hoàn toàn" bị chậm thêm `MISS_MIN` lần đọc.
         """
         if self._closed:
             return None                     # chủ động đóng (stop/đổi phiên) — không phải lỗi
@@ -103,13 +128,15 @@ class OpenCvFrameSource:
         if self._exhausted:
             return SourceHealth(LiveState.STOPPED, "nguồn đã hết (không lặp lại)")
         if self._capture is None:
-            return SourceHealth(LiveState.ERROR, f"mất kết nối nguồn {self._source} — xem log worker")
+            return SourceHealth(LiveState.ERROR, f"mất kết nối nguồn {self._source} — xem log API")
+        limit = STALE_S if self._got_frame else WARMUP_S
         age = time.monotonic() - self._last_frame_at
-        if age > STALE_S:
+        if age > limit and self._misses >= MISS_MIN:
             kind = "file video" if self._is_file else "camera/luồng"
             return SourceHealth(
                 LiveState.ERROR,
-                f"{kind} không trả frame trong {age:.0f} s — kiểm tra nguồn/kết nối",
+                f"{kind} không trả frame trong {age:.0f} s ({self._misses} lần liên tiếp)"
+                " — kiểm tra nguồn/kết nối",
             )
         return None
 

@@ -156,8 +156,21 @@ def _one_run(base, args, live_dir):
         "tg_dong_luong_ms": (round((probe.closed_at - killed_at) * 1000, 1)
                              if probe.closed_at else None),
         "luong_dong_kieu": probe.error or "EOF (server đóng kết nối)",
-        "vuot_nguong": bool(error_at and (error_at - killed_at) > NGUONG_DANG_KY_TRUOC_S),
+        # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
+        **_verdict(error_at, killed_at, NGUONG_DANG_KY_TRUOC_S),
     }
+
+
+def _verdict(error_at, killed_at, nguong_s):
+    """(that_bai, vuot_nguong) cho một lần đo — "không phát hiện được" là THẤT BẠI, không phải đạt.
+
+    Trước đây `vuot_nguong = error_at and ...` ⇒ khi hết 15 s vẫn `running` (hỏng NẶNG NHẤT) thì
+    `False` ⇒ artifact ghi `so_lan_vuot_nguong = 0` và script thoát 0. Đúng bẫy "0/None ≠ đã đo"
+    (AGENTS §6) nên phải tách hai khái niệm: `that_bai` = không đo được phản ứng.
+    """
+    if error_at is None:
+        return True, True
+    return False, (error_at - killed_at) > nguong_s
 
 
 def _is_dirty_outside_data(porcelain: str) -> bool:
@@ -174,19 +187,26 @@ def _is_dirty_outside_data(porcelain: str) -> bool:
 
 
 def _git_provenance():
-    """(git_rev, git_dirty, git_dirty_code) — KHÔNG ném khi thiếu git/hỏng repo.
+    """(git_rev, git_dirty, git_dirty_code, git_loi) — KHÔNG ném khi thiếu git/hỏng repo.
 
     Vì sao tách hàm: nhánh lỗi từng làm `git_dirty_code` không được gán ⇒ `UnboundLocalError` nuốt
     mất cả 3 lần đo ngay trước khi ghi artifact (review độc lập 09-11, P2). Có test riêng.
+
+    `git_loi` (chuỗi lý do hoặc None): không có provenance thì artifact phải NÓI RA và script thoát
+    1 — ghi `git_rev: ""` rồi thoát 0 là "artifact trông hợp lệ" (review vòng 2, P2). Bắt rộng
+    `Exception` vì git có thể ném `UnicodeDecodeError` khi locale/tiếng Việt lạ — ném lúc đó là ném
+    SAU KHI đo xong, đúng chỗ lỗi cũ muốn bịt.
     """
     try:
         rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO_ROOT),
                              capture_output=True, text=True, check=True).stdout.strip()
         changed = subprocess.run(["git", "status", "--porcelain"], cwd=str(_REPO_ROOT),
                                  capture_output=True, text=True).stdout
-    except (OSError, subprocess.CalledProcessError):
-        return "", None, None
-    return rev, bool(changed.strip()), _is_dirty_outside_data(changed)
+    except Exception as exc:                           # noqa: BLE001 — provenance không được ném
+        return None, None, None, f"{type(exc).__name__}: {exc}"
+    if not rev:
+        return None, None, None, "git rev-parse trả rỗng"
+    return rev, bool(changed.strip()), _is_dirty_outside_data(changed), None
 
 
 class _SnapshotServer:
@@ -252,9 +272,24 @@ def _one_run_raw(base, args, snapshot_port):
         "tg_dong_luong_ms": (round((probe.closed_at - killed_at) * 1000, 1)
                              if probe.closed_at else None),
         "luong_dong_kieu": probe.error or "EOF (server đóng kết nối)",
+        # `frames` của API chỉ đếm khi NỘI DUNG frame đổi; relay phục vụ đúng MỘT file ảnh nên
+        # luôn là 0 — ghi rõ để không ai đọc thành "chưa từng có frame" (review vòng 2, P3).
+        "ghi_chu_frames": "frames đếm khung hình ĐỔI nội dung; relay phục vụ 1 ảnh tĩnh ⇒ 0 là bình "
+                          "thường, KHÔNG phải 'nguồn không ra frame'",
         # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
-        "vuot_nguong": bool(error_at and (error_at - killed_at) > args.nguong_s),
+        **_verdict(error_at, killed_at, args.nguong_s),
     }
+
+
+def _exit_code(runs, loi, git_loi) -> int:
+    """Mã thoát: 0 CHỈ KHI đo được phản ứng trong ngưỡng và có provenance (review vòng 2, P2).
+
+    Trước đây: lần đo không phát hiện được lỗi (`that_bai`) và nhánh git lỗi đều trả 0 ⇒ CI/log
+    người đọc bằng `&&` sẽ thấy "đạt" trong khi artifact hoặc không có số, hoặc không có `git_rev`.
+    """
+    if loi or git_loi:
+        return 1
+    return 1 if any(r.get("that_bai") or r.get("vuot_nguong") for r in runs) else 0
 
 
 def main() -> int:
@@ -320,7 +355,7 @@ def main() -> int:
         except subprocess.TimeoutExpired:
             server.kill()
 
-    git_rev, git_dirty, git_dirty_code = _git_provenance()
+    git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
 
     errors = [r["tg_bao_error_ms"] for r in runs if r["tg_bao_error_ms"] is not None]
     result = {
@@ -328,11 +363,13 @@ def main() -> int:
         "git_rev": git_rev,
         "git_dirty": git_dirty,
         "git_dirty_code": git_dirty_code,
+        "git_loi": git_loi,
         "ghi_chu_git_rev": "git_rev = commit chứa CODE sinh ra số; CHỈ ĐƯỢC commit thêm docs/data sau "
                            "đó (không sửa code) thì số mới tái lập được. `git_dirty` = có file nào "
                            "khác commit đó (kể cả file mới chưa track); `git_dirty_code` = như trên "
                            "NHƯNG bỏ qua `data/` (đo lại lần nữa thì chính file artifact bị sửa — "
-                           "không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`.",
+                           "không phải code bẩn). Tái lập được ⇔ `git_dirty_code == false`. "
+                           "`git_loi` khác null ⇒ KHÔNG có provenance (artifact không được trích).",
         "moi_truong": "WSL laptop CPU (Intel Iris Xe, không GPU rời), torch CPU, SAM 2.1 tiny, "
                       f"image_size {args.image_size}" if args.mode == "worker" else
                       "WSL laptop CPU, mode `raw`: relay ảnh JPEG qua HTTP (localhost)",
@@ -356,6 +393,7 @@ def main() -> int:
                                 "max": max(errors) if errors else None,
                                 "mean": round(sum(errors) / len(errors), 1) if errors else None},
             "so_lan_vuot_nguong": sum(1 for r in runs if r["vuot_nguong"]),
+            "so_lan_khong_phat_hien": sum(1 for r in runs if r.get("that_bai")),
             "so_lan_luong_khong_dong": sum(1 for r in runs if r["tg_dong_luong_ms"] is None),
             "message_mau": runs[0]["message"] if runs else "",
         },
@@ -371,9 +409,15 @@ def main() -> int:
         print(f"| {index} | {run['load_s']}s | {run['state_sau_khi_giet']} | "
               f"{run['tg_bao_error_ms']} ms | {run['tg_dong_luong_ms']} ms | {run['message']} |")
     print(f"\nGhi: {out}")
+    if git_loi:
+        print(f"[CANH BAO] không lấy được provenance git: {git_loi}")
+    thieu = [i for i, r in enumerate(runs, 1) if r.get("that_bai")]
+    if thieu:
+        print(f"[THAT BAI] không phát hiện được lỗi trong 15 s ở lần {thieu} — "
+              "lỗi nặng nhất lại từng được ghi là 'không vượt ngưỡng'")
     if error:
         print(f"[LOI] {error}")
-        return 1
+    return _exit_code(runs, error, git_loi)
     return 0
 
 

@@ -467,3 +467,60 @@ class TestDocFrameNemLoi:
         assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
         service.stop()
         assert service.status().state is LiveState.STOPPED
+
+
+class _AlwaysFailingSource:
+    """Nguồn ném lỗi Ở MỌI lần đọc và KHÔNG tự khai sức sống (không có `health()`).
+
+    Đây là tấm chắn cuối của service: adapter `FrameSource` trơn mà đọc lỗi mãi thì `_read_safely`
+    nuốt lỗi ⇒ phiên kẹt `running` với 0 frame (review độc lập 09-11 vòng 2, P3).
+    """
+
+    def __init__(self, source="0"):
+        self.source = source
+        self.reads = 0
+        self.stopped = False
+
+    def start(self):
+        pass
+
+    def read_jpeg(self):
+        self.reads += 1
+        raise RuntimeError("capture hỏng vĩnh viễn")
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestDocFrameLoiLienTuc:
+    def test_loi_lien_tuc_qua_nguong_thi_error_chu_khong_running_mai(self, monkeypatch):
+        """Nguồn không có `health()`: nếu `read_jpeg()` ném mãi thì phải thành `error` có message."""
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        service = LiveStreamService(lambda *a, **k: _AlwaysFailingSource(), target_fps=50)
+        service.start("0")
+
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0), service.status()
+        status = service.status()
+        assert "lỗi liên tiếp" in status.message
+        assert _wait(lambda: service._read_errors >= 1, timeout=2.0)
+        service.stop()
+
+    def test_doc_lai_duoc_thi_xoa_chuoi_loi(self):
+        """Lỗi TẠM THỜI (vài lần) không được tích thành `error`: đọc lại được là reset bộ đếm."""
+        from src.api.live import LiveStreamService
+
+        service = LiveStreamService(lambda *a, **k: _RaisingSource(raises=5), target_fps=50)
+        service.start("0")
+        try:
+            assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+            assert service.status().state is LiveState.RUNNING
+            assert service._read_errors == 0
+        finally:
+            service.stop()
