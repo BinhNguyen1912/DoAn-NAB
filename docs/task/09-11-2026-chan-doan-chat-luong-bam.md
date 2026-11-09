@@ -87,6 +87,16 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
   khoá vào allowlist; `test_tuoi_mask_literal_va_gom_ca_vos_ms` trước kiểm `mask_age_p95` với **10
   mẫu** — đúng loại lỗi vừa sửa, nên đổi thành: 10 mẫu ⇒ `None`, 30 mẫu ⇒ có số.
 
+### Review độc lập (§9.1)
+
+| Vòng | Ai | Phát hiện | Xử lý |
+|---|---|---|---|
+| 1 | subagent `reviewer` (đọc-only) | **P1**: nhãn UI `nhấp nháy mask: N%` in `stability × 100` — **đảo chiều** (`stability = 1,0` là *êm*), và `stability = 0` vừa là "chưa đo" vừa là giá trị bị đặt khi mask rỗng ⇒ in "0 %" đúng lúc mất dấu. P2: hằng số 30 nhân bản ở UI; chữ "LK lệch" đọc thành "không lệch"; log chép tay thay vì chép từ artifact | Sửa `100 − Math.round(...)` + 2 test (đảo lại ⇒ **đỏ**); UI bỏ hằng số, ngưỡng do backend; đổi wording; log chép lại từ artifact |
+| 2 | subagent `reviewer` | P1 trên (đọc bản **trước** khi commit nên tưởng còn) + P2: `--expect-lost` vắng ⇒ clip xấu đo thành công vẫn thoát mã 1; log mô tả copy UI cũ + số test cũ; P3: docstring "mask rỗng không vào mẫu", 2 khối `_stats_lock` liền nhau, test chỉ gọi hàm phụ (`_feed`) nên double-push vẫn xanh, `frames` ngắn không bị chấm, `mask_drops ≡ 0` không ghi chú, `git_rev` artifact (pre-rebase) không reachable | Sửa hết: chỉ chấm clip được khai + `frames` ngắn là lỗi đo; gộp 1 khối lock; docstring rõ; thêm 2 test **session-level** `empty_window_n == min(200, vos_runs)` (append 2 lần ⇒ **đỏ**); ghi chú `mask_drops`; **đo lại** artifact tại `af84285` |
+| 3 | subagent `reviewer` | (kết quả ghi ở mục "Việc cần làm tiếp" nếu còn P1/P2) | — |
+
+Race `_drift_window` (2 luồng ghi, một ngoài lock — có từ 08-11) → **ticket 17**, không nới phạm vi PR.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Ô chọn sai ⇒ số vô nghĩa**: lần đầu chạy `binh2` bằng bbox của `binh1` (104,308,209,287) cho
   `empty_runs = 0`, `p05 = 0,255` — trông như "binh2 không còn xấu". Đúng bbox của binh2
@@ -99,6 +109,12 @@ Bảng dưới chép **từ artifact** (`data/empty_window_2026-11-09_metrics.js
   vế (không mất test nào), 711 test xanh sau rebase.
 
 ## 📌 Việc cần làm tiếp (Next steps)
+- [ ] **Ticket 17**: `_drift_window` có 2 luồng ghi, một luồng ngoài `_stats_lock` ⇒ có thể
+      `deque mutated during iteration` (lỗi có từ 08-11, không phải của nhánh này).
+- [ ] API thêm `stability_n` (như `drift_n`) để người dùng API phân biệt "0 = tệ nhất" với
+      "0 = chưa đo" — hiện chỉ UI phân biệt được (note review vòng 2).
+- [ ] E2E trình duyệt đang chạy live ở `mode=raw` (`mask_fps = 0`) nên **không** render 2 dòng UI
+      mới; muốn phủ thì stub `/api/live/status` với `mask_fps > 0` (note review vòng 2).
 - [ ] **Cờ phán quyết** (`model_lost` / `drift_trend`) — ticket 14: **chờ** clip có `p05` thấp mà
       `empty_frac_window ≈ 0`; hiện chưa có nên cờ sẽ chỉ là bản sao của `empty_frac_window`.
 - [ ] **Log từng mẫu drift ra CSV + đối chứng cảnh tĩnh** — ticket 15 (để ngưỡng thành tái lập được).
