@@ -18,15 +18,33 @@ import signal
 import time
 from pathlib import Path
 
-from src.api.domain import LiveTelemetry, SourceUnavailable
+from src.api.domain import LiveState, LiveTelemetry, SourceHealth, SourceUnavailable
 from src.api.ports import FrameSource
-from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATUS_NAME
+from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATE_STOPPED, STATUS_NAME
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
 logger = logging.getLogger("doan.api.worker_source")
 
 DEFAULT_LIVE_DIR = "/dev/shm/doan-live"
 LIVE_DIR_ENV = "DOAN_LIVE_DIR"
+# `frame.jpg` đứng bao lâu thì coi là TREO (chỉ dùng cho ca "tiến trình còn sống nhưng đứng im"):
+# **15 s**, không phải 2 s. Vì sao: nhịp ghi frame HỢP LỆ có thể rất chậm — `engine.start()` chạy
+# inline trước frame tracking đầu tiên (`live_tracking.py:348`), `--vos-every 1` tắt nội suy LK nên
+# nhịp ghi = nhịp model, và `image_size 1024` ≈ 4 s/frame (README). Ngưỡng 2 s sẽ giết phiên KHOẺ.
+# Còn ca `kill -9` (ca cần ≤ 2 s) được bắt bằng `proc.poll()`, không phụ thuộc hằng số này.
+FRAME_STALE_S = 15.0
+# Nhưng nếu worker tự báo độ trễ model (`vos_ms`) thì ngưỡng phải co theo: 4 × độ trễ gần nhất.
+# (worker đang chạy 4 s/frame mà 15 s không có frame mới = đã lỡ 4 frame ⇒ mới đáng ngờ).
+FRAME_STALE_CYCLES = 4
+# Trần: một mẫu `vos_ms` bất thường (model khựng 60 s) không được nới ngưỡng lên 4 phút — quá lâu
+# để phát hiện treo thật. 120 s là mức "chắc chắn treo" cho đồ án.
+FRAME_STALE_MAX_S = 120.0
+
+# Dọn worker cũ: chờ SIGTERM rồi SIGKILL, và **chờ tới khi nó chết thật** sau SIGKILL.
+# Thiếu bước chờ cuối cùng ⇒ hàm trả về khi tiến trình còn sống nửa nhịp, test `proc.poll()`
+# chập chờn khi máy đang tải (bắt được ở lần chạy full suite 08-11).
+TERM_WAIT_S = 2.0
+KILL_WAIT_S = 1.0
 
 # File do adapter quản lý trong thư mục live (dọn trước mỗi phiên để không đọc nhầm của phiên cũ)
 PID_NAME = "worker.pid"
@@ -100,7 +118,13 @@ class WorkerFrameSource(FrameSource):
         except Exception:                 # noqa: BLE001 — không được treo khi dọn dẹp
             proc.kill()
         finally:
-            (self._out / PID_NAME).unlink(missing_ok=True)
+            # Chỉ xoá pidfile NẾU nó vẫn là của mình: `stop()` có thể chạy sau khi phiên mới đã
+            # spawn worker và ghi pidfile mới (watchdog đóng nguồn trong luồng riêng) ⇒ xoá mù
+            # sẽ làm mất pidfile của phiên mới, và lần `uvicorn --reload` sau không reap được
+            # worker mồ côi (bug đã sửa ở PR vòng đời 08-11).
+            pidfile = self._out / PID_NAME
+            if _read_pid(pidfile) == proc.pid:
+                pidfile.unlink(missing_ok=True)
 
     @property
     def label(self) -> str:
@@ -123,6 +147,52 @@ class WorkerFrameSource(FrameSource):
             lk_ms=float(status.get("lk_ms") or 0.0),
             empty_runs=int(status.get("empty_runs") or 0),
         )
+
+    # ------------------------------------------------------------------ HealthReportingSource
+
+    def health(self) -> SourceHealth | None:
+        """Worker còn sống và còn ghi frame không? None = khoẻ.
+
+        Ba tín hiệu, theo thứ tự tin cậy:
+        1. **tiến trình** (`proc.poll()`): đã thoát ⇒ phân biệt "kết thúc bình thường"
+           (`status.state == stopped`, ví dụ hết video/`stop_after_frames`) với lỗi thật;
+        2. **status.json**: worker tự báo `error` (model lỗi, nguồn frame đọc lỗi) ⇒ giữ message của nó;
+        3. **tuổi `frame.jpg`** quá `_stale_limit_s` (15 s, co theo `vos_ms` worker tự báo):
+           còn tiến trình nhưng frame đứng ⇒ treo (deadlock trong model). Không dùng ngưỡng nhỏ:
+           nhịp ghi frame hợp lệ có thể là 4 s/frame (`image_size 1024`, `vos_every=1`).
+
+        Vì sao heartbeat là mtime của `frame.jpg` chứ KHÔNG phải `ts` trong `status.json`: trong giai
+        đoạn chờ người dùng kéo ô chọn, vòng lặp ghi frame mỗi vòng nhưng **không** gọi
+        `_publish_status` (`src/live_tracking.py:342-348`) ⇒ `ts` sẽ cũ 2 phút trong khi phiên hoàn
+        toàn khoẻ, và watchdog sẽ giết phiên đúng oan.
+        """
+        proc = self._proc
+        if proc is None:
+            return None                     # chưa start (hoặc đã stop) — không phải lỗi của phiên
+        status = _read_status(self._out / STATUS_NAME)
+        state = status.get("state")
+        code = proc.poll()
+        if code is not None:
+            message = str(status.get("message") or "")
+            if state == STATE_STOPPED:
+                return SourceHealth(LiveState.STOPPED,
+                                    message or "worker đã kết thúc phiên")
+            detail = f": {message}" if message else ""
+            return SourceHealth(
+                LiveState.ERROR,
+                f"worker đã dừng (mã {code}){detail} — xem {self._log}",
+            )
+        if state == STATE_ERROR:
+            return SourceHealth(LiveState.ERROR,
+                                str(status.get("message") or f"worker báo lỗi — xem {self._log}"))
+        age = _age_s(self._out / FRAME_NAME)
+        limit = _stale_limit_s(status)
+        if age is not None and age > limit:
+            return SourceHealth(
+                LiveState.ERROR,
+                f"worker không ghi frame mới trong {age:.0f} s (treo?) — xem {self._log}",
+            )
+        return None
 
     # ------------------------------------------------------------------ nội bộ
 
@@ -167,7 +237,11 @@ class WorkerFrameSource(FrameSource):
 
     @staticmethod
     def _terminate_process(pid: int) -> None:
-        """SIGTERM rồi SIGKILL sau 2 s (không chờ quá lâu: zombie cũng tính là đã chết)."""
+        """SIGTERM, chờ `TERM_WAIT_S` rồi SIGKILL — và **chờ tới khi chết thật**.
+
+        Bản trước trả về ngay sau `killpg(SIGKILL)`; dưới tải, tiến trình còn sống thêm vài chục ms
+        ⇒ test (và `_reap_stale_worker`) thấy "vẫn sống" dù lệnh giết đã gửi.
+        """
         try:
             os.killpg(pid, signal.SIGTERM)
         except (ProcessLookupError, PermissionError):
@@ -175,15 +249,14 @@ class WorkerFrameSource(FrameSource):
                 os.kill(pid, signal.SIGTERM)
             except OSError:
                 return
-        deadline = time.time() + 2.0
-        while time.time() < deadline:
-            if not _pid_alive(pid):
-                return
-            time.sleep(0.05)
+        if _wait_pid_gone(pid, TERM_WAIT_S):
+            return
         try:
             os.killpg(pid, signal.SIGKILL)
         except (ProcessLookupError, PermissionError):
             pass
+        if not _wait_pid_gone(pid, KILL_WAIT_S):
+            logger.warning("không dọn được worker cũ pid=%s (vẫn còn sống sau SIGKILL)", pid)
 
     def _write_bbox(self, bbox) -> None:
         import json
@@ -210,6 +283,39 @@ class WorkerFrameSource(FrameSource):
         raise SourceUnavailable(
             f"worker không đưa được frame trong {self._startup_timeout:.0f}s — xem {self._log}"
         )
+
+
+def _stale_limit_s(status: dict) -> float:
+    """Ngưỡng "frame đứng bao lâu là treo", co theo độ trễ model mà worker TỰ BÁO.
+
+    Vì sao không dùng một số cố định: nhịp ghi frame hợp lệ = nhịp model khi `vos_every=1` (tắt LK)
+    hoặc trong lúc `engine.start()` chạy inline; `image_size 1024` ≈ 4 s/frame. Ngưỡng cứng 2 s sẽ
+    giết phiên khoẻ (review độc lập 09-11, P1).
+    """
+    try:
+        vos_ms = float(status.get("vos_ms") or 0.0)
+    except (TypeError, ValueError):
+        vos_ms = 0.0
+    limit = max(FRAME_STALE_S, FRAME_STALE_CYCLES * vos_ms / 1000.0)
+    return min(limit, FRAME_STALE_MAX_S)
+
+
+def _wait_pid_gone(pid: int, timeout: float) -> bool:
+    """Chờ tới khi tiến trình chết (zombie cũng tính là chết); False nếu quá `timeout`."""
+    deadline = time.time() + timeout
+    while time.time() < deadline:
+        if not _pid_alive(pid):
+            return True
+        time.sleep(0.02)
+    return not _pid_alive(pid)
+
+
+def _age_s(path: Path) -> float | None:
+    """File cũ bao nhiêu giây rồi; None nếu không có/không đọc được."""
+    try:
+        return max(0.0, time.time() - path.stat().st_mtime)
+    except OSError:
+        return None
 
 
 def _read_pid(path: Path):

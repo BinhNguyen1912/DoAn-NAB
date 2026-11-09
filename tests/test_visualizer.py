@@ -172,6 +172,27 @@ class TestGhiVideo:
         assert viz.open_recorder(str(tmp_path / "khong-the" / "x.mp4"),
                                  frame_size=(320, 240)) is False
 
+    def test_recording_chi_true_khi_da_ghi_duoc_frame(self, tmp_path):
+        """`recording` = "đã ghi frame", không phải "writer đã mở".
+
+        Vì sao cần: `run_live` chỉ chuyển mã bản H.264 khi `recording` — nếu mở writer mà chưa ghi
+        frame nào thì file rỗng, và nếu mở LỖI mà file cùng tên từ lần trước còn đó thì sẽ chuyển mã
+        bản CŨ rồi báo "phát được trên Chrome" (thành công giả, review 09-11).
+        """
+        viz = Visualizer()
+        assert viz.recording is False                       # chưa mở gì
+
+        path = tmp_path / "r.mp4"
+        assert viz.open_recorder(str(path), fps=10, frame_size=(64, 48)) is True
+        assert viz.recording is False, "mở writer chưa đủ — chưa có frame nào"
+
+        frame = np.full((48, 64, 3), 100, np.uint8)
+        viz.update(frame, TrackingResult(frame_idx=0, mask=None, bbox=(0, 0, 0, 0),
+                                         score=0.0, elapsed_ms=1.0))
+        assert viz.recording is True
+        viz.close_recorder()
+        assert viz.recording is False
+
     def test_close_recorder_khi_chua_mo_khong_crash(self):
         Visualizer().close_recorder()
 

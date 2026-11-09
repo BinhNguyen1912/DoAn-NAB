@@ -129,6 +129,19 @@ class LiveTelemetry:
 
 
 @dataclass(frozen=True)
+class SourceHealth:
+    """Kết quả kiểm tra sức sống của nguồn live: **None = khoẻ**, có giá trị = nguồn đã dừng/hỏng.
+
+    Vì sao cần: sau `start()`, worker có thể chết mà API không biết (frame.jpg đứng yên) ⇒ UI vẫn
+    báo `running` với số liệu cũ. `state` cho biết nên báo `error` (chết/hỏng) hay `stopped`
+    (nguồn kết thúc bình thường — hết video, `stop_after_frames`).
+    """
+
+    state: LiveState
+    message: str = ""
+
+
+@dataclass(frozen=True)
 class JobView:
     """Tổng hợp để tầng HTTP trả cho client (job + trạng thái + artifact + số liệu)."""
 
