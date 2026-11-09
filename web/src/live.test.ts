@@ -5,7 +5,7 @@ import { driftLine, maskRhythmLine, shownFps } from './live'
 describe('maskRhythmLine', () => {
   it('hiện đủ hai nhịp khi nguồn báo mask_fps', () => {
     const line = maskRhythmLine({
-      mask_fps: 8.64, stability: 0.962, latency_ms: 108.4, empty_runs: 0,
+      mask_fps: 8.64, stability: 0.962, stability_n: 200, latency_ms: 108.4, empty_runs: 0,
       empty_frac_window: 0, empty_window_n: 12,
     })
     // Hai lần sửa nhãn: (1) "độ ổn định" → "nhấp nháy"; (2) nhãn nhấp nháy phải là 100 − stability
@@ -17,28 +17,38 @@ describe('maskRhythmLine', () => {
 
   it('trả null khi chế độ raw (không có model)', () => {
     expect(maskRhythmLine({
-      mask_fps: 0, stability: 0, latency_ms: 0, empty_runs: 0,
+      mask_fps: 0, stability: null, stability_n: 0, latency_ms: 0, empty_runs: 0,
       empty_frac_window: null, empty_window_n: 0,
     })).toBeNull()
   })
 
-  it('stability thiếu/NaN/rỗng đều là "chưa đo", không phải "êm tuyệt đối"', () => {
-    // `stability` không có encoding "chưa đo" ở backend (`?? 0`), nên UI phải chặn cả ba ca:
-    // thiếu trường, NaN (chia 0 trong numpy), và 0 (= vừa mất dấu hoặc chưa đo).
-    for (const stability of [undefined, NaN, 0, -0.2, null] as any[]) {
-      const line = maskRhythmLine({
-        mask_fps: 8, stability, latency_ms: 1, empty_runs: 0,
-        empty_frac_window: null, empty_window_n: 0,
-      } as any)
-      expect(line).toContain('nhấp nháy mask: chưa đo')
-      expect(line).not.toContain('nhấp nháy mask: 0%')
-      expect(line).not.toMatch(/NaN/)
+  it('stability thiếu/NaN/rỗng/âm đều là "chưa đo", không phải "êm tuyệt đối"', () => {
+    // Backend giờ có encoding "chưa đo" (`stability = null` + `stability_n = 0`), nhưng UI vẫn phải
+    // chặn ca trường bị thiếu (API cũ), NaN (chia 0 trong numpy) và số âm.
+    for (const stability of [undefined, NaN, -0.2, null] as any[]) {
+      for (const stability_n of [0, 200]) {
+        const line = maskRhythmLine({
+          mask_fps: 8, stability, stability_n, latency_ms: 1, empty_runs: 0,
+          empty_frac_window: null, empty_window_n: 0,
+        } as any)
+        expect(line).toContain('nhấp nháy mask: chưa đo')
+        expect(line).not.toContain('nhấp nháy mask: 0%')
+        expect(line).not.toMatch(/NaN/)
+      }
     }
+  })
+
+  it('stability_n = 0 ⇒ "chưa đo" dù `stability` là 0 (không có mẫu nào)', () => {
+    const line = maskRhythmLine({
+      mask_fps: 8, stability: 0, stability_n: 0, latency_ms: 1, empty_runs: 0,
+      empty_frac_window: null, empty_window_n: 0,
+    })
+    expect(line).toContain('nhấp nháy mask: chưa đo')
   })
 
   it('ưu tiên tỉ lệ theo CỬA SỔ thay vì bộ đếm trọn đời (không giấu số xấu)', () => {
     const line = maskRhythmLine({
-      mask_fps: 8.6, stability: 0.7, latency_ms: 100,
+      mask_fps: 8.6, stability: 0.7, stability_n: 200, latency_ms: 100,
       empty_runs: 26, empty_frac_window: 0.112, empty_window_n: 200,
     })
     // `empty_runs` = 26 là sự việc ĐÃ QUA; con số nói "hiện tại" là 11,2 % của 200 lần gần nhất.
@@ -48,7 +58,7 @@ describe('maskRhythmLine', () => {
 
   it('chưa đủ mẫu cửa sổ thì nói rõ là số cả phiên', () => {
     const line = maskRhythmLine({
-      mask_fps: 8.6, stability: 0.7, latency_ms: 100,
+      mask_fps: 8.6, stability: 0.7, stability_n: 200, latency_ms: 100,
       empty_runs: 3, empty_frac_window: null, empty_window_n: 2,
     })
     expect(line).toContain('mất dấu (cả phiên): 3 lần')
@@ -58,20 +68,20 @@ describe('maskRhythmLine', () => {
     expect(maskRhythmLine(null)).toBeNull()
   })
 
-  it('stability = 0 KHÔNG được đọc là "nhấp nháy 0 %" (vừa mất dấu / chưa đo)', () => {
-    // `stability = 0` vừa là default "chưa đo", vừa bị gán 0 khi mask RỖNG ⇒ in "nhấp nháy 0 %"
-    // sẽ thành "êm tuyệt đối" đúng lúc model rơi vật (review 09-11, P1).
+  it('stability = 0 ĐO ĐƯỢC (stability_n > 0) ⇒ "nhấp nháy 100 %", không phải "êm tuyệt đối"', () => {
+    // `0` cũ vừa là default "chưa đo" vừa bị gán 0 khi mask RỖNG. Nay `stability_n` tách hai nghĩa:
+    // có mẫu ⇒ `0` là số đo được (mask rời nhau hoàn toàn) ⇒ 100 % nhấp nháy, KHÔNG bao giờ là 0 %.
     const line = maskRhythmLine({
-      mask_fps: 3, stability: 0, latency_ms: 70, empty_runs: 1,
+      mask_fps: 3, stability: 0, stability_n: 150, latency_ms: 70, empty_runs: 1,
       empty_frac_window: 0.2, empty_window_n: 10,
     })
-    expect(line).toContain('nhấp nháy mask: chưa đo')
+    expect(line).toContain('nhấp nháy mask: 100%')
     expect(line).not.toContain('nhấp nháy mask: 0%')
   })
 
   it('stability 1,0 (êm tuyệt đối) phải ra 0% nhấp nháy, không phải 100%', () => {
     const line = maskRhythmLine({
-      mask_fps: 8.6, stability: 1.0, latency_ms: 100, empty_runs: 0,
+      mask_fps: 8.6, stability: 1.0, stability_n: 200, latency_ms: 100, empty_runs: 0,
       empty_frac_window: 0, empty_window_n: 200,
     })
     expect(line).toContain('nhấp nháy mask: 0%')

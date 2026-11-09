@@ -98,7 +98,11 @@ class LiveTrackStats:
     vos_fps: float = 0.0          # FPS của VOS (nhịp mask thật)
     vos_ms: float = 0.0           # độ trễ suy luận gần nhất
     lk_ms: float = 0.0            # độ trễ LK gần nhất
-    stability: float = 0.0        # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy)
+    # IoU trung bình giữa hai mask VOS liên tiếp (1,0 = không nhấp nháy). `None` = CHƯA ĐO (cửa sổ
+    # rỗng) — `0,0` là số ĐO ĐƯỢC (hai mask rời nhau hoàn toàn) hoặc "đang mất dấu"; `stability_n`
+    # cho biết cửa sổ có bao nhiêu mẫu (ticket 18: trước đây `0` mang cả hai nghĩa).
+    stability: float | None = None
+    stability_n: int = 0          # số mẫu của cửa sổ IoU (0 ⇒ `stability is None`)
     stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
     drift_iou: float | None = None        # IoU(ô bao đã phát, ô bao VOS sửa lại) — độ tự nhất quán
     drift_iou_p05: float | None = None    # phân vị 5 % (đuôi xấu: lúc nội suy lệch nhất)
@@ -181,6 +185,7 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "mask_age_p95": stats.mask_age_p95,
         "age_n": stats.age_n,
         "stability": stats.stability,
+        "stability_n": stats.stability_n,
         "stability_shown": stats.stability_shown,
         "empty_runs": stats.empty_runs,
         "empty_frac_window": stats.empty_frac_window,
@@ -534,11 +539,18 @@ class LiveTrackingSession:
         self._record_drift(_bbox_iou(shown, fresh))
 
     def _record_drift(self, value) -> None:
-        """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm)."""
+        """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
+
+        `append` PHẢI trong `_stats_lock`: `_apply_drift_locked()` duyệt deque bằng `np.fromiter`
+        trong lúc giữ lock, còn `_update_stats_locked()` (luồng chính) cũng append trong lock ⇒ nếu
+        nguồn ghi này ở ngoài lock thì deque bị sửa giữa lúc duyệt ⇒
+        `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết ⇒ `state=error`
+        (ticket 17; test stress bắt được trước khi sửa).
+        """
         if value is None:
             return
-        self._drift_window.append(value)
         with self._stats_lock:
+            self._drift_window.append(value)
             self._apply_drift_locked()
 
     def _apply_drift_locked(self) -> None:
@@ -597,9 +609,11 @@ class LiveTrackingSession:
                 if len(self._vos_lost_window) >= _EMPTY_WINDOW_MIN else None)
             if not raw.any():
                 self._stats.empty_runs += 1
-                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định: đặt 0 (không giữ số cũ, không
-                # nối IoU xuyên qua khoảng mất dấu — mask trước và sau là hai chuyện khác nhau).
-                self._stats.stability = 0.0
+                # Mất dấu ⇒ KHÔNG có gì để nói về độ ổn định hiện tại: không giữ số cũ, không nối
+                # IoU xuyên qua khoảng mất dấu (mask trước và sau là hai chuyện khác nhau).
+                # Chưa có mẫu nào ⇒ `None` (CHƯA ĐO); đã có mẫu ⇒ `0,0` (số đo được: mask đang rỗng).
+                self._stats.stability = 0.0 if self._iou_window else None
+            self._stats.stability_n = len(self._iou_window)
         if not raw.any():
             self._prev_raw_mask = None
             return
@@ -609,6 +623,7 @@ class LiveTrackingSession:
             with self._stats_lock:
                 self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
                 self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
+                self._stats.stability_n = len(self._iou_window)
         self._prev_raw_mask = raw
 
     def _smooth(self, result) -> None:

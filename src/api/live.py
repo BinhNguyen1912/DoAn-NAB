@@ -96,6 +96,10 @@ class LiveStreamService:
             with self._lock:                # công bố TRƯỚC khi mở → stop() huỷ được giữa chừng
                 self._pending = candidate
                 self._label = candidate.label
+                # `LOADING`, không giữ `error` của phiên trước: nạp worker `track` mất 20–240 s, mà
+                # để `error` thì UI hiện `role="alert"` + `/api/live/stream` trả 409 "đã dừng vì lỗi"
+                # trong suốt lúc nạp bình thường (ticket 16, P3 review vòng 4).
+                self._state = LiveState.LOADING
                 self._message = f"Đang mở {candidate.label}…"
             try:
                 candidate.start()
@@ -177,7 +181,8 @@ class LiveStreamService:
                 detail = None
             if detail is not None:
                 base.update(display_fps=detail.display_fps, mask_fps=detail.mask_fps,
-                            stability=detail.stability, latency_ms=detail.latency_ms,
+                            stability=detail.stability, stability_n=detail.stability_n,
+                            latency_ms=detail.latency_ms,
                             empty_runs=detail.empty_runs,
                             empty_frac_window=detail.empty_frac_window,
                             empty_window_n=detail.empty_window_n,

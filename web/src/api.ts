@@ -118,7 +118,7 @@ export async function health(): Promise<boolean> {
 
 // --------------------------------------------------------------------------- live
 
-export type LiveState = 'stopped' | 'running' | 'error'
+export type LiveState = 'stopped' | 'loading' | 'running' | 'error'
 
 export interface LiveStatus {
   state: LiveState
@@ -131,7 +131,9 @@ export interface LiveStatus {
   /** nhịp MASK MỚI (số lần model chạy/giây); 0 khi chế độ raw hoặc nguồn không báo */
   mask_fps: number
   /** IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy); 0 khi không có */
-  stability: number
+  /** `null` = CHƯA ĐO (xem `stability_n`), khác `0` = đo được 0 / đang mất dấu */
+  stability: number | null
+  stability_n: number
   /** độ trễ suy luận gần nhất (ms) */
   latency_ms: number
   /** số lần model trả mask RỖNG (mất dấu thật) từ đầu phiên — bộ đếm TRỌN ĐỜI, không giảm */

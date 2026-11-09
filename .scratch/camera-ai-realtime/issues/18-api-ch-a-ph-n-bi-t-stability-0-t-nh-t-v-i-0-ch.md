@@ -18,3 +18,17 @@ Phát hiện khi review độc lập nhánh `feat/chan-doan-chat-luong-bam` (not
 Chưa gây lỗi hiện tại — chỉ là API không tự mô tả được.
 
 **Blocked by:** None (can start immediately)
+
+**Status:** done
+
+- [x] Cửa sổ rỗng ⇒ `stability is None` + `stability_n == 0` (test `TestStabilityCoEncodingChuaDo`)
+- [x] Mất dấu khi đã có mẫu ⇒ `stability == 0.0` + `stability_n > 0`
+- [x] `None` sống sót worker → adapter → domain → route → JSON (`test_stability_none_va_0_0_khac_nhau`)
+- [x] UI: `stability_n > 0` mới in số ⇒ `0,0` đo được in "nhấp nháy 100 %", `None` in "chưa đo" (3 test vitest)
+- [x] `./run test` + `./run webtest` + `./run e2e` xanh
+
+## Đã làm (10-11-2026)
+- `src/live_tracking.py`: `stability: float | None` + `stability_n`; cửa sổ rỗng ⇒ `None`.
+- adapter → `LiveTelemetry`/`LiveStatus` → schema (`float | None`) → `api.ts` → `live.ts`
+  (`stability_n > 0` mới in số ⇒ `0,0` đo được in "nhấp nháy 100 %", không phải "chưa đo").
+- Test: 3 test `live_tracking` (None/0,0/`n`), 1 test API (`None` ≠ `0,0` qua cả chuỗi), 3 test vitest.

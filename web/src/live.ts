@@ -6,7 +6,7 @@
  */
 import type { LiveStatus } from './api'
 
-type Rhythm = Pick<LiveStatus, 'mask_fps' | 'stability' | 'latency_ms' | 'empty_runs'
+type Rhythm = Pick<LiveStatus, 'mask_fps' | 'stability' | 'stability_n' | 'latency_ms' | 'empty_runs'
   | 'empty_frac_window' | 'empty_window_n'>
 
 /** Dòng mô tả nhịp mask; `null` khi nguồn không báo (chế độ raw / webcam thường).
@@ -23,8 +23,13 @@ type Rhythm = Pick<LiveStatus, 'mask_fps' | 'stability' | 'latency_ms' | 'empty_
 export function maskRhythmLine(status: Rhythm | null | undefined): string | null {
   if (!status || !(status.mask_fps > 0)) return null
   const fps = status.mask_fps.toFixed(1)
-  const stability = status.stability ?? 0
-  const flicker = stability > 0 ? `nhấp nháy mask: ${100 - Math.round(stability * 100)}%`
+  // `stability` giờ có encoding "chưa đo": `null` (+ `stability_n = 0`). `0` là số ĐO ĐƯỢC
+  // (hai mask rời nhau) ⇒ phải in "nhấp nháy 100 %", không được nói "chưa đo" (ticket 18).
+  const soOnDinh = status.stability
+  const coSoOnDinh = Number.isFinite(soOnDinh) && (soOnDinh as number) >= 0
+    && (status.stability_n ?? 0) > 0
+  const flicker = coSoOnDinh
+    ? `nhấp nháy mask: ${100 - Math.round((soOnDinh as number) * 100)}%`
     : 'nhấp nháy mask: chưa đo'
   const latency = Math.round(status.latency_ms)
   let lost = ''

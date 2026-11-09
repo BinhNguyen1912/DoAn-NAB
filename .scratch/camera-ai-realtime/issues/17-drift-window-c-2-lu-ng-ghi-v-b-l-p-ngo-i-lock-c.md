@@ -13,8 +13,12 @@ Cách sửa: đưa `append` của `_record_drift` vào trong `_stats_lock` (cùn
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** done
 
-- [ ] Chỉ còn MỘT chỗ ghi `_drift_window` và mọi lần ghi đều dưới `_stats_lock`
-- [ ] Test stress: 2 thread gọi `_record_drift` + 1 thread đọc `_apply_drift_locked` 1.000 vòng, không ném `RuntimeError` (trước khi sửa phải đỏ)
-- [ ] `./run test` + `./run testall` xanh, không chậm thêm quá 5 %
+- [x] Chỉ còn MỘT chỗ ghi `_drift_window` và mọi lần ghi đều dưới `_stats_lock`
+- [x] Test stress: 2 thread gọi `_record_drift` + 1 thread đọc `_apply_drift_locked` 1.000 vòng, không ném `RuntimeError` (trước khi sửa phải đỏ)
+- [x] `./run test` + `./run testall` xanh, không chậm thêm quá 5 %
+
+
+## Đã làm (10-11-2026)
+- Nhánh `feat/chan-doan-chat-luong-bam`: sửa + test bắt hồi quy (xem mục tick ở trên).

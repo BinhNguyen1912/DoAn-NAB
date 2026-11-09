@@ -30,6 +30,7 @@ class LiveState(str, Enum):
     """Trạng thái của một phiên phát trực tiếp."""
 
     STOPPED = "stopped"
+    LOADING = "loading"      # đang mở nguồn/nạp model — KHÔNG phải lỗi, KHÔNG phải đang chạy
     RUNNING = "running"
     ERROR = "error"
 
@@ -110,7 +111,10 @@ class LiveStatus:
     measured_fps: float = 0.0
     display_fps: float = 0.0    # FPS PHÁT do CHÍNH worker đo (nguồn gốc của mọi con số trong báo cáo)
     mask_fps: float = 0.0       # nhịp MASK MỚI (số lần model thật sự chạy/giây)
-    stability: float = 0.0      # IoU trung bình giữa hai mask liên tiếp (1,0 = không nhấp nháy)
+    # IoU trung bình giữa hai mask liên tiếp (1,0 = không nhấp nháy). `None` = CHƯA ĐO;
+    # `stability_n` = số mẫu của cửa sổ (0 ⇒ None). Đừng đổi `None` thành 0 (AGENTS §6).
+    stability: float | None = None
+    stability_n: int = 0
     latency_ms: float = 0.0     # độ trễ suy luận gần nhất
     empty_runs: int = 0         # số lần model trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
     empty_frac_window: float | None = None  # tỉ lệ mất dấu trong 200 lần VOS gần nhất (None = chưa đủ)
@@ -129,7 +133,8 @@ class LiveTelemetry:
 
     display_fps: float = 0.0
     mask_fps: float = 0.0
-    stability: float = 0.0
+    stability: float | None = None
+    stability_n: int = 0
     latency_ms: float = 0.0
     lk_ms: float = 0.0
     empty_runs: int = 0

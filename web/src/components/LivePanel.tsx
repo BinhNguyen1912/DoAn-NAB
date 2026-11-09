@@ -156,8 +156,9 @@ export function LivePanel(): JSX.Element {
         // nói cho người vận hành biết ảnh đang đứng vì lỗi, không phải vì camera chậm.
         <p className={status.state === 'error' ? 'error' : 'hint'} data-testid="live-status"
            role={status.state === 'error' ? 'alert' : undefined}>
-          Trạng thái: <strong>{status.state}</strong> · {status.message} · frame: {status.frames} · FPS
-          đo được: {displayFps}
+          Trạng thái:{' '}
+          <strong>{status.state === 'loading' ? 'đang mở…' : status.state}</strong> · {status.message} ·
+          frame: {status.frames} · FPS đo được: {displayFps}
         </p>
       )}
 

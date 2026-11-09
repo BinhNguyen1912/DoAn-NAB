@@ -56,7 +56,9 @@ class TestLiveStreamService:
     def test_nguon_khong_co_telemetry_thi_so_lieu_bang_0(self, live_service, make_frame_source):
         live_service.start("0")     # FakeFrameSource: chỉ có frame, không có số liệu chi tiết
         status = live_service.status()
-        assert (status.mask_fps, status.stability) == (0.0, 0.0)
+        assert (status.mask_fps, status.empty_runs) == (0.0, 0)
+        # Nguồn không báo `stability` ⇒ **chưa đo** (`None`), KHÔNG phải "đo được 0" (ticket 18).
+        assert status.stability is None and status.stability_n == 0
         live_service.stop()
 
     def test_stop_dong_nguon_va_xoa_frame(self, live_service, make_frame_source):
@@ -122,7 +124,8 @@ class TestLiveRoutes:
         assert set(body) == {"state", "source", "frames", "measured_fps", "display_fps",
                              # 4 trường chẩn đoán (09-11): drift + tỉ lệ mất dấu theo cửa sổ
                              "drift_p05", "drift_n", "empty_frac_window", "empty_window_n",
-                             "mask_fps", "stability", "latency_ms", "empty_runs", "message"}
+                             "mask_fps", "stability", "stability_n", "latency_ms", "empty_runs",
+                             "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
         assert live_client.get("/api/live/status").json()["state"] == "running"
@@ -802,3 +805,86 @@ class TestLiveStatusChanDoanQuaApi:
         assert body["drift_n"] == 0
         assert body["empty_frac_window"] == pytest.approx(0.112)
         assert body["empty_window_n"] == 200
+
+
+class TestMoLaiSauPhienLoi:
+    """Ticket 16: sau phiên `error`, lúc bấm Bật phát lại, API **không** được trả `error` trong khi
+    đang nạp nguồn (worker `track` mất 20–240 s) — nếu không, UI hiện `role="alert"` và
+    `/api/live/stream` trả 409 "Phiên live đã dừng vì lỗi: Đang mở …" suốt lúc nạp bình thường."""
+
+    def test_dang_mo_lai_thi_state_la_loading_khong_phai_error(self, live_client, monkeypatch):
+        import threading
+
+        created = []
+
+        def factory(*args, **kwargs):
+            item = _SlowStartSource("0", delay=0.4)
+            created.append(item)
+            return item
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
+
+        # Phiên trước: kết thúc bằng `error` (worker chết) — đúng ca người dùng bấm Bật lại.
+        live_client.post("/api/live/start", json={"source": "0"})
+        created[-1].release.set() if created else None
+        live_client.app.state.live.stop()
+        with live_client.app.state.live._lock:            # mô phỏng watchdog đã báo lỗi
+            live_client.app.state.live._state = LiveState.ERROR
+            live_client.app.state.live._message = "worker dừng (mã 1)"
+
+        # Bật lại: giữ `start()` trong lúc đang nạp để đọc trạng thái giữa chừng.
+        errors, done = [], threading.Event()
+
+        def _post():
+            _try(lambda: live_client.post("/api/live/start", json={"source": "0"}), errors)
+            done.set()
+
+        worker = threading.Thread(target=_post)
+        worker.start()
+        assert created[-1].entered.wait(timeout=5), "start() chưa vào nguồn"
+
+        status = live_client.get("/api/live/status").json()
+        assert status["state"] == "loading", f"state = {status['state']} (phải 'loading')"
+        assert status["state"] != "error", "đang nạp bình thường mà báo lỗi ⇒ UI hiện role=alert"
+
+        stream = live_client.get("/api/live/stream")
+        assert stream.status_code == 409
+        chi_tiet = stream.json()["detail"]
+        assert "đã dừng vì lỗi" not in chi_tiet, f"stream báo lỗi giả: {chi_tiet}"
+        assert "Đang mở" in chi_tiet
+
+        created[-1].release.set()
+        worker.join(timeout=10)
+        assert done.is_set() and not errors
+
+
+class TestStabilityNoneDiQuaCaChuoi:
+    """Ticket 18: `stability = None` (chưa đo) phải sống sót worker → adapter → domain → route →
+    JSON. Bẫy đã gặp 3 lần trong repo: `float(x or 0.0)` biến "chưa đo" thành "đo được 0"."""
+
+    def test_stability_none_va_0_0_khac_nhau(self, live_client, monkeypatch):
+        from src.api.domain import LiveTelemetry
+
+        class _KhongDoDuoc(FakeFrameSource):
+            def telemetry(self):
+                return LiveTelemetry(display_fps=30.0, mask_fps=8.0, stability=None, stability_n=0)
+
+        class _DoDuoc0(FakeFrameSource):
+            def telemetry(self):
+                return LiveTelemetry(display_fps=30.0, mask_fps=8.0, stability=0.0, stability_n=150)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _KhongDoDuoc("0"))
+        live_client.post("/api/live/start", json={"source": "0"})
+        chua_do = live_client.get("/api/live/status").json()
+        live_client.app.state.live.stop()
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: _DoDuoc0("0"))
+        live_client.post("/api/live/start", json={"source": "0"})
+        do_duoc = live_client.get("/api/live/status").json()
+        live_client.app.state.live.stop()
+
+        assert chua_do["stability"] is None and chua_do["stability_n"] == 0
+        assert do_duoc["stability"] == 0.0 and do_duoc["stability_n"] == 150, \
+            "0,0 ĐO ĐƯỢC không được biến thành null (và ngược lại)"
