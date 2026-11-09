@@ -53,21 +53,24 @@
 ## 📤 Output / Kết quả
 
 ### Số đo thật (worker thật, `kill -9` giữa phiên, 3 lần)
-`data/watchdog_2026-11-09_metrics.json` — `git_rev = cdcd1f5`, `git_dirty = false`
-(đo lại SAU **cả hai vòng** review, để `git_rev` đúng là commit chứa code),
-lệnh: `python scripts/measure_watchdog.py --lan 3`, clip `data/binh1.mp4`, `image_size 192`,
-`vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
+`data/watchdog_2026-11-09_metrics.json` — `git_rev = 4e9248c`, `git_dirty_code = false`,
+`do_luc = 2026-11-09T21:39:54`,
+lệnh: `python scripts/measure_watchdog.py --mode worker --lan 3`, clip `data/binh1.mp4`,
+`image_size 192`, `vos_every 3`, laptop CPU (Iris Xe, torch CPU, SAM 2.1 tiny):
 
 | Lần | nạp phiên | state sau kill | **báo `error`** | **đóng luồng MJPEG** | message |
 |---|---|---|---|---|---|
-| 1 | 4,2 s | `error` | **91,3 ms** | 92,6 ms | worker đã dừng (mã -9) — xem worker.log |
-| 2 | 4,3 s | `error` | **111,2 ms** | 105,4 ms | worker đã dừng (mã -9) — xem worker.log |
-| 3 | 4,2 s | `error` | **110,4 ms** | 96,9 ms | worker đã dừng (mã -9) — xem worker.log |
+| 1 | 3,4 s | `error` | **110,3 ms** | 101,0 ms | worker đã dừng (mã -9) — xem worker.log |
+| 2 | 3,3 s | `error` | **110,5 ms** | 100,2 ms | worker đã dừng (mã -9) — xem worker.log |
+| 3 | 3,4 s | `error` | **110,0 ms** | 107,5 ms | worker đã dừng (mã -9) — xem worker.log |
+
+> ⚠️ Bảng này **thay thế** bảng 91,3/111,2/110,4 ms của lần đo trên `git_rev = cdcd1f5` trước đó
+> (artifact đã bị ghi đè khi đo lại — đừng trích số cũ, xem mục "Bổ sung 21:30").
 
 **Ngưỡng đăng ký trước: ĐẠT** — cả hai mốc plan ghi (mục nghiệm thu **≤ 5 s**, dòng ticket
-**≤ 2 s**): chậm nhất 111,2 ms, 0/3 lần vượt; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
-**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 91–111 ms là độ trễ kiểm tra 0,2 s
-cộng nhịp poll 0,02 s.
+**≤ 2 s**): chậm nhất 110,5 ms, 0/3 lần vượt; 3/3 lần luồng đóng (0/3 lần treo). Đây là phép đo
+**ngưỡng**, không phải so A/B nên không cần ngưỡng nhiễu; độ tản 110,0–110,5 ms là độ trễ kiểm tra
+0,2 s cộng nhịp poll 0,02 s.
 
 ⚠️ **Con số này CHỈ đúng cho ca "tiến trình chết"** (bắt bằng `proc.poll()`). Ca khác — worker **còn
 sống nhưng treo** (deadlock model) — phát hiện chậm hơn nhiều: **~15 s** (ngưỡng `max(15 s, 4 ×
@@ -115,7 +118,7 @@ vos_ms)`, trần 120 s). Cấm trích "watchdog phản ứng trong 0,1 s" cho ca
     hợp lệ: `image_size 1024` ≈ 4 s/frame, `vos_every=1` (tắt LK) ⇒ nhịp ghi = nhịp model, và
     `engine.start()` chạy **inline** trước frame đầu ⇒ watchdog sẽ **giết phiên khoẻ**. Sửa: ngưỡng
     `max(15 s, 4 × vos_ms)`; ca `kill -9` vẫn ≤ 2 s vì bắt bằng `proc.poll()`, không dùng ngưỡng này
-    (số đo lại ở trên không đổi: 96–114 ms). Thêm 3 test canh false-positive.
+    (số đo lại ở trên không đổi: 110,0–110,5 ms). Thêm 3 test canh false-positive.
   - **P1-2 (nặng, đúng):** `_finish_recording` (ffmpeg chạy **im lặng**, timeout 300 s) được gọi
     **trước** `_finish_metrics`; Ctrl+C lần hai lúc chờ ffmpeg (`KeyboardInterrupt ⊄ Exception`) ⇒
     **mất CSV/summary** — tái phạm bảo đảm "Ctrl+C không mất metrics" (18-10). Sửa: `_finish_outputs`
