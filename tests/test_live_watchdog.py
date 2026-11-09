@@ -524,3 +524,79 @@ class TestDocFrameLoiLienTuc:
             assert service._read_errors == 0
         finally:
             service.stop()
+
+
+class _FailThenWorkSource:
+    """Ném lỗi đúng `raises` lần rồi trả frame — dùng để kiểm bộ đếm lỗi có reset theo phiên."""
+
+    def __init__(self, source="0", *, raises=1):
+        self.source = source
+        self._left = raises
+        self.stopped = False
+        self._seq = 0
+
+    def start(self):
+        pass
+
+    def read_jpeg(self):
+        if self._left > 0:
+            self._left -= 1
+            raise RuntimeError("capture hỏng")
+        self._seq += 1
+        return b"\xff\xd8ok#" + str(self._seq).encode()
+
+    def stop(self):
+        self.stopped = True
+
+    @property
+    def label(self):
+        return f"giả:{self.source}"
+
+
+class TestBoDemLoiDocTheoPhien:
+    def test_bo_dem_loi_doc_khong_ro_tu_phien_truoc(self, monkeypatch):
+        """P1 vòng 3: `_read_errors`/`_read_error_since` để rò qua `start()` ⇒ lần đọc lỗi ĐẦU TIÊN
+        của phiên mới thấy `stuck_s` hàng chục giây ⇒ give-up ngay, giết phiên khoẻ.
+
+        Kịch bản thật: phiên A chết vì give-up (lần đọc cuối luôn ném ⇒ `_read_errors ≥ 1`), người
+        dùng bật lại (phiên B) và nguồn trượt MỘT lần ⇒ nếu không reset, B bị `error` oan.
+        """
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        dying = _AlwaysFailingSource()
+        service = LiveStreamService(lambda *a, **k: dying, target_fps=50)
+        service.start("0")
+        assert _wait(lambda: service.status().state is LiveState.ERROR, timeout=3.0)
+        service.stop()
+        # Tua đồng hồ: người dùng thật bật lại sau vài chục giây, không phải sau 10 ms. Không tua
+        # thì test vô nghĩa (mốc rò cũ cách hiện tại ~0 s < mọi ngưỡng).
+        service._read_error_since = time.monotonic() - 30.0
+
+        # Phiên B: nguồn chỉ trượt 1 lần rồi chạy bình thường — phải KHỎE. Ngưỡng give-up trả về
+        # mặc định để test đo đúng thứ cần đo (rò `_read_error_since`), không phải ngưỡng 0.
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 5.0)
+        healthy = _FailThenWorkSource(raises=1)
+        service._make_source = lambda *a, **k: healthy      # noqa: SLF001 — test bơm nguồn giả
+        service.start("0")
+        try:
+            assert _wait(lambda: service.status().frames >= 1, timeout=3.0), service.status()
+            assert service.status().state is LiveState.RUNNING
+            assert service._read_errors == 0
+        finally:
+            service.stop()
+
+    def test_give_up_dong_nguon_de_lan_sau_mo_duoc(self, monkeypatch):
+        """Đóng nguồn ngay khi give-up (như `_check_health`) — nếu không, thiết bị bị giữ."""
+        from src.api import live as live_module
+        from src.api.live import LiveStreamService
+
+        monkeypatch.setattr(live_module, "_READ_ERROR_GIVE_UP_S", 0.0)
+        source = _AlwaysFailingSource()
+        service = LiveStreamService(lambda *a, **k: source, target_fps=50)
+        service.start("0")
+        try:
+            assert _wait(lambda: source.stopped, timeout=3.0), "give-up phải đóng nguồn"
+        finally:
+            service.stop()

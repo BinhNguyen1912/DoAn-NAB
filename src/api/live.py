@@ -121,6 +121,11 @@ class LiveStreamService:
                     self._latest = None
                     self._frames = 0
                     self._stamps.clear()
+                    # PHẢI reset bộ đếm lỗi đọc theo TỪNG phiên: để rò từ phiên trước thì lần đọc
+                    # lỗi ĐẦU TIÊN của phiên mới thấy `stuck_s` = hàng chục giây ⇒ give-up ngay và
+                    # giết phiên khoẻ sau một lỗi tạm thời (review độc lập vòng 3, P1).
+                    self._read_errors = 0
+                    self._read_error_since = None
                     self._label = candidate.label
                     self._state = LiveState.RUNNING
                     self._message = f"Đang phát từ {candidate.label}"
@@ -257,7 +262,7 @@ class LiveStreamService:
         try:
             data = source.read_jpeg()
         except Exception as exc:                       # noqa: BLE001 — không được làm sập thread
-            self._note_read_error(generation, exc)
+            self._note_read_error(source, generation, exc)
             return None
         if self._read_errors:
             with self._lock:
@@ -266,7 +271,7 @@ class LiveStreamService:
                     self._read_error_since = None
         return data
 
-    def _note_read_error(self, generation: int, exc: BaseException) -> None:
+    def _note_read_error(self, source: FrameSource, generation: int, exc: BaseException) -> None:
         """Ghi nhận một lần `read_jpeg()` ném lỗi — có đếm, có ngưỡng, không xả log 30 Hz.
 
         Vì sao cần ngưỡng: `_read_safely` nuốt lỗi để thread không chết, nhưng nếu nguồn *không*
@@ -293,6 +298,12 @@ class LiveStreamService:
             logger.warning("đọc frame từ %s thất bại %d lần liên tiếp: %s", label, count, exc)
         if should_fail:
             logger.error("nguồn live lỗi (%s): %s", label, self._message)
+            # Đóng nguồn ngay (NGOÀI `_lock`): nguồn còn giữ webcam/thiết bị thì lần "Bật phát"
+            # sau sẽ không mở được. Cùng lý do như `_check_health` (review vòng 3, P3).
+            try:
+                source.stop()
+            except Exception:                          # noqa: BLE001 — dọn dẹp lỗi không được ném
+                logger.warning("đóng nguồn live sau khi give-up gặp lỗi", exc_info=True)
 
     def _check_health(self, source: FrameSource, generation: int) -> bool:
         """Nguồn đã chết/treo/kết thúc? True = thread đọc phải dừng.

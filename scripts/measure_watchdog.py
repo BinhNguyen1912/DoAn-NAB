@@ -35,6 +35,10 @@ if str(_REPO_ROOT) not in sys.path:
 
 NGUONG_DANG_KY_TRUOC_S = 2.0     # plan 08-11: API phải chuyển `error` ≤ 2 s sau khi worker chết
 POLL_S = 0.02
+# Bao lâu thì kết luận "KHÔNG phát hiện được lỗi" (thất bại). Phải khai theo mode: mode `worker`
+# bắt bằng `proc.poll()` nên chỉ cần 10 s; mode `raw` phải chờ `STALE_S` 3 s + `max_misses` của
+# nguồn nên để 15 s. Trước đây con số 15 s bị hardcode cả trong thông báo của mode `worker`.
+WAIT_S = {"worker": 10.0, "raw": 15.0}
 
 
 def _get(base, path, timeout=5.0):
@@ -135,7 +139,7 @@ def _one_run(base, args, live_dir):
     os.kill(pid, signal.SIGKILL)
     error_at = None
     message = ""
-    while time.perf_counter() - killed_at < 10.0:
+    while time.perf_counter() - killed_at < WAIT_S["worker"]:
         status = _get(base, "/api/live/status")
         if status.get("state") != "running":
             error_at = time.perf_counter()
@@ -157,7 +161,7 @@ def _one_run(base, args, live_dir):
                              if probe.closed_at else None),
         "luong_dong_kieu": probe.error or "EOF (server đóng kết nối)",
         # Ngưỡng đăng ký trước KHÁC nhau cho hai ca (xem docstring đầu file)
-        **_verdict_dict(error_at, killed_at, NGUONG_DANG_KY_TRUOC_S),
+        **_verdict_dict(error_at, killed_at, args.nguong_s),
     }
 
 
@@ -170,7 +174,7 @@ def _verdict_dict(error_at, killed_at, nguong_s) -> dict:
 def _verdict(error_at, killed_at, nguong_s):
     """(that_bai, vuot_nguong) cho một lần đo — "không phát hiện được" là THẤT BẠI, không phải đạt.
 
-    Trước đây `vuot_nguong = error_at and ...` ⇒ khi hết 15 s vẫn `running` (hỏng NẶNG NHẤT) thì
+    Trước đây `vuot_nguong = error_at and ...` ⇒ khi hết `WAIT_S` mà vẫn `running` (hỏng NẶNG NHẤT) thì
     `False` ⇒ artifact ghi `so_lan_vuot_nguong = 0` và script thoát 0. Đúng bẫy "0/None ≠ đã đo"
     (AGENTS §6) nên phải tách hai khái niệm: `that_bai` = không đo được phản ứng.
     """
@@ -206,8 +210,10 @@ def _git_provenance():
     try:
         rev = subprocess.run(["git", "rev-parse", "HEAD"], cwd=str(_REPO_ROOT),
                              capture_output=True, text=True, check=True).stdout.strip()
+        # `check=True` cũng cho lệnh status: mã ≠ 0 (index.lock, quyền, hook) mà vẫn đọc
+        # `stdout == ""` thì artifact ghi "sạch" ⇒ trông tái lập được (review vòng 3, P2).
         changed = subprocess.run(["git", "status", "--porcelain"], cwd=str(_REPO_ROOT),
-                                 capture_output=True, text=True).stdout
+                                 capture_output=True, text=True, check=True).stdout
     except Exception as exc:                           # noqa: BLE001 — provenance không được ném
         return None, None, None, f"{type(exc).__name__}: {exc}"
     if not rev:
@@ -256,7 +262,7 @@ def _one_run_raw(base, args, snapshot_port):
         server.stop()                       # "rút camera": từ đây nguồn không trả frame nữa
 
         error_at, message = None, ""
-        while time.perf_counter() - killed_at < 15.0:
+        while time.perf_counter() - killed_at < WAIT_S["raw"]:
             status = _get(base, "/api/live/status")
             if status.get("state") != "running":
                 error_at = time.perf_counter()
@@ -295,6 +301,8 @@ def _exit_code(runs, loi, git_loi) -> int:
     """
     if loi or git_loi:
         return 1
+    if not runs:
+        return 1                     # `--lan 0`: không có lần đo nào — "0/None ≠ đã đo"
     return 1 if any(r.get("that_bai") or r.get("vuot_nguong") for r in runs) else 0
 
 
@@ -323,7 +331,7 @@ def main() -> int:
     if args.nguong_s is None:
         # worker: `proc.poll()` nên phải nhanh (plan 08-11 ghi ≤ 2 s). raw: chỉ biết qua "không có
         # frame" ⇒ ngưỡng là STALE_S 3 s (+ chờ mạng), đăng ký trước 5 s.
-        args.nguong_s = 2.0 if args.mode == "worker" else 5.0
+        args.nguong_s = (NGUONG_DANG_KY_TRUOC_S if args.mode == "worker" else 5.0)
     snapshot_port = args.port + 1
 
     if args.out:
@@ -419,12 +427,11 @@ def main() -> int:
         print(f"[CANH BAO] không lấy được provenance git: {git_loi}")
     thieu = [i for i, r in enumerate(runs, 1) if r.get("that_bai")]
     if thieu:
-        print(f"[THAT BAI] không phát hiện được lỗi trong 15 s ở lần {thieu} — "
+        print(f"[THAT BAI] không phát hiện được lỗi trong {WAIT_S[args.mode]:.0f} s ở lần {thieu} — "
               "lỗi nặng nhất lại từng được ghi là 'không vượt ngưỡng'")
     if error:
         print(f"[LOI] {error}")
     return _exit_code(runs, error, git_loi)
-    return 0
 
 
 if __name__ == "__main__":

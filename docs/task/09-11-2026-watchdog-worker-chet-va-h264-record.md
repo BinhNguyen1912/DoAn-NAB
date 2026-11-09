@@ -118,7 +118,8 @@ vos_ms)`, trần 120 s). Cấm trích "watchdog phản ứng trong 0,1 s" cho ca
     hợp lệ: `image_size 1024` ≈ 4 s/frame, `vos_every=1` (tắt LK) ⇒ nhịp ghi = nhịp model, và
     `engine.start()` chạy **inline** trước frame đầu ⇒ watchdog sẽ **giết phiên khoẻ**. Sửa: ngưỡng
     `max(15 s, 4 × vos_ms)`; ca `kill -9` vẫn ≤ 2 s vì bắt bằng `proc.poll()`, không dùng ngưỡng này
-    (số đo lại ở trên không đổi: 110,0–110,5 ms). Thêm 3 test canh false-positive.
+    (số đo lại xem bảng ở mục "Bổ sung 22:40"; bộ số cũ trong file đã bị gỡ). Thêm 3 test canh
+    false-positive.
   - **P1-2 (nặng, đúng):** `_finish_recording` (ffmpeg chạy **im lặng**, timeout 300 s) được gọi
     **trước** `_finish_metrics`; Ctrl+C lần hai lúc chờ ffmpeg (`KeyboardInterrupt ⊄ Exception`) ⇒
     **mất CSV/summary** — tái phạm bảo đảm "Ctrl+C không mất metrics" (18-10). Sửa: `_finish_outputs`
@@ -250,7 +251,8 @@ Làm 3 P3 mà vòng review 09-11 đã đẩy sang Next steps (không để nợ 
 
 ### Review độc lập vòng 2 (agent `reviewer`, chỉ đọc, phạm vi `git diff origin/main..HEAD`)
 Kết luận: **chưa merge ngay — merge được sau khi sửa 2 P1** (0 P0). Bản sửa vòng 1 được xác nhận
-**thật sự đóng lỗ hổng**, không phải làm test xanh (số 3,73–3,76 s tái lập được từ code: 20 miss ×
+**thật sự đóng lỗ hổng**, không phải làm test xanh (số `raw` 3,73–3,76 s **của lần đo lúc review**
+tái lập được từ code: 20 miss ×
 2 lần fetch @30 Hz ≈ 0,6–0,7 s + `STALE_S` 3 s). Reviewer cũng tự khai giới hạn: phiên review không
 chạy được `git diff`, nên đối chiếu theo ngữ nghĩa code + `.git/logs/refs/heads/…`.
 
@@ -288,12 +290,12 @@ connection-refused trên localhost.
 - Artifact: `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` —
   cả hai có `git_rev = 09e622c`, `git_dirty_code = false`, `git_loi = null`,
   `so_lan_khong_phat_hien = 0`.
-- Mode `raw` chậm hơn ~0,02 s so với lần đo trước (3,76 s vs 3,73–3,76 s) — **không phân biệt được**
-  về mặt ngưỡng (cùng cấu hình, độ tản lần này 12 ms); nguyên nhân hiển thị ngay trong message:
+- Mode `raw` nay là **3,76–3,77 s** (lần đo cũ trên code trước khi sửa review vòng 2 đã bị ghi đè —
+  đừng trích số cũ); nguyên nhân chậm hơn ~0,7 s so với `STALE_S` hiển thị ngay trong message:
   `91–92 lần liên tiếp` không ra frame, tức là `MISS_MIN` không phải nút chặn ở ca relay (đồng hồ
   `STALE_S` mới là nút chặn). Đừng trích "3 s" — số đúng là **~3,76 s** gồm `max_misses` của nguồn.
-- Mode `worker` tản rộng hơn (94–115 ms so với 110–111 ms lần trước) — cùng cơ chế (độ trễ kiểm tra
-  0,2 s + poll 0,02 s), chênh lệch nằm trong độ tản giữa các lần chạy.
+- Mode `worker` tản 94–115 ms (3 lần) — cùng cơ chế (độ trễ kiểm tra 0,2 s + poll 0,02 s), chênh
+  lệch nằm trong độ tản giữa các lần chạy; mọi lần đều ≪ ngưỡng 2 s.
 
 ### Kiểm tra
 - `./run lint` ✓ · `./run test` **686 passed**, 5 deselected (~54 s)

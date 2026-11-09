@@ -668,3 +668,53 @@ class TestTheHePhien:
         assert live_service.latest_jpeg() is None
         time.sleep(0.5)                  # đủ để thread cũ (nếu còn sống) ghi lại
         assert live_service.latest_jpeg() is None, "thread của phiên cũ ghi lại frame sau khi dừng"
+
+
+class TestCaptureNemLoi:
+    """`capture.read()` NÉM (cv2.error khi capture hỏng) vẫn phải được đếm là một lần trượt."""
+
+    class _RaisingCapture:
+        def read(self):
+            raise RuntimeError("cv2.error: capture hỏng")
+
+        def close(self):
+            pass
+
+    def test_read_nem_loi_van_bao_error_sau_nguong(self, monkeypatch):
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        source = OpenCvFrameSource("0")
+
+        class _Opener:
+            def open(self):
+                return TestCaptureNemLoi._RaisingCapture()
+
+        monkeypatch.setattr(opencv_source, "open_video_source", lambda *a, **k: _Opener())
+        source.start()
+        for _ in range(opencv_source.MISS_MIN):
+            assert source.read_jpeg() is None            # mỗi lần ném = một lần trượt
+        source._last_frame_at -= (opencv_source.WARMUP_S + 1.0)
+
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR
+
+    def test_imencode_hong_thi_khong_coi_la_co_frame(self, monkeypatch):
+        """`imencode` trả False mãi ⇒ `health()` không được báo khoẻ (UI không thấy frame nào)."""
+        from src.api.adapters import OpenCvFrameSource, opencv_source
+
+        capture = TestOpenCvSourceHealth._Capture([TestOpenCvSourceHealth._frame()])
+
+        class _Opener:
+            def open(self):
+                return capture
+
+        monkeypatch.setattr(opencv_source, "open_video_source", lambda *a, **k: _Opener())
+        monkeypatch.setattr(opencv_source.cv2, "imencode", lambda *a, **k: (False, None))
+        source = OpenCvFrameSource("0")
+        source.start()
+        for _ in range(opencv_source.MISS_MIN):
+            assert source.read_jpeg() is None
+        source._last_frame_at -= (opencv_source.WARMUP_S + 1.0)
+
+        health = source.health()
+        assert health is not None and health.state is LiveState.ERROR

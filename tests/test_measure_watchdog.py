@@ -139,3 +139,26 @@ def test_verdict_dict_trai_duoc_vao_ban_ghi_artifact():
 
     record = {"load_s": 0.1, **measure._verdict_dict(101.0, 100.0, 5.0)}
     assert record["that_bai"] is False and record["vuot_nguong"] is False
+
+
+def test_lan_0_khong_do_gi_la_that_bai():
+    """`--lan 0` sinh artifact `n = 0` (mọi phân vị null) — không được thoát 0 như thể 'đạt'."""
+    assert measure._exit_code([], None, None) == 1
+
+
+def test_git_status_tra_ma_loi_thi_bao_khong_co_provenance(monkeypatch):
+    """P2 vòng 3: `git status` lỗi (index.lock/quyền) mà không `check` ⇒ artifact ghi 'sạch'."""
+
+    def _run(cmd, **kwargs):
+        class _Result:
+            stdout = "abc123\n" if "rev-parse" in cmd else ""
+
+        if "status" in cmd and kwargs.get("check"):
+            raise subprocess.CalledProcessError(128, "git status")
+
+        return _Result()
+
+    monkeypatch.setattr(measure.subprocess, "run", _run)
+
+    rev, _, _, loi = measure._git_provenance()
+    assert rev is None and loi and "CalledProcessError" in loi

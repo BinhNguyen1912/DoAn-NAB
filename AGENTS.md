@@ -177,18 +177,24 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   kết luận ngay ở lần trượt đầu thì một cú chập mạng giết phiên khoẻ (review độc lập vòng 2, P1).
   Ân hạn frame đầu là `WARMUP_S` 10 s. Đo 09-11 trên relay ảnh JPEG localhost: **3,76–3,77 s** để
   `error`, luồng MJPEG đóng cùng lúc (`data/watchdog_raw_2026-11-09_metrics.json`, 3 lần,
-  `git_rev = 09e622c`) — **chưa đo trên webcam/RTSP thật**.
+  `git_rev = 09e622c`) — **chưa đo trên webcam/RTSP thật**. Với nguồn có read-timeout 5 s
+  (`HttpVideoSource`/`RtspVideoSource`), `MISS_MIN = 3` khiến ca "mất mạng hẳn" mất thêm ~15 s
+  (3 × 5 s) — đó là **giá phải trả** để không giết phiên khoẻ khi mạng chập; đừng trích "raw báo lỗi
+  sau ~3 s" cho mọi kiểu mất mạng.
   Với `HttpSnapshotSource` (relay): nguồn giữ frame cuối `max_misses=20` lần rồi mới trả None ⇒ đồng
   hồ 3 s chỉ bắt đầu **sau** đó; mạng "black-hole" (mỗi lần hỏng chờ hết timeout 5 s) có thể làm ảnh
   đứng hàng phút trước khi báo lỗi. Đừng nói "raw phát hiện trong 3 s" cho mọi kiểu mất mạng.
 - **`read()` treo vô hạn thì watchdog không cứu được**: `health()` chạy **cùng thread** với `read()`
   (`live.py`) nên không có nhịp kiểm nào trong lúc `read()` block (V4L2/RTSP không có read-timeout).
   Chỉ ca `read()` trả None, **ném** lỗi, hoặc nguồn tự khai `health()` là được xử lý (nay không làm
-  chết thread đọc). Nguồn **không** cài `HealthReportingSource` mà `read_jpeg()` ném liên tiếp quá
-  `_READ_ERROR_GIVE_UP_S` (5 s) thì service tự chuyển `error` — log lần đầu + mỗi 100 lần.
+  chết thread đọc). Mọi nguồn mà `read_jpeg()` ném liên tiếp quá `_READ_ERROR_GIVE_UP_S` (5 s) thì
+  service tự chuyển `error` + đóng nguồn (log lần đầu + mỗi 100 lần). Bộ đếm này **phải reset trong
+  `start()`**: để rò qua phiên thì lần lỗi đầu tiên của phiên mới thấy `stuck_s` hàng chục giây ⇒
+  giết phiên khoẻ (review độc lập vòng 3 bắt đúng).
 - **"Không phát hiện được" là THẤT BẠI, không phải "đạt"**: `scripts/measure_watchdog.py` ghi
   `that_bai` riêng khỏi `vuot_nguong` và thoát mã 1 (`so_lan_khong_phat_hien`, `git_loi`); một lần
-  chạy không có `error` trong 15 s từng bị ghi thành "0 lần vượt ngưỡng" — đúng bẫy "0/None ≠ đã đo".
+  chạy không có `error` trong **`WAIT_S` của mode** (worker 10 s, raw 15 s) từng bị ghi thành
+  "0 lần vượt ngưỡng" — đúng bẫy "0/None ≠ đã đo". `--lan 0` cũng là thất bại (`n = 0`).
 - **SAM 2 không tất định**: cùng seed, cùng video, hai lần chạy cho ô bao cuối khác nhau ⇒ chỉ so
   sánh chỉ số **trong cùng một lần chạy**.
 - **Chất lượng phân đoạn phải là mIoU mask vs GT, không phải IoU hộp bao.** Số hiện có (fixture

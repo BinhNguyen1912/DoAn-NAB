@@ -13,6 +13,7 @@ Lưu ý  : đây là NƠI DUY NHẤT của nhánh live import cv2 (qua video_sou
          sửa cho chế độ `track`).
 """
 
+import logging
 import time
 from pathlib import Path
 
@@ -20,6 +21,8 @@ import cv2
 
 from src.api.domain import LiveState, SourceHealth
 from src.video_source import open_video_source
+
+logger = logging.getLogger("doan.api.opencv_source")
 
 # Đuôi file được coi là video (để quyết định có lặp lại hay không)
 _FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
@@ -75,7 +78,15 @@ class OpenCvFrameSource:
         """Đọc 1 frame và nén JPEG; None nếu nguồn đã cạn (file không lặp) hoặc lỗi tạm thời."""
         if self._capture is None:
             return None
-        frame = self._capture.read()
+        try:
+            frame = self._capture.read()
+        except Exception as exc:                  # noqa: BLE001 — capture hỏng (cv2.error) là "trượt"
+            # `health()` kết luận bằng `_misses`, nên `read()` NÉM cũng phải được đếm như một lần
+            # trượt — nếu không, ngưỡng `_misses >= MISS_MIN` làm ca này không bao giờ báo lỗi
+            # (review độc lập vòng 3, P3).
+            self._misses += 1
+            logger.debug("đọc frame lỗi: %s", exc)
+            return None
         if frame is None and self._is_file and self._loop:
             frame = self._rewind()
         if frame is None:
@@ -83,11 +94,16 @@ class OpenCvFrameSource:
                 self._exhausted = True          # hết video, không lặp ⇒ phiên KẾT THÚC, không phải lỗi
             self._misses += 1                   # để `health()` có dung sai "một lần trượt"
             return None
+        ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self._quality])
+        if not ok:
+            # Chỉ tính là "có frame" khi THẬT SỰ ra được JPEG: `imencode` hỏng mãi mà vẫn cập nhật
+            # `_last_frame_at` sẽ làm `health()` báo khoẻ trong khi UI không thấy frame nào.
+            self._misses += 1
+            return None
         self._misses = 0
         self._got_frame = True
         self._last_frame_at = time.monotonic()
-        ok, buffer = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), self._quality])
-        return bytes(buffer) if ok else None
+        return bytes(buffer)
 
     def stop(self) -> None:
         self._closed = True
