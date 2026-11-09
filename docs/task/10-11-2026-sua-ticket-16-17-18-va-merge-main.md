@@ -55,8 +55,8 @@
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **741 passed** (5 deselected, ~63 s) — trên `main` sau merge 3 nhánh |
-| `./run testall` | **746 passed** (~184 s) |
+| `./run test` | **742 passed** (5 deselected, ~64 s) — trên `main` sau merge 3 nhánh |
+| `./run testall` | **747 passed** (~183 s) |
 | `./run webtest` | **32 passed** |
 | `npm --prefix web run build` | ✓ |
 | `./run e2e` | **PASS** |
@@ -67,11 +67,25 @@ Merge (máy không có `gh` nên làm bằng lệnh, có ghi ở đây để tá
 2. `git rebase main feat/bang-chung-camera-that` (7 commit, **không xung đột**) → merge `--no-ff`.
 3. `git rebase main feat/chan-doan-chat-luong-bam` (25 commit, **không xung đột**) → merge `--no-ff`.
    B và C cùng rẽ từ nhánh A nên phải merge **tuần tự**; sau mỗi bước chạy `./run lint` + `./run test`.
-4. Kiểm tra trên `main` sau cả 3 merge: lint ✓ · test **741** · testall **746** · webtest **32** ·
+4. Kiểm tra trên `main` sau cả 3 merge: lint ✓ · test **742** · testall **747** · webtest **32** ·
    build ✓ · e2e **PASS**.
 
 Bài học: giữ `.gitignore`/`docs/*` chỉ thêm ở **cuối** file (AGENTS §7b) nên 3 nhánh không xung đột
 — lần này `git rebase` chạy 25 commit mà không phải sửa tay dòng nào.
+
+### Review độc lập lần 2 (trước khi push `main`) — **push được**, P0/P1 = 0
+
+2 P2 (đều là lỗ hổng **test**, không phải lỗi sản phẩm) — đã sửa ngay trong cùng commit:
+
+| Mức | Phát hiện | Xử lý |
+|---|---|---|
+| P2 | Test ticket 17 gọi `_apply_drift_locked()` **ngoài** lock ⇒ chính test vi phạm bất biến nó kiểm (và có thể đỏ oan khi numpy duyệt deque trong lúc writer append) | Gọi trong `with lock`; deque tự theo dõi vẫn là thứ có răng |
+| P2 | Seam `status.json → LiveTelemetry` **không** có test cho `stability: null` / `0.0 + stability_n` ⇒ đổi `_so_hoac_none` thành `float(x or 0.0)` mà test vẫn xanh | 2 test mới (đã kiểm: đổi sang `float(... or 0.0)` ⇒ **đỏ**), fixture `TestWorkerTelemetry` thêm `stability_n` |
+| P3 | `loading` ⇒ nút **Dừng** bị disable (backend huỷ được giữa lúc nạp), **Bật phát** vẫn bật (bấm ⇒ 409 `LiveBusy` = banner lỗi giữa lúc nạp bình thường) | `LivePanel`: `Dừng` bấm được khi `loading`, `Bật phát` tắt khi `loading` |
+| P3 | `/api/live/frame` lúc `loading` trả "hãy bật phát trước" (sai ngữ cảnh) | "Đang mở phiên live — chưa có frame" |
+| P3 | `stability_shown` vẫn `float` (3 nghĩa) | **Ticket 19** |
+| P3 | `_shown_iou_window`/`_age_window` còn `append` ngoài lock (một luồng ghi nên chưa lỗi) | **Ticket 20** |
+| P3 | `api.ts` còn comment luật cũ; plan 09-11 ghi luật cũ; artifact `measure_live_relay` thiếu `stability_n` | Sửa comment; plan thêm dòng "cập nhật 10-11" (giữ lịch sử); thêm `stability_n` vào `keys` |
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test stress đầu tiên xanh cả khi có lỗi**: nguyên nhân là GIL switch interval 5 ms; cách xử lý ở
@@ -86,6 +100,7 @@ Bài học: giữ `.gitignore`/`docs/*` chỉ thêm ở **cuối** file (AGENTS 
 - [ ] Ticket 14/15 (cờ phán quyết drift + log từng mẫu drift) — **chờ dữ liệu**: cần clip có
       `p05` thấp mà `empty_frac_window ≈ 0`; hiện chưa có nên cờ sẽ chỉ là bản sao của tỉ lệ mất dấu.
 - [ ] Bước CI `grep` cấm số đếm cũ trong `docs/` (nợ từ review nhánh bằng chứng camera).
+- [ ] Ticket 19 (`stability_shown` chưa có encoding "chưa đo") và 20 (2 cửa sổ `append` ngoài lock).
 - [ ] Quay clip camera thật có vật bị che + kéo chuột chọn vật trên UI (cần người ngồi trước máy).
 
 ## 📚 Tài liệu tham khảo
