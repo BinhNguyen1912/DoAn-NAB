@@ -53,3 +53,12 @@ class TestVerdict:
 
     def test_thieu_clip_cung_la_van_de(self):
         assert measure._verdict({}, {"a": False})
+
+
+def test_thieu_han_truong_khac_voi_chua_du_mau():
+    """Worker bản cũ không ghi `empty_frac_window` ⇒ chẩn đoán phải nói "thiếu khoá", không phải
+    "chưa đủ mẫu" (hai nguyên nhân khác nhau, review 09-11 P3)."""
+    per_clip = measure.summarize([{"clip": "a", "empty_runs": 0, "empty_window_n": 0}])
+    assert per_clip["a"]["co_truong_empty_window"] is False
+    problems = measure._verdict(per_clip, {"a": False})
+    assert problems and "KHÔNG ghi" in problems[0]

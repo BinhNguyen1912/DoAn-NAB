@@ -5,6 +5,9 @@ Chức năng: chạy `tools/live_worker.py` cho từng clip + ô chọn, đọc 
            `git_rev`/`git_dirty_code`/`lenh`/`do_luc` + bảng tóm tắt ra stdout.
 Input  : --clip (nhiều lần): `tên=đường_dẫn:x,y,w,h`; --image-size, --vos-every, --frames, --out.
 Output : `data/empty_window_<ngày>_metrics.json`.
+`--expect-lost <clip>`: khai clip KỲ VỌNG có mất dấu. Clip không khai ⇒ kỳ vọng **KHÔNG** mất dấu
+         (mặc định an toàn: không bao giờ false-pass). Mỗi lần chạy ghi đè cùng một file artifact —
+         muốn giữ nhiều lần thì truyền `--out data/empty_window_<ngày>_run<N>.json`.
 Lưu ý  : ô chọn (bbox) là **đầu vào của phép đo** — sai bbox thì số vô nghĩa (đo 09-11: `binh2` dùng
          bbox của `binh1` cho `empty_frac_window = 0`, đúng bbox của `binh2` cho **0,17**).
          Đây là phép **đếm sự kiện**, không phải phân vị: `empty_runs` là bộ đếm trọn đời (không
@@ -51,6 +54,7 @@ def summarize(rows: list) -> dict:
         name = row["clip"]
         frac = row.get("empty_frac_window")
         per_clip[name] = {
+            "co_truong_empty_window": "empty_frac_window" in row,
             "empty_runs": row.get("empty_runs"),
             "empty_frac_window": frac,
             "empty_window_n": row.get("empty_window_n"),
@@ -71,7 +75,10 @@ def _verdict(per_clip: dict, expect: dict) -> list:
             problems.append(f"{name}: không có số")
             continue
         if got["dang_mat_dau"] is None:
-            problems.append(f"{name}: chưa đủ mẫu (`empty_window_n` = {got['empty_window_n']})")
+            if not got.get("co_truong_empty_window"):
+                problems.append(f"{name}: worker KHÔNG ghi `empty_frac_window` (bản cũ?)")
+            else:
+                problems.append(f"{name}: chưa đủ mẫu (`empty_window_n` = {got['empty_window_n']})")
         elif got["dang_mat_dau"] != want:
             problems.append(f"{name}: kỳ vọng mất dấu = {want}, đo được {got['dang_mat_dau']} "
                             f"(tỉ lệ {got['empty_frac_window']})")
@@ -86,7 +93,10 @@ def main() -> int:
     parser.add_argument("--vos-every", type=int, default=3)
     parser.add_argument("--frames", type=int, default=900)
     parser.add_argument("--expect-lost", action="append", default=[],
-                        help="tên clip KỲ VỌNG có mất dấu (dùng để tự kiểm phép đo)")
+                        help="tên clip KỲ VỌNG có mất dấu (dùng để tự kiểm phép đo). Clip không khai "
+                             "⇒ kỳ vọng KHÔNG mất dấu")
+    parser.add_argument("--timeout-s", type=float, default=900.0,
+                        help="giới hạn thời gian mỗi lần chạy worker")
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
@@ -95,18 +105,31 @@ def main() -> int:
     for name, path, bbox in clips:
         out_dir = Path(f"/dev/shm/doan_empty_window_{name}")
         out_dir.mkdir(parents=True, exist_ok=True)
+        # Xoá `status.json` của lần trước: nếu worker lần này chết trước khi ghi, đọc lại file cũ sẽ
+        # báo số của PHIÊN TRƯỚC (bẫy `_prepare_dir` đã gặp trong `worker_source`).
+        (out_dir / "status.json").unlink(missing_ok=True)
         (out_dir / "bbox.json").write_text(
             json.dumps({"x": bbox[0], "y": bbox[1], "w": bbox[2], "h": bbox[3]}), encoding="utf-8")
         cmd = [sys.executable, "tools/live_worker.py", "--source", path, "--out-dir", str(out_dir),
                "--image-size", str(args.image_size), "--max-fps", "30",
                "--vos-every", str(args.vos_every), "--stop-after-frames", str(args.frames)]
         print(f"[{name}] chạy {args.frames} frame…", flush=True)
-        result = subprocess.run(cmd, cwd=str(_REPO_ROOT), capture_output=True, text=True)
+        try:
+            result = subprocess.run(cmd, cwd=str(_REPO_ROOT), capture_output=True, text=True,
+                                    timeout=args.timeout_s)
+        except subprocess.TimeoutExpired:
+            errors.append(f"{name}: worker quá {args.timeout_s:.0f} s chưa xong")
+            continue
         if result.returncode != 0:
             errors.append(f"{name}: worker thoát mã {result.returncode} — "
                           f"{(result.stderr or '').strip().splitlines()[-1:]}")
             continue
-        status = json.loads((out_dir / "status.json").read_text(encoding="utf-8"))
+        try:
+            status = json.loads((out_dir / "status.json").read_text(encoding="utf-8"))
+        except (OSError, ValueError) as exc:
+            # Ghi lỗi rồi ĐI TIẾP để artifact vẫn là bằng chứng của lần hỏng (không traceback).
+            errors.append(f"{name}: không đọc được status.json ({type(exc).__name__}: {exc})")
+            continue
         row = {"clip": name, "path": path, "bbox_xywh": list(bbox)}
         row.update({key: status.get(key) for key in FIELDS})
         rows.append(row)

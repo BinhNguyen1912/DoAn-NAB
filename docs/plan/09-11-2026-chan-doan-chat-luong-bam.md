@@ -88,15 +88,21 @@ Hay làm việc khác trước?
 - Đối chứng **cảnh tĩnh**: `drift_iou ≥ 0,99` khi vật đứng yên (loại nghi ngờ "0,88 là sàn giả tạo").
 
 **Tiêu chí nghiệm thu (có SỐ):**
-- [ ] Test: đẩy 200 mẫu VOS rỗng rồi 200 mẫu có vật ⇒ `empty_frac_window` đi **1,0 → 0,0**, trong khi
-      `empty_runs` **đứng ở 200** (chứng minh hai đại lượng khác nhau).
-- [ ] `binh1` (clip khoẻ): `empty_frac_window = 0/798 = **0 %**`; `binh2`: **26/233 = 11,2 %** — chép
-      từ `data/drift_2026-11-08_metrics.json` (không đo lại bằng tay).
-- [ ] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
-      + UI hiện "không đo được", không hiện "tốt".
-- [ ] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.
-- [ ] `./run lint`, `./run test`, `./run testall`, `./run webtest`, `./run e2e` xanh; review độc lập
-      (§9.1) P0 = 0.
+- [x] Test: đẩy 200 mẫu VOS rỗng rồi 200 mẫu có vật ⇒ `empty_frac_window` đi **1,0 → 0,0**, trong khi
+      `empty_runs` **đứng ở 200** (chứng minh hai đại lượng khác nhau) —
+      `tests/test_live_tracking.py::TestDemMatDauTheoCuaSo`.
+- [x] `binh1` (clip khoẻ): `empty_frac_window = **0,00**` (0/200 mẫu cửa sổ); `binh2`: **0,14**
+      (28 lần VOS rỗng **trọn đời** trên 244 lần chạy = 11,5 % — **tỉ lệ trọn đời**, KHÔNG phải
+      `empty_frac_window`; cửa sổ dao động 0,12–0,20 qua 4 lần chạy). Nguồn:
+      `data/empty_window_2026-11-09_metrics.json`.
+- [x] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
+      + UI hiện "chưa đo được", không hiện "tốt".
+- [x] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.
+- [x] `./run lint`, `./run test`, `./run testall`, `./run webtest`, `./run e2e` xanh; review độc lập
+      (§9.1) P0 = 0 — vòng 1 bắt **1 P1** (nhãn "nhấp nháy" bị **đảo chiều số**: in `stability × 100`
+      trong khi `stability = 1,0` mới là êm; và `stability = 0` vừa là "chưa đo" vừa là "vừa mất
+      dấu" ⇒ in "nhấp nháy 0 %" đúng lúc model rơi vật) — đã sửa: in `100 − stability`, và
+      `stability <= 0` ⇒ "chưa đo".
 
 ## 📌 Phương án bị bác (ghi để không mở lại)
 1. **Tự giảm `vos_every` khi p05 thấp** — bác bằng số: p05 đổi 0,000–0,010 (< ±0,057), `mask_fps`

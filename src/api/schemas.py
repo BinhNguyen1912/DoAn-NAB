@@ -143,7 +143,8 @@ class LiveStatusResponse(BaseModel):
     empty_window_n: int = Field(default=0, ge=0, description="số mẫu của cửa sổ trên (0 = chưa có)")
     drift_p05: float | None = Field(
         default=None, ge=0, le=1,
-        description="phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên 200 lần VOS gần "
-                    "nhất — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
+        description="phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên tối đa 200 MẪU "
+                    "DRIFT gần nhất (mẫu bị bỏ khi hộp VOS suy biến, nên `drift_n` có thể nhỏ hơn "
+                    "`vos_runs`) — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
     drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
     message: str

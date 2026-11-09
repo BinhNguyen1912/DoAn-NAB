@@ -583,8 +583,11 @@ class LiveTrackingSession:
         # Đẩy ĐÚNG MỘT mẫu cho MỖI lần VOS trả kết quả: có vật (False) hay rỗng (True). Nếu chỉ
         # đẩy khi rỗng thì tỉ lệ không bao giờ giảm sau khi model bám lại (đúng lỗi mà đại lượng
         # này sinh ra để sửa).
-        self._vos_lost_window.append(not raw.any())
         with self._stats_lock:
+            # `append` PHẢI trong lock cùng với `sum()` bên dưới: giữ bất biến "deque chỉ bị sửa khi
+            # giữ `_stats_lock`" (hôm nay chỉ một luồng gọi, nhưng mẫu code sai sẽ bị copy — review
+            # 09-11, P3).
+            self._vos_lost_window.append(not raw.any())
             self._stats.empty_window_n = len(self._vos_lost_window)
             self._stats.empty_frac_window = (
                 round(sum(self._vos_lost_window) / len(self._vos_lost_window), 3)

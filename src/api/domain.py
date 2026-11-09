@@ -115,8 +115,9 @@ class LiveStatus:
     empty_runs: int = 0         # số lần model trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
     empty_frac_window: float | None = None  # tỉ lệ mất dấu trong 200 lần VOS gần nhất (None = chưa đủ)
     empty_window_n: int = 0     # số mẫu của cửa sổ đó (0 ⇒ chưa có số)
-    # `drift_p05` = phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên 200 lần VOS gần
-    # nhất. Đây là **độ tự nhất quán**, KHÔNG phải độ chính xác (AGENTS §6). `drift_n` < 30 ⇒ None.
+    # `drift_p05` = phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên TỐI ĐA 200 mẫu drift
+    # gần nhất (mẫu bị bỏ khi VOS trả hộp suy biến ⇒ `drift_n` có thể < `vos_runs`). Đây là **độ tự
+    # nhất quán**, KHÔNG phải độ chính xác (AGENTS §6). `drift_n` < 30 ⇒ None.
     drift_p05: float | None = None
     drift_n: int = 0
     message: str = ""

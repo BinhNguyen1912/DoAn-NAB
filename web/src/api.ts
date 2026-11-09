@@ -140,7 +140,8 @@ export interface LiveStatus {
   empty_frac_window: number | null
   /** số mẫu của cửa sổ trên (0 = chưa có số) */
   empty_window_n: number
-  /** phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) — ĐỘ TỰ NHẤT QUÁN, không phải độ chính xác */
+  /** phân vị 5 % của IoU(ô bao đã phát, ô bao VOS sửa lại) trên tối đa 200 MẪU DRIFT gần nhất
+   * — ĐỘ TỰ NHẤT QUÁN, không phải độ chính xác; `null` khi chưa đủ mẫu */
   drift_p05: number | null
   /** số mẫu drift (0 ⇒ chưa đo, KHÔNG phải "drift = 0") */
   drift_n: number
