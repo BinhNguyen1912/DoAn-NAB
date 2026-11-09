@@ -96,10 +96,11 @@ Hay làm việc khác trước?
       (`::TestDemMatDauTheoCuaSo`, **unit-level**: gọi `_measure_stability` trực tiếp). Thêm 2 ca
       **session-level** `::TestMotMauMoiLanVos` (30 frame, `vos_every` 1 và 3) kiểm
       `empty_window_n == min(200, vos_runs)` đi qua `_record_vos` thật.
-- [x] `binh1` (clip khoẻ): `empty_frac_window = **0,00**` (0/200
-      mẫu cửa sổ); `binh2`: **0,21** — `empty_runs` **trọn đời** = 42/243
-      lần chạy (tỉ lệ trọn đời, KHÔNG phải `empty_frac_window`; cửa sổ dao động **0,12–0,21 qua 8 lần
-      chạy**, p05 = **0,000 cả 8 lần**). Nguồn: `data/empty_window_2026-11-10_metrics.json`.
+- [x] `binh1` (clip khoẻ): `empty_frac_window = **0,00**` (0/235 lần VOS, 200
+      mẫu cửa sổ); `binh2`: **0.16** — `empty_runs` **trọn đời** =
+      32/237 lần chạy (tỉ lệ trọn đời, KHÔNG phải `empty_frac_window`;
+      cửa sổ dao động **0,12–0,21 qua 9 lần chạy**, p05 = **0,000 cả 9 lần**). Nguồn:
+      `data/empty_window_2026-11-10_metrics.json`.
 - [x] `/api/live/status` với phiên `vos_every=1` trả `drift_p05 = null`, `drift_n = 0` (**không** `0,0`)
       + UI hiện "chưa đo được", không hiện "tốt".
 - [x] `drift_n < 30` ⇒ `drift_iou_p05 = null` (test đơn vị), `drift_n` vẫn công bố.
