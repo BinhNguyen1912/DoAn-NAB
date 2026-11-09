@@ -321,6 +321,106 @@ class TestGhiRunInfoKhiCoMetrics:
         assert (tmp_path / "x_run_info.json").is_file()
 
 
+class TestXuatBanWeb:
+    """`--record` ghi mp4v (OpenCV chỉ có codec đó) — Chrome/Edge KHÔNG giải mã được.
+
+    Đo 08-11 bằng Chrome headless thật: `canPlayType('video/mp4; codecs="mp4v.20.9"')` trả `""`,
+    `videoWidth = 0`. Video demo mở bằng trình duyệt là màn hình đen ⇒ sau khi đóng recorder phải
+    xuất bản H.264 cạnh file gốc (dùng đúng `src/worker/web_export.py` mà API đã dùng).
+    """
+
+    def test_ghi_video_xong_thi_xuat_ban_h264_canh_file_goc(self, tmp_path, video, fake_engine,
+                                                           monkeypatch):
+        rec = tmp_path / "demo.mp4"
+        calls = {}
+
+        def fake_transcode(src, dst=None, **kwargs):
+            calls["src"], calls["dst"] = str(src), str(dst)
+            with open(dst, "wb") as handle:
+                handle.write(b"h264")
+            return str(dst)
+
+        monkeypatch.setattr(run_live, "transcode_for_web", fake_transcode)
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {rec}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+
+        assert calls["src"] == str(rec)
+        assert calls["dst"] == str(tmp_path / "demo_web.mp4")
+        assert (tmp_path / "demo_web.mp4").is_file()
+        assert rec.is_file(), "file gốc phải còn (bản web chỉ là bản chuyển mã thêm)"
+
+    def test_khong_co_ffmpeg_thi_canh_bao_ro_rang_ma_khong_no(self, tmp_path, video, fake_engine,
+                                                            monkeypatch, capsys):
+        monkeypatch.setattr(run_live, "transcode_for_web", lambda *a, **k: None)
+        rec = tmp_path / "demo.mp4"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {rec}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()                       # không được ném: video gốc đã ghi xong rồi
+
+        out = capsys.readouterr().out
+        assert "không có ffmpeg" in out and "imageio-ffmpeg" in out
+        assert rec.is_file()
+
+    def test_khong_bat_ghi_thi_khong_goi_chuyen_ma(self, tmp_path, video, fake_engine, monkeypatch):
+        called = []
+        monkeypatch.setattr(run_live, "transcode_for_web",
+                            lambda *a, **k: called.append(a) or None)
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+        assert called == []
+
+    def test_that_su_ra_h264_phat_duoc_bang_opencv(self, tmp_path, video, fake_engine, monkeypatch):
+        """Test thật (cần ffmpeg): 4 cc của file web phải là `avc1`, không phải `mp4v`."""
+        from src.worker.web_export import find_ffmpeg
+
+        if not find_ffmpeg():
+            pytest.skip("chưa có ffmpeg — cài `pip install imageio-ffmpeg` (requirements.txt)")
+        rec = tmp_path / "demo.mp4"
+        cfg = _write_cfg(tmp_path, f"""
+checkpoint: {video}
+source: {video}
+record_enabled: true
+record_path: {rec}
+max_frames: 2
+""")
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--config", cfg])
+        run_live.main()
+
+        web = tmp_path / "demo_web.mp4"
+        assert web.is_file(), "phải có bản H.264 cạnh file gốc"
+        cap = cv2.VideoCapture(str(web))
+        try:
+            assert cap.isOpened()
+            fourcc = int(cap.get(cv2.CAP_PROP_FOURCC))
+            # Tag phải KHÔNG phải `mp4v` — đó chính là codec Chrome không giải mã được (đo 08-11:
+            # `canPlayType("video/mp4; codecs=\"mp4v.20.9\"") = ""`, `videoWidth = 0`).
+            # OpenCV báo tên codec (`h264`); ffmpeg -i trên cùng file cho `h264 (High) (avc1 …)` +
+            # `yuv420p` — chấp nhận cả ba tag, chỉ cấm `mp4v`.
+            tag = fourcc.to_bytes(4, "little").decode("latin1")   # OpenCV trả int little-endian
+            assert tag in {"avc1", "avc3", "h264"}, tag
+            assert tag != "mp4v"
+        finally:
+            cap.release()
+
+
 class TestKhongGhiDeKhiLoi:
     """Bug 21-10: mở camera lỗi → phiên 0 frame vẫn ghi CSV/JSON rỗng, đè mất số liệu tốt."""
 
