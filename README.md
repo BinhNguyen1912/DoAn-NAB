@@ -358,7 +358,8 @@ Nguyên tắc đã giữ:
   của model chặn nhịp phát; tách luồng mới đạt 29,8 FPS.
 - **Nói thật trong báo cáo:** mask chỉ **mới** ở nhịp VOS (8,6 lần/giây với `vos_every=3`); giữa hai
   lần là mask cũ được **tịnh tiến** theo LK — không được claim "mask 30 FPS". UI hiện đúng hai nhịp
-  (`/api/live/status` có `mask_fps`, `stability`, `latency_ms`, và hai chỉ số **chẩn đoán**:
+  (`/api/live/status` có `mask_fps`, `stability` + `stability_n` — `stability = null` ⇔ `stability_n = 0`
+  là **chưa đo**, khác `0,0` đo được; `latency_ms`; và hai chỉ số **chẩn đoán**:
   `empty_frac_window`/`empty_window_n` = tỉ lệ lần VOS trả mask rỗng trong 200 lần gần nhất,
   `drift_p05`/`drift_n` = IoU **tự nhất quán** giữa ô đang hiển thị và lần VOS kế tiếp — `null` =
   **chưa đo**, không phải 0), nguồn không có model thì ẩn dòng.
