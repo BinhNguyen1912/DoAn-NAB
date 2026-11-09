@@ -84,12 +84,17 @@ def summarize(samples) -> dict:
 
     Nguyên tắc: `None` (chưa đo) KHÔNG được đổi thành 0. `drift_iou`/`mask_age_p95` chỉ có nghĩa
     khi `drift_n`/`age_n` > 0; số mẫu được ghi kèm để người đọc không trích nhầm (AGENTS §6).
+
+    Chỉ tóm tắt **đúng những trường API có** (`LiveStatusResponse`): thêm `display_fps` (nhịp HUD —
+    nguồn gốc con số "29,9 FPS" trong báo cáo). `drift_*`/`mask_age_p95` **không** nằm trong API ⇒
+    lấy từ `status.json` ở `worker_status`, để artifact không có khoá "trông như đã đo" mà luôn
+    `None` (review độc lập nhánh bằng chứng, P2).
     """
     frames = [s.get("frames") or 0 for s in samples]
-    fps = [s.get("measured_fps") or 0.0 for s in samples]
-    mask_fps = [s.get("mask_fps") or 0.0 for s in samples]
-    drift = [s.get("drift_iou") for s in samples if s.get("drift_iou") is not None]
-    age_p95 = [s.get("mask_age_p95") for s in samples if s.get("mask_age_p95") is not None]
+    # Chỉ lấy mẫu CÓ số: thiếu trường ⇒ `None`, không được biến thành `0,0` (bẫy "0 ≠ chưa đo").
+    fps = [s["measured_fps"] for s in samples if s.get("measured_fps") is not None]
+    mask_fps = [s["mask_fps"] for s in samples if s.get("mask_fps") is not None]
+    display_fps = [s["display_fps"] for s in samples if s.get("display_fps") is not None]
     states = [s.get("state") for s in samples]
     return {
         "n_mau": len(samples),
@@ -97,24 +102,31 @@ def summarize(samples) -> dict:
         "frames_dau": frames[0] if frames else 0,
         "frames_cuoi": frames[-1] if frames else 0,
         "measured_fps_max": round(max(fps), 1) if fps else None,
+        "display_fps_max": round(max(display_fps), 1) if display_fps else None,
+        "display_fps_cuoi": round(display_fps[-1], 1) if display_fps else None,
         "mask_fps_max": round(max(mask_fps), 1) if mask_fps else None,
-        "drift_n_cuoi": samples[-1].get("drift_n") if samples else None,
-        "drift_iou_max": round(max(drift), 3) if drift else None,
-        "drift_iou_p05_max": round(max(
-            [s.get("drift_iou_p05") for s in samples if s.get("drift_iou_p05") is not None] or [0.0]
-        ), 3) if any(s.get("drift_iou_p05") is not None for s in samples) else None,
-        "mask_age_p95_max": round(max(age_p95), 1) if age_p95 else None,
+        "mask_fps_cuoi": round(mask_fps[-1], 1) if mask_fps else None,
         "empty_runs_cuoi": samples[-1].get("empty_runs") if samples else None,
         "message_cuoi": samples[-1].get("message", "") if samples else "",
     }
 
 
+def _is_ancestor(rev: str) -> bool:
+    """`rev` có phải tổ tiên của HEAD không (provenance chỉ có nghĩa khi `git show <rev>` chạy được)."""
+    try:
+        done = subprocess.run(["git", "merge-base", "--is-ancestor", rev, "HEAD"],
+                              cwd=str(_REPO_ROOT), capture_output=True, timeout=20)
+    except (OSError, subprocess.SubprocessError):
+        return True                                   # không kết luận được ⇒ đừng chặn
+    return done.returncode == 0
+
+
 def _worker_telemetry(out_dir) -> dict:
     """Đọc thẳng `status.json` của worker — những số KHÔNG đi qua API live (`drift_*`, tuổi mask).
 
-    Vì sao cần: `/api/live/status` chỉ mang 6 trường (`mask_fps`, `stability`, `latency_ms`,
-    `empty_runs`…); `drift_iou`/`drift_iou_p05`/`mask_age_p95` nằm trong `status.json`. Artifact
-    "camera thật chạy được" nên ghi cả hai nguồn, và ghi `None` trung thực khi worker chưa đo.
+    Vì sao cần: `/api/live/status` mang 10 trường nhưng **không** có `drift_iou`/`drift_iou_p05`/
+    `mask_age_p95`; ba số đó chỉ nằm trong `status.json` của worker. Artifact "camera thật chạy được"
+    nên ghi cả hai nguồn, và ghi `None` trung thực khi worker chưa đo.
     """
     path = Path(out_dir) / "status.json"
     try:
@@ -166,6 +178,9 @@ def main() -> int:
     frame_dir = Path(args.frame_dir) if args.frame_dir else out.parent / f"live_web_relay_{stamp:%Y-%m-%d}"
     base = f"http://127.0.0.1:{args.port}"
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
+    # Xoá `status.json` của lần trước: nếu lần này API bận/không vào `running`, đọc lại file cũ sẽ
+    # gán số của PHIÊN KHÁC cho lần đo này (review độc lập nhánh bằng chứng, P2).
+    (Path(args.out_dir) / "status.json").unlink(missing_ok=True)
     env = dict(os.environ, DOAN_LIVE_DIR=args.out_dir)
 
     server = subprocess.Popen(
@@ -175,7 +190,7 @@ def main() -> int:
         stdout=subprocess.DEVNULL, stderr=(_REPO_ROOT / "data" / "live_relay_api.log").open("w"),
     )
 
-    samples, frames_saved, error = [], [], None
+    samples, frames_saved, frame_errors, error = [], [], [], None
     started_at = time.perf_counter()
     try:
         if not _wait_up(base):
@@ -199,10 +214,13 @@ def main() -> int:
                 try:
                     path = frame_dir / f"frame{index + 1}.jpg"
                     path.write_bytes(_get_bytes(base, "/api/live/frame"))
-                    frames_saved.append(str(path.relative_to(_REPO_ROOT)))
+                    try:      # `--out` tương đối ⇒ đường dẫn cũng tương đối
+                        frames_saved.append(str(path.resolve().relative_to(_REPO_ROOT)))
+                    except ValueError:
+                        frames_saved.append(str(path))
                     index += 1
-                except (urllib.error.URLError, OSError):
-                    pass
+                except (urllib.error.URLError, OSError) as exc:
+                    frame_errors.append(f"frame{index + 1}: {type(exc).__name__}")
             time.sleep(POLL_S)
         summary = summarize(samples)
         print("[3/3] dừng phiên…", flush=True)
@@ -211,6 +229,12 @@ def main() -> int:
         error = f"{type(exc).__name__}: {exc}"
         summary = summarize(samples)
     finally:
+        # Dừng phiên bằng API (idempotent): nhánh lỗi trước đây chỉ terminate uvicorn, worker chạy
+        # `start_new_session` chỉ được reaped nhờ lifespan ⇒ SIGKILL sau `wait(10)` là mồ côi camera.
+        try:
+            _post(base, "/api/live/stop", {})
+        except Exception:                             # noqa: BLE001 — API có thể đã chết
+            pass
         server.terminate()
         try:
             server.wait(timeout=10)
@@ -219,6 +243,9 @@ def main() -> int:
 
     ok, reasons = _verdict(summary)
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
+    if git_rev and not _is_ancestor(git_rev):
+        git_loi = (f"`git_rev = {git_rev[:7]}` KHÔNG phải tổ tiên của HEAD — nhánh đã rebase sau khi "
+                   "đo ⇒ không tái lập được từ clone mới (đo lại)")
     artifact = {
         "do_luc": stamp.isoformat(timespec="seconds"),
         "git_rev": git_rev,
@@ -235,11 +262,15 @@ def main() -> int:
                       "vos_every": args.vos_every, "seconds": args.seconds},
         "dieu_kien_dang_ky_truoc": "state=running, frames>0, measured_fps>0, mask_fps>0 "
                                    "(đường camera thật chạy được — KHÔNG phải mục tiêu FPS)",
-        "ket_qua": ok,
+        # `ket_qua` = "lần đo này dùng được làm bằng chứng": điều kiện đo đạt **và** không có lỗi
+        # giữa phiên **và** có provenance (review độc lập nhánh này, P2).
+        "ket_qua": ok and not error and not git_loi,
+        "dat_dieu_kien_do_luong": ok,
         "ly_do_khong_dat": reasons,
         "tom_tat": summary,
         "worker_status": _worker_telemetry(args.out_dir),
         "anh_frame": frames_saved,
+        "anh_frame_loi": frame_errors,
         "mau_cuoi": samples[-3:],
         "n_mau": len(samples),
         "loi": error,

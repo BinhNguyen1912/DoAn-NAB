@@ -10,29 +10,36 @@ import scripts.measure_live_relay as relay
 
 
 def _mau(**fields):
-    base = {"state": "running", "frames": 10, "measured_fps": 29.8, "mask_fps": 8.6,
-            "drift_iou": 0.9, "drift_iou_p05": 0.7, "drift_n": 12, "mask_age_p95": 210.0,
-            "empty_runs": 0, "message": ""}
+    # CHỈ trường `LiveStatusResponse` có (drift/age nằm ở `status.json` của worker — xem docstring).
+    base = {"state": "running", "frames": 10, "measured_fps": 26.3, "display_fps": 29.8,
+            "mask_fps": 8.6, "empty_runs": 0, "message": ""}
     base.update(fields)
     return base
 
 
 class TestSummarize:
     def test_none_khong_bi_doi_thanh_0(self):
-        summary = relay.summarize([_mau(drift_iou=None, drift_iou_p05=None, drift_n=0,
-                                        mask_age_p95=None)])
-        assert summary["drift_iou_max"] is None
-        assert summary["drift_iou_p05_max"] is None
-        assert summary["mask_age_p95_max"] is None
-        assert summary["drift_n_cuoi"] == 0
+        """Thiếu `mask_fps`/`display_fps` ⇒ `None`, KHÔNG thành `0,0` (bẫy AGENTS §6)."""
+        summary = relay.summarize([_mau(mask_fps=None, display_fps=None)])
+        assert summary["mask_fps_max"] is None
+        assert summary["mask_fps_cuoi"] is None
+        assert summary["display_fps_max"] is None
+
+    def test_khong_tao_khoa_ma_api_khong_co(self):
+        """`summarize` chỉ được tóm tắt trường API thật có: `drift_*`/`mask_age_p95` nằm ở
+        `status.json` (`worker_status`), không được xuất hiện như "đã đo" ở `tom_tat`."""
+        summary = relay.summarize([_mau()])
+        for key in ("drift_iou_max", "drift_iou_p05_max", "drift_n_cuoi", "mask_age_p95_max"):
+            assert key not in summary, f"{key} không có trong API nhưng vẫn được tóm tắt"
 
     def test_lay_max_cua_cac_mau(self):
-        samples = [_mau(measured_fps=10.0, mask_fps=2.0, drift_iou=0.5),
-                   _mau(measured_fps=29.9, mask_fps=8.7, drift_iou=0.93)]
+        samples = [_mau(measured_fps=10.0, display_fps=25.0, mask_fps=2.0),
+                   _mau(measured_fps=29.9, display_fps=30.0, mask_fps=8.7)]
         summary = relay.summarize(samples)
         assert summary["measured_fps_max"] == 29.9
+        assert summary["display_fps_max"] == 30.0
+        assert summary["display_fps_cuoi"] == 30.0
         assert summary["mask_fps_max"] == 8.7
-        assert summary["drift_iou_max"] == 0.93
         assert summary["n_mau"] == 2
 
     def test_frames_tang_dan_duoc_ghi_dau_va_cuoi(self):
@@ -61,3 +68,12 @@ class TestVerdict:
     def test_state_error_la_khong_dat(self):
         ok, reasons = relay._verdict(relay.summarize([_mau(state="error")]))
         assert ok is False and any("state_cuoi" in r for r in reasons)
+
+
+def test_khong_vao_running_thi_khong_dat_va_khong_ghi_artefact_la_dat():
+    """`state="stopped"` (phiên chết giữa lúc lấy mẫu) và danh sách mẫu rỗng đều phải KHÔNG đạt —
+    fail-closed, không được coi là "đo xong" (review độc lập nhánh bằng chứng, P3)."""
+    ok, reasons = relay._verdict(relay.summarize([_mau(state="stopped")]))
+    assert ok is False and reasons
+    ok_rong, reasons_rong = relay._verdict(relay.summarize([]))
+    assert ok_rong is False and reasons_rong
