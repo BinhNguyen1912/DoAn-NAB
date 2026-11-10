@@ -35,17 +35,29 @@ AGENTS §6 "số đo phải ghi rõ môi trường").
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **787 passed** (5 deselected, ~74 s) |
-| `./run testall` | **792 passed**, 0 failed (205,7 s) |
-| `./run e2e` | **PASS** (bắt buộc: có sửa `src/api/**`) |
-| Test mới | 34 case (`test_device.py` 17, `test_worker_device.py` 11, `test_measure_live_relay.py` +3, `test_worker_pipeline.py` +3) |
+| `./run test` | **795 passed** (5 deselected, ~76 s) |
+| `./run testall` | **800 passed**, 0 failed (271 s) |
+| `./run e2e` | **PASS** (bắt buộc: có sửa `src/api/**`) — 2 lần, trước và sau khi sửa review |
+| Test mới | 41 case (`test_device.py` 17, `test_worker_device.py` 17, `test_measure_live_relay.py` +5, `test_worker_pipeline.py` +3, `test_run_script.py` +1) |
+
+### Số đo CPU baseline — 3 lần liền (commit `e34eb5c`, cả 3 `git_dirty_code=false`)
+
+| Lần | FPS phát | Mask mới/giây | `drift_iou_p05` (`drift_n`) | `stability_shown` |
+|---|---|---|---|---|
+| run1 | 27,9 | 5,0 | 0,671 (34) | 0,911 |
+| run2 | 29,7 | 6,0 | 0,689 (47) | 0,960 |
+| run3 | 29,6 | 6,3 | 0,752 (51) | 0,960 |
+| **TB** | **29,1** | **5,8** | 0,704 | 0,944 |
+
+Nhiễu giữa 3 lần: mask **5,0–6,3 (±11 %)**, FPS phát 27,9–29,7 ⇒ **không** dùng mask_fps để A/B nếu
+chưa có ngưỡng nhiễu (`scripts/repeatability.py`).
 
 Số đo thật (artifact có `git_rev` + `git_dirty_code=false`, commit `ffc9f02`):
 
 | Artifact | Nội dung |
 |---|---|
-| `data/live_gpu_device_cpu_baseline_2026-11-10_metrics.json` | đường live qua API trên **CPU**: `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` · **29,9 FPS phát** · **mask 6,9 lần/giây** · `drift_n 59` (p05 0,673) · `stability_shown 0,957 (n=10)` |
-| `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json` | xin `cuda` trên máy **không** GPU: `ket_qua=false`, `loi` = `HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"` ⇒ **không âm thầm rơi về CPU** |
+| `data/live_gpu_device_cpu_baseline_run1..3_2026-11-10_metrics.json` | đường live qua API trên **CPU**: `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` (xem bảng trên) |
+| `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json` | xin `cuda` trên máy **không** GPU: `ket_qua=false`, `device_worker_log=null` (worker chết trước dòng log), `ly_do_khong_dat` nêu rõ, `loi` giữ câu `HTTP 400 … "đã xin device='cuda' … Colab → T4"` ⇒ **không âm thầm rơi về CPU** |
 
 Test "có răng" (đã kiểm thật, có phục hồi):
 - bỏ `device=device` khỏi `build_default(...)` ⇒ 2 test wiring đỏ (đúng lỗ của PR này);
@@ -65,3 +77,8 @@ Test "có răng" (đã kiểm thật, có phục hồi):
 
 **Hai chiều** — toàn bộ thay đổi là additive và mặc định vẫn là CPU: không đặt `$CAMERA_AI_DEVICE`
 thì argv không có `--device`, hành vi + số đo cũ giữ nguyên (có test cho đúng chiều này).
+
+### Review độc lập 2 vòng
+
+- **Vòng 1**: P0 = 0, **2 P1** (lệnh GPU trong `README`/`./run gpu` sai: `./run web` chỉ build; `./run video --device cuda` lỗi argparse) + 4 P2 (thiếu test ở composition root; script đo thừa hưởng env; `ket_qua` không xét thiết bị; thiếu log) + 8 P3.
+- **Vòng 2**: review lại delta — xem kết quả trong `docs/task/10-11-2026-duong-live-chay-duoc-tren-gpu.md`.
