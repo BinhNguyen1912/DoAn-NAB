@@ -75,8 +75,10 @@ Test "có răng" (đã kiểm thật, có phục hồi):
 
 ### Cửa một chiều hay hai chiều?
 
-**Hai chiều** — toàn bộ thay đổi là additive và mặc định vẫn là CPU: không đặt `$CAMERA_AI_DEVICE`
-thì argv không có `--device`, hành vi + số đo cũ giữ nguyên (có test cho đúng chiều này).
+**Hai chiều** — toàn bộ thay đổi là additive: không đặt `$CAMERA_AI_DEVICE` thì API truyền
+`--device cpu` xuống worker/job, **trùng đúng** mặc định `device: cpu` của `configs/default.yaml`
+⇒ hành vi + số đo cũ giữ nguyên (có test khoá cả hai chiều: `--device cpu` khi env trống, và không
+có cờ khi constructor nhận `None`).
 
 ### Review độc lập 2 vòng
 

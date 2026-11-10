@@ -71,12 +71,13 @@ tưởng GPU (đúng bẫy AGENTS §6 "số đo phải ghi rõ môi trường").
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **795 passed** (5 deselected, ~76 s) — sau khi sửa review |
+| `./run test` | **800 passed** (5 deselected, ~77 s) — sau khi sửa cả 2 vòng review |
 | `./run testall` (lần 1, trước khi thêm đường job upload) | 786 passed + **1 failed** (`test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau`); chạy riêng: **8/8 pass**. Flaky do SAM 2 không tất định + máy tải, **không liên quan nhánh này** (engine do fixture tự dựng) ⇒ **ticket 22** |
 | `./run testall` (lần 2, giữa phiên) | **792 passed**, 0 failed (205,7 s) — test flaky `tracker_engine` xanh |
-| `./run testall` (lần 3, trạng thái cuối sau khi sửa review) | **800 passed**, 0 failed (271 s) |
-| `./run e2e` | **PASS** (bắt buộc vì có sửa `src/api/**`) — 7 dòng bảng số, MJPEG 29,8 FPS, dừng sạch, 0 lỗi JS |
-| Test mới | **41** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 17 (gồm composition root + job upload), `tests/test_measure_live_relay.py` +5, `tests/test_worker_pipeline.py` +3, `tests/test_run_script.py` +1 |
+| `./run testall` (lần 3) | **800 passed**, 0 failed (271 s) |
+| `./run testall` (lần 4, trạng thái cuối) | **805 passed**, 0 failed (221 s) |
+| `./run e2e` | **PASS** (bắt buộc vì có sửa `src/api/**`) — chạy 3 lần (trước/sau mỗi vòng sửa): 7 dòng bảng số, MJPEG ~29,8 FPS, dừng sạch, 0 lỗi JS |
+| Test mới | **45** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 17 (gồm composition root + job upload), `tests/test_measure_live_relay.py` +5, `tests/test_worker_pipeline.py` +3, `tests/test_run_script.py` +1 |
 
 ### Review độc lập (AGENTS §9.1) — 2 vòng
 
@@ -103,7 +104,21 @@ Reviewer cũng xác nhận bằng đọc mã: `device` **không rơi** ở hop n
 import torch (ADR-0005); `worker.log` được xoá mỗi phiên nên không có ca "hai phiên ghi cùng file";
 test skip trên máy có GPU là đúng (không tái hiện được).
 
-**Vòng 2** (review delta job-upload + các sửa trên): xem PR body `.scratch/pr/d-live-gpu-device.md`.
+**Vòng 2** (review delta `b10e5ff..HEAD`) — **P0 = 0, P1 = 0, merge được**, 3 P2 + 4 P3 (đã sửa hết):
+
+| Mức | Phát hiện | Xử lý |
+|---|---|---|
+| P2 | Mắt xích **cuối** của chuỗi job (`--device` → `TrackerEngine.build_default(device=…)`) **không có test**: fixture `fake_engine` nuốt mọi kwarg ⇒ xoá `device=device` ở `run_live.py` mà 792 test vẫn xanh | 3 test `TestThietBiXuongEngine` (cuda→engine, mặc định cpu, `run_info.json` ghi thiết bị); đã kiểm đỏ khi bỏ `device=` |
+| P2 | Artifact của **job** không ghi thiết bị; `summary.json` chỉ có `resources.gpu` = "MÁY có GPU" ⇒ job chạy CPU trên máy GPU vẫn in tên GPU | `_write_run_info` thêm `device=<đã dùng>` + test đọc lại file |
+| P2 | PR body + docstring test nói sai: "env trống ⇒ argv không có `--device`". Thật ra `device_from_env()` trả `"cpu"` ⇒ API **ghi `--device cpu`** (trùng mặc định YAML nên hành vi không đổi) | Sửa câu chữ + test `test_env_trong_van_ghi_device_cpu` khoá hành vi THẬT của production |
+| P3 | `service.select` chỉ bắt `OSError`; `build_command` nay có thể ném `ValueError` ⇒ job kẹt `running` mãi + HTTP 500 | Bắt `(OSError, ValueError)`; test dùng runner ném ValueError (bài học: `FakeRunner.fail_start` luôn ném **OSError**, nên bản test đầu tiên "xanh giả" — đã sửa) |
+| P3 | `export CAMERA_AI_DEVICE` kẹt trong shell sẽ làm `app = create_app()` (chạy lúc import) không boot, kể cả `./run e2e` | README 3b: dùng **inline**, đừng `export`, kèm lý do |
+| P3 | Fake proc `object()` trong 1 test job-upload | Dùng `_ProcGia` như các test khác |
+| P3 | Comment `command.py` nói allowlist là cổng chặn tham số client | Sửa: 2 lớp — Pydantic `TrackParams` rồi allowlist số nguyên |
+
+Reviewer vòng 2 xác nhận bằng đọc mã: `device` đi trọn 4 mắt xích tới argv; **không** có đường chèn
+lệnh (`normalize_device` allowlist + `shlex.quote`); client **không** chạm được `device`
+(`TrackParams` chỉ 5 field); `src/worker`/`src/api` **không** import torch (ADR-0005).
 
 ### Số đo thật — **3 lần đo liền** (commit `e34eb5c`, cả 3 artifact đều `git_dirty_code = false`)
 

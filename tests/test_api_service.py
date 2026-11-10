@@ -99,6 +99,25 @@ class TestSelect:
         assert "không chạy được" in status.message.lower()
 
 
+    def test_runner_nem_valueerror_cung_ve_error_khong_ket_running(self, service, fs_store,
+                                                                  fake_runner):
+        """`build_command` có thể ném `ValueError` (tham số không hợp lệ, vd `device` lạ).
+
+        Trước đây `service.select` chỉ bắt `OSError` ⇒ job kẹt `running` MÃI (không tiến trình,
+        không watchdog cho job) + HTTP 500 (P3 review 10-11).
+        """
+        job = _create(service)
+
+        # KHÔNG dùng `fail_start` (FakeRunner luôn raise OSError) — phải ném đúng ValueError.
+        def _start_no(_job_id, _job_dir, *, params, bbox, on_exit=None):
+            raise ValueError("device phải là một trong ('cpu', 'cuda')")
+
+        fake_runner.start = _start_no
+        with pytest.raises(RunnerStartFailed):
+            service.select(job.job_id, BOX)
+        assert fs_store.read_status(job.job_id).state is JobState.ERROR
+
+
 class TestStatusVaTienTrinh:
     def test_job_uploaded_giu_nguyen_trang_thai(self, service):
         job = _create(service)

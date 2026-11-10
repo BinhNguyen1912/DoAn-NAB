@@ -66,6 +66,55 @@ def fake_engine(monkeypatch):
     )
 
 
+class TestThietBiXuongEngine:
+    """Mắt xích CUỐI của chuỗi GPU: `--device` phải tới `TrackerEngine.build_default(device=…)`.
+
+    Fixture `fake_engine` ở trên nuốt mọi kwarg ⇒ xoá `device=device` trong `run_live.py` (đúng lỗi
+    `live_worker.py` đã mắc) mà **toàn bộ** test vẫn xanh ⇒ job upload chạy CPU im lặng trên máy GPU
+    (P2 review 10-11). Test này khoá đúng kwarg đó.
+    """
+
+    def _bat_kwargs(self, monkeypatch, *, cuda: bool):
+        import torch
+
+        ghi = {}
+
+        def build_default(**kwargs):
+            ghi.update(kwargs)
+            return FakeEngine()
+
+        monkeypatch.setattr(run_live.TrackerEngine, "build_default", staticmethod(build_default))
+        monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
+        monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "GPU giả")
+        return ghi
+
+    def test_device_cuda_truyen_xuong_engine(self, tmp_path, video, monkeypatch):
+        ghi = self._bat_kwargs(monkeypatch, cuda=True)
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--source", video,
+                                          "--max-frames", "1", "--device", "cuda"])
+        run_live.main()
+        assert ghi["device"] == "cuda", "thiếu device ⇒ máy GPU vẫn chạy CPU (lỗi 10-11)"
+
+    def test_mac_dinh_la_cpu(self, tmp_path, video, monkeypatch):
+        ghi = self._bat_kwargs(monkeypatch, cuda=False)
+        monkeypatch.setattr(sys, "argv", ["run_live.py", "--source", video, "--max-frames", "1"])
+        run_live.main()
+        assert ghi["device"] == "cpu"
+
+    def test_run_info_ghi_thiet_be_da_dung(self, tmp_path, video, monkeypatch):
+        """`resources.gpu` chỉ nói "MÁY có GPU"; artifact phải ghi thiết bị ĐÃ DÙNG."""
+        self._bat_kwargs(monkeypatch, cuda=False)
+        info = tmp_path / "run_info.json"
+        monkeypatch.setattr(sys, "argv", [
+            "run_live.py", "--source", video, "--max-frames", "1",
+            "--metrics-csv", str(tmp_path / "m.csv"),
+            "--metrics-summary", str(tmp_path / "s.json")])
+        monkeypatch.setattr(run_live, "run_info_path_for", lambda *a, **k: str(info))
+        run_live.main()
+        data = json.loads(info.read_text(encoding="utf-8"))
+        assert data["device"] == "cpu", "artifact job không ghi thiết bị ⇒ dễ bị trích như số GPU"
+
+
 def _write_cfg(tmp_path, text):
     """Ghi config YAML tạm — dedent để test viết YAML thụt lề tự nhiên."""
     path = tmp_path / "cfg.yaml"

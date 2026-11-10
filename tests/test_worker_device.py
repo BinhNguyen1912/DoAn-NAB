@@ -67,7 +67,11 @@ class TestAdapterChuyenTiep:
         assert "--device cuda" in joined
 
     def test_mac_dinh_khong_ghi_co_device(self, tmp_path, bat_lenh):
-        """Mặc định repo là CPU: không đặt `$CAMERA_AI_DEVICE` thì argv không có `--device`."""
+        """Constructor nhận `None` = KHÔNG ghi cờ (worker tự dùng mặc định cpu).
+
+        Nhánh production thì `device_from_env()` trả `"cpu"` (có cờ) — xem
+        `TestCompositionRoot::test_env_trong_van_ghi_device_cpu`.
+        """
         source = ws.WorkerFrameSource("0", bbox=(1, 2, 3, 4), out_dir=tmp_path,
                                       python_exe=sys.executable)
         source.start()
@@ -160,6 +164,26 @@ class TestCompositionRoot:
         with pytest.raises(ValueError, match="device phải là"):
             main.build_default_live()
 
+    def test_env_trong_van_ghi_device_cpu(self, monkeypatch, tmp_path):
+        """Env trống ⇒ `device_from_env()` trả `"cpu"` ⇒ lệnh job **có** `--device cpu`.
+
+        Câu cũ trong docstring một test khác ("không đặt env thì argv không có `--device`") chỉ đúng
+        cho nhánh constructor nhận `None` — nhánh production không đi qua đó (P2 review 10-11).
+        Giá trị `cpu` trùng mặc định `configs/default.yaml` nên hành vi không đổi.
+        """
+        import src.api.main as main
+
+        ghi = {}
+
+        class _RunnerGia:
+            def __init__(self, repo_root, **kwargs):
+                ghi.update(kwargs)
+
+        monkeypatch.setattr(main, "SubprocessPipelineRunner", _RunnerGia)
+        monkeypatch.delenv("CAMERA_AI_DEVICE", raising=False)
+        main.build_default_service(main.ApiSettings(jobs_root=tmp_path))
+        assert ghi["device"] == "cpu"
+
     def test_job_upload_cung_theo_thiet_bi(self, monkeypatch, tmp_path):
         """`build_default_service()` cũng phải truyền thiết bị (job tải video lên)."""
         import src.api.main as main
@@ -204,9 +228,15 @@ class TestJobTaiVideoLen:
     def test_mac_dinh_khong_ghi_co_device(self, tmp_path, monkeypatch):
         from src.api.adapters import subprocess_runner as sr
 
+        class _ProcGia:
+            pid = 4242
+
+            def poll(self):
+                return None
+
         da_dung = []
         monkeypatch.setattr(sr, "start",
-                            lambda argv, **_kw: (da_dung.append(argv), object())[1])
+                            lambda argv, **_kw: (da_dung.append(argv), _ProcGia())[1])
         runner = sr.SubprocessPipelineRunner(tmp_path, python_exe=sys.executable)
         job_dir = tmp_path / "job"
         job_dir.mkdir()

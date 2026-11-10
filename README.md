@@ -430,6 +430,13 @@ máy có GPU vẫn chạy model trên CPU (~155 ms/frame @ `image_size 256`). Na
 | Job tải video lên (web) | cùng biến `CAMERA_AI_DEVICE=cuda` — job `tools/run_live.py` cũng nhận `--device` |
 | Gọi thẳng worker | `python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/live --device cuda` |
 
+Dùng **inline** (`CAMERA_AI_DEVICE=cuda ./run api`) chứ đừng `export` trong `~/.bashrc`: API đọc biến
+này **lúc import** (`app = create_app()`), nên một `export ...=gpu` kẹt trong shell sẽ làm server (và
+cả `./run e2e`) không khởi động được.
+
+Khi **không** đặt biến, API truyền `--device cpu` xuống worker/job — trùng đúng mặc định `device: cpu`
+của `configs/default.yaml`, nên hành vi và số đo cũ **không đổi**.
+
 Quy tắc trung thực (đã khoá bằng test — `tests/test_device.py`, `tests/test_worker_device.py`):
 
 - Xin `cuda` mà máy **không** có GPU ⇒ lỗi ngay **trước** khi nạp checkpoint, `status.json` ghi

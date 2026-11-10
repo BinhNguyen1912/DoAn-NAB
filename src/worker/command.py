@@ -68,8 +68,9 @@ def build_command(job_dir, *, params: dict, bbox, device: str | None = None,
             args += [flag, str(int(params[key]))]
 
     if device is not None:
-        # Thiết bị do MÁY CHỦ quyết định (`$CAMERA_AI_DEVICE`), KHÔNG lấy từ tham số job của client:
-        # job params đi qua `_ALLOWED_INT_PARAMS` (chỉ số nguyên) đúng vì lý do chống rò rỉ tham số.
+        # Thiết bị do MÁY CHỦ quyết định (`$CAMERA_AI_DEVICE`), KHÔNG lấy từ tham số job của client.
+        # Hai lớp chặn phía client: (1) Pydantic `TrackParams` (`src/api/routes.py`) chỉ nhận 5 field;
+        # (2) allowlist `_ALLOWED_INT_PARAMS` dưới đây chỉ chuyển số nguyên ⇒ khoá lạ bị bỏ qua.
         args += ["--device", normalize_device(device)]
 
     if params.get("reid"):

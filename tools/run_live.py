@@ -374,6 +374,9 @@ def _write_run_info(args):
         reid_cue=getattr(args, "reid_cue", None),
         reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
         reid_obj_ncc_min=getattr(args, "reid_obj_ncc_min", None),
+        # Thiết bị ĐÃ DÙNG (cpu|cuda): `resources.gpu` trong summary chỉ nói "MÁY có GPU hay không" ⇒
+        # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
+        device=getattr(args, "device", None) or "cpu",
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
         reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
         reid_verify_frames=getattr(args, "reid_verify_frames", None),
