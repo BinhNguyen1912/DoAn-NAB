@@ -426,6 +426,7 @@ máy có GPU vẫn chạy model trên CPU (~155 ms/frame @ `image_size 256`). Na
 |---|---|
 | CLI demo (đã có từ trước) | `./run video --device cuda` · `./run fast --device cuda` |
 | Worker live (web) | `CAMERA_AI_DEVICE=cuda ./run web` (API đọc lúc khởi động → chuyển xuống worker) |
+| Job tải video lên (web) | cùng biến `CAMERA_AI_DEVICE=cuda` — job `tools/run_live.py` cũng nhận `--device` |
 | Gọi thẳng worker | `python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/live --device cuda` |
 
 Quy tắc trung thực (đã khoá bằng test — `tests/test_device.py`, `tests/test_worker_device.py`):

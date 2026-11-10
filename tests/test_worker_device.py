@@ -120,6 +120,44 @@ class TestWiringEngine:
         assert ghi.get("device") == "cpu"
 
 
+class TestJobTaiVideoLen:
+    """Job `POST /api/jobs` (tải video lên → track → trả mp4) cũng phải chạy được trên GPU.
+
+    Trước 11-11 `SubprocessPipelineRunner` dựng lệnh mà không có `--device` ⇒ trên máy GPU, job
+    xuất video vẫn chạy CPU (155 ms/frame @256) trong khi người dùng tưởng đang dùng GPU.
+    """
+
+    def test_runner_truyen_device_vao_lenh(self, tmp_path, monkeypatch):
+        from src.api.adapters import subprocess_runner as sr
+
+        da_dung = []
+
+        class _ProcGia:
+            pid = 4242
+
+            def poll(self):
+                return None
+
+        monkeypatch.setattr(sr, "start", lambda argv, **_kw: (da_dung.append(argv), _ProcGia())[1])
+        runner = sr.SubprocessPipelineRunner(tmp_path, device="cuda", python_exe=sys.executable)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        runner.start("j1", job_dir, params={}, bbox=(1, 2, 3, 4))
+        assert "--device cuda" in " ".join(da_dung[0])
+
+    def test_mac_dinh_khong_ghi_co_device(self, tmp_path, monkeypatch):
+        from src.api.adapters import subprocess_runner as sr
+
+        da_dung = []
+        monkeypatch.setattr(sr, "start",
+                            lambda argv, **_kw: (da_dung.append(argv), object())[1])
+        runner = sr.SubprocessPipelineRunner(tmp_path, python_exe=sys.executable)
+        job_dir = tmp_path / "job"
+        job_dir.mkdir()
+        runner.start("j1", job_dir, params={}, bbox=(1, 2, 3, 4))
+        assert "--device" not in " ".join(da_dung[0])
+
+
 @pytest.mark.skipif(subprocess.run([sys.executable, "-c",
                                     "import torch,sys; sys.exit(0 if torch.cuda.is_available() "
                                     "else 1)"], capture_output=True).returncode == 0,

@@ -64,6 +64,22 @@ class TestBuildCommand:
         assert "--max-frames 40" in cmd
         assert "--max-trajectory 55" in cmd
 
+    def test_device_duoc_chuyen_thanh_co(self, tmp_path):
+        """Job tải video lên phải chạy được trên GPU: `device` do MÁY CHỦ quyết định, không phải client."""
+        argv = command.build_command(tmp_path, params={}, bbox=(1, 2, 3, 4), device="cuda",
+                                     repo_root=tmp_path)
+        assert "--device cuda" in " ".join(argv)
+
+    def test_device_ten_la_bi_tu_choi(self, tmp_path):
+        with pytest.raises(ValueError, match="device phải là"):
+            command.build_command(tmp_path, params={}, bbox=(1, 2, 3, 4), device="gpu",
+                                  repo_root=tmp_path)
+
+    def test_khong_co_device_thi_khong_ghi_co(self, tmp_path):
+        """Mặc định không ghi cờ ⇒ hành vi CPU cũ giữ nguyên (không đổi số đo đã có)."""
+        argv = command.build_command(tmp_path, params={}, bbox=(1, 2, 3, 4), repo_root=tmp_path)
+        assert "--device" not in " ".join(argv)
+
     def test_tham_so_la_bi_bo_qua(self, tmp_path):
         """Khoá lạ không được lọt vào dòng lệnh (chống chèn cờ tuỳ ý)."""
         cmd = command.build_command(

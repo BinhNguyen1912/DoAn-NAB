@@ -57,7 +57,12 @@ tưởng GPU (đúng bẫy AGENTS §6 "số đo phải ghi rõ môi trường").
    - `ghi_chu_device` (lệch nhau ⇒ đừng trích),
    - `_post` giờ **giữ thân lỗi HTTP**: bản trước ném `HTTPError: 400` trơn nên artifact mất lý do thật
      (đã gặp đúng lúc đo nhánh này).
-6. **Docs**: `README.md` mục **3b** "Demo LIVE (web) trên GPU" (3 cách bật + 3 quy tắc trung thực);
+6. **Job tải video lên cũng đi theo thiết bị** (cùng lỗi lớp trên, phát hiện thêm khi ráp đường API):
+   `build_command(..., device=…)` + `SubprocessPipelineRunner(device=…)` +
+   `build_default_service()` truyền `device_from_env()` ⇒ `CAMERA_AI_DEVICE=cuda` áp cho **cả**
+   phiên live **và** job upload→track→mp4. Thiết bị do **máy chủ** quyết định, không lấy từ tham số
+   job của client (giữ nguyên nguyên tắc chống rò rỉ tham số của `_ALLOWED_INT_PARAMS`).
+7. **Docs**: `README.md` mục **3b** "Demo LIVE (web) trên GPU" (3 cách bật + 3 quy tắc trung thực);
    `./run gpu` in thêm lệnh live GPU và **bỏ số cũ sai** (`mean≈65 ms | FPS≈15,3` → `49,6 ms ≈ 20,15 FPS`
    theo `data/gpu_summary.json`, commit `8d64d59`).
 
@@ -66,10 +71,11 @@ tưởng GPU (đúng bẫy AGENTS §6 "số đo phải ghi rõ môi trường").
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **782 passed** (5 deselected, ~73 s) |
-| `./run testall` | 786 passed + **1 failed** (`test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau`) — chạy riêng: **pass** (8/8 file `test_tracker_engine.py`). Flaky do SAM 2 không tất định + máy tải, **không liên quan nhánh này** (engine do fixture tự dựng, không đi qua `live_worker`) |
+| `./run test` | **787 passed** (5 deselected, ~74 s) |
+| `./run testall` (lần 1, trước khi thêm đường job upload) | 786 passed + **1 failed** (`test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau`); chạy riêng: **8/8 pass**. Flaky do SAM 2 không tất định + máy tải, **không liên quan nhánh này** (engine do fixture tự dựng) ⇒ **ticket 22** |
+| `./run testall` (lần 2, trạng thái cuối) | **792 passed**, 0 failed (205,7 s) — lần này test flaky kia xanh |
 | `./run e2e` | **PASS** (bắt buộc vì có sửa `src/api/**`) — 7 dòng bảng số, MJPEG 29,8 FPS, dừng sạch, 0 lỗi JS |
-| Test mới | **29** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 9, `tests/test_measure_live_relay.py` +3 |
+| Test mới | **34** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 11 (thêm 2 cho job upload), `tests/test_measure_live_relay.py` +3, `tests/test_worker_pipeline.py` +3 |
 
 ### Số đo thật (commit `ffc9f02`, `git_dirty_code = false`)
 
@@ -99,7 +105,8 @@ File thay đổi:
 - `src/device.py` — **mới**: chuẩn hoá/kiểm tra thiết bị + đọc env.
 - `tools/live_worker.py` — `--device`, kiểm CUDA trước khi nạp, `device=` xuống engine, log tên GPU.
 - `src/worker/command.py` — dựng `--device` cho worker live.
-- `src/api/adapters/worker_source.py`, `src/api/main.py` — chuyển `device` + đọc `$CAMERA_AI_DEVICE`.
+- `src/api/adapters/worker_source.py`, `src/api/adapters/subprocess_runner.py`, `src/api/main.py` —
+  chuyển `device` cho phiên live **và** job upload + đọc `$CAMERA_AI_DEVICE` một lần.
 - `scripts/measure_live_relay.py` — `--device`, `device_yeu_cau`/`device_worker_log`, `_post` giữ lỗi.
 - `tests/test_device.py`, `tests/test_worker_device.py` — **mới**; `tests/test_measure_live_relay.py` +3.
 - `README.md` (mục 3b), `run` (lệnh `gpu`).

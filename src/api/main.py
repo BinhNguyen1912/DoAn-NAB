@@ -70,7 +70,8 @@ def build_default_service(settings: ApiSettings) -> JobService:
     )
     return JobService(
         store=store,
-        runner=SubprocessPipelineRunner(REPO_ROOT),
+        # Job tải video lên cũng chạy trên thiết bị của máy chủ: `CAMERA_AI_DEVICE=cuda` (Colab/NVIDIA).
+        runner=SubprocessPipelineRunner(REPO_ROOT, device=device_from_env()),
         probe=Cv2VideoProbe(),
         settings=settings,
     )

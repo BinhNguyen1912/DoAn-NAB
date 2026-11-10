@@ -44,7 +44,8 @@ _ALLOWED_INT_PARAMS = {
 _ALLOWED_CUES = ("face", "object", "both")
 
 
-def build_command(job_dir, *, params: dict, bbox, python_exe: str | None = None,
+def build_command(job_dir, *, params: dict, bbox, device: str | None = None,
+                  python_exe: str | None = None,
                   repo_root: Path | None = None) -> list[str]:
     """Trả argv chạy pipeline cho một job (xem docstring đầu module)."""
     job = Path(job_dir).resolve()
@@ -65,6 +66,11 @@ def build_command(job_dir, *, params: dict, bbox, python_exe: str | None = None,
     for key, flag in _ALLOWED_INT_PARAMS.items():
         if params.get(key):
             args += [flag, str(int(params[key]))]
+
+    if device is not None:
+        # Thiết bị do MÁY CHỦ quyết định (`$CAMERA_AI_DEVICE`), KHÔNG lấy từ tham số job của client:
+        # job params đi qua `_ALLOWED_INT_PARAMS` (chỉ số nguyên) đúng vì lý do chống rò rỉ tham số.
+        args += ["--device", normalize_device(device)]
 
     if params.get("reid"):
         args.append("--reid")
