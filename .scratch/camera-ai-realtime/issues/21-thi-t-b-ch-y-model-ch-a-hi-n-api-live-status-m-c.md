@@ -15,4 +15,4 @@
 
 - [ ] `status.json` có `device`, xuyên chuỗi tới `/api/live/status` và HUD web; allowlist test cập nhật; `./run webtest` + `./run e2e` xanh
 - [ ] Bảng mặc định theo thiết bị (image_size, vos_every) kèm số đo thật trên GPU, có `git_rev` + `device_worker_log`, và ghi ngưỡng nhiễu
-- [ ] Không làm mất đường CPU hiện tại: `./run test` + `testall` xanh, số CPU baseline trong `data/live_gpu_device_cpu_baseline_2026-11-10_metrics.json` vẫn tái lập được
+- [ ] Không làm mất đường CPU hiện tại: `./run test` + `testall` xanh, số CPU baseline trong `data/live_gpu_device_cpu_baseline_run1..3_2026-11-10_metrics.json` vẫn tái lập được

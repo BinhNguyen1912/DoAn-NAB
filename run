@@ -130,7 +130,7 @@ EOF
     activate_env
     # Như `view`/`fast`: chỉ lấy $1 làm nguồn khi nó KHÔNG phải cờ. Bug 27-10 còn sót ở đây:
     # `./run video --device cuda` từng bị đọc thành --source "--device" ⇒ argparse lỗi
-    # (review độc lập 11-11 bắt khi viết tài liệu chạy GPU).
+    # (review độc lập 10-11 bắt khi viết tài liệu chạy GPU).
     if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
       video="$1"; shift
     else

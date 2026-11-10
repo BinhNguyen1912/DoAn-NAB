@@ -37,7 +37,7 @@ class SubprocessPipelineRunner(PipelineRunner):
         self._repo_root = Path(repo_root)
         self._python = python_exe
         # `None` = không ghi cờ ⇒ `tools/run_live.py` dùng mặc định `cpu`. `"cuda"` = job đã tải
-        # video lên cũng chạy model trên GPU (trước 11-11 đường này luôn CPU dù máy có GPU).
+        # video lên cũng chạy model trên GPU (trước 10-11 đường này luôn CPU dù máy có GPU).
         self._device = device
         self._procs: dict = {}
         # Job đã hết tiến trình nhưng còn đang xuất bản H.264 → vẫn coi là ĐANG CHẠY.

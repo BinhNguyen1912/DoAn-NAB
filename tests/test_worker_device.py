@@ -1,7 +1,7 @@
 """
 Test đường `device` (cpu | cuda) đi qua ĐƯỜNG LIVE — worker + adapter web.
 
-Vì sao có: 11-11 phát hiện `tools/live_worker.py` gọi `TrackerEngine.build_default(image_size=...)`
+Vì sao có: 10-11 phát hiện `tools/live_worker.py` gọi `TrackerEngine.build_default(image_size=...)`
 **không** truyền `device` ⇒ dù máy có GPU, phiên live qua web vẫn chạy model trên CPU. Ba chỗ phải
 khớp nhau, nếu lệch thì im lặng chạy CPU (số FPS trong báo cáo bị gán sai thiết bị):
   CLI worker (`--device`) ← `src/worker/command.py` ← `WorkerFrameSource` ← `$CAMERA_AI_DEVICE`.
@@ -86,7 +86,7 @@ class TestAdapterChuyenTiep:
 
 
 class TestWiringEngine:
-    """Cái lỗ 11-11: `build_default()` được gọi mà THIẾU `device` ⇒ máy GPU vẫn chạy CPU.
+    """Cái lỗ 10-11: `build_default()` được gọi mà THIẾU `device` ⇒ máy GPU vẫn chạy CPU.
 
     Chặn `TrackerEngine.build_default` để bắt đúng kwargs rồi dừng `main()` ngay (không nạp
     checkpoint), nhờ vậy test chạy được trên máy không có GPU mà vẫn kiểm được nhánh `cuda`.
@@ -117,7 +117,7 @@ class TestWiringEngine:
 
     def test_truyen_device_xuong_engine(self, monkeypatch, tmp_path):
         ghi = self._chay(monkeypatch, tmp_path, "--device", "cuda")
-        assert ghi.get("device") == "cuda", "thiếu `device` ⇒ máy GPU vẫn chạy CPU (lỗi 11-11)"
+        assert ghi.get("device") == "cuda", "thiếu `device` ⇒ máy GPU vẫn chạy CPU (lỗi 10-11)"
 
     def test_mac_dinh_la_cpu(self, monkeypatch, tmp_path):
         ghi = self._chay(monkeypatch, tmp_path)
@@ -125,7 +125,7 @@ class TestWiringEngine:
 
 
 class TestCompositionRoot:
-    """Hop DUY NHẤT không có test trước review 11-11: `build_default_live()` đọc env rồi truyền
+    """Hop DUY NHẤT không có test trước review 10-11: `build_default_live()` đọc env rồi truyền
     xuống `WorkerFrameSource`. Xoá `device=device` ở đó ⇒ 782 test vẫn xanh và đường live quay lại
     chạy CPU (đúng lỗi gốc tái phát), nên phải khoá bằng test ở chính composition root.
     """
@@ -203,7 +203,7 @@ class TestCompositionRoot:
 class TestJobTaiVideoLen:
     """Job `POST /api/jobs` (tải video lên → track → trả mp4) cũng phải chạy được trên GPU.
 
-    Trước 11-11 `SubprocessPipelineRunner` dựng lệnh mà không có `--device` ⇒ trên máy GPU, job
+    Trước 10-11 `SubprocessPipelineRunner` dựng lệnh mà không có `--device` ⇒ trên máy GPU, job
     xuất video vẫn chạy CPU (155 ms/frame @256) trong khi người dùng tưởng đang dùng GPU.
     """
 
@@ -248,10 +248,15 @@ def _cuda_co_san() -> bool:
     """Có CUDA không — tính MỘT lần (import torch ~1–3 s; đừng chạy ở mỗi lần collect)."""
     cache = getattr(_cuda_co_san, "_cache", None)
     if cache is None:
-        proc = subprocess.run(
-            [sys.executable, "-c", "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"],
-            capture_output=True, timeout=60)
-        cache = proc.returncode == 0
+        try:
+            proc = subprocess.run(
+                [sys.executable, "-c",
+                 "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"],
+                capture_output=True, timeout=60)
+            cache = proc.returncode == 0
+        except (subprocess.SubprocessError, OSError):
+            # Không để pha COLLECT nổ (TimeoutExpired ⇒ cả module 15 test error thay vì skip gọn).
+            cache = False
         _cuda_co_san._cache = cache
     return cache
 

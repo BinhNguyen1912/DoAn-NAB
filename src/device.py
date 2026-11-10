@@ -10,7 +10,7 @@ Lưu ý  : module này KHÔNG kiểm tra CUDA thật — ai có torch thì truy�
          `torch.cuda.is_available()`), còn API (tiến trình nhẹ, không có torch) chỉ cần chuẩn hoá
          tên rồi chuyển tiếp xuống worker.
 
-Vì sao cần: đường live (web demo) trước 11-11 gọi `TrackerEngine.build_default()` mà **không**
+Vì sao cần: đường live (web demo) trước 10-11 gọi `TrackerEngine.build_default()` mà **không**
 truyền `device` ⇒ dù máy có GPU vẫn chạy model trên CPU (155 ms/frame @256). Đường CLI của
 `tools/run_live.py` đã có `--device` từ trước; đường live thì chưa.
 """
@@ -19,7 +19,8 @@ import os
 
 DEFAULT_DEVICE = "cpu"
 VALID_DEVICES = ("cpu", "cuda")
-# Biến môi trường cho đường LIVE qua web: `CAMERA_AI_DEVICE=cuda ./run web` (API đọc lúc khởi động
+# Biến môi trường cho đường LIVE qua web: `./run web` (build frontend) rồi
+# `CAMERA_AI_DEVICE=cuda ./run api` (API đọc biến lúc khởi động
 # rồi chuyển tiếp xuống worker). Đặt tên theo môi trường để không phải đổi hợp đồng HTTP.
 ENV_VAR = "CAMERA_AI_DEVICE"
 

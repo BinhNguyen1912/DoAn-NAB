@@ -44,7 +44,7 @@ def _cuda_available() -> bool:
         import torch
     except Exception:                # noqa: BLE001 — thiếu torch HOẶC torch hỏng (vd OSError libcudart)
         # Bắt rộng vì worker luôn có torch; nếu torch hỏng kiểu `OSError: libcudart.so.12` thì một
-        # `except ImportError` sẽ để traceback làm status.json kẹt ở `loading` (P3 review 11-11).
+        # `except ImportError` sẽ để traceback làm status.json kẹt ở `loading` (P3 review 10-11).
         return False
     return bool(torch.cuda.is_available())
 
@@ -75,10 +75,10 @@ def main() -> int:
                         help="chạy VOS mỗi N frame (1 = VOS mỗi frame, tắt LK; mask mới ở nhịp 1/N)")
     parser.add_argument("--mask-smoothing", type=float, default=1.0,
                         help="trọng số mask MỚI khi trộn theo thời gian (0-1]; 1.0 = tắt (mặc định, "
-                             "đo 10-11: bật không cải thiện độ êm mà thêm trễ)")
+                             "đo 08-11: bật không cải thiện độ êm mà thêm trễ — data/live_2026-11-08_vos3_smoothing05_metrics.json")
     parser.add_argument("--trajectory-len", type=int, default=100)
     # KHÔNG dùng `choices`: `validate_device` chuẩn hoá hoa/thường + khoảng trắng và cho CÙNG một
-    # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 11-11).
+    # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 10-11).
     parser.add_argument("--device", default=None,
                         help="thiết bị chạy model: cpu (mặc định) | cuda (NVIDIA/Colab)")
     parser.add_argument("--stop-after-frames", type=int, default=None,

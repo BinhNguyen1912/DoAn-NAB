@@ -523,7 +523,7 @@ class LiveTrackingSession:
         `reversed()` PHẢI trong `_stats_lock`: đây là cấu trúc **thật sự có hai luồng** — luồng
         chính `append` (`_update_stats_locked`) còn luồng VOS duyệt (`_measure_drift`). `reversed()`
         của `deque` cũng kiểm `state` như iterator xuôi ⇒ sửa giữa lúc duyệt là
-        `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết (review 11-11, P1).
+        `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết (review 10-11, P1).
         Lock ở đây là lock lá, và hàm này chỉ được gọi khi KHÔNG giữ lock (không tái nhập).
         """
         with self._stats_lock:
@@ -554,7 +554,7 @@ class LiveTrackingSession:
             return
         # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
-        # (review 11-11 vòng 2, P3).
+        # (review 10-11 vòng 2, P3).
         with self._stats_lock:
             shown = self._shown_at_locked(frame_idx)
             if shown is None:

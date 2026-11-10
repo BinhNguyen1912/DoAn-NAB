@@ -120,31 +120,33 @@ Reviewer vòng 2 xác nhận bằng đọc mã: `device` đi trọn 4 mắt xíc
 lệnh (`normalize_device` allowlist + `shlex.quote`); client **không** chạm được `device`
 (`TrackParams` chỉ 5 field); `src/worker`/`src/api` **không** import torch (ADR-0005).
 
-### Số đo thật — **3 lần đo liền** (commit `e34eb5c`, cả 3 artifact đều `git_dirty_code = false`)
+### Số đo thật — 3 lần đo liền trên máy rảnh (commit `8501ff3`, cả 3 `git_dirty_code = false`)
 
 Đường live qua API trên **CPU** (nguồn `data/binh1.mp4`, bbox `104,308,209,287`, `image_size 192`,
 `vos_every 3`, 10 s/lần) — `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` ở cả 3:
 
-| Lần | FPS phát (`measured_fps_max`) | Mask mới/giây | `drift_iou_p05` (`drift_n`) | `stability_shown` (`n`) |
-|---|---|---|---|---|
-| `…_run1_2026-11-10_metrics.json` | 27,9 | 5,0 | 0,671 (34) | 0,911 (10) |
-| `…_run2_2026-11-10_metrics.json` | 29,7 | 6,0 | 0,689 (47) | 0,960 (10) |
-| `…_run3_2026-11-10_metrics.json` | 29,6 | 6,3 | 0,752 (51) | 0,960 (10) |
-| **Trung bình** | **29,1** | **5,8** | 0,704 | 0,944 |
+| Lần | FPS phát | Mask mới/giây | `vos_ms` | `mask_age_p95` | `drift_iou_p05` (`drift_n`) | `stability_shown` (`n`) |
+|---|---|---|---|---|---|---|
+| `…_run1_2026-11-10_metrics.json` | 29,8 | 7,0 | 123 ms | 304 ms | 0,714 (60) | 0,958 (10) |
+| `…_run2_2026-11-10_metrics.json` | 29,9 | 6,7 | 327 ms | 668 ms | 0,673 (51) | 0,949 (10) |
+| `…_run3_2026-11-10_metrics.json` | 29,8 | 7,5 | 133 ms | 354 ms | 0,681 (55) | 0,962 (10) |
+| **Trung bình** | **29,8** | **7,07** | — | — | 0,689 | 0,956 |
 
-- **Nhiễu giữa 3 lần: mask 5,0–6,3 (≈ ±11 %), FPS phát 27,9–29,7, `drift_iou_p05` 0,671–0,752.**
-  Một lần đo buổi sáng (máy rảnh, trước `testall`) ra **8,4** mask/giây ⇒ **cấm** dùng mask_fps để
-  A/B nếu chưa chạy `scripts/repeatability.py` lấy ngưỡng nhiễu (AGENTS §6).
-- Con số mang nghĩa "đường live chạy được, số đo có provenance", **không** phải "chất lượng bám".
+- **Nhiễu giữa 3 lần**: mask 6,7–7,5 (**±6 %**), FPS phát 29,8–29,9, `vos_ms` 123–327 ms (run2 bị
+  một cú trễ đơn lẻ, `mask_age_p95` theo đó tăng gấp đôi). Vẫn **cấm** dùng mask_fps để A/B khi chưa
+  chạy `scripts/repeatability.py` lấy ngưỡng nhiễu (AGENTS §6).
+- **Một bộ đo trước đó bị loại**: ở bộ cũ, lần đầu có `vos_ms = 4 363 ms` (chậm **20×**), `vos_fps` 1,5,
+  `mask_age_p95 = 1 935 ms` ⇒ mask người xem thấy cũ ~2 s. Đo lại 3 lần trên máy rảnh không tái hiện
+  ⇒ đó là **phiên suy giảm do máy đang tải**, không phải đặc tính pipeline. **Không** trung bình hoá
+  nó vào bộ số này (review vòng 2 bắt đúng: bảng cũ đã trộn run1 suy giảm với 2 run khoẻ).
+- Con số mang nghĩa "đường live chạy được, số có provenance", **không** phải "chất lượng bám".
 
 Bằng chứng **không âm thầm rơi về CPU**: `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json`
-(`git_rev=e34eb5c`) — xin `cuda` trên máy không có GPU ⇒ `ket_qua=false`, `ly_do_khong_dat` liệt kê
-4 lý do (state/frames/FPS/mask) **+ "không đọc được thiết bị từ worker.log"**, `loi` giữ nguyên câu:
+(`git_rev=8501ff3`) — xin `cuda` trên máy không có GPU ⇒ `ket_qua=false`, `device_worker_log=null`,
+`ly_do_khong_dat` có "không đọc được thiết bị từ worker.log", `loi` giữ nguyên câu:
 `HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"`. Worker chết
-**trước khi nạp checkpoint** (~3 s), lý do tới được `status.json` và UI.
-- `device_worker_log = null` ở artifact này là **đúng** (worker chết trước dòng log `device=`), và nay
-  `ket_qua` **tự** thành `false` vì thiết bị không đọc được — không còn phụ thuộc câu chữ trong
-  `ghi_chu_device` (P2 review 10-11).
+**trước khi nạp checkpoint** (~3 s), lý do tới được `status.json` và UI; **mã thoát của script = 1**
+(trước review vòng 2 là **0** — artifact ghi "không đạt" mà CI tưởng thành công).
 
 ### Bằng chứng test "có răng" (đã kiểm thật, có phục hồi)
 
