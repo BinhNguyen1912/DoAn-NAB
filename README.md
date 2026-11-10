@@ -417,6 +417,27 @@ lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/col
    → hội đồng mở repo ra đối chiếu được số trong báo cáo. Kiểm `git_rev` trong
    `data/gpu_run_info.json` phải bằng `git log -1`.
 
+### 3b. Demo LIVE (web) trên GPU — `CAMERA_AI_DEVICE=cuda`
+Đường live (worker bám trực tiếp + `/api/live/*` + giao diện) **trước 11-11 bị ghim CPU**:
+`tools/live_worker.py` gọi `TrackerEngine.build_default(image_size=…)` mà không truyền `device` ⇒
+máy có GPU vẫn chạy model trên CPU (~155 ms/frame @ `image_size 256`). Nay có 3 cách chọn thiết bị:
+
+| Đường chạy | Cách bật GPU |
+|---|---|
+| CLI demo (đã có từ trước) | `./run video --device cuda` · `./run fast --device cuda` |
+| Worker live (web) | `CAMERA_AI_DEVICE=cuda ./run web` (API đọc lúc khởi động → chuyển xuống worker) |
+| Gọi thẳng worker | `python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/live --device cuda` |
+
+Quy tắc trung thực (đã khoá bằng test — `tests/test_device.py`, `tests/test_worker_device.py`):
+
+- Xin `cuda` mà máy **không** có GPU ⇒ lỗi ngay **trước** khi nạp checkpoint, `status.json` ghi
+  `state=error` kèm hướng dẫn (Colab → Runtime → T4 GPU). **Không** âm thầm rơi về CPU — chạy CPU mà
+  tưởng GPU sẽ khiến mọi số FPS trong báo cáo bị gán sai thiết bị.
+- Tên thiết bị lạ (`gpu`, `cuda:1`) bị từ chối ở cửa vào (không lọt xuống CLI).
+- Khi báo cáo: ghi rõ **thiết bị + `image_size` + `vos_every`** của từng con số. Số CPU đo trên
+  laptop này (mask ~8,6 lần/giây @ `vos_every 3`, HUD 30 FPS) **không** được trích như số GPU và
+  ngược lại.
+
 ## 4. Đóng góp của sinh viên vs thành phần có sẵn
 
 Bảng chi tiết phần nào tự viết, phần nào dùng có sẵn (SAM 2/SAMURAI theo ADR-0001) và bằng chứng

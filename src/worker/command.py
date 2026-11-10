@@ -12,6 +12,8 @@ Lưu ý  : đây là module DUY NHẤT biết `tools/run_live.py` tồn tại �
 import shlex
 from pathlib import Path
 
+from src.device import normalize_device
+
 # `python` trần KHÔNG tồn tại trong WSL (chỉ có python3 hệ thống = 3.14, không cài được torch)
 # → buộc phải activate conda trước khi gọi.
 CONDA_ACTIVATE = "source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai"
@@ -77,7 +79,7 @@ def build_command(job_dir, *, params: dict, bbox, python_exe: str | None = None,
 
 def build_live_worker_command(source: str, out_dir, *, image_size: int | None = None,
                               max_fps: float = 30.0, vos_every: int | None = None,
-                              mask_smoothing: float | None = None,
+                              mask_smoothing: float | None = None, device: str | None = None,
                               python_exe: str | None = None,
                               repo_root: Path | None = None) -> list[str]:
     """Trả argv chạy worker bám trực tiếp (tools/live_worker.py) trong conda env.
@@ -101,5 +103,10 @@ def build_live_worker_command(source: str, out_dir, *, image_size: int | None = 
         args += ["--vos-every", str(int(vos_every))]
     if mask_smoothing is not None:
         args += ["--mask-smoothing", repr(float(mask_smoothing))]
+    if device is not None:
+        # `normalize_device` ném `ValueError` cho tên lạ: một cái typo KHÔNG được lặng lẽ chạy CPU
+        # (số FPS đo ra sẽ bị gán sai thiết bị trong báo cáo). Ở đây không kiểm CUDA thật vì tiến
+        # trình API không có torch — worker kiểm rồi báo lỗi rõ (xem `tools/live_worker.py`).
+        args += ["--device", normalize_device(device)]
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
     return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]

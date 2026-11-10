@@ -38,6 +38,7 @@ from src.api.domain import (
     UnsupportedMedia,
 )
 from src.api.live import LIVE_READ_FPS, LiveStreamService
+from src.device import device_from_env
 from src.api.routes import APP_VERSION, build_router
 from src.api.service import JobService
 from src.worker import REPO_ROOT
@@ -77,13 +78,17 @@ def build_default_service(settings: ApiSettings) -> JobService:
 
 def build_default_live() -> LiveStreamService:
     """Lắp ghép phiên live: mode "raw" = OpenCV tại chỗ, mode "track" = worker model riêng."""
+    # Thiết bị chạy model cho phiên live: `CAMERA_AI_DEVICE=cuda` (Colab/NVIDIA) | mặc định cpu.
+    # Đọc MỘT lần lúc dựng service ⇒ gõ sai thì lỗi ngay khi khởi động, không phải giữa lúc demo.
+    device = device_from_env()
 
     def make_source(source, mode="raw", bbox=None, image_size=None, vos_every=None,
                     mask_smoothing=None):
         if mode == "track":
             # Mặc định 192: đo trên máy này 192 ≈ 10 FPS, 256 ≈ 6,5 FPS, 1024 ≈ 0,4 FPS.
             return WorkerFrameSource(source, bbox=bbox, image_size=image_size or 192,
-                                     vos_every=vos_every, mask_smoothing=mask_smoothing)
+                                     vos_every=vos_every, mask_smoothing=mask_smoothing,
+                                     device=device)
         return OpenCvFrameSource(source)
 
     # 30 Hz khớp `--max-fps` mặc định của worker: đọc chậm hơn nhịp ghi sẽ báo FPS sai (trần = nhịp đọc)

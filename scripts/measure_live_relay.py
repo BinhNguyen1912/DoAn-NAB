@@ -5,8 +5,10 @@ Chức năng: dựng API (uvicorn) + mở phiên live `mode=track` trên nguồn
            `scripts/cam_relay.sh` phục vụ `/snapshot.jpg`), chờ tới `running`, lấy mẫu
            `/api/live/status` trong N giây, chụp vài frame đã overlay mask, rồi ghi 1 artifact JSON
            có `git_rev` + `lenh` + `do_luc` và bảng tóm tắt ra stdout.
-Input  : --source (URL snapshot của relay), --bbox x,y,w,h (ô chọn đối tượng), --image-size,
-         --vos-every, --seconds, --port, --out, --frame-dir.
+Input  : --source (URL snapshot của relay hoặc đường dẫn video), --bbox x,y,w,h (ô chọn đối tượng),
+         --image-size, --vos-every, --seconds, --port, --out, --frame-dir,
+         --device cpu|cuda (11-11: chạy model trên GPU của đường LIVE — trước đó đường live bị
+         ghim CPU vì worker không nhận `device`; số FPS đo ra phải ghi kèm thiết bị).
 Output : `data/live_web_relay_<ngày>_metrics.json` (đuôi `_metrics.json` để `.gitignore` cho qua, đúng
          quy ước artifact của repo) + ảnh `data/live_web_relay_<ngày>/frame*.jpg` (**không** commit ảnh:
          repo không giữ binary trong `data/`).
@@ -19,6 +21,7 @@ Lưu ý  : đây là **bằng chứng "camera thật đã chạy"**, không ph�
 import argparse
 import json
 import os
+import re
 import subprocess
 import sys
 import time
@@ -46,8 +49,15 @@ def _post(base, path, payload, timeout=600.0):
     data = json.dumps(payload).encode("utf-8")
     request = urllib.request.Request(base + path, data=data,
                                      headers={"Content-Type": "application/json"}, method="POST")
-    with urllib.request.urlopen(request, timeout=timeout) as response:
-        return json.loads(response.read().decode("utf-8"))
+    try:
+        with urllib.request.urlopen(request, timeout=timeout) as response:
+            return json.loads(response.read().decode("utf-8"))
+    except urllib.error.HTTPError as exc:
+        # KHÔNG để mất thân lỗi: API trả `{"detail": "..."}` là lý do THẬT (ví dụ xin `cuda` mà máy
+        # không có GPU). Bản trước ném `HTTPError: 400` trơn ⇒ artifact ghi lỗi vô nghĩa
+        # (đã gặp thật khi đo nhánh GPU-live 11-11).
+        body = exc.read().decode("utf-8", "replace").strip()
+        raise RuntimeError(f"POST {path} → HTTP {exc.code}: {body[:500]}") from exc
 
 
 def _get_bytes(base, path, timeout=10.0):
@@ -140,6 +150,20 @@ def _worker_telemetry(out_dir) -> dict:
     return {key: data.get(key) for key in keys if key in data}
 
 
+def _worker_device(out_dir) -> str | None:
+    """Thiết bị mà WORKER thực sự dùng, đọc từ `worker.log` (dòng `[worker] sẵn sàng ... device=…`).
+
+    Vì sao không lấy từ tham số: tham số là *yêu cầu*, còn log là *sự thật đã chạy*. Nếu hai số
+    lệch nhau thì artifact phải thấy được (ví dụ quên đặt biến môi trường ⇒ worker chạy CPU).
+    """
+    try:
+        text = (Path(out_dir) / "worker.log").read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    found = re.findall(r"device=(cpu|cuda)", text)
+    return found[-1] if found else None
+
+
 def _verdict(summary: dict) -> tuple[bool, list]:
     """(đạt, danh sách lý do) — điều kiện đăng ký trước của "đường demo thật chạy được"."""
     reasons = []
@@ -166,6 +190,9 @@ def main() -> int:
     parser.add_argument("--out", default="")
     parser.add_argument("--frame-dir", default="")
     parser.add_argument("--out-dir", default="/dev/shm/doan-live-relay")
+    parser.add_argument("--device", default=None, choices=["cpu", "cuda"],
+                        help="thiết bị chạy model của phiên live (API chuyển xuống worker). "
+                             "Đo trên GPU PHẢI có cờ này để artifact biết số FPS là của máy nào")
     args = parser.parse_args()
 
     bbox = [int(v) for v in args.bbox.replace(",", " ").split()] if args.bbox else []
@@ -182,6 +209,11 @@ def main() -> int:
     # gán số của PHIÊN KHÁC cho lần đo này (review độc lập nhánh bằng chứng, P2).
     (Path(args.out_dir) / "status.json").unlink(missing_ok=True)
     env = dict(os.environ, DOAN_LIVE_DIR=args.out_dir)
+    if args.device:
+        # Đường live đọc `$CAMERA_AI_DEVICE` lúc dựng service (src/api/main.py) ⇒ đặt trước khi
+        # spawn uvicorn là worker con nhận được. Xin cuda mà máy không có GPU: worker ghi
+        # `state=error` ⇒ `_wait_running` ném lỗi và artifact ghi `loi` (không có số giả).
+        env["CAMERA_AI_DEVICE"] = args.device
 
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1",
@@ -255,8 +287,14 @@ def main() -> int:
         "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có "
                            "provenance, đừng trích file này.",
         "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
-        "moi_truong": "WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny; nguồn ảnh = webcam Windows "
-                      "qua relay HTTP (scripts/cam_relay.sh)",
+        "device_yeu_cau": args.device or "cpu",
+        "device_worker_log": _worker_device(args.out_dir),
+        "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với "
+                          "`device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
+        "moi_truong": ("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if (args.device or "cpu") == "cpu"
+                       else f"device={args.device} do người chạy khai báo (xem device_worker_log để "
+                            "biết worker thật sự dùng gì)")
+                      + "; nguồn = " + args.source,
         "nguon": args.source,
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},
@@ -287,6 +325,7 @@ def main() -> int:
         print(f"\nstatus.json của worker: drift_n={worker.get('drift_n')} · "
               f"drift_iou={worker.get('drift_iou')} · p05={worker.get('drift_iou_p05')} · "
               f"mask_age_p95={worker.get('mask_age_p95')} · empty_runs={worker.get('empty_runs')}")
+        print(f"  thiết bị: yêu cầu={artifact['device_yeu_cau']} · worker log={artifact['device_worker_log']}")
         print(f"  ổn định hiển thị: stability_shown={worker.get('stability_shown')} "
               f"(n={worker.get('stability_shown_n')}; null = CHƯA ĐO)")
     print(f"Ảnh: {frames_saved or '(không chụp được)'}")
