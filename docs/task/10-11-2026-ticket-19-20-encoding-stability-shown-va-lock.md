@@ -1,4 +1,4 @@
-# Ngày 11-11-2026 — Đóng ticket 19 (`stability_shown` hết "0 = chưa đo") + ticket 20 (2 cửa sổ `append` ngoài lock)
+# Ngày 10-11-2026 — Đóng ticket 19 (`stability_shown` hết "0 = chưa đo") + ticket 20 (2 cửa sổ `append` ngoài lock)
 
 > Tiếp ngay sau phiên 10-11 (đóng ticket 16/17/18 + merge 3 nhánh vào `main`). Hôm nay là **trả nợ
 > kỹ thuật** đã ghi ticket trong review, không phải tính năng mới. Nhánh:

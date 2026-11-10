@@ -1,6 +1,6 @@
 # 22: Test tracker_engine IoU đỏ khi chạy full suite (chạy riêng xanh) — flaky do SAM 2 không tất định + máy tải
 
-**What to build:** `./run testall` ngày 11-11 (nhánh `feat/live-gpu-device`) đỏ **1** test:
+**What to build:** `./run testall` ngày 10-11 (nhánh `feat/live-gpu-device`) đỏ **1** test:
 `tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau`
 (`IoU tại frame N thấp hơn ngưỡng` 0,5). Chạy riêng cả file: **8/8 pass** (82,9 s). Nhánh đó chỉ sửa đường `device` của worker live, không đi qua `TrackerEngine` ⇒ nhiều khả năng flaky: SAM 2 **không tất định** (AGENTS §6) + máy bị chiếm CPU sau ~6 phút chạy full suite.
 

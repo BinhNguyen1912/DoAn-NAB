@@ -44,8 +44,8 @@ Số đo thật (artifact có `git_rev` + `git_dirty_code=false`, commit `ffc9f0
 
 | Artifact | Nội dung |
 |---|---|
-| `data/live_gpu_device_cpu_baseline_2026-11-11_metrics.json` | đường live qua API trên **CPU**: `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` · **29,9 FPS phát** · **mask 6,9 lần/giây** · `drift_n 59` (p05 0,673) · `stability_shown 0,957 (n=10)` |
-| `data/live_gpu_device_cuda_unavailable_2026-11-11_metrics.json` | xin `cuda` trên máy **không** GPU: `ket_qua=false`, `loi` = `HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"` ⇒ **không âm thầm rơi về CPU** |
+| `data/live_gpu_device_cpu_baseline_2026-11-10_metrics.json` | đường live qua API trên **CPU**: `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` · **29,9 FPS phát** · **mask 6,9 lần/giây** · `drift_n 59` (p05 0,673) · `stability_shown 0,957 (n=10)` |
+| `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json` | xin `cuda` trên máy **không** GPU: `ket_qua=false`, `loi` = `HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"` ⇒ **không âm thầm rơi về CPU** |
 
 Test "có răng" (đã kiểm thật, có phục hồi):
 - bỏ `device=device` khỏi `build_default(...)` ⇒ 2 test wiring đỏ (đúng lỗ của PR này);

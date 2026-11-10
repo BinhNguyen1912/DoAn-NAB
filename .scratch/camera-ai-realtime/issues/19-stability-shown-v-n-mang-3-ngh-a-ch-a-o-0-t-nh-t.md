@@ -22,7 +22,7 @@ Test: cửa sổ rỗng ⇒ `None`/0; mất dấu khi đã có mẫu ⇒ `0,0`/n
 - [x] `status.json` có `stability_shown_n`; allowlist test cập nhật
 - [x] `./run test` + `./run testall` xanh
 
-## Đã làm (11-11-2026)
+## Đã làm (10-11-2026)
 - Nhánh `fix/ticket-19-20-stability-shown-va-lock`: `stability_shown: float | None = None` +
   `stability_shown_n`; `status_payload` thêm khoá; `_shown_iou_window` rỗng ⇒ `None`.
 - `scripts/measure_live_relay.py::_worker_telemetry` giữ thêm `stability_shown(_n)` (không qua API).

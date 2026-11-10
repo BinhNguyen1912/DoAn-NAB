@@ -21,7 +21,7 @@ Cách sửa: gộp `append` + tính thống kê vào CÙNG khối `with self._st
 - [x] Test tham số hoá kiểm cả 3 cửa sổ bằng deque tự theo dõi (đỏ khi trả append ra ngoài)
 - [x] `./run test` + `./run testall` xanh
 
-## Đã làm (11-11-2026)
+## Đã làm (10-11-2026)
 - `_note_mask_age`: `append` + `np.fromiter` + `percentile` gộp vào CÙNG `with self._stats_lock`.
 - `_smooth`: `append` + `sum()` của `_shown_iou_window` trong cùng lock.
 - `TestDriftWindowChiMotNguonGhiTrongLock` → `TestCuaSoThongKeChiMotNguonGhiTrongLock`
