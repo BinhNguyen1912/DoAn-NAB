@@ -6,6 +6,8 @@ repo phải khoá bằng test:
   2. lấy mẫu mà phiên không vào `running` vẫn in bảng "đạt" ⇒ báo động giả ngược lại.
 """
 
+import json
+
 import scripts.measure_live_relay as relay
 
 
@@ -77,3 +79,29 @@ def test_khong_vao_running_thi_khong_dat_va_khong_ghi_artefact_la_dat():
     assert ok is False and reasons
     ok_rong, reasons_rong = relay._verdict(relay.summarize([]))
     assert ok_rong is False and reasons_rong
+
+
+class TestWorkerStatus:
+    """`stability_shown` không đi qua API nên chỉ có trong artifact qua `worker_status` — phải đi
+    kèm `stability_shown_n` và giữ `None` trung thực (ticket 19, cùng bẫy AGENTS §6)."""
+
+    def test_stability_shown_di_kem_n_va_none_trung_thuc(self, tmp_path):
+        (tmp_path / "status.json").write_text(json.dumps({
+            "state": "running", "frames": 12, "stability": None, "stability_n": 0,
+            "stability_shown": None, "stability_shown_n": 0}), encoding="utf-8")
+        data = relay._worker_telemetry(tmp_path)
+        assert data["stability_shown"] is None, "chưa đo mà ghi 0,0 là số liệu sai"
+        assert data["stability_shown_n"] == 0
+        assert data["stability"] is None
+
+    def test_0_0_do_duoc_khong_bi_doi_thanh_none(self, tmp_path):
+        """Chiều ngược của bẫy AGENTS §6: `0,0` ĐO ĐƯỢC phải đi nguyên, không bị "làm sạch"."""
+        (tmp_path / "status.json").write_text(json.dumps({
+            "state": "running", "stability_shown": 0.0, "stability_shown_n": 150}),
+            encoding="utf-8")
+        data = relay._worker_telemetry(tmp_path)
+        assert data["stability_shown"] == 0.0
+        assert data["stability_shown_n"] == 150
+
+    def test_thieu_file_thi_khong_bia_so(self, tmp_path):
+        assert relay._worker_telemetry(tmp_path) == {}

@@ -15,8 +15,15 @@ Cách sửa: gộp `append` + tính thống kê vào CÙNG khối `with self._st
 `TestDriftWindowChiMotNguonGhiTrongLock` thành tham số hoá cho cả 3 cửa sổ (deque tự báo nếu
 `append` chạy khi không giữ lock).
 
-**Blocked by:** None. **Status:** ready-for-agent
+**Blocked by:** None. **Status:** done
 
-- [ ] `append` của `_shown_iou_window` và `_age_window` đều nằm trong `_stats_lock`
-- [ ] Test tham số hoá kiểm cả 3 cửa sổ bằng deque tự theo dõi (đỏ khi trả append ra ngoài)
-- [ ] `./run test` + `./run testall` xanh
+- [x] `append` của `_shown_iou_window` và `_age_window` đều nằm trong `_stats_lock`
+- [x] Test tham số hoá kiểm cả 3 cửa sổ bằng deque tự theo dõi (đỏ khi trả append ra ngoài)
+- [x] `./run test` + `./run testall` xanh
+
+## Đã làm (11-11-2026)
+- `_note_mask_age`: `append` + `np.fromiter` + `percentile` gộp vào CÙNG `with self._stats_lock`.
+- `_smooth`: `append` + `sum()` của `_shown_iou_window` trong cùng lock.
+- `TestDriftWindowChiMotNguonGhiTrongLock` → `TestCuaSoThongKeChiMotNguonGhiTrongLock`
+  (`pytest.mark.parametrize` cho `_drift_window`, `_shown_iou_window`, `_age_window`; deque tự theo
+  dõi). Đã kiểm "có răng": trả `append` của từng cửa sổ ra ngoài lock ⇒ đỏ đúng tham số đó.

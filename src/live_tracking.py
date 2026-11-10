@@ -103,7 +103,13 @@ class LiveTrackStats:
     # cho biết cửa sổ có bao nhiêu mẫu (ticket 18: trước đây `0` mang cả hai nghĩa).
     stability: float | None = None
     stability_n: int = 0          # số mẫu của cửa sổ IoU (0 ⇒ `stability is None`)
-    stability_shown: float = 0.0  # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt)
+    # IoU giữa hai mask ĐÃ LÀM MƯỢT (càng cao càng êm mắt). Cùng encoding với `stability`
+    # (ticket 19): `None` + `stability_shown_n == 0` = CHƯA ĐO (chưa có cặp mask nào để so, ví dụ
+    # chưa chọn ô / engine trả `mask is None`). Tắt làm mượt KHÔNG làm cửa sổ rỗng — lúc đó
+    # `stability_shown` đo trên mask thô, gần bằng `stability`. `0,0` + n > 0 = số ĐO ĐƯỢC (màn
+    # hình đang trống / hai mask rời nhau).
+    stability_shown: float | None = None
+    stability_shown_n: int = 0    # số mẫu của `_shown_iou_window` (0 ⇒ `stability_shown is None`)
     drift_iou: float | None = None        # IoU(ô bao đã phát, ô bao VOS sửa lại) — độ tự nhất quán
     drift_iou_p05: float | None = None    # phân vị 5 % (đuôi xấu: lúc nội suy lệch nhất)
     drift_n: int = 0                      # số mẫu drift (0 ⇒ CHƯA ĐO, không phải "drift = 0")
@@ -187,6 +193,7 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "stability": stats.stability,
         "stability_n": stats.stability_n,
         "stability_shown": stats.stability_shown,
+        "stability_shown_n": stats.stability_shown_n,
         "empty_runs": stats.empty_runs,
         "empty_frac_window": stats.empty_frac_window,
         "empty_window_n": stats.empty_window_n,
@@ -324,7 +331,10 @@ class LiveTrackingSession:
         self._prev_raw_mask = None
         self._prev_vos_bbox = None
         self._lock = threading.Lock()          # bảo vệ `_vos_state`
-        self._stats_lock = threading.Lock()    # bảo vệ `_stats` (luồng VOS ghi, luồng chính đọc)
+        # Bảo vệ `_stats` + mọi cửa sổ thống kê (luồng VOS ghi, luồng chính đọc). Lock LÁ, KHÔNG
+        # tái nhập: đang giữ nó thì cấm gọi hàm có `with self._stats_lock` (dùng biến thể
+        # `*_locked` cho phần dùng chung, như `_apply_drift_locked`).
+        self._stats_lock = threading.Lock()
         self._vos_state = None          # (seq, result, gray, produced_at, vos_ms) lần VOS gần nhất
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
@@ -464,7 +474,9 @@ class LiveTrackingSession:
         self._interp.reset(base_gray, base_bbox)      # mốc LUÔN là frame VOS → sai số không tích luỹ
         began = time.perf_counter()
         bbox, ok = self._interp.update(gray)
-        self._stats.lk_ms = round((time.perf_counter() - began) * 1000.0, 2)
+        lk_ms = round((time.perf_counter() - began) * 1000.0, 2)
+        with self._stats_lock:            # `_stats` chỉ được ghi dưới lock (xem `__init__`)
+            self._stats.lk_ms = lk_ms
         if not ok:
             # LK mất dấu: vẫn phát mask/ô bao của lần VOS gần nhất (không bịa vị trí mới)
             return base_result
@@ -476,7 +488,7 @@ class LiveTrackingSession:
             frame_idx=self._frame_index,
             bbox=xywh_to_xyxy(bbox),
             mask=shift_mask(mask, dx, dy) if mask is not None else None,
-            elapsed_ms=self._stats.lk_ms,
+            elapsed_ms=lk_ms,
         )
 
     # ------------------------------------------------------------------ đường đơn luồng
@@ -506,7 +518,19 @@ class LiveTrackingSession:
         self._measure_stability(result)
 
     def _shown_at(self, frame_idx):
-        """Ô bao đã PHÁT ở frame `frame_idx` (tra ngược trong cửa sổ) — None nếu không có."""
+        """Ô bao đã PHÁT ở frame `frame_idx` (tra ngược trong cửa sổ) — None nếu không có.
+
+        `reversed()` PHẢI trong `_stats_lock`: đây là cấu trúc **thật sự có hai luồng** — luồng
+        chính `append` (`_update_stats_locked`) còn luồng VOS duyệt (`_measure_drift`). `reversed()`
+        của `deque` cũng kiểm `state` như iterator xuôi ⇒ sửa giữa lúc duyệt là
+        `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết (review 11-11, P1).
+        Lock ở đây là lock lá, và hàm này chỉ được gọi khi KHÔNG giữ lock (không tái nhập).
+        """
+        with self._stats_lock:
+            return self._shown_at_locked(frame_idx)
+
+    def _shown_at_locked(self, frame_idx):
+        """Như `_shown_at` nhưng gọi khi ĐÃ giữ `_stats_lock` (hậu tố `_locked`, không acquire)."""
         for idx, bbox in reversed(self._shown_by_frame):
             if idx == frame_idx:
                 return bbox
@@ -528,12 +552,16 @@ class LiveTrackingSession:
         fresh = getattr(result, "bbox", None)
         if frame_idx is None or fresh is None or not _bbox_hop_le(fresh):
             return
-        shown = self._shown_at(frame_idx)
-        if shown is None:
-            # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát frame;
-            # nếu frame đó đã trôi qua thì BỎ, không lấy ô bao của frame khác (sẽ đo sai thứ).
-            self._pending_drift = (frame_idx, tuple(fresh))
-            return
+        # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
+        # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
+        # (review 11-11 vòng 2, P3).
+        with self._stats_lock:
+            shown = self._shown_at_locked(frame_idx)
+            if shown is None:
+                # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát
+                # frame; nếu frame đó đã trôi qua thì BỎ, không lấy ô bao của frame khác (đo sai thứ).
+                self._pending_drift = (frame_idx, tuple(fresh))
+                return
         if not _bbox_hop_le(shown):
             return
         self._record_drift(_bbox_iou(shown, fresh))
@@ -571,13 +599,15 @@ class LiveTrackingSession:
         `mask_age_total_ms` (tuổi dữ liệu ảnh). Ngân sách 150 ms dùng con số **total**.
         """
         age_ms = max(0.0, float(seconds) * 1000.0)
-        self._age_window.append(age_ms)
-        total = age_ms + max(0.0, float(vos_ms))
-        total_values = np.fromiter((v + max(0.0, float(vos_ms)) for v in self._age_window),
-                                   dtype=float)
+        vos_ms = max(0.0, float(vos_ms))
+        # `append` + `np.fromiter` + `percentile` trong CÙNG `_stats_lock` (ticket 20): hôm nay chỉ
+        # có một luồng ghi, nhưng đây đúng mẫu code mà ticket 17 vừa phải sửa cho `_drift_window`
+        # (`RuntimeError: deque mutated during iteration` nếu một người sửa sau thêm luồng thứ hai).
         with self._stats_lock:
+            self._age_window.append(age_ms)
+            total_values = np.fromiter((v + vos_ms for v in self._age_window), dtype=float)
             self._stats.mask_age_ms = round(age_ms, 1)
-            self._stats.mask_age_total_ms = round(total, 1)
+            self._stats.mask_age_total_ms = round(age_ms + vos_ms, 1)
             self._stats.age_n = len(self._age_window)
             self._stats.mask_age_p95 = (round(float(np.percentile(total_values, 95)), 1)
                                         if len(self._age_window) >= _STAT_MIN_SAMPLES
@@ -618,10 +648,10 @@ class LiveTrackingSession:
             self._prev_raw_mask = None
             return
         if self._prev_raw_mask is not None:
-            # `append` + `sum()` trong CÙNG lock — cùng lý do như `_vos_lost_window` ở trên (review
-            # 09-11 vòng 3: comment cấm append ngoài lock mà 16 dòng dưới lại làm đúng thế).
+            # `mask_iou` tính NGOÀI lock (cùng lý do như `_smooth`): chỉ `append` + `sum()` cần lock.
+            value = mask_iou(self._prev_raw_mask, raw)
             with self._stats_lock:
-                self._iou_window.append(mask_iou(self._prev_raw_mask, raw))
+                self._iou_window.append(value)
                 self._stats.stability = round(sum(self._iou_window) / len(self._iou_window), 3)
                 self._stats.stability_n = len(self._iou_window)
         self._prev_raw_mask = raw
@@ -656,16 +686,22 @@ class LiveTrackingSession:
                 self._stats.mask_drops = smoother.drops
 
         if not shown.any():
-            # Cùng lý do như `stability`: màn hình trống mà báo IoU = 1,0 là số liệu sai.
+            # Cùng lý do như `stability`: màn hình trống mà báo IoU = 1,0 là số liệu sai. Và `0,0`
+            # chỉ có nghĩa "đo được" khi ĐÃ CÓ mẫu — cửa sổ rỗng ⇒ `None` = CHƯA ĐO (ticket 19).
             with self._stats_lock:
-                self._stats.stability_shown = 0.0
+                self._stats.stability_shown = 0.0 if self._shown_iou_window else None
+                self._stats.stability_shown_n = len(self._shown_iou_window)
             self._prev_shown_mask = None
             return
         if self._prev_shown_mask is not None:
-            self._shown_iou_window.append(mask_iou(self._prev_shown_mask, shown))
+            # `mask_iou` tính NGOÀI lock (không gian ảnh 480p/720p ⇒ ~0,2–1 ms, dài hơn hẳn
+            # `np.percentile` 200 mẫu); chỉ `append` + `sum()` nằm trong lock (ticket 20).
+            value = mask_iou(self._prev_shown_mask, shown)
             with self._stats_lock:
+                self._shown_iou_window.append(value)
                 self._stats.stability_shown = round(
                     sum(self._shown_iou_window) / len(self._shown_iou_window), 3)
+                self._stats.stability_shown_n = len(self._shown_iou_window)
         self._prev_shown_mask = shown
 
     @staticmethod

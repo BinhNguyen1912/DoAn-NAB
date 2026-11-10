@@ -15,9 +15,16 @@ Cách sửa (giống ticket 18): `stability_shown: float | None = None` + `stabi
 (độ dài `_shown_iou_window`), `status_payload` thêm khoá, allowlist test `status.json` cập nhật.
 Test: cửa sổ rỗng ⇒ `None`/0; mất dấu khi đã có mẫu ⇒ `0,0`/n>0.
 
-**Blocked by:** None. **Status:** ready-for-agent
+**Blocked by:** None. **Status:** done
 
-- [ ] Cửa sổ `_shown_iou_window` rỗng ⇒ `stability_shown is None`, `stability_shown_n == 0`
-- [ ] Có mẫu rồi mới mất dấu ⇒ `stability_shown == 0.0`, `stability_shown_n > 0`
-- [ ] `status.json` có `stability_shown_n`; allowlist test cập nhật
-- [ ] `./run test` + `./run testall` xanh
+- [x] Cửa sổ `_shown_iou_window` rỗng ⇒ `stability_shown is None`, `stability_shown_n == 0`
+- [x] Có mẫu rồi mới mất dấu ⇒ `stability_shown == 0.0`, `stability_shown_n > 0`
+- [x] `status.json` có `stability_shown_n`; allowlist test cập nhật
+- [x] `./run test` + `./run testall` xanh
+
+## Đã làm (11-11-2026)
+- Nhánh `fix/ticket-19-20-stability-shown-va-lock`: `stability_shown: float | None = None` +
+  `stability_shown_n`; `status_payload` thêm khoá; `_shown_iou_window` rỗng ⇒ `None`.
+- `scripts/measure_live_relay.py::_worker_telemetry` giữ thêm `stability_shown(_n)` (không qua API).
+- Test: 3 trong `TestStabilityShownCoEncodingChuaDo` + 2 trong `TestWorkerStatus`; allowlist
+  `status.json` đã thêm `stability_shown_n`. Đã kiểm "có răng": trả `0.0` vô điều kiện ⇒ đỏ.

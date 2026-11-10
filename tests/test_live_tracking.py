@@ -126,7 +126,8 @@ class TestLiveTrackingSession:
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         bat_buoc = {
             "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
-            "stability", "stability_n", "stability_shown", "empty_runs", "mask_holds",
+            "stability", "stability_n", "stability_shown", "stability_shown_n",
+            "empty_runs", "mask_holds",
             "mask_drops",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
             "mask_age_p95", "age_n", "empty_frac_window", "empty_window_n",
@@ -541,7 +542,8 @@ class TestLoiReviewDocLap:
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert status["empty_runs"] >= 2
-        assert status["stability_shown"] < 0.999, "màn hình trống mà báo IoU 1,0 là số liệu sai"
+        assert status["stability_shown"] is not None and status["stability_shown"] < 0.999, \
+            "màn hình trống mà báo IoU 1,0 là số liệu sai (None = chưa đo cũng không đạt)"
 
     def test_p3_o_bao_mong_1px_van_duoc_coi_la_hop_le(self):
         from src.live_tracking import _bbox_hop_le
@@ -1104,16 +1106,43 @@ class TestMotMauMoiLanVos:
         assert status["empty_runs"] == 0
 
 
-class TestDriftWindowChiMotNguonGhiTrongLock:
-    """Ticket 17: `_drift_window` từng có nguồn ghi **ngoài** `_stats_lock` trong khi
-    `_apply_drift_locked` duyệt deque bằng `np.fromiter` **trong** lock ⇒
-    `RuntimeError: deque mutated during iteration` ⇒ luồng VOS chết giữa lúc chạy.
+class TestCuaSoThongKeChiMotNguonGhiTrongLock:
+    """Ticket 17 + 20: MỌI cửa sổ thống kê chỉ được ghi khi đang giữ `_stats_lock`.
+
+    `_drift_window` từng có nguồn ghi **ngoài** lock trong khi `_apply_drift_locked` duyệt deque
+    bằng `np.fromiter` **trong** lock ⇒ `RuntimeError: deque mutated during iteration` ⇒ luồng VOS
+    chết giữa lúc chạy (ticket 17). Ticket 20 chỉ ra `_shown_iou_window` và `_age_window` còn đúng
+    mẫu code đó (hôm nay mỗi cửa sổ chỉ có một luồng ghi nên chưa nổ, nhưng mẫu sai sẽ bị copy).
 
     Test phải **thấy lỗi trước khi sửa** (đã kiểm: đỏ khi trả `append` ra ngoài lock), không chỉ xanh.
     """
 
-    def test_hai_thread_ghi_va_doc_khong_no(self, video_source, tmp_path):
-        """Bất biến "chỉ ghi `_drift_window` khi giữ `_stats_lock`" + stress thật.
+    @staticmethod
+    def _lenh_ghi(ten, session):
+        """Hàm ghi ĐÚNG MỘT mẫu vào cửa sổ `ten`, đi qua đường sản phẩm (không `append` tay)."""
+        co_vat = np.zeros((32, 32), bool)
+        co_vat[4:12, 4:12] = True
+        if ten == "_drift_window":
+            return lambda: session._record_drift(0.5)
+        if ten == "_shown_iou_window":
+            return lambda: session._smooth(_Result(0, (4, 4, 12, 12), co_vat))
+        if ten == "_age_window":
+            return lambda: session._note_mask_age(0.01, 5.0)
+        raise AssertionError(f"cửa sổ chưa khai báo trong bài test: {ten}")
+
+    @staticmethod
+    def _so_mau(session, ten):
+        """Số mẫu mà CHÍNH sản phẩm báo ra cho cửa sổ đó (không đọc thẳng `len(deque)`)."""
+        stats = session._stats
+        return {
+            "_drift_window": stats.drift_n,
+            "_shown_iou_window": stats.stability_shown_n,
+            "_age_window": stats.age_n,
+        }[ten]
+
+    @pytest.mark.parametrize("ten", ["_drift_window", "_shown_iou_window", "_age_window"])
+    def test_hai_thread_ghi_va_doc_khong_no(self, ten, video_source, tmp_path):
+        """Bất biến "chỉ ghi cửa sổ khi giữ `_stats_lock`" + stress thật.
 
         Vì sao cần kiểm bất biến bằng deque tự theo dõi: CPython chỉ chuyển GIL mỗi 5 ms nên vòng
         duyệt 200 phần tử (vài µs) **không** bị chen ngang ⇒ test stress thuần sẽ xanh cả khi còn
@@ -1123,21 +1152,27 @@ class TestDriftWindowChiMotNguonGhiTrongLock:
         session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
         errors = []
         lock = session._stats_lock
+        ghi = self._lenh_ghi(ten, session)
 
         class _DequeTheoDoi(deque):
-            """`deque` ghi lại nếu có lần `append` nào xảy ra khi KHÔNG giữ `_stats_lock`."""
+            """`deque` ghi lại nếu có lần `append` nào xảy ra khi KHÔNG giữ `_stats_lock`.
+
+            `lock.locked()` = "MỘT thread nào đó đang giữ" (không phải "thread này giữ"): với 2
+            writer × 3000 lần + `setswitchinterval(1e-6)` thì lần `append` ngoài lock gần như chắc
+            chắn rơi vào lúc không ai giữ ⇒ đỏ (đã kiểm thật, không phải lý thuyết).
+            """
 
             def append(self, value):
                 if not lock.locked():
-                    errors.append("append() gọi khi KHÔNG giữ _stats_lock")
+                    errors.append(f"{ten}: append() gọi khi KHÔNG giữ _stats_lock")
                 super().append(value)
 
-        session._drift_window = _DequeTheoDoi(maxlen=200)
+        setattr(session, ten, _DequeTheoDoi(maxlen=getattr(session, ten).maxlen))
 
         def writer():
             try:
-                for i in range(5000):
-                    session._record_drift(0.5 + (i % 3) * 0.1)
+                for _ in range(3000):
+                    ghi()
             except Exception as exc:                  # noqa: BLE001 — đây là thứ cần bắt
                 errors.append(f"writer: {type(exc).__name__}: {exc}")
 
@@ -1148,12 +1183,13 @@ class TestDriftWindowChiMotNguonGhiTrongLock:
                     # ném `RuntimeError: deque mutated during iteration` nếu có nguồn ghi ngoài lock.
                     with lock:
                         total = 0.0
-                        for value in session._drift_window:
+                        for value in getattr(session, ten):
                             total += value
-                        # `_apply_drift_locked()` PHẢI gọi trong lock (hàm tự mô tả như vậy):
+                        # Hàm tổng hợp PHẢI gọi trong lock (hậu tố `_locked` tự mô tả điều đó):
                         # gọi ngoài lock thì chính test vi phạm bất biến nó đang kiểm, và có thể
                         # đỏ oan khi numpy duyệt deque trong lúc writer append (review 10-11, P2).
-                        session._apply_drift_locked()
+                        if ten == "_drift_window":
+                            session._apply_drift_locked()
                     assert total >= 0.0
             except Exception as exc:                  # noqa: BLE001
                 errors.append(f"reader: {type(exc).__name__}: {exc}")
@@ -1170,8 +1206,65 @@ class TestDriftWindowChiMotNguonGhiTrongLock:
         finally:
             sys.setswitchinterval(cu)
 
-        assert errors == [], "vi phạm bất biến lock của `_drift_window`: " + "; ".join(errors[:5])
-        assert session._stats.drift_n > 0 and session._stats.drift_iou is not None
+        assert errors == [], f"vi phạm bất biến lock của `{ten}`: " + "; ".join(errors[:5])
+        assert self._so_mau(session, ten) > 0, f"`{ten}` không nhận mẫu nào ⇒ bài test vô nghĩa"
+
+
+class TestShownByFrameDocTrongLock:
+    """Review 11-11 (P1): `_shown_by_frame` là cấu trúc **thật sự hai luồng** — luồng chính
+    `append` (trong lock), luồng VOS duyệt bằng `reversed()` trong `_measure_drift`. TRƯỚC KHI SỬA
+    vế thứ hai **ngoài** lock ⇒ cùng lớp lỗi `RuntimeError: deque mutated during iteration` đã giết
+    luồng VOS ở ticket 17. Nay cả hai vế đều dưới lock.
+
+    Test không cần stress: chỉ cần biết lúc `reversed()` chạy có đang giữ lock hay không — trước khi
+    sửa là `False`, sau khi sửa là `True` (đã kiểm cả hai chiều).
+    """
+
+    def test_shown_at_doc_deque_trong_lock(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        lock = session._stats_lock
+        da_giu_lock = []
+
+        class _DequeTheoDoi(deque):
+            def __reversed__(self):
+                da_giu_lock.append(lock.locked())
+                return super().__reversed__()
+
+        maxlen = session._shown_by_frame.maxlen      # dùng đúng hằng số production (_SHOWN_HISTORY)
+        session._shown_by_frame = _DequeTheoDoi([(3, (1, 1, 10, 10))], maxlen=maxlen)
+        assert session._shown_at(3) == (1, 1, 10, 10)
+        assert session._shown_at(99) is None
+        assert da_giu_lock == [True, True], \
+            "duyệt `_shown_by_frame` phải trong `_stats_lock` (luồng chính append cùng lúc)"
+
+    def test_pending_drift_ghi_duoi_lock(self, video_source, tmp_path):
+        """`_pending_drift` do luồng VOS GHI và luồng chính ĐỌC/XOÁ cùng lúc ⇒ ghi cũng phải dưới
+        lock (nếu không thì có thể mất một mẫu drift — review 11-11, P3).
+
+        Dùng lớp con để theo dõi lần GÁN (không `setattr` vào lớp thật ⇒ không rò sang test khác).
+        """
+        da_giu_lock = []
+
+        class _SessionTheoDoi(LiveTrackingSession):
+            @property
+            def _pending_drift(self):
+                return self.__dict__.get("_pending")
+
+            @_pending_drift.setter
+            def _pending_drift(self, value):
+                # Trong `__init__` lock chưa tồn tại ⇒ ghi `None` để không tính là "vi phạm".
+                lock = getattr(self, "_stats_lock", None)
+                da_giu_lock.append(None if lock is None else lock.locked())
+                self.__dict__["_pending"] = value
+
+        # `vos_every > 1` mới bật LK ⇒ mới có drift để đo (`_config` ghim `vos_every=1`).
+        session = _SessionTheoDoi(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+        # Frame 0 CHƯA được phát ⇒ `_shown_at` trả None ⇒ đi nhánh hẹn `_pending_drift`.
+        session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
+        assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
+        assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
+        assert session._pending_drift == (0, (4, 4, 12, 12))
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -1205,3 +1298,37 @@ class TestStabilityCoEncodingChuaDo:
         session._measure_stability(_Result(2, (0, 0, 1, 1), np.zeros((32, 32), bool)))
         assert session._stats.stability == 0.0
         assert session._stats.stability_n == 1, "cửa sổ giữ mẫu cũ; `stability = 0` là số ĐO ĐƯỢC"
+
+
+class TestStabilityShownCoEncodingChuaDo:
+    """Ticket 19: `stability_shown` là bản sao đúng lỗi mà ticket 18 vừa sửa cho `stability` —
+    `0,0` vừa là giá trị mặc định ("chưa đo") vừa là số đo được ("màn hình đang trống"). Không lộ
+    ra API/UI, nhưng artifact `data/*_metrics.json` đã công bố nên người đọc báo cáo sẽ trích
+    "ổn định 0 %" cho một phiên chưa đo gì (AGENTS §6: `0/None ≠ đã đo`)."""
+
+    def test_cua_so_rong_thi_none_va_n_bang_0(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        rong = np.zeros((32, 32), bool)
+        session._smooth(_Result(0, (0, 0, 1, 1), rong))   # màn hình trống, chưa có mẫu nào
+        assert session._stats.stability_shown_n == 0
+        assert session._stats.stability_shown is None, "chưa có mẫu ⇒ None, không phải 0,0"
+
+    def test_co_mau_roi_mat_dau_thi_0_0_va_n_duong(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        co_vat = np.zeros((32, 32), bool)
+        co_vat[4:12, 4:12] = True
+        session._smooth(_Result(0, (4, 4, 12, 12), co_vat))    # mẫu 1: chưa có cặp
+        session._smooth(_Result(1, (4, 4, 12, 12), co_vat))    # mẫu 2: IoU = 1,0
+        assert session._stats.stability_shown_n == 1
+        assert session._stats.stability_shown == 1.0
+        session._smooth(_Result(2, (0, 0, 1, 1), np.zeros((32, 32), bool)))   # màn hình trống
+        assert session._stats.stability_shown == 0.0
+        assert session._stats.stability_shown_n == 1, "cửa sổ giữ mẫu cũ; `0,0` là số ĐO ĐƯỢC"
+
+    def test_status_json_co_stability_shown_n(self, video_source, tmp_path):
+        """Khoá mới phải đi qua `status_payload` (nếu chỉ thêm vào dataclass, file vẫn thiếu)."""
+        from src.live_tracking import LiveTrackStats, status_payload
+
+        payload = status_payload(LiveTrackStats())
+        assert payload["stability_shown"] is None
+        assert payload["stability_shown_n"] == 0

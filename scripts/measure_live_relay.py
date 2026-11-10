@@ -135,9 +135,8 @@ def _worker_telemetry(out_dir) -> dict:
         return {}
     keys = ("state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
-            "mask_age_p95", "age_n", "stability", "stability_n", "empty_runs", "mask_holds",
-            "mask_drops",
-            "lost_streak")
+            "mask_age_p95", "age_n", "stability", "stability_n", "stability_shown",
+            "stability_shown_n", "empty_runs", "mask_holds", "mask_drops", "lost_streak")
     return {key: data.get(key) for key in keys if key in data}
 
 
@@ -288,6 +287,8 @@ def main() -> int:
         print(f"\nstatus.json của worker: drift_n={worker.get('drift_n')} · "
               f"drift_iou={worker.get('drift_iou')} · p05={worker.get('drift_iou_p05')} · "
               f"mask_age_p95={worker.get('mask_age_p95')} · empty_runs={worker.get('empty_runs')}")
+        print(f"  ổn định hiển thị: stability_shown={worker.get('stability_shown')} "
+              f"(n={worker.get('stability_shown_n')}; null = CHƯA ĐO)")
     print(f"Ảnh: {frames_saved or '(không chụp được)'}")
     print(f"Ghi: {out}")
     if git_loi:
