@@ -1,15 +1,15 @@
 {
-  "do_luc": "2026-11-10T20:40:05",
-  "git_rev": "ffc9f02ad840d1dd4c271d0b3abfa33796bca28f",
+  "do_luc": "2026-11-10T20:55:23+07:00",
+  "git_rev": "e34eb5c4da4519d9df692cb45101097204f0d5bf",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
-  "lenh": "python scripts/measure_live_relay.py --source data/binh1.mp4 --bbox 104,308,209,287 --image-size 192 --seconds 4 --device cuda --out data/live_gpu_device_cuda_unavailable_2026-11-11_metrics.json --out-dir /tmp/live_cuda3 --frame-dir /tmp/f_cuda3",
+  "lenh": "python scripts/measure_live_relay.py --source data/binh1.mp4 --bbox 104,308,209,287 --image-size 192 --seconds 4 --device cuda --out data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json --out-dir /tmp/lc --frame-dir /tmp/fc",
   "device_yeu_cau": "cuda",
   "device_worker_log": null,
   "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với `device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
-  "moi_truong": "device=cuda do người chạy khai báo (xem device_worker_log để biết worker thật sự dùng gì); nguồn = data/binh1.mp4",
+  "moi_truong": "device=cuda (xem device_worker_log để biết worker thật sự dùng gì); nguồn = data/binh1.mp4",
   "nguon": "data/binh1.mp4",
   "thiet_lap": {
     "bbox_xywh": [
@@ -29,7 +29,8 @@
     "state_cuoi = None (cần 'running')",
     "frames = 0 (không có frame nào tới browser)",
     "measured_fps = 0",
-    "mask_fps = 0 (mask chưa được cập nhật ⇒ không phải mode track)"
+    "mask_fps = 0 (mask chưa được cập nhật ⇒ không phải mode track)",
+    "không đọc được thiết bị từ worker.log (worker chết trước khi in, hoặc log bản cũ)"
   ],
   "tom_tat": {
     "n_mau": 0,

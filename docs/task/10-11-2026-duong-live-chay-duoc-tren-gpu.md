@@ -71,27 +71,64 @@ tưởng GPU (đúng bẫy AGENTS §6 "số đo phải ghi rõ môi trường").
 | Kiểm tra | Kết quả |
 |---|---|
 | `./run lint` | ✓ |
-| `./run test` | **787 passed** (5 deselected, ~74 s) |
+| `./run test` | **795 passed** (5 deselected, ~76 s) — sau khi sửa review |
 | `./run testall` (lần 1, trước khi thêm đường job upload) | 786 passed + **1 failed** (`test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau`); chạy riêng: **8/8 pass**. Flaky do SAM 2 không tất định + máy tải, **không liên quan nhánh này** (engine do fixture tự dựng) ⇒ **ticket 22** |
 | `./run testall` (lần 2, trạng thái cuối) | **792 passed**, 0 failed (205,7 s) — lần này test flaky kia xanh |
 | `./run e2e` | **PASS** (bắt buộc vì có sửa `src/api/**`) — 7 dòng bảng số, MJPEG 29,8 FPS, dừng sạch, 0 lỗi JS |
-| Test mới | **34** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 11 (thêm 2 cho job upload), `tests/test_measure_live_relay.py` +3, `tests/test_worker_pipeline.py` +3 |
+| Test mới | **41** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 17 (gồm composition root + job upload), `tests/test_measure_live_relay.py` +5, `tests/test_worker_pipeline.py` +3, `tests/test_run_script.py` +1 |
 
-### Số đo thật (commit `ffc9f02`, `git_dirty_code = false`)
+### Review độc lập (AGENTS §9.1) — 2 vòng
 
-| Artifact | Nội dung | Số |
+**Vòng 1** (agent `reviewer`, trên commit `ffc9f02`): **P0 = 0**, nhưng **2 P1** đều nằm ở **tài liệu
+hướng dẫn chạy GPU** — đúng loại lỗi "người dùng tưởng GPU mà chạy CPU" mà nhánh này sinh ra để diệt:
+
+| Mức | Phát hiện | Xử lý |
 |---|---|---|
-| `data/live_gpu_device_cpu_baseline_2026-11-10_metrics.json` | Đường live qua API trên **CPU** (nguồn `data/binh1.mp4`, bbox `104,308,209,287`, `image_size 192`, `vos_every 3`, 10 s) | `device_yeu_cau=cpu`, `device_worker_log=cpu`, `git_rev=ffc9f02`, `ket_qua=true` · **29,9 FPS phát** · **mask 6,9 lần/giây** · `drift_n 59` (p05 0,673) · `stability_shown 0,957 (n=10)` |
-| `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json` | Xin `cuda` trên máy **không** có GPU | `ket_qua=false`, `loi` = `HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"` ⇒ chứng minh **không âm thầm rơi về CPU** |
+| **P1** | `README.md` + `./run gpu` dạy `CAMERA_AI_DEVICE=cuda ./run web`, nhưng `./run web` chỉ **build** frontend rồi in "chạy: ./run api" ⇒ biến không bao giờ tới API | Sửa thành `./run web` (build) rồi `CAMERA_AI_DEVICE=cuda ./run api`; README ghi rõ **`./run web` KHÔNG khởi động API** |
+| **P1** | `./run video --device cuda` lỗi argparse: nhánh `video)` ăn `--device` làm nguồn (bug 27-10 còn sót; `fast`/`view` đã sửa) | Thêm guard `[ "${1#-}" = "$1" ]` như `fast`/`view` + test `test_video_nhan_co_thay_vi_lam_nguon` (đỏ khi trả lại code cũ) |
+| P2 | Hop `src/api/main.py` **không có test**: xoá `device=device` ở đó thì 782 test vẫn xanh (đường live quay lại CPU) | 4 test `TestCompositionRoot` (env→`WorkerFrameSource`, mặc định cpu, env sai ⇒ nổ lúc khởi động, `build_default_service`→runner); đã kiểm đỏ khi bỏ `device=` |
+| P2 | Script đo **thừa hưởng** `$CAMERA_AI_DEVICE` từ shell ⇒ "baseline CPU" có thể thật ra chạy GPU | Ghim env con theo đúng giá trị artifact khai (`device_yeu_cau = --device > env > cpu`) |
+| P2 | `ket_qua` không xét thiết bị ⇒ artifact `ket_qua=true` với `device_worker_log=null` (bẫy `0/None ≠ đã đo`) | Hàm thuần `_ly_do_thiet_bi` (null hoặc lệch ⇒ `ket_qua=false` + lý do) + 3 test |
+| P2 | Thiếu log phiên cho nhánh này | Chính file này |
+| P3 | `_cuda_available` chỉ bắt `ImportError` (torch hỏng kiểu `OSError: libcudart.so` ⇒ traceback, status kẹt `loading`) | `except Exception` + comment lý do |
+| P3 | Worker `--device` có `choices` ⇒ `--device CUDA` bị argparse từ chối bằng usage thô, lệch `normalize_device` | Bỏ `choices`, dùng `validate_device` (một nguồn sự thật) |
+| P3 | CLI `run_live.py` và worker in câu lỗi khác nhau, mã thoát 1 vs 2 | `run_live.py` dùng `validate_device` ⇒ cùng câu, cùng mã 2 |
+| P3 | `skipif` import torch lúc collect, không timeout (+1–3 s mỗi lần chạy test) | `_cuda_co_san()` có cache + `timeout=60` |
+| P3 | `do_luc` (UTC) lệch tên file (giờ VN) | `datetime.now().astimezone()` ⇒ ISO có offset (`2026-11-10T20:53:08+07:00`) |
+| P3 | Đường **job upload** vẫn không có `--device` | Đã làm trong PR này (`build_command(device=…)` + `SubprocessPipelineRunner(device=…)` + 5 test) |
 
-- Ca xin `cuda` trên máy không GPU: worker chết **trước khi nạp checkpoint** (chỉ ~3 s), lý do tới
-  `status.json` **và** `data/*_metrics.json`.
-- Lưu ý trung thực (3 lần đo cùng clip/cấu hình trong phiên này): `mask_fps` **6,7 · 6,8 · 6,9**
-  (artifact cuối = 6,9), còn lần đo buổi sáng trước khi chạy `testall` ra **8,4**. Chênh ~20 % giữa
-  các lần ⇒ **không** dùng các số này để A/B (AGENTS §6: A/B phải dùng `scripts/repeatability.py`
-  lấy ngưỡng nhiễu; muốn trích thì đo 3 lần liền và ghi `mean ± spread`).
-- Ca "xin cuda mà không GPU": `device_worker_log = null` là **đúng** (worker chết trước khi log dòng
-  `device=`); lý do nằm ở `loi` + `status.json` của worker.
+Reviewer cũng xác nhận bằng đọc mã: `device` **không rơi** ở hop nào; chống chèn lệnh OK
+(`normalize_device` chỉ cho `cpu|cuda`, mọi argv qua `shlex.quote`); `src/worker`/`src/api` **không**
+import torch (ADR-0005); `worker.log` được xoá mỗi phiên nên không có ca "hai phiên ghi cùng file";
+test skip trên máy có GPU là đúng (không tái hiện được).
+
+**Vòng 2** (review delta job-upload + các sửa trên): xem PR body `.scratch/pr/d-live-gpu-device.md`.
+
+### Số đo thật — **3 lần đo liền** (commit `e34eb5c`, cả 3 artifact đều `git_dirty_code = false`)
+
+Đường live qua API trên **CPU** (nguồn `data/binh1.mp4`, bbox `104,308,209,287`, `image_size 192`,
+`vos_every 3`, 10 s/lần) — `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` ở cả 3:
+
+| Lần | FPS phát (`measured_fps_max`) | Mask mới/giây | `drift_iou_p05` (`drift_n`) | `stability_shown` (`n`) |
+|---|---|---|---|---|
+| `…_run1_2026-11-10_metrics.json` | 27,9 | 5,0 | 0,671 (34) | 0,911 (10) |
+| `…_run2_2026-11-10_metrics.json` | 29,7 | 6,0 | 0,689 (47) | 0,960 (10) |
+| `…_run3_2026-11-10_metrics.json` | 29,6 | 6,3 | 0,752 (51) | 0,960 (10) |
+| **Trung bình** | **29,1** | **5,8** | 0,704 | 0,944 |
+
+- **Nhiễu giữa 3 lần: mask 5,0–6,3 (≈ ±11 %), FPS phát 27,9–29,7, `drift_iou_p05` 0,671–0,752.**
+  Một lần đo buổi sáng (máy rảnh, trước `testall`) ra **8,4** mask/giây ⇒ **cấm** dùng mask_fps để
+  A/B nếu chưa chạy `scripts/repeatability.py` lấy ngưỡng nhiễu (AGENTS §6).
+- Con số mang nghĩa "đường live chạy được, số đo có provenance", **không** phải "chất lượng bám".
+
+Bằng chứng **không âm thầm rơi về CPU**: `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json`
+(`git_rev=e34eb5c`) — xin `cuda` trên máy không có GPU ⇒ `ket_qua=false`, `ly_do_khong_dat` liệt kê
+4 lý do (state/frames/FPS/mask) **+ "không đọc được thiết bị từ worker.log"**, `loi` giữ nguyên câu:
+`HTTP 400 … "đã xin device='cuda' nhưng máy này không thấy GPU CUDA … Colab → T4"`. Worker chết
+**trước khi nạp checkpoint** (~3 s), lý do tới được `status.json` và UI.
+- `device_worker_log = null` ở artifact này là **đúng** (worker chết trước dòng log `device=`), và nay
+  `ket_qua` **tự** thành `false` vì thiết bị không đọc được — không còn phụ thuộc câu chữ trong
+  `ghi_chu_device` (P2 review 10-11).
 
 ### Bằng chứng test "có răng" (đã kiểm thật, có phục hồi)
 
