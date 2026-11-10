@@ -374,6 +374,9 @@ def _write_run_info(args):
         reid_cue=getattr(args, "reid_cue", None),
         reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
         reid_obj_ncc_min=getattr(args, "reid_obj_ncc_min", None),
+        # Thiết bị ĐÃ DÙNG (cpu|cuda): `resources.gpu` trong summary chỉ nói "MÁY có GPU hay không" ⇒
+        # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
+        device=getattr(args, "device", None) or "cpu",
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
         reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
         reid_verify_frames=getattr(args, "reid_verify_frames", None),
@@ -701,14 +704,21 @@ def main():
     if args.image_size:
         print(f"[pipeline] model image_size={args.image_size} (nhanh hơn trên CPU, "
               f"đánh đổi chi tiết vật thể nhỏ)")
-    device = args.device or "cpu"
+    # Cùng một nguồn sự thật với worker live (`src/device.py`): cùng câu lỗi, cùng mã thoát 2,
+    # cùng chấp nhận "--device CUDA"/"--device ' cuda '". Trước đây CLI tự viết thông điệp riêng.
+    from src.device import validate_device
+    try:
+        import torch as _torch
+        _cuda_ok = bool(_torch.cuda.is_available())
+    except Exception:                    # noqa: BLE001 — thiếu/hỏng torch: coi như không có CUDA
+        _cuda_ok = False
+    try:
+        device = validate_device(args.device, cuda_available=_cuda_ok)
+    except ValueError as exc:
+        print(f"[LOI] {exc}")
+        raise SystemExit(2) from exc
     if device == "cuda":
-        import torch
-        if not torch.cuda.is_available():
-            print("[LOI] --device cuda nhưng máy không có GPU CUDA (kiểm tra: Colab → Runtime → "
-                  "Change runtime type → GPU)")
-            raise SystemExit(1)
-        print(f"[pipeline] device=cuda ({torch.cuda.get_device_name(0)})")
+        print(f"[pipeline] device=cuda ({_torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
                                          image_size=args.image_size, device=device,
                                          apply_postprocessing=args.postprocess,

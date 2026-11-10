@@ -22,6 +22,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from src.live_tracking import (  # noqa: E402
+    STATE_ERROR,
     STATE_LOADING,
     LiveTrackConfig,
     LiveTrackStats,
@@ -35,6 +36,28 @@ def _write_loading(out_dir: Path, message: str = "Đang nạp model...") -> None
     """Ghi trạng thái "loading" bằng CHÍNH payload của phiên chạy (một nguồn schema)."""
     write_json_atomic(out_dir / "status.json",
                       status_payload(LiveTrackStats(state=STATE_LOADING, message=message)))
+
+
+def _cuda_available() -> bool:
+    """Máy (tiến trình này) có CUDA không — `False` cả khi thiếu torch."""
+    try:
+        import torch
+    except Exception:                # noqa: BLE001 — thiếu torch HOẶC torch hỏng (vd OSError libcudart)
+        # Bắt rộng vì worker luôn có torch; nếu torch hỏng kiểu `OSError: libcudart.so.12` thì một
+        # `except ImportError` sẽ để traceback làm status.json kẹt ở `loading` (P3 review 11-11).
+        return False
+    return bool(torch.cuda.is_available())
+
+
+def _device_note(device: str) -> str:
+    """Hậu tố log tên GPU thật (rỗng nếu CPU) — để log/artifact không phải đoán thiết bị."""
+    if device != "cuda":
+        return ""
+    try:
+        import torch
+        return f" — {torch.cuda.get_device_name(0)}"
+    except Exception:                # noqa: BLE001 — chỉ là dòng log
+        return ""
 
 
 def main() -> int:
@@ -54,6 +77,10 @@ def main() -> int:
                         help="trọng số mask MỚI khi trộn theo thời gian (0-1]; 1.0 = tắt (mặc định, "
                              "đo 10-11: bật không cải thiện độ êm mà thêm trễ)")
     parser.add_argument("--trajectory-len", type=int, default=100)
+    # KHÔNG dùng `choices`: `validate_device` chuẩn hoá hoa/thường + khoảng trắng và cho CÙNG một
+    # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 11-11).
+    parser.add_argument("--device", default=None,
+                        help="thiết bị chạy model: cpu (mặc định) | cuda (NVIDIA/Colab)")
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
     args = parser.parse_args()
@@ -71,11 +98,24 @@ def main() -> int:
     out_dir.mkdir(parents=True, exist_ok=True)
     _write_loading(out_dir)
 
+    from src.device import validate_device  # chuẩn hoá + kiểm CUDA, không import torch ở module
+
+    try:
+        cuda_ok = _cuda_available()
+        device = validate_device(args.device, cuda_available=cuda_ok)
+    except ValueError as exc:
+        # Lỗi ở CỬA VÀO: ghi status error để UI/watchdog thấy lý do, không nạp checkpoint 156 MB
+        write_json_atomic(out_dir / "status.json", status_payload(
+            LiveTrackStats(state=STATE_ERROR, message=str(exc))))
+        print(f"[LOI] {exc}", flush=True)
+        return 2
+
     from src.tracker_engine import TrackerEngine  # import muộn: cần torch, chỉ trong worker
 
-    print(f"[worker] nạp model (image_size={args.image_size or 'mặc định 1024'})...", flush=True)
-    engine = TrackerEngine.build_default(image_size=args.image_size)
-    print(f"[worker] sẵn sàng | nguồn: {args.source} | out: {out_dir}", flush=True)
+    print(f"[worker] nạp model (image_size={args.image_size or 'mặc định 1024'}, "
+          f"device={device}{_device_note(device)})...", flush=True)
+    engine = TrackerEngine.build_default(image_size=args.image_size, device=device)
+    print(f"[worker] sẵn sàng | nguồn: {args.source} | out: {out_dir} | device={device}", flush=True)
 
     stop = threading.Event()
 

@@ -8,6 +8,8 @@ repo phải khoá bằng test:
 
 import json
 
+import pytest
+
 import scripts.measure_live_relay as relay
 
 
@@ -105,3 +107,78 @@ class TestWorkerStatus:
 
     def test_thieu_file_thi_khong_bia_so(self, tmp_path):
         assert relay._worker_telemetry(tmp_path) == {}
+
+
+class TestWorkerDevice:
+    """Ticket GPU-live (11-11): artifact phải ghi THIẾT BỊ THẬT, không chỉ tham số yêu cầu.
+
+    Bẫy: quên đặt `$CAMERA_AI_DEVICE` ⇒ worker chạy CPU nhưng `--device cuda` vẫn nằm trong `lenh`
+    ⇒ số FPS bị gán sai thiết bị trong báo cáo. Vì vậy đọc từ `worker.log` và ghi cả hai.
+    """
+
+    def test_doc_device_tu_worker_log(self, tmp_path):
+        (tmp_path / "worker.log").write_text(
+            "[worker] nạp model (image_size=192, device=cuda — Tesla T4)...\n"
+            "[worker] sẵn sàng | nguồn: 0 | out: /tmp/x | device=cuda\n", encoding="utf-8")
+        assert relay._worker_device(tmp_path) == "cuda"
+
+    def test_log_cu_chua_co_device_tra_none(self, tmp_path):
+        """Log của worker bản CŨ không có chữ `device=` ⇒ `None` (chưa biết), không đoán 'cpu'."""
+        (tmp_path / "worker.log").write_text("[worker] sẵn sàng | nguồn: 0\n", encoding="utf-8")
+        assert relay._worker_device(tmp_path) is None
+
+    def test_khong_co_log_tra_none(self, tmp_path):
+        assert relay._worker_device(tmp_path) is None
+
+
+class TestPostGiuThanLoi:
+    """API trả `{"detail": "..."}` là LÝ DO THẬT (vd xin `cuda` mà máy không có GPU).
+
+    Bản trước ném `HTTPError: 400` trơn ⇒ artifact nhánh GPU-live ghi một dòng lỗi vô nghĩa, người
+    đọc không biết vì sao phiên không chạy (gặp thật 11-11).
+    """
+
+    def test_400_co_than_detail_duoc_giu(self):
+        import http.server
+        import threading
+
+        class _Handler(http.server.BaseHTTPRequestHandler):
+            def do_POST(self):                                   # noqa: N802 — API của http.server
+                self.send_response(400)
+                self.send_header("Content-Type", "application/json")
+                self.end_headers()
+                self.wfile.write(b'{"detail": "khong co GPU CUDA"}')
+
+            def log_message(self, *_args):                       # tắt log ồn
+                return
+
+        server = http.server.HTTPServer(("127.0.0.1", 0), _Handler)
+        thread = threading.Thread(target=server.serve_forever, daemon=True)
+        thread.start()
+        try:
+            base = f"http://127.0.0.1:{server.server_address[1]}"
+            with pytest.raises(RuntimeError, match="khong co GPU CUDA"):
+                relay._post(base, "/api/live/start", {"source": "0"}, timeout=5.0)
+        finally:
+            server.shutdown()
+            server.server_close()
+
+
+class TestVerdictThietBi:
+    """`null` ≠ "đã đo" (AGENTS §6): thiết bị không đọc được hoặc lệch ⇒ artifact KHÔNG được trích.
+
+    Bẫy thật: shell `export CAMERA_AI_DEVICE=cuda` rồi chạy script không `--device` ⇒ artifact khai
+    "baseline CPU" trong khi worker chạy GPU ⇒ mọi FPS bị gán sai thiết bị trong báo cáo.
+    """
+
+    def test_khop_thi_khong_co_ly_do(self):
+        assert relay._ly_do_thiet_bi("cpu", "cpu") == []
+        assert relay._ly_do_thiet_bi("cuda", "cuda") == []
+
+    def test_khong_doc_duoc_thiet_bi_la_khong_dat(self):
+        reasons = relay._ly_do_thiet_bi("cpu", None)
+        assert reasons and "worker.log" in reasons[0]
+
+    def test_lech_thiet_bi_la_khong_dat(self):
+        reasons = relay._ly_do_thiet_bi("cpu", "cuda")
+        assert reasons and "LỆCH" in reasons[0]

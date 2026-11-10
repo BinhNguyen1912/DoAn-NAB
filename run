@@ -128,8 +128,14 @@ EOF
     ;;
   video)
     activate_env
-    video="${1:-data/_gui_test.mp4}"
-    shift || true
+    # Như `view`/`fast`: chỉ lấy $1 làm nguồn khi nó KHÔNG phải cờ. Bug 27-10 còn sót ở đây:
+    # `./run video --device cuda` từng bị đọc thành --source "--device" ⇒ argparse lỗi
+    # (review độc lập 11-11 bắt khi viết tài liệu chạy GPU).
+    if [ $# -gt 0 ] && [ "${1#-}" = "$1" ]; then
+      video="$1"; shift
+    else
+      video=data/_gui_test.mp4
+    fi
     exec "$PYTHON" tools/run_live.py --source "$video" --display --smooth --reid --image-size 384 "$@"
     ;;
   relay)
@@ -350,7 +356,16 @@ PY
   → Runtime → Change runtime type → T4 GPU → Save
   → chạy cell "⚡ CHẠY TẤT CẢ"   (hoặc trong Colab: !python scripts/colab_run_all.py)
   → tải data/colab_gpu_results.zip về máy, chép vào D:\DOAN-NAB\data\
-Kỳ vọng: mean≈65 ms | FPS≈15,3 (Tesla T4)
+Kỳ vọng (T4, image_size 512, 720p tổng hợp): 49,6 ms/frame ≈ 20,15 FPS
+  (mean thô 100,8 ms vì frame 0 warmup CUDA — phải bỏ 5 frame đầu, xem README mục 3)
+
+Demo LIVE trên GPU (worker bám trực tiếp + web):
+  ./run web                              # build frontend (KHÔNG khởi động API)
+  CAMERA_AI_DEVICE=cuda ./run api        # API đọc biến này lúc khởi động → chuyển xuống worker
+  ./run video --device cuda              # đường CLI trên video mặc định
+  ./run video data/binh1.mp4 --device cuda
+  python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/live --device cuda
+  Xin cuda mà máy không có GPU ⇒ báo lỗi ngay, KHÔNG âm thầm chạy CPU (README mục 3b)
 EOF
     ;;
   env)

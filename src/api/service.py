@@ -93,7 +93,9 @@ class JobService:
                 bbox=bbox,
                 on_exit=lambda code: self._on_exit(job_id, code),
             )
-        except OSError as exc:
+        except (OSError, ValueError) as exc:
+            # `ValueError`: runner dựng lệnh với tham số không hợp lệ (vd `device` lạ) — trước đây
+            # chỉ bắt `OSError` ⇒ job kẹt `running` mãi (không tiến trình, không watchdog cho job).
             self._store.save_status(
                 job_id, JobStatus(JobState.ERROR, 0, MSG_START_FAILED.format(error=exc))
             )

@@ -30,11 +30,15 @@ from src.worker import (
 
 
 class SubprocessPipelineRunner(PipelineRunner):
-    """Chạy `tools/run_live.py` trong conda env bằng subprocess (CPU, không cần GPU)."""
+    """Chạy `tools/run_live.py` trong conda env bằng subprocess (mặc định CPU; `device="cuda"` thì GPU)."""
 
-    def __init__(self, repo_root: Path, *, python_exe: str | None = None) -> None:
+    def __init__(self, repo_root: Path, *, python_exe: str | None = None,
+                 device: str | None = None) -> None:
         self._repo_root = Path(repo_root)
         self._python = python_exe
+        # `None` = không ghi cờ ⇒ `tools/run_live.py` dùng mặc định `cpu`. `"cuda"` = job đã tải
+        # video lên cũng chạy model trên GPU (trước 11-11 đường này luôn CPU dù máy có GPU).
+        self._device = device
         self._procs: dict = {}
         # Job đã hết tiến trình nhưng còn đang xuất bản H.264 → vẫn coi là ĐANG CHẠY.
         # Nếu không tách cờ này, UI thấy summary.json là báo "done" khi chưa có out_web.mp4
@@ -45,7 +49,7 @@ class SubprocessPipelineRunner(PipelineRunner):
     def start(self, job_id: str, job_dir: Path, *, params: dict, bbox,
               on_exit=None):
         argv = build_command(
-            job_dir, params=params, bbox=bbox,
+            job_dir, params=params, bbox=bbox, device=self._device,
             python_exe=self._python, repo_root=self._repo_root,
         )
         proc = start(argv, log_path=Path(job_dir) / LOG_NAME, cwd=self._repo_root)
