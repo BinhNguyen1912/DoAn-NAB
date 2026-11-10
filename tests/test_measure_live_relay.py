@@ -162,3 +162,23 @@ class TestPostGiuThanLoi:
         finally:
             server.shutdown()
             server.server_close()
+
+
+class TestVerdictThietBi:
+    """`null` ≠ "đã đo" (AGENTS §6): thiết bị không đọc được hoặc lệch ⇒ artifact KHÔNG được trích.
+
+    Bẫy thật: shell `export CAMERA_AI_DEVICE=cuda` rồi chạy script không `--device` ⇒ artifact khai
+    "baseline CPU" trong khi worker chạy GPU ⇒ mọi FPS bị gán sai thiết bị trong báo cáo.
+    """
+
+    def test_khop_thi_khong_co_ly_do(self):
+        assert relay._ly_do_thiet_bi("cpu", "cpu") == []
+        assert relay._ly_do_thiet_bi("cuda", "cuda") == []
+
+    def test_khong_doc_duoc_thiet_bi_la_khong_dat(self):
+        reasons = relay._ly_do_thiet_bi("cpu", None)
+        assert reasons and "worker.log" in reasons[0]
+
+    def test_lech_thiet_bi_la_khong_dat(self):
+        reasons = relay._ly_do_thiet_bi("cpu", "cuda")
+        assert reasons and "LỆCH" in reasons[0]

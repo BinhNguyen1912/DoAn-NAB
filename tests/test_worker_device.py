@@ -120,6 +120,62 @@ class TestWiringEngine:
         assert ghi.get("device") == "cpu"
 
 
+class TestCompositionRoot:
+    """Hop DUY NHẤT không có test trước review 11-11: `build_default_live()` đọc env rồi truyền
+    xuống `WorkerFrameSource`. Xoá `device=device` ở đó ⇒ 782 test vẫn xanh và đường live quay lại
+    chạy CPU (đúng lỗi gốc tái phát), nên phải khoá bằng test ở chính composition root.
+    """
+
+    def _bat_source(self, monkeypatch):
+        import src.api.main as main
+
+        ghi = {}
+
+        class _SourceGia:
+            label = "giả"
+
+            def __init__(self, source, **kwargs):
+                ghi.update(kwargs, source=source)
+
+        monkeypatch.setattr(main, "WorkerFrameSource", _SourceGia)
+        return main, ghi
+
+    def test_env_cuda_duoc_truyen_xuong_worker(self, monkeypatch):
+        main, ghi = self._bat_source(monkeypatch)
+        monkeypatch.setenv("CAMERA_AI_DEVICE", "cuda")
+        live = main.build_default_live()
+        live._make_source("0", "track", (1, 2, 3, 4), 192, 3, None)
+        assert ghi["device"] == "cuda", "env không tới được worker ⇒ GPU bị bỏ qua im lặng"
+
+    def test_mac_dinh_la_cpu(self, monkeypatch):
+        main, ghi = self._bat_source(monkeypatch)
+        monkeypatch.delenv("CAMERA_AI_DEVICE", raising=False)
+        live = main.build_default_live()
+        live._make_source("0", "track", (1, 2, 3, 4), 192, 3, None)
+        assert ghi["device"] == "cpu"
+
+    def test_env_go_sai_no_ngay_luc_khoi_dong(self, monkeypatch):
+        main, _ghi = self._bat_source(monkeypatch)
+        monkeypatch.setenv("CAMERA_AI_DEVICE", "gpu")
+        with pytest.raises(ValueError, match="device phải là"):
+            main.build_default_live()
+
+    def test_job_upload_cung_theo_thiet_bi(self, monkeypatch, tmp_path):
+        """`build_default_service()` cũng phải truyền thiết bị (job tải video lên)."""
+        import src.api.main as main
+
+        ghi = {}
+
+        class _RunnerGia:
+            def __init__(self, repo_root, **kwargs):
+                ghi.update(kwargs)
+
+        monkeypatch.setattr(main, "SubprocessPipelineRunner", _RunnerGia)
+        monkeypatch.setenv("CAMERA_AI_DEVICE", "cuda")
+        main.build_default_service(main.ApiSettings(jobs_root=tmp_path))
+        assert ghi["device"] == "cuda"
+
+
 class TestJobTaiVideoLen:
     """Job `POST /api/jobs` (tải video lên → track → trả mp4) cũng phải chạy được trên GPU.
 
@@ -158,9 +214,19 @@ class TestJobTaiVideoLen:
         assert "--device" not in " ".join(da_dung[0])
 
 
-@pytest.mark.skipif(subprocess.run([sys.executable, "-c",
-                                    "import torch,sys; sys.exit(0 if torch.cuda.is_available() "
-                                    "else 1)"], capture_output=True).returncode == 0,
+def _cuda_co_san() -> bool:
+    """Có CUDA không — tính MỘT lần (import torch ~1–3 s; đừng chạy ở mỗi lần collect)."""
+    cache = getattr(_cuda_co_san, "_cache", None)
+    if cache is None:
+        proc = subprocess.run(
+            [sys.executable, "-c", "import torch,sys; sys.exit(0 if torch.cuda.is_available() else 1)"],
+            capture_output=True, timeout=60)
+        cache = proc.returncode == 0
+        _cuda_co_san._cache = cache
+    return cache
+
+
+@pytest.mark.skipif(_cuda_co_san(),
                     reason="máy CÓ CUDA — ca 'xin cuda mà không có GPU' không tái hiện được")
 class TestWorkerKhongCoCuda:
     """Xin `cuda` trên máy không có GPU: phải báo lỗi RÕ và KHÔNG nạp checkpoint 156 MB."""

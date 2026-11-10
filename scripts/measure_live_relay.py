@@ -35,6 +35,7 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 from scripts.measure_watchdog import _git_provenance  # noqa: E402 — dùng lại provenance đã có test
+from src.device import ENV_VAR, device_from_env  # noqa: E402 — cùng nguồn sự thật với API/worker
 
 POLL_S = 0.5
 WAIT_RUNNING_S = 240.0     # nạp model SAM 2 trên CPU: 20–60 s, chừa rộng cho máy đang tải
@@ -164,6 +165,19 @@ def _worker_device(out_dir) -> str | None:
     return found[-1] if found else None
 
 
+def _ly_do_thiet_bi(device_yeu_cau: str, device_worker_log: str | None) -> list:
+    """Lý do artifact KHÔNG được trích vì thiết bị: None = chưa đo, khác = đo trên máy khác.
+
+    AGENTS §6: `null` không phải "đã đo". Một "baseline CPU" thật ra là GPU (hoặc ngược lại) làm mọi
+    con số FPS trong báo cáo bị gán sai thiết bị — đúng thứ nhánh này sinh ra để diệt.
+    """
+    if device_worker_log is None:
+        return ["không đọc được thiết bị từ worker.log (worker chết trước khi in, hoặc log bản cũ)"]
+    if device_worker_log != device_yeu_cau:
+        return [f"thiết bị LỆCH: yêu cầu {device_yeu_cau!r} nhưng worker chạy {device_worker_log!r}"]
+    return []
+
+
 def _verdict(summary: dict) -> tuple[bool, list]:
     """(đạt, danh sách lý do) — điều kiện đăng ký trước của "đường demo thật chạy được"."""
     reasons = []
@@ -199,7 +213,7 @@ def main() -> int:
     if len(bbox) != 4:
         parser.error("--bbox phải là x,y,w,h (đây là mode track)")
 
-    stamp = datetime.now()
+    stamp = datetime.now().astimezone()   # có offset: WSL chạy UTC, tên file theo giờ VN
     out = Path(args.out) if args.out else (
         _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d}_metrics.json")
     frame_dir = Path(args.frame_dir) if args.frame_dir else out.parent / f"live_web_relay_{stamp:%Y-%m-%d}"
@@ -209,11 +223,14 @@ def main() -> int:
     # gán số của PHIÊN KHÁC cho lần đo này (review độc lập nhánh bằng chứng, P2).
     (Path(args.out_dir) / "status.json").unlink(missing_ok=True)
     env = dict(os.environ, DOAN_LIVE_DIR=args.out_dir)
-    if args.device:
-        # Đường live đọc `$CAMERA_AI_DEVICE` lúc dựng service (src/api/main.py) ⇒ đặt trước khi
-        # spawn uvicorn là worker con nhận được. Xin cuda mà máy không có GPU: worker ghi
-        # `state=error` ⇒ `_wait_running` ném lỗi và artifact ghi `loi` (không có số giả).
-        env["CAMERA_AI_DEVICE"] = args.device
+    # Thiết bị: `--device` > `$CAMERA_AI_DEVICE` của shell > cpu. PHẢI ghim lại env cho tiến trình
+    # con theo đúng giá trị artifact khai: shell đã `export CAMERA_AI_DEVICE=cuda` mà ta lại chạy
+    # KHÔNG `--device` thì child sẽ chạy GPU trong khi artifact ghi "cpu" ⇒ "baseline CPU" giả
+    # (P2 review 11-11).
+    device_yeu_cau = args.device or device_from_env()
+    env["CAMERA_AI_DEVICE"] = device_yeu_cau
+    if args.device is None and not os.environ.get(ENV_VAR):
+        env.pop("CAMERA_AI_DEVICE", None)      # không ai yêu cầu ⇒ đừng thêm biến vào môi trường con
 
     server = subprocess.Popen(
         [sys.executable, "-m", "uvicorn", "src.api.main:app", "--host", "127.0.0.1",
@@ -274,6 +291,9 @@ def main() -> int:
             server.kill()
 
     ok, reasons = _verdict(summary)
+    device_log = _worker_device(args.out_dir)
+    device_reasons = _ly_do_thiet_bi(device_yeu_cau, device_log)
+    reasons = reasons + device_reasons
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
     if git_rev and not _is_ancestor(git_rev):
         git_loi = (f"`git_rev = {git_rev[:7]}` KHÔNG phải tổ tiên của HEAD — nhánh đã rebase sau khi "
@@ -287,12 +307,12 @@ def main() -> int:
         "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có "
                            "provenance, đừng trích file này.",
         "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
-        "device_yeu_cau": args.device or "cpu",
-        "device_worker_log": _worker_device(args.out_dir),
+        "device_yeu_cau": device_yeu_cau,
+        "device_worker_log": device_log,
         "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với "
                           "`device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
-        "moi_truong": ("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if (args.device or "cpu") == "cpu"
-                       else f"device={args.device} do người chạy khai báo (xem device_worker_log để "
+        "moi_truong": ("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if device_yeu_cau == "cpu"
+                       else f"device={device_yeu_cau} (xem device_worker_log để "
                             "biết worker thật sự dùng gì)")
                       + "; nguồn = " + args.source,
         "nguon": args.source,
@@ -302,7 +322,7 @@ def main() -> int:
                                    "(đường camera thật chạy được — KHÔNG phải mục tiêu FPS)",
         # `ket_qua` = "lần đo này dùng được làm bằng chứng": điều kiện đo đạt **và** không có lỗi
         # giữa phiên **và** có provenance (review độc lập nhánh này, P2).
-        "ket_qua": ok and not error and not git_loi,
+        "ket_qua": ok and not error and not git_loi and not device_reasons,
         "dat_dieu_kien_do_luong": ok,
         "ly_do_khong_dat": reasons,
         "tom_tat": summary,

@@ -37,6 +37,13 @@ class TestRunHelp:
         assert r.returncode == 0
         assert "unrecognized arguments" not in (r.stdout + r.stderr)
 
+    def test_video_nhan_co_thay_vi_lam_nguon(self):
+        """Bug 27-10 còn sót ở `video`: `./run video --device cuda` từng ăn "--device" làm nguồn
+        ⇒ argparse lỗi. Review độc lập 11-11 bắt đúng lúc viết tài liệu chạy GPU."""
+        r = _run("video", "--help")
+        assert r.returncode == 0
+        assert "unrecognized arguments" not in (r.stdout + r.stderr)
+
     def test_fast_tu_ghi_video_co_moc_thoi_gian(self):
         """Bug thật 29-10: `./run fast` không ghi file → người dùng tưởng đã lưu video."""
         r = _run("fast", "--help")          # --help thoát trước khi mở cửa sổ

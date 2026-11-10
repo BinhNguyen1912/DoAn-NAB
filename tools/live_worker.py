@@ -42,7 +42,9 @@ def _cuda_available() -> bool:
     """Máy (tiến trình này) có CUDA không — `False` cả khi thiếu torch."""
     try:
         import torch
-    except ImportError:              # worker luôn có torch, nhưng test CLI có thể không
+    except Exception:                # noqa: BLE001 — thiếu torch HOẶC torch hỏng (vd OSError libcudart)
+        # Bắt rộng vì worker luôn có torch; nếu torch hỏng kiểu `OSError: libcudart.so.12` thì một
+        # `except ImportError` sẽ để traceback làm status.json kẹt ở `loading` (P3 review 11-11).
         return False
     return bool(torch.cuda.is_available())
 
@@ -75,7 +77,9 @@ def main() -> int:
                         help="trọng số mask MỚI khi trộn theo thời gian (0-1]; 1.0 = tắt (mặc định, "
                              "đo 10-11: bật không cải thiện độ êm mà thêm trễ)")
     parser.add_argument("--trajectory-len", type=int, default=100)
-    parser.add_argument("--device", default=None, choices=["cpu", "cuda"],
+    # KHÔNG dùng `choices`: `validate_device` chuẩn hoá hoa/thường + khoảng trắng và cho CÙNG một
+    # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 11-11).
+    parser.add_argument("--device", default=None,
                         help="thiết bị chạy model: cpu (mặc định) | cuda (NVIDIA/Colab)")
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
