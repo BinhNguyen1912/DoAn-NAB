@@ -73,7 +73,8 @@ tưởng GPU (đúng bẫy AGENTS §6 "số đo phải ghi rõ môi trường").
 | `./run lint` | ✓ |
 | `./run test` | **795 passed** (5 deselected, ~76 s) — sau khi sửa review |
 | `./run testall` (lần 1, trước khi thêm đường job upload) | 786 passed + **1 failed** (`test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau`); chạy riêng: **8/8 pass**. Flaky do SAM 2 không tất định + máy tải, **không liên quan nhánh này** (engine do fixture tự dựng) ⇒ **ticket 22** |
-| `./run testall` (lần 2, trạng thái cuối) | **792 passed**, 0 failed (205,7 s) — lần này test flaky kia xanh |
+| `./run testall` (lần 2, giữa phiên) | **792 passed**, 0 failed (205,7 s) — test flaky `tracker_engine` xanh |
+| `./run testall` (lần 3, trạng thái cuối sau khi sửa review) | **800 passed**, 0 failed (271 s) |
 | `./run e2e` | **PASS** (bắt buộc vì có sửa `src/api/**`) — 7 dòng bảng số, MJPEG 29,8 FPS, dừng sạch, 0 lỗi JS |
 | Test mới | **41** case: `tests/test_device.py` 17, `tests/test_worker_device.py` 17 (gồm composition root + job upload), `tests/test_measure_live_relay.py` +5, `tests/test_worker_pipeline.py` +3, `tests/test_run_script.py` +1 |
 
