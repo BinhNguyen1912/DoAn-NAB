@@ -1211,7 +1211,7 @@ class TestCuaSoThongKeChiMotNguonGhiTrongLock:
 
 
 class TestShownByFrameDocTrongLock:
-    """Review 11-11 (P1): `_shown_by_frame` là cấu trúc **thật sự hai luồng** — luồng chính
+    """Review 10-11 (P1): `_shown_by_frame` là cấu trúc **thật sự hai luồng** — luồng chính
     `append` (trong lock), luồng VOS duyệt bằng `reversed()` trong `_measure_drift`. TRƯỚC KHI SỬA
     vế thứ hai **ngoài** lock ⇒ cùng lớp lỗi `RuntimeError: deque mutated during iteration` đã giết
     luồng VOS ở ticket 17. Nay cả hai vế đều dưới lock.
@@ -1239,7 +1239,7 @@ class TestShownByFrameDocTrongLock:
 
     def test_pending_drift_ghi_duoi_lock(self, video_source, tmp_path):
         """`_pending_drift` do luồng VOS GHI và luồng chính ĐỌC/XOÁ cùng lúc ⇒ ghi cũng phải dưới
-        lock (nếu không thì có thể mất một mẫu drift — review 11-11, P3).
+        lock (nếu không thì có thể mất một mẫu drift — review 10-11, P3).
 
         Dùng lớp con để theo dõi lần GÁN (không `setattr` vào lớp thật ⇒ không rò sang test khác).
         """

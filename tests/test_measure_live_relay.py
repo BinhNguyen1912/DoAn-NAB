@@ -110,7 +110,7 @@ class TestWorkerStatus:
 
 
 class TestWorkerDevice:
-    """Ticket GPU-live (11-11): artifact phải ghi THIẾT BỊ THẬT, không chỉ tham số yêu cầu.
+    """Ticket GPU-live (10-11): artifact phải ghi THIẾT BỊ THẬT, không chỉ tham số yêu cầu.
 
     Bẫy: quên đặt `$CAMERA_AI_DEVICE` ⇒ worker chạy CPU nhưng `--device cuda` vẫn nằm trong `lenh`
     ⇒ số FPS bị gán sai thiết bị trong báo cáo. Vì vậy đọc từ `worker.log` và ghi cả hai.
@@ -135,7 +135,7 @@ class TestPostGiuThanLoi:
     """API trả `{"detail": "..."}` là LÝ DO THẬT (vd xin `cuda` mà máy không có GPU).
 
     Bản trước ném `HTTPError: 400` trơn ⇒ artifact nhánh GPU-live ghi một dòng lỗi vô nghĩa, người
-    đọc không biết vì sao phiên không chạy (gặp thật 11-11).
+    đọc không biết vì sao phiên không chạy (gặp thật 10-11).
     """
 
     def test_400_co_than_detail_duoc_giu(self):
@@ -182,3 +182,54 @@ class TestVerdictThietBi:
     def test_lech_thiet_bi_la_khong_dat(self):
         reasons = relay._ly_do_thiet_bi("cpu", "cuda")
         assert reasons and "LỆCH" in reasons[0]
+
+
+class TestKetQuaVaMaThoat:
+    """`ket_qua` trong artifact và MÃ THOÁT phải cùng một phép tính (P2 review 10-11).
+
+    Bản trước: `ket_qua` đã xét thiết bị nhưng `return 0 if (ok and not error and not git_loi)`
+    bỏ quên nó ⇒ ca "worker chạy khác thiết bị yêu cầu" ghi `ket_qua=false` mà script thoát 0 và
+    không in `[THAT BAI]` ⇒ CI/người chạy tưởng đo thành công.
+    """
+
+    def test_dat_khi_moi_thu_tot(self):
+        assert relay._ket_qua(True, None, None, []) is True
+        assert relay._ma_thoat(True) == 0
+
+    def test_khong_dat_vi_thiet_bi(self):
+        assert relay._ket_qua(True, None, None, ["thiết bị LỆCH"]) is False
+        assert relay._ma_thoat(relay._ket_qua(True, None, None, ["thiết bị LỆCH"])) == 1
+
+    @pytest.mark.parametrize("ok,error,git_loi", [
+        (False, None, None),          # điều kiện đo không đạt
+        (True, "boom", None),         # lỗi giữa phiên
+        (True, None, "không có git"),  # không tái lập được
+    ])
+    def test_khong_dat_vi_cac_ly_do_khac(self, ok, error, git_loi):
+        assert relay._ket_qua(ok, error, git_loi, []) is False
+        assert relay._ma_thoat(False) == 1
+
+
+def test_call_site_dung_hai_ham_thuan():
+    """Guard "dây nối": chính `main()` phải DÙNG `_ket_qua`/`_ma_thoat`, không được tính lại tại chỗ.
+
+    Vì sao cần guard đọc-mã: test hàm thuần ở trên không phát hiện việc `main()` bỏ quên
+    `device_reasons` (đúng lỗi của bản trước — `ket_qua` xét thiết bị nhưng mã thoát thì không).
+    Chạy `main()` thật thì phải spawn uvicorn + worker (không hợp cho test nhanh), nên khoá bằng
+    chuỗi có chủ đích ở đây.
+    """
+    from pathlib import Path
+
+    nguon = Path(relay.__file__).read_text(encoding="utf-8")
+    assert '"ket_qua": _ket_qua(' in nguon, "artifact phải lấy ket_qua từ hàm thuần"
+    assert 'return _ma_thoat(artifact["ket_qua"])' in nguon, "mã thoát phải khớp ket_qua"
+    assert 'elif not artifact["ket_qua"]:' in nguon, "phải in [THAT BAI] cả khi chỉ thiết bị sai"
+
+
+def test_ten_file_mac_dinh_co_gio():
+    """Chạy lần hai trong ngày KHÔNG được ghi đè artifact đang được trích (P3 review 10-11)."""
+    from datetime import datetime
+
+    stamp = datetime(2026, 11, 10, 21, 5, 7).astimezone()
+    name = f"live_web_relay_{stamp:%Y-%m-%d_%H%M%S}_metrics.json"
+    assert name == "live_web_relay_2026-11-10_210507_metrics.json"

@@ -579,7 +579,9 @@ def main():
     ap.add_argument("--smooth", action="store_true",
                     help="hiển thị tách luồng: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
                          "(HUD ghi tuổi overlay) — dùng cho demo mượt")
-    ap.add_argument("--device", default=None, choices=["cpu", "cuda"],
+    # KHÔNG `choices`: `validate_device` (src/device.py) chuẩn hoá hoa/thường + khoảng trắng và cho
+    # CÙNG câu lỗi với worker live. `choices` từng chặn "--device CUDA" bằng usage thô (P2 review 10-11).
+    ap.add_argument("--device", default=None,
                     help="thiết bị chạy model: cpu (mặc định) | cuda (Colab GPU/máy NVIDIA)")
     ap.add_argument("--mask-threshold", type=float, default=None,
                     help="ngưỡng logit của mask (0 = như model trả; 0.5–2.0 = cắt rìa mờ, "

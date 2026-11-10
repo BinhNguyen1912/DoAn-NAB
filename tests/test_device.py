@@ -1,7 +1,7 @@
 """
 Test `src/device.py` — chuẩn hoá/kiểm tra thiết bị chạy model ở cửa vào.
 
-Vì sao có: trước 11-11 đường live (web demo) **không** truyền `device` xuống
+Vì sao có: trước 10-11 đường live (web demo) **không** truyền `device` xuống
 `TrackerEngine.build_default()` ⇒ máy có GPU vẫn chạy CPU, và mọi số FPS đo qua web bị gán sai
 thiết bị trong báo cáo. Ba bẫy phải khoá bằng test:
   1. `None`/"" (không cấu hình) phải là `cpu` — không được nổ;

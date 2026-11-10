@@ -418,7 +418,7 @@ lần lượt; hướng dẫn chi tiết + thời gian từng bước: `docs/col
    `data/gpu_run_info.json` phải bằng `git log -1`.
 
 ### 3b. Demo LIVE (web) trên GPU — `CAMERA_AI_DEVICE=cuda`
-Đường live (worker bám trực tiếp + `/api/live/*` + giao diện) **trước 11-11 bị ghim CPU**:
+Đường live (worker bám trực tiếp + `/api/live/*` + giao diện) **trước 10-11 bị ghim CPU**:
 `tools/live_worker.py` gọi `TrackerEngine.build_default(image_size=…)` mà không truyền `device` ⇒
 máy có GPU vẫn chạy model trên CPU (~155 ms/frame @ `image_size 256`). Nay có 3 cách chọn thiết bị:
 

@@ -83,4 +83,13 @@ có cờ khi constructor nhận `None`).
 ### Review độc lập 2 vòng
 
 - **Vòng 1**: P0 = 0, **2 P1** (lệnh GPU trong `README`/`./run gpu` sai: `./run web` chỉ build; `./run video --device cuda` lỗi argparse) + 4 P2 (thiếu test ở composition root; script đo thừa hưởng env; `ket_qua` không xét thiết bị; thiếu log) + 8 P3.
-- **Vòng 2**: review lại delta — xem kết quả trong `docs/task/10-11-2026-duong-live-chay-duoc-tren-gpu.md`.
+- **Vòng 2**: P0 = 0, P1 = 1 (chỉ 1 dòng comment trong `src/device.py` vẫn dạy `CAMERA_AI_DEVICE=cuda ./run web` — đúng lệnh sai của vòng 1) + 5 P2 + 7 P3. Đã sửa hết trong nhánh này:
+
+| Mức | Phát hiện | Xử lý |
+|---|---|---|
+| P1 | `src/device.py` comment dạy `CAMERA_AI_DEVICE=cuda ./run web` (web chỉ BUILD) | Sửa thành `./run web` rồi `CAMERA_AI_DEVICE=cuda ./run api` |
+| P2 | `run_live.py --device` còn `choices` ⇒ `--device CUDA` bị argparse chặn, lệch worker | Bỏ `choices`, dùng chung `validate_device` |
+| P2 | Script đo: `ket_qua` có xét thiết bị nhưng **mã thoát thì không** ⇒ ca lệch thiết bị exit 0, không cảnh báo | Tách `_ket_qua`/`_ma_thoat` + in `[THAT BAI]` khi `ket_qua` false + test |
+| P2 | Artifact/log/PR trỏ `…_cpu_baseline_2026-11-10_metrics.json` (không tồn tại; thật là run1..3) | Sửa cả 3 chỗ theo bảng số thật |
+| P2 | Bảng số liệu **trung bình hoá run1** dù run1 suy giảm 20× (`vos_ms 4 363 ms`, `mask_age_p95 1 935 ms`) | Bảng mới nêu rõ run1 là outlier, đo lại 3 lần trên máy rảnh (xem dưới) |
+| P3 | Prose còn "11-11" trong ~16 file; cheatsheet còn số cũ 65 ms/15,3 FPS; `_cuda_co_san` có thể nổ lúc collect; `--out` mặc định không có giờ (ghi đè artifact) | Đã sửa: sed ngày, cheatsheet theo `data/gpu_summary.json`, `try/except`, tên file có `%H%M%S` |

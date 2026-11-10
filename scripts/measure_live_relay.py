@@ -7,7 +7,7 @@ Chức năng: dựng API (uvicorn) + mở phiên live `mode=track` trên nguồn
            có `git_rev` + `lenh` + `do_luc` và bảng tóm tắt ra stdout.
 Input  : --source (URL snapshot của relay hoặc đường dẫn video), --bbox x,y,w,h (ô chọn đối tượng),
          --image-size, --vos-every, --seconds, --port, --out, --frame-dir,
-         --device cpu|cuda (11-11: chạy model trên GPU của đường LIVE — trước đó đường live bị
+         --device cpu|cuda (10-11: chạy model trên GPU của đường LIVE — trước đó đường live bị
          ghim CPU vì worker không nhận `device`; số FPS đo ra phải ghi kèm thiết bị).
 Output : `data/live_web_relay_<ngày>_metrics.json` (đuôi `_metrics.json` để `.gitignore` cho qua, đúng
          quy ước artifact của repo) + ảnh `data/live_web_relay_<ngày>/frame*.jpg` (**không** commit ảnh:
@@ -56,7 +56,7 @@ def _post(base, path, payload, timeout=600.0):
     except urllib.error.HTTPError as exc:
         # KHÔNG để mất thân lỗi: API trả `{"detail": "..."}` là lý do THẬT (ví dụ xin `cuda` mà máy
         # không có GPU). Bản trước ném `HTTPError: 400` trơn ⇒ artifact ghi lỗi vô nghĩa
-        # (đã gặp thật khi đo nhánh GPU-live 11-11).
+        # (đã gặp thật khi đo nhánh GPU-live 10-11).
         body = exc.read().decode("utf-8", "replace").strip()
         raise RuntimeError(f"POST {path} → HTTP {exc.code}: {body[:500]}") from exc
 
@@ -178,6 +178,20 @@ def _ly_do_thiet_bi(device_yeu_cau: str, device_worker_log: str | None) -> list:
     return []
 
 
+def _ket_qua(ok: bool, error, git_loi, device_reasons) -> bool:
+    """Lần đo này có dùng được làm BẰNG CHỨNG không (một chỗ duy nhất, để test khoá được).
+
+    `ok` = điều kiện đo đạt; `error` = lỗi giữa phiên; `git_loi` = không có provenance tái lập;
+    `device_reasons` = thiết bị chưa đọc được hoặc LỆCH yêu cầu. Bất kỳ cái nào xấu ⇒ `False`.
+    """
+    return bool(ok and not error and not git_loi and not device_reasons)
+
+
+def _ma_thoat(ket_qua: bool) -> int:
+    """Mã thoát của script: 0 ⇔ `ket_qua` True (phải khớp artifact, không được lệch)."""
+    return 0 if ket_qua else 1
+
+
 def _verdict(summary: dict) -> tuple[bool, list]:
     """(đạt, danh sách lý do) — điều kiện đăng ký trước của "đường demo thật chạy được"."""
     reasons = []
@@ -215,7 +229,8 @@ def main() -> int:
 
     stamp = datetime.now().astimezone()   # có offset: WSL chạy UTC, tên file theo giờ VN
     out = Path(args.out) if args.out else (
-        _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d}_metrics.json")
+        # Có GIỜ: chạy lần hai trong ngày từng ghi đè artifact đang được trích trong báo cáo (P3).
+        _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d_%H%M%S}_metrics.json")
     frame_dir = Path(args.frame_dir) if args.frame_dir else out.parent / f"live_web_relay_{stamp:%Y-%m-%d}"
     base = f"http://127.0.0.1:{args.port}"
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
@@ -226,7 +241,7 @@ def main() -> int:
     # Thiết bị: `--device` > `$CAMERA_AI_DEVICE` của shell > cpu. PHẢI ghim lại env cho tiến trình
     # con theo đúng giá trị artifact khai: shell đã `export CAMERA_AI_DEVICE=cuda` mà ta lại chạy
     # KHÔNG `--device` thì child sẽ chạy GPU trong khi artifact ghi "cpu" ⇒ "baseline CPU" giả
-    # (P2 review 11-11).
+    # (P2 review 10-11).
     device_yeu_cau = args.device or device_from_env()
     env["CAMERA_AI_DEVICE"] = device_yeu_cau
     if args.device is None and not os.environ.get(ENV_VAR):
@@ -322,7 +337,7 @@ def main() -> int:
                                    "(đường camera thật chạy được — KHÔNG phải mục tiêu FPS)",
         # `ket_qua` = "lần đo này dùng được làm bằng chứng": điều kiện đo đạt **và** không có lỗi
         # giữa phiên **và** có provenance (review độc lập nhánh này, P2).
-        "ket_qua": ok and not error and not git_loi and not device_reasons,
+        "ket_qua": _ket_qua(ok, error, git_loi, device_reasons),
         "dat_dieu_kien_do_luong": ok,
         "ly_do_khong_dat": reasons,
         "tom_tat": summary,
@@ -354,9 +369,11 @@ def main() -> int:
         print(f"[CANH BAO] không lấy được provenance git: {git_loi}")
     if error:
         print(f"[LOI] {error}")
-    elif not ok:
-        print("[THAT BAI] " + "; ".join(reasons))
-    return 0 if (ok and not error and not git_loi) else 1
+    elif not artifact["ket_qua"]:
+        # In cả lý do THIẾT BỊ: bản trước chỉ in khi `not ok` ⇒ ca "worker chạy khác thiết bị yêu cầu"
+        # có `ket_qua=false` mà terminal im lặng và script thoát 0 (P2 review 10-11).
+        print("[THAT BAI] " + "; ".join(reasons or ["xem `loi`/`git_loi` trong artifact"]))
+    return _ma_thoat(artifact["ket_qua"])
 
 
 if __name__ == "__main__":

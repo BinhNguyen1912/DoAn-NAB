@@ -260,7 +260,11 @@ Hoặc trong Colab gõ 1 lệnh:
 ```
 - **Làm gì:** tự clone repo, cài `sam2`+`loguru`, tải checkpoint (kiểm tra >100 MB), tạo/nhận video,
   chạy pipeline GPU (`image_size 512` + `reanchor 10`), in số liệu, đóng gói `data/colab_gpu_results.zip`.
-- **Kỳ vọng:** `mean≈65 ms | FPS≈15,3` (Tesla T4).
+- **Kỳ vọng (T4, `image_size 512`, 720p tổng hợp):** `49,6 ms/frame ≈ 20,15 FPS` ổn định — mean thô
+  100,8 ms vì frame 0 warmup CUDA 2 954 ms (`data/gpu_summary.json`, commit `8d64d59`).
+- **Chạy LIVE (web) trên GPU:** `./run web` (build) rồi `CAMERA_AI_DEVICE=cuda ./run api`;
+  job tải video lên cũng theo biến đó. CLI: `./run video data/binh1.mp4 --device cuda`.
+  Xin `cuda` mà máy không có GPU ⇒ báo lỗi ngay (kèm hướng dẫn Colab), **không** tự chạy CPU.
 - **Nhớ:** **tải file kết quả về máy** — Colab xoá sạch `/content` khi đóng phiên.
 
 ---
