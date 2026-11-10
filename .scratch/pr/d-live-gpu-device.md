@@ -40,45 +40,19 @@ AGENTS §6 "số đo phải ghi rõ môi trường").
 | `./run e2e` | **PASS** (bắt buộc: có sửa `src/api/**`) — 2 lần, trước và sau khi sửa review |
 | Test mới | 41 case (`test_device.py` 17, `test_worker_device.py` 17, `test_measure_live_relay.py` +5, `test_worker_pipeline.py` +3, `test_run_script.py` +1) |
 
-### Số đo CPU baseline — 3 lần liền (commit `e34eb5c`, cả 3 `git_dirty_code=false`)
+### Số đo CPU baseline — 3 lần liền trên máy rảnh (commit `8501ff3`, cả 3 `git_dirty_code=false`)
 
-| Lần | FPS phát | Mask mới/giây | `drift_iou_p05` (`drift_n`) | `stability_shown` |
-|---|---|---|---|---|
-| run1 | 27,9 | 5,0 | 0,671 (34) | 0,911 |
-| run2 | 29,7 | 6,0 | 0,689 (47) | 0,960 |
-| run3 | 29,6 | 6,3 | 0,752 (51) | 0,960 |
-| **TB** | **29,1** | **5,8** | 0,704 | 0,944 |
+| Lần | FPS phát | Mask mới/giây | `vos_ms` | `mask_age_p95` | `drift_iou_p05` (`drift_n`) |
+|---|---|---|---|---|---|
+| run1 | 29,8 | 7,0 | 123 ms | 304 ms | 0,714 (60) |
+| run2 | 29,9 | 6,7 | 327 ms | 668 ms | 0,673 (51) |
+| run3 | 29,8 | 7,5 | 133 ms | 354 ms | 0,681 (55) |
+| **TB** | **29,8** | **7,07** | — | — | 0,689 |
 
-Nhiễu giữa 3 lần: mask **5,0–6,3 (±11 %)**, FPS phát 27,9–29,7 ⇒ **không** dùng mask_fps để A/B nếu
-chưa có ngưỡng nhiễu (`scripts/repeatability.py`).
-
-Số đo thật (artifact có `git_rev` + `git_dirty_code=false`, commit `ffc9f02`):
-
-| Artifact | Nội dung |
-|---|---|
-| `data/live_gpu_device_cpu_baseline_run1..3_2026-11-10_metrics.json` | đường live qua API trên **CPU**: `device_yeu_cau=cpu`, `device_worker_log=cpu`, `ket_qua=true` (xem bảng trên) |
-| `data/live_gpu_device_cuda_unavailable_2026-11-10_metrics.json` | xin `cuda` trên máy **không** GPU: `ket_qua=false`, `device_worker_log=null` (worker chết trước dòng log), `ly_do_khong_dat` nêu rõ, `loi` giữ câu `HTTP 400 … "đã xin device='cuda' … Colab → T4"` ⇒ **không âm thầm rơi về CPU** |
-
-Test "có răng" (đã kiểm thật, có phục hồi):
-- bỏ `device=device` khỏi `build_default(...)` ⇒ 2 test wiring đỏ (đúng lỗ của PR này);
-- bỏ `device=self._device` khỏi lệnh runner ⇒ test job-upload đỏ;
-- ca subprocess `--device cuda` trên máy CPU: mã thoát 2 + `status.json` chứa "GPU CUDA".
-
-### Việc còn nợ (đã tạo ticket)
-
-- **#21** — `device` chưa có trong `/api/live/status`/HUD (hiện chỉ đọc từ `worker.log`); mặc định
-  `image_size`/`vos_every` của mode track chưa theo thiết bị (cần số đo trên GPU trước khi đổi).
-- **#22** — `test_tracker_engine::test_process_theo_frames_iou_dat_o_cac_frame_mau` đỏ 1 lần khi chạy
-  full suite trên máy đang tải (chạy riêng 8/8 xanh) — đo tần suất đỏ trước khi đổi ngưỡng/retry.
-- **Chạy Colab T4** để có số GPU thật của đường live (người dùng bấm; agent không có tài khoản
-  Google): `CAMERA_AI_DEVICE=cuda python scripts/measure_live_relay.py … --device cuda`.
-
-### Cửa một chiều hay hai chiều?
-
-**Hai chiều** — toàn bộ thay đổi là additive: không đặt `$CAMERA_AI_DEVICE` thì API truyền
-`--device cpu` xuống worker/job, **trùng đúng** mặc định `device: cpu` của `configs/default.yaml`
-⇒ hành vi + số đo cũ giữ nguyên (có test khoá cả hai chiều: `--device cpu` khi env trống, và không
-có cờ khi constructor nhận `None`).
+Nhiễu: mask **6,7–7,5 (±6 %)**, `vos_ms` 123–327 ms ⇒ **không** dùng mask_fps để A/B nếu chưa có
+ngưỡng nhiễu (`scripts/repeatability.py`, AGENTS §6). Một bộ đo trước đó có lần đầu `vos_ms =
+4 363 ms` (chậm 20×, `mask_age_p95` 1 935 ms) — đo lại trên máy rảnh **không tái hiện** ⇒ đó là phiên
+suy giảm do máy đang tải, **đã loại khỏi** bảng (không trung bình hoá nó vào).
 
 ### Review độc lập 2 vòng
 
