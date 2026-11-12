@@ -32,10 +32,18 @@ from src.live_tracking import (  # noqa: E402
 )
 
 
-def _write_loading(out_dir: Path, message: str = "Đang nạp model...") -> None:
-    """Ghi trạng thái "loading" bằng CHÍNH payload của phiên chạy (một nguồn schema)."""
+def _write_loading(out_dir: Path, message: str = "Đang nạp model...", *,
+                   device: str = "") -> None:
+    """Ghi trạng thái "loading" bằng CHÍNH payload của phiên chạy (một nguồn schema).
+
+    `device` là thiết bị ĐỊNH chạy: người xem phải biết phiên này sẽ chạy CPU hay GPU ngay từ
+    lúc nạp (nạp 20–240 s), không phải đọc `worker.log` (ticket 21).
+    Mặc định `""` = **chưa biết** — cố tình KHÔNG mặc định `cpu`: ai gọi mà quên truyền thì file
+    phải nói "chưa biết", không được khẳng định "cpu" (AGENTS §6; P3 review 12-11).
+    """
     write_json_atomic(out_dir / "status.json",
-                      status_payload(LiveTrackStats(state=STATE_LOADING, message=message)))
+                      status_payload(LiveTrackStats(state=STATE_LOADING, message=message,
+                                                    device=device)))
 
 
 def _cuda_available() -> bool:
@@ -96,9 +104,17 @@ def main() -> int:
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)
-    _write_loading(out_dir)
 
-    from src.device import validate_device  # chuẩn hoá + kiểm CUDA, không import torch ở module
+    from src.device import normalize_device, validate_device  # không import torch ở module
+
+    # Ghi "loading" TRƯỚC khi `_cuda_available()` (nó import torch, vài giây) để UI không coi worker
+    # là treo — nhưng phải kèm thiết bị ĐỊNH chạy. `normalize_device` là hàm thuần nên không làm
+    # chậm đường này; tên rác thì để nguyên văn (dưới đây báo `error` với message nêu tên đó).
+    try:
+        device_hint = normalize_device(args.device)
+    except ValueError:
+        device_hint = str(args.device)
+    _write_loading(out_dir, device=device_hint)
 
     try:
         cuda_ok = _cuda_available()
@@ -106,7 +122,7 @@ def main() -> int:
     except ValueError as exc:
         # Lỗi ở CỬA VÀO: ghi status error để UI/watchdog thấy lý do, không nạp checkpoint 156 MB
         write_json_atomic(out_dir / "status.json", status_payload(
-            LiveTrackStats(state=STATE_ERROR, message=str(exc))))
+            LiveTrackStats(state=STATE_ERROR, device=device_hint, message=str(exc))))
         print(f"[LOI] {exc}", flush=True)
         return 2
 
@@ -129,6 +145,7 @@ def main() -> int:
     config = LiveTrackConfig(
         source=args.source,
         out_dir=out_dir,
+        device=device,
         display_fps=args.max_fps,
         vos_every=args.vos_every,
         mask_smoothing=args.mask_smoothing,

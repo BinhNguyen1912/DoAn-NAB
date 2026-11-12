@@ -132,6 +132,7 @@ def build_router(service: JobService, live) -> APIRouter:
         return LiveStatusResponse(
             state=status.state.value,
             source=status.source,
+            device=status.device,
             frames=status.frames,
             measured_fps=status.measured_fps,
             display_fps=status.display_fps,

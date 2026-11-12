@@ -18,3 +18,12 @@
 - [ ] `./run testall` 3 lần liên tiếp xanh trên máy này, HOẶC test được đánh dấu theo cách không còn đỏ oan (kèm số lần đo và lý do chọn)
 - [ ] Ghi vào log số đo thật: tần suất đỏ của test khi chạy full suite (n≥3) và IoU đo được ở mỗi lần
 - [ ] Không nới ngưỡng IoU một cách im lặng: nếu đổi 0,5 → thấp hơn thì phải chứng minh bằng số (phân bố IoU) rằng 0,5 không hợp lý; ưu tiên chạy lại 1 lần (retry) hoặc tách khỏi full suite
+
+## Comments
+
+12-11 (nhánh `feat/live-device-status-api`): thêm **một** test flaky CÙNG LOẠI (đỏ dưới tải, xanh khi chạy riêng) — bằng chứng n=2 lần chạy full suite liên tiếp:
+
+- `./run testall` lần 1 (12:58): **1 failed** / 820: `tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_khong_cho_zombie_5_giay`; chạy riêng ngay sau đó: **8/8 xanh** (test đo `elapsed < 3.0 s` cho `_prepare_dir()` reap worker giả bằng subprocess ⇒ đo THỜI GIAN, không đo hành vi).
+- `./run testall` lần 2 (13:05): **820 passed**.
+
+Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ không đi qua `_prepare_dir`, nên gần như chắc chắn flaky sẵn có (không đổi ngưỡng, không sửa test khi chưa có số tần suất). Cần gộp vào phạm vi ticket này: đo tần suất đỏ của CẢ HAI test (n≥3 lần full suite), ưu tiên cách sửa "không đo thời gian tường" (assert `poll() is not None` + `elapsed < ngưỡng rộng theo số CPU, hoặc `pytest.mark.slow`/retry) thay vì nới ngưỡng im lặng.

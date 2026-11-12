@@ -144,7 +144,7 @@ def _worker_telemetry(out_dir) -> dict:
         data = json.loads(path.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return {}
-    keys = ("state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+    keys = ("state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
             "mask_age_p95", "age_n", "stability", "stability_n", "stability_shown",
             "stability_shown_n", "empty_runs", "mask_holds", "mask_drops", "lost_streak")

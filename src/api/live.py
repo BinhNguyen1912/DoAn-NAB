@@ -162,7 +162,10 @@ class LiveStreamService:
 
     def status(self) -> LiveStatus:
         with self._lock:
-            source = self._source
+            # `_pending` = nguồnđang mở (worker `track` nạp model 20–240 s, `self._source` còn None).
+            # Phải đọc luôn nó: không thì suốt giai đoạn `loading` API trả `device=""` và HUD ẩn
+            # dòng thiết bị đúng lúc người xem cần biết nhất (P2, review độc lập 12-11 — ticket 21).
+            source = self._pending or self._source
             base = dict(
                 state=self._state,
                 source=self._label,
@@ -181,6 +184,7 @@ class LiveStreamService:
                 detail = None
             if detail is not None:
                 base.update(display_fps=detail.display_fps, mask_fps=detail.mask_fps,
+                            device=detail.device,
                             stability=detail.stability, stability_n=detail.stability_n,
                             latency_ms=detail.latency_ms,
                             empty_runs=detail.empty_runs,

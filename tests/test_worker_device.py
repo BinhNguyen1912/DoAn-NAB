@@ -276,5 +276,7 @@ class TestWorkerKhongCoCuda:
         assert "GPU CUDA" in (proc.stdout + proc.stderr)
         status = json.loads((out / "status.json").read_text(encoding="utf-8"))
         assert status["state"] == "error"
+        # Thiết bị ĐỊNH chạy vẫn phải hiện ra (ticket 21): UI cần biết phiên hỏng vì cuda.
+        assert status["device"] == "cuda"
         assert "GPU CUDA" in status["message"], \
             "lý do phải tới được UI/watchdog, không chỉ nằm trong console"

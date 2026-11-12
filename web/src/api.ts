@@ -123,6 +123,8 @@ export type LiveState = 'stopped' | 'loading' | 'running' | 'error'
 export interface LiveStatus {
   state: LiveState
   source: string
+  /** thiết bị model THẬT SỰ chạy: 'cpu' | 'cuda'; '' = chưa biết (chế độ raw / worker bản cũ) */
+  device: string
   frames: number
   /** FPS PHÁT (frame hình/giây) — không phải nhịp mask */
   measured_fps: number

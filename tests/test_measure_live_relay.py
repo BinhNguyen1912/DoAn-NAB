@@ -108,6 +108,18 @@ class TestWorkerStatus:
     def test_thieu_file_thi_khong_bia_so(self, tmp_path):
         assert relay._worker_telemetry(tmp_path) == {}
 
+    def test_device_di_vao_worker_status(self, tmp_path):
+        """Ticket 21: artifact phải mang `device` của worker (cùng nguồn với HUD/API); trước đây
+        khoá này bị whitelist cắt nên số CPU/GPU chỉ còn đọc bằng regex `worker.log`."""
+        (tmp_path / "status.json").write_text(json.dumps(
+            {"state": "running", "device": "cuda", "vos_fps": 8.6}), encoding="utf-8")
+        assert relay._worker_device  # cửa sổ so sánh cũ vẫn còn (worker.log)
+        data = relay._worker_telemetry(tmp_path)
+        assert data["device"] == "cuda"
+        # Worker bản cũ không ghi khoá ⇒ **không bịa** "cpu".
+        (tmp_path / "status.json").write_text(json.dumps({"state": "running"}), encoding="utf-8")
+        assert "device" not in relay._worker_telemetry(tmp_path)
+
 
 class TestWorkerDevice:
     """Ticket GPU-live (10-11): artifact phải ghi THIẾT BỊ THẬT, không chỉ tham số yêu cầu.

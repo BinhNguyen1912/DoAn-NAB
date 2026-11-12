@@ -35,7 +35,7 @@ from scripts.measure_watchdog import _git_provenance  # noqa: E402 — provenanc
 _EMPTY_WINDOW_MIN = 5
 
 # Các trường lấy từ `status.json` — giữ cả `None` (chưa đo) để không biến thành 0,0.
-FIELDS = ("state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+FIELDS = ("state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
           "empty_runs", "empty_frac_window", "empty_window_n", "mask_drops", "lost_streak",
           "drift_iou", "drift_iou_p05", "drift_n", "mask_age_p95", "age_n")
 

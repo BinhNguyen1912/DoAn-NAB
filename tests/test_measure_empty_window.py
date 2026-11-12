@@ -81,6 +81,16 @@ def test_ket_luan_phan_biet_chi_do_voi_dat():
     assert measure._ket_luan(["binh2: chưa đủ mẫu"], {"binh2": True}).startswith("KHÔNG ĐẠT")
 
 
+def test_device_di_vao_dong_so(tmp_path):
+    """Ticket 21: dòng số phải mang `device` — số FPS của một clip chỉ có nghĩa khi biết CPU hay GPU."""
+    row = measure._row_from_status({"device": "cpu", "vos_fps": 8.6}, "binh1", "p.mp4",
+                                  (1, 2, 3, 4))
+    assert row["device"] == "cpu"
+    # Worker bản cũ không ghi khoá ⇒ `None` (chưa biết), KHÔNG bịa "cpu".
+    row = measure._row_from_status({}, "binh1", "p.mp4", (1, 2, 3, 4))
+    assert row["device"] is None
+
+
 def test_co_truong_empty_window_lay_tu_status_tho():
     """`co_truong_empty_window` phải phản ánh `status.json` THÔ: nếu tính từ dòng đã `update` thì khoá
     luôn tồn tại (giá trị None) và nhánh "worker bản cũ không ghi khoá" không bao giờ chạy."""

@@ -20,6 +20,14 @@ def _wait(predicate, timeout=3.0):
     return False
 
 
+def _chay(ham, tham_so, loi: list) -> None:
+    """Chạy `ham(tham_so)` trong thread nền, gom lỗi — để test không chết im lặng."""
+    try:
+        ham(tham_so)
+    except BaseException as exc:                # noqa: BLE001 — test phải thấy được mọi lỗi
+        loi.append(exc)
+
+
 class TestLiveStreamService:
     def test_ban_dau_chua_phat(self, live_service):
         status = live_service.status()
@@ -44,6 +52,7 @@ class TestLiveStreamService:
         class _TelemetrySource(FakeFrameSource):
             def telemetry(self):
                 return LiveTelemetry(display_fps=29.9, mask_fps=8.6, stability=0.96,
+                                      device="cuda",
                                       latency_ms=108.0, lk_ms=4.6, empty_runs=2)
 
         monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _TelemetrySource("0"))
@@ -51,7 +60,47 @@ class TestLiveStreamService:
         status = live_service.status()
         assert (status.display_fps, status.mask_fps, status.stability,
                 status.latency_ms, status.empty_runs) == (29.9, 8.6, 0.96, 108.0, 2)
+        # Thiết bị do worker báo phải tới được API/HUD — ticket 21.
+        assert status.device == "cuda"
         live_service.stop()
+
+    def test_thiet_bi_hien_ra_TRONG_LUC_nap_model(self, live_service, monkeypatch):
+        """P2 review 12-11: lúc `start()` đang nạp model (20–240 s) `_source` còn None — thiết bị
+        phải đọc từ `_pending`, nếu không HUD ẩn dòng thiết bị đúng lúc người xem cần biết nhất."""
+        import threading
+
+        from src.api.domain import LiveTelemetry
+
+        from tests.conftest import FakeFrameSource
+
+        started = threading.Event()
+        release = threading.Event()
+        loi = []
+
+        class _ChamSource(FakeFrameSource):
+            def start(self):
+                started.set()
+                release.wait(timeout=10)     # giả lập nạp checkpoint
+                super().start()
+
+            def telemetry(self):
+                # Worker đã ghi `status.json` với "device": "cuda" ngay từ giai đoạn loading.
+                return LiveTelemetry(device="cuda")
+
+        monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _ChamSource("0"))
+        worker = threading.Thread(target=lambda: _chay(live_service.start, "0", loi), daemon=True)
+        worker.start()
+        try:
+            assert started.wait(5), "nguồn giả không được gọi start()"
+            status = live_service.status()
+            assert status.state is LiveState.LOADING
+            assert status.device == "cuda", \
+                "đang nạp model mà API báo device='' ⇒ HUD ẩn dòng thiết bị suốt 20–240 s"
+        finally:
+            release.set()
+            worker.join(timeout=10)
+            live_service.stop()
+        assert not loi, f"start() nổ trong thread: {loi}"
 
     def test_nguon_khong_co_telemetry_thi_so_lieu_bang_0(self, live_service, make_frame_source):
         live_service.start("0")     # FakeFrameSource: chỉ có frame, không có số liệu chi tiết
@@ -59,6 +108,8 @@ class TestLiveStreamService:
         assert (status.mask_fps, status.empty_runs) == (0.0, 0)
         # Nguồn không báo `stability` ⇒ **chưa đo** (`None`), KHÔNG phải "đo được 0" (ticket 18).
         assert status.stability is None and status.stability_n == 0
+        # Không nguồn nào báo thiết bị ⇒ chuỗi RỖNG (chưa biết), KHÔNG phải "cpu" (ticket 21).
+        assert status.device == ""
         live_service.stop()
 
     def test_stop_dong_nguon_va_xoa_frame(self, live_service, make_frame_source):
@@ -121,7 +172,7 @@ class TestLiveRoutes:
         body = r.json()
         assert body["state"] == "running"
         assert body["source"] == "giả:0"
-        assert set(body) == {"state", "source", "frames", "measured_fps", "display_fps",
+        assert set(body) == {"state", "source", "device", "frames", "measured_fps", "display_fps",
                              # 4 trường chẩn đoán (09-11): drift + tỉ lệ mất dấu theo cửa sổ
                              "drift_p05", "drift_n", "empty_frac_window", "empty_window_n",
                              "mask_fps", "stability", "stability_n", "latency_ms", "empty_runs",
@@ -472,7 +523,7 @@ class TestWorkerTelemetry:
             "state": "tracking", "frames": 400, "measure_fps": 0, "measured_fps": 29.9,
             "vos_fps": 8.6, "vos_ms": 100.0, "lk_ms": 2.7, "stability": 0.963,
             "stability_n": 200, "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4,
-            "mask_drops": 2,
+            "mask_drops": 2, "device": "cuda",
             "bbox": [10, 10, 40, 60], "message": "",
         }), encoding="utf-8")
 
@@ -483,6 +534,18 @@ class TestWorkerTelemetry:
         assert detail.stability_n == 200
         assert detail.latency_ms == 100.0
         assert detail.empty_runs == 14
+        # Thiết bị đi qua NGUYÊN VĂN (ticket 21) — báo cáo không phải đọc worker.log nữa.
+        assert detail.device == "cuda"
+
+    def test_thieu_khoa_device_thi_rong_khong_phai_cpu(self, tmp_path):
+        """Worker bản cũ (status.json không có `device`) ⇒ `""` = chưa biết, KHÔNG được đoán "cpu"."""
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps({"state": "running", "vos_fps": 8.0}),
+                                             encoding="utf-8")
+        assert WorkerFrameSource("0", out_dir=tmp_path).telemetry().device == ""
 
     def test_seam_stability_none_va_0_0(self, tmp_path):
         """Seam `status.json → LiveTelemetry` phải giữ `None` (chưa đo) — nếu ai đổi

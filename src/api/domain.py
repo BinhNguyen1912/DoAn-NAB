@@ -107,6 +107,9 @@ class LiveStatus:
 
     state: LiveState
     source: str = ""
+    # Thiết bị model THẬT SỰ chạy (`cpu` | `cuda`) do worker báo. `""` = chưa biết (chế độ raw, hoặc
+    # nguồn không phải worker). Không đổi `""` thành `"cpu"`: đó sẽ là một lời khẳng định sai.
+    device: str = ""
     frames: int = 0
     measured_fps: float = 0.0
     display_fps: float = 0.0    # FPS PHÁT do CHÍNH worker đo (nguồn gốc của mọi con số trong báo cáo)
@@ -133,6 +136,8 @@ class LiveTelemetry:
 
     display_fps: float = 0.0
     mask_fps: float = 0.0
+    # Thiết bị model chạy (`cpu` | `cuda`); `""` = status.json không có khoá này (worker bản cũ).
+    device: str = ""
     stability: float | None = None
     stability_n: int = 0
     latency_ms: float = 0.0
