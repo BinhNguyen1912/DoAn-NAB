@@ -371,3 +371,27 @@ class TestAdapterDangHoanTat:
             time.sleep(0.01)
         assert finished == [0]
         assert runner.is_running("job-1") is False     # xong hẳn
+
+
+class TestTienToMoiTruong:
+    """Lỗi thật 12-11 (Colab T4): lệnh worker **luôn** bắt đầu bằng `source ~/miniconda3/…`; máy
+    không có conda (Colab/CI) ⇒ bash thoát mã 1 ⇒ API báo "worker dừng khi khởi động (mã 1)" trong
+    khi chạy tay `python tools/live_worker.py` thì bình thường. Lệnh phải tự dò conda TRƯỚC khi dùng.
+    """
+
+    def test_khong_co_conda_van_chay_duoc_lenh(self, tmp_path):
+        # `python_exe="echo"` ⇒ không nạp model; chỉ kiểm chuỗi shell có chạy tới cuối hay không.
+        argv = command.build_live_worker_command("0", tmp_path, python_exe="echo",
+                                                 repo_root=tmp_path)
+        env = {"HOME": str(tmp_path / "khong_co_conda"), "PATH": "/usr/bin:/bin"}
+        proc = subprocess.run(argv, capture_output=True, text=True, timeout=30, env=env)
+        assert proc.returncode == 0, f"bash thoát {proc.returncode}: {proc.stderr}"
+        assert "tools/live_worker.py" in proc.stdout
+        assert "No such file or directory" not in proc.stderr
+
+    def test_van_activate_conda_khi_may_co(self, tmp_path):
+        """Máy CÓ conda (WSL) thì vẫn phải activate `samurai` như trước — không được bỏ mất."""
+        cmd = command.build_live_worker_command("0", tmp_path, repo_root=tmp_path)[2]
+        assert 'if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]' in cmd
+        assert "conda activate samurai" in cmd
+        assert cmd.index("conda.sh") < cmd.index("tools/live_worker.py")

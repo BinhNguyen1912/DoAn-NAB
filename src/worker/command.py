@@ -15,8 +15,22 @@ from pathlib import Path
 from src.device import normalize_device
 
 # `python` trần KHÔNG tồn tại trong WSL (chỉ có python3 hệ thống = 3.14, không cài được torch)
-# → buộc phải activate conda trước khi gọi.
+# → buộc phải activate conda trước khi gọi — NHƯNG chỉ khi máy CÓ conda (xem `_ENV_PREFIX`).
 CONDA_ACTIVATE = "source ~/miniconda3/etc/profile.d/conda.sh && conda activate samurai"
+
+# Tiền tố môi trường: bọc trong `if [ -f … ]` để **máy không có conda (Colab/CI) vẫn chạy được**.
+# Lỗi thật 12-11 trên Colab T4: worker do API sinh ra luôn chết ngay (`worker dừng khi khởi động
+# (mã 1)`, `worker.log` chỉ có "No such file or directory") vì `source ~/miniconda3/…` thất bại rồi
+# `&&` cắt cả chuỗi — trong khi chạy `python tools/live_worker.py` bằng tay thì bình thường.
+_ENV_PREFIX = (
+    'if [ -f "$HOME/miniconda3/etc/profile.d/conda.sh" ]; then '
+    'source "$HOME/miniconda3/etc/profile.d/conda.sh" && conda activate samurai; fi'
+)
+
+
+def _wrap(inner: str, root) -> list[str]:
+    """`python …` → `bash -lc "<activate conda nếu có> && cd <root> && python …"`."""
+    return ["bash", "-lc", f"{_ENV_PREFIX} && cd {shlex.quote(str(root))} && {inner}"]
 
 # Script pipeline đã được đo đạc nhiều lần (docs/task/) — dùng lại đúng nó thay vì viết lại
 # vòng lặp tracking, để số liệu web đo ra trùng số liệu trong báo cáo.
@@ -81,7 +95,7 @@ def build_command(job_dir, *, params: dict, bbox, device: str | None = None,
             args += ["--reid-cue", cue]
 
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
-    return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]
+    return _wrap(inner, root)
 
 
 def build_live_worker_command(source: str, out_dir, *, image_size: int | None = None,
@@ -116,4 +130,4 @@ def build_live_worker_command(source: str, out_dir, *, image_size: int | None = 
         # trình API không có torch — worker kiểm rồi báo lỗi rõ (xem `tools/live_worker.py`).
         args += ["--device", normalize_device(device)]
     inner = " ".join([shlex.quote(python_exe or "python")] + [shlex.quote(a) for a in args])
-    return ["bash", "-lc", f"{CONDA_ACTIVATE} && cd {shlex.quote(str(root))} && {inner}"]
+    return _wrap(inner, root)
