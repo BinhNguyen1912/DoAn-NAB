@@ -84,6 +84,12 @@ class TestThietBiXuongEngine:
             return FakeEngine()
 
         monkeypatch.setattr(run_live.TrackerEngine, "build_default", staticmethod(build_default))
+        # KHÔNG cần checkpoint thật: test này chỉ khoá kwarg `device` tới `build_default`, mà
+        # `build_default` đã bị thay bằng engine giả. CI (ubuntu) không có
+        # `samurai/sam2/checkpoints/*.pt` (bị .gitignore) nên trước đây 3 test này **đổ** ở làn nhanh
+        # (`FileNotFoundError: Checkpoint không tồn tại`) ⇒ CI đỏ từ 10-11. Bỏ phép "file phải tồn tại"
+        # ở đây là đúng phạm vi: đường resolve thật vẫn có test riêng trong `tests/test_config.py`.
+        monkeypatch.setattr(run_live, "resolve_checkpoint", lambda checkpoint: str(checkpoint))
         monkeypatch.setattr(torch.cuda, "is_available", lambda: cuda)
         monkeypatch.setattr(torch.cuda, "get_device_name", lambda _i: "GPU giả")
         return ghi
