@@ -106,6 +106,24 @@
      vòng có hạn và in mã HTTP + lỗi khi đỏ. Không nới ngưỡng, không bỏ assertion nào.
 - **Kết quả:** CI `main` **success** (run `43167972913`) — lần đầu xanh lại từ 10-11.
 
+## 🚦 Lần đo GPU đầu tiên trên Colab (12-11) — **THẤT BẠI, không được trích**
+
+Người dùng chạy notebook (T4) theo mục 8, hai artifact ghi ra đều `ket_qua: false`:
+
+```text
+loi: "Không mở được bám-đối-tượng:data/input.mp4: worker dừng khi khởi động (mã 1) —
+      xem /dev/shm/doan-live-relay/worker.log"
+ly_do: state_cuoi=None · frames=0 · measured_fps=0 · mask_fps=0 · device_worker_log=None
+```
+
+- **Chưa có số GPU nào.** Hai file `data/live_512_metrics.json` / `data/live_192_metrics.json` là
+  lần đo HỎNG ⇒ **đã xoá khỏi repo** (chúng bị commit nhầm cùng PR #15 do `git add -A`; xem
+  "Vấn đề gặp phải"). Cấm trích hai file này trong báo cáo.
+- Nguyên nhân chưa biết: `worker.log` nằm trên `/dev/shm` của runtime Colab, runtime xoá là mất ⇒
+  **PR #15** thêm `worker_log` + `api_log` (4000 ký tự cuối) vào artifact để lần sau tự chẩn đoán.
+- Bước tiếp: chạy `tools/live_worker.py` trực tiếp trên Colab để lấy traceback (nhanh hơn đo lại),
+  rồi sửa đúng chỗ; sau đó chạy lại mục 8 (2 lần/cấu hình để có ngưỡng nhiễu).
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **E2E "PASS" trên mã CŨ**: lần chạy đầu, check mới báo đỏ "không thấy dòng thiết bị" dù mã đúng. Nguyên
   nhân: `./run e2e` **không build** frontend — server phục vụ `web/dist` cũ (từ lần build trước), nên trình
@@ -115,6 +133,13 @@
   status bằng phản hồi THẬT (chế độ raw ⇒ `device=""` ⇒ dòng thiết bị biến mất sau < 1 s). Xử lý: stub cả
   `/api/live/status` rồi `unroute` ngay sau khi kiểm.
 - **`web/dist` không nằm trong git** nên `git status` sạch dù đã build — không có artifact lạ trong diff.
+
+- **Lỡ commit artifact HỎNG vào `main`:** `git add -A` trong PR #15 nhặt luôn
+  `data/live_512_metrics.json` / `data/live_192_metrics.json` (chúng KHÔNG bị `.gitignore` chặn vì
+  repo cố ý cho qua `data/*_metrics.json`). Hậu quả: (a) `main` chứa "bằng chứng" là lần đo thất bại,
+  (b) Colab `git pull` báo `untracked working tree files would be overwritten`. Xử lý: xoá 2 file
+  khỏi repo (nhánh riêng, có log ghi rõ lý do) — bài học: khi `git add -A`, phải xem `git status`
+  trước khi commit artifact do người khác vừa copy vào `data/`.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [x] **Review độc lập** (§9.1) diff này — 0 P0/P1, 1 P2 + 4 P3, đã sửa hết (xem mục trên).
