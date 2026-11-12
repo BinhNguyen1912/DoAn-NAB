@@ -151,6 +151,20 @@ def _worker_telemetry(out_dir) -> dict:
     return {key: data.get(key) for key in keys if key in data}
 
 
+def _tail_file(path, *, limit: int = 4000):
+    """Đuôi của một file log (None nếu không có) — để artifact TỰ CHẨN ĐOÁN khi worker chết.
+
+    Vì sao cần (12-11): artifact chỉ ghi `worker dừng khi khởi động (mã 1) — xem
+    /dev/shm/…/worker.log`, mà runtime Colab bị xoá là log đó biến mất ⇒ người đọc artifact không
+    bao giờ biết worker chết vì gì. Nay nguyên văn đuôi log nằm ngay trong JSON.
+    """
+    try:
+        text = Path(path).read_text(encoding="utf-8", errors="replace")
+    except OSError:
+        return None
+    return text if len(text) <= limit else "…(cắt bớt)…\n" + text[-limit:]
+
+
 def _worker_device(out_dir) -> str | None:
     """Thiết bị mà WORKER thực sự dùng, đọc từ `worker.log` (dòng `[worker] sẵn sàng ... device=…`).
 
@@ -347,6 +361,9 @@ def main() -> int:
         "mau_cuoi": samples[-3:],
         "n_mau": len(samples),
         "loi": error,
+        # Log là BẰNG CHỨNG khi lỗi: worker chết ⇒ đuôi log của nó là thứ duy nhất nói vì sao.
+        "worker_log": _tail_file(Path(args.out_dir) / "worker.log"),
+        "api_log": _tail_file(_REPO_ROOT / "data" / "live_relay_api.log"),
     }
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")

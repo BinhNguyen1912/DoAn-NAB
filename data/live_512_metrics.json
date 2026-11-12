@@ -1,0 +1,54 @@
+{
+  "do_luc": "2026-11-12T07:10:34+00:00",
+  "git_rev": "3edfb834fa0610dda3ac42554dcadde2f176e6ec",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
+  "lenh": "python scripts/measure_live_relay.py --source data/input.mp4 --bbox 200,200,120,120 --device cuda --image-size 512 --vos-every 3 --seconds 30 --out data/live_512_metrics.json",
+  "device_yeu_cau": "cuda",
+  "device_worker_log": null,
+  "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với `device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
+  "moi_truong": "device=cuda (xem device_worker_log để biết worker thật sự dùng gì); nguồn = data/input.mp4",
+  "nguon": "data/input.mp4",
+  "thiet_lap": {
+    "bbox_xywh": [
+      200,
+      200,
+      120,
+      120
+    ],
+    "image_size": 512,
+    "vos_every": 3,
+    "seconds": 30.0
+  },
+  "dieu_kien_dang_ky_truoc": "state=running, frames>0, measured_fps>0, mask_fps>0 (đường camera thật chạy được — KHÔNG phải mục tiêu FPS)",
+  "ket_qua": false,
+  "dat_dieu_kien_do_luong": false,
+  "ly_do_khong_dat": [
+    "state_cuoi = None (cần 'running')",
+    "frames = 0 (không có frame nào tới browser)",
+    "measured_fps = 0",
+    "mask_fps = 0 (mask chưa được cập nhật ⇒ không phải mode track)",
+    "không đọc được thiết bị từ worker.log (worker chết trước khi in, hoặc log bản cũ)"
+  ],
+  "tom_tat": {
+    "n_mau": 0,
+    "state_cuoi": null,
+    "frames_dau": 0,
+    "frames_cuoi": 0,
+    "measured_fps_max": null,
+    "display_fps_max": null,
+    "display_fps_cuoi": null,
+    "mask_fps_max": null,
+    "mask_fps_cuoi": null,
+    "empty_runs_cuoi": null,
+    "message_cuoi": ""
+  },
+  "worker_status": {},
+  "anh_frame": [],
+  "anh_frame_loi": [],
+  "mau_cuoi": [],
+  "n_mau": 0,
+  "loi": "RuntimeError: POST /api/live/start → HTTP 400: {\"detail\":\"Không mở được bám-đối-tượng:data/input.mp4: worker dừng khi khởi động (mã 1) — xem /dev/shm/doan-live-relay/worker.log\"}"
+}

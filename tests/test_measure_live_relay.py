@@ -83,6 +83,24 @@ def test_khong_vao_running_thi_khong_dat_va_khong_ghi_artefact_la_dat():
     assert ok_rong is False and reasons_rong
 
 
+class TestTailFile:
+    """12-11: worker chết khi khởi động ⇒ artifact phải mang đuôi log của worker (tự chẩn đoán)."""
+
+    def test_doc_duoi_log(self, tmp_path):
+        p = tmp_path / "worker.log"
+        p.write_text("dòng cũ\nTraceback: ModuleNotFoundError loguru\n", encoding="utf-8")
+        assert "ModuleNotFoundError" in relay._tail_file(p)
+
+    def test_file_dai_bi_cat_va_giu_phan_cuoi(self, tmp_path):
+        p = tmp_path / "worker.log"
+        p.write_text("A" * 100 + "LOI-CUOI-CUNG", encoding="utf-8")
+        text = relay._tail_file(p, limit=50)
+        assert text.endswith("LOI-CUOI-CUNG") and len(text) < 120
+
+    def test_khong_co_file_tra_none(self, tmp_path):
+        assert relay._tail_file(tmp_path / "khong_co.log") is None
+
+
 class TestWorkerStatus:
     """`stability_shown` không đi qua API nên chỉ có trong artifact qua `worker_status` — phải đi
     kèm `stability_shown_n` và giữ `None` trung thực (ticket 19, cùng bẫy AGENTS §6)."""
