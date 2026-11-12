@@ -86,6 +86,26 @@
 - **Còn nợ (ghi ticket):** đường `cuda` thật chưa đo được trên máy này (chờ Colab — ticket 21 phần 2);
   nhánh flaky `test_reap_khong_cho_zombie_5_giay` gộp vào ticket 22.
 
+## 🚦 CI GitHub & merge
+- **PR #10** (https://github.com/BinhNguyen1912/DoAn-NAB/pull/10) — tự tạo bằng GitHub REST API qua
+  credential của `git credential fill` (máy này **không có `gh` CLI**), chờ CI xanh rồi merge
+  (`7c05e6c`), xoá nhánh cả hai phía.
+- **CI đỏ sẵn trên `main` từ 10-11** (run `42834180353`, không liên quan nhánh này) — sửa luôn trong PR:
+  1. `tests/test_run_live_cli.py::TestThietBiXuongEngine` gọi `run_live.main()` ⇒ đi qua
+     `resolve_checkpoint()` **thật** trong khi `build_default` đã bị thay bằng engine giả ⇒ 3 test đổ
+     `FileNotFoundError` trên runner (không có `samurai/sam2/checkpoints/*.pt` — bị `.gitignore`).
+     Fix: thay luôn `run_live.resolve_checkpoint` bằng hàm nhận nguyên đường dẫn (đúng phạm vi: test này
+     khoá kwarg `device`, đường resolve thật có test riêng ở `tests/test_config.py`).
+     **Đã kiểm bằng cách ẩn checkpoint thật** (`mv … .pt .pt.hidden`) rồi chạy lại 3 test: 3/3 xanh, sau đó
+     trả file về chỗ cũ (đúng môi trường CI).
+  2. `tests/test_api_live.py::TestMoLaiSauPhienLoi` đỏ oan: (a) phiên ĐẦU dùng `_SlowStartSource` chặn
+     tới **5 s** trong `start()` — sát mức timeout mặc định 5 s của `TestClient`; (b) đợi bằng
+     `created[-1].entered`, mà nếu lần Bật lại chưa kịp tạo nguồn mới thì `created[-1]` là nguồn **CŨ**
+     (đã `entered` từ trước) ⇒ assertion "đã vào nguồn" pass **sai**, rồi đọc `state = error`. Fix: phiên
+     đầu dùng nguồn mở tức thì; chờ đúng nguồn CỦA lần bật lại (`len(cham) > truoc`); đọc trạng thái theo
+     vòng có hạn và in mã HTTP + lỗi khi đỏ. Không nới ngưỡng, không bỏ assertion nào.
+- **Kết quả:** CI `main` **success** (run `43167972913`) — lần đầu xanh lại từ 10-11.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **E2E "PASS" trên mã CŨ**: lần chạy đầu, check mới báo đỏ "không thấy dòng thiết bị" dù mã đúng. Nguyên
   nhân: `./run e2e` **không build** frontend — server phục vụ `web/dist` cũ (từ lần build trước), nên trình
@@ -98,6 +118,7 @@
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [x] **Review độc lập** (§9.1) diff này — 0 P0/P1, 1 P2 + 4 P3, đã sửa hết (xem mục trên).
+- [x] **PR #10 đã merge vào `main`** (`7c05e6c`) sau khi CI xanh; nhánh đã xoá cả local lẫn remote.
 - [ ] **Ticket 21 phần 2** (chờ số GPU thật — người dùng chạy Colab):
       `python scripts/measure_live_relay.py --source data/<video>.mp4 --bbox "x,y,w,h" --device cuda
       --image-size 512 --seconds 30` ⇒ artifact có `device_worker_log=cuda` + tên GPU; từ đó mới chọn
