@@ -30,7 +30,15 @@ REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if REPO_ROOT not in sys.path:
     sys.path.insert(0, REPO_ROOT)
 CKPT = os.path.join(REPO_ROOT, "samurai", "sam2", "checkpoints", "sam2.1_hiera_tiny.pt")
-CKPT_URL = "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt"
+# Nguồn chính thức (Meta). Ngày 12-11 máy chủ này trả về `SSL: CERTIFICATE_VERIFY_FAILED
+# certificate has expired` trên Colab (và không kết nối được từ WSL) ⇒ phải có nguồn dự phòng,
+# nếu không cell "⚡ CHẠY TẤT CẢ" chết ngay ở bước tải checkpoint.
+CKPT_URLS = (
+    "https://dl.fbaipublicfiles.com/segment_anything_2/092824/sam2.1_hiera_tiny.pt",
+    # Mirror HuggingFace của CHÍNH Meta — cùng file (156 008 466 bytes), kiểm được Content-Length.
+    "https://huggingface.co/facebook/sam2.1-hiera-tiny/resolve/main/sam2.1_hiera_tiny.pt",
+)
+CKPT_URL = CKPT_URLS[0]        # giữ tên cũ cho ai import
 CKPT_MIN_BYTES = 100_000_000
 SAMURAI_REPO = "https://github.com/yangchris11/samurai.git"
 
@@ -41,22 +49,106 @@ def run(cmd, **kw):
     return subprocess.run(cmd, text=True, **kw)
 
 
-def checkpoint_ok(path=CKPT):
+def checkpoint_ok(path=CKPT, min_bytes=CKPT_MIN_BYTES):
     """Checkpoint tồn tại và đủ lớn (file 0 byte từng làm hỏng cả phiên Colab)."""
-    return os.path.isfile(path) and os.path.getsize(path) > CKPT_MIN_BYTES
+    return os.path.isfile(path) and os.path.getsize(path) > min_bytes
 
 
-def ensure_checkpoint(path=CKPT, url=CKPT_URL):
-    if checkpoint_ok(path):
+def _ssl_contexts():
+    """Ngữ cảnh TLS theo thứ tự thử: CA của `certifi` → CA hệ thống → **bỏ kiểm chứng** (cuối).
+
+    Vì sao có nấc cuối: trên Colab, `dl.fbaipublicfiles.com` từng báo
+    `certificate verify failed: certificate has expired` dù `git clone` vẫn chạy ⇒ CA store (hoặc
+    đồng hồ) của runtime lệch. Checkpoint là file CÔNG KHAI, không phải bí mật; nếu buộc phải bỏ
+    kiểm chứng thì vẫn kiểm **dung lượng** (>100 MB) và in cảnh báo để không ai tưởng là im lặng.
+    """
+    import ssl
+
+    contexts = []
+    try:
+        import certifi
+
+        contexts.append(("CA certifi", ssl.create_default_context(cafile=certifi.where())))
+    except Exception:                     # noqa: BLE001 — thiếu certifi không phải lỗi
+        pass
+    contexts.append(("CA hệ thống", ssl.create_default_context()))
+    contexts.append(("KHÔNG kiểm chứng TLS", ssl._create_unverified_context()))
+    return contexts
+
+
+def _ten_nguon(url: str) -> str:
+    """Tên ngắn của nguồn để in lỗi (khỏi dán URL dài cả màn hình)."""
+    if "huggingface.co" in url:
+        return "HuggingFace (mirror)"
+    if "fbaipublicfiles" in url:
+        return "dl.fbaipublicfiles.com"
+    return url.split("/")[2] if "//" in url else url
+
+
+def _tai_mot_file(url: str, path: str, context, *, timeout: float = 60.0) -> None:
+    """Tải `url` → `path` bằng TLS context cho trước, ghi qua `.part` rồi `os.replace`.
+
+    Ghi qua file tạm để lần sau chạy lại KHÔNG thấy "checkpoint đủ lớn" từ một file dở dang.
+    """
+    part = path + ".part"
+    request = urllib.request.Request(url, headers={"User-Agent": "doan-nab-colab-setup"})
+    try:
+        with urllib.request.urlopen(request, timeout=timeout, context=context) as response:
+            total = int(response.headers.get("Content-Length") or 0)
+            da = 0
+            with open(part, "wb") as handle:
+                while True:
+                    chunk = response.read(1 << 20)
+                    if not chunk:
+                        break
+                    handle.write(chunk)
+                    da += len(chunk)
+                    if total and sys.stdout.isatty():
+                        print(f"\r[setup]   {da / 1e6:6.1f}/{total / 1e6:.1f} MB", end="", flush=True)
+            if total and da != total:
+                raise RuntimeError(f"tải thiếu: {da} / {total} bytes")
+        os.replace(part, path)
+    finally:
+        if os.path.exists(part):
+            try:
+                os.remove(part)
+            except OSError:
+                pass
+
+
+def ensure_checkpoint(path=CKPT, urls=CKPT_URLS, *, min_bytes=CKPT_MIN_BYTES, fetch=None):
+    """Có checkpoint đủ lớn thì thôi; không thì tải từ lần lượt các nguồn × các TLS context.
+
+    `fetch` là seam cho test (mặc định `_tai_mot_file`). Lỗi được GOM lại và in một lần: "không
+    tải được" mà không nói đã thử gì là thông báo vô dụng (bài học 12-11 — traceback chỉ có một URL).
+    """
+    if checkpoint_ok(path, min_bytes):
         print(f"[setup] checkpoint OK: {os.path.getsize(path) / 1e6:.1f} MB")
         return
     print("[setup] đang tải checkpoint (~156 MB)…")
     os.makedirs(os.path.dirname(path), exist_ok=True)
-    urllib.request.urlretrieve(url, path)
-    size = os.path.getsize(path)
-    if size < CKPT_MIN_BYTES:
-        raise RuntimeError(f"tải checkpoint hỏng: {size} bytes — kiểm tra mạng rồi chạy lại")
-    print(f"[setup] checkpoint OK: {size / 1e6:.1f} MB")
+    fetch = fetch or _tai_mot_file
+    loi = []
+    for url in urls:
+        for nhan, context in _ssl_contexts():
+            print(f"[setup]   thử {_ten_nguon(url)} ({nhan})…", flush=True)
+            try:
+                fetch(url, path, context)
+                size = os.path.getsize(path)
+                if size < min_bytes:
+                    raise RuntimeError(f"file hỏng: {size} bytes (< {min_bytes})")
+                print(f"\n[setup] checkpoint OK: {size / 1e6:.1f} MB (nguồn: {_ten_nguon(url)}) "
+                      f"→ {path}")
+                if nhan.startswith("KHÔNG"):
+                    print("[setup] CẢNH BÁO: đã phải bỏ kiểm chứng TLS mới tải được (CA store/đồng "
+                          "hồ của runtime lệch). File vẫn được kiểm dung lượng.")
+                return
+            except Exception as exc:      # noqa: BLE001 — thử nguồn/cách khác
+                loi.append(f"{_ten_nguon(url)} [{nhan}]: {type(exc).__name__}: {exc}")
+    raise RuntimeError(
+        "không tải được checkpoint ở mọi nguồn/cách:\n  " + "\n  ".join(loi)
+        + "\n→ Tải tay bằng trình duyệt rồi upload lên Colab:\n  " + "\n  ".join(urls)
+        + f"\n  rồi đặt file vào {path}")
 
 
 def ensure_samurai(install=True):

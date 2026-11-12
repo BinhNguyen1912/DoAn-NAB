@@ -1,11 +1,13 @@
 """Test phần logic thuần của scripts/colab_run_all.py (không chạy model/không mạng)."""
 
+import os
+
 import pytest
 
 from types import SimpleNamespace
 
 from scripts.colab_run_all import (
-    CKPT_MIN_BYTES, checkpoint_ok, ensure_video, write_run_info, zip_results,
+    CKPT_MIN_BYTES, checkpoint_ok, ensure_checkpoint, ensure_video, write_run_info, zip_results,
 )
 
 
@@ -24,6 +26,70 @@ class TestCheckpointOk:
 
     def test_khong_ton_tai(self, tmp_path):
         assert checkpoint_ok(str(tmp_path / "khong_co.pt")) is False
+
+
+class TestEnsureCheckpoint:
+    """Lỗi thật trên Colab 12-11: `dl.fbaipublicfiles.com` trả `certificate has expired` ⇒ cell
+    "⚡ CHẠY TẤT CẢ" chết vì chỉ có MỘT URL và một cách TLS."""
+
+    def _ghi(self, size):
+        def fetch(url, path, context):
+            with open(path, "wb") as handle:
+                handle.write(b"x" * size)
+        return fetch
+
+    def test_nguon_dau_loi_thi_thu_nguon_sau(self, tmp_path):
+        path = str(tmp_path / "ckpt.pt")
+        da_goi = []
+        ghi = self._ghi(50)
+
+        def fetch(url, target, context):
+            da_goi.append(url)
+            if "fbaipublicfiles" in url:
+                raise OSError("SSL: CERTIFICATE_VERIFY_FAILED")
+            ghi(url, target, context)
+
+        ensure_checkpoint(path, ("https://dl.fbaipublicfiles.com/x.pt", "https://huggingface.co/y.pt"),
+                          min_bytes=10, fetch=fetch)
+        assert os.path.getsize(path) == 50
+        assert len(da_goi) >= 2, "phải thử nguồn dự phòng sau khi nguồn đầu lỗi"
+        assert "huggingface" in da_goi[-1]
+
+    def test_moi_nguon_loi_thi_bao_ro_da_thu_gi(self, tmp_path):
+        def fetch(url, path, context):
+            raise OSError("certificate has expired")
+
+        with pytest.raises(RuntimeError) as info:
+            ensure_checkpoint(str(tmp_path / "ckpt.pt"), ("https://huggingface.co/y.pt",),
+                              min_bytes=10, fetch=fetch)
+        message = str(info.value)
+        assert "huggingface" in message and "certificate has expired" in message
+        # Không để lại rác: không có file .part nào sót lại sau khi mọi cách thất bại.
+        assert not list(tmp_path.glob("*.part"))
+
+    def test_file_tai_ve_qua_nho_la_hong(self, tmp_path):
+        with pytest.raises(RuntimeError, match="hỏng"):
+            ensure_checkpoint(str(tmp_path / "nho.pt"), ("https://x/y.pt",), min_bytes=10,
+                              fetch=self._ghi(5))
+
+    def test_da_co_checkpoint_thi_khong_tai(self, tmp_path):
+        path = tmp_path / "co.pt"
+        path.write_bytes(b"x" * 50)
+
+        def fetch(*_a, **_k):
+            raise AssertionError("không được tải lại khi checkpoint đã đủ lớn")
+
+        ensure_checkpoint(str(path), min_bytes=10, fetch=fetch)
+
+    def test_ngu_canh_tls_cuoi_cung_la_bo_kiem_chung(self):
+        """Nấc cuối phải là "bỏ kiểm chứng" — nó tồn tại vì CA store của Colab có thể lệch."""
+        import ssl
+
+        from scripts.colab_run_all import _ssl_contexts
+
+        nhan = [ten for ten, _ctx in _ssl_contexts()]
+        assert nhan[-1].startswith("KHÔNG")
+        assert _ssl_contexts()[-1][1].verify_mode == ssl.CERT_NONE
 
 
 class TestEnsureVideo:
