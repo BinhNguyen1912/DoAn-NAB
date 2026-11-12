@@ -905,37 +905,51 @@ class TestMoLaiSauPhienLoi:
     def test_dang_mo_lai_thi_state_la_loading_khong_phai_error(self, live_client, monkeypatch):
         import threading
 
-        created = []
+        cham = []        # nguồn CHẬM (chỉ dùng cho lần Bật lại — xem chú thích bên dưới)
 
         def factory(*args, **kwargs):
             item = _SlowStartSource("0", delay=0.4)
-            created.append(item)
+            cham.append(item)
             return item
 
         monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
 
         # Phiên trước: kết thúc bằng `error` (worker chết) — đúng ca người dùng bấm Bật lại.
-        live_client.post("/api/live/start", json={"source": "0"})
-        created[-1].release.set() if created else None
+        # Dùng nguồn mở TỨC THÌ cho phiên này: `_SlowStartSource.start()` chặn tới 5 s, sát mức
+        # timeout mặc định của `TestClient` (5 s) ⇒ trên runner CI chậm, request đầu và request
+        # sau dễ chồng nhau, `_start_lock` còn bị giữ ⇒ lần bấm lại nhận 409 `LiveBusy` và `state`
+        # vẫn là `error` từ phiên trước ⇒ test đỏ OAN (đã gặp trên CI 12-11 và 10-11, chạy riêng
+        # 10/10 lần xanh). Test này không cần nguồn chậm cho phiên ĐẦU.
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: FakeFrameSource("0"))
+        dau = live_client.post("/api/live/start", json={"source": "0"})
+        assert dau.status_code == 200, dau.text
         live_client.app.state.live.stop()
         with live_client.app.state.live._lock:            # mô phỏng watchdog đã báo lỗi
             live_client.app.state.live._state = LiveState.ERROR
             live_client.app.state.live._message = "worker dừng (mã 1)"
 
-        # Bật lại: giữ `start()` trong lúc đang nạp để đọc trạng thái giữa chừng.
-        errors, done = [], threading.Event()
+        # Bật lại: nguồn CHẬM, giữ `start()` trong lúc đang nạp để đọc trạng thái giữa chừng.
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
+        errors, ma, done = [], [], threading.Event()
 
         def _post():
-            _try(lambda: live_client.post("/api/live/start", json={"source": "0"}), errors)
+            def _go():
+                ma.append(live_client.post("/api/live/start", json={"source": "0"}).status_code)
+            _try(_go, errors)
             done.set()
 
+        truoc = len(cham)
         worker = threading.Thread(target=_post)
         worker.start()
-        assert created[-1].entered.wait(timeout=5), "start() chưa vào nguồn"
+        assert _wait(lambda: len(cham) > truoc and cham[-1].entered.is_set(), timeout=5), \
+            f"start() chưa vào nguồn mới (http={ma}, errors={[str(e) for e in errors]})"
 
-        status = live_client.get("/api/live/status").json()
-        assert status["state"] == "loading", f"state = {status['state']} (phải 'loading')"
-        assert status["state"] != "error", "đang nạp bình thường mà báo lỗi ⇒ UI hiện role=alert"
+        # Đọc vài lần trong lúc vẫn đang nạp — trạng thái phải là `loading` suốt giai đoạn đó.
+        states = []
+        assert _wait(lambda: states.append(live_client.get("/api/live/status").json()["state"])
+                     or states[-1] == "loading", timeout=5), \
+            f"state = {states} (phải 'loading') — http={ma}, nguồn mới={len(cham) - truoc}"
 
         stream = live_client.get("/api/live/stream")
         assert stream.status_code == 409
@@ -943,7 +957,7 @@ class TestMoLaiSauPhienLoi:
         assert "đã dừng vì lỗi" not in chi_tiet, f"stream báo lỗi giả: {chi_tiet}"
         assert "Đang mở" in chi_tiet
 
-        created[-1].release.set()
+        cham[-1].release.set()
         worker.join(timeout=10)
         assert done.is_set() and not errors
 
