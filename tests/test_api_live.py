@@ -20,6 +20,14 @@ def _wait(predicate, timeout=3.0):
     return False
 
 
+def _chay(ham, tham_so, loi: list) -> None:
+    """Chạy `ham(tham_so)` trong thread nền, gom lỗi — để test không chết im lặng."""
+    try:
+        ham(tham_so)
+    except BaseException as exc:                # noqa: BLE001 — test phải thấy được mọi lỗi
+        loi.append(exc)
+
+
 class TestLiveStreamService:
     def test_ban_dau_chua_phat(self, live_service):
         status = live_service.status()
@@ -44,6 +52,7 @@ class TestLiveStreamService:
         class _TelemetrySource(FakeFrameSource):
             def telemetry(self):
                 return LiveTelemetry(display_fps=29.9, mask_fps=8.6, stability=0.96,
+                                      device="cuda",
                                       latency_ms=108.0, lk_ms=4.6, empty_runs=2)
 
         monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _TelemetrySource("0"))
@@ -51,7 +60,47 @@ class TestLiveStreamService:
         status = live_service.status()
         assert (status.display_fps, status.mask_fps, status.stability,
                 status.latency_ms, status.empty_runs) == (29.9, 8.6, 0.96, 108.0, 2)
+        # Thiết bị do worker báo phải tới được API/HUD — ticket 21.
+        assert status.device == "cuda"
         live_service.stop()
+
+    def test_thiet_bi_hien_ra_TRONG_LUC_nap_model(self, live_service, monkeypatch):
+        """P2 review 12-11: lúc `start()` đang nạp model (20–240 s) `_source` còn None — thiết bị
+        phải đọc từ `_pending`, nếu không HUD ẩn dòng thiết bị đúng lúc người xem cần biết nhất."""
+        import threading
+
+        from src.api.domain import LiveTelemetry
+
+        from tests.conftest import FakeFrameSource
+
+        started = threading.Event()
+        release = threading.Event()
+        loi = []
+
+        class _ChamSource(FakeFrameSource):
+            def start(self):
+                started.set()
+                release.wait(timeout=10)     # giả lập nạp checkpoint
+                super().start()
+
+            def telemetry(self):
+                # Worker đã ghi `status.json` với "device": "cuda" ngay từ giai đoạn loading.
+                return LiveTelemetry(device="cuda")
+
+        monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _ChamSource("0"))
+        worker = threading.Thread(target=lambda: _chay(live_service.start, "0", loi), daemon=True)
+        worker.start()
+        try:
+            assert started.wait(5), "nguồn giả không được gọi start()"
+            status = live_service.status()
+            assert status.state is LiveState.LOADING
+            assert status.device == "cuda", \
+                "đang nạp model mà API báo device='' ⇒ HUD ẩn dòng thiết bị suốt 20–240 s"
+        finally:
+            release.set()
+            worker.join(timeout=10)
+            live_service.stop()
+        assert not loi, f"start() nổ trong thread: {loi}"
 
     def test_nguon_khong_co_telemetry_thi_so_lieu_bang_0(self, live_service, make_frame_source):
         live_service.start("0")     # FakeFrameSource: chỉ có frame, không có số liệu chi tiết
@@ -59,6 +108,8 @@ class TestLiveStreamService:
         assert (status.mask_fps, status.empty_runs) == (0.0, 0)
         # Nguồn không báo `stability` ⇒ **chưa đo** (`None`), KHÔNG phải "đo được 0" (ticket 18).
         assert status.stability is None and status.stability_n == 0
+        # Không nguồn nào báo thiết bị ⇒ chuỗi RỖNG (chưa biết), KHÔNG phải "cpu" (ticket 21).
+        assert status.device == ""
         live_service.stop()
 
     def test_stop_dong_nguon_va_xoa_frame(self, live_service, make_frame_source):
@@ -121,7 +172,7 @@ class TestLiveRoutes:
         body = r.json()
         assert body["state"] == "running"
         assert body["source"] == "giả:0"
-        assert set(body) == {"state", "source", "frames", "measured_fps", "display_fps",
+        assert set(body) == {"state", "source", "device", "frames", "measured_fps", "display_fps",
                              # 4 trường chẩn đoán (09-11): drift + tỉ lệ mất dấu theo cửa sổ
                              "drift_p05", "drift_n", "empty_frac_window", "empty_window_n",
                              "mask_fps", "stability", "stability_n", "latency_ms", "empty_runs",
@@ -472,7 +523,7 @@ class TestWorkerTelemetry:
             "state": "tracking", "frames": 400, "measure_fps": 0, "measured_fps": 29.9,
             "vos_fps": 8.6, "vos_ms": 100.0, "lk_ms": 2.7, "stability": 0.963,
             "stability_n": 200, "stability_shown": 0.95, "empty_runs": 14, "mask_holds": 4,
-            "mask_drops": 2,
+            "mask_drops": 2, "device": "cuda",
             "bbox": [10, 10, 40, 60], "message": "",
         }), encoding="utf-8")
 
@@ -483,6 +534,18 @@ class TestWorkerTelemetry:
         assert detail.stability_n == 200
         assert detail.latency_ms == 100.0
         assert detail.empty_runs == 14
+        # Thiết bị đi qua NGUYÊN VĂN (ticket 21) — báo cáo không phải đọc worker.log nữa.
+        assert detail.device == "cuda"
+
+    def test_thieu_khoa_device_thi_rong_khong_phai_cpu(self, tmp_path):
+        """Worker bản cũ (status.json không có `device`) ⇒ `""` = chưa biết, KHÔNG được đoán "cpu"."""
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps({"state": "running", "vos_fps": 8.0}),
+                                             encoding="utf-8")
+        assert WorkerFrameSource("0", out_dir=tmp_path).telemetry().device == ""
 
     def test_seam_stability_none_va_0_0(self, tmp_path):
         """Seam `status.json → LiveTelemetry` phải giữ `None` (chưa đo) — nếu ai đổi
@@ -842,37 +905,51 @@ class TestMoLaiSauPhienLoi:
     def test_dang_mo_lai_thi_state_la_loading_khong_phai_error(self, live_client, monkeypatch):
         import threading
 
-        created = []
+        cham = []        # nguồn CHẬM (chỉ dùng cho lần Bật lại — xem chú thích bên dưới)
 
         def factory(*args, **kwargs):
             item = _SlowStartSource("0", delay=0.4)
-            created.append(item)
+            cham.append(item)
             return item
 
         monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
 
         # Phiên trước: kết thúc bằng `error` (worker chết) — đúng ca người dùng bấm Bật lại.
-        live_client.post("/api/live/start", json={"source": "0"})
-        created[-1].release.set() if created else None
+        # Dùng nguồn mở TỨC THÌ cho phiên này: `_SlowStartSource.start()` chặn tới 5 s, sát mức
+        # timeout mặc định của `TestClient` (5 s) ⇒ trên runner CI chậm, request đầu và request
+        # sau dễ chồng nhau, `_start_lock` còn bị giữ ⇒ lần bấm lại nhận 409 `LiveBusy` và `state`
+        # vẫn là `error` từ phiên trước ⇒ test đỏ OAN (đã gặp trên CI 12-11 và 10-11, chạy riêng
+        # 10/10 lần xanh). Test này không cần nguồn chậm cho phiên ĐẦU.
+        monkeypatch.setattr(live_client.app.state.live, "_make_source",
+                            lambda *a, **k: FakeFrameSource("0"))
+        dau = live_client.post("/api/live/start", json={"source": "0"})
+        assert dau.status_code == 200, dau.text
         live_client.app.state.live.stop()
         with live_client.app.state.live._lock:            # mô phỏng watchdog đã báo lỗi
             live_client.app.state.live._state = LiveState.ERROR
             live_client.app.state.live._message = "worker dừng (mã 1)"
 
-        # Bật lại: giữ `start()` trong lúc đang nạp để đọc trạng thái giữa chừng.
-        errors, done = [], threading.Event()
+        # Bật lại: nguồn CHẬM, giữ `start()` trong lúc đang nạp để đọc trạng thái giữa chừng.
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", factory)
+        errors, ma, done = [], [], threading.Event()
 
         def _post():
-            _try(lambda: live_client.post("/api/live/start", json={"source": "0"}), errors)
+            def _go():
+                ma.append(live_client.post("/api/live/start", json={"source": "0"}).status_code)
+            _try(_go, errors)
             done.set()
 
+        truoc = len(cham)
         worker = threading.Thread(target=_post)
         worker.start()
-        assert created[-1].entered.wait(timeout=5), "start() chưa vào nguồn"
+        assert _wait(lambda: len(cham) > truoc and cham[-1].entered.is_set(), timeout=5), \
+            f"start() chưa vào nguồn mới (http={ma}, errors={[str(e) for e in errors]})"
 
-        status = live_client.get("/api/live/status").json()
-        assert status["state"] == "loading", f"state = {status['state']} (phải 'loading')"
-        assert status["state"] != "error", "đang nạp bình thường mà báo lỗi ⇒ UI hiện role=alert"
+        # Đọc vài lần trong lúc vẫn đang nạp — trạng thái phải là `loading` suốt giai đoạn đó.
+        states = []
+        assert _wait(lambda: states.append(live_client.get("/api/live/status").json()["state"])
+                     or states[-1] == "loading", timeout=5), \
+            f"state = {states} (phải 'loading') — http={ma}, nguồn mới={len(cham) - truoc}"
 
         stream = live_client.get("/api/live/stream")
         assert stream.status_code == 409
@@ -880,7 +957,7 @@ class TestMoLaiSauPhienLoi:
         assert "đã dừng vì lỗi" not in chi_tiet, f"stream báo lỗi giả: {chi_tiet}"
         assert "Đang mở" in chi_tiet
 
-        created[-1].release.set()
+        cham[-1].release.set()
         worker.join(timeout=10)
         assert done.is_set() and not errors
 

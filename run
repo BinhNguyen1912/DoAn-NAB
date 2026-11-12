@@ -287,6 +287,11 @@ EOF
       exit 1
     fi
     "$PYTHON" scripts/make_e2e_video.py || exit 1
+    # LUÔN build lại frontend trước khi lái trình duyệt: `web/dist` cũ ⇒ E2E "PASS" trên mã CŨ.
+    # Đã gặp đúng cái bẫy này khi thêm dòng thiết bị (ticket 21, 12-11): server phục vụ dist cũ
+    # nên một test mới báo đỏ"không thấy dòng thiết bị" trong khi mã đúng. Build ~2 s.
+    ( cd "$ROOT/web" && npm run build >/dev/null 2>&1 ) \
+      || { echo "[e2e] build frontend thất bại — chạy ./run web để xem lỗi"; exit 1; }
     port="${E2E_PORT:-8013}"
     "$PYTHON" -m uvicorn src.api.main:app --host 0.0.0.0 --port "$port" \
       > "$ROOT/data/e2e_server.log" 2>&1 &

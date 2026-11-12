@@ -239,10 +239,25 @@ async function waitJobState(page, wanted, timeout = 240000) {
     trackPayload = JSON.parse(route.request().postData() || '{}')
     await route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
-                             message: 'stub' }) })
+                             device: 'cuda', message: 'stub' }) })
   })
   await liveCard.getByRole('button', { name: 'Bám đối tượng' }).click()
   await page.waitForTimeout(300)
+
+  // Thiết bị phải đi hết chuỗi status.json → LiveTelemetry → schema → api.ts → HUD (ticket 21).
+  // Chặn CẢ /api/live/status: sau khi bắt đầu bám, component poll mỗi 1 s và ghi đè status bằng
+  // phản hồi THẬT (mode raw: `device = ""` ⇒ không có dòng thiết bị), nên chỉ stub `/start`
+  // thì dòng thiết bị chỉ sống < 1 s — kiểm tra sẽ chập chờn.
+  await page.route('**/api/live/status', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+                             device: 'cuda', message: 'stub' }) })
+  })
+  const deviceText = await liveCard.getByTestId('device-line').innerText({ timeout: 8000 })
+    .catch(() => '')
+  check('HUD hiện thiết bị model (cuda) lấy từ /api/live/status', /cuda/.test(deviceText),
+    deviceText.replace(/\s+/g, ' ') || '(không thấy dòng thiết bị)')
+  await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 
   check('UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"',

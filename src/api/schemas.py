@@ -121,6 +121,11 @@ class LiveStatusResponse(BaseModel):
 
     state: Literal["stopped", "loading", "running", "error"]
     source: str
+    device: str = Field(
+        default="",
+        description="thiết bị model THẬT SỰ chạy: 'cpu' | 'cuda' (worker báo); '' = chưa biết "
+                    "(chế độ raw hoặc worker bản cũ) — chuỗi rỗng KHÔNG được đọc thành 'cpu'",
+    )
     frames: int = Field(ge=0, description="số frame MỚI đã đọc từ khi bắt đầu (chỉ đếm khi nội "
                                            "dung đổi — cảnh tĩnh thì con số đứng yên)")
     measured_fps: float = Field(ge=0, description="FPS THỰC ĐO trong 2 giây gần nhất")

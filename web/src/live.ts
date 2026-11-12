@@ -70,3 +70,17 @@ export function shownFps(status: Pick<LiveStatus, 'measured_fps' | 'display_fps'
   if (!status) return 0
   return status.display_fps > 0 ? status.display_fps : status.measured_fps
 }
+
+/** Dòng "model chạy trên thiết bị nào"; `null` khi nguồn không báo (chế độ raw / worker bản cũ).
+ *
+ * Vì sao phải hiện: mọi con số FPS/độ trễ chỉ đúng cho MỘT thiết bị. Cùng mã nguồn cho 97 ms @192
+ * trên CPU laptop này và 49,6 ms/frame (~20,15 FPS) trên GPU T4 (`docs/task/22-10-2026-colab-gpu-
+ * so-lieu-va-fix.md`) — không nói thiết bị thì người xem báo cáo không tái lập được
+ * (ticket 21; AGENTS §6). `''` (chưa biết) KHÔNG được in thành "cpu".
+ */
+export function deviceLine(status: Pick<LiveStatus, 'device'> | null | undefined): string | null {
+  const device = (status?.device ?? '').trim()
+  if (!device) return null
+  const nhan = device === 'cuda' ? 'cuda (GPU)' : device === 'cpu' ? 'cpu (CPU)' : device
+  return `Thiết bị chạy model: ${nhan} — FPS/độ trễ chỉ đúng cho thiết bị này`
+}

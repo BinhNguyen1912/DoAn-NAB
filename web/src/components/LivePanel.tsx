@@ -20,7 +20,7 @@ import {
   type BBox,
   type LiveStatus,
 } from '../api'
-import { driftLine, maskRhythmLine, shownFps } from '../live'
+import { deviceLine, driftLine, maskRhythmLine, shownFps } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
 const POLL_MS = 1000
@@ -116,6 +116,7 @@ export function LivePanel(): JSX.Element {
   const loading = status?.state === 'loading'
   const maskLine = maskRhythmLine(status)
   const driftText = driftLine(status)
+  const deviceText = deviceLine(status)
   const displayFps = shownFps(status)
 
   return (
@@ -181,6 +182,14 @@ export function LivePanel(): JSX.Element {
         // dụng cụ đo; "chưa đo được" không bao giờ được hiện thành "tốt".
         <p className="hint" data-testid="drift-line">
           {driftText}
+        </p>
+      )}
+
+      {deviceText && (
+        // Thiết bị là NGỮ CẢNH của mọi số ở trên: cùng mã cho 97 ms @192 trên CPU và nhanh hơn
+        // nhiều lần trên GPU — không nói thiết bị thì không ai tái lập được số trong báo cáo.
+        <p className="hint" data-testid="device-line">
+          {deviceText}
         </p>
       )}
 

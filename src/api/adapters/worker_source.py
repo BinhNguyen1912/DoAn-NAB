@@ -146,6 +146,9 @@ class WorkerFrameSource(FrameSource):
         return LiveTelemetry(
             display_fps=float(status.get("measured_fps") or 0.0),
             mask_fps=float(status.get("vos_fps") or 0.0),
+            # `""` = status.json KHÔNG có khoá `device` (worker bản cũ) ⇒ UI ẩn dòng thiết bị, thay
+            # vì in "cpu" — một lời khẳng định sai (ticket 21).
+            device=str(status.get("device") or ""),
             # `None` = CHƯA ĐO (khác `0,0` = đo được 0 / đang mất dấu) — ticket 18.
             stability=_so_hoac_none(status.get("stability")),
             stability_n=int(status.get("stability_n") or 0),

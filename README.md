@@ -446,6 +446,11 @@ Quy tắc trung thực (đã khoá bằng test — `tests/test_device.py`, `test
 - Khi báo cáo: ghi rõ **thiết bị + `image_size` + `vos_every`** của từng con số. Số CPU đo trên
   laptop này (mask ~8,6 lần/giây @ `vos_every 3`, HUD 30 FPS) **không** được trích như số GPU và
   ngược lại.
+- Thiết bị **hiện ngay trên giao diện** (`Thiết bị chạy model: cuda (GPU) — FPS/độ trễ chỉ đúng cho
+  thiết bị này`) và có trong `/api/live/status` + `status.json` (`device: "cpu" | "cuda"`), kể cả
+  lúc đang nạp model ⇒ không phải đọc `worker.log` để biết phiên chạy CPU hay GPU (ticket 21).
+  Chế độ `raw` (không chạy model) trả `device: ""` = **chưa biết**, giao diện ẩn dòng đó — chuỗi
+  rỗng nghĩa là "chưa biết", KHÔNG phải "cpu".
 
 ## 4. Đóng góp của sinh viên vs thành phần có sẵn
 

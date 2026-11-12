@@ -125,7 +125,7 @@ class TestLiveTrackingSession:
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         bat_buoc = {
-            "state", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+            "state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "stability", "stability_n", "stability_shown", "stability_shown_n",
             "empty_runs", "mask_holds",
             "mask_drops",
@@ -574,6 +574,27 @@ class TestLoiReviewDocLap:
 
         assert set(loading) == set(status_payload(LiveTrackStats()))
         assert loading["state"] == "loading"
+
+    def test_p3_loading_cung_ghi_thiet_bj(self, textured_video, tmp_path):
+        """Ticket 21: giai đoạn nạp model (20–240 s) cũng phải nói đang nạp cho CPU hay GPU."""
+        from tools.live_worker import _write_loading
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        _write_loading(out, "Đang nạp model...", device="cuda")
+        loading = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert loading["state"] == "loading"
+        assert loading["device"] == "cuda"
+
+    def test_p3_loading_khong_truyen_device_thi_la_chua_biet(self, tmp_path):
+        """Quên truyền `device` ⇒ file nói **chưa biết** (`""`), không được đoán "cpu" (P3 12-11)."""
+        from tools.live_worker import _write_loading
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        _write_loading(out)
+        loading = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert loading["device"] == ""
 
     def test_p3_lk_mat_dau_thi_tra_ve_o_bao_cu_khong_bia(self, textured_video, tmp_path):
         """LK fail (nền phẳng) không được crash và không được bịa vị trí mới."""
@@ -1332,3 +1353,26 @@ class TestStabilityShownCoEncodingChuaDo:
         payload = status_payload(LiveTrackStats())
         assert payload["stability_shown"] is None
         assert payload["stability_shown_n"] == 0
+
+    def test_status_json_co_device_cua_phien(self, video_source, tmp_path):
+        """Ticket 21: `device` phải đi từ config → `status.json` (không chỉ nằm trong worker.log)."""
+        import json
+
+        from src.live_tracking import STATUS_NAME
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / "bbox.json").write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}),
+                                       encoding="utf-8")
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
+                                                             stop_after_frames=1, device="CUDA "))
+        # `device` được chuẩn hoá ở CỬA VÀO (cùng hàm với CLI/API) — "CUDA " → "cuda".
+        assert session._cfg.device == "cuda"
+        session.run()
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["device"] == "cuda", "thiết bị phải nằm trong status.json cho API/HUD/artifact"
+
+    def test_device_la_bi_tu_choi_o_cua_vao(self, video_source, tmp_path):
+        """Tên thiết bị rác không được lọt vào status.json như một khẳng định đúng."""
+        with pytest.raises(ValueError, match="device"):
+            LiveTrackConfig(source=video_source, out_dir=tmp_path / "x", device="gpu")

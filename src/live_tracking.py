@@ -30,6 +30,7 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from src.device import normalize_device
 from src.light_tracker import LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
@@ -72,10 +73,16 @@ class LiveTrackConfig:
     jpeg_quality: int = 80
     loop_files: bool = True
     stop_after_frames: int | None = None      # cho test/thử nhanh
+    # Thiết bị model THẬT SỰ chạy (`cpu` | `cuda`). Trước đây chỉ có trong `worker.log` ⇒ status.json,
+    # API và HUD đều không biết phiên đang chạy CPU hay GPU, trong khi mọi số FPS trong báo cáo phải
+    # gắn với một thiết bị cụ thể (ticket 21).
+    device: str = "cpu"
 
     def __post_init__(self) -> None:
         """Kiểm tra tham số ở MỘT chỗ — trước đây schema API cho 0.0 còn worker clamp 0.05,
         hai bên hiểu khác nhau (lỗi P2, review 08-11)."""
+        # Cùng hàm chuẩn hoá với CLI/API/worker ⇒ `--device CUDA ` cũng thành `cuda`.
+        self.device = normalize_device(self.device)
         if not 0.0 < float(self.mask_smoothing) <= 1.0:
             raise ValueError(
                 f"mask_smoothing phải trong khoảng (0, 1]; nhận {self.mask_smoothing!r} "
@@ -92,6 +99,12 @@ class LiveTrackStats:
     """Số liệu đo được của phiên (ghi ra status.json mỗi frame đã phát)."""
 
     state: str = STATE_LOADING
+    # Thiết bị model chạy (`cpu` | `cuda`) — đi cùng mọi số trong status.json để không ai trích FPS
+    # CPU cho một phiên GPU (hoặc ngược lại). `""` = **chưa biết**. `LiveTrackingSession` luôn điền
+    # từ `LiveTrackConfig.device` (mặc định `cpu` = mặc định của worker).
+    # `state=error` ở cửa vào (tên thiết bị rác) thì đây là thiết bị **được YÊU CẦU**, có thể
+    # ngoài `cpu|cuda` (nguyên văn người dùng gõ) — `message` nói rõ lỗi (P3 review 12-11).
+    device: str = "cpu"
     frames: int = 0               # số frame ĐÃ PHÁT (nhịp display)
     vos_runs: int = 0             # số lần CHẠY MODEL (mask mới)
     measured_fps: float = 0.0     # FPS phát thực đo
@@ -177,6 +190,7 @@ def status_payload(stats: "LiveTrackStats") -> dict:
     """
     return {
         "state": stats.state,
+        "device": stats.device,
         "frames": stats.frames,
         "vos_runs": stats.vos_runs,
         "measured_fps": stats.measured_fps,
@@ -309,7 +323,7 @@ class LiveTrackingSession:
         self._cfg = config
         self._lk = lk_tracker or LkBoxTracker()
         self._interp = LkBoxTracker()      # nội suy từ frame VOS gần nhất → frame hiện tại
-        self._stats = LiveTrackStats()
+        self._stats = LiveTrackStats(device=config.device)
         self._trail: deque = deque(maxlen=config.trajectory_len)
         self._display_stamps: deque = deque()
         self._vos_stamps: deque = deque()

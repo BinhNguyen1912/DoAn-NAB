@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { driftLine, maskRhythmLine, shownFps } from './live'
+import { deviceLine, driftLine, maskRhythmLine, shownFps } from './live'
 
 describe('maskRhythmLine', () => {
   it('hiện đủ hai nhịp khi nguồn báo mask_fps', () => {
@@ -127,5 +127,30 @@ describe('shownFps', () => {
 
   it('không có status thì 0', () => {
     expect(shownFps(null)).toBe(0)
+  })
+})
+
+describe('deviceLine', () => {
+  it('nói GPU khi worker báo cuda', () => {
+    expect(deviceLine({ device: 'cuda' })).toBe(
+      'Thiết bị chạy model: cuda (GPU) — FPS/độ trễ chỉ đúng cho thiết bị này')
+  })
+
+  it('nói CPU khi worker báo cpu', () => {
+    expect(deviceLine({ device: 'cpu' })).toBe(
+      'Thiết bị chạy model: cpu (CPU) — FPS/độ trễ chỉ đúng cho thiết bị này')
+  })
+
+  it('chuỗi rỗng = CHƯA BIẾT ⇒ ẩn dòng, không in "cpu" (ticket 21)', () => {
+    // `''` là chế độ raw hoặc worker bản cũ chưa ghi `device` — in "cpu" ở đây là khẳng định sai.
+    expect(deviceLine({ device: '' })).toBeNull()
+    expect(deviceLine({ device: '   ' })).toBeNull()
+    expect(deviceLine(null)).toBeNull()
+    expect(deviceLine(undefined)).toBeNull()
+  })
+
+  it('giá trị lạ thì hiện nguyên văn, không đoán', () => {
+    expect(deviceLine({ device: 'mps' })).toBe(
+      'Thiết bị chạy model: mps — FPS/độ trễ chỉ đúng cho thiết bị này')
   })
 })
