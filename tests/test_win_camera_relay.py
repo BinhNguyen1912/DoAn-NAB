@@ -94,3 +94,87 @@ class TestKhiChuaCoKhungHinh:
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+class TestNhipPhat:
+    """Nhịp `--fps` phải tính cả thời gian đọc + nén frame (bug thật 13-11-2026).
+
+    Lần đo lúc sửa bug: webcam Windows cho ~22 FPS ở 640x480 (`read()` ≈ 44 ms), nhưng relay chỉ
+    phát **10,6 FPS** vì `sleep(interval)` không trừ thời gian `read()`+`imencode()` ⇒ chu kỳ =
+    công việc + interval (44 + 50 = 94 ms).
+
+    Test dùng capture GIẢ (không cần webcam), hai ca:
+    - `read()` 40 ms **nhanh hơn** interval 50 ms ⇒ nhịp đúng chạm trần 20 FPS (sai: 11,1 FPS);
+    - `read()` 80 ms **chậm hơn** interval ⇒ nhịp đúng = 12,5 FPS (sai: 7,7 FPS) — đây là ca của
+      webcam thật khi phòng tối (auto-exposure làm camera tụt nhịp).
+
+    Lấy **median** của ~1 s mẫu (không phải 1 mẫu) vì `_LATEST['fps']` là số của cửa sổ 1 s: một
+    lần CI stall 20 ms không được phép làm đỏ (review 13-11, P2-2).
+    """
+
+    class _SlowCap:
+        """`read()` tốn `delay` giây như webcam thật; frame 16x16 để `imencode` không đáng kể."""
+
+        def __init__(self, delay):
+            self.delay = delay
+            self.released = False
+
+        def isOpened(self):
+            return True
+
+        def get(self, _prop):
+            return 640
+
+        def set(self, *_a, **_k):        # adapter có thể set width/height/FOURCC
+            return True
+
+        def read(self):
+            import time
+
+            import numpy as np
+
+            time.sleep(self.delay)
+            return True, np.full((16, 16, 3), 90, np.uint8)
+
+        def release(self):
+            self.released = True
+
+    def _do_nhip(self, monkeypatch, *, delay, fps, warmup_s=1.0, sample_s=1.0):
+        """Chạy `_reader` với capture chậm `delay`, trả **median** fps relay tự báo."""
+        import statistics
+        import time
+
+        monkeypatch.setattr(relay.cv2, "VideoCapture", lambda *a, **k: self._SlowCap(delay))
+        cu = dict(relay._LATEST)                       # khôi phục sau test (review 13-11, P3-5)
+        stop = threading.Event()
+        thread = threading.Thread(target=relay._reader, args=(0, fps, 0, 0, stop), daemon=True)
+        thread.start()
+        try:
+            time.sleep(warmup_s)                       # để cửa sổ 1 s đầy mốc rồi mới đo
+            mau = []
+            t0 = time.monotonic()
+            while time.monotonic() - t0 < sample_s:
+                with relay._LOCK:
+                    mau.append(relay._LATEST["fps"])
+                time.sleep(0.02)
+        finally:
+            stop.set()
+            thread.join(timeout=5)
+            relay._LATEST.update(cu)                   # không để rác 16x16 cho test sau
+        assert not thread.is_alive(), "vòng đọc phải dừng theo stop"
+        return statistics.median(mau)
+
+    def test_read_nhanh_hon_interval_cham_tran_fps(self, monkeypatch):
+        """`read()` 40 ms < interval 50 ms ⇒ 20 FPS (code cũ: 11,1 FPS)."""
+        med = self._do_nhip(monkeypatch, delay=0.04, fps=20.0)
+        assert 15.0 < med < 24.0, (
+            f"nhịp {med:.1f} FPS — kỳ vọng ~20 (code cũ ~11,1: thiếu trừ thời gian read()+encode); "
+            f"cận trên bắt hồi quy ngược kiểu bỏ sleep hẳn"
+        )
+
+    def test_camera_cham_hon_interval_khong_bi_cong_them_interval(self, monkeypatch):
+        """Webcam thật chậm hơn interval (80 ms > 50 ms) ⇒ 12,5 FPS (code cũ: 7,7 FPS)."""
+        med = self._do_nhip(monkeypatch, delay=0.08, fps=20.0)
+        assert 10.0 < med < 16.0, (
+            f"nhịp {med:.1f} FPS — kỳ vọng ~12,5 (code cũ ~7,7 vì cộng thêm 50 ms interval)"
+        )

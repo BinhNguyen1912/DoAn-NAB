@@ -12,7 +12,7 @@ Chức năng:
     GET /             → trang HTML xem nhanh (tiện kiểm tra bằng trình duyệt)
     GET /video        → luồng MJPEG (dùng cho OpenCV/VideoSource — đúng định dạng "camera IP")
     GET /snapshot.jpg → 1 khung JPEG (kiểm tra nhanh bằng curl)
-    GET /info         → JSON: kích thước, fps thực, camera index
+    GET /info         → JSON: kích thước, fps phát (trung bình 1 s), camera index
 
 Input  : --camera (chỉ số webcam Windows, mặc định 0), --port (mặc định 8090), --fps, --width/--height.
 Output : log ra stdout; luồng MJPEG cho client.
@@ -25,6 +25,7 @@ import json
 import sys
 import threading
 import time
+from collections import deque
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
 import cv2
@@ -38,6 +39,19 @@ for _stream in (sys.stdout, sys.stderr):
 
 _LOCK = threading.Lock()
 _LATEST = {"jpeg": None, "w": 0, "h": 0, "fps": 0.0, "t": 0.0}
+
+# Cửa sổ lấy fps trong `/info`. Một chu kỳ đơn lẻ là số **nhiễu**: nó có thể vượt trần `--fps`
+# (khi vòng trước chậm hơn vòng này) và bằng ~0 ngay sau một lần camera hỏng. Đo 13-11-2026:
+# `/info` báo 21,3 FPS trong khi `--fps 20`, còn sau một lần `read()` fail thì mẫu kế tiếp méo hẳn.
+_FPS_WINDOW_S = 1.0
+
+
+def _fps_smoothed(stamps) -> float:
+    """FPS trung bình trong `_FPS_WINDOW_S` gần nhất — 0.0 khi chưa đủ 2 mốc."""
+    if len(stamps) < 2:
+        return 0.0
+    dt = stamps[-1] - stamps[0]
+    return (len(stamps) - 1) / dt if dt > 0 else 0.0
 
 _HTML = """<!doctype html><meta charset=utf-8><title>Camera relay</title>
 <body style="background:#111;color:#eee;font-family:sans-serif;text-align:center">
@@ -58,22 +72,32 @@ def _reader(cam_index: int, fps: float, width: int, height: int, stop: threading
         stop.set()
         return
     interval = 1.0 / max(1.0, fps)
-    last = time.monotonic()
+    stamps: deque = deque()          # mốc thời gian để lấy fps san phằng (xem `_fps_smoothed`)
     print(f"[relay] camera {cam_index} mở OK: {int(cap.get(3))}x{int(cap.get(4))} — bắt đầu phát")
     while not stop.is_set():
+        # Mốc ĐẦU vòng: nhịp phải trừ cả thời gian `read()` + `imencode()` vừa tốn.
+        # Bug thật 13-11-2026: mốc cũ lấy SAU `imencode` ⇒ `sleep(interval)` mỗi vòng bất kể
+        # camera/encode chậm bao nhiêu ⇒ chu kỳ = công việc + interval. Lần đo lúc sửa: camera
+        # ~22 FPS (read ≈ 44 ms) + interval 50 ms ⇒ 94 ms ⇒ relay chỉ ra **10,6 FPS**.
+        loop_start = time.monotonic()
         ok, frame = cap.read()
         if not ok:
-            time.sleep(0.05)
+            # Nhịp *thử lại* (không phải nhịp phát): `stop.wait` để tắt ngay, không phải chờ sleep.
+            stop.wait(0.05)
             continue
         ok, buf = cv2.imencode(".jpg", frame, [int(cv2.IMWRITE_JPEG_QUALITY), 80])
         if not ok:
+            # Đường DUY NHẤT không ngủ tới đây — không có `wait` thì lặp vô hạn ăn 100 % CPU.
+            stop.wait(0.01)
             continue
         now = time.monotonic()
+        stamps.append(now)
+        while stamps and now - stamps[0] > _FPS_WINDOW_S:
+            stamps.popleft()
         with _LOCK:
             _LATEST.update(jpeg=buf.tobytes(), w=frame.shape[1], h=frame.shape[0],
-                           fps=1.0 / max(1e-6, now - last), t=now)
-        last = now
-        time.sleep(max(0.0, interval - (time.monotonic() - now)))
+                           fps=_fps_smoothed(stamps), t=now)
+        stop.wait(max(0.0, interval - (time.monotonic() - loop_start)))
     cap.release()
     print("[relay] đã đóng camera")
 
@@ -160,6 +184,10 @@ def main():
     ap.add_argument("--width", type=int, default=0)
     ap.add_argument("--height", type=int, default=0)
     args = ap.parse_args()
+    # `--fps <= 0` từng bị `max(1.0, fps)` nuốt im lặng thành 1 FPS (review 13-11, P3-2).
+    # Cùng hợp đồng với `src/live_tracking.py` (raise thay vì clamp im lặng).
+    if args.fps <= 0:
+        raise SystemExit("[LOI] --fps phải > 0")
 
     stop = threading.Event()
     threading.Thread(target=_reader, args=(args.camera, args.fps, args.width, args.height, stop),

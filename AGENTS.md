@@ -254,6 +254,14 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   worker chạy `cd REPO_ROOT`) ⇒ muốn trỏ file tên `0` thì ghi rõ `./0`. Khi thêm nguồn mới, kiểm cả
   hai đầu: HTTP (chuỗi) và CLI (int). Log:
   `docs/task/13-11-2026-live-webcam-nguon-0-tu-web.md`.
+- **Relay webcam (`scripts/win_camera_relay.py`): `--fps` là TRẦN, đừng ngủ thêm một `interval` nữa.**
+  Đo 13-11: webcam Windows cho ~16,6 FPS ở 640×480 (`scripts/probe_cam_fps.py`, 720p chỉ 10), nhưng
+  relay chỉ phát **10,6** vì `sleep(interval)` không trừ thời gian `read()`+`imencode()` ⇒ chu kỳ =
+  công việc + interval; sửa bằng mốc **đầu vòng** rồi mới ngủ phần còn lại. Với fake capture
+  `read()` 40/80 ms + `--fps 20`: code cũ **11,0/7,6** FPS, code mới **20,0/12,5** FPS (không thể
+  “đoán” bằng mắt trên webcam vì số giây thay đổi theo ánh sáng). `/info.fps` phải là **trung bình 1 s**,
+  không phải một chu kỳ (một chu kỳ từng báo 21,3 FPS với `--fps 20`). Demo web: nguồn
+  `http://<IP-Windows>:8090/snapshot.jpg` (ảnh JPEG rời 2,6 ms/frame), **không** dùng `/video` (MJPEG đắt hơn).
 
 ## 7. Các repo/model tham khảo
 
