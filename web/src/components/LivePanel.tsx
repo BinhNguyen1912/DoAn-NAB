@@ -25,7 +25,8 @@ import {
   type LiveSources,
   type LiveStatus,
 } from '../api'
-import { deviceLine, driftLine, maskRhythmLine, shownFps } from '../live'
+import { deviceLine, driftLine, maskRhythmLine, shownFps, sourceCheckLine, stallLine }
+  from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
 const POLL_MS = 1000
@@ -48,6 +49,9 @@ export function LivePanel(): JSX.Element {
   const timerRef = useRef<number | null>(null)
   // Người dùng đã động vào ô nguồn chưa: có rồi thì kết quả dò (về sau) không được đè lên.
   const touchedRef = useRef(false)
+  // Theo dõi `frames` để biết ảnh có ĐỨNG không (relay giữ frame cuối ⇒ state vẫn `running`).
+  const lastFramesRef = useRef<{ frames: number; at: number }>({ frames: -1, at: 0 })
+  const [stalledSeconds, setStalledSeconds] = useState(0)
 
   const stopPolling = (): void => {
     if (timerRef.current !== null) {
@@ -60,23 +64,34 @@ export function LivePanel(): JSX.Element {
 
   // Tự dò nguồn khi mở trang: WSL không thấy webcam nên người dùng phải dán URL relay mỗi lần —
   // backend dò hộ (webcam → relay → video demo) rồi UI điền sẵn. Lỗi dò KHÔNG được làm hỏng UI.
-  useEffect(() => {
-    let cancelled = false
+  const detectSources = (): void => {
     void getLiveSources()
       .then((found) => {
-        if (cancelled) return
         setSources(found)
         if (!touchedRef.current && found.suggested) setSource(found.suggested)
       })
       .catch(() => undefined)
-    return () => {
-      cancelled = true
-    }
+  }
+
+  useEffect(() => {
+    detectSources()
   }, [])
 
   const poll = async (): Promise<void> => {
     try {
-      setStatus(await getLiveStatus())
+      const next = await getLiveStatus()
+      setStatus(next)
+      // `frames` chỉ tăng khi NỘI DUNG frame đổi ⇒ đứng yên = ảnh không mới (không phải "nguồn chết").
+      const theoDoi = lastFramesRef.current
+      if (next.state !== 'running') {
+        lastFramesRef.current = { frames: -1, at: Date.now() }
+        setStalledSeconds(0)
+      } else if (next.frames !== theoDoi.frames) {
+        lastFramesRef.current = { frames: next.frames, at: Date.now() }
+        setStalledSeconds(0)
+      } else if (theoDoi.at > 0) {
+        setStalledSeconds((Date.now() - theoDoi.at) / 1000)
+      }
     } catch (err) {
       setError((err as Error).message)
     }
@@ -187,6 +202,10 @@ export function LivePanel(): JSX.Element {
               ))}
             </select>
           </label>
+          <button type="button" className="button ghost" onClick={detectSources}
+                  disabled={running || loading}>
+            Dò lại
+          </button>
         </div>
       )}
 
@@ -223,10 +242,23 @@ export function LivePanel(): JSX.Element {
       </div>
 
       {suggestedLabel && !running && (
+        // "available" chỉ là "thử được lúc dò" — in mốc thời gian + bằng chứng + độ trễ, KHÔNG in
+        // chữ "đã kiểm" trống rỗng (nó không chứng minh ảnh còn mới).
         <p className="hint">
           Nguồn đang chọn: <strong>{suggestedLabel}</strong>
-          <span className="tag ok">đã kiểm</span>
+          <span className="tag ok">
+            {sourceCheckLine(
+              sources?.candidates.find((c) => c.source === source),
+              sources?.checked_at,
+            )}
+          </span>
         </p>
+      )}
+
+      {stallLine(status, stalledSeconds) && (
+        // Cảnh báo VÀNG (không phải banner đỏ): cảnh tĩnh cũng làm frame đứng — chỉ được nói
+        // "không có frame mới", không được nói "nguồn đã chết".
+        <p className="warn" data-testid="stall-line">{stallLine(status, stalledSeconds)}</p>
       )}
 
       {error && <p className="error">Lỗi: {error}</p>}

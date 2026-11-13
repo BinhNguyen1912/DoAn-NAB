@@ -174,6 +174,9 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
         response.headers["Cache-Control"] = "no-store"    # kết quả dò là trạng thái SỐNG
         return LiveSourcesResponse(
             suggested=data.get("suggested", ""),
+            suggested_kind=data.get("suggested_kind", ""),
+            checked_at=data.get("checked_at", ""),
+            budget_ms=int(data.get("budget_ms", 0) or 0),
             candidates=[LiveSourceCandidate(**c) for c in data.get("candidates", [])],
         )
 

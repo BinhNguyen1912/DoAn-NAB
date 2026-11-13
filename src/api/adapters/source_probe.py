@@ -30,8 +30,14 @@ CACHE_TTL_S = 5.0
 _RELAY_PORTS = (8090,)
 _VIDEO_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
 _MAX_CAMERA_INDEX = 2
+# Ngân sách thời gian mỗi lần dò. Không tin driver: `cv2.VideoCapture` (DSHOW trên Windows) có thể
+# block 1–3 s/thiết bị khi camera bận, còn HTTP tới IP "black-hole" chờ hết timeout.
+CAMERA_BUDGET_S = 0.6
+HTTP_BUDGET_S = 0.8
 # Video demo trong `data/` được ưu tiên theo thứ tự này (clip đã đo nhiều trong báo cáo)
-_PREFERRED_VIDEOS = ("binh1.mp4", "binh2.mp4", "simloss.mp4")
+_PREFERRED_VIDEOS = ("binh1.mp4", "binh2.mp4", "binh1_simloss.mp4")
+# Clip nhỏ hơn mức này là clip test (160×120 vài chục KB) — gợi ý nó làm demo trông "hỏng".
+_MIN_VIDEO_BYTES = 100 * 1024
 
 
 def default_gateway_ip(route_table: Path = Path("/proc/net/route")) -> str | None:
@@ -73,28 +79,27 @@ def http_snapshot_ok(url: str, timeout_s: float = 0.8) -> bool:
 def camera_ok(index: int) -> bool:
     """Webcam index này mở được và đọc được 1 frame không (mở rồi ĐÓNG ngay).
 
-    Trên Linux KHÔNG có `/dev/video*` (WSL khi usbipd kẹt, runner CI) thì trả False NGAY: thử
-    `cv2.VideoCapture` ở đó chỉ tốn ~30 ms/ index kèm một tràng WARN của OpenCV trong log/test —
-    đo 13-11: 3 index = ~90 ms tiếng ồn mà kết quả luôn là False.
+    Dùng ĐÚNG đường mở của phiên live (`open_video_source(str(index))` → V4L2 + MJPG + 640×480),
+    không gọi `cv2.VideoCapture` trần: webcam UVC-qua-usbipd đã đo được `isOpened()=True` nhưng
+    `read()` luôn False ⇒ dò bằng đường khác sẽ báo "dùng được" trong khi bấm "Bật phát" lại hỏng.
+
+    Trên Linux KHÔNG có `/dev/video*` (WSL khi usbipd kẹt, runner CI) thì trả False NGAY: thử mở
+    ở đó chỉ tốn ~30 ms/index kèm một tràng WARN của OpenCV — đo 13-11: 3 index = ~90 ms tiếng ồn
+    mà kết quả luôn là False.
     """
     if os.name == "posix" and not glob.glob("/dev/video*"):
         return False
+    from src.video_source import open_video_source
+
+    source = None
     try:
-        import cv2
-    except Exception:                     # noqa: BLE001 — thiếu cv2/HAL hỏng đều là "không có camera"
-        return False
-    cap = None
-    try:
-        cap = cv2.VideoCapture(index)
-        if not cap.isOpened():
-            return False
-        ok, frame = cap.read()
-        return bool(ok) and frame is not None
-    except Exception:                     # noqa: BLE001 — driver ném lỗi là "không có camera"
+        source = open_video_source(str(index)).open()      # ném RuntimeError nếu không mở được
+        return source.read() is not None
+    except Exception:                     # noqa: BLE001 — driver/thiết bị lỗi đều là "không dùng được"
         return False
     finally:
-        if cap is not None:
-            cap.release()
+        if source is not None:
+            source.close()
 
 
 class SourceProbe:
@@ -144,23 +149,35 @@ class SourceProbe:
                 candidates.append(_candidate(str(index), f"Webcam {index} (cắm ở máy chủ)", "camera",
                                              available=False, note="đang có phiên live"))
                 continue
-            ok = self._safe(self._camera_ok, index)
-            candidates.append(_candidate(str(index), f"Webcam {index} (cắm ở máy chủ)", "camera", ok))
+            ok, elapsed_ms, detail = self._timed(self._camera_ok, CAMERA_BUDGET_S, index)
+            candidates.append(_candidate(
+                str(index), f"Webcam {index} (cắm ở máy chủ)", "camera", bool(ok),
+                check=detail if detail else ("mở được camera + đọc được 1 frame" if ok
+                                             else "không mở được camera"), latency_ms=elapsed_ms))
             if ok:
                 break                     # máy chỉ có 1 webcam — không dò tiếp 1, 2
 
         # 2) Relay camera Windows → WSL (đường demo khi WSL không thấy webcam)
         for url in self._relay_urls():
-            ok = self._safe(self._http_ok, url)
-            candidates.append(_candidate(url, "Relay webcam Windows (snapshot JPEG)", "relay", ok))
+            ok, elapsed_ms, detail = self._timed(self._http_ok, HTTP_BUDGET_S + 0.2, url)
+            candidates.append(_candidate(
+                url, "Relay webcam Windows (snapshot JPEG)", "relay", bool(ok),
+                check=detail if detail else ("nhận được ảnh JPEG" if ok else "không lấy được ảnh JPEG"),
+                latency_ms=elapsed_ms))
 
         # 3) Video demo có sẵn trong repo (luôn "available": file tồn tại, backend tự lặp lại)
         for path in self._demo_videos():
-            candidates.append(_candidate(str(path), f"Video demo {path.name}", "file", True))
+            candidates.append(_candidate(
+                str(path), f"Video demo {path.name}", "file", True,
+                check=f"file tồn tại · {path.stat().st_size // 1024} KB"))
 
         available = [c for c in candidates if c["available"]]
         return {
             "suggested": available[0]["source"] if available else "",
+            # UI cần biết gợi ý là CAMERA hay VIDEO: gợi ý video mà UI ghi "đã kiểm camera" là nói dối.
+            "suggested_kind": available[0]["kind"] if available else "",
+            "checked_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+            "budget_ms": int((CAMERA_BUDGET_S + HTTP_BUDGET_S) * 1000),
             "candidates": candidates,
         }
 
@@ -176,13 +193,46 @@ class SourceProbe:
         return urls
 
     def _demo_videos(self) -> list[Path]:
+        """Video demo đáng đem ra gợi ý: bỏ clip tạm (`_*`), clip test E2E, và clip quá nhỏ.
+
+        Vì sao: `data/` có `_gui_test.mp4` (160×120, 14 KB) và `e2e_web.mp4` — gợi ý những clip đó
+        làm demo trông "hỏng" dù hệ thống chạy đúng (review 13-11, góc nhìn chất lượng).
+        """
         data = self._root / "data"
         if not data.is_dir():
             return []
-        found = [p for p in data.iterdir() if p.suffix.lower() in _VIDEO_SUFFIXES and p.is_file()]
+        found = [
+            p for p in data.iterdir()
+            if p.suffix.lower() in _VIDEO_SUFFIXES
+            and p.is_file()
+            and not p.name.startswith(("_", "e2e_"))
+            and p.stat().st_size > _MIN_VIDEO_BYTES
+        ]
         order = {name: i for i, name in enumerate(_PREFERRED_VIDEOS)}
         found.sort(key=lambda p: (order.get(p.name, len(order)), p.name))
         return found[:3]
+
+    @staticmethod
+    def _timed(func, budget_s: float, *args):
+        """Chạy `func` với DEADLINE cứng: quá `budget_s` thì coi như không dùng được.
+
+        Vì sao phải có: `cv2.VideoCapture` trên Windows (DSHOW) có thể block 1–3 s/thiết bị khi
+        camera đang bị app khác giữ — không được để một request HTTP treo theo nó. Thread bị bỏ rơi
+        là daemon và `camera_ok`/`http_snapshot_ok` đều đóng tài nguyên trong `finally`.
+        """
+        box: list = []
+
+        def run():
+            box.append(SourceProbe._safe(func, *args))
+
+        thread = threading.Thread(target=run, daemon=True)
+        started = time.monotonic()
+        thread.start()
+        thread.join(budget_s)
+        elapsed_ms = int((time.monotonic() - started) * 1000)
+        if thread.is_alive():
+            return None, elapsed_ms, f"quá hạn {int(budget_s * 1000)} ms"
+        return box[0] if box else None, elapsed_ms, ""
 
     @staticmethod
     def _safe(func, *args):
@@ -193,6 +243,12 @@ class SourceProbe:
             return None
 
 
-def _candidate(source: str, label: str, kind: str, available: bool, note: str = "") -> dict:
+def _candidate(source: str, label: str, kind: str, available: bool, *, check: str = "",
+               latency_ms: int = 0, note: str = "") -> dict:
+    """Một ứng viên + BẰNG CHỨNG đã kiểm (`check`) và thời gian kiểm — để UI không nói quá.
+
+    `available` chỉ có nghĩa "thử được lúc `checked_at`", KHÔNG phải "đang chạy": chỉ phiên live
+    mới chứng minh được điều đó, bằng `state`/`frames`/`measured_fps` của chính nó.
+    """
     return {"source": source, "label": label, "kind": kind, "available": bool(available),
-            "note": note}
+            "check": check, "latency_ms": int(latency_ms), "note": note}

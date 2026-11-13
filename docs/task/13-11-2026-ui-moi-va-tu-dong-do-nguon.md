@@ -76,9 +76,28 @@
 - **`create_app(sources=None)` là "dùng bộ dò THẬT"**, không phải "không dò" ⇒ test phải tiêm bộ dò rỗng
   (`lambda: {}`). Đã ghi trong docstring để không ai hiểu nhầm.
 
+## 🔧 Siết sau 2 góc nhìn plan (§9.2) — phần "không được nói dối"
+
+Góc nhìn **chất lượng & đo** và **độ bền** bắt đúng các chỗ tính năng dễ nói quá; đã sửa hết phần rẻ:
+
+| Vấn đề được bắt | Đã sửa | Bằng chứng |
+|---|---|---|
+| `available` + chữ "đã kiểm" chỉ chứng minh "lấy được 4 byte JPEG", không nói ảnh còn mới | Mỗi ứng viên giờ có `check` (bằng chứng), `latency_ms`, và response có `checked_at` + `budget_ms` + `suggested_kind`; UI in **"dò lúc 23:21:05 · nhận được ảnh JPEG · 6 ms"** thay cho "đã kiểm" | `GET /api/live/sources` trên máy: `kind=relay`, `checked_at=2026-11-13T23:21:05`, relay `6 ms` |
+| `camera_ok` gọi `cv2.VideoCapture` trần ⇒ khác đường mở thật (webcam UVC-usbipd `isOpened()=True` mà `read()` False) | Dùng đúng `open_video_source(str(index)).open()/read()/close()` — cùng đường với "Bật phát" | `tests/test_api_live_sources.py::TestNganSachThoiGian` |
+| Không có deadline: driver Windows (DSHOW) có thể block 1–3 s/thiết bị | `_timed()` chạy trong thread + `join(budget)`: webcam **0,6 s**, HTTP **0,8 s**; quá hạn ⇒ `available=false` + `check="quá hạn … ms"` | `CAMERA_BUDGET_S`/`HTTP_BUDGET_S`, `budget_ms=1400` trong response |
+| Gợi ý `_gui_test.mp4` (160×120, 14 KB) và `e2e_web.mp4` làm demo trông "hỏng"; `_PREFERRED_VIDEOS` còn tên file không tồn tại (`simloss.mp4`) | Bỏ tên `_*`/`e2e_*` và file < 100 KB; sửa danh sách ưu tiên thành `binh1/binh2/binh1_simloss` | test `test_bo_clip_tam_va_clip_qua_nho`; response thật chỉ còn `binh1/binh2` (2915/3108/4533 KB) |
+| Relay giữ frame CUỐI khi camera hỏng ⇒ `state` vẫn `running`, ảnh đứng, HUD vẫn ghi "live" | Thêm `stallLine()` (web/src/live.ts) + `data-testid="stall-line"`: **"Không có frame mới trong 3,4 s (frame đứng ở 120 …)"** — cấm chữ "nguồn đã chết" (cảnh tĩnh cũng đứng) | 3 test vitest + 2 test cho nhãn nguồn |
+| `--reload` làm mất cache mỗi lần lưu file | Đã ghi trong docstring adapter; ngân sách 1,4 s nên chấp nhận được | — |
+
+Không làm (đưa vào Next steps): script đo `scripts/measure_live_sources.py` (p95 gọi đầu ≤ 500 ms, cache-hit ≤ 50 ms,
+first-frame ≤ 1500 ms) và đo LCP/CLS trong E2E — cần thêm thời gian, chưa chặn merge.
+
 ## 📌 Next steps
 - [ ] Review độc lập §9.1 cho nhánh `feat/ui-tu-dong-do-nguon` → sửa P0/P1 → merge.
 - [ ] Cân nhắc nhớ nguồn gần nhất (`localStorage`) — hiện chỉ tự điền theo kết quả dò.
+- [ ] `scripts/measure_live_sources.py`: p95 gọi đầu ≤ 500 ms, cache-hit ≤ 50 ms, first-frame ≤ 1500 ms
+      (artifact có `git_rev`/`lenh`/`do_luc`/`git_dirty_code`), và LCP ≤ 1500 ms / CLS ≤ 0,1 đo trong E2E.
+- [ ] Auto-fill nguồn cũng nên chạy lại sau `Dừng` và sau `start` lỗi (hiện chỉ lúc mount + nút "Dò lại").
 - [ ] Ticket P2-5 (từ log trước): relay báo khoẻ khi camera chết giữa phiên (`age_ms` + `streaming()`).
 - [ ] Nếu API chạy trên VPS công khai: rà lại việc `/api/live/sources` trả đường dẫn tuyệt đối của `data/`
       (đang trả, phục vụ demo nội bộ).

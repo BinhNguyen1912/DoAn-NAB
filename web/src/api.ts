@@ -165,13 +165,24 @@ export interface LiveSourceCandidate {
   source: string
   label: string
   kind: 'camera' | 'relay' | 'file'
+  /** backend đã THỬ và dùng được LÚC DÒ — KHÔNG phải "đang chạy" (chỉ phiên live nói được điều đó) */
   available: boolean
+  /** bằng chứng đã kiểm (vd 'nhận được ảnh JPEG') — hiện lên UI thay cho chữ "đã kiểm" */
+  check: string
+  /** thời gian dò nguồn này (ms) */
+  latency_ms: number
   note: string
 }
 
 export interface LiveSources {
   /** nguồn NÊN dùng ngay ('' = không dò được) — UI tự điền vào ô "Nguồn frame" */
   suggested: string
+  /** 'camera' | 'relay' | 'file' — rỗng khi không có gợi ý (gợi ý video ≠ gợi ý camera) */
+  suggested_kind: string
+  /** thời điểm dò (giờ máy chủ) — dò cũ ≠ dò mới */
+  checked_at: string
+  /** ngân sách thời gian của một lần dò (ms) */
+  budget_ms: number
   candidates: LiveSourceCandidate[]
 }
 

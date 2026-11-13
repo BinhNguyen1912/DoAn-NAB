@@ -84,3 +84,45 @@ export function deviceLine(status: Pick<LiveStatus, 'device'> | null | undefined
   const nhan = device === 'cuda' ? 'cuda (GPU)' : device === 'cpu' ? 'cpu (CPU)' : device
   return `Thiết bị chạy model: ${nhan} — FPS/độ trễ chỉ đúng cho thiết bị này`
 }
+
+/** Câu chữ cho "ảnh có đứng không" — suy từ `frames` KHÔNG tăng, không phải từ `state`.
+ *
+ * Vì sao cần (review 13-11, góc nhìn chất lượng): relay giữ frame CUỐI khi camera hỏng
+ * (`scripts/win_camera_relay.py`), nên `/snapshot.jpg` vẫn 200 và `state` vẫn `running` trong khi
+ * ảnh trên màn hình đứng im. Tín hiệu trung thực duy nhất là `frames`: backend chỉ đếm khi NỘI DUNG
+ * frame đổi (`src/api/live.py`), nên ảnh đứng ⇒ `frames` đứng và `measured_fps → 0`.
+ *
+ * Cấm viết "nguồn đã chết": cảnh tĩnh (người ngồi im) cũng làm `frames` đứng — chỉ được nói
+ * "không có frame mới trong N s".
+ *
+ * @param stalledSeconds số giây liên tiếp `frames` không đổi (0 = vừa đổi)
+ */
+export function stallLine(
+  status: Pick<LiveStatus, 'state' | 'frames' | 'measured_fps'> | null | undefined,
+  stalledSeconds: number,
+): string | null {
+  if (!status || status.state !== 'running') return null
+  if (!(stalledSeconds >= 3)) return null
+  return (
+    `Không có frame mới trong ${stalledSeconds.toFixed(1)} s` +
+    ` (frame đứng ở ${status.frames}, FPS đo được ${status.measured_fps.toFixed(1)})` +
+    ' — cảnh có thể tĩnh, hoặc camera/relay đã ngừng trả ảnh mới; bấm "Dò lại" rồi "Bật phát" để kiểm.'
+  )
+}
+
+/** Nhãn nguồn gợi ý kèm BẰNG CHỨNG đo được — thay cho chữ "đã kiểm" trống rỗng.
+ *
+ * `available` chỉ có nghĩa "thử được lúc `checked_at`"; nó KHÔNG chứng minh nguồn đang chạy và
+ * cũng KHÔNG chứng minh ảnh còn mới (relay phục vụ lại frame cũ). Vì vậy nhãn phải nói rõ:
+ * dò lúc mấy giờ, kiểm bằng gì, mất bao lâu.
+ */
+export function sourceCheckLine(
+  candidate: { check?: string; latency_ms?: number } | null | undefined,
+  checkedAt?: string | null,
+): string {
+  if (!candidate) return 'chưa dò nguồn'
+  const gio = checkedAt ? checkedAt.slice(11, 19) : ''
+  const bangChung = candidate.check || 'không có bằng chứng'
+  const ms = candidate.latency_ms ?? 0
+  return `dò lúc ${gio || '—'} · ${bangChung} · ${ms} ms`
+}

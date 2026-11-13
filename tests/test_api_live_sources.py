@@ -63,11 +63,23 @@ class TestThuTuUuTien:
 
     def test_khong_co_gi_thi_goi_y_video_demo(self, tmp_path):
         (tmp_path / "data").mkdir()
-        (tmp_path / "data" / "binh1.mp4").write_bytes(b"x")
+        (tmp_path / "data" / "binh1.mp4").write_bytes(b"x" * (200 * 1024))
         probe, _ = _probe(tmp_path)
         result = probe.suggest()
         assert result["suggested"].endswith("binh1.mp4")
         assert result["candidates"][-1]["available"] is True   # file tồn tại = dùng được
+
+    def test_bo_clip_tam_va_clip_qua_nho(self, tmp_path):
+        """`_gui_test.mp4` (160×120, 14 KB) và clip `e2e_*` không được gợi ý cho người dùng."""
+        data = tmp_path / "data"
+        data.mkdir()
+        (data / "_gui_test.mp4").write_bytes(b"x" * 200_000)     # tên tạm → bỏ
+        (data / "e2e_web.mp4").write_bytes(b"x" * 200_000)       # clip test → bỏ
+        (data / "nho.mp4").write_bytes(b"x" * 1024)              # quá nhỏ → bỏ
+        (data / "binh2.mp4").write_bytes(b"x" * 200_000)         # hợp lệ
+        probe, _ = _probe(tmp_path)
+        sources = [c["source"] for c in probe.suggest()["candidates"] if c["kind"] == "file"]
+        assert len(sources) == 1 and sources[0].endswith("binh2.mp4")
 
     def test_khong_nguon_nao_thi_suggested_rong(self, tmp_path):
         probe, _ = _probe(tmp_path)
@@ -136,22 +148,45 @@ class TestEndpoint:
 
         res = self._client(boom).get("/api/live/sources")
         assert res.status_code == 200
-        assert res.json() == {"suggested": "", "candidates": []}
+        body = res.json()
+        assert body["suggested"] == "" and body["candidates"] == []
+        assert res.headers["Cache-Control"] == "no-store"
 
     def test_bo_do_khong_tim_thay_nguon_thi_tra_rong(self):
         """`create_app(sources=None)` = dùng bộ dò THẬT; muốn "không dò" thì tiêm bộ dò rỗng."""
         res = self._client(lambda: {}).get("/api/live/sources")
         assert res.status_code == 200
-        assert res.json() == {"suggested": "", "candidates": []}
+        body = res.json()
+        assert body["suggested"] == "" and body["candidates"] == []
 
     def test_source_goi_y_that_su_mo_duoc_bang_live_start(self, tmp_path):
         """Chuỗi gợi ý phải là thứ `/api/live/start` chấp nhận — không phải nhãn hiển thị."""
         (tmp_path / "data").mkdir()
         video = tmp_path / "data" / "demo.mp4"
-        video.write_bytes(b"x")
+        video.write_bytes(b"x" * (200 * 1024))
         probe, _ = _probe(tmp_path)
-        source = probe.suggest()["suggested"]
+        result = probe.suggest()
+        source = result["suggested"]
         assert Path(source).exists(), "gợi ý phải trỏ tới đường dẫn/camera thật dùng được"
+        assert result["suggested_kind"] == "file", "UI cần biết gợi ý là nguồn VIDEO, không phải camera"
+        assert result["checked_at"], "phải có mốc thời gian dò — 'đã kiểm' không được vô thời hạn"
+
+    def test_ung_vien_co_bang_chung_va_thoi_gian(self):
+        """Mỗi ứng viên phải nói RÕ đã kiểm cái gì + mất bao lâu (chống chữ 'đã kiểm' vô nghĩa)."""
+        payload = {
+            "suggested": "http://10.0.0.5:8090/snapshot.jpg",
+            "suggested_kind": "relay",
+            "checked_at": "2026-11-13T22:41:03",
+            "budget_ms": 1400,
+            "candidates": [{"source": "0", "label": "Webcam 0", "kind": "camera",
+                            "available": False, "check": "không mở được camera",
+                            "latency_ms": 1, "note": ""}],
+        }
+        body = self._client(lambda: payload).get("/api/live/sources").json()
+        assert body["suggested_kind"] == "relay" and body["checked_at"].startswith("2026-11-13")
+        assert body["budget_ms"] == 1400
+        assert body["candidates"][0]["check"] == "không mở được camera"
+        assert body["candidates"][0]["latency_ms"] == 1
 
 
 class TestNganSachThoiGian:
