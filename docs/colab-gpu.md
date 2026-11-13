@@ -40,9 +40,19 @@ khi chạy cell, và truyền `--bbox` đúng:
    - Cell 4: chạy pipeline `--device cuda` → ra mp4 + CSV + JSON.
    - Cell 5: in số liệu + xem video ngay trong notebook.
    - Cell 6: tải 3 file về máy.
-4. Đưa video vào slide; đưa số GPU vào báo cáo mục "Đánh giá hiệu năng", **cạnh** số CPU laptop.
+4. **Mục 8 — đo đường LIVE trên GPU (ticket 21 phần 2):** cell **8a** kiểm video + bbox (in
+   `WxH | số frame`, ghi `data/bbox_check.jpg`, chặn clip tổng hợp) → cell **8b** đo 2 lần × 2 mức
+   `image_size` (512/192) → cell **8c** đọc `vos_ms`/`lk_ms`/`mask_age_p95`/`drift` + `device_worker_log`
+   rồi tải 4 artifact `live_{512,192}_lan{1,2}_metrics.json`.
+5. Đưa video vào slide; đưa số GPU vào báo cáo mục "Đánh giá hiệu năng", **cạnh** số CPU laptop.
 
 ## Video nguồn nên quay thế nào
+
+> ⚠️ **Cell 3b TỰ SINH `data/input.mp4`** (clip ô vuông tổng hợp 60 frame 1280×720) nếu file chưa có.
+> Đo chất lượng bám trên clip đó bằng bbox của video thật sẽ ra `drift_iou` 0,1–0,35 **dù artifact
+> `ket_qua=true`** (gặp thật 13-11). Trước khi tin số: cell 8a in `WxH | số frame` và ghi
+> `data/bbox_check.jpg` — **mở ảnh đó**, ô xanh phải bao đúng VẬT. Bbox đúng cho clip tổng hợp là
+> `200,200,120,120`; cho `data/binh1.mp4` là `104,308,209,287`.
 
 - 10–15 giây, 720p, **một đối tượng chuyển động** (người đi qua khung, tay vẫy, con vật…).
 - Quay bằng điện thoại rồi kéo file vào panel **Files** của Colab, đặt tên `data/input.mp4`.
