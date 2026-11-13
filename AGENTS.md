@@ -227,6 +227,15 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
+- **Ngưỡng `drift_iou_p05 = 0,70` (đăng ký trước 08-11) KHÔNG dùng được làm cờ chẩn đoán**: đo 13-11
+  bằng dãy mẫu từng dòng (`data/drift_samples_*.csv`, `scripts/analyze_drift_samples.py`), nó báo
+  động **100 % cửa sổ** trên clip khoẻ binh1 ở cửa sổ ≥ 100 mẫu, 74–84 % ở 50, 45–47 % ở 20. Ngưỡng
+  **0,30** thì 0 % báo oan trên binh1 và bắt 100 % trên binh2. Đối chứng cảnh tĩnh (frame lặp) cho
+  `drift_iou` 0,9951 và p05 0,9884 (n = 364) ⇒ p05 thấp là lỗi bám/mất dấu thật, không phải lỗi đo.
+  **Độ trễ phát hiện ≈ độ dài cửa sổ** (p05 chưa tồn tại trước khi đủ W mẫu): binh2 mất 15/45/95/195
+  mẫu ở W = 20/50/100/200 (nhịp ~6,3 lần VOS/giây ⇒ W = 200 là ~30 s). Vì thế cờ chẩn đoán phải dùng
+  cửa sổ ngắn, và **không** được hứa "phát hiện trong ~1 s". Chi tiết + số: log
+  `docs/task/13-11-2026-ticket-15-dang-mau-drift-ra-csv.md`.
 
 ## 7. Các repo/model tham khảo
 

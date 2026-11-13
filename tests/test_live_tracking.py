@@ -825,7 +825,13 @@ class TestDriftVaTuoiMask:
         assert session._stats.drift_iou is None
 
     def test_mask_rong_khong_vao_mau_drift(self, tmp_path):
-        """Mask rỗng ⇒ bbox (0,0,0,0): bỏ mẫu, KHÔNG ghi điểm 0."""
+        """Mask rỗng ⇒ bbox (0,0,0,0): bỏ mẫu drift, KHÔNG ghi điểm 0 — nhưng VẪN có dòng CSV.
+
+        Dòng đó (`empty=1`, `drift_iou` trống) là bằng chứng "VOS mất dấu" — thiếu nó thì cột
+        `empty` luôn 0 và `% cửa sổ báo oan` không tách được "model mất vật" khỏi "LK trôi".
+        """
+        from src.drift_samples import read_samples
+
         out = tmp_path / "live"
         _pre_select(out)
         session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -836,6 +842,32 @@ class TestDriftVaTuoiMask:
         session._measure_drift(2, _Result(0, (0, 0, 0, 0), None))
 
         assert session._stats.drift_n == 0
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 2
+        assert [row["empty"] for row in rows] == [None, None]   # `mask=None` ⇒ chưa đo, không phải 0
+        assert all(row["drift_iou"] is None for row in rows)
+
+    def test_mask_rong_co_that_thi_dong_csv_ghi_empty_1(self, tmp_path):
+        """`mask` là mảng RỖNG (engine trả mask) ⇒ dòng CSV phải ghi `empty=1`.
+
+        Đây là lỗi gặp thật khi đo 13-11: binh2 có 81 lần VOS trả mask rỗng trong `status.json`,
+        nhưng CSV (chỉ ghi mẫu CÓ drift) báo `empty_frac = 0,0` ⇒ đọc thành "model không mất dấu
+        lần nào", ngược hẳn sự thật.
+        """
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        rong = np.zeros((32, 32), bool)
+        session._shown_by_frame.append((3, None))
+        session._measure_drift(3, _Result(0, (0, 0, 0, 0), rong), seq=7)
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["empty"] is True and rows[0]["seq"] == 7
+        assert rows[0]["drift_iou"] is None           # không chấm drift khi không có vật
 
     def test_tat_lk_thi_khong_do_drift(self, tmp_path):
         """`vos_every=1`: không có nội suy ⇒ không được gọi đó là drift (nếu không "tắt LK" trông tốt hơn)."""
@@ -1285,7 +1317,9 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        assert session._pending_drift == (0, (4, 4, 12, 12))
+        # Tuple hẹn nay mang cả dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq,
+        # vos_ms, empty). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`).
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -1376,3 +1410,224 @@ class TestStabilityShownCoEncodingChuaDo:
         """Tên thiết bị rác không được lọt vào status.json như một khẳng định đúng."""
         with pytest.raises(ValueError, match="device"):
             LiveTrackConfig(source=video_source, out_dir=tmp_path / "x", device="gpu")
+
+
+class TestDriftSamplesCsv:
+    """Ticket 15: từng mẫu drift ra `drift_samples.csv` để đo được độ trễ phát hiện + tỉ lệ báo oan.
+
+    Vì sao cần: `status.json` chỉ có mean/p05 của cửa sổ 200 mẫu ⇒ không trả lời được "phát hiện sau
+    bao nhiêu mẫu" và "% cửa sổ báo oan". Dãy mẫu phải TÁI LẬP ĐÚNG con số đã công bố, nếu không
+    nó chỉ là một phép tính khác mang cùng tên.
+    """
+
+    def test_csv_khop_cua_so_trong_status(self, textured_video, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3, loop_files=True))
+        stats = session.run(stop_event=_StopAfter(40))
+
+        from src.drift_samples import read_samples
+
+        rows = read_samples(out / "drift_samples.csv")
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["drift_n"] > 0, "phiên có LK + đủ frame phải đo được mẫu drift"
+        # CSV giữ TẤT CẢ mẫu; `status.json` chỉ giữ cửa sổ 200 mẫu ⇒ CSV >= drift_n.
+        assert len(rows) >= status["drift_n"]
+        assert stats.drift_n == status["drift_n"]
+        # Mỗi dòng phải truy được về một lần VOS + một frame cụ thể (đó là toàn bộ mục đích của file).
+        assert all(row["frame_idx"] is not None for row in rows)
+        assert all(row["seq"] is not None for row in rows)
+        # Bất biến "không mất mẫu": mỗi kết quả VOS của luồng worker ⇒ đúng 1 dòng. `vos_runs` lớn
+        # hơn CSV đúng 1 vì `engine.start()` cũng chạy model nhưng KHÔNG đi qua `_store_vos` (nó là
+        # mẫu khởi tạo, không có nội suy để so). P1 review 13-11 từng làm lệch 10–20 dòng.
+        assert len(rows) == stats.vos_runs - 1
+        # 200 mẫu drift cuối phải cho đúng `drift_iou` đã công bố trong status.json (bỏ dòng không
+        # đo được — dòng đó vẫn có trong CSV để đếm `empty`).
+        values = [row["drift_iou"] for row in rows if row["drift_iou"] is not None][-200:]
+        assert round(sum(values) / len(values), 3) == pytest.approx(status["drift_iou"], abs=1e-3)
+
+    def test_tat_lk_thi_khong_sinh_file_mau(self, textured_video, tmp_path):
+        """`vos_every=1` (tắt LK): không có nội suy ⇒ KHÔNG có CSV. File rỗng dễ bị đọc là "đã đo"."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True)).run(stop_event=_StopAfter(8))
+
+        assert not (out / "drift_samples.csv").exists()
+
+    def test_nhanh_pending_cung_ghi_mot_dong(self, tmp_path):
+        """Ca VOS trả về TRƯỚC khi frame được phát: mẫu được chấm lúc phát frame ⇒ CSV phải có dòng.
+
+        Bỏ sót nhánh này thì dãy mẫu thiếu đúng những lúc engine nhanh — tức đúng những đoạn
+        `_pending_drift` chiếm phần lớn (máy GPU).
+        """
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        co_vat = np.zeros((32, 32), bool)
+        co_vat[4:12, 4:12] = True
+        session._measure_drift(0, _Result(0, (4, 4, 12, 12), co_vat))
+        assert session._pending_drift is not None
+
+        session._frame_index = 0
+        session._update_stats(_Result(0, (4, 4, 12, 12), co_vat))
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 0
+        assert rows[0]["drift_iou"] == 1.0          # ô bao đã phát TRÙNG ô bao VOS
+        assert rows[0]["empty"] is False
+        assert session._stats.drift_n == 1
+
+
+class TestKhongMatMauDriftCsv:
+    """P1 của review độc lập 13-11: CSV phải có dòng cho MỌI lần VOS.
+
+    Đo thật: binh1 có 379 lần VOS nhưng CSV chỉ 368 dòng; binh2 359 vs 339. Nguyên nhân: frame đã
+    phát mà KHÔNG có ô bao hiển thị (`_shown_by_frame` lưu `None`) bị coi là "chưa phát" ⇒ mẫu bị
+    hẹn `_pending_drift` cho một frame đã trôi qua ⇒ bỏ im lặng. Mẫu bị mất đúng vào ca "VOS thấy
+    vật / màn hình không có hộp" — chính là ca cần đếm để tách khỏi "LK trôi".
+    """
+
+    def _session(self, tmp_path, source="x.mp4"):
+        out = tmp_path / "live"
+        _pre_select(out)
+        return LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=source, out_dir=out, display_fps=100, vos_every=3)), out
+
+    def test_frame_da_phat_khong_co_o_bao_van_ghi_dong(self, tmp_path):
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._shown_by_frame.append((5, None))        # frame 5 ĐÃ phát nhưng không có hộp
+        session._measure_drift(5, _Result(0, (4, 4, 12, 12), None), seq=4)
+
+        # Không chấm drift (không có gì để so) nhưng KHÔNG được bỏ mẫu.
+        assert session._stats.drift_n == 0
+        assert session._pending_drift is None, "frame đã phát thì không được hẹn pending"
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 5 and rows[0]["drift_iou"] is None
+
+    def test_pending_treo_qua_frame_khac_van_ghi_dong(self, tmp_path):
+        """Frame hẹn pending không bao giờ tới lượt phát ⇒ lần publish sau ghi dòng (drift trống)."""
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._measure_drift(3, _Result(0, (4, 4, 12, 12), None), seq=2)
+        assert session._pending_drift is not None
+
+        session._frame_index = 6                        # frame 3 đã trôi qua, không được phát
+        session._update_stats(_Result(0, (4, 4, 12, 12), None))
+
+        assert session._stats.drift_n == 0
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 3 and rows[0]["drift_iou"] is None
+
+    def test_con_treo_khi_dung_phien_thi_flush_ra_dong(self, tmp_path):
+        """Kết quả VOS cuối về sau frame cuối: `run()` phải flush, không để mất mẫu cuối."""
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._measure_drift(99, _Result(0, (4, 4, 12, 12), None), seq=9)
+        session._flush_pending_csv()
+        session._drift_log.close()
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1 and rows[0]["frame_idx"] == 99
+
+    def test_ghi_csv_ngoai_stats_lock(self, tmp_path):
+        """`_log_drift_sample` KHÔNG được gọi khi đang giữ `_stats_lock` (I/O trong lock ⇒ chặn VOS).
+
+        Bọc `write()` của logger để đọc `stats_lock.locked()` ngay lúc ghi — đúng mẫu kiểm mà ticket
+        17/20 đã dùng cho các cửa sổ thống kê.
+        """
+        session, _out = self._session(tmp_path)
+        lock = session._stats_lock
+        violations = []
+        that = session._drift_log
+
+        class _LogBoc:
+            def __init__(self):
+                ...
+
+            def __getattr__(self, name):
+                return getattr(that, name)
+
+            def write(self, **fields):
+                if lock.locked():
+                    violations.append("write() khi ĐANG giữ _stats_lock")
+                that.write(**fields)
+
+        session._drift_log = _LogBoc()
+        # Nhánh 1: đo ngay trong luồng VOS (frame đã phát, có ô bao)
+        session._shown_by_frame.append((2, (4, 4, 12, 12)))
+        session._measure_drift(2, _Result(0, (4, 4, 12, 12), None), seq=2)
+        # Nhánh 2: pending tới hạn, chấm trong `_update_stats_locked` (ĐANG giữ lock)
+        session._measure_drift(7, _Result(0, (4, 4, 12, 12), None), seq=3)
+        session._frame_index = 7
+        session._update_stats(_Result(0, (4, 4, 12, 12), None))
+
+        assert violations == []
+        assert session._drift_log.n_rows == 2
+
+
+class TestHaiMauChoMotSlotPending:
+    """P3 review vòng 2: `_pending_drift` là MỘT slot ⇒ kết quả VOS thứ hai về trước khi frame đầu
+    được phát sẽ ghi đè mẫu đang treo (mất dòng). Nay mẫu cũ được ghi thành dòng (drift trống) trước.
+    """
+
+    def test_ket_qua_thu_hai_khong_de_mat_mau_dang_treo(self, tmp_path):
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        # Cả hai frame đều CHƯA được phát ⇒ cả hai đi nhánh hẹn pending.
+        session._measure_drift(4, _Result(0, (4, 4, 12, 12), None), seq=1)
+        session._measure_drift(7, _Result(0, (4, 4, 12, 12), None), seq=2)
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert [row["frame_idx"] for row in rows] == [4]     # mẫu đầu được ghi, không bị ghi đè
+        assert rows[0]["seq"] == 1 and rows[0]["drift_iou"] is None
+        assert session._pending_drift[0] == 7                # mẫu sau vẫn đang chờ frame 7
+
+
+class TestFlushPendingNamTrongRun:
+    """P3 review vòng 2: test cũ gọi thẳng `_flush_pending_csv()` ⇒ xoá nó khỏi `finally` vẫn xanh."""
+
+    def test_run_luon_goi_flush_pending(self, video_source, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        goi = []
+
+        class _SessionTheoDoi(LiveTrackingSession):
+            def _flush_pending_csv(self):
+                goi.append(1)
+                super()._flush_pending_csv()
+
+        _SessionTheoDoi(FakeEngine(), _config(video_source, tmp_path, stop_after_frames=5)).run()
+        assert goi == [1], "flush phải được gọi đúng một lần, trong `finally` của run()"
+
+    def test_luoi_khong_loop_van_giu_bat_bien_so_dong(self, video_source, tmp_path):
+        """Nguồn hết frame (không lặp) cũng phải có `n_dong == vos_runs - 1` — ca khác với stop_event."""
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=3, loop_files=False))
+        stats = session.run()
+
+        csv = out / "drift_samples.csv"
+        if stats.vos_runs <= 1:                    # clip quá ngắn: chưa có mẫu nào để ghi
+            assert not csv.exists()
+            return
+        assert len(read_samples(csv)) == stats.vos_runs - 1

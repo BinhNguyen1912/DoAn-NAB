@@ -132,6 +132,46 @@ def _is_ancestor(rev: str) -> bool:
     return done.returncode == 0
 
 
+def _ten_clip(source: str) -> str:
+    """Tên clip để đặt file mẫu: `data/binh1.mp4` → `binh1`; nguồn mạng → `relay`.
+
+    Dùng cho tên file `drift_samples_<clip>_<mốc>.csv` (ticket 15) — phải đọc được bằng mắt khi liệt
+    kê `data/`, nên bỏ mọi ký tự ngoài chữ/số.
+    """
+    if "://" in source:
+        return "relay"
+    stem = Path(source).stem or "clip"
+    return re.sub(r"[^0-9A-Za-z_-]+", "_", stem)
+
+
+def _luu_mau_drift(out_dir, clip: str, stamp: datetime, meta: dict) -> dict:
+    """Chép `drift_samples.csv` của phiên ra `data/drift_samples_<clip>_<mốc>.csv` + `.meta.json`.
+
+    Vì sao phải chép ra `data/`: file gốc nằm trong `out_dir` = `/dev/shm` (tmpfs) — runtime tắt là
+    mất, đúng thứ đã xảy ra với `worker.log` trên Colab ngày 12-11. `.meta.json` đi kèm để dãy mẫu
+    mang `git_rev`/`lenh`/`do_luc` (AGENTS §6): số đo không có provenance thì không được trích.
+    """
+    nguon = Path(out_dir) / "drift_samples.csv"
+    if not nguon.exists():
+        return {"csv": None, "meta": None, "n_dong": 0,
+                "ly_do": "phiên không ghi mẫu drift nào (xem `tom_tat`/`worker_status`)"}
+    dich = _REPO_ROOT / "data" / f"drift_samples_{clip}_{stamp:%Y-%m-%d_%H%M%S}.csv"
+    dich.write_text(nguon.read_text(encoding="utf-8"), encoding="utf-8")
+    from src.drift_samples import read_samples      # import muộn: script phải chạy được cả khi lỗi
+    meta_path = dich.with_name(dich.name.replace(".csv", ".meta.json"))
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    rows = read_samples(dich)
+
+    def _tuong_doi(path):
+        try:
+            return str(path.relative_to(_REPO_ROOT))
+        except ValueError:
+            return str(path)
+
+    return {"csv": _tuong_doi(dich), "meta": _tuong_doi(meta_path),
+            "n_dong": len(rows), "ly_do": None}
+
+
 def _worker_telemetry(out_dir) -> dict:
     """Đọc thẳng `status.json` của worker — những số KHÔNG đi qua API live (`drift_*`, tuổi mask).
 
@@ -251,6 +291,9 @@ def main() -> int:
     # Xoá `status.json` của lần trước: nếu lần này API bận/không vào `running`, đọc lại file cũ sẽ
     # gán số của PHIÊN KHÁC cho lần đo này (review độc lập nhánh bằng chứng, P2).
     (Path(args.out_dir) / "status.json").unlink(missing_ok=True)
+    # Cùng lý do với dãy mẫu drift: CSV còn lại của phiên trước sẽ bị chép ra `data/` như "số của
+    # lần đo này" (ticket 15).
+    (Path(args.out_dir) / "drift_samples.csv").unlink(missing_ok=True)
     env = dict(os.environ, DOAN_LIVE_DIR=args.out_dir)
     # Thiết bị: `--device` > `$CAMERA_AI_DEVICE` của shell > cpu. PHẢI ghim lại env cho tiến trình
     # con theo đúng giá trị artifact khai: shell đã `export CAMERA_AI_DEVICE=cuda` mà ta lại chạy
@@ -327,6 +370,29 @@ def main() -> int:
     if git_rev and not _is_ancestor(git_rev):
         git_loi = (f"`git_rev = {git_rev[:7]}` KHÔNG phải tổ tiên của HEAD — nhánh đã rebase sau khi "
                    "đo ⇒ không tái lập được từ clone mới (đo lại)")
+    # Dãy mẫu drift (ticket 15): chép ra `data/` + provenance, rồi phân tích ngay để báo cáo có số
+    # "phát hiện sau bao nhiêu mẫu" / "% cửa sổ báo oan" thay vì chỉ mean/p05.
+    drift = _luu_mau_drift(args.out_dir, _ten_clip(args.source), stamp, {
+        "do_luc": stamp.isoformat(timespec="seconds"),
+        "git_rev": git_rev,
+        "git_dirty": git_dirty,
+        "git_dirty_code": git_dirty_code,
+        "git_loi": git_loi,
+        "ghi_chu": "Mỗi dòng = 1 kết quả VOS của luồng worker (frame_idx, seq, vos_ms, empty, "
+                   "drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy "
+                   "để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
+        "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
+        "nguon": args.source,
+        "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
+                      "vos_every": args.vos_every, "seconds": args.seconds},
+        "device_yeu_cau": device_yeu_cau,
+        "device_worker_log": device_log,
+    })
+    series = None
+    if drift["csv"]:
+        # Đặt bí danh: `summarize` là hàm tóm tắt mẫu `/api/live/status` của chính script này.
+        from src.drift_samples import read_samples, summarize as summarize_series
+        series = summarize_series(read_samples(_REPO_ROOT / drift["csv"]))
     artifact = {
         "do_luc": stamp.isoformat(timespec="seconds"),
         "git_rev": git_rev,
@@ -356,6 +422,13 @@ def main() -> int:
         "ly_do_khong_dat": reasons,
         "tom_tat": summary,
         "worker_status": _worker_telemetry(args.out_dir),
+        # Chuỗi mẫu drift: đường dẫn + số dòng + phân tích (KHÔNG có file ⇒ `csv=None`, `n_dong=0`
+        # — đừng đọc thành "0 mẫu đã đo").
+        "drift_samples_csv": drift["csv"],
+        "drift_samples_meta": drift["meta"],
+        "drift_samples_n_dong": drift["n_dong"],
+        "drift_samples_ly_do": drift["ly_do"],
+        "drift_series": series,
         "anh_frame": frames_saved,
         "anh_frame_loi": frame_errors,
         "mau_cuoi": samples[-3:],
@@ -381,6 +454,17 @@ def main() -> int:
         print(f"  ổn định hiển thị: stability_shown={worker.get('stability_shown')} "
               f"(n={worker.get('stability_shown_n')}; null = CHƯA ĐO)")
     print(f"Ảnh: {frames_saved or '(không chụp được)'}")
+    if series:
+        print(f"\nDãy mẫu drift ({drift['csv']}, {drift['n_dong']} dòng): "
+              f"mean={series['drift_iou_mean']} · p05={series['drift_iou_p05']} · "
+              f"mask rỗng={series['empty_frac']}")
+        print(f"  cửa sổ {series['bao_dong_070']['cua_so']} mẫu, p05 < 0,70: "
+              f"{series['bao_dong_070']['n_bao']}/{series['bao_dong_070']['n_cua_so']} "
+              f"(tỉ lệ báo {series['bao_dong_070']['ti_le_bao']})")
+        print(f"  phát hiện: sau {series['phat_hien']['phat_hien_sau_mau']} mẫu kể từ mẫu xấu đầu "
+              f"(null = chưa có mẫu xấu nào hoặc chưa đủ cửa sổ)")
+    else:
+        print(f"Dãy mẫu drift: KHÔNG có ({drift['ly_do']})")
     print(f"Ghi: {out}")
     if git_loi:
         print(f"[CANH BAO] không lấy được provenance git: {git_loi}")

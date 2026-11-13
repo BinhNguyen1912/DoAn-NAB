@@ -1,0 +1,729 @@
+{
+  "do_luc": "2026-11-13T13:20:04+07:00",
+  "git_rev": "7832e5536daabbf209bc25de74519937c69e2bd4",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
+  "lenh": "python scripts/analyze_drift_samples.py --windows 20 50 100 200 --static data/drift_samples_tinh_*.csv",
+  "cua_so": 200,
+  "cua_so_quet": [
+    20,
+    50,
+    100,
+    200
+  ],
+  "dinh_nghia": {
+    "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
+    "drift_iou_p05": "p05 trên TOÀN DÃY mẫu của lần đo — KHÁC p05 của 200 mẫu CUỐI trong status.json (cùng định nghĩa phân vị, khác tập mẫu)",
+    "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",
+    "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
+    "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",
+    "empty_frac": "tỉ lệ lần VOS trả mask RỖNG (mất dấu) trong các dòng có cột `empty`",
+    "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14, đếm trên TRỤC DÒNG (mỗi dòng = 1 lần VOS): cửa sổ p05 < 0,30 MÀ mask rỗng < 3 %. `n_cua_so_du_mau` chỉ đếm cửa sổ có ≥ nửa số mẫu đo được (nên nhỏ hơn `n_cua_so` của `bao_dong_030`); `co_dieu_kien_ticket_14 = null` = chưa đo được"
+  },
+  "canh_bao": "`drift_iou` là độ tự nhất quán của ô bao đang hiển thị, KHÔNG phải độ chính xác bám (AGENTS §6). Muốn nói chất lượng phân đoạn phải dùng mIoU vs GT.",
+  "file": [
+    {
+      "n_dong": 378,
+      "n_mau_drift": 364,
+      "empty_frac": 0.0,
+      "drift_iou_mean": 0.8661,
+      "drift_iou_p05": 0.6453,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 165,
+        "n_bao": 165,
+        "ti_le_bao": 1.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 165,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": 80,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 179,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_binh1_2026-11-13_125634.csv",
+      "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          104,
+          308,
+          209,
+          287
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_cua_so": {
+        "20": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 20,
+            "n_cua_so": 345,
+            "n_bao": 162,
+            "ti_le_bao": 0.47
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 20,
+            "n_cua_so": 345,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 80,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "50": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 50,
+            "n_cua_so": 315,
+            "n_bao": 238,
+            "ti_le_bao": 0.756
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 50,
+            "n_cua_so": 315,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 80,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "100": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 100,
+            "n_cua_so": 265,
+            "n_bao": 265,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 100,
+            "n_cua_so": 265,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 80,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "200": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 200,
+            "n_cua_so": 165,
+            "n_bao": 165,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 200,
+            "n_cua_so": 165,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 80,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        }
+      }
+    },
+    {
+      "n_dong": 356,
+      "n_mau_drift": 346,
+      "empty_frac": 0.0,
+      "drift_iou_mean": 0.8632,
+      "drift_iou_p05": 0.6453,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 147,
+        "n_bao": 147,
+        "ti_le_bao": 1.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 147,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": 73,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 157,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_binh1_2026-11-13_125739.csv",
+      "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          104,
+          308,
+          209,
+          287
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_cua_so": {
+        "20": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 20,
+            "n_cua_so": 327,
+            "n_bao": 148,
+            "ti_le_bao": 0.453
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 20,
+            "n_cua_so": 327,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "50": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 50,
+            "n_cua_so": 297,
+            "n_bao": 248,
+            "ti_le_bao": 0.835
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 50,
+            "n_cua_so": 297,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "100": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 100,
+            "n_cua_so": 247,
+            "n_bao": 247,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 100,
+            "n_cua_so": 247,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "200": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 200,
+            "n_cua_so": 147,
+            "n_bao": 147,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 200,
+            "n_cua_so": 147,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        }
+      }
+    },
+    {
+      "n_dong": 359,
+      "n_mau_drift": 352,
+      "empty_frac": 0.0,
+      "drift_iou_mean": 0.8672,
+      "drift_iou_p05": 0.6475,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 153,
+        "n_bao": 153,
+        "ti_le_bao": 1.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 153,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": 73,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 160,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_binh1_2026-11-13_125844.csv",
+      "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          104,
+          308,
+          209,
+          287
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_cua_so": {
+        "20": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 20,
+            "n_cua_so": 333,
+            "n_bao": 158,
+            "ti_le_bao": 0.474
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 20,
+            "n_cua_so": 333,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "50": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 50,
+            "n_cua_so": 303,
+            "n_bao": 224,
+            "ti_le_bao": 0.739
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 50,
+            "n_cua_so": 303,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "100": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 100,
+            "n_cua_so": 253,
+            "n_bao": 253,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 100,
+            "n_cua_so": 253,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "200": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 200,
+            "n_cua_so": 153,
+            "n_bao": 153,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 200,
+            "n_cua_so": 153,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 73,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        }
+      }
+    },
+    {
+      "n_dong": 357,
+      "n_mau_drift": 262,
+      "empty_frac": 0.218,
+      "drift_iou_mean": 0.4665,
+      "drift_iou_p05": 0.0,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 63,
+        "n_bao": 63,
+        "ti_le_bao": 1.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 63,
+        "n_bao": 63,
+        "ti_le_bao": 1.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": 4,
+        "phat_hien_sau_mau": 195,
+        "p05_luc_phat_hien": 0.0
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 158,
+        "n_p05_thap": 158,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_binh2_2026-11-13_125951.csv",
+      "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          200,
+          400,
+          300,
+          500
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_cua_so": {
+        "20": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 20,
+            "n_cua_so": 243,
+            "n_bao": 243,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 20,
+            "n_cua_so": 243,
+            "n_bao": 243,
+            "ti_le_bao": 1.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 4,
+            "phat_hien_sau_mau": 15,
+            "p05_luc_phat_hien": 0.1971
+          }
+        },
+        "50": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 50,
+            "n_cua_so": 213,
+            "n_bao": 213,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 50,
+            "n_cua_so": 213,
+            "n_bao": 213,
+            "ti_le_bao": 1.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 4,
+            "phat_hien_sau_mau": 45,
+            "p05_luc_phat_hien": 0.0
+          }
+        },
+        "100": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 100,
+            "n_cua_so": 163,
+            "n_bao": 163,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 100,
+            "n_cua_so": 163,
+            "n_bao": 163,
+            "ti_le_bao": 1.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 4,
+            "phat_hien_sau_mau": 95,
+            "p05_luc_phat_hien": 0.0
+          }
+        },
+        "200": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 200,
+            "n_cua_so": 63,
+            "n_bao": 63,
+            "ti_le_bao": 1.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 200,
+            "n_cua_so": 63,
+            "n_bao": 63,
+            "ti_le_bao": 1.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": 4,
+            "phat_hien_sau_mau": 195,
+            "p05_luc_phat_hien": 0.0
+          }
+        }
+      }
+    },
+    {
+      "n_dong": 364,
+      "n_mau_drift": 364,
+      "empty_frac": 0.0,
+      "drift_iou_mean": 0.9951,
+      "drift_iou_p05": 0.9884,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 165,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 165,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": null,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 165,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_tinh_binh1_2026-11-13_130057.csv",
+      "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          104,
+          308,
+          209,
+          287
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_cua_so": {
+        "20": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 20,
+            "n_cua_so": 345,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 20,
+            "n_cua_so": 345,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": null,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "50": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 50,
+            "n_cua_so": 315,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 50,
+            "n_cua_so": 315,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": null,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "100": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 100,
+            "n_cua_so": 265,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 100,
+            "n_cua_so": 265,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": null,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        },
+        "200": {
+          "bao_dong_070": {
+            "nguong_p05": 0.7,
+            "cua_so": 200,
+            "n_cua_so": 165,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "bao_dong_030": {
+            "nguong_p05": 0.3,
+            "cua_so": 200,
+            "n_cua_so": 165,
+            "n_bao": 0,
+            "ti_le_bao": 0.0
+          },
+          "phat_hien": {
+            "mau_xau_dau": null,
+            "phat_hien_sau_mau": null,
+            "p05_luc_phat_hien": null
+          }
+        }
+      },
+      "doi_chung_canh_tinh": {
+        "n": 364,
+        "drift_iou_mean": 0.9951,
+        "drift_iou_p05": 0.9884,
+        "nguong_mean": 0.99,
+        "dat": true,
+        "ly_do": [],
+        "ghi_chu": [
+          "p05 = 0.9884 < 0.99 trong khi mean ĐẠT: đuôi thấp do làm tròn toạ độ nguyên của LK, không phải lỗi bookkeeping"
+        ]
+      }
+    }
+  ]
+}

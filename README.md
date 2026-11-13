@@ -341,6 +341,20 @@ kéo chuột → *Bám đối tượng*.
 > `vos_fps` ±1,2 %, `measured_fps` ±0,3 %, `mask_age_p95` ±3 ms.
 > Số liệu: `data/drift_2026-11-08_metrics.json`; ngưỡng đăng ký trước & kết luận: xem log 08-11.
 
+> **Từng mẫu drift ra CSV** (ticket 15, đo 13-11, số lấy từ
+> `data/drift_series_2026-11-13_130246_metrics.json` — đo LẠI sau khi sửa lỗi mất dòng): mỗi kết quả
+> VOS sinh 1 dòng `data/drift_samples_<clip>_<mốc>.csv` (`frame_idx, seq, vos_ms, empty, drift_iou,
+> bbox`), kèm `.meta.json` có `git_rev`/`lenh`/`do_luc`. Phân tích:
+> `python scripts/analyze_drift_samples.py --windows 20 50 100 200`.
+> Số đo được (nhịp VOS **6,1–6,6** lần/giây qua API; nhịp dòng CSV 6,4–6,5): binh1 ×3 có
+> **`drift_iou` 0,863–0,867, p05 0,645–0,648**, 0 % mask rỗng; binh2 có `drift_iou` 0,4665, p05 0,000
+> với **21,8 % lần VOS trả mask rỗng**; cảnh tĩnh (frame lặp 300 lần) có **0,9951** (p05 0,9884,
+> n = 364) ⇒ bookkeeping so-cặp-frame đúng ⇒ **p05 thấp là lỗi bám/mất dấu thật, không phải lỗi đo**.
+> **Ngưỡng p05 = 0,70 đăng ký trước 08-11 bị bác**: trên binh1 nó báo động 100 % cửa sổ ở W ≥ 100,
+> 74–84 % ở W = 50, 45–47 % ở W = 20. Ngưỡng **0,30** thì 0 % báo oan trên binh1 và bắt 100 % trên
+> binh2. Độ trễ phát hiện ≈ độ dài cửa sổ (binh2: 15/45/95/195 mẫu ở W = 20/50/100/200) — xem log
+> 13-11.
+
 > Số **đo lại ngày 08-11** sau khi sửa bug ô chọn `(x,y,w,h)` → `(x1,y1,x2,y2)` (xem
 > `docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md`). Bảng cũ (10,1 FPS) đo bằng ô chọn
 > SAI nên chỉ giữ làm mốc lịch sử.
