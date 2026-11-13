@@ -161,17 +161,34 @@
    `fps=20`; nhịp đúng ⇒ ~20 FPS, nhịp sai ⇒ công việc + interval = ~11 FPS.
 
 ## 📤 Output / Kết quả
-- **Đỏ → xanh (tất định, không phụ thuộc camera)**: test mới trên code CŨ báo
-  `AssertionError: nhịp chỉ 11.0 FPS`; trên code mới xanh (> 15 FPS).
-- **A/B trên camera thật** (`./run relay start`, `--fps` mặc định 20, đo bằng cách poll `/snapshot.jpg`
-  6 s rồi đếm số khung **mới** qua md5, cùng buổi, cách nhau ~2 phút): **16,8 → 19,8 khung/giây** (+18 %,
-  chạm trần `--fps 20`). ⚠️ Nhiễu lớn: cùng một cấu hình đo lúc khác nhau cho 10,6 / 16,8 / 19,8 khung/giây
-  (camera tự phơi sáng + driver vừa mở) ⇒ **một lần A/B chưa đủ kết luận**; bằng chứng chắc là test tất định.
-- Trạng thái hiện tại: `./run relay status` → `{"w":640,"h":480,"fps":21.3,"serving":true}`.
-- Lệnh kiểm tra: `./run lint` xanh; `./run test` → **878 passed, 5 deselected** (96,8 s).
+- **Bằng chứng chắc (tất định, không phụ thuộc camera)**: 2 test mới trong `TestNhipPhat`
+  (capture GIẢ, `--fps 20`) — **code cũ → code mới**:
+  | ca test | kỳ vọng | code cũ (đo) | code mới (đo) |
+  |---|---|---|---|
+  | `read()` 40 ms < interval 50 ms | ~20,0 FPS | **11,0** (đỏ) | 20,0 (xanh) |
+  | `read()` 80 ms > interval 50 ms (ca webcam tối) | ~12,5 FPS | **7,6** (đỏ) | 12,5 (xanh) |
+  Chạy lặp 10 lần (`./run test ... -k nhip`): **10/10 xanh** ⇒ không flaky trên máy này.
+- **Số trên phần cứng** (cùng buổi, sau khi sửa; cách đo ghi kèm để tái lập):
+  - Trần camera — `scripts/probe_cam_fps.py` (MỚI, chạy bằng python của venv Windows, `do_luc`
+    2026-11-13 22:15:07): `mặc định` / `640x480 MJPG` / `640x480 YUY2` = **16,6 FPS**, `1280x720 MJPG`
+    = **10,0 FPS**.
+  - Relay đang chạy (`--fps` mặc định 20): `/info` = **16,5** FPS (trung bình 1 s — xem mục 🐞) và
+    poll `/snapshot.jpg` 6 s đếm khung **mới** qua md5 = **16,8 khung/giây**.
+  - API live mode `raw`, nguồn `.../snapshot.jpg`: `frames=76`, `measured_fps=16,6` (4 s) ⇒ API không
+    phải nút cổ chai.
+  - ⚠️ **Nhiễu**: đọc liên tục (probe) bị nghẽn ở decode nên 16,6 là **cận dưới**, không phải trần cứng;
+    cùng một cấu hình đo lúc khác nhau trong buổi này ra 10,6 / 16,8 / 19,8 khung/giây (camera tự phơi
+    sáng + driver vừa mở). Một lần A/B **không** đủ kết luận — bằng chứng dùng để merge là bảng test ở trên.
+- `./run lint` xanh; `./run test` → **879 passed, 5 deselected**.
 - File thay đổi:
-  - `scripts/win_camera_relay.py` — `_reader()` lấy mốc đầu vòng + comment giải thích bug 13-11.
-  - `tests/test_win_camera_relay.py` — `TestNhipPhat.test_read_cham_khong_lam_tut_nhip`.
+  - `scripts/win_camera_relay.py` — `_reader()`: mốc `loop_start` ở đầu vòng (nhịp = max(công việc,
+    interval)); fps trong `/info` lấy **trung bình 1 s** (`_fps_smoothed`) thay vì một chu kỳ; `--fps <= 0`
+    báo lỗi thay vì lặng lẽ thành 1 FPS; nhánh lỗi dùng `stop.wait` (tắt ngay) + chống spin khi
+    `imencode` hỏng.
+  - `tests/test_win_camera_relay.py` — `TestNhipPhat` (2 ca, median của ~1 s mẫu, có **cận trên** để bắt
+    hồi quy ngược "bỏ sleep hẳn", khôi phục `_LATEST` sau test).
+  - `scripts/probe_cam_fps.py` — MỚI: đo trần FPS webcam theo cấu hình, in bảng + `json` (tái lập được
+    con số "trần camera" mà trước đây đo bằng script tạm rồi xoá).
 
 ## 🐞 Vấn đề & cách xử lý
 - **Vì sao phải qua relay**: WSL không thấy webcam (`/dev/video0` không tồn tại, `nb_devices = 0`) — ca usbipd
@@ -180,7 +197,31 @@
   lại `/snapshot.jpg` chỉ **2,6 ms/frame** ⇒ dùng `.../snapshot.jpg`, không dùng `.../video`.
 - **Số FPS của camera không ổn định** (10,6–21 giữa các lần đo): phải nêu khoảng, không trích một con số đẹp.
 
+- **`/info.fps` là số nhiễu nếu lấy MỘT chu kỳ**: đo 13-11 thấy `/info` báo 21,3 FPS khi `--fps 20`
+  (vòng trước chậm hơn vòng này) và ~0 ngay sau một lần `read()` fail ⇒ đã đổi sang **trung bình 1 s**
+  (`_fps_smoothed`) + docstring ghi đúng; sau khi đổi, `/info` = 16,5 khớp md5-poll 16,8.
+
+## 🔍 Kết quả review độc lập (vòng 2 — nhánh relay)
+- **Ai review**: agent `reviewer` qua tool `task`, chỉ đọc. Kết luận: **0 P0, 0 P1 — MERGEABLE**; công thức
+  nhịp đúng ở cả 3 ca (nhanh hơn/chậm hơn interval, `read()` fail), test không rò thread, `cv2.VideoCapture`
+  được `monkeypatch` hoàn nguyên, không hồi quy đĩa/busy-loop. Review cũng xác nhận log **không** trình bày
+  A/B như kết luận chắc chắn.
+- **Đã sửa ngay trong PR**: P2-1 (`fps` san phẳng 1 s + docstring), P2-2 (test lấy **median** ~1 s mẫu, có
+  **cận trên**, thêm ca `read()` **chậm hơn** interval = ca webcam thật), P2-3 (`scripts/probe_cam_fps.py`
+  để con số "trần camera" tái lập được — script tạm cũ đã xoá), P2-4 (mâu thuẫn 16,6 vs 19,8: nay ghi rõ
+  16,6 là **cận dưới** vì probe đọc liên tục bị nghẽn decode, và nêu khoảng nhiễu), P3-1 (`stop.wait` thay
+  `sleep`), P3-2 (`--fps <= 0` báo lỗi), P3-3 (chống spin khi `imencode` hỏng), P3-4 (comment nêu đúng bộ
+  số của **một** lần đo), P3-5 (khôi phục `_LATEST`, thêm `set()` cho capture giả), P3-6 (bỏ gợi ý
+  `--fps 30` không đi qua `./run relay`).
+- **Còn nợ**: **P2-5** — camera chết **giữa phiên** thì relay vẫn giữ frame cũ và `/info` báo khoẻ
+  (`streaming()` chỉ grep `w > 0`) ⇒ ảnh đứng trên web mà không ai báo lỗi (đúng lớp lỗi watchdog ở
+  `AGENTS.md` §6). Hướng sửa: expose `age_ms` (từ `_LATEST['t']`) trong `/info` và cho `streaming()` đòi
+  `age_ms < 3000`. Chưa làm: nằm ngoài phạm vi bug nhịp, cần ticket riêng.
+
 ## 📌 Next steps
-- [ ] Review độc lập cho nhánh `fix/relay-nhip-fps-demo-webcam` rồi merge.
-- [ ] Nếu cần > 20 FPS: `python scripts/win_camera_relay.py --fps 30` (trần thật là camera ~16,6–22 FPS ở 640×480).
-- [ ] Đo lại trần camera khi phòng đủ sáng (auto-exposure làm FPS tụt khi thiếu sáng).
+- [x] Review độc lập nhánh `fix/relay-nhip-fps-demo-webcam` (0 P0/0 P1) — đã sửa P2/P3, xem mục trên.
+- [ ] **Ticket P2-5**: relay báo khoẻ khi camera chết giữa phiên (`age_ms` + `streaming()`).
+- [ ] Muốn > 20 FPS: chạy tay `python scripts/win_camera_relay.py --fps 30` (**không** đi qua `./run relay`
+      — `tools/start_cam_relay.cmd` chỉ truyền `--port`); trần thật là camera ~16,6 FPS ở 640×480.
+- [ ] Đo lại trần camera khi phòng đủ sáng (auto-exposure làm FPS tụt khi thiếu sáng) — chạy
+      `scripts/probe_cam_fps.py` 2-3 lần rồi báo khoảng.
