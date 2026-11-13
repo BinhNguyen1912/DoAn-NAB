@@ -1576,3 +1576,58 @@ class TestKhongMatMauDriftCsv:
 
         assert violations == []
         assert session._drift_log.n_rows == 2
+
+
+class TestHaiMauChoMotSlotPending:
+    """P3 review vòng 2: `_pending_drift` là MỘT slot ⇒ kết quả VOS thứ hai về trước khi frame đầu
+    được phát sẽ ghi đè mẫu đang treo (mất dòng). Nay mẫu cũ được ghi thành dòng (drift trống) trước.
+    """
+
+    def test_ket_qua_thu_hai_khong_de_mat_mau_dang_treo(self, tmp_path):
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        # Cả hai frame đều CHƯA được phát ⇒ cả hai đi nhánh hẹn pending.
+        session._measure_drift(4, _Result(0, (4, 4, 12, 12), None), seq=1)
+        session._measure_drift(7, _Result(0, (4, 4, 12, 12), None), seq=2)
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert [row["frame_idx"] for row in rows] == [4]     # mẫu đầu được ghi, không bị ghi đè
+        assert rows[0]["seq"] == 1 and rows[0]["drift_iou"] is None
+        assert session._pending_drift[0] == 7                # mẫu sau vẫn đang chờ frame 7
+
+
+class TestFlushPendingNamTrongRun:
+    """P3 review vòng 2: test cũ gọi thẳng `_flush_pending_csv()` ⇒ xoá nó khỏi `finally` vẫn xanh."""
+
+    def test_run_luon_goi_flush_pending(self, video_source, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        goi = []
+
+        class _SessionTheoDoi(LiveTrackingSession):
+            def _flush_pending_csv(self):
+                goi.append(1)
+                super()._flush_pending_csv()
+
+        _SessionTheoDoi(FakeEngine(), _config(video_source, tmp_path, stop_after_frames=5)).run()
+        assert goi == [1], "flush phải được gọi đúng một lần, trong `finally` của run()"
+
+    def test_luoi_khong_loop_van_giu_bat_bien_so_dong(self, video_source, tmp_path):
+        """Nguồn hết frame (không lặp) cũng phải có `n_dong == vos_runs - 1` — ca khác với stop_event."""
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=3, loop_files=False))
+        stats = session.run()
+
+        csv = out / "drift_samples.csv"
+        if stats.vos_runs <= 1:                    # clip quá ngắn: chưa có mẫu nào để ghi
+            assert not csv.exists()
+            return
+        assert len(read_samples(csv)) == stats.vos_runs - 1

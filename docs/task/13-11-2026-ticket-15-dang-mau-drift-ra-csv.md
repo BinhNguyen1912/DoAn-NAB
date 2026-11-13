@@ -59,9 +59,10 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
 - **Quan hệ đếm**: `n_dong == vos_runs - 1` ở cả 5 lần đo — lệch 1 là `engine.start()` (chạy model
   nhưng là mẫu khởi tạo, không có nội suy để so). Có test khoá bất biến này; nếu P1 tái phát thì test
   đỏ ngay (trước khi sửa P1, lệch là 10–12 dòng ở binh1 và **20** ở binh2).
-- Nhịp VOS trong harness này: `vos_fps` **6,1–6,7 lần/giây** (`vos_ms` 118–165 ms; `mask_fps` 6,5),
-  nhịp dòng CSV 6,4–6,5 dòng/giây — chậm hơn 8,6 lần/giây của bảng 08-11 (đo thẳng
-  `tools/live_worker.py`); **đừng trộn hai bộ số**. `mask_age_p95` ở đây 271–303 ms.
+- Nhịp VOS trong harness này: `vos_fps` **6,1–6,7 lần/giây** (`vos_ms` 118–126 ms theo `status.json`;
+  107–226 ms nếu đọc từng dòng CSV; `mask_fps` 6,1–6,6), nhịp dòng CSV 6,4–6,5 dòng/giây — chậm hơn
+  8,6 lần/giây của bảng 08-11 (đo thẳng `tools/live_worker.py`); **đừng trộn hai bộ số**.
+  `mask_age_p95` ở đây 271–303 ms.
 - **Đối chứng cảnh tĩnh ĐẠT**: mean 0,9951 ≥ 0,99 (tiêu chí ticket), `n = 364` ⇒ bookkeeping
   so-cặp-frame đúng. `p05 = 0,9884` (0,0016 dưới ngưỡng) do **làm tròn toạ độ nguyên** của LK — đã ghi
   chú trong `static_control`, không dùng p05 để phán quyết.
@@ -84,11 +85,10 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
   - `.gitignore` — whitelist `data/drift_samples_*`
   - `tests/test_drift_samples.py` (mới), `tests/test_live_tracking.py`,
     `tests/test_measure_live_relay.py`
-  - `data/drift_samples_{binh1×3,binh2,tinh_binh1}_2026-11-13_*.csv` + `.meta.json`,
-    `data/drift_series_2026-11-13_124245_metrics.json`
+  - `data/drift_samples_{binh1×3,binh2,tinh_binh1}_2026-11-13_1256..1300.csv` + `.meta.json`,
+    `data/drift_series_2026-11-13_130246_metrics.json`
 - Kiểm tra trên máy này (sau vòng sửa theo review): `./run lint` xanh · `./run test`
-  **862 passed** (85 s, 5 deselected) · `./run testall` **867 passed** (237 s). CI GitHub trên PR:
-  `ruff` success, `pytest (fast lane)` success.
+  **867 passed** (65 s, 5 deselected) · `./run testall` **872 passed** (177 s).
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Lỗi thật #1 — CSV nói dối về "mask rỗng".** Lần đo binh2 đầu tiên: `status.json` ghi
@@ -142,12 +142,27 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
   giữa lock CSV và lock thống kê; `_pending_drift` 5 phần tử nhất quán ở code + test; `read_samples`
   không biến ô trống thành 0/False; p05 tái lập được bằng `numpy.percentile` (kiểm tay một giá trị);
   `.gitignore` whitelist hoạt động; `measure_live_relay` không đọc CSV của phiên trước.
-- **Còn nợ:** vòng review 2 cho phần vừa sửa **chưa chạy lại bằng agent** (bù bằng: 5 lần đo lại + test
-  hồi quy + `./run test` 862 xanh + `testall`); `ghi_chu` trong 5 file `.meta.json` đã ghi vẫn dùng câu
-  cũ ("1 mẫu drift") — giữ nguyên vì đó là provenance của lần đo, code đã sửa câu này.
+- **Review vòng 2** (agent `reviewer` khác, chỉ đọc): **MERGEABLE — 0 P0, 0 P1**, 2 P2 + 7 P3. Reviewer
+  xác nhận P1 đã hết bằng dữ liệu (lan can chứng cứ: binh2 có **17 dòng `empty=0` mà `drift_iou`
+  trống** — đúng chữ ký "VOS thấy vật / frame đã phát không có hộp", loại mẫu từng bị bỏ). Đã sửa
+  trong cùng PR:
+  - **P2 (số cũ trong README):** README còn trích số của lần đo **trước** fix P1 (20,1 % / 0,9955 /
+    44–48 %). Nay chép lại từ artifact mới (21,8 % / 0,9951 / 45–47 %) + ghi rõ file artifact.
+  - **P2 (`min_measured` ghim 100):** `low_p05_low_empty` ghim ngưỡng "đủ mẫu" theo `WINDOW` ⇒ gọi
+    `--window 20` cho **0 cửa sổ** và trả `False` im lặng. Nay suy từ `window // 2` và trả **`None`**
+    khi không có cửa sổ đủ mẫu ("chưa đo" ≠ "đã đo, không có").
+  - **P3:** ô `empty` trống không còn bị đếm thành "không rỗng"; pending là 1 slot nên mẫu thứ hai về
+    trước khi frame được phát **không còn ghi đè** mẫu đang treo (mẫu cũ được ghi thành dòng); test
+    mới khoá "`run()` luôn gọi `_flush_pending_csv`" (test cũ gọi thẳng hàm nên xoá khỏi `finally`
+    vẫn xanh) + test bất biến số dòng cho ca **nguồn hết frame, không lặp**; docstring nêu rõ
+    `n_dong == vos_runs - 1` chỉ đúng khi `vos_every > 1`; `dinh_nghia` của artifact nêu cửa sổ đếm
+    trên trục dòng và `n_cua_so_du_mau` khác `n_cua_so` của `bao_dong_030`.
+  - **Còn nợ (P3, ghi ở Next steps):** `_shown_at`/`_shown_at_locked` nay chỉ còn test dùng;
+    `ghi_chu` trong 5 `.meta.json` đã ghi vẫn là câu cũ ("1 mẫu drift") — giữ nguyên vì đó là
+    provenance của lần đo, code đã sửa câu này.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **Vòng review 2** cho phần sửa P1/P2/P3 (agent `reviewer`) trước khi merge PR.
+- [x] **Vòng review 2** đã chạy: MERGEABLE, 0 P0/P1, đã sửa 2 P2 + 4 P3 trong cùng PR.
 - [ ] **Ticket 14 vẫn chờ**: cần 1 clip "LK trôi thật" (`p05 < 0,30` mà mask rỗng < 3 %). Công cụ soi đã
       có: `python scripts/analyze_drift_samples.py --windows 20 50 100 200` → khoá `p05_thap_va_empty`.
 - [ ] Hiểu vì sao nhịp VOS qua API (6,1–6,7 lần/giây) chậm hơn đo thẳng worker (8,6): nghi do đọc/ghi
@@ -156,6 +171,10 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
       binh1, phát hiện ~2–7 giây ở nhịp 6,5 dòng/giây); nêu rõ ngưỡng 0,70 đăng ký trước 08-11 đã bị
       bác vì báo oan 45–100 % trên clip khoẻ.
 - [ ] Ticket 21 phần 2 (mặc định `image_size`/`vos_every` theo GPU) vẫn chờ số đo Colab.
+- [ ] Dọn dần: `_shown_at`/`_shown_at_locked` nay chỉ còn test dùng (giữ vì test khoá bất biến lock) —
+      quyết định bỏ hay chuyển test sang `_shown_state_locked` khi đụng lại file này.
+- [ ] 5 file `.meta.json` đã ghi mang câu `ghi_chu` cũ ("1 mẫu drift"); code đã sửa thành "1 kết quả
+      VOS" nhưng **không** sửa lại artifact cũ (đó là provenance của lần đo).
 
 ## 📚 Tài liệu tham khảo
 - Ticket: `.scratch/camera-ai-realtime/issues/15-log-t-ng-m-u-drift-ra-csv-i-ch-ng-c-nh-t-nh-ng-n.md`

@@ -124,8 +124,10 @@ def main() -> int:
             "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
             "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",
             "empty_frac": "tỉ lệ lần VOS trả mask RỖNG (mất dấu) trong các dòng có cột `empty`",
-            "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14: cửa sổ p05 < 0,30 MÀ mask rỗng "
-                                 "< 3 % (có ⇒ mới được thêm cờ chẩn đoán 'LK nội suy lệch')",
+            "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14, đếm trên TRỤC DÒNG (mỗi dòng = "
+                                 "1 lần VOS): cửa sổ p05 < 0,30 MÀ mask rỗng < 3 %. `n_cua_so_du_mau` "
+                                 "chỉ đếm cửa sổ có ≥ nửa số mẫu đo được (nên nhỏ hơn `n_cua_so` của "
+                                 "`bao_dong_030`); `co_dieu_kien_ticket_14 = null` = chưa đo được",
         },
         "canh_bao": "`drift_iou` là độ tự nhất quán của ô bao đang hiển thị, KHÔNG phải độ chính xác "
                     "bám (AGENTS §6). Muốn nói chất lượng phân đoạn phải dùng mIoU vs GT.",

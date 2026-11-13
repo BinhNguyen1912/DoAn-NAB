@@ -7,8 +7,9 @@ Chức năng: `status.json` chỉ có mean/p05 của cửa sổ 200 mẫu ⇒ **
            lại + phân tích: `rolling_p05`, `flag_rate`, `detect_latency`, `static_control`.
 Input  : `DriftSampleLog.write(...)` từ `LiveTrackingSession`; `read_samples(path)` cho CSV đã ghi.
 Output : `<out_dir>/drift_samples.csv` (một dòng / kết quả VOS của luồng worker) + dict thống kê
-         thuần. Quan hệ đếm: `n_dong == vos_runs - 1` — `vos_runs` cộng thêm 1 lần `engine.start()`
-         (mẫu khởi tạo, không có nội suy để so nên không có dòng).
+         thuần. Quan hệ đếm: `n_dong == vos_runs - 1` **khi bật LK (`vos_every > 1`)** — `vos_runs`
+         cộng thêm 1 lần `engine.start()` (mẫu khởi tạo, không có nội suy để so nên không có dòng);
+         `vos_every = 1` không có CSV nào (không có nội suy ⇒ không có drift để ghi).
 Lưu ý  : (1) Ô TRỐNG = **chưa đo**, KHÔNG được đọc thành 0 (AGENTS §6). (2) `write()` được gọi từ
          HAI luồng (luồng VOS khi đo drift ngay, luồng chính khi mẫu `_pending_drift` tới hạn) nên
          có lock riêng; lock chỉ giữ trong lúc ghi một dòng (~vài chục µs), KHÔNG gọi hàm này khi
@@ -36,7 +37,8 @@ WINDOW = 200
 # p05 từ 20 mẫu thì nó nói một điều mà `status.json` từ chối nói (với n = 20, p05 ≈ min ⇒ "một mẫu
 # xui"). `static_control` dùng ngưỡng riêng 20 vì ticket 15 yêu cầu `drift_n >= 20`.
 MIN_SAMPLES = 30
-# Số mẫu "đo được" tối thiểu để một cửa sổ được tính p05 trong `low_p05_low_empty` (nửa cửa sổ).
+# Số mẫu "đo được" tối thiểu để một cửa sổ được tính p05 trong `low_p05_low_empty`: mặc định
+# `window // 2`, suy từ chính cửa sổ được hỏi (đừng ghim theo `WINDOW` — xem docstring hàm).
 MIN_MEASURED_IN_WINDOW = WINDOW // 2
 # Ngưỡng "mẫu xấu" (nội suy LK đã lệch hẳn) và ngưỡng CỜ chẩn đoán đề xuất trong plan 09-11.
 BAD_SAMPLE = 0.5
@@ -247,37 +249,47 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> d
 
 
 def low_p05_low_empty(rows, *, flag: float = FLAG_P05, max_empty: float = 0.03,
-                      window: int = WINDOW,
-                      min_measured: int = MIN_MEASURED_IN_WINDOW) -> dict:
+                      window: int = WINDOW, min_measured=None) -> dict:
     """Đếm cửa sổ `window` lần VOS có `p05 < flag` **và** tỉ lệ mask rỗng `< max_empty`.
 
     Đây là **điều kiện tiên quyết của ticket 14** (cờ chẩn đoán "LK nội suy lệch"): nếu mọi cửa sổ
     p05 thấp đều có mask rỗng cao thì cờ đó chỉ là bản sao của `empty_frac_window` ⇒ claim vượt dữ
-    liệu. Đếm trên trục **lần VOS** (mỗi dòng CSV = 1 lần VOS) vì mask rỗng cũng là một lần VOS;
-    p05 chỉ tính trên các dòng CÓ `drift_iou`, và cửa sổ phải có ≥ `min_measured` mẫu đo được mới
-    được tính (cửa sổ toàn mask rỗng thì p05 của 2 mẫu là vô nghĩa).
+    liệu. Đếm trên trục **lần VOS** (mỗi dòng CSV = 1 lần VOS) vì mask rỗng cũng là một lần VOS.
+
+    `min_measured` mặc định = `window // 2`: một cửa sổ phải có ít nhất nửa số mẫu ĐO ĐƯỢC thì p05
+    mới có nghĩa (cửa sổ toàn mask rỗng thì p05 của 2 mẫu là vô nghĩa). Trước đây tham số này ghim
+    theo `WINDOW` (100) ⇒ gọi với `window=20` cho **0 cửa sổ** và trả `False` một cách im lặng — đúng
+    bẫy "0/None ≠ đã đo" (review độc lập vòng 2, P2).
+
+    `co_dieu_kien_ticket_14` là **None** khi không có cửa sổ nào đủ mẫu: "chưa đo được", không phải
+    "đã đo và không có".
     """
+    min_measured = max(1, window // 2) if min_measured is None else int(min_measured)
     total = flagged = both = 0
     for start in range(max(0, len(rows) - window + 1)):
         chunk = rows[start:start + window]
         values = drift_values(chunk)
-        if len(values) < min_measured:
+        # Ô `empty` trống = CHƯA ĐO ⇒ không được đếm thành "không rỗng" (AGENTS §6). Cửa sổ phải có
+        # ít nhất nửa số dòng khai `empty` mới được dùng để nói về tỉ lệ rỗng.
+        known = [row["empty"] for row in chunk if row.get("empty") is not None]
+        if len(values) < min_measured or len(known) < min_measured:
             continue
         total += 1
         p05 = float(np.percentile(values, 5))
-        empty_frac = sum(1 for row in chunk if row.get("empty")) / len(chunk)
+        empty_frac = sum(1 for value in known if value) / len(known)
         if p05 < float(flag):
             flagged += 1
             if empty_frac < float(max_empty):
                 both += 1
     return {
         "cua_so": window,
+        "min_mau_do_duoc": min_measured,
         "nguong_p05": flag,
         "nguong_empty": max_empty,
-        "n_cua_so": total,
+        "n_cua_so_du_mau": total,
         "n_p05_thap": flagged,
         "n_p05_thap_va_empty_thap": both,
-        "co_dieu_kien_ticket_14": both > 0,
+        "co_dieu_kien_ticket_14": (both > 0) if total else None,
     }
 
 

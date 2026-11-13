@@ -431,6 +431,9 @@ class LiveTrackingSession:
             self._stop_worker()
             if self._source is not None:
                 self._source.close()
+            # Thứ tự `stop_worker → flush → close`: nếu `join(5 s)` timeout mà worker còn sống thì nó
+            # có thể ghi thêm dòng giữa flush và close (được), hoặc sau close (bị `_closed` bỏ — mất
+            # mẫu cuối, nhưng KHÔNG được mở lại file vì mode `w` sẽ xoá sạch dãy đã ghi).
             self._flush_pending_csv()
             self._drift_log.close()
             # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
@@ -614,16 +617,26 @@ class LiveTrackingSession:
         # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
         # (review 10-11 vòng 2, P3).
+        da_hen = False
+        cu = None
         with self._stats_lock:
             found, shown = self._shown_state_locked(frame_idx)
             if not found:
                 # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát
                 # frame; nếu frame đó đã trôi qua thật thì `_update_stats_locked`/`_flush_pending`
                 # vẫn ghi được dòng (drift trống), không bỏ mẫu.
+                # Pending là MỘT slot: nếu kết quả VOS trước đó còn treo thì ghi nó thành dòng ngay
+                # (sau khi nhả lock) thay vì ghi đè ⇒ không mất mẫu khi VOS nhanh hơn nhịp phát
+                # (review độc lập vòng 2, P3).
+                cu, da_hen = self._pending_drift, True
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
                                        self._mask_empty(result))
-                return
+        if da_hen:
+            if cu is not None:
+                self._log_drift_sample(frame_idx=cu[0], seq=cu[2], vos_ms=cu[3],
+                                       empty=cu[4], value=None, bbox=cu[1])
+            return
         if shown is None:
             # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
             self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)

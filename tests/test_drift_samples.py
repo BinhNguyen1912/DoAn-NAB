@@ -309,7 +309,7 @@ class TestCuaSoP05ThapVaEmptyThap:
             else:
                 rows.append({"drift_iou": 0.0, "empty": False})
         result = low_p05_low_empty(rows, window=10, min_measured=5)
-        assert result["n_cua_so"] == 31
+        assert result["n_cua_so_du_mau"] == 31
         assert result["n_p05_thap"] == 31
         assert result["n_p05_thap_va_empty_thap"] == 0
         assert result["co_dieu_kien_ticket_14"] is False
@@ -323,11 +323,35 @@ class TestCuaSoP05ThapVaEmptyThap:
         assert result["co_dieu_kien_ticket_14"] is True
 
     def test_cua_so_qua_it_mau_do_duoc_thi_khong_tinh(self):
-        """Toàn mask rỗng ⇒ p05 của 0 mẫu: bỏ cửa sổ, không bịa 0,0 thành "p05 thấp"."""
+        """Toàn mask rỗng ⇒ p05 của 0 mẫu: bỏ cửa sổ, và kết luận là **None** (chưa đo).
+
+        `False` ở đây sẽ là một khẳng định ("đã đo, không có cửa sổ nào thoả") trong khi sự thật là
+        không có mẫu nào để đo — đúng bẫy `0/None ≠ đã đo` (AGENTS §6, review vòng 2 P2).
+        """
         rows = [{"drift_iou": None, "empty": True} for _ in range(40)]
         result = low_p05_low_empty(rows, window=10, min_measured=5)
-        assert result["n_cua_so"] == 0
-        assert result["co_dieu_kien_ticket_14"] is False
+        assert result["n_cua_so_du_mau"] == 0
+        assert result["co_dieu_kien_ticket_14"] is None
+
+    def test_o_empty_trong_khong_bi_dem_thanh_khong_rong(self):
+        """Cột `empty` trống = CHƯA ĐO ⇒ không được tính là "không rỗng" (nếu không sẽ thoả điều
+        kiện ticket 14 bằng dữ liệu chưa đo)."""
+        rows = [{"drift_iou": 0.1, "empty": None} for _ in range(40)]
+        result = low_p05_low_empty(rows, window=10, min_measured=5)
+        assert result["n_cua_so_du_mau"] == 0
+        assert result["co_dieu_kien_ticket_14"] is None
+
+    def test_min_mau_do_duoc_suy_tu_cua_so(self):
+        """Cửa sổ 20 mẫu: ngưỡng mẫu đo được là 10 (window//2), KHÔNG phải 100 của `WINDOW`.
+
+        Trước khi sửa, `--window 20` cho 0 cửa sổ một cách im lặng ⇒ người đọc tưởng "không có
+        cửa sổ nào thoả" thay vì "chưa đo được".
+        """
+        rows = [{"drift_iou": 0.05, "empty": False} for _ in range(40)]
+        result = low_p05_low_empty(rows, window=20)
+        assert result["min_mau_do_duoc"] == 10
+        assert result["n_cua_so_du_mau"] == 21          # 40 - 20 + 1
+        assert result["co_dieu_kien_ticket_14"] is True
 
 
 class TestKhoaCuaSoKhopPhien:
