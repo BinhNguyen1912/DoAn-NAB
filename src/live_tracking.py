@@ -431,6 +431,7 @@ class LiveTrackingSession:
             self._stop_worker()
             if self._source is not None:
                 self._source.close()
+            self._flush_pending_csv()
             self._drift_log.close()
             # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
             self._publish_status(out_dir)
@@ -453,6 +454,20 @@ class LiveTrackingSession:
         # (ticket 15: mỗi dòng phải có `frame_idx` để đối chiếu với video).
         self._seq_frame[self._seq] = self._frame_index
         self._worker.submit(self._seq, frame, gray)
+
+    def _flush_pending_csv(self) -> None:
+        """Ghi dòng CSV cho mẫu còn treo trong `_pending_drift` khi phiên dừng.
+
+        Ca thật: kết quả VOS cuối cùng về SAU frame cuối ⇒ không bao giờ có lần phát nào để chấm.
+        Không flush thì CSV mất đúng mẫu cuối (đo 13-11: cảnh tĩnh 358 lần VOS nhưng 357 dòng).
+        Không chấm drift vì không có ô bao đã phát — ghi `drift_iou` trống, KHÔNG bịa 0.
+        """
+        with self._stats_lock:
+            pending, self._pending_drift = self._pending_drift, None
+        if pending is None:
+            return
+        self._log_drift_sample(frame_idx=pending[0], seq=pending[2], vos_ms=pending[3],
+                               empty=pending[4], value=None, bbox=pending[1])
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
@@ -558,10 +573,22 @@ class LiveTrackingSession:
 
     def _shown_at_locked(self, frame_idx):
         """Như `_shown_at` nhưng gọi khi ĐÃ giữ `_stats_lock` (hậu tố `_locked`, không acquire)."""
+        found, bbox = self._shown_state_locked(frame_idx)
+        return bbox if found else None
+
+    def _shown_state_locked(self, frame_idx):
+        """`(đã phát frame này chưa?, ô bao lúc phát hoặc None)`.
+
+        Phải phân biệt hai ca mà `None` gộp làm một (review độc lập 13-11, P1): (a) frame **chưa**
+        được phát — chờ phát rồi mới chấm, và (b) frame **đã** phát nhưng không có ô bao hiển thị
+        (`_update_stats_locked` lưu `None`). Nếu gộp, ca (b) bị hẹn `_pending_drift` cho một frame
+        ĐÃ TRÔI QUA ⇒ mẫu bị bỏ im lặng ⇒ CSV thiếu dòng (đo được: binh1 379 lần VOS nhưng 368
+        dòng; binh2 359 vs 339).
+        """
         for idx, bbox in reversed(self._shown_by_frame):
             if idx == frame_idx:
-                return bbox
-        return None
+                return True, bbox
+        return False, None
 
     def _measure_drift(self, frame_idx, result, seq=None) -> None:
         """Nội suy LK **sai bao nhiêu** ở đúng frame mà VOS vừa trả kết quả.
@@ -588,15 +615,17 @@ class LiveTrackingSession:
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
         # (review 10-11 vòng 2, P3).
         with self._stats_lock:
-            shown = self._shown_at_locked(frame_idx)
-            if shown is None:
+            found, shown = self._shown_state_locked(frame_idx)
+            if not found:
                 # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát
-                # frame; nếu frame đó đã trôi qua thì BỎ, không lấy ô bao của frame khác (đo sai thứ).
+                # frame; nếu frame đó đã trôi qua thật thì `_update_stats_locked`/`_flush_pending`
+                # vẫn ghi được dòng (drift trống), không bỏ mẫu.
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
                                        self._mask_empty(result))
                 return
-        if not _bbox_hop_le(shown):
+        if shown is None:
+            # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
             self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
             return
         value = _bbox_iou(shown, fresh)
@@ -798,10 +827,16 @@ class LiveTrackingSession:
                 if value is not None:          # ở đây ĐANG giữ `_stats_lock` ⇒ không gọi _record_drift
                     self._drift_window.append(value)
                     self._apply_drift_locked()
-                    csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
-                               "vos_ms": pending[3], "empty": pending[4],
-                               "value": value, "bbox": pending[1]}
-            # pending[0] < frame hiện tại ⇒ frame đó đã trôi qua, bỏ mẫu (không bịa)
+                csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
+                           "vos_ms": pending[3], "empty": pending[4],
+                           "value": value, "bbox": pending[1]}
+            else:
+                # Frame đã phát mà KHÔNG có ô bao hiển thị (hoặc frame đó không bao giờ tới lượt
+                # phát): KHÔNG chấm drift nhưng VẪN ghi dòng — bỏ im lặng là mất mẫu, và đúng
+                # những mẫu đó là ca "VOS thấy vật / màn hình không có hộp" cần tách khỏi "LK trôi"
+                # (review độc lập 13-11, P1).
+                csv_row = {"frame_idx": pending[0], "seq": pending[2], "vos_ms": pending[3],
+                           "empty": pending[4], "value": None, "bbox": pending[1]}
         lost = mask is None or not mask.any()
         self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
         self._stats.bbox = [int(v) for v in result.bbox]

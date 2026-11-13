@@ -12,7 +12,10 @@ import pytest
 
 from src.drift_samples import (
     CSV_HEADER,
+    MIN_SAMPLES,
+    WINDOW,
     DriftSampleLog,
+    low_p05_low_empty,
     detect_latency,
     flag_rate,
     read_samples,
@@ -20,6 +23,7 @@ from src.drift_samples import (
     static_control,
     summarize,
 )
+from src.drift_samples import _opt_bool
 
 
 def _rows(values, empties=None):
@@ -234,7 +238,7 @@ class TestPhanTichFile:
 
         monkeypatch.setattr(analyze, "_REPO_ROOT", tmp_path)
         csv = tmp_path / "drift_samples_binh1_2026-11-12_1430.csv"
-        self._viet(csv, [0.9] * 10 + [0.0] * 10,
+        self._viet(csv, [0.9] * 30 + [0.0] * 10,
                    meta={"git_rev": "abc1234", "git_dirty_code": False,
                          "device_worker_log": "cpu", "thiet_lap": {"vos_every": 3}})
 
@@ -242,11 +246,13 @@ class TestPhanTichFile:
 
         assert result["co_meta"] is True
         assert result["git_rev"] == "abc1234" and result["git_dirty_code"] is False
-        assert result["n_mau_drift"] == 20
+        assert result["n_mau_drift"] == 40
+        # 30 mẫu 0,9 rồi 10 mẫu 0,0 ⇒ p05 toàn dãy = 0,0 (n = 40 >= 30 nên được công bố).
         assert result["drift_iou_p05"] == 0.0
-        # Cửa sổ 5: 16 cửa sổ, 10 cửa sổ báo (0,625) — cùng literal như test của `flag_rate`.
-        assert result["bao_dong_070"]["n_cua_so"] == 16
-        assert result["bao_dong_070"]["ti_le_bao"] == pytest.approx(0.625)
+        # Cửa sổ 5: 36 cửa sổ, cửa sổ kết thúc ở chỉ số 30..39 chứa đủ số 0 ⇒ 10 cửa sổ báo 0,70.
+        assert result["bao_dong_070"]["n_cua_so"] == 36
+        assert result["bao_dong_070"]["n_bao"] == 10
+        assert result["bao_dong_070"]["ti_le_bao"] == pytest.approx(0.278, abs=5e-4)
         assert "doi_chung_canh_tinh" not in result          # chỉ tính khi được chỉ định là cảnh tĩnh
         assert "theo_cua_so" not in result                  # chỉ tính khi có `windows`
 
@@ -270,6 +276,8 @@ class TestPhanTichFile:
 
         theo = result["theo_cua_so"]
         assert set(theo) == {"5", "10"}
+        # p05 toàn dãy KHÔNG được nhân bản vào từng cửa sổ (gây hiểu sai "p05 không phụ thuộc W")
+        assert "drift_iou_p05" not in theo["5"]
         # mẫu xấu đầu = chỉ số 20 ⇒ cửa sổ 5 chưa kín cho tới 24, cửa sổ 10 tới 29
         assert theo["5"]["phat_hien"]["phat_hien_sau_mau"] == 0
         assert theo["10"]["phat_hien"]["phat_hien_sau_mau"] == 1
@@ -287,3 +295,69 @@ class TestPhanTichFile:
         assert result["co_meta"] is False                   # không có `.meta.json` ⇒ nói thẳng
         assert result["doi_chung_canh_tinh"]["dat"] is True
         assert result["doi_chung_canh_tinh"]["drift_iou_mean"] == 1.0
+
+
+class TestCuaSoP05ThapVaEmptyThap:
+    """Điều kiện tiên quyết của ticket 14 — phải đếm được bằng code đã commit, không tính tay."""
+
+    def test_cua_so_rong_nhieu_thi_khong_phai_bang_chung_lk_troi(self):
+        """p05 thấp + mask rỗng cao ⇒ KHÔNG thoả điều kiện (cờ sẽ là bản sao của `empty_frac`)."""
+        rows = []
+        for i in range(40):
+            if i % 2:                      # 50 % lần VOS trả mask rỗng (không có điểm drift)
+                rows.append({"drift_iou": None, "empty": True})
+            else:
+                rows.append({"drift_iou": 0.0, "empty": False})
+        result = low_p05_low_empty(rows, window=10, min_measured=5)
+        assert result["n_cua_so"] == 31
+        assert result["n_p05_thap"] == 31
+        assert result["n_p05_thap_va_empty_thap"] == 0
+        assert result["co_dieu_kien_ticket_14"] is False
+
+    def test_cua_so_p05_thap_ma_khong_rong_thi_thoa_dieu_kien(self):
+        """Đúng ca cần tìm: LK trôi thật trong khi model vẫn thấy vật (mask không rỗng)."""
+        rows = [{"drift_iou": 0.1, "empty": False} for _ in range(40)]
+        result = low_p05_low_empty(rows, window=10, min_measured=5)
+        assert result["n_p05_thap"] == 31
+        assert result["n_p05_thap_va_empty_thap"] == 31
+        assert result["co_dieu_kien_ticket_14"] is True
+
+    def test_cua_so_qua_it_mau_do_duoc_thi_khong_tinh(self):
+        """Toàn mask rỗng ⇒ p05 của 0 mẫu: bỏ cửa sổ, không bịa 0,0 thành "p05 thấp"."""
+        rows = [{"drift_iou": None, "empty": True} for _ in range(40)]
+        result = low_p05_low_empty(rows, window=10, min_measured=5)
+        assert result["n_cua_so"] == 0
+        assert result["co_dieu_kien_ticket_14"] is False
+
+
+class TestKhoaCuaSoKhopPhien:
+    def test_hang_so_khop_voi_phien_live(self):
+        """`WINDOW`/`MIN_SAMPLES` phải bằng hằng của `src/live_tracking.py`.
+
+        Nếu trôi khỏi nhau, dãy trong CSV sẽ "giải thích" một phân vị mà phiên tính bằng cửa sổ
+        khác (hoặc công bố p05 từ 20 mẫu trong khi `status.json` từ chối công bố).
+        """
+        import src.live_tracking as live
+
+        assert WINDOW == live._STAT_WINDOW
+        assert MIN_SAMPLES == live._STAT_MIN_SAMPLES
+
+
+class TestDongFileKhongBiXoa:
+    def test_ghi_sau_khi_dong_thi_khong_xoa_file(self, tmp_path):
+        """`close()` rồi còn `write()` (luồng VOS sống tới 5 s sau `join`) ⇒ KHÔNG mở lại mode `w`.
+
+        Mở lại bằng `"w"` sẽ xoá sạch dãy mẫu đã ghi ⇒ artifact "trông hợp lệ" mà rỗng ruột.
+        """
+        log = DriftSampleLog(tmp_path / "drift_samples.csv")
+        log.write(frame_idx=1, seq=1, vos_ms=100.0, empty=False, drift_iou=0.9, bbox=(0, 0, 5, 5))
+        log.close()
+        log.write(frame_idx=2, seq=2, vos_ms=100.0, empty=False, drift_iou=0.8, bbox=(0, 0, 5, 5))
+
+        assert log.n_rows == 1                        # mẫu tới sau khi đóng bị BỎ, không ghi đè
+        assert len(read_samples(log.path)) == 1
+
+    def test_doc_lai_empty_la_chuoi_la_thi_none(self):
+        """Cột `empty` chỉ nhận 1/0; chuỗi lạ ⇒ None (chưa đo), không thành False."""
+        assert _opt_bool("1") is True and _opt_bool("0") is False
+        assert _opt_bool("True") is None and _opt_bool("") is None

@@ -1479,3 +1479,96 @@ class TestDriftSamplesCsv:
         assert rows[0]["drift_iou"] == 1.0          # ô bao đã phát TRÙNG ô bao VOS
         assert rows[0]["empty"] is False
         assert session._stats.drift_n == 1
+
+
+class TestKhongMatMauDriftCsv:
+    """P1 của review độc lập 13-11: CSV phải có dòng cho MỌI lần VOS.
+
+    Đo thật: binh1 có 379 lần VOS nhưng CSV chỉ 368 dòng; binh2 359 vs 339. Nguyên nhân: frame đã
+    phát mà KHÔNG có ô bao hiển thị (`_shown_by_frame` lưu `None`) bị coi là "chưa phát" ⇒ mẫu bị
+    hẹn `_pending_drift` cho một frame đã trôi qua ⇒ bỏ im lặng. Mẫu bị mất đúng vào ca "VOS thấy
+    vật / màn hình không có hộp" — chính là ca cần đếm để tách khỏi "LK trôi".
+    """
+
+    def _session(self, tmp_path, source="x.mp4"):
+        out = tmp_path / "live"
+        _pre_select(out)
+        return LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=source, out_dir=out, display_fps=100, vos_every=3)), out
+
+    def test_frame_da_phat_khong_co_o_bao_van_ghi_dong(self, tmp_path):
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._shown_by_frame.append((5, None))        # frame 5 ĐÃ phát nhưng không có hộp
+        session._measure_drift(5, _Result(0, (4, 4, 12, 12), None), seq=4)
+
+        # Không chấm drift (không có gì để so) nhưng KHÔNG được bỏ mẫu.
+        assert session._stats.drift_n == 0
+        assert session._pending_drift is None, "frame đã phát thì không được hẹn pending"
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 5 and rows[0]["drift_iou"] is None
+
+    def test_pending_treo_qua_frame_khac_van_ghi_dong(self, tmp_path):
+        """Frame hẹn pending không bao giờ tới lượt phát ⇒ lần publish sau ghi dòng (drift trống)."""
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._measure_drift(3, _Result(0, (4, 4, 12, 12), None), seq=2)
+        assert session._pending_drift is not None
+
+        session._frame_index = 6                        # frame 3 đã trôi qua, không được phát
+        session._update_stats(_Result(0, (4, 4, 12, 12), None))
+
+        assert session._stats.drift_n == 0
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 3 and rows[0]["drift_iou"] is None
+
+    def test_con_treo_khi_dung_phien_thi_flush_ra_dong(self, tmp_path):
+        """Kết quả VOS cuối về sau frame cuối: `run()` phải flush, không để mất mẫu cuối."""
+        from src.drift_samples import read_samples
+
+        session, out = self._session(tmp_path)
+        session._measure_drift(99, _Result(0, (4, 4, 12, 12), None), seq=9)
+        session._flush_pending_csv()
+        session._drift_log.close()
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1 and rows[0]["frame_idx"] == 99
+
+    def test_ghi_csv_ngoai_stats_lock(self, tmp_path):
+        """`_log_drift_sample` KHÔNG được gọi khi đang giữ `_stats_lock` (I/O trong lock ⇒ chặn VOS).
+
+        Bọc `write()` của logger để đọc `stats_lock.locked()` ngay lúc ghi — đúng mẫu kiểm mà ticket
+        17/20 đã dùng cho các cửa sổ thống kê.
+        """
+        session, _out = self._session(tmp_path)
+        lock = session._stats_lock
+        violations = []
+        that = session._drift_log
+
+        class _LogBoc:
+            def __init__(self):
+                ...
+
+            def __getattr__(self, name):
+                return getattr(that, name)
+
+            def write(self, **fields):
+                if lock.locked():
+                    violations.append("write() khi ĐANG giữ _stats_lock")
+                that.write(**fields)
+
+        session._drift_log = _LogBoc()
+        # Nhánh 1: đo ngay trong luồng VOS (frame đã phát, có ô bao)
+        session._shown_by_frame.append((2, (4, 4, 12, 12)))
+        session._measure_drift(2, _Result(0, (4, 4, 12, 12), None), seq=2)
+        # Nhánh 2: pending tới hạn, chấm trong `_update_stats_locked` (ĐANG giữ lock)
+        session._measure_drift(7, _Result(0, (4, 4, 12, 12), None), seq=3)
+        session._frame_index = 7
+        session._update_stats(_Result(0, (4, 4, 12, 12), None))
+
+        assert violations == []
+        assert session._drift_log.n_rows == 2

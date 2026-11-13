@@ -60,11 +60,12 @@ def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False,
         "co_meta": info is not None,
     })
     if windows:
+        # Chỉ đưa các đại lượng THẬT SỰ phụ thuộc cửa sổ. `drift_iou_p05` KHÔNG nằm ở đây: nó tính
+        # trên toàn dãy (xem `dinh_nghia`), nhân bản nó vào từng cửa sổ sẽ khiến người đọc kết luận
+        # sai "p05 không phụ thuộc cửa sổ" (review độc lập 13-11, P2).
         ket_qua["theo_cua_so"] = {
-            str(size): {
-                **{key: value for key, value in summarize(rows, window=size).items()
-                   if key in ("bao_dong_070", "bao_dong_030", "phat_hien", "drift_iou_p05")},
-            }
+            str(size): {key: value for key, value in summarize(rows, window=size).items()
+                        if key in ("bao_dong_070", "bao_dong_030", "phat_hien")}
             for size in windows
         }
     if static:
@@ -117,10 +118,14 @@ def main() -> int:
         "cua_so_quet": args.windows,
         "dinh_nghia": {
             "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
+            "drift_iou_p05": "p05 trên TOÀN DÃY mẫu của lần đo — KHÁC p05 của 200 mẫu CUỐI trong "
+                              "status.json (cùng định nghĩa phân vị, khác tập mẫu)",
             "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",
             "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
             "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",
             "empty_frac": "tỉ lệ lần VOS trả mask RỖNG (mất dấu) trong các dòng có cột `empty`",
+            "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14: cửa sổ p05 < 0,30 MÀ mask rỗng "
+                                 "< 3 % (có ⇒ mới được thêm cờ chẩn đoán 'LK nội suy lệch')",
         },
         "canh_bao": "`drift_iou` là độ tự nhất quán của ô bao đang hiển thị, KHÔNG phải độ chính xác "
                     "bám (AGENTS §6). Muốn nói chất lượng phân đoạn phải dùng mIoU vs GT.",

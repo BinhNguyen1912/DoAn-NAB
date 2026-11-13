@@ -27,10 +27,15 @@ CSV_HEADER = [
 ]
 
 # Cửa sổ phân vị: khớp `_STAT_WINDOW` của `src/live_tracking.py` ⇒ p05 tính từ CSV tái lập đúng
-# con số trong `status.json`/artifact cũ (cùng định nghĩa, cùng độ trễ bất đối xứng).
+# ĐỊNH NGHĨA của con số trong `status.json`/artifact cũ (độ làm tròn khác: 4 chữ số ở đây, 3 ở
+# `status.json`). Có test khoá `WINDOW == live_tracking._STAT_WINDOW` để hai chỗ không trôi khỏi nhau.
 WINDOW = 200
-# Số mẫu TỐI THIỂU để được coi là "đủ mẫu" khi kết luận cảnh tĩnh (p05 của 5 mẫu là min ⇒ vô nghĩa).
-MIN_SAMPLES = 20
+# Số mẫu TỐI THIỂU để công bố phân vị — phải bằng `_STAT_MIN_SAMPLES` của phiên (30): nếu CSV công bố
+# p05 từ 20 mẫu thì nó nói một điều mà `status.json` từ chối nói (với n = 20, p05 ≈ min ⇒ "một mẫu
+# xui"). `static_control` dùng ngưỡng riêng 20 vì ticket 15 yêu cầu `drift_n >= 20`.
+MIN_SAMPLES = 30
+# Số mẫu "đo được" tối thiểu để một cửa sổ được tính p05 trong `low_p05_low_empty` (nửa cửa sổ).
+MIN_MEASURED_IN_WINDOW = WINDOW // 2
 # Ngưỡng "mẫu xấu" (nội suy LK đã lệch hẳn) và ngưỡng CỜ chẩn đoán đề xuất trong plan 09-11.
 BAD_SAMPLE = 0.5
 FLAG_P05 = 0.30
@@ -49,6 +54,7 @@ class DriftSampleLog:
         self._path = Path(path)
         self._lock = threading.Lock()
         self._handle = None
+        self._closed = False
         self.n_rows = 0
 
     @property
@@ -70,6 +76,11 @@ class DriftSampleLog:
             row.extend([int(v) for v in bbox])
         line = ",".join(str(v) for v in row) + "\n"
         with self._lock:
+            if self._closed:
+                # Phiên đã đóng file (luồng VOS có thể còn sống tới 5 s sau `join`): KHÔNG mở lại —
+                # `_ensure_open` dùng mode `w` nên mở lại sẽ XOÁ sạch dãy mẫu đã ghi (file bằng
+                # chứng "trông hợp lệ" mà rỗng ruột — đúng bẫy AGENTS §6). Bỏ mẫu cuối, không xoá.
+                return
             handle = self._ensure_open()
             handle.write(line)
             # Flush mỗi dòng: phiên live bị dừng bằng SIGTERM/`kill` (không qua `finally`) vẫn giữ
@@ -79,6 +90,7 @@ class DriftSampleLog:
 
     def close(self) -> None:
         with self._lock:
+            self._closed = True
             if self._handle is not None:
                 self._handle.close()
                 self._handle = None
@@ -105,6 +117,10 @@ def _opt_float(text):
 def _opt_bool(text):
     text = (text or "").strip()
     if not text:
+        return None
+    # Chỉ nhận ĐÚNG định dạng mình ghi (1/0). Chuỗi lạ ("True", "yes") ⇒ None = CHƯA ĐO, không
+    # được quy thành False (False sẽ biến "không rõ" thành "không mất dấu" ⇒ hạ tỉ lệ báo oan sai).
+    if text not in {"1", "0"}:
         return None
     return text == "1"
 
@@ -191,15 +207,16 @@ def detect_latency(rows, *, bad: float = BAD_SAMPLE, flag: float = FLAG_P05,
     return {"mau_xau_dau": bad_idx, "phat_hien_sau_mau": None, "p05_luc_phat_hien": None}
 
 
-def static_control(rows, *, min_drift: float = 0.99, min_samples: int = MIN_SAMPLES) -> dict:
+def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> dict:
     """Đối chứng cảnh TĨNH: vật đứng yên ⇒ nội suy LK và VOS phải trùng nhau (drift ≈ 1,0).
 
     Đây là phép kiểm **bookkeeping** (`_shown_at`/`_pending_drift`), không phải phép đo chất lượng
     bám: cảnh tĩnh mà drift thấp nghĩa là ta đang so SAI CẶP frame, chứ không phải LK kém.
 
     Tiêu chí đạt = **`drift_iou` (trung bình) ≥ `min_drift`** — đúng đại lượng đã đăng ký trước trong
-    ticket 15. `p05` KHÔNG tham gia phán quyết vì đuôi thấp của cảnh tĩnh bị làm bẩn bởi phép
-    **làm tròn toạ độ nguyên** của LK (đo 13-11, 357 mẫu: mean 0,9955 nhưng p05 0,9885 — lệch
+    ticket 15 (`drift_iou >= 0,99` với `drift_n >= 20` ⇒ `min_samples` mặc định 20, thấp hơn ngưỡng
+    công bố phân vị 30). `p05` KHÔNG tham gia phán quyết vì đuôi thấp của cảnh tĩnh bị làm bẩn bởi
+    phép **làm tròn toạ độ nguyên** của LK (đo 13-11, 357 mẫu: mean 0,9955 nhưng p05 0,9885 — lệch
     0,0015 so với ngưỡng). Ghi chú đi kèm nói rõ khi p05 dưới ngưỡng, để không ai đọc p05 thành
     lỗi bookkeeping.
     """
@@ -227,8 +244,47 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = MIN_SAMP
     }
 
 
+def low_p05_low_empty(rows, *, flag: float = FLAG_P05, max_empty: float = 0.03,
+                      window: int = WINDOW,
+                      min_measured: int = MIN_MEASURED_IN_WINDOW) -> dict:
+    """Đếm cửa sổ `window` lần VOS có `p05 < flag` **và** tỉ lệ mask rỗng `< max_empty`.
+
+    Đây là **điều kiện tiên quyết của ticket 14** (cờ chẩn đoán "LK nội suy lệch"): nếu mọi cửa sổ
+    p05 thấp đều có mask rỗng cao thì cờ đó chỉ là bản sao của `empty_frac_window` ⇒ claim vượt dữ
+    liệu. Đếm trên trục **lần VOS** (mỗi dòng CSV = 1 lần VOS) vì mask rỗng cũng là một lần VOS;
+    p05 chỉ tính trên các dòng CÓ `drift_iou`, và cửa sổ phải có ≥ `min_measured` mẫu đo được mới
+    được tính (cửa sổ toàn mask rỗng thì p05 của 2 mẫu là vô nghĩa).
+    """
+    total = flagged = both = 0
+    for start in range(max(0, len(rows) - window + 1)):
+        chunk = rows[start:start + window]
+        values = drift_values(chunk)
+        if len(values) < min_measured:
+            continue
+        total += 1
+        p05 = float(np.percentile(values, 5))
+        empty_frac = sum(1 for row in chunk if row.get("empty")) / len(chunk)
+        if p05 < float(flag):
+            flagged += 1
+            if empty_frac < float(max_empty):
+                both += 1
+    return {
+        "cua_so": window,
+        "nguong_p05": flag,
+        "nguong_empty": max_empty,
+        "n_cua_so": total,
+        "n_p05_thap": flagged,
+        "n_p05_thap_va_empty_thap": both,
+        "co_dieu_kien_ticket_14": both > 0,
+    }
+
+
 def summarize(rows, *, window: int = WINDOW) -> dict:
-    """Toàn bộ số của một file mẫu: đếm, tỉ lệ mask rỗng, phân vị, tỉ lệ báo, độ trễ phát hiện."""
+    """Toàn bộ số của một file mẫu: đếm, tỉ lệ mask rỗng, phân vị, tỉ lệ báo, độ trễ phát hiện.
+
+    `drift_iou_p05` ở đây là p05 trên **toàn dãy** của lần đo, KHÁC p05 của 200 mẫu CUỐI trong
+    `status.json` — cùng định nghĩa phân vị, khác tập mẫu.
+    """
     values = drift_values(rows)
     n = len(values)
     empties = [row["empty"] for row in rows if row.get("empty") is not None]
@@ -242,4 +298,5 @@ def summarize(rows, *, window: int = WINDOW) -> dict:
         "bao_dong_070": flag_rate(values, threshold=HEALTHY_P05, window=window),
         "bao_dong_030": flag_rate(values, threshold=FLAG_P05, window=window),
         "phat_hien": detect_latency(rows, window=window),
+        "p05_thap_va_empty": low_p05_low_empty(rows, window=window),
     }
