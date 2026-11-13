@@ -282,6 +282,37 @@ async function waitJobState(page, wanted, timeout = 240000) {
   )
   check('dừng phát sạch (state=stopped)', true)
 
+  // 9c. Nguồn mặc định "0" (chuỗi UI gửi đi) phải được hiểu là WEBCAM INDEX.
+  //     Bug thật 13-11-2026: backend coi chuỗi "0" là ĐƯỜNG DẪN FILE ⇒ /api/live/start trả
+  //     "Không mở được video file: '0'" — người dùng chọn webcam mà bị báo lỗi file.
+  //     Máy chạy E2E có thể KHÔNG có webcam ⇒ chấp nhận "không có camera" hoặc chạy được;
+  //     điều bị cấm là báo lỗi "video file".
+  await liveCard.getByLabel('Nguồn frame').fill('0')
+  await liveCard.getByRole('button', { name: 'Bật phát' }).click()
+  const zeroMsg = await page.waitForFunction(
+    () => {
+      const err = document.querySelector('p.error')?.textContent || ''
+      const st = document.querySelector('[data-testid="live-status"]')?.textContent || ''
+      if (err.includes('Không mở được')) return err
+      if (st.includes('running')) return 'running'
+      return null
+    },
+    null,
+    { timeout: 20000 },
+  ).then((handle) => handle.jsonValue()).catch(() => '(không có phản hồi)')
+  check('nguồn "0" là webcam index, không phải file tên "0"',
+    zeroMsg === 'running' || /camera index/.test(zeroMsg),
+    String(zeroMsg).replace(/\s+/g, ' '))
+  if (zeroMsg === 'running') {                 // máy có webcam thật ⇒ đóng phiên cho sạch
+    await liveCard.getByRole('button', { name: 'Dừng' }).click()
+    await page.waitForFunction(
+      () => (document.querySelector('[data-testid="live-status"]')?.textContent || '')
+        .includes('stopped'),
+      null,
+      { timeout: 10000 },
+    )
+  }
+
   // 10. log lỗi JS
   check('không có lỗi JS trên trang', pageErrors.length === 0, pageErrors.join(' | '))
 

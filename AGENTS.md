@@ -243,6 +243,14 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   mẫu ở W = 20/50/100/200 (nhịp ~6,3 lần VOS/giây ⇒ W = 200 là ~30 s). Vì thế cờ chẩn đoán phải dùng
   cửa sổ ngắn, và **không** được hứa "phát hiện trong ~1 s". Chi tiết + số: log
   `docs/task/13-11-2026-ticket-15-dang-mau-drift-ra-csv.md`.
+- **`source` của web là CHUỖI: `"0"` (webcam) không được để rơi vào nhánh file.** Hợp đồng HTTP
+  khai `source: str` ("0 = webcam") nên `tools/run_live.py`/`tools/check_video_source.py` đã đổi
+  chuỗi số → `int` từ trước, nhưng `open_video_source()` chỉ coi **int** là webcam ⇒ mode `raw`
+  (`OpenCvFrameSource`) lẫn `track` (`live_worker`) nhận `"0"` đều báo
+  "Không mở được video file: '0'" (đo 13-11 trên web: bấm "Bật phát" với ô nguồn mặc định). Nay
+  factory tự đổi chuỗi chỉ-gồm-chữ-số → index webcam, **trừ khi** có file/thư mục thật trùng tên
+  (`os.path.exists`). Khi thêm nguồn mới, kiểm cả hai đầu: HTTP (chuỗi) và CLI (int). Log:
+  `docs/task/13-11-2026-live-webcam-nguon-0-tu-web.md`.
 
 ## 7. Các repo/model tham khảo
 
