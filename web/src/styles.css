@@ -190,6 +190,9 @@ h1 {
   .layout > .col-live {
     position: sticky;
     top: 76px;
+    /* Panel live cao hơn viewport (video + số liệu) ⇒ sticky không được cắt mất phần dưới. */
+    max-height: calc(100vh - 92px);
+    overflow: auto;
   }
 }
 
@@ -314,6 +317,11 @@ select:disabled {
   grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
   align-items: end;
   margin-top: 14px;
+}
+
+.file-label {
+  display: block;
+  margin-top: 4px;
 }
 
 .file-input {
@@ -498,6 +506,12 @@ canvas {
   border-radius: 50%;
   background: #fff;
   animation: pulse 1.6s ease-in-out infinite;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .stage .badge .dot {
+    animation: none;
+  }
 }
 
 @keyframes pulse {

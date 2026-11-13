@@ -169,7 +169,7 @@ class SourceProbe:
         for path in self._demo_videos():
             candidates.append(_candidate(
                 str(path), f"Video demo {path.name}", "file", True,
-                check=f"file tồn tại · {path.stat().st_size // 1024} KB"))
+                check=f"có sẵn · {path.stat().st_size // 1024} KB (chưa mở thử)"))
 
         available = [c for c in candidates if c["available"]]
         return {
@@ -187,9 +187,14 @@ class SourceProbe:
         explicit = (env.get("CAM_RELAY_URL") or "").strip()
         if explicit:
             urls.append(explicit)
+        # LUÔN thử cả IP gateway: IP WSL2 đổi sau mỗi lần restart, còn `CAM_RELAY_URL` trong env thì
+        # kẹt IP cũ ⇒ nếu chỉ dùng env thì dò hỏng câm đúng lúc người dùng đã "cấu hình đúng".
         host = self._safe(self._gateway)
-        if host and not explicit:
-            urls.extend(f"http://{host}:{port}/snapshot.jpg" for port in _RELAY_PORTS)
+        if host:
+            for port in _RELAY_PORTS:
+                url = f"http://{host}:{port}/snapshot.jpg"
+                if url not in urls:
+                    urls.append(url)
         return urls
 
     def _demo_videos(self) -> list[Path]:

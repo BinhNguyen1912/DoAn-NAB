@@ -78,12 +78,22 @@ export function LivePanel(): JSX.Element {
 
   useEffect(() => {
     detectSources()
+    // F5 giữa phiên: backend vẫn đang stream ⇒ phải lấy trạng thái thật, nếu không UI nói
+    // "Chưa phát" trong khi ảnh vẫn chạy (đúng lớp lỗi "báo sai trạng thái" ở AGENTS §6).
+    void getLiveStatus()
+      .then((current) => {
+        setStatus(current)
+        if (current.state === 'running' || current.state === 'loading') beginPolling()
+      })
+      .catch(() => undefined)
   }, [])
 
   const poll = async (): Promise<void> => {
     try {
       const next = await getLiveStatus()
       setStatus(next)
+      setError(null)                 // đọc được trạng thái = lỗi mạng thoáng qua đã hết
+      if (next.state === 'stopped' || next.state === 'error') stopPolling()
       // `frames` chỉ tăng khi NỘI DUNG frame đổi ⇒ đứng yên = ảnh không mới (không phải "nguồn chết").
       const theoDoi = lastFramesRef.current
       if (next.state !== 'running') {
@@ -108,6 +118,7 @@ export function LivePanel(): JSX.Element {
   }
 
   const onStart = async (): Promise<void> => {
+    touchedRef.current = true        // đã chốt nguồn: kết quả dò về sau không được đổi nó
     setError(null)
     setPicking(false)
     setBox(null)
@@ -151,6 +162,7 @@ export function LivePanel(): JSX.Element {
     setMode('raw')
     try {
       setStatus(await stopLive())
+      detectSources()                // lúc đang live, webcam bị bỏ khỏi danh sách ⇒ dò lại
     } catch (err) {
       setError((err as Error).message)
     }
@@ -341,7 +353,7 @@ export function LivePanel(): JSX.Element {
         // `error`: worker chết/treo giữa phiên (watchdog ở backend) — dòng chữ này là thứ DUY NHẤT
         // nói cho người vận hành biết ảnh đang đứng vì lỗi, không phải vì camera chậm.
         <p className={status.state === 'error' ? 'error' : 'hint'} data-testid="live-status"
-           role={status.state === 'error' ? 'alert' : undefined}>
+           aria-live="polite" role={status.state === 'error' ? 'alert' : undefined}>
           Trạng thái: <strong>{status.state === 'loading' ? 'đang mở…' : status.state}</strong> ·{' '}
           {status.message} · frame: {status.frames} · FPS đo được: {displayFps}
         </p>

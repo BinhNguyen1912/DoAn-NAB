@@ -37,12 +37,15 @@ export function UploadForm({ onUpload, uploading, jobId }: Props): JSX.Element {
       <p className="hint" style={{ marginTop: 0 }}>
         Xử lý offline: tải video lên → chọn vật → xuất video HUD + CSV/JSON số liệu (dùng cho báo cáo).
       </p>
-      <input
-        className="file-input"
-        type="file"
-        accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska"
-        onChange={(event) => setFile(event.target.files?.[0] ?? null)}
-      />
+      <label className="file-label">
+        Chọn video từ máy (mp4/avi/mov/mkv)
+        <input
+          className="file-input"
+          type="file"
+          accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska"
+          onChange={(event) => setFile(event.target.files?.[0] ?? null)}
+        />
+      </label>
 
       <div className="grid-opts">
         <label>

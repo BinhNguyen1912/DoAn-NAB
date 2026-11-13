@@ -176,7 +176,7 @@ class LiveSourceCandidate(BaseModel):
 class LiveSourcesResponse(BaseModel):
     """Kết quả dò nguồn — UI dùng `suggested` để tự điền ô 'Nguồn frame'."""
 
-    suggested: str = Field(description="nguồn NÊN dùng ngay ('' = không dò được nguồn nào)")
+    suggested: str = Field(default="", description="nguồn NÊN dùng ngay ('' = không dò được nguồn nào)")
     suggested_kind: str = Field(default="", description="loại của nguồn gợi ý: camera|relay|file — "
                                                        "rỗng = không có gợi ý")
     checked_at: str = Field(default="", description="thời điểm dò (giờ máy chủ) — dò cũ ≠ dò mới")

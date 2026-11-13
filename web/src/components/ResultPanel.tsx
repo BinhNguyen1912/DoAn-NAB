@@ -24,7 +24,7 @@ export function ResultPanel({ jobId, job }: { jobId: string; job: JobStatus }): 
         <span className="step">3</span>
         <h2>Kết quả</h2>
       </div>
-      <p>
+      <p data-testid="job-status">
         Trạng thái: <strong>{job.state}</strong> — {job.message}
       </p>
 

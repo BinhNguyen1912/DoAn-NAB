@@ -85,11 +85,13 @@ class TestThuTuUuTien:
         probe, _ = _probe(tmp_path)
         assert probe.suggest()["suggested"] == ""
 
-    def test_cam_relay_url_duoc_uu_tien_hon_do_gateway(self, tmp_path):
+    def test_cam_relay_url_duoc_thu_truoc_gateway(self, tmp_path):
+        """Env URL được thử TRƯỚC, nhưng vẫn thử gateway sau (IP WSL2 đổi sau restart)."""
         url = "http://192.168.1.9:8090/snapshot.jpg"
         probe, calls = _probe(tmp_path, http={url}, env={"CAM_RELAY_URL": url})
         assert probe.suggest()["suggested"] == url
-        assert calls["http"] == [url]            # không dò thêm IP gateway
+        assert calls["http"][0] == url
+        assert "http://10.0.0.5:8090/snapshot.jpg" in calls["http"]
 
 
 class TestKhongTranhThietBi:
@@ -151,6 +153,18 @@ class TestEndpoint:
         body = res.json()
         assert body["suggested"] == "" and body["candidates"] == []
         assert res.headers["Cache-Control"] == "no-store"
+
+    def test_do_loi_giua_chung_van_tra_200(self):
+        """Dựng DTO nằm trong try: dict hỏng giữa đường không được biến thành 500."""
+        def hong_sau_khi_co_du_lieu():
+            class _Bad(dict):
+                def get(self, *_a, **_k):
+                    raise RuntimeError("dữ liệu dò hỏng")
+
+            return _Bad()
+
+        res = self._client(hong_sau_khi_co_du_lieu).get("/api/live/sources")
+        assert res.status_code == 200
 
     def test_bo_do_khong_tim_thay_nguon_thi_tra_rong(self):
         """`create_app(sources=None)` = dùng bộ dò THẬT; muốn "không dò" thì tiêm bộ dò rỗng."""
@@ -219,3 +233,50 @@ class TestNganSachThoiGian:
         monkeypatch.setattr("urllib.request.urlopen", slow_urlopen)
         assert sp.http_snapshot_ok("http://10.0.0.5:8090/snapshot.jpg") is False
         assert calls == [0.8], "timeout HTTP phải là 0.8 s (ngân sách dò ≤ ~1,6 s cho 2 URL)"
+
+
+class TestDangBanThietBi:
+    def test_loading_cung_la_dang_ban(self):
+        """`LOADING` = worker `track` đang nạp model rồi SẼ mở camera ⇒ phải coi là bận (P1 review)."""
+        from src.api.domain import LiveState
+        from src.api.main import live_uses_device
+
+        class _Live:
+            def __init__(self, state):
+                self._state = state
+
+            def status(self):
+                class _S:
+                    pass
+
+                s = _S()
+                s.state = self._state
+                return s
+
+        assert live_uses_device(_Live(LiveState.RUNNING)) is True
+        assert live_uses_device(_Live(LiveState.LOADING)) is True
+        assert live_uses_device(_Live(LiveState.STOPPED)) is False
+        assert live_uses_device(_Live(LiveState.ERROR)) is False
+
+
+class TestRelayEnvHong:
+    def test_env_sai_van_thu_gateway(self, tmp_path):
+        """`CAM_RELAY_URL` kẹt IP cũ (IP WSL2 đổi sau restart) không được chặn dò gateway."""
+        gateway_url = "http://10.0.0.5:8090/snapshot.jpg"
+        probe, calls = _probe(tmp_path, http={gateway_url},
+                             env={"CAM_RELAY_URL": "http://10.9.9.9:8090/snapshot.jpg"})
+        result = probe.suggest()
+        assert result["suggested"] == gateway_url
+        assert calls["http"] == ["http://10.9.9.9:8090/snapshot.jpg", gateway_url]
+
+
+class TestUngVienHongKhongLam500:
+    def test_dict_ung_vien_thieu_khoa_van_200(self):
+        from fastapi.testclient import TestClient
+
+        from src.api.main import create_app
+
+        sources = lambda: {"suggested": "0", "candidates": [{"source": "0"}]}   # noqa: E731
+        res = TestClient(create_app(sources=sources)).get("/api/live/sources")
+        assert res.status_code == 200
+        assert res.json()["candidates"] == []      # ứng viên hỏng bị bỏ, không nổ 500

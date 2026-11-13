@@ -166,19 +166,26 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
         Dò có thể mở webcam/chờ HTTP ⇒ adapter `SourceProbe` tự cache (`CACHE_TTL_S`), và hàm này
         là `def` đồng bộ nên FastAPI chạy nó trong threadpool (không chặn event loop).
         """
+        response.headers["Cache-Control"] = "no-store"    # kết quả dò là trạng thái SỐNG
+        # Dựng DTO nằm TRONG try: một dict ứng viên thiếu khoá cũng không được biến thành 500.
         try:
             data = sources() if callable(sources) else {}
+            candidates = []
+            for raw in data.get("candidates", []):
+                try:
+                    candidates.append(LiveSourceCandidate(**raw))
+                except Exception:         # noqa: BLE001 — bỏ ứng viên hỏng, giữ phần còn lại
+                    logger.warning("bỏ ứng viên nguồn không hợp lệ: %r", raw, exc_info=True)
+            return LiveSourcesResponse(
+                suggested=data.get("suggested", ""),
+                suggested_kind=data.get("suggested_kind", ""),
+                checked_at=data.get("checked_at", ""),
+                budget_ms=int(data.get("budget_ms", 0) or 0),
+                candidates=candidates,
+            )
         except Exception:                 # noqa: BLE001 — dò nguồn là TIỆN ÍCH, không được làm 500
             logger.warning("dò nguồn frame thất bại", exc_info=True)
-            data = {}
-        response.headers["Cache-Control"] = "no-store"    # kết quả dò là trạng thái SỐNG
-        return LiveSourcesResponse(
-            suggested=data.get("suggested", ""),
-            suggested_kind=data.get("suggested_kind", ""),
-            checked_at=data.get("checked_at", ""),
-            budget_ms=int(data.get("budget_ms", 0) or 0),
-            candidates=[LiveSourceCandidate(**c) for c in data.get("candidates", [])],
-        )
+            return LiveSourcesResponse()
 
     @router.post("/api/live/start", response_model=LiveStatusResponse)
     def start_live(payload: LiveStartRequest) -> LiveStatusResponse:

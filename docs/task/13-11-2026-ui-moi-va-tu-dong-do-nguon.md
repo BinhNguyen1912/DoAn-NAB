@@ -103,6 +103,34 @@ Góc nhìn **sản phẩm & bằng chứng bảo vệ** (demo trước hội đ�
 Không làm (đưa vào Next steps): script đo `scripts/measure_live_sources.py` (p95 gọi đầu ≤ 500 ms, cache-hit ≤ 50 ms,
 first-frame ≤ 1500 ms) và đo LCP/CLS trong E2E — cần thêm thời gian, chưa chặn merge.
 
+## 🔍 Kết quả review độc lập (§9.1) — vòng 3
+- **Ai review**: agent `reviewer` qua tool `task` (chỉ đọc). Kết luận: **0 P0**, 1 P1 code, 1 P1 tài liệu;
+  kiến trúc ADR-0005 **đạt** (`SourceProbe` không rò vào domain/routes/service), hợp đồng API cũ không đổi,
+  luồng chọn đối tượng và tỉ lệ canvas **không bị phá** (E2E `16,36,48×48` vẫn xanh).
+- **P1 code — `live_busy` phải gồm `LOADING`**: reviewer đọc bản trước commit `8f70f1c`; bản hiện tại đã
+  sửa, và tôi tách `live_uses_device()` ở `main.py` để **test được** (`TestDangBanThietBi`: RUNNING/LOADING
+  ⇒ True, STOPPED/ERROR ⇒ False).
+- **P1 tài liệu**: thiếu `docs/plan/…` và bullet `AGENTS.md` §6 → đã viết
+  `docs/plan/13-11-2026-ui-tu-dong-nguon.md` (3 góc nhìn + tranh chấp + 5 phương án bị bác) và thêm bullet
+  §6 (dò nguồn chỉ lúc có request; `available` ≠ "đang chạy"; cấm dùng `fps` của relay).
+- **P2/P3 đã sửa trong PR**:
+  - `touchedRef` chưa set khi bấm "Bật phát" ⇒ kết quả dò về muộn có thể đổi nguồn giữa phiên: đã set.
+  - `CAM_RELAY_URL` sai **chặn luôn** dò gateway (IP WSL2 đổi sau restart) ⇒ luôn thử gateway sau env;
+    test `test_env_sai_van_thu_gateway`.
+  - Dò lại sau "Dừng" (lúc đang live, webcam bị bỏ khỏi danh sách) + F5 giữa phiên giờ lấy trạng thái
+    thật thay vì hiện "Chưa phát"; poll tự dừng khi `stopped|error`; lỗi mạng thoáng qua được xoá khi
+    đọc lại được trạng thái.
+  - Dựng DTO nằm **trong** `try` ⇒ một dict ứng viên hỏng không thành 500 (test `..._giua_chung_van_tra_200`).
+  - Ứng viên `file`: chữ "đã kiểm" → **"có sẵn · N KB (chưa mở thử)"** (đúng thứ đã kiểm).
+  - E2E: thêm check **"nguồn frame tự điền theo kết quả dò của backend"** (đây là lỗ hổng *bằng chứng*
+    reviewer bắt được: trước đó không có test nào phủ tính năng chính) và `waitJobState` scope vào
+    `[data-testid="job-status"]` (panel live cũng có dòng "Trạng thái:", đứng trước trong DOM).
+  - A11y: file input có `<label>`, `p.error` có `role="alert"`, dòng trạng thái `aria-live="polite"`,
+    `prefers-reduced-motion` tắt nhấp nháy badge; cột live sticky có `max-height` + `overflow:auto`.
+- **Còn nợ (Next steps)**: đường dẫn tuyệt đối `data/` trong response (API chạy VPS cần rà), `image_size`
+  trong `LiveStatusResponse`, card tổng kết phiên, `scripts/measure_live_sources.py`, TTL riêng cho kết quả
+  dò âm, và follower của `suggest()` vẫn chiếm 1 thread threadpool khi phải chờ (chưa đo ca xấu).
+
 ## 📌 Next steps
 - [ ] Review độc lập §9.1 cho nhánh `feat/ui-tu-dong-do-nguon` → sửa P0/P1 → merge.
 - [ ] Cân nhắc nhớ nguồn gần nhất (`localStorage`) — hiện chỉ tự điền theo kết quả dò.

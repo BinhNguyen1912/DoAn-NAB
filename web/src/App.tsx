@@ -103,7 +103,7 @@ export default function App(): JSX.Element {
           </p>
         </section>
 
-        {error && <p className="error">Lỗi: {error}</p>}
+        {error && <p className="error" role="alert">Lỗi: {error}</p>}
 
         <div className="layout">
           <div className="col col-live">

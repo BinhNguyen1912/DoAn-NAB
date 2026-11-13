@@ -80,6 +80,16 @@ def build_default_service(settings: ApiSettings) -> JobService:
     )
 
 
+def live_uses_device(live) -> bool:
+    """Phiên live có đang (hoặc sắp) mở thiết bị camera không?
+
+    `LOADING` cũng tính: `LiveStreamService.start()` đặt `LOADING` TRƯỚC khi mở nguồn, và với mode
+    `track` cửa sổ đó là 20–240 s (worker nạp model rồi mở camera) — dò webcam đúng lúc này là
+    tranh thiết bị với chính phiên đang mở (V4L2/DirectShow khoá độc quyền).
+    """
+    return live.status().state in (LiveState.RUNNING, LiveState.LOADING)
+
+
 def build_default_live() -> LiveStreamService:
     """Lắp ghép phiên live: mode "raw" = OpenCV tại chỗ, mode "track" = worker model riêng."""
     # Thiết bị chạy model cho phiên live: `CAMERA_AI_DEVICE=cuda` (Colab/NVIDIA) | mặc định cpu.
@@ -141,10 +151,7 @@ def create_app(settings: ApiSettings | None = None,
     if sources is None:
         # Bỏ dò webcam khi phiên live đang chạy HOẶC đang nạp (`loading` = worker `track` nạp model
         # 20–240 s rồi sẽ mở đúng thiết bị đó — mở thêm lúc này là ca "Device busy" ở AGENTS §6).
-        probe = SourceProbe(
-            REPO_ROOT,
-            live_busy=lambda: live.status().state in (LiveState.RUNNING, LiveState.LOADING),
-        )
+        probe = SourceProbe(REPO_ROOT, live_busy=lambda: live_uses_device(live))
         sources = probe.suggest
 
     @asynccontextmanager
