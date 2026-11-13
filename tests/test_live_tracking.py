@@ -1285,7 +1285,9 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        assert session._pending_drift == (0, (4, 4, 12, 12))
+        # Tuple hẹn nay mang cả dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq,
+        # vos_ms, empty). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`).
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -1376,3 +1378,71 @@ class TestStabilityShownCoEncodingChuaDo:
         """Tên thiết bị rác không được lọt vào status.json như một khẳng định đúng."""
         with pytest.raises(ValueError, match="device"):
             LiveTrackConfig(source=video_source, out_dir=tmp_path / "x", device="gpu")
+
+
+class TestDriftSamplesCsv:
+    """Ticket 15: từng mẫu drift ra `drift_samples.csv` để đo được độ trễ phát hiện + tỉ lệ báo oan.
+
+    Vì sao cần: `status.json` chỉ có mean/p05 của cửa sổ 200 mẫu ⇒ không trả lời được "phát hiện sau
+    bao nhiêu mẫu" và "% cửa sổ báo oan". Dãy mẫu phải TÁI LẬP ĐÚNG con số đã công bố, nếu không
+    nó chỉ là một phép tính khác mang cùng tên.
+    """
+
+    def test_csv_khop_cua_so_trong_status(self, textured_video, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3, loop_files=True))
+        stats = session.run(stop_event=_StopAfter(40))
+
+        from src.drift_samples import read_samples
+
+        rows = read_samples(out / "drift_samples.csv")
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["drift_n"] > 0, "phiên có LK + đủ frame phải đo được mẫu drift"
+        # CSV giữ TẤT CẢ mẫu; `status.json` chỉ giữ cửa sổ 200 mẫu ⇒ CSV >= drift_n.
+        assert len(rows) >= status["drift_n"]
+        assert stats.drift_n == status["drift_n"]
+        # Mỗi dòng phải truy được về một lần VOS + một frame cụ thể (đó là toàn bộ mục đích của file).
+        assert all(row["frame_idx"] is not None for row in rows)
+        assert all(row["seq"] is not None for row in rows)
+        # 200 mẫu cuối phải cho đúng `drift_iou` đã công bố trong status.json.
+        values = [row["drift_iou"] for row in rows][-200:]
+        assert round(sum(values) / len(values), 3) == pytest.approx(status["drift_iou"], abs=1e-3)
+
+    def test_tat_lk_thi_khong_sinh_file_mau(self, textured_video, tmp_path):
+        """`vos_every=1` (tắt LK): không có nội suy ⇒ KHÔNG có CSV. File rỗng dễ bị đọc là "đã đo"."""
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=1,
+            loop_files=True)).run(stop_event=_StopAfter(8))
+
+        assert not (out / "drift_samples.csv").exists()
+
+    def test_nhanh_pending_cung_ghi_mot_dong(self, tmp_path):
+        """Ca VOS trả về TRƯỚC khi frame được phát: mẫu được chấm lúc phát frame ⇒ CSV phải có dòng.
+
+        Bỏ sót nhánh này thì dãy mẫu thiếu đúng những lúc engine nhanh — tức đúng những đoạn
+        `_pending_drift` chiếm phần lớn (máy GPU).
+        """
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        co_vat = np.zeros((32, 32), bool)
+        co_vat[4:12, 4:12] = True
+        session._measure_drift(0, _Result(0, (4, 4, 12, 12), co_vat))
+        assert session._pending_drift is not None
+
+        session._frame_index = 0
+        session._update_stats(_Result(0, (4, 4, 12, 12), co_vat))
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["frame_idx"] == 0
+        assert rows[0]["drift_iou"] == 1.0          # ô bao đã phát TRÙNG ô bao VOS
+        assert rows[0]["empty"] is False
+        assert session._stats.drift_n == 1

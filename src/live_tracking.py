@@ -5,7 +5,9 @@ Chức năng: mở nguồn frame, chờ ô chọn đối tượng (hoặc nhận
            (mỗi `vos_every` frame) và dùng **LK optical flow** cho các frame còn lại; vẽ overlay và
            ghi **frame mới nhất** + **trạng thái** ra thư mục chia sẻ để API đọc và phát.
 Input  : engine (TrackerEngine hoặc engine giả trong test), LiveTrackConfig.
-Output : `<out_dir>/frame.jpg` (JPEG mới nhất), `<out_dir>/status.json`, `<out_dir>/worker.log`.
+Output : `<out_dir>/frame.jpg` (JPEG mới nhất), `<out_dir>/status.json`, `<out_dir>/worker.log`,
+         và `<out_dir>/drift_samples.csv` (từng mẫu drift — xem `src/drift_samples.py`; file chỉ
+         sinh ra khi phiên thật sự đo được mẫu nào).
 Lưu ý  : đây là phần CHẠY TRONG TIẾN TRÌNH RIÊNG (tools/live_worker.py) — nhờ vậy API vẫn không
          import torch/SAM 2 (ADR-0005).
          **Kiến trúc hybrid (Phase 4c):** VOS (97 ms @image_size 192) không thể chạy mỗi frame
@@ -31,6 +33,7 @@ import cv2
 import numpy as np
 
 from src.device import normalize_device
+from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src.light_tracker import LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
@@ -338,7 +341,11 @@ class LiveTrackingSession:
         # một khoảng bằng độ trễ suy luận (review 08-11 chỉ ra phép so cũ lệch ~3 frame).
         self._shown_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
         self._seq_frame: dict = {}       # seq → chỉ số frame đã phát lúc gửi cho VOS
-        self._pending_drift = None       # (frame_idx, bbox VOS) chờ frame đó được phát để so
+        # (frame_idx, bbox VOS, seq, vos_ms, empty) chờ frame đó được phát để so
+        self._pending_drift = None
+        # Từng mẫu drift ra CSV (ticket 15): status.json chỉ có mean/p05 ⇒ không đo được độ trễ
+        # phát hiện và tỉ lệ báo oan. Lock riêng của logger ⇒ KHÔNG ghi trong `_stats_lock`.
+        self._drift_log = DriftSampleLog(Path(config.out_dir) / DRIFT_CSV_NAME)
         self._iou_window: deque = deque(maxlen=10)
         self._shown_iou_window: deque = deque(maxlen=10)
         self._prev_shown_mask = None
@@ -424,6 +431,7 @@ class LiveTrackingSession:
             self._stop_worker()
             if self._source is not None:
                 self._source.close()
+            self._drift_log.close()
             # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
             self._publish_status(out_dir)
         # Trả BẢN SAO: `join(5 s)` có thể timeout và luồng VOS còn ghi `_stats` sau đó ⇒ trả object
@@ -459,7 +467,8 @@ class LiveTrackingSession:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
         self._record_vos(result)
         frame_idx = self._seq_frame.pop(seq, None)
-        self._measure_drift(frame_idx, result)   # nội suy LK lệch bao nhiêu ở ĐÚNG frame đó
+        # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
+        self._measure_drift(frame_idx, result, seq)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         with self._lock:
             self._vos_state = (seq, result, gray, time.perf_counter(),
@@ -550,7 +559,7 @@ class LiveTrackingSession:
                 return bbox
         return None
 
-    def _measure_drift(self, frame_idx, result) -> None:
+    def _measure_drift(self, frame_idx, result, seq=None) -> None:
         """Nội suy LK **sai bao nhiêu** ở đúng frame mà VOS vừa trả kết quả.
 
         Ý nghĩa: `drift_iou` = IoU giữa ô bao mà người xem đã thấy ở frame đó (do LK nội suy) và
@@ -574,11 +583,37 @@ class LiveTrackingSession:
             if shown is None:
                 # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát
                 # frame; nếu frame đó đã trôi qua thì BỎ, không lấy ô bao của frame khác (đo sai thứ).
-                self._pending_drift = (frame_idx, tuple(fresh))
+                self._pending_drift = (frame_idx, tuple(fresh), seq,
+                                       float(getattr(result, "elapsed_ms", 0.0)),
+                                       self._mask_empty(result))
                 return
         if not _bbox_hop_le(shown):
             return
-        self._record_drift(_bbox_iou(shown, fresh))
+        value = _bbox_iou(shown, fresh)
+        self._record_drift(value)
+        self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value)
+
+    @staticmethod
+    def _mask_empty(result):
+        """Mask của kết quả VOS có RỖNG không — `None` khi engine không trả mask (chưa đo)."""
+        mask = getattr(result, "mask", None)
+        if mask is None:
+            return None
+        return not bool(mask.any())
+
+    def _log_drift_sample(self, *, frame_idx, seq, value, result=None, vos_ms=None,
+                          empty=None, bbox=None) -> None:
+        """Ghi MỘT dòng CSV cho mẫu drift (ticket 15). PHẢI gọi khi KHÔNG giữ `_stats_lock`.
+
+        `result` là kết quả VOS (có `elapsed_ms`/`mask`/`bbox`); nhánh `_pending_drift` tới hạn thì
+        dữ liệu đã tách sẵn trong tuple hẹn (`vos_ms`/`empty`/`bbox`) → không truyền `result`.
+        """
+        self._drift_log.write(
+            frame_idx=frame_idx, seq=seq,
+            vos_ms=(float(getattr(result, "elapsed_ms", 0.0)) if vos_ms is None else vos_ms),
+            empty=(self._mask_empty(result) if empty is None else empty),
+            drift_iou=value,
+            bbox=(getattr(result, "bbox", None) if bbox is None else bbox))
 
     def _record_drift(self, value) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
@@ -725,9 +760,13 @@ class LiveTrackingSession:
 
     def _update_stats(self, result) -> None:
         with self._stats_lock:
-            self._update_stats_locked(result)
+            row = self._update_stats_locked(result)
+        # Ghi CSV NGOÀI lock: I/O trong `_stats_lock` sẽ chặn luồng VOS (nó cũng cần lock này).
+        if row is not None:
+            self._log_drift_sample(**row)
 
-    def _update_stats_locked(self, result) -> None:
+    def _update_stats_locked(self, result):
+        """Cập nhật số liệu; TRẢ về dòng CSV cần ghi (mẫu `_pending_drift` tới hạn) hoặc `None`."""
         now = time.perf_counter()
         self._stats.frames += 1
         self._display_stamps.append(now)
@@ -741,6 +780,7 @@ class LiveTrackingSession:
         shown = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
         self._shown_by_frame.append((self._frame_index, shown))
         pending = self._pending_drift
+        csv_row = None
         if pending is not None:
             self._pending_drift = None
             if pending[0] == self._frame_index and shown is not None:
@@ -748,6 +788,9 @@ class LiveTrackingSession:
                 if value is not None:          # ở đây ĐANG giữ `_stats_lock` ⇒ không gọi _record_drift
                     self._drift_window.append(value)
                     self._apply_drift_locked()
+                    csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
+                               "vos_ms": pending[3], "empty": pending[4],
+                               "value": value, "bbox": pending[1]}
             # pending[0] < frame hiện tại ⇒ frame đó đã trôi qua, bỏ mẫu (không bịa)
         lost = mask is None or not mask.any()
         self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
@@ -755,6 +798,7 @@ class LiveTrackingSession:
         if not lost:
             x1, y1, x2, y2 = result.bbox
             self._trail.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
+        return csv_row
 
     def _annotate(self, frame, result):
         """Tô mask + ô bao + quỹ đạo + HUD. Chữ HUD dùng ASCII vì font Hershey không có dấu."""

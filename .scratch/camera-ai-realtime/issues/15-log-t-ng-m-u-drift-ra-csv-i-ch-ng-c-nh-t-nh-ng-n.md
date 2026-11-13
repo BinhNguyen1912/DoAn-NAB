@@ -9,7 +9,7 @@ Vì sao: p05@200 có độ trễ bất đối xứng (bắt ~1,2 s khi hỏng ho
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Có `data/drift_samples_*.csv` cho ít nhất binh1 (3 lần) + binh2 (1 lần), mỗi dòng có `frame_idx` và `drift_iou` hoặc cột `empty`
 - [ ] Artifact kèm `git_rev`, `git_dirty_code`, `lenh`, `do_luc` (quy tắc AGENTS §6)

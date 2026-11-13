@@ -50,3 +50,7 @@ data/e2e_*
 # artifact đo (gặp khi đo lại bằng camera thật cho nhánh này).
 /samurai
 /models
+# Dãy mẫu drift từng mẫu (ticket 15): CSV nhỏ (~40 KB/900 mẫu) + provenance của lần đo — phải vào
+# Git để "% cửa sổ báo oan" và "phát hiện sau N mẫu" trong báo cáo kiểm chứng lại được.
+!data/drift_samples_*.csv
+!data/drift_samples_*.meta.json

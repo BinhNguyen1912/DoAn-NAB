@@ -263,3 +263,47 @@ def test_ten_file_mac_dinh_co_gio():
     stamp = datetime(2026, 11, 10, 21, 5, 7).astimezone()
     name = f"live_web_relay_{stamp:%Y-%m-%d_%H%M%S}_metrics.json"
     assert name == "live_web_relay_2026-11-10_210507_metrics.json"
+
+
+class TestLuuMauDrift:
+    """Ticket 15: dãy mẫu drift phải ra `data/` kèm provenance, và KHÔNG bịa file khi phiên không đo.
+
+    Bẫy đã gặp thật: mỗi dòng CSV là bằng chứng cho "% cửa sổ báo oan" — nếu file của phiên TRƯỚC
+    còn trong `out_dir` thì nó sẽ được chép ra `data/` như số của lần đo NÀY.
+    """
+
+    def test_chep_ra_data_kem_meta(self, tmp_path, monkeypatch):
+        out = tmp_path / "out"
+        out.mkdir()
+        (out / "drift_samples.csv").write_text(
+            "frame_idx,seq,vos_ms,empty,drift_iou,bbox_x1,bbox_y1,bbox_x2,bbox_y2\n"
+            "5,2,131.5,0,0.8750,1,2,30,40\n", encoding="utf-8")
+        monkeypatch.setattr(relay, "_REPO_ROOT", tmp_path)          # không ghi vào repo thật
+        (tmp_path / "data").mkdir()
+        from datetime import datetime
+
+        result = relay._luu_mau_drift(out, "binh1", datetime(2026, 11, 12, 14, 30, 0),
+                                      {"git_rev": "abc1234", "lenh": "python x.py"})
+
+        assert result["n_dong"] == 1
+        assert result["csv"] == "data/drift_samples_binh1_2026-11-12_143000.csv"
+        assert result["meta"] == "data/drift_samples_binh1_2026-11-12_143000.meta.json"
+        meta = json.loads((tmp_path / result["meta"]).read_text(encoding="utf-8"))
+        assert meta["git_rev"] == "abc1234"
+        assert (tmp_path / result["csv"]).read_text(encoding="utf-8").splitlines()[1].startswith("5,2,")
+
+    def test_khong_co_file_thi_khong_tao_artifact_rong(self, tmp_path, monkeypatch):
+        """`csv=None` + `n_dong=0` + lý do — người đọc artifact không thấy "0 mẫu đã đo"."""
+        monkeypatch.setattr(relay, "_REPO_ROOT", tmp_path)
+        from datetime import datetime
+
+        result = relay._luu_mau_drift(tmp_path / "out", "binh1", datetime(2026, 11, 12),
+                                      {"git_rev": "abc"})
+        assert result["csv"] is None and result["n_dong"] == 0
+        assert "không ghi mẫu drift" in result["ly_do"]
+        assert not (tmp_path / "data").exists()
+
+    def test_ten_clip_bo_ky_tu_la(self):
+        assert relay._ten_clip("data/binh1.mp4") == "binh1"
+        assert relay._ten_clip("https://cam/snapshot.jpg") == "relay"
+        assert relay._ten_clip("data/my clip (1).mp4") == "my_clip_1_"
