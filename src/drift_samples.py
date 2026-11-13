@@ -196,22 +196,34 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = MIN_SAMP
 
     Đây là phép kiểm **bookkeeping** (`_shown_at`/`_pending_drift`), không phải phép đo chất lượng
     bám: cảnh tĩnh mà drift thấp nghĩa là ta đang so SAI CẶP frame, chứ không phải LK kém.
+
+    Tiêu chí đạt = **`drift_iou` (trung bình) ≥ `min_drift`** — đúng đại lượng đã đăng ký trước trong
+    ticket 15. `p05` KHÔNG tham gia phán quyết vì đuôi thấp của cảnh tĩnh bị làm bẩn bởi phép
+    **làm tròn toạ độ nguyên** của LK (đo 13-11, 357 mẫu: mean 0,9955 nhưng p05 0,9885 — lệch
+    0,0015 so với ngưỡng). Ghi chú đi kèm nói rõ khi p05 dưới ngưỡng, để không ai đọc p05 thành
+    lỗi bookkeeping.
     """
     values = drift_values(rows)
     n = len(values)
+    mean = round(float(np.mean(values)), 4) if n else None
     p05 = round(float(np.percentile(values, 5)), 4) if n >= min_samples else None
     reasons = []
     if n < min_samples:
         reasons.append(f"chỉ có {n} mẫu (< {min_samples}) — chưa đủ để kết luận")
+    elif mean is not None and mean < float(min_drift):
+        reasons.append(f"mean = {mean} < {min_drift} ⇒ nghi so lệch cặp frame, KHÔNG phải LK kém")
+    notes = []
     if p05 is not None and p05 < float(min_drift):
-        reasons.append(f"p05 = {p05} < {min_drift} ⇒ nghi so lệch cặp frame, KHÔNG phải LK kém")
+        notes.append(f"p05 = {p05} < {min_drift} trong khi mean ĐẠT: đuôi thấp do làm tròn toạ độ "
+                     "nguyên của LK, không phải lỗi bookkeeping")
     return {
         "n": n,
-        "drift_iou_mean": round(float(np.mean(values)), 4) if n else None,
+        "drift_iou_mean": mean,
         "drift_iou_p05": p05,
-        "nguong_p05": min_drift,
+        "nguong_mean": min_drift,
         "dat": not reasons,
         "ly_do": reasons,
+        "ghi_chu": notes,
     }
 
 

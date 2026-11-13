@@ -1,0 +1,23 @@
+{
+  "do_luc": "2026-11-13T12:40:00+07:00",
+  "git_rev": "713f869650ef5c54c68eb05bd40a086a335ec88c",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu": "Mỗi dòng = 1 mẫu drift của phiên live (frame_idx, seq, vos_ms, empty, drift_iou, bbox). Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
+  "lenh": "python scripts/measure_live_relay.py --source data/tinh_binh1.mp4 --bbox 104,308,209,287 --image-size 192 --vos-every 3 --seconds 55 --port 8021",
+  "nguon": "data/tinh_binh1.mp4",
+  "thiet_lap": {
+    "bbox_xywh": [
+      104,
+      308,
+      209,
+      287
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "seconds": 55.0
+  },
+  "device_yeu_cau": "cpu",
+  "device_worker_log": "cpu"
+}

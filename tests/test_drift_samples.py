@@ -168,12 +168,13 @@ class TestTiLeBaoVaDoTre:
 
 
 class TestDoiChungCanhTinh:
-    def test_canh_tinh_dat_khi_p05_cao(self):
+    def test_canh_tinh_dat_khi_drift_gan_1(self):
         result = static_control(_rows([1.0] * 25))
         assert result["n"] == 25
-        assert result["drift_iou_p05"] == 1.0
+        assert result["drift_iou_mean"] == 1.0
         assert result["dat"] is True
         assert result["ly_do"] == []
+        assert result["ghi_chu"] == []
 
     def test_canh_tinh_khong_dat_khi_thieu_mau(self):
         result = static_control(_rows([1.0] * 5))
@@ -181,7 +182,21 @@ class TestDoiChungCanhTinh:
         assert result["dat"] is False
         assert "chưa đủ" in result["ly_do"][0]
 
-    def test_canh_tinh_khong_dat_khi_p05_tut_va_neu_dung_nguyen_nhan(self):
+    def test_mean_dat_nhung_p05_thap_thi_van_dat_va_co_ghi_chu(self):
+        """Số ĐO THẬT 13-11 (cảnh tĩnh, 357 dòng): mean 0,9955 / p05 0,9885.
+
+        Tiêu chí của ticket là `drift_iou >= 0,99` trên **mean** ⇒ ĐẠT. `p05` dưới ngưỡng do làm
+        tròn toạ độ nguyên của LK — phải được ghi chú chứ không âm thầm bỏ qua.
+        """
+        rows = _rows([0.9955] * 340 + [0.985] * 40)
+        result = static_control(rows)
+        assert result["drift_iou_mean"] == pytest.approx(0.995, abs=1e-3)
+        assert result["drift_iou_p05"] < 0.99
+        assert result["dat"] is True
+        assert result["ly_do"] == []
+        assert "làm tròn toạ độ nguyên" in result["ghi_chu"][0]
+
+    def test_canh_tinh_khong_dat_khi_drift_tut_that(self):
         """Cảnh tĩnh mà drift thấp ⇒ lỗi SO LỆCH CẶP FRAME (bookkeeping), không phải "LK kém"."""
         rows = _rows([1.0] * 20 + [0.5] * 20)
         result = static_control(rows)
@@ -245,4 +260,4 @@ class TestPhanTichFile:
 
         assert result["co_meta"] is False                   # không có `.meta.json` ⇒ nói thẳng
         assert result["doi_chung_canh_tinh"]["dat"] is True
-        assert result["doi_chung_canh_tinh"]["drift_iou_p05"] == 1.0
+        assert result["doi_chung_canh_tinh"]["drift_iou_mean"] == 1.0
