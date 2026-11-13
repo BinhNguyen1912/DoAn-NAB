@@ -40,7 +40,11 @@ khi chạy cell, và truyền `--bbox` đúng:
    - Cell 4: chạy pipeline `--device cuda` → ra mp4 + CSV + JSON.
    - Cell 5: in số liệu + xem video ngay trong notebook.
    - Cell 6: tải 3 file về máy.
-4. Đưa video vào slide; đưa số GPU vào báo cáo mục "Đánh giá hiệu năng", **cạnh** số CPU laptop.
+4. **Mục 8 — đo đường LIVE trên GPU (ticket 21 phần 2):** cell **8a** kiểm video + bbox (in
+   `WxH | số frame`, ghi `data/bbox_check.jpg`, chặn clip tổng hợp) → cell **8b** đo 2 lần × 2 mức
+   `image_size` (512/192) → cell **8c** đọc `vos_ms`/`lk_ms`/`mask_age_p95`/`drift` + `device_worker_log`
+   rồi tải 4 artifact `live_{512,192}_lan{1,2}_metrics.json`.
+5. Đưa video vào slide; đưa số GPU vào báo cáo mục "Đánh giá hiệu năng", **cạnh** số CPU laptop.
 
 ## Video nguồn nên quay thế nào
 

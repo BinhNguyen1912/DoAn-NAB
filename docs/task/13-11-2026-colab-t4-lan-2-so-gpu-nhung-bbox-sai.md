@@ -21,20 +21,24 @@
   `device_worker_log = cpu`, nguồn `data/input_tong_hop_60f.mp4` = 60 frame 1280×720 sinh bằng đúng tham
   số cell 3b: `square_size=120, start=(200,200), velocity=(14,6)`) + dãy mẫu
   `data/drift_samples_input_tong_hop_60f_2026-11-13_140724.csv` (233 dòng, `drift_iou` trung bình 0,126).
+  Clip đó = `data/input.mp4` do cell 3b sinh (60 frame 1280×720, 25 fps, ô vuông 120 px ở `200,200`,
+  vận tốc `14,6`); bản dùng để đo đã đổi tên `data/input_tong_hop_60f.mp4` (bị `.gitignore` chặn,
+  sha256 `5d1a54914d6c67dee6be3c27012c1ee3391fcca7052636ee99224ac8e586739c`, 60 frame) — muốn tái lập thì chạy cell 3b rồi đổi tên như vậy.
 
 ## 🔨 Công việc đã thực hiện
 1. Đọc 2 artifact: `ket_qua = true`, `device_worker_log = cuda`, `git_dirty_code = false` ⇒ **lần đo này
    hợp lệ về đường ống** (khác hẳn lần 12-11 thất bại). Kiểm `worker_status` để lấy `vos_ms`/`lk_ms`/
    `mask_age_p95` (những số **không** đi qua API live).
 2. Nghi vấn chất lượng: `drift_iou` 0,203 (512) / 0,346 (192) và `stability` 0,27 / 0,35 — trong khi đo
-   trên CPU với **cùng model, cùng `image_size 192`** trên `data/binh1.mp4` cho drift 0,86 / stability
-   0,96. Chênh quá lớn ⇒ kiểm clip.
+   trên CPU với **cùng model, cùng `image_size 192`** trên `data/binh1.mp4` cho `drift_iou` 0,86 và
+   `stability_shown` **0,88** (13-11, 3 file `live_web_relay_2026-11-13_1256…`) / **0,95–0,96** (10-11,
+   3 file `live_gpu_device_cpu_baseline_run1..3_2026-11-10_metrics.json`). Chênh quá lớn ⇒ kiểm clip.
 3. **Tái lập trên CPU** (artifact lưu ở `data/repro_bbox_tro_nen_cpu_2026-11-13_metrics.json`): sinh lại
    đúng clip tổng hợp của notebook (60 frame, 1280×720, ô vuông frame 0 ở `200,200`, vận tốc `14,6`) rồi
    chạy `measure_live_relay` với bbox `104,308,209,287`/`image_size 192`: được **`drift_iou = 0,118`,
-   `stability_shown = 0,389`** (lần chạy thử trước đó, không lưu artifact: 0,114 / 0,35 — hai lần cùng kết
-   luận, SAM 2 không tất định) ⇒ **trùng khớp số Colab** (0,203–0,346 / 0,271–0,351) ⇒ sai là do
-   **ô chọn**, không phải do GPU.
+   `stability_shown = 0,389`** ⇒ **cùng kết luận** với Colab (0,203–0,346 / 0,271–0,351) — *cùng kết
+   luận*, **không** trùng giá trị (0,118 nằm ngoài khoảng đó; SAM 2 không tất định + máy khác) — nghĩa là
+   cả hai đều **≪ mức 0,86/0,88 trên `binh1`** ⇒ sai là do **ô chọn**, không phải do GPU.
 4. Nguyên nhân gốc: cell 3b của notebook **tự sinh** `data/input.mp4` (clip ô vuông tổng hợp) nếu file
    chưa có, nên lần chạy này dùng clip tổng hợp chứ không phải `binh1.mp4`; bbox `104,308,209,287` khi đó
    rơi vào **nền** (ô vuông ở `200,200`–`320,320`).
@@ -66,10 +70,12 @@ chưa kết luận "tốt hơn"; đó là lý do cell 8b nay chạy 2 lần/cấ
 - **Đường GPU qua API live đã chạy được trên T4**: `device_worker_log = cuda`, `state_cuoi = running`,
   804–810 frame trong 30 s, `empty_runs = 0`.
 - **Độ trễ model trên T4**: `vos_ms` **43,5 ms @192** và **63,8 ms @512** ⇒ 512 chậm hơn **1,47×**
-  (n = 1/cấu hình, xem caveat ở bảng). So với laptop CPU cùng `image_size 192` và cùng loại số
-  (`vos_ms` của `status.json` = **118,0 / 124,0 / 125,7 ms** ở 3 lần đo 13-11,
-  `data/live_web_relay_2026-11-13_125634|125739|125844_metrics.json`): T4 nhanh hơn **~2,7–2,9×**.
-  Đây là suy ra từ **hai máy khác nhau**, chỉ để định hướng — không phải phép so A/B.
+  (n = 1/cấu hình, xem caveat ở bảng). So với CPU trên **cùng clip tổng hợp** (`data/repro_bbox_tro_nen_cpu_…`:
+  `vos_ms` **83,2 ms** @192): T4 nhanh hơn **~1,9×**. Với `binh1.mp4` (clip KHÁC) CPU cho `vos_ms`
+  **118,0 / 124,0 / 125,7 ms** (`data/live_web_relay_2026-11-13_125634|125739|125844_metrics.json`)
+  ⇒ tỉ lệ khi đó là 2,7–2,9×, nhưng **so hai clip khác nhau** thì chỉ để định hướng. Lưu ý `vos_ms`
+  là **mẫu cuối** của phiên (dao động 79–113 ms trong một phiên) nên đừng trích tỉ lệ tới 2 chữ số.
+  Cả hai phép so đều là **hai máy khác nhau** — không phải A/B.
 - **`mask_fps` KHÔNG phân biệt được 512 với 192**: cả hai chạm trần `display_fps / vos_every` ≈ 10 lần/giây
   (10,4 vs 10,8; `1/vos_ms` = 15,7 và 23 lần/giây ⇒ model còn dư) ⇒ muốn so `image_size` phải dùng
   **`vos_ms`**, không dùng `mask_fps`.
@@ -83,7 +89,9 @@ chưa kết luận "tốt hơn"; đó là lý do cell 8b nay chạy 2 lần/cấ
   bằng `json.load` hợp lệ, 15 cell; cell kiểm video/bbox đã chạy thử headless trên clip tổng hợp và bắt
   đúng cảnh báo "clip tổng hợp ⇒ bbox đúng là 200,200,120,120".
 - File thay đổi:
-  - `notebooks/colab_gpu_evaluation.ipynb` — mục 8 thành 3 cell (guard bbox + 2 lần/cấu hình + in số)
+  - `notebooks/colab_gpu_evaluation.ipynb` — mục 8 thành 3 cell (guard bbox + 2 lần/cấu hình + in số;
+    8b `assert DA_KIEM_8A` để "Run all" không bỏ qua bước kiểm)
+  - `tests/test_notebook_colab.py` — 5 test cấu trúc notebook (không cần model)
   - `docs/colab-gpu.md` — cảnh báo clip tổng hợp / `bbox_check.jpg`
   - `AGENTS.md` §6 — bài học "bbox trỏ nền vẫn cho `ket_qua=true`"
   - (không vào Git: 2 artifact Colab đã đổi tên thành `data/colab_t4_2026-11-13_live_*_bbox_sai.json`
@@ -114,6 +122,12 @@ chưa kết luận "tốt hơn"; đó là lý do cell 8b nay chạy 2 lần/cấ
       **không** trích `drift_iou` từ 2 artifact ngày 13-11 này.
 - [ ] Cân nhắc thêm vào `measure_live_relay.py` một cờ `--bbox-check <ảnh>` để chụp frame 0 + vẽ bbox vào
       artifact (hiện chỉ có ảnh `frame*.jpg` sau khi bám) — chưa làm vì ngoài phạm vi phiên này.
+- [ ] Heuristic "clip tổng hợp" của cell 8a dựa vào `1280×720 và ≤120 frame` ⇒ một video **thật** rất ngắn
+      (≤ 4 giây) sẽ bị chặn oan (đường thoát: đặt `CHO_PHEP_CLIP_TONG_HOP = True`, đã ghi trong thông
+      báo lỗi). Chấp nhận trong phiên này vì mặc định an toàn; nếu thấy vướng thì nhận diện bằng nội
+      dung (màu ô vuông) thay vì kích thước.
+- [ ] `vos_ms` là **mẫu cuối** của phiên (không phải trung vị) — muốn con số chắc hơn cho báo cáo thì
+      lấy `vos_ms` từ dãy `drift_samples_*.csv` (có từng dòng) hoặc thêm trung vị vào `status.json`.
 
 ## 📚 Tài liệu tham khảo
 - `docs/task/12-11-2026-ticket-21-thiet-bi-live-xuyen-chuoi-api-hud.md` — lần đo Colab thất bại 12-11
