@@ -39,8 +39,14 @@ def _meta_for(csv_path: Path):
         return None
 
 
-def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False) -> dict:
-    """Một file mẫu → dict số liệu (hàm thuần ngoài việc đọc file; test bằng CSV trong `tmp_path`)."""
+def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False,
+                 windows=()) -> dict:
+    """Một file mẫu → dict số liệu (hàm thuần ngoài việc đọc file; test bằng CSV trong `tmp_path`).
+
+    `windows` (danh sách cửa sổ) ⇒ thêm mục `theo_cua_so`: độ trễ phát hiện của p05 **luôn** xấp xỉ
+    bằng độ dài cửa sổ (chưa đủ `W` mẫu thì chưa có p05 nào để so), nên phải quét nhiều cửa sổ mới
+    nói được "đổi cửa sổ thì đánh đổi gì" thay vì báo một con số của một lựa chọn tuỳ ý.
+    """
     rows = read_samples(csv_path)
     ket_qua = summarize(rows, window=window)
     info = _meta_for(csv_path)
@@ -53,6 +59,14 @@ def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False) 
         "thiet_lap": (info or {}).get("thiet_lap"),
         "co_meta": info is not None,
     })
+    if windows:
+        ket_qua["theo_cua_so"] = {
+            str(size): {
+                **{key: value for key, value in summarize(rows, window=size).items()
+                   if key in ("bao_dong_070", "bao_dong_030", "phat_hien", "drift_iou_p05")},
+            }
+            for size in windows
+        }
     if static:
         ket_qua["doi_chung_canh_tinh"] = static_control(rows)
     return ket_qua
@@ -65,6 +79,9 @@ def main() -> int:
                         help="glob các file là CẢNH TĨNH (đối chứng bookkeeping) — tách khỏi clip thật")
     parser.add_argument("--window", type=int, default=WINDOW,
                         help=f"cửa sổ phân vị (mặc định {WINDOW} = _STAT_WINDOW của phiên live)")
+    parser.add_argument("--windows", type=int, nargs="*", default=[],
+                        help="quét thêm các cửa sổ khác (ghi vào `theo_cua_so`) — độ trễ phát hiện "
+                             "xấp xỉ bằng độ dài cửa sổ nên phải quét mới thấy đánh đổi")
     parser.add_argument("--out", default="")
     args = parser.parse_args()
 
@@ -82,7 +99,8 @@ def main() -> int:
     ket_qua = []
     for path in files:
         la_tinh = path.resolve() in static_files
-        ket_qua.append(analyze_file(path, window=args.window, static=la_tinh))
+        ket_qua.append(analyze_file(path, window=args.window, static=la_tinh,
+                                    windows=args.windows))
 
     stamp = datetime.now().astimezone()
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
@@ -96,6 +114,7 @@ def main() -> int:
                            "provenance, đừng trích file này.",
         "lenh": "python scripts/analyze_drift_samples.py " + " ".join(sys.argv[1:]),
         "cua_so": args.window,
+        "cua_so_quet": args.windows,
         "dinh_nghia": {
             "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
             "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",

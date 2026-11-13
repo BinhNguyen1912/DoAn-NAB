@@ -248,6 +248,32 @@ class TestPhanTichFile:
         assert result["bao_dong_070"]["n_cua_so"] == 16
         assert result["bao_dong_070"]["ti_le_bao"] == pytest.approx(0.625)
         assert "doi_chung_canh_tinh" not in result          # chỉ tính khi được chỉ định là cảnh tĩnh
+        assert "theo_cua_so" not in result                  # chỉ tính khi có `windows`
+
+    def test_quet_cua_so_cho_thay_doi_lai_do_tre(self, tmp_path, monkeypatch):
+        """Độ trễ phát hiện xấp xỉ **bằng độ dài cửa sổ** ⇒ quét cửa sổ mới thấy đánh đổi.
+
+        Dãy 20 mẫu 0,9 rồi 20 mẫu 0,0 ⇒ mẫu xấu đầu ở chỉ số 20.
+          - Cửa sổ 5: cửa sổ [16..20] = [0,9; 0,9; 0,9; 0,9; 0,0] ⇒ p05 = 0 + 0,2 × 0,9 = 0,18 < 0,3
+            ⇒ báo NGAY tại mẫu xấu (0 mẫu trễ).
+          - Cửa sổ 10: cửa sổ [11..20] = [0,9 × 9; 0,0] ⇒ p05 = 0 + 0,45 × 0,9 = 0,405 ≥ 0,3 (chưa
+            báo); cửa sổ [12..21] có hai số 0 ⇒ p05 = 0,0 ⇒ báo sau **1** mẫu.
+        ⇒ cửa sổ càng dài thì phát hiện càng trễ — đúng thứ phải quét mới thấy.
+        """
+        import scripts.analyze_drift_samples as analyze
+
+        monkeypatch.setattr(analyze, "_REPO_ROOT", tmp_path)
+        csv = tmp_path / "drift_samples_binh2_2026-11-13_1430.csv"
+        self._viet(csv, [0.9] * 20 + [0.0] * 20)
+
+        result = analyze.analyze_file(csv, window=5, windows=[5, 10])
+
+        theo = result["theo_cua_so"]
+        assert set(theo) == {"5", "10"}
+        # mẫu xấu đầu = chỉ số 20 ⇒ cửa sổ 5 chưa kín cho tới 24, cửa sổ 10 tới 29
+        assert theo["5"]["phat_hien"]["phat_hien_sau_mau"] == 0
+        assert theo["10"]["phat_hien"]["phat_hien_sau_mau"] == 1
+        assert theo["5"]["bao_dong_030"]["ti_le_bao"] <= theo["10"]["bao_dong_030"]["ti_le_bao"]
 
     def test_file_canh_tinh_duoc_cham_bang_doi_chung(self, tmp_path, monkeypatch):
         import scripts.analyze_drift_samples as analyze
