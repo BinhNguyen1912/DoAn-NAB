@@ -226,6 +226,12 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   phải LK mất dấu)**. Cấm phát biểu "hybrid luôn bám được" — phải nêu clip + drift đo được.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
+- **`measure_live_relay` báo `ket_qua = true` KHÔNG có nghĩa là bám đúng vật**: nó chỉ kiểm đường ống
+  (running, có frame, có mask). Đo trên Colab T4 (13-11) với **bbox trỏ vào nền** cho `ket_qua = true`
+  mà `drift_iou` 0,203–0,346 và `stability` 0,27–0,35 — tái lập trên CPU với đúng clip đó cũng ra
+  0,114/0,35 ⇒ đó là **lỗi chọn ô**, không phải "GPU bám tệ". Trước khi trích số chất lượng phải xem
+  ảnh `bbox_check.jpg` (cell 8a của notebook) hoặc kiểm bbox nằm trên vật. Chi tiết:
+  `docs/task/13-11-2026-colab-t4-lan-2-so-gpu-nhung-bbox-sai.md`.
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
 - **Ngưỡng `drift_iou_p05 = 0,70` (đăng ký trước 08-11) KHÔNG dùng được làm cờ chẩn đoán**: đo 13-11
   bằng dãy mẫu từng dòng (`data/drift_samples_*.csv`, `scripts/analyze_drift_samples.py`), nó báo

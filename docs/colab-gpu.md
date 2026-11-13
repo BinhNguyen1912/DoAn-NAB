@@ -44,6 +44,12 @@ khi chạy cell, và truyền `--bbox` đúng:
 
 ## Video nguồn nên quay thế nào
 
+> ⚠️ **Cell 3b TỰ SINH `data/input.mp4`** (clip ô vuông tổng hợp 60 frame 1280×720) nếu file chưa có.
+> Đo chất lượng bám trên clip đó bằng bbox của video thật sẽ ra `drift_iou` 0,1–0,35 **dù artifact
+> `ket_qua=true`** (gặp thật 13-11). Trước khi tin số: cell 8a in `WxH | số frame` và ghi
+> `data/bbox_check.jpg` — **mở ảnh đó**, ô xanh phải bao đúng VẬT. Bbox đúng cho clip tổng hợp là
+> `200,200,120,120`; cho `data/binh1.mp4` là `104,308,209,287`.
+
 - 10–15 giây, 720p, **một đối tượng chuyển động** (người đi qua khung, tay vẫy, con vật…).
 - Quay bằng điện thoại rồi kéo file vào panel **Files** của Colab, đặt tên `data/input.mp4`.
 - Chọn `--bbox "x,y,w,h"` đúng vị trí đối tượng ở **frame 0** (mở video trong máy để xem toạ độ ước lượng;
