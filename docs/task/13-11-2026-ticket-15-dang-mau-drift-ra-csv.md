@@ -43,33 +43,39 @@
 ## 📤 Output / Kết quả
 
 Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 192`, `vos_every 3`,
-`device=cpu`, đo qua **API live** bằng `scripts/measure_live_relay.py --seconds 55`
-(`git_rev = 713f869`, cây sạch; artifact phân tích ở `b4c37a6`, `git_dirty_code = false`).
+`device=cpu`, đo qua **API live** bằng `scripts/measure_live_relay.py --seconds 55`. Provenance:
+`git_rev = 301b961` (commit chứa code sinh ra số), `git_dirty_code = false`; artifact phân tích
+`data/drift_series_2026-11-13_130246_metrics.json` ở `git_rev = 3b80dbc`, `git_dirty_code = false`
+(`git_dirty = true` chỉ vì chính các file số liệu nằm trong `data/` — AGENTS §6 phân biệt hai cờ này).
 
-| Lần đo | Dòng CSV | Mẫu drift | `drift_iou` | p05 | mask rỗng | Cửa sổ p05<0,70 | Cửa sổ p05<0,30 |
-|---|---|---|---|---|---|---|---|
-| binh1 · lần 1 | 368 | 368 | **0,8684** | 0,6455 | 0 | **169/169 = 100 %** | 0 % |
-| binh1 · lần 2 | 332 | 332 | 0,8631 | 0,6465 | 0 | **133/133 = 100 %** | 0 % |
-| binh1 · lần 3 | 326 | 326 | 0,8615 | 0,6136 | 0 | **127/127 = 100 %** | 0 % |
-| **binh2** | 339 | 271 | **0,4696** | **0,000** | **20,1 %** (68/339) | 72/72 = 100 % | **100 %** |
-| **cảnh tĩnh** (`tinh_binh1`) | 357 | 357 | **0,9955** | 0,9885 | 0 | 0/158 = 0 % | 0 % |
+| Lần đo | Dòng CSV | `vos_runs` | Mẫu drift | `drift_iou` | p05 | mask rỗng | Cửa sổ p05<0,70 | Cửa sổ p05<0,30 |
+|---|---|---|---|---|---|---|---|---|
+| binh1 · lần 1 | 378 | 379 | 364 | **0,8661** | 0,6453 | 0 | **165/165 = 100 %** | 0 % |
+| binh1 · lần 2 | 356 | 357 | 346 | 0,8632 | 0,6453 | 0 | **147/147 = 100 %** | 0 % |
+| binh1 · lần 3 | 359 | 360 | 352 | 0,8672 | 0,6475 | 0 | **153/153 = 100 %** | 0 % |
+| **binh2** | 357 | 358 | 262 | **0,4665** | **0,000** | **21,8 %** (78/357) | 63/63 = 100 % | **100 %** |
+| **cảnh tĩnh** (`tinh_binh1`) | 364 | 365 | 364 | **0,9951** | 0,9884 | 0 | 0/165 = 0 % | 0 % |
 
-- Nhịp VOS trong harness này: **6,2–6,7 lần/giây** (`mask_fps` 6,5; `vos_ms` ≈ 150 ms) — chậm hơn
-  8,6 lần/giây của bảng 08-11 (đo thẳng `tools/live_worker.py`); **đừng trộn hai bộ số**. Nguyên nhân
-  chênh chưa điều tra (ghi ở Next steps), chỉ ghi nhận `mask_age_p95` ở đây 284–307 ms.
-- **Đối chứng cảnh tĩnh ĐẠT**: mean 0,9955 ≥ 0,99 (tiêu chí ticket), `n = 357` ⇒ bookkeeping
-  `_shown_at`/`_pending_drift` đúng. `p05 = 0,9885` (0,0015 dưới ngưỡng) do **làm tròn toạ độ nguyên**
-  của LK — đã ghi chú trong `static_control`, không dùng p05 để phán quyết.
+- **Quan hệ đếm**: `n_dong == vos_runs - 1` ở cả 5 lần đo — lệch 1 là `engine.start()` (chạy model
+  nhưng là mẫu khởi tạo, không có nội suy để so). Có test khoá bất biến này; nếu P1 tái phát thì test
+  đỏ ngay (trước khi sửa P1, lệch là 10–12 dòng ở binh1 và **20** ở binh2).
+- Nhịp VOS trong harness này: `vos_fps` **6,1–6,7 lần/giây** (`vos_ms` 118–165 ms; `mask_fps` 6,5),
+  nhịp dòng CSV 6,4–6,5 dòng/giây — chậm hơn 8,6 lần/giây của bảng 08-11 (đo thẳng
+  `tools/live_worker.py`); **đừng trộn hai bộ số**. `mask_age_p95` ở đây 271–303 ms.
+- **Đối chứng cảnh tĩnh ĐẠT**: mean 0,9951 ≥ 0,99 (tiêu chí ticket), `n = 364` ⇒ bookkeeping
+  so-cặp-frame đúng. `p05 = 0,9884` (0,0016 dưới ngưỡng) do **làm tròn toạ độ nguyên** của LK — đã ghi
+  chú trong `static_control`, không dùng p05 để phán quyết.
 - **Ngưỡng 0,70 đăng ký trước 08-11 BỊ BÁC làm cờ chẩn đoán**: trên clip khoẻ binh1 nó báo động
-  **100 % cửa sổ** ở W ≥ 100, 72–87 % ở W = 50, 44–48 % ở W = 20. Ngưỡng 0,30 thì **0 % báo oan**
-  trên binh1 và bắt 100 % trên binh2.
-- **Độ trễ phát hiện xấp xỉ BẰNG độ dài cửa sổ** (p05 chưa tồn tại trước khi có đủ W mẫu) — quét
-  cửa sổ trên binh2: phát hiện sau **14 / 44 / 94 / 194 mẫu** ứng với W = 20 / 50 / 100 / 200. Ở nhịp
-  6,2 mẫu/giây, W = 200 ⇒ **~31 giây** sau mẫu xấu đầu. Đây là lý do phải quét cửa sổ, không chọn 200
-  một cách tuỳ ý.
-- **Ticket 14 vẫn bị chặn, nay có bằng chứng từng mẫu**: trên binh2, **140/140 cửa sổ** có
-  `p05 < 0,30` đều có `empty_frac` 20–24 % (không cửa sổ nào < 3 %) ⇒ `p05` thấp và "VOS mất vật"
-  vẫn dính nhau 1:1. Thiếu đúng clip "LK trôi thật": vật đi qua vùng che khuất mà model vẫn thấy.
+  **100 % cửa sổ** ở W ≥ 100, **74–84 %** ở W = 50, **45–47 %** ở W = 20. Ngưỡng 0,30 thì **0 % báo
+  oan** trên binh1 (mọi cửa sổ) và bắt 100 % trên binh2.
+- **Độ trễ phát hiện xấp xỉ BẰNG độ dài cửa sổ** (p05 chưa tồn tại trước khi có đủ W mẫu) — quét cửa
+  sổ trên binh2: phát hiện sau **15 / 45 / 95 / 195 mẫu** ứng với W = 20 / 50 / 100 / 200. Ở nhịp
+  6,5 dòng/giây, W = 200 ⇒ **~30 giây** sau mẫu xấu đầu; W = 20 ⇒ ~2–3 giây. Đây là lý do phải quét
+  cửa sổ thay vì chọn 200 một cách tuỳ ý.
+- **Ticket 14 vẫn bị chặn — nay đo được bằng code đã commit** (`low_p05_low_empty`, có trong artifact
+  dưới khoá `p05_thap_va_empty`): binh2 có **158/158 cửa sổ** `p05 < 0,30` nhưng **0 cửa sổ** trong
+  số đó có mask rỗng < 3 % (`empty_frac` cả phiên 21,8 %) ⇒ `p05` thấp và "VOS mất vật" vẫn dính nhau
+  1:1. Thiếu đúng clip "LK trôi thật": vật đi qua vùng che khuất mà model vẫn thấy vật.
 - File thay đổi:
   - `src/drift_samples.py` (mới) — logger CSV + 6 hàm phân tích thuần
   - `src/live_tracking.py` — ghi dòng cho mọi lần VOS, đóng file, đăng ký `seq_frame` của `start()`
@@ -80,8 +86,8 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
     `tests/test_measure_live_relay.py`
   - `data/drift_samples_{binh1×3,binh2,tinh_binh1}_2026-11-13_*.csv` + `.meta.json`,
     `data/drift_series_2026-11-13_124245_metrics.json`
-- Kiểm tra trên máy này: `./run lint` xanh · `./run test` **849 passed** · `./run testall`
-  **857 passed** (224 s).
+- Kiểm tra trên máy này: `./run lint` xanh · `./run test` **862 passed** (85 s, 5 deselected) ·
+  `./run testall` **857 passed** (224 s, trước khi thêm 5 test của vòng sửa P1).
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Lỗi thật #1 — CSV nói dối về "mask rỗng".** Lần đo binh2 đầu tiên: `status.json` ghi
@@ -99,23 +105,55 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
 - **`summarize` bị che tên**: import `summarize` của `src.drift_samples` trong `measure_live_relay.main()`
   làm ruff báo `F823 Local variable 'summarize' referenced before assignment` (script đã có hàm
   `summarize` riêng) — dùng bí danh `summarize_series`.
+- **P1 của review (xem mục review) — mất 10–20 dòng CSV**: phát hiện bằng cách đối chiếu
+  `vos_runs` với số dòng. Bài học: khi thêm "ghi từng mẫu", **phải** khoá bất biến số dòng bằng test,
+  nếu không sẽ chỉ thấy lệch khi tình cờ so hai con số.
 - **Lần đo 35 giây không đủ mẫu**: 166–183 mẫu < cửa sổ 200 ⇒ `ti_le_bao = None` (đúng luật "0/None ≠
   đã đo"), nhưng không trả lời được câu hỏi. Nâng lên 55 giây ⇒ 269–368 mẫu.
 
 ## 🔎 Review độc lập (§9.1)
-- **Ai review:** agent `reviewer` (phiên khác), prompt có `parent_context` + `proposed_changes` + phạm
-  vi = 3 commit của nhánh `feat/drift-samples-csv`.
-- **Kết luận:** _(điền sau khi có kết quả review)_
-- **Đã sửa trong cùng PR:** _(điền)_
-- **Còn nợ (ghi ticket):** _(điền)_
+- **Ai review:** agent `reviewer` (phiên khác, chỉ đọc — không có shell nên không tự chạy `git`/`pytest`;
+  các kết luận là bằng chứng đọc mã + **tính lại tay** số trong artifact từ CSV). Phạm vi: 3 commit đầu
+  của nhánh `feat/drift-samples-csv`. Kết luận vòng 1: **NOT MERGEABLE** — 1 P1 + 3 P2 + 6 P3.
+- **P1 (đã sửa, có test hồi quy + đo lại toàn bộ):** "ghi 1 dòng cho MỌI lần VOS" **không đạt** —
+  `vos_runs 379` mà CSV chỉ 368 dòng (binh2: 359 vs 339). Nguyên nhân: `_shown_at_locked` trả `None`
+  cho **cả** "frame chưa phát" và "frame đã phát nhưng không có ô bao hiển thị" ⇒ ca thứ hai bị hẹn
+  `_pending_drift` cho một frame đã trôi qua rồi bỏ im lặng. Nay `_shown_state_locked` trả
+  `(found, bbox)`, nhánh pending-trễ và mẫu còn treo lúc dừng phiên đều ghi dòng (`drift_iou` trống,
+  không bịa 0) qua `_flush_pending_csv()`; test khoá bất biến `n_dong == vos_runs - 1` (đúng: start
+  không có nội suy để so). **Đo lại 5 lần**: lệch đúng 1 ở cả 5.
+- **P2 #1 (đã sửa):** `theo_cua_so[W]["drift_iou_p05"]` là p05 **toàn dãy** nên nhân bản vào mọi cửa
+  sổ ⇒ người đọc kết luận sai "p05 không phụ thuộc cửa sổ". Đã bỏ khoá đó khỏi `theo_cua_so` và ghi rõ
+  trong `dinh_nghia` rằng p05 top-level là p05 toàn dãy (khác p05 của 200 mẫu **cuối** trong
+  `status.json`).
+- **P2 #2 (đã sửa):** con số "140/140 cửa sổ" trong bản log đầu **không tái lập được** bằng công cụ đã
+  commit (nó đến từ một phép tính nháp gán 0 cho mẫu rỗng ⇒ tautology). Nay có hàm
+  `low_p05_low_empty()` + khoá `p05_thap_va_empty` trong artifact; số đúng là **158/158 cửa sổ p05<0,30,
+  0 cửa sổ có mask rỗng < 3 %**.
+- **P2 #3 (đã sửa):** `DriftSampleLog.close()` rồi còn `write()` (luồng VOS sống tới 5 s sau `join`) sẽ
+  **mở lại file bằng mode `w` ⇒ xoá sạch dãy mẫu**. Nay `write()` sau `close()` là no-op + test.
+- **P3 (đã sửa):** `MIN_SAMPLES` 20 → **30** (= `_STAT_MIN_SAMPLES` của phiên) + test khoá
+  `WINDOW`/`MIN_SAMPLES` với `live_tracking`; `_opt_bool` chỉ nhận `1`/`0` (chuỗi lạ ⇒ `None`, không
+  thành `False`); thêm test khoá "`_log_drift_sample` không được gọi khi đang giữ `_stats_lock`"; sửa
+  các câu chữ trong log (nhịp VOS lấy từ artifact, `git_dirty_code` ≠ `git_dirty`, `n_dong` không dùng
+  làm "số lần VOS").
+- **"Đã kiểm, không phải lỗi" (reviewer xác nhận):** không I/O file trong `_stats_lock`, không deadlock
+  giữa lock CSV và lock thống kê; `_pending_drift` 5 phần tử nhất quán ở code + test; `read_samples`
+  không biến ô trống thành 0/False; p05 tái lập được bằng `numpy.percentile` (kiểm tay một giá trị);
+  `.gitignore` whitelist hoạt động; `measure_live_relay` không đọc CSV của phiên trước.
+- **Còn nợ:** vòng review 2 cho phần vừa sửa **chưa chạy lại bằng agent** (bù bằng: 5 lần đo lại + test
+  hồi quy + `./run test` 862 xanh + `testall`); `ghi_chu` trong 5 file `.meta.json` đã ghi vẫn dùng câu
+  cũ ("1 mẫu drift") — giữ nguyên vì đó là provenance của lần đo, code đã sửa câu này.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **Ticket 14 vẫn chờ**: cần 1 clip "LK trôi thật" (`p05 < 0,30` mà `empty_frac < 3 %`). Nay có
-      công cụ soi: `python scripts/analyze_drift_samples.py --windows 20 50 100 200`.
-- [ ] Hiểu vì sao nhịp VOS qua API (6,2–6,7 lần/giây) chậm hơn đo thẳng worker (8,6): nghi do đọc/ghi
+- [ ] **Vòng review 2** cho phần sửa P1/P2/P3 (agent `reviewer`) trước khi merge PR.
+- [ ] **Ticket 14 vẫn chờ**: cần 1 clip "LK trôi thật" (`p05 < 0,30` mà mask rỗng < 3 %). Công cụ soi đã
+      có: `python scripts/analyze_drift_samples.py --windows 20 50 100 200` → khoá `p05_thap_va_empty`.
+- [ ] Hiểu vì sao nhịp VOS qua API (6,1–6,7 lần/giây) chậm hơn đo thẳng worker (8,6): nghi do đọc/ghi
       frame 720p + API poll, **chưa đo** — đừng trích số này cho báo cáo FPS.
-- [ ] Báo cáo dùng: ngưỡng cờ chẩn đoán nên là **0,30 với cửa sổ ngắn (20–50)**; nêu rõ độ trễ phát
-      hiện ≈ độ dài cửa sổ (~3–8 giây ở W = 20–50, nhịp 6,2 mẫu/giây).
+- [ ] Báo cáo dùng: ngưỡng cờ chẩn đoán nên là **0,30 với cửa sổ ngắn (20–50)** (0 % báo oan trên
+      binh1, phát hiện ~2–7 giây ở nhịp 6,5 dòng/giây); nêu rõ ngưỡng 0,70 đăng ký trước 08-11 đã bị
+      bác vì báo oan 45–100 % trên clip khoẻ.
 - [ ] Ticket 21 phần 2 (mặc định `image_size`/`vos_every` theo GPU) vẫn chờ số đo Colab.
 
 ## 📚 Tài liệu tham khảo

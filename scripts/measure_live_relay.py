@@ -378,8 +378,9 @@ def main() -> int:
         "git_dirty": git_dirty,
         "git_dirty_code": git_dirty_code,
         "git_loi": git_loi,
-        "ghi_chu": "Mỗi dòng = 1 mẫu drift của phiên live (frame_idx, seq, vos_ms, empty, "
-                   "drift_iou, bbox). Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
+        "ghi_chu": "Mỗi dòng = 1 kết quả VOS của luồng worker (frame_idx, seq, vos_ms, empty, "
+                   "drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy "
+                   "để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
         "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
         "nguon": args.source,
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
