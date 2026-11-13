@@ -16,7 +16,11 @@
   --image-size {512,192} --vos-every 3 --seconds 30 --out data/live_{512,192}_metrics.json`
   (trên Colab sinh ra 2 file cùng tên; khi tải về đã đổi tên ở trên để khỏi lẫn với artifact cũ 12-11)
 - Tái lập trên máy này (CPU) với clip tổng hợp của `src/synthetic_video.py` + đúng bbox đó để kiểm giả
-  thuyết "clip sai", dùng `scripts/measure_live_relay.py`.
+  thuyết "clip sai", dùng `scripts/measure_live_relay.py`. Artifact:
+  `data/repro_bbox_tro_nen_cpu_2026-11-13_metrics.json` (`git_rev = 633bdcf`, `git_dirty_code = false`,
+  `device_worker_log = cpu`, nguồn `data/input_tong_hop_60f.mp4` = 60 frame 1280×720 sinh bằng đúng tham
+  số cell 3b: `square_size=120, start=(200,200), velocity=(14,6)`) + dãy mẫu
+  `data/drift_samples_input_tong_hop_60f_2026-11-13_140724.csv` (233 dòng, `drift_iou` trung bình 0,126).
 
 ## 🔨 Công việc đã thực hiện
 1. Đọc 2 artifact: `ket_qua = true`, `device_worker_log = cuda`, `git_dirty_code = false` ⇒ **lần đo này
@@ -25,10 +29,12 @@
 2. Nghi vấn chất lượng: `drift_iou` 0,203 (512) / 0,346 (192) và `stability` 0,27 / 0,35 — trong khi đo
    trên CPU với **cùng model, cùng `image_size 192`** trên `data/binh1.mp4` cho drift 0,86 / stability
    0,96. Chênh quá lớn ⇒ kiểm clip.
-3. **Tái lập trên CPU**: sinh lại đúng clip tổng hợp của notebook (60 frame, 1280×720, ô vuông frame 0 ở
-   `200,200`, vận tốc `14,6`) rồi chạy `measure_live_relay` với bbox `104,308,209,287`/`image_size 192`:
-   được `drift_iou = 0,114`, `stability_shown = 0,35` ⇒ **trùng khớp số Colab** ⇒ sai là do **ô chọn**,
-   không phải do GPU.
+3. **Tái lập trên CPU** (artifact lưu ở `data/repro_bbox_tro_nen_cpu_2026-11-13_metrics.json`): sinh lại
+   đúng clip tổng hợp của notebook (60 frame, 1280×720, ô vuông frame 0 ở `200,200`, vận tốc `14,6`) rồi
+   chạy `measure_live_relay` với bbox `104,308,209,287`/`image_size 192`: được **`drift_iou = 0,118`,
+   `stability_shown = 0,389`** (lần chạy thử trước đó, không lưu artifact: 0,114 / 0,35 — hai lần cùng kết
+   luận, SAM 2 không tất định) ⇒ **trùng khớp số Colab** (0,203–0,346 / 0,271–0,351) ⇒ sai là do
+   **ô chọn**, không phải do GPU.
 4. Nguyên nhân gốc: cell 3b của notebook **tự sinh** `data/input.mp4` (clip ô vuông tổng hợp) nếu file
    chưa có, nên lần chạy này dùng clip tổng hợp chứ không phải `binh1.mp4`; bbox `104,308,209,287` khi đó
    rơi vào **nền** (ô vuông ở `200,200`–`320,320`).

@@ -229,7 +229,8 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **`measure_live_relay` báo `ket_qua = true` KHÔNG có nghĩa là bám đúng vật**: nó chỉ kiểm đường ống
   (running, có frame, có mask). Đo trên Colab T4 (13-11) với **bbox trỏ vào nền** cho `ket_qua = true`
   mà `drift_iou` 0,203–0,346 và `stability` 0,27–0,35 — tái lập trên CPU với đúng clip đó cũng ra
-  0,114/0,35 ⇒ đó là **lỗi chọn ô**, không phải "GPU bám tệ". Trước khi trích số chất lượng phải xem
+  0,118/0,389 (`data/repro_bbox_tro_nen_cpu_2026-11-13_metrics.json`) ⇒ đó là **lỗi chọn ô**, không phải
+  "GPU bám tệ". Trước khi trích số chất lượng phải xem
   ảnh `bbox_check.jpg` (cell 8a của notebook) hoặc kiểm bbox nằm trên vật. Chi tiết:
   `docs/task/13-11-2026-colab-t4-lan-2-so-gpu-nhung-bbox-sai.md`.
 - **Báo cáo và handoff kèm số từ CSV** (`mean`, `p95`, `mất dấu`, `reacquired`), không mô tả cảm tính.
