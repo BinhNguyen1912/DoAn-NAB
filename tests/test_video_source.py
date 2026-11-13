@@ -77,6 +77,15 @@ class TestChuoiSoTuWebLaWebcam:
         monkeypatch.chdir(tmp_path)
         assert isinstance(open_video_source("0"), FileVideoSource)
 
+    def test_thu_muc_that_trung_ten_van_la_day_anh(self, tmp_path, monkeypatch):
+        """Nhánh thư mục ảnh: `os.path.exists` → `isdir` ⇒ `FramesVideoSource`, không thành webcam."""
+        from src.video_source import FramesVideoSource
+
+        (tmp_path / "0").mkdir()
+        (tmp_path / "0" / "00000.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        monkeypatch.chdir(tmp_path)
+        assert isinstance(open_video_source("0"), FramesVideoSource)
+
     def test_live_raw_tu_web_mo_duoc_camera(self, monkeypatch):
         """Đường đi THẬT của web: adapter `raw` nhận chuỗi "0" ⇒ phải gọi camera, không FileVideoSource."""
         import numpy as np
@@ -106,7 +115,9 @@ class TestChuoiSoTuWebLaWebcam:
         source = OpenCvFrameSource("0")
         source.start()
         try:
-            assert source.read_jpeg() is not None     # trước khi sửa: FileNotFoundError ở dòng start()
+            # Trước khi sửa: mở được (FakeCap luôn isOpened) NHƯNG index truyền xuống là chuỗi
+            # '0' ⇒ đỏ ở `assert opened == [0]` bên dưới, không phải ở dòng start().
+            assert source.read_jpeg() is not None
             assert opened == [0]                      # index int, không phải chuỗi
         finally:
             source.stop()

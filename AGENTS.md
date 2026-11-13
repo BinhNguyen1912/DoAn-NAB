@@ -247,9 +247,12 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   khai `source: str` ("0 = webcam") nên `tools/run_live.py`/`tools/check_video_source.py` đã đổi
   chuỗi số → `int` từ trước, nhưng `open_video_source()` chỉ coi **int** là webcam ⇒ mode `raw`
   (`OpenCvFrameSource`) lẫn `track` (`live_worker`) nhận `"0"` đều báo
-  "Không mở được video file: '0'" (đo 13-11 trên web: bấm "Bật phát" với ô nguồn mặc định). Nay
+  "Không mở được video file: '0'" — người dùng báo 13-11 (tái hiện bằng `TestClient`: xem log): bấm
+  "Bật phát" với ô nguồn mặc định là `0`. Nay
   factory tự đổi chuỗi chỉ-gồm-chữ-số → index webcam, **trừ khi** có file/thư mục thật trùng tên
-  (`os.path.exists`). Khi thêm nguồn mới, kiểm cả hai đầu: HTTP (chuỗi) và CLI (int). Log:
+  (`os.path.exists`). Tên số được hiểu theo **CWD của tiến trình** (API chạy theo CWD của uvicorn,
+  worker chạy `cd REPO_ROOT`) ⇒ muốn trỏ file tên `0` thì ghi rõ `./0`. Khi thêm nguồn mới, kiểm cả
+  hai đầu: HTTP (chuỗi) và CLI (int). Log:
   `docs/task/13-11-2026-live-webcam-nguon-0-tu-web.md`.
 
 ## 7. Các repo/model tham khảo

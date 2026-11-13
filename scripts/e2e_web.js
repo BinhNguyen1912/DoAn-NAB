@@ -291,8 +291,12 @@ async function waitJobState(page, wanted, timeout = 240000) {
   await liveCard.getByRole('button', { name: 'Bật phát' }).click()
   const zeroMsg = await page.waitForFunction(
     () => {
-      const err = document.querySelector('p.error')?.textContent || ''
-      const st = document.querySelector('[data-testid="live-status"]')?.textContent || ''
+      // SCOPE vào card live: trang có banner lỗi của khối JOB (`App.tsx`) đứng TRƯỚC panel live
+      // ⇒ `document.querySelector('p.error')` có thể đọc nhầm banner khác (review 13-11, P3).
+      const card = [...document.querySelectorAll('section')]
+        .find((el) => el.textContent.includes('Phát trực tiếp'))
+      const err = card?.querySelector('p.error')?.textContent || ''
+      const st = card?.querySelector('[data-testid="live-status"]')?.textContent || ''
       if (err.includes('Không mở được')) return err
       if (st.includes('running')) return 'running'
       return null
