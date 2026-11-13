@@ -45,7 +45,7 @@
 Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 192`, `vos_every 3`,
 `device=cpu`, đo qua **API live** bằng `scripts/measure_live_relay.py --seconds 55`. Provenance:
 `git_rev = 301b961` (commit chứa code sinh ra số), `git_dirty_code = false`; artifact phân tích
-`data/drift_series_2026-11-13_130246_metrics.json` ở `git_rev = 3b80dbc`, `git_dirty_code = false`
+`data/drift_series_2026-11-13_132004_metrics.json` ở `git_rev = 7832e55`, `git_dirty_code = false`
 (`git_dirty = true` chỉ vì chính các file số liệu nằm trong `data/` — AGENTS §6 phân biệt hai cờ này).
 
 | Lần đo | Dòng CSV | `vos_runs` | Mẫu drift | `drift_iou` | p05 | mask rỗng | Cửa sổ p05<0,70 | Cửa sổ p05<0,30 |
@@ -86,7 +86,7 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
   - `tests/test_drift_samples.py` (mới), `tests/test_live_tracking.py`,
     `tests/test_measure_live_relay.py`
   - `data/drift_samples_{binh1×3,binh2,tinh_binh1}_2026-11-13_1256..1300.csv` + `.meta.json`,
-    `data/drift_series_2026-11-13_130246_metrics.json`
+    `data/drift_series_2026-11-13_132004_metrics.json`
 - Kiểm tra trên máy này (sau vòng sửa theo review): `./run lint` xanh · `./run test`
   **867 passed** (65 s, 5 deselected) · `./run testall` **872 passed** (177 s).
 
@@ -180,4 +180,4 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
 - Ticket: `.scratch/camera-ai-realtime/issues/15-log-t-ng-m-u-drift-ra-csv-i-ch-ng-c-nh-t-nh-ng-n.md`
 - `docs/task/08-11-2026-do-cai-gia-noi-suy-lk-va-nguong-nhieu.md` — định nghĩa `drift_iou`, ngưỡng nhiễu
 - `docs/plan/09-11-2026-chan-doan-chat-luong-bam.md` — vì sao cờ chẩn đoán chưa được làm
-- Artifact: `data/drift_series_2026-11-13_124245_metrics.json` + 5 file `data/drift_samples_*.csv`
+- Artifact: `data/drift_series_2026-11-13_132004_metrics.json` + 5 file `data/drift_samples_*.csv`
