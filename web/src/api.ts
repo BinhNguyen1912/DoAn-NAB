@@ -160,6 +160,39 @@ export interface LiveStartOptions {
   vos_every?: number
 }
 
+/** Một nguồn frame backend DÒ được (kèm cờ đã kiểm bằng thử thật). */
+export interface LiveSourceCandidate {
+  source: string
+  label: string
+  kind: 'camera' | 'relay' | 'file'
+  /** backend đã THỬ và dùng được LÚC DÒ — KHÔNG phải "đang chạy" (chỉ phiên live nói được điều đó) */
+  available: boolean
+  /** bằng chứng đã kiểm (vd 'nhận được ảnh JPEG') — hiện lên UI thay cho chữ "đã kiểm" */
+  check: string
+  /** thời gian dò nguồn này (ms) */
+  latency_ms: number
+  note: string
+}
+
+export interface LiveSources {
+  /** nguồn NÊN dùng ngay ('' = không dò được) — UI tự điền vào ô "Nguồn frame" */
+  suggested: string
+  /** 'camera' | 'relay' | 'file' — rỗng khi không có gợi ý (gợi ý video ≠ gợi ý camera) */
+  suggested_kind: string
+  /** thời điểm dò (giờ máy chủ) — dò cũ ≠ dò mới */
+  checked_at: string
+  /** ngân sách thời gian của một lần dò (ms) */
+  budget_ms: number
+  candidates: LiveSourceCandidate[]
+}
+
+/** Dò nguồn frame backend dùng được (webcam / relay / video demo) để UI tự điền. */
+export async function getLiveSources(): Promise<LiveSources> {
+  const res = await fetch('/api/live/sources')
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveSources
+}
+
 /** Bắt đầu phát trực tiếp từ nguồn frame (webcam/RTSP/snapshot/video file). */
 export async function startLive(source: string, options: LiveStartOptions = {}): Promise<LiveStatus> {
   const res = await fetch('/api/live/start', {

@@ -35,7 +35,8 @@ function HealthBadge(): JSX.Element {
       : online
         ? 'Backend sẵn sàng'
         : 'Không kết nối được backend — chạy ./run api'
-  return <p className={online === false ? 'status bad' : 'status ok'}>{text}</p>
+  const cls = online === null ? 'pill' : online ? 'pill ok' : 'pill bad'
+  return <p className={cls}>{text}</p>
 }
 
 export default function App(): JSX.Element {
@@ -79,33 +80,56 @@ export default function App(): JSX.Element {
   const done = job?.state === 'done'
 
   return (
-    <main className="page">
-      <header>
-        <h1>Camera AI — bám bắt đối tượng</h1>
-        <p className="sub">
-          SAM 2 + Motion Memory: chọn vật thể, hệ thống phân đoạn và bám theo, xuất video HUD
-          kèm số liệu đo thật (FPS, độ trễ, số lần mất dấu).
-        </p>
-        <HealthBadge />
-      </header>
+    <>
+      <div className="topbar">
+        <div className="topbar-inner">
+          <div className="brand">
+            <span className="mark">◉</span>
+            Camera AI
+            <span className="ver">SAM 2 · live</span>
+          </div>
+          <span className="spacer" />
+          <HealthBadge />
+        </div>
+      </div>
 
-      {error && <p className="error">Lỗi: {error}</p>}
-
-      <UploadForm onUpload={onUpload} uploading={uploading} jobId={jobId} />
-
-      {jobId && (
-        <section className="card">
-          <h2>2. Chọn đối tượng</h2>
-          <SelectionCanvas src={previewUrl(jobId)} value={box} onChange={setBox} />
-          <button type="button" onClick={() => void onStart()} disabled={!box || busy || done}>
-            Bắt đầu bám
-          </button>
+      <main className="page">
+        <section className="hero">
+          <h1>Camera AI — bám bắt đối tượng thời gian thực</h1>
+          <p className="sub">
+            SAM 2 + Motion Memory: chọn vật thể bằng chuột, hệ thống phân đoạn — bám theo — vẽ quỹ
+            đạo trên luồng camera, và ghi lại số liệu đo thật (FPS phát, nhịp mask, độ trễ, số lần
+            mất dấu). Số trên màn hình luôn là số ĐO, không phải số ước lượng.
+          </p>
         </section>
-      )}
 
-      {jobId && job && <ResultPanel jobId={jobId} job={job} />}
+        {error && <p className="error" role="alert">Lỗi: {error}</p>}
 
-      <LivePanel />
-    </main>
+        <div className="layout">
+          <div className="col col-live">
+            <LivePanel />
+          </div>
+
+          <div className="col">
+            <UploadForm onUpload={onUpload} uploading={uploading} jobId={jobId} />
+
+            {jobId && (
+              <section className="card">
+                <div className="card-head">
+                  <span className="step">2</span>
+                  <h2>Chọn đối tượng</h2>
+                </div>
+                <SelectionCanvas src={previewUrl(jobId)} value={box} onChange={setBox} />
+                <button type="button" onClick={() => void onStart()} disabled={!box || busy || done}>
+                  Bắt đầu bám
+                </button>
+              </section>
+            )}
+
+            {jobId && job && <ResultPanel jobId={jobId} job={job} />}
+          </div>
+        </div>
+      </main>
+    </>
   )
 }

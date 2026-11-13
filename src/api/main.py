@@ -9,8 +9,9 @@ Lưu ý  : đổi sang SQLite/S3/GPU worker chỉ cần sửa `build_default_ser
          service/routes/domain không phải sửa một dòng.
 """
 
-import logging
 import asyncio
+import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,12 +24,14 @@ from src.api.adapters import (
     Cv2VideoProbe,
     FileSystemJobStore,
     OpenCvFrameSource,
+    SourceProbe,
     SubprocessPipelineRunner,
     WorkerFrameSource,
 )
 from src.api.config import ApiSettings
 from src.api.domain import (
     LiveBusy,
+    LiveState,
     InvalidBBox,
     JobConflict,
     JobNotFound,
@@ -75,6 +78,16 @@ def build_default_service(settings: ApiSettings) -> JobService:
         probe=Cv2VideoProbe(),
         settings=settings,
     )
+
+
+def live_uses_device(live) -> bool:
+    """Phiên live có đang (hoặc sắp) mở thiết bị camera không?
+
+    `LOADING` cũng tính: `LiveStreamService.start()` đặt `LOADING` TRƯỚC khi mở nguồn, và với mode
+    `track` cửa sổ đó là 20–240 s (worker nạp model rồi mở camera) — dò webcam đúng lúc này là
+    tranh thiết bị với chính phiên đang mở (V4L2/DirectShow khoá độc quyền).
+    """
+    return live.status().state in (LiveState.RUNNING, LiveState.LOADING)
 
 
 def build_default_live() -> LiveStreamService:
@@ -125,11 +138,21 @@ def mount_frontend(app: FastAPI) -> None:
 
 def create_app(settings: ApiSettings | None = None,
                 service: JobService | None = None,
-                live: LiveStreamService | None = None) -> FastAPI:
-    """Application factory: điểm lắp ghép phụ thuộc duy nhất của tầng API."""
+                live: LiveStreamService | None = None,
+                sources: Callable[[], dict] | None = None) -> FastAPI:
+    """Application factory: điểm lắp ghép phụ thuộc duy nhất của tầng API.
+
+    `sources`: bộ dò nguồn frame cho `/api/live/sources` (mặc định: `SourceProbe` thật).
+    Tiêm được để test không phải mở webcam/HTTP thật.
+    """
     settings = settings or ApiSettings.from_env(REPO_ROOT)
     service = service or build_default_service(settings)
     live = live or build_default_live()
+    if sources is None:
+        # Bỏ dò webcam khi phiên live đang chạy HOẶC đang nạp (`loading` = worker `track` nạp model
+        # 20–240 s rồi sẽ mở đúng thiết bị đó — mở thêm lúc này là ca "Device busy" ở AGENTS §6).
+        probe = SourceProbe(REPO_ROOT, live_busy=lambda: live_uses_device(live))
+        sources = probe.suggest
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
@@ -158,7 +181,7 @@ def create_app(settings: ApiSettings | None = None,
     app.state.settings = settings
     app.state.service = service
     app.state.live = live
-    app.include_router(build_router(service, live))
+    app.include_router(build_router(service, live, sources))
     register_error_handlers(app)
     mount_frontend(app)
 

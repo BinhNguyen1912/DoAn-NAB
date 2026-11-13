@@ -157,3 +157,28 @@ class LiveStatusResponse(BaseModel):
                     "`vos_runs`) — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
     drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
     message: str
+
+
+class LiveSourceCandidate(BaseModel):
+    """Một nguồn frame mà backend DÒ được, kèm cờ đã kiểm bằng thử thật."""
+
+    source: str = Field(description="giá trị truyền cho /api/live/start (index webcam | URL | đường dẫn)")
+    label: str = Field(description="tên hiện trên UI — người dùng chọn theo nhãn, không theo URL")
+    kind: Literal["camera", "relay", "file"] = Field(description="loại nguồn (để UI gắn nhãn)")
+    available: bool = Field(description="backend đã THỬ và dùng được tại thời điểm dò. Đây KHÔNG "
+                                       "phải 'đang chạy' — chỉ phiên live mới chứng minh được điều đó")
+    check: str = Field(default="", description="bằng chứng đã kiểm (vd 'nhận được ảnh JPEG') — để UI "
+                                               "hiện phép đo, không hứa 'chắc chắn chạy'")
+    latency_ms: int = Field(default=0, ge=0, description="thời gian dò nguồn này (ms)")
+    note: str = Field(default="", description="lý do không dò được (vd 'đang có phiên live')")
+
+
+class LiveSourcesResponse(BaseModel):
+    """Kết quả dò nguồn — UI dùng `suggested` để tự điền ô 'Nguồn frame'."""
+
+    suggested: str = Field(default="", description="nguồn NÊN dùng ngay ('' = không dò được nguồn nào)")
+    suggested_kind: str = Field(default="", description="loại của nguồn gợi ý: camera|relay|file — "
+                                                       "rỗng = không có gợi ý")
+    checked_at: str = Field(default="", description="thời điểm dò (giờ máy chủ) — dò cũ ≠ dò mới")
+    budget_ms: int = Field(default=0, ge=0, description="ngân sách thời gian của một lần dò (ms)")
+    candidates: list[LiveSourceCandidate] = Field(default_factory=list)

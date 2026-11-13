@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 
-import { deviceLine, driftLine, maskRhythmLine, shownFps } from './live'
+import { deviceLine, driftLine, maskRhythmLine, shownFps, sourceCheckLine, stallLine } from './live'
 
 describe('maskRhythmLine', () => {
   it('hiện đủ hai nhịp khi nguồn báo mask_fps', () => {
@@ -152,5 +152,37 @@ describe('deviceLine', () => {
   it('giá trị lạ thì hiện nguyên văn, không đoán', () => {
     expect(deviceLine({ device: 'mps' })).toBe(
       'Thiết bị chạy model: mps — FPS/độ trễ chỉ đúng cho thiết bị này')
+  })
+})
+
+describe('stallLine — ảnh đứng thì phải nói, không được im', () => {
+  const running = { state: 'running' as const, frames: 120, measured_fps: 0 }
+
+  it('dưới 3 s thì chưa cảnh báo (tránh nháy khi cảnh tĩnh ngắn)', () => {
+    expect(stallLine(running, 2.9)).toBeNull()
+  })
+
+  it('≥ 3 s thì nói rõ "không có frame mới", KHÔNG nói "nguồn đã chết"', () => {
+    const line = stallLine(running, 3.4)
+    expect(line).toContain('Không có frame mới trong 3.4 s')
+    expect(line).toContain('frame đứng ở 120')
+    expect(line).not.toContain('chết')
+  })
+
+  it('phiên không chạy (stopped/error/loading) thì không cảnh báo đứng hình', () => {
+    expect(stallLine({ ...running, state: 'stopped' }, 10)).toBeNull()
+    expect(stallLine({ ...running, state: 'error' }, 10)).toBeNull()
+    expect(stallLine(null, 10)).toBeNull()
+  })
+})
+
+describe('sourceCheckLine — bằng chứng đo được thay cho chữ "đã kiểm"', () => {
+  it('in mốc thời gian + bằng chứng + thời gian dò', () => {
+    expect(sourceCheckLine({ check: 'nhận được ảnh JPEG', latency_ms: 6 }, '2026-11-13T22:41:03'))
+      .toBe('dò lúc 22:41:03 · nhận được ảnh JPEG · 6 ms')
+  })
+
+  it('chưa dò thì nói chưa dò, không bịa bằng chứng', () => {
+    expect(sourceCheckLine(null)).toBe('chưa dò nguồn')
   })
 })

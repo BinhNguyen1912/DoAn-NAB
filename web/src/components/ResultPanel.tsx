@@ -20,8 +20,11 @@ export function ResultPanel({ jobId, job }: { jobId: string; job: JobStatus }): 
 
   return (
     <section className="card">
-      <h2>3. Kết quả</h2>
-      <p>
+      <div className="card-head">
+        <span className="step">3</span>
+        <h2>Kết quả</h2>
+      </div>
+      <p data-testid="job-status">
         Trạng thái: <strong>{job.state}</strong> — {job.message}
       </p>
 

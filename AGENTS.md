@@ -263,6 +263,19 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   không phải một chu kỳ (một chu kỳ từng báo 21,3 FPS với `--fps 20`). Demo web: nguồn
   `http://<IP-Windows>:8090/snapshot.jpg` (ảnh JPEG rời 2,6 ms/frame), **không** dùng `/video` (MJPEG đắt hơn).
 
+- **Dò nguồn (`GET /api/live/sources`) chỉ được chạy LÚC CÓ REQUEST, không bao giờ trong
+  `create_app()`/import.** `src/api/main.py` có `app = create_app()` ở cấp module ⇒ dò ở đó là dò mỗi
+  lần import (CI ubuntu không có webcam) và mỗi lần lưu file (`uvicorn --reload`). Đo 13-11: dò nguồn
+  lần đầu **74 ms**, trong cache **3 ms** (TTL 5 s), `budget_ms = 1400` (webcam 0,6 s · HTTP 0,8 s).
+  `live_busy` phải là **`RUNNING | LOADING`**: `LOADING` là worker `track` đang nạp model 20–240 s và
+  **sẽ mở đúng thiết bị đó** — dò webcam lúc này là tranh thiết bị (ca "Device busy" ở trên).
+  `available = true` chỉ có nghĩa *"thử được lúc `checked_at`"*, **không** phải "đang chạy": với
+  `kind=file` nó chỉ là "file tồn tại, chưa mở thử" — UI phải in kèm bằng chứng (`check`) chứ không
+  được in chữ "đã kiểm" trống rỗng. Và **cấm** dùng `fps` do relay tự khai (`/info`) làm FPS trên HUD:
+  đo 13-11 relay khai 16,26 FPS trong khi nhịp đổi thật ~19,9/s ⇒ chỉ dùng `measured_fps`/`display_fps`
+  của API/worker. Log + plan: `docs/task/13-11-2026-ui-moi-va-tu-dong-do-nguon.md`,
+  `docs/plan/13-11-2026-ui-tu-dong-nguon.md`.
+
 ## 7. Các repo/model tham khảo
 
 - SAM 2: https://github.com/facebookresearch/sam2

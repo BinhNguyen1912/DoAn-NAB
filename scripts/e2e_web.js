@@ -55,11 +55,11 @@ function check(name, ok, detail = '') {
 }
 
 async function waitJobState(page, wanted, timeout = 240000) {
+  // SCOPE vào thẻ kết quả của JOB: panel live cũng có dòng bắt đầu bằng "Trạng thái:" và nó đứng
+  // TRƯỚC trong DOM ⇒ bắt "<p> đầu tiên" sẽ đọc nhầm ngay khi có phiên live (review 13-11, P3).
   await page.waitForFunction(
     (states) => {
-      const p = [...document.querySelectorAll('p')].find((element) =>
-        element.textContent.trim().startsWith('Trạng thái:'),
-      )
+      const p = document.querySelector('[data-testid="job-status"]')
       return p && states.some((state) => p.textContent.includes(state))
     },
     wanted,
@@ -185,6 +185,19 @@ async function waitJobState(page, wanted, timeout = 240000) {
 
   const blocked = await page.request.get(`${BASE}/api/jobs/${jobId}/artifacts/job.json`)
   check('artifact ngoài whitelist bị chặn 404', blocked.status() === 404, String(blocked.status()))
+
+  // 8b. TỰ ĐIỀN NGUỒN: backend dò nguồn (webcam/relay/video) và UI phải điền sẵn.
+  //     Chấp nhận mọi kết quả dò (máy CI không có webcam/relay) — chỉ đòi: có gợi ý thì ô nguồn
+  //     phải bằng đúng gợi ý đó; không có gợi ý thì ô giữ nguyên.
+  const goiY = await page.request.get(`${BASE}/api/live/sources`)
+  const duLieuGoiY = await goiY.json().catch(() => ({ suggested: '' }))
+  const nguonTrongO = await page.getByLabel('Nguồn frame').inputValue()
+  check(
+    'nguồn frame tự điền theo kết quả dò của backend',
+    duLieuGoiY.suggested ? nguonTrongO === duLieuGoiY.suggested : true,
+    `gợi ý=${JSON.stringify(duLieuGoiY.suggested)} · ô=${JSON.stringify(nguonTrongO)} · ` +
+      `kind=${JSON.stringify(duLieuGoiY.suggested_kind)} · checked_at=${JSON.stringify(duLieuGoiY.checked_at)}`,
+  )
 
   // 9. live: dùng chính video file làm nguồn (backend lặp lại) — không cần webcam thật
   await page.getByLabel('Nguồn frame').fill(LIVE_SOURCE)
