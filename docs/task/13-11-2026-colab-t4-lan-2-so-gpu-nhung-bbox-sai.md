@@ -47,21 +47,29 @@
 Môi trường: **Colab T4 GPU**, `--device cuda`, `device_worker_log = cuda` (worker thật dùng GPU),
 `git_rev = 58770a3`, `git_dirty_code = false`, `data/input.mp4` = **clip tổng hợp 60 frame 1280×720**.
 
-| Cấu hình | `vos_ms` | `vos_fps` | `lk_ms` | `mask_age_p95` | `measured_fps` (HUD) | `mask_fps_max` | `drift_iou` | `stability` |
+| Cấu hình | `vos_ms` | `vos_fps` | `lk_ms` | `mask_age_p95` | `measured_fps` <br>(`worker_status`, mẫu cuối) | `mask_fps_max` | `drift_iou` | `stability` |
 |---|---|---|---|---|---|---|---|---|
 | `image_size 512` | **63,8 ms** | 6,5 | 16,49 | 234,8 ms | 25,6 | 10,4 | 0,203 ⚠ | 0,271 ⚠ |
 | `image_size 192` | **43,5 ms** | 10,1 | 4,27 | 138,8 ms | 30,0 | 10,8 | 0,346 ⚠ | 0,351 ⚠ |
+
+(n = **1 lần/cấu hình** ⇒ chênh lệch 1,47× chưa đối chiếu được ngưỡng nhiễu — AGENTS §6: `n < 2` thì
+chưa kết luận "tốt hơn"; đó là lý do cell 8b nay chạy 2 lần/cấu hình.)
 
 ⚠ = **không dùng được** (bbox trỏ nền — xem mục 🐞). Số dùng được:
 
 - **Đường GPU qua API live đã chạy được trên T4**: `device_worker_log = cuda`, `state_cuoi = running`,
   804–810 frame trong 30 s, `empty_runs = 0`.
-- **Độ trễ model trên T4**: `vos_ms` **43,5 ms @192** và **63,8 ms @512** ⇒ 512 chậm hơn **1,47×**.
-  (Trên laptop CPU: ~150 ms @192 ⇒ T4 nhanh hơn **~3,4×** ở cùng `image_size` — nhưng đây là suy ra từ
-  hai máy khác nhau, chỉ để định hướng, không phải phép so A/B.)
+- **Độ trễ model trên T4**: `vos_ms` **43,5 ms @192** và **63,8 ms @512** ⇒ 512 chậm hơn **1,47×**
+  (n = 1/cấu hình, xem caveat ở bảng). So với laptop CPU cùng `image_size 192` và cùng loại số
+  (`vos_ms` của `status.json` = **118,0 / 124,0 / 125,7 ms** ở 3 lần đo 13-11,
+  `data/live_web_relay_2026-11-13_125634|125739|125844_metrics.json`): T4 nhanh hơn **~2,7–2,9×**.
+  Đây là suy ra từ **hai máy khác nhau**, chỉ để định hướng — không phải phép so A/B.
 - **`mask_fps` KHÔNG phân biệt được 512 với 192**: cả hai chạm trần `display_fps / vos_every` ≈ 10 lần/giây
-  (10,4 vs 10,8) ⇒ muốn so `image_size` phải dùng **`vos_ms`**, không dùng `mask_fps`. Trần này cũng có
-  nghĩa: trên GPU, `vos_every = 3` là **nút điều khiển nhịp mask** (khác CPU, nơi model chậm hơn `vos_every`).
+  (10,4 vs 10,8; `1/vos_ms` = 15,7 và 23 lần/giây ⇒ model còn dư) ⇒ muốn so `image_size` phải dùng
+  **`vos_ms`**, không dùng `mask_fps`.
+  **Suy ra (chưa đo):** trên GPU, `vos_every` mới là nút chặn nhịp mask, khác CPU nơi model chậm hơn
+  `vos_every` (`mask_fps` ≈ `vos_fps` 6,1–6,6). Muốn nói chắc phải **chạy `vos_every` 1/2/6 trên T4** —
+  đã ghi ở Next steps, chưa làm.
 - **`lk_ms` tăng theo `image_size`**: 4,27 → 16,49 ms (×3,9) — chi phí LK + dời mask lớn hơn, và trên VM
   Colab CPU yếu hơn laptop nên `measured_fps` tụt 30,0 → 25,6 ở 512.
 - **`mask_age_p95`** (tuổi dữ liệu ảnh người xem thực thấy): **138,8 ms @192** vs **234,8 ms @512**.
