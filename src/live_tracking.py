@@ -448,6 +448,10 @@ class LiveTrackingSession:
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1
+        # Đăng ký `seq → frame` cho CẢ lần `start()`: nếu thiếu, mẫu VOS đầu tiên không có
+        # `frame_idx` ⇒ không chấm được drift và dòng CSV của nó không truy về frame nào
+        # (ticket 15: mỗi dòng phải có `frame_idx` để đối chiếu với video).
+        self._seq_frame[self._seq] = self._frame_index
         self._worker.submit(self._seq, frame, gray)
 
     def _stop_worker(self) -> None:
@@ -574,6 +578,11 @@ class LiveTrackingSession:
             return
         fresh = getattr(result, "bbox", None)
         if frame_idx is None or fresh is None or not _bbox_hop_le(fresh):
+            # VOS không thấy vật (mask rỗng ⇒ bbox (0,0,0,0)): KHÔNG chấm drift nhưng VẪN ghi dòng —
+            # đây chính là bằng chứng "VOS mất dấu", thứ phải TÁCH khỏi "LK trôi". Bỏ dòng này thì
+            # cột `empty` luôn 0 và `empty_frac` nói dối (binh2 12-11: 81 lần mask rỗng trong
+            # status.json nhưng CSV ghi 0,0 — bắt được khi đo thật).
+            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
             return
         # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
@@ -588,6 +597,7 @@ class LiveTrackingSession:
                                        self._mask_empty(result))
                 return
         if not _bbox_hop_le(shown):
+            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
             return
         value = _bbox_iou(shown, fresh)
         self._record_drift(value)

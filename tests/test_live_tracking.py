@@ -825,7 +825,13 @@ class TestDriftVaTuoiMask:
         assert session._stats.drift_iou is None
 
     def test_mask_rong_khong_vao_mau_drift(self, tmp_path):
-        """Mask rỗng ⇒ bbox (0,0,0,0): bỏ mẫu, KHÔNG ghi điểm 0."""
+        """Mask rỗng ⇒ bbox (0,0,0,0): bỏ mẫu drift, KHÔNG ghi điểm 0 — nhưng VẪN có dòng CSV.
+
+        Dòng đó (`empty=1`, `drift_iou` trống) là bằng chứng "VOS mất dấu" — thiếu nó thì cột
+        `empty` luôn 0 và `% cửa sổ báo oan` không tách được "model mất vật" khỏi "LK trôi".
+        """
+        from src.drift_samples import read_samples
+
         out = tmp_path / "live"
         _pre_select(out)
         session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -836,6 +842,32 @@ class TestDriftVaTuoiMask:
         session._measure_drift(2, _Result(0, (0, 0, 0, 0), None))
 
         assert session._stats.drift_n == 0
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 2
+        assert [row["empty"] for row in rows] == [None, None]   # `mask=None` ⇒ chưa đo, không phải 0
+        assert all(row["drift_iou"] is None for row in rows)
+
+    def test_mask_rong_co_that_thi_dong_csv_ghi_empty_1(self, tmp_path):
+        """`mask` là mảng RỖNG (engine trả mask) ⇒ dòng CSV phải ghi `empty=1`.
+
+        Đây là lỗi gặp thật khi đo 13-11: binh2 có 81 lần VOS trả mask rỗng trong `status.json`,
+        nhưng CSV (chỉ ghi mẫu CÓ drift) báo `empty_frac = 0,0` ⇒ đọc thành "model không mất dấu
+        lần nào", ngược hẳn sự thật.
+        """
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+        rong = np.zeros((32, 32), bool)
+        session._shown_by_frame.append((3, None))
+        session._measure_drift(3, _Result(0, (0, 0, 0, 0), rong), seq=7)
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert len(rows) == 1
+        assert rows[0]["empty"] is True and rows[0]["seq"] == 7
+        assert rows[0]["drift_iou"] is None           # không chấm drift khi không có vật
 
     def test_tat_lk_thi_khong_do_drift(self, tmp_path):
         """`vos_every=1`: không có nội suy ⇒ không được gọi đó là drift (nếu không "tắt LK" trông tốt hơn)."""
@@ -1406,8 +1438,9 @@ class TestDriftSamplesCsv:
         # Mỗi dòng phải truy được về một lần VOS + một frame cụ thể (đó là toàn bộ mục đích của file).
         assert all(row["frame_idx"] is not None for row in rows)
         assert all(row["seq"] is not None for row in rows)
-        # 200 mẫu cuối phải cho đúng `drift_iou` đã công bố trong status.json.
-        values = [row["drift_iou"] for row in rows][-200:]
+        # 200 mẫu drift cuối phải cho đúng `drift_iou` đã công bố trong status.json (bỏ dòng không
+        # đo được — dòng đó vẫn có trong CSV để đếm `empty`).
+        values = [row["drift_iou"] for row in rows if row["drift_iou"] is not None][-200:]
         assert round(sum(values) / len(values), 3) == pytest.approx(status["drift_iou"], abs=1e-3)
 
     def test_tat_lk_thi_khong_sinh_file_mau(self, textured_video, tmp_path):
