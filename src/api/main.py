@@ -9,8 +9,9 @@ Lưu ý  : đổi sang SQLite/S3/GPU worker chỉ cần sửa `build_default_ser
          service/routes/domain không phải sửa một dòng.
 """
 
-import logging
 import asyncio
+import logging
+from collections.abc import Callable
 from contextlib import asynccontextmanager
 from pathlib import Path
 
@@ -23,12 +24,14 @@ from src.api.adapters import (
     Cv2VideoProbe,
     FileSystemJobStore,
     OpenCvFrameSource,
+    SourceProbe,
     SubprocessPipelineRunner,
     WorkerFrameSource,
 )
 from src.api.config import ApiSettings
 from src.api.domain import (
     LiveBusy,
+    LiveState,
     InvalidBBox,
     JobConflict,
     JobNotFound,
@@ -125,11 +128,20 @@ def mount_frontend(app: FastAPI) -> None:
 
 def create_app(settings: ApiSettings | None = None,
                 service: JobService | None = None,
-                live: LiveStreamService | None = None) -> FastAPI:
-    """Application factory: điểm lắp ghép phụ thuộc duy nhất của tầng API."""
+                live: LiveStreamService | None = None,
+                sources: Callable[[], dict] | None = None) -> FastAPI:
+    """Application factory: điểm lắp ghép phụ thuộc duy nhất của tầng API.
+
+    `sources`: bộ dò nguồn frame cho `/api/live/sources` (mặc định: `SourceProbe` thật).
+    Tiêm được để test không phải mở webcam/HTTP thật.
+    """
     settings = settings or ApiSettings.from_env(REPO_ROOT)
     service = service or build_default_service(settings)
     live = live or build_default_live()
+    if sources is None:
+        # Bỏ dò webcam khi đang có phiên live: mở thêm thiết bị sẽ tranh với phiên đang chạy.
+        probe = SourceProbe(REPO_ROOT, live_busy=lambda: live.status().state is LiveState.RUNNING)
+        sources = probe.suggest
 
     @asynccontextmanager
     async def _lifespan(_app: FastAPI):
@@ -158,7 +170,7 @@ def create_app(settings: ApiSettings | None = None,
     app.state.settings = settings
     app.state.service = service
     app.state.live = live
-    app.include_router(build_router(service, live))
+    app.include_router(build_router(service, live, sources))
     register_error_handlers(app)
     mount_frontend(app)
 

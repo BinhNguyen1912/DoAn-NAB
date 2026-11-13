@@ -30,14 +30,21 @@ export function UploadForm({ onUpload, uploading, jobId }: Props): JSX.Element {
 
   return (
     <section className="card">
-      <h2>1. Chọn video</h2>
+      <div className="card-head">
+        <span className="step">1</span>
+        <h2>Chọn video</h2>
+      </div>
+      <p className="hint" style={{ marginTop: 0 }}>
+        Xử lý offline: tải video lên → chọn vật → xuất video HUD + CSV/JSON số liệu (dùng cho báo cáo).
+      </p>
       <input
+        className="file-input"
         type="file"
         accept="video/mp4,video/x-msvideo,video/quicktime,video/x-matroska"
         onChange={(event) => setFile(event.target.files?.[0] ?? null)}
       />
 
-      <div className="row">
+      <div className="grid-opts">
         <label>
           Độ phân giải model
           <select
@@ -65,6 +72,7 @@ export function UploadForm({ onUpload, uploading, jobId }: Props): JSX.Element {
           Giới hạn frame
           <input
             type="number"
+            style={{ width: '100%' }}
             min={1}
             placeholder="tất cả"
             onChange={(event) => {
@@ -85,7 +93,7 @@ export function UploadForm({ onUpload, uploading, jobId }: Props): JSX.Element {
         {uploading ? 'Đang tải lên…' : 'Tải lên và tạo job'}
       </button>
 
-      {jobId && <p className="hint">Mã job: {jobId}</p>}
+      {jobId && <p className="hint">Mã job: <span className="kbd">{jobId}</span></p>}
     </section>
   )
 }

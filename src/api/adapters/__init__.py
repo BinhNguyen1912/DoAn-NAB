@@ -9,8 +9,9 @@ Lưu ý  : chỉ composition root được import package này — service/route
 from src.api.adapters.cv2_probe import Cv2VideoProbe
 from src.api.adapters.fs_store import FileSystemJobStore
 from src.api.adapters.opencv_source import OpenCvFrameSource
+from src.api.adapters.source_probe import SourceProbe
 from src.api.adapters.subprocess_runner import SubprocessPipelineRunner
 from src.api.adapters.worker_source import WorkerFrameSource
 
-__all__ = ["Cv2VideoProbe", "FileSystemJobStore", "OpenCvFrameSource",
+__all__ = ["Cv2VideoProbe", "FileSystemJobStore", "OpenCvFrameSource", "SourceProbe",
            "SubprocessPipelineRunner", "WorkerFrameSource"]

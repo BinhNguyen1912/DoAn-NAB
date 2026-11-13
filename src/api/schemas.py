@@ -157,3 +157,21 @@ class LiveStatusResponse(BaseModel):
                     "`vos_runs`) — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
     drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
     message: str
+
+
+class LiveSourceCandidate(BaseModel):
+    """Một nguồn frame mà backend DÒ được, kèm cờ đã kiểm bằng thử thật."""
+
+    source: str = Field(description="giá trị truyền cho /api/live/start (index webcam | URL | đường dẫn)")
+    label: str = Field(description="tên hiện trên UI — người dùng chọn theo nhãn, không theo URL")
+    kind: Literal["camera", "relay", "file"] = Field(description="loại nguồn (để UI gắn nhãn)")
+    available: bool = Field(description="backend đã thử và DÙNG ĐƯỢC thật hay không (false vẫn "
+                                       "được liệt kê để người dùng thấy vì sao không có nguồn)")
+    note: str = Field(default="", description="lý do không dò được (vd 'đang có phiên live')")
+
+
+class LiveSourcesResponse(BaseModel):
+    """Kết quả dò nguồn — UI dùng `suggested` để tự điền ô 'Nguồn frame'."""
+
+    suggested: str = Field(description="nguồn NÊN dùng ngay ('' = không dò được nguồn nào)")
+    candidates: list[LiveSourceCandidate] = Field(default_factory=list)

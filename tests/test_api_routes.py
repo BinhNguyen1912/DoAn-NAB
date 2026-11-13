@@ -207,6 +207,8 @@ class TestHopDongOpenApi:
             "/api/live/status",
             "/api/live/frame",
             "/api/live/stream",
+            # dò nguồn frame để UI tự điền (13-11-2026)
+            "/api/live/sources",
         }
         assert bat_buoc <= set(paths), f"thiếu endpoint: {bat_buoc - set(paths)}"
         # không có endpoint lạ ngoài danh sách (bỏ "/" — phụ thuộc web/dist)

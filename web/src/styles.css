@@ -1,49 +1,156 @@
-/* Giao diện tối giản, không phụ thuộc thư viện UI — đủ rõ để demo và dễ đọc trong báo cáo. */
+/* Giao diện "studio" — tối, gọn, số liệu đọc được từ xa khi chiếu máy chiếu.
+   Không phụ thuộc thư viện UI: chỉ CSS thuần + biến, để bundle nhỏ và không phải học thêm lib. */
 
 :root {
-  --bg: #0f1115;
-  --card: #181b22;
-  --line: #2a2f3a;
-  --text: #e8ecf3;
-  --muted: #9aa4b2;
+  --bg: #0b0d12;
+  --bg-soft: #11141c;
+  --card: rgba(24, 28, 38, 0.86);
+  --card-solid: #171b24;
+  --line: #262c3a;
+  --line-soft: #1e2430;
+  --text: #eef2f8;
+  --muted: #97a3b6;
   --accent: #ffd400;
-  --ok: #35c07d;
+  --accent-2: #ff8a3d;
+  --ok: #3ddc97;
   --bad: #ff6b6b;
+  --info: #6aa9ff;
+  --radius: 14px;
+  --shadow: 0 18px 40px rgba(0, 0, 0, 0.45);
 }
 
 * {
   box-sizing: border-box;
 }
 
+html,
 body {
-  margin: 0;
-  background: var(--bg);
-  color: var(--text);
-  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
-  line-height: 1.5;
+  min-height: 100%;
 }
 
+body {
+  margin: 0;
+  color: var(--text);
+  font-family: system-ui, -apple-system, 'Segoe UI', Roboto, sans-serif;
+  line-height: 1.55;
+  background:
+    radial-gradient(1100px 600px at 12% -10%, rgba(255, 212, 0, 0.1), transparent 60%),
+    radial-gradient(900px 520px at 100% 0%, rgba(106, 169, 255, 0.12), transparent 55%),
+    var(--bg);
+}
+
+/* ------------------------------------------------------------------ khung trang */
+
 .page {
-  max-width: 880px;
+  max-width: 1240px;
   margin: 0 auto;
-  padding: 24px 16px 64px;
+  padding: 28px 20px 80px;
+}
+
+.topbar {
+  position: sticky;
+  top: 0;
+  z-index: 20;
+  backdrop-filter: blur(10px);
+  background: rgba(11, 13, 18, 0.82);
+  border-bottom: 1px solid var(--line-soft);
+}
+
+.topbar-inner {
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 12px 20px;
+  display: flex;
+  gap: 14px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+
+.brand .mark {
+  width: 26px;
+  height: 26px;
+  border-radius: 9px;
+  display: grid;
+  place-items: center;
+  font-size: 0.85rem;
+  color: #10131a;
+  background: linear-gradient(140deg, var(--accent), var(--accent-2));
+  box-shadow: 0 6px 18px rgba(255, 180, 60, 0.28);
+}
+
+.brand .ver {
+  color: var(--muted);
+  font-size: 0.75rem;
+  font-weight: 500;
+  padding: 2px 8px;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+}
+
+.topbar .spacer {
+  flex: 1 1 auto;
+}
+
+.hero {
+  margin: 22px 0 8px;
 }
 
 h1 {
-  font-size: 1.6rem;
+  font-size: clamp(1.5rem, 2.4vw, 2.1rem);
+  line-height: 1.2;
   margin: 0 0 8px;
-}
-
-h2 {
-  font-size: 1.1rem;
-  margin: 0 0 12px;
+  letter-spacing: -0.02em;
 }
 
 .sub {
   color: var(--muted);
-  margin: 0 0 12px;
+  margin: 0;
+  max-width: 76ch;
 }
 
+.pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 6px 12px;
+  border-radius: 999px;
+  border: 1px solid var(--line);
+  background: var(--bg-soft);
+  font-size: 0.82rem;
+  color: var(--muted);
+  white-space: nowrap;
+}
+
+.pill::before {
+  content: '';
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  background: currentColor;
+  box-shadow: 0 0 0 3px rgba(255, 255, 255, 0.05);
+}
+
+.pill.ok {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.35);
+  background: rgba(61, 220, 151, 0.08);
+}
+
+.pill.bad {
+  color: var(--bad);
+  border-color: rgba(255, 107, 107, 0.4);
+  background: rgba(255, 107, 107, 0.08);
+}
+
+/* giữ tên class `.status` cũ cho code/test đang dùng */
 .status {
   font-size: 0.9rem;
   margin: 0;
@@ -57,75 +164,224 @@ h2 {
   color: var(--bad);
 }
 
+/* ------------------------------------------------------------------ bố cục */
+
+.layout {
+  display: grid;
+  gap: 18px;
+  grid-template-columns: minmax(0, 1fr);
+  margin-top: 18px;
+}
+
+@media (min-width: 1080px) {
+  .layout {
+    grid-template-columns: minmax(0, 1.5fr) minmax(340px, 1fr);
+    align-items: start;
+  }
+
+  .layout > .col-live {
+    position: sticky;
+    top: 76px;
+  }
+}
+
+.col {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  min-width: 0;
+}
+
 .card {
   background: var(--card);
   border: 1px solid var(--line);
-  border-radius: 12px;
-  padding: 16px;
-  margin-top: 16px;
+  border-radius: var(--radius);
+  padding: 18px;
+  box-shadow: var(--shadow);
 }
+
+.card.flat {
+  box-shadow: none;
+  background: var(--card-solid);
+}
+
+.card-head {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+  margin-bottom: 14px;
+}
+
+.card-head h2 {
+  margin: 0;
+}
+
+h2 {
+  font-size: 1.02rem;
+  margin: 0 0 12px;
+  letter-spacing: 0.01em;
+}
+
+.step {
+  display: inline-grid;
+  place-items: center;
+  width: 24px;
+  height: 24px;
+  border-radius: 8px;
+  font-size: 0.78rem;
+  font-weight: 700;
+  color: var(--accent);
+  background: rgba(255, 212, 0, 0.12);
+  border: 1px solid rgba(255, 212, 0, 0.3);
+}
+
+/* ------------------------------------------------------------------ nhập liệu */
 
 .row {
   display: flex;
   flex-wrap: wrap;
-  gap: 16px;
+  gap: 12px;
   align-items: flex-end;
-  margin: 12px 0;
+  margin: 12px 0 0;
 }
 
 label {
   display: flex;
   flex-direction: column;
   gap: 6px;
-  font-size: 0.9rem;
+  font-size: 0.82rem;
   color: var(--muted);
+  min-width: 0;
 }
 
 label.inline {
   flex-direction: row;
   align-items: center;
   gap: 8px;
+  color: var(--text);
+  font-size: 0.9rem;
 }
 
 input[type='file'],
 select,
+input[type='text'],
 input[type='number'] {
-  background: #10131a;
+  background: #0d1017;
   color: var(--text);
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  font-size: 0.95rem;
+  border-radius: 10px;
+  padding: 9px 11px;
+  font-size: 0.92rem;
+  font-family: inherit;
+  transition: border-color 0.15s ease, box-shadow 0.15s ease;
 }
 
 input[type='number'] {
   width: 110px;
 }
 
-button,
-.button {
-  display: inline-block;
-  background: var(--accent);
-  color: #111;
-  border: none;
+input:focus,
+select:focus {
+  outline: none;
+  border-color: rgba(255, 212, 0, 0.55);
+  box-shadow: 0 0 0 3px rgba(255, 212, 0, 0.12);
+}
+
+input:disabled,
+select:disabled {
+  opacity: 0.6;
+}
+
+.grid-opts {
+  display: grid;
+  gap: 12px;
+  grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+  align-items: end;
+  margin-top: 14px;
+}
+
+.file-input {
+  width: 100%;
+  padding: 10px;
+  border: 1px dashed var(--line);
+  border-radius: 10px;
+  background: #0d1017;
+  color: var(--muted);
+  font-size: 0.86rem;
+  cursor: pointer;
+}
+
+.file-input::file-selector-button {
+  margin-right: 10px;
+  padding: 7px 12px;
   border-radius: 8px;
-  padding: 10px 18px;
-  font-size: 0.95rem;
+  border: 1px solid var(--line);
+  background: #141922;
+  color: var(--text);
+  font-family: inherit;
   font-weight: 600;
   cursor: pointer;
+}
+
+.grow {
+  flex: 1 1 260px;
+  min-width: 0;
+}
+
+button,
+.button {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  background: linear-gradient(140deg, var(--accent), #ffbe3d);
+  color: #14161c;
+  border: 1px solid transparent;
+  border-radius: 10px;
+  padding: 10px 16px;
+  font-size: 0.92rem;
+  font-weight: 700;
+  font-family: inherit;
+  cursor: pointer;
   text-decoration: none;
+  transition: transform 0.12s ease, filter 0.15s ease, opacity 0.15s ease;
+}
+
+button:hover:not(:disabled),
+.button:hover {
+  filter: brightness(1.06);
+  transform: translateY(-1px);
 }
 
 button:disabled {
-  opacity: 0.45;
+  opacity: 0.42;
   cursor: not-allowed;
+  transform: none;
 }
 
-.button.ghost {
+.button.ghost,
+button.ghost {
   background: transparent;
-  color: var(--accent);
-  border: 1px solid var(--accent);
+  color: var(--text);
+  border: 1px solid var(--line);
+  font-weight: 600;
 }
+
+.button.ghost:hover,
+button.ghost:hover:not(:disabled) {
+  border-color: rgba(255, 212, 0, 0.5);
+  color: var(--accent);
+}
+
+.button.danger,
+button.danger {
+  background: transparent;
+  color: var(--bad);
+  border: 1px solid rgba(255, 107, 107, 0.45);
+  font-weight: 600;
+}
+
+/* ------------------------------------------------------------------ vùng hình */
 
 .canvas-wrap {
   margin-bottom: 12px;
@@ -136,29 +392,167 @@ canvas {
   height: auto;
   display: block;
   border: 1px solid var(--line);
-  border-radius: 8px;
+  border-radius: 12px;
   cursor: crosshair;
   background: #000;
 }
 
+.stage {
+  position: relative;
+  border-radius: 12px;
+  overflow: hidden;
+  border: 1px solid var(--line);
+  background: #000;
+  margin-top: 14px;
+}
+
+.stage::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  box-shadow: inset 0 0 90px rgba(0, 0, 0, 0.55);
+}
+
+.live-frame {
+  width: 100%;
+  display: block;
+  background: #000;
+  aspect-ratio: 4 / 3;
+  object-fit: contain;
+}
+
+.stage.empty {
+  display: grid;
+  place-items: center;
+  min-height: 260px;
+  border-style: dashed;
+  border-color: var(--line);
+  background: repeating-linear-gradient(
+    45deg,
+    rgba(255, 255, 255, 0.012),
+    rgba(255, 255, 255, 0.012) 10px,
+    transparent 10px,
+    transparent 20px
+  );
+}
+
+.empty-inner {
+  text-align: center;
+  padding: 20px;
+  max-width: 46ch;
+}
+
+.empty-icon {
+  font-size: 1.6rem;
+  color: var(--accent);
+  opacity: 0.8;
+  margin-bottom: 6px;
+}
+
+.empty-inner p {
+  margin: 4px 0;
+}
+
+.stage .badge {
+  position: absolute;
+  top: 10px;
+  left: 10px;
+  z-index: 2;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  padding: 4px 10px;
+  border-radius: 999px;
+  font-size: 0.74rem;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: #ffd7d7;
+  background: rgba(200, 30, 30, 0.72);
+  backdrop-filter: blur(4px);
+}
+
+.stage .badge .dot {
+  width: 7px;
+  height: 7px;
+  border-radius: 50%;
+  background: #fff;
+  animation: pulse 1.6s ease-in-out infinite;
+}
+
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.25;
+  }
+}
+
+video {
+  width: 100%;
+  border-radius: 12px;
+  margin: 12px 0;
+  background: #000;
+}
+
+/* ------------------------------------------------------------------ số liệu */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(110px, 1fr));
+  gap: 10px;
+  margin-top: 14px;
+}
+
+.stat {
+  background: #0e1118;
+  border: 1px solid var(--line-soft);
+  border-radius: 11px;
+  padding: 9px 11px;
+}
+
+.stat .k {
+  font-size: 0.72rem;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+  color: var(--muted);
+}
+
+.stat .v {
+  font-size: 1.12rem;
+  font-weight: 700;
+  font-variant-numeric: tabular-nums;
+}
+
+.stat .v small {
+  font-size: 0.72rem;
+  font-weight: 500;
+  color: var(--muted);
+  margin-left: 3px;
+}
+
 .hint {
   color: var(--muted);
-  font-size: 0.85rem;
+  font-size: 0.84rem;
   margin: 8px 0 0;
 }
 
 .error {
-  background: rgba(255, 107, 107, 0.12);
-  border: 1px solid var(--bad);
-  color: var(--bad);
-  border-radius: 8px;
+  background: rgba(255, 107, 107, 0.1);
+  border: 1px solid rgba(255, 107, 107, 0.5);
+  color: #ffb3b3;
+  border-radius: 10px;
   padding: 10px 12px;
-  margin-top: 16px;
+  margin-top: 14px;
+  font-size: 0.9rem;
 }
 
 .progress {
-  height: 10px;
-  background: #10131a;
+  height: 8px;
+  background: #0d1017;
   border: 1px solid var(--line);
   border-radius: 999px;
   overflow: hidden;
@@ -166,15 +560,8 @@ canvas {
 
 .progress .bar {
   height: 100%;
-  background: var(--accent);
+  background: linear-gradient(90deg, var(--accent), var(--accent-2));
   transition: width 0.3s ease;
-}
-
-video {
-  width: 100%;
-  border-radius: 8px;
-  margin: 12px 0;
-  background: #000;
 }
 
 .summary {
@@ -186,9 +573,9 @@ video {
 .summary th,
 .summary td {
   text-align: left;
-  padding: 8px 10px;
-  border-bottom: 1px solid var(--line);
-  font-size: 0.95rem;
+  padding: 9px 10px;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 0.9rem;
 }
 
 .summary th {
@@ -197,20 +584,36 @@ video {
   width: 55%;
 }
 
-.live-frame {
-  width: 100%;
-  border-radius: 8px;
-  border: 1px solid var(--line);
-  background: #000;
-  margin-top: 12px;
-  display: block;
+.summary td {
+  font-variant-numeric: tabular-nums;
+  font-weight: 600;
 }
 
-input[type='text'] {
-  background: #10131a;
-  color: var(--text);
+.tag {
+  display: inline-block;
+  font-size: 0.72rem;
+  padding: 2px 8px;
+  border-radius: 999px;
   border: 1px solid var(--line);
-  border-radius: 8px;
-  padding: 8px;
-  font-size: 0.95rem;
+  color: var(--muted);
+  margin-left: 6px;
+}
+
+.tag.ok {
+  color: var(--ok);
+  border-color: rgba(61, 220, 151, 0.4);
+}
+
+.tag.bad {
+  color: var(--bad);
+  border-color: rgba(255, 107, 107, 0.4);
+}
+
+.kbd {
+  font-family: ui-monospace, SFMono-Regular, Menlo, monospace;
+  font-size: 0.82rem;
+  background: #0d1017;
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 1px 6px;
 }

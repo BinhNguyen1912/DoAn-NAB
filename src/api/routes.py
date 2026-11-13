@@ -9,6 +9,8 @@ Lưu ý  : lỗi miền (JobNotFound, JobConflict, ...) do `main.register_error_
          mã HTTP — ở đây KHÔNG bắt exception của service để tránh lặp đi lặp lại try/except.
 """
 
+import logging
+
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile
 from fastapi.responses import FileResponse, Response, StreamingResponse
 
@@ -17,6 +19,8 @@ from src.api.schemas import (
     JobCreateResponse,
     JobListItem,
     JobStatusResponse,
+    LiveSourceCandidate,
+    LiveSourcesResponse,
     LiveStartRequest,
     LiveStatusResponse,
     ReidCue,
@@ -26,6 +30,8 @@ from src.api.schemas import (
 from src.api.service import JobService
 
 APP_VERSION = "0.1.0"
+
+logger = logging.getLogger("doan.api.routes")
 
 
 def _to_status_response(view: JobView) -> JobStatusResponse:
@@ -52,8 +58,12 @@ def _to_list_item(view: JobView) -> JobListItem:
     )
 
 
-def build_router(service: JobService, live) -> APIRouter:
-    """Dựng router với service + live service được tiêm vào (composition root gọi hàm này)."""
+def build_router(service: JobService, live, sources=None) -> APIRouter:
+    """Dựng router với service + live service (+ bộ dò nguồn) được tiêm vào.
+
+    `sources` là callable trả dict `{"suggested", "candidates"}`; None = không có bộ dò (test cũ,
+    hoặc môi trường không muốn dò) ⇒ endpoint trả danh sách rỗng thay vì lỗi.
+    """
     router = APIRouter()
 
     @router.get("/health")
@@ -146,6 +156,23 @@ def build_router(service: JobService, live) -> APIRouter:
             drift_p05=status.drift_p05,
             drift_n=status.drift_n,
             message=status.message,
+        )
+
+    @router.get("/api/live/sources", response_model=LiveSourcesResponse)
+    def live_sources() -> LiveSourcesResponse:
+        """Nguồn frame backend dò được, kèm nguồn GỢI Ý — UI tự điền để không phải dán URL.
+
+        Dò có thể mở webcam/chờ HTTP ⇒ adapter `SourceProbe` tự cache (`CACHE_TTL_S`), và hàm này
+        là `def` đồng bộ nên FastAPI chạy nó trong threadpool (không chặn event loop).
+        """
+        try:
+            data = sources() if callable(sources) else {}
+        except Exception:                 # noqa: BLE001 — dò nguồn là TIỆN ÍCH, không được làm 500
+            logger.warning("dò nguồn frame thất bại", exc_info=True)
+            data = {}
+        return LiveSourcesResponse(
+            suggested=data.get("suggested", ""),
+            candidates=[LiveSourceCandidate(**c) for c in data.get("candidates", [])],
         )
 
     @router.post("/api/live/start", response_model=LiveStatusResponse)

@@ -160,6 +160,28 @@ export interface LiveStartOptions {
   vos_every?: number
 }
 
+/** Một nguồn frame backend DÒ được (kèm cờ đã kiểm bằng thử thật). */
+export interface LiveSourceCandidate {
+  source: string
+  label: string
+  kind: 'camera' | 'relay' | 'file'
+  available: boolean
+  note: string
+}
+
+export interface LiveSources {
+  /** nguồn NÊN dùng ngay ('' = không dò được) — UI tự điền vào ô "Nguồn frame" */
+  suggested: string
+  candidates: LiveSourceCandidate[]
+}
+
+/** Dò nguồn frame backend dùng được (webcam / relay / video demo) để UI tự điền. */
+export async function getLiveSources(): Promise<LiveSources> {
+  const res = await fetch('/api/live/sources')
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveSources
+}
+
 /** Bắt đầu phát trực tiếp từ nguồn frame (webcam/RTSP/snapshot/video file). */
 export async function startLive(source: string, options: LiveStartOptions = {}): Promise<LiveStatus> {
   const res = await fetch('/api/live/start', {
