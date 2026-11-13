@@ -86,8 +86,9 @@ Môi trường: WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny, `image_size 1
     `tests/test_measure_live_relay.py`
   - `data/drift_samples_{binh1×3,binh2,tinh_binh1}_2026-11-13_*.csv` + `.meta.json`,
     `data/drift_series_2026-11-13_124245_metrics.json`
-- Kiểm tra trên máy này: `./run lint` xanh · `./run test` **862 passed** (85 s, 5 deselected) ·
-  `./run testall` **857 passed** (224 s, trước khi thêm 5 test của vòng sửa P1).
+- Kiểm tra trên máy này (sau vòng sửa theo review): `./run lint` xanh · `./run test`
+  **862 passed** (85 s, 5 deselected) · `./run testall` **867 passed** (237 s). CI GitHub trên PR:
+  `ruff` success, `pytest (fast lane)` success.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Lỗi thật #1 — CSV nói dối về "mask rỗng".** Lần đo binh2 đầu tiên: `status.json` ghi
