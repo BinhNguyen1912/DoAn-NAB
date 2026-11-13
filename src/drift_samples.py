@@ -6,7 +6,9 @@ Chức năng: `status.json` chỉ có mean/p05 của cửa sổ 200 mẫu ⇒ **
            (`frame_idx, seq, vos_ms, empty, drift_iou, bbox_*`) và cung cấp các hàm THUẦN để đọc
            lại + phân tích: `rolling_p05`, `flag_rate`, `detect_latency`, `static_control`.
 Input  : `DriftSampleLog.write(...)` từ `LiveTrackingSession`; `read_samples(path)` cho CSV đã ghi.
-Output : `<out_dir>/drift_samples.csv` (một dòng / một mẫu drift) + dict thống kê thuần.
+Output : `<out_dir>/drift_samples.csv` (một dòng / kết quả VOS của luồng worker) + dict thống kê
+         thuần. Quan hệ đếm: `n_dong == vos_runs - 1` — `vos_runs` cộng thêm 1 lần `engine.start()`
+         (mẫu khởi tạo, không có nội suy để so nên không có dòng).
 Lưu ý  : (1) Ô TRỐNG = **chưa đo**, KHÔNG được đọc thành 0 (AGENTS §6). (2) `write()` được gọi từ
          HAI luồng (luồng VOS khi đo drift ngay, luồng chính khi mẫu `_pending_drift` tới hạn) nên
          có lock riêng; lock chỉ giữ trong lúc ghi một dòng (~vài chục µs), KHÔNG gọi hàm này khi

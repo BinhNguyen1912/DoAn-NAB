@@ -1438,6 +1438,10 @@ class TestDriftSamplesCsv:
         # Mỗi dòng phải truy được về một lần VOS + một frame cụ thể (đó là toàn bộ mục đích của file).
         assert all(row["frame_idx"] is not None for row in rows)
         assert all(row["seq"] is not None for row in rows)
+        # Bất biến "không mất mẫu": mỗi kết quả VOS của luồng worker ⇒ đúng 1 dòng. `vos_runs` lớn
+        # hơn CSV đúng 1 vì `engine.start()` cũng chạy model nhưng KHÔNG đi qua `_store_vos` (nó là
+        # mẫu khởi tạo, không có nội suy để so). P1 review 13-11 từng làm lệch 10–20 dòng.
+        assert len(rows) == stats.vos_runs - 1
         # 200 mẫu drift cuối phải cho đúng `drift_iou` đã công bố trong status.json (bỏ dòng không
         # đo được — dòng đó vẫn có trong CSV để đếm `empty`).
         values = [row["drift_iou"] for row in rows if row["drift_iou"] is not None][-200:]

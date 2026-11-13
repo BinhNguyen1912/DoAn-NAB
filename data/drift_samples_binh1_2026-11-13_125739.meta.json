@@ -1,18 +1,18 @@
 {
-  "do_luc": "2026-11-13T12:38:57+07:00",
-  "git_rev": "713f869650ef5c54c68eb05bd40a086a335ec88c",
+  "do_luc": "2026-11-13T12:57:39+07:00",
+  "git_rev": "301b9615b78e1efffaa7f82d4614d78a6b3f4b95",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "ghi_chu": "Mỗi dòng = 1 mẫu drift của phiên live (frame_idx, seq, vos_ms, empty, drift_iou, bbox). Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
-  "lenh": "python scripts/measure_live_relay.py --source data/binh2.mp4 --bbox 200,400,300,500 --image-size 192 --vos-every 3 --seconds 55 --port 8021",
-  "nguon": "data/binh2.mp4",
+  "lenh": "python scripts/measure_live_relay.py --source data/binh1.mp4 --bbox 104,308,209,287 --image-size 192 --vos-every 3 --seconds 55 --port 8021",
+  "nguon": "data/binh1.mp4",
   "thiet_lap": {
     "bbox_xywh": [
-      200,
-      400,
-      300,
-      500
+      104,
+      308,
+      209,
+      287
     ],
     "image_size": 192,
     "vos_every": 3,
