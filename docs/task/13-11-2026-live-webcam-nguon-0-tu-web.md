@@ -125,3 +125,62 @@
 - `AGENTS.md` §6 (kinh nghiệm đã đo: webcam WSL/usbipd, relay) và §7b (quy trình git).
 - `docs/task/_template.md` — khuôn log này.
 - `docs/task/04-11-2026-cuu-webcam-relay-http.md`, `docs/task/05-11-2026-webcam-usbipd-ket-o-driver-khong-phai-wsl.md`.
+
+---
+
+# Bổ sung 22:00 — Demo webcam thật realtime qua relay + sửa nhịp phát của relay
+
+## 🎯 Mục tiêu
+- Đưa **webcam thật** lên web ngay (máy WSL không có `/dev/video0` ⇒ phải qua relay Windows → WSL).
+- Tìm và sửa nút cổ chai FPS của đường demo này.
+
+## 📥 Input
+- Yêu cầu người dùng: "tôi muốn demo có webcam, realtime".
+- `scripts/win_camera_relay.py` (relay MJPEG/snapshot chạy bằng python của Windows),
+  `scripts/cam_relay.sh` (`./run relay start|status|stop`), `tools/start_cam_relay.cmd`.
+
+## 🔨 Công việc đã thực hiện
+1. Kiểm môi trường: `powershell.exe Test-Path $env:LOCALAPPDATA\wincam-venv\Scripts\python.exe` → `True`
+   (venv Windows + opencv đã có). `./run relay start` → `/info` = `{"w":640,"h":480,"serving":true}` ⇒ camera
+   Windows mở được. `./run relay status` → `fps 10.6` (đây là số **relay** tự đo).
+2. Đo trần camera (script tạm `data/_probe_cam.py`, python của venv wincam, DSHOW):
+   | cấu hình | FPS đo |
+   |---|---|
+   | mặc định (không set gì) | 16,6 |
+   | 640×480 MJPG@30 | 16,6 |
+   | 640×480 YUY2@30 | 16,6 |
+   | 1280×720 MJPG@30 | 10,0 |
+   ⇒ trần của **camera** ở 640×480 ≈ 16,6 FPS; 720p chỉ 10 FPS.
+3. Đo đường web end-to-end (`TestClient` → `/api/live/start` mode `raw`, nguồn `.../snapshot.jpg`):
+   `frames=76`, `measured_fps=16.6` trong 4 s ⇒ **API không phải nút cổ chai** (đọc snapshot 2,6 ms/frame,
+   đo riêng: 381 frame/giây là trần lý thuyết của nguồn).
+4. Tìm bug nhịp của relay: `scripts/win_camera_relay.py::_reader()` lấy mốc thời gian **sau** `imencode`
+   rồi `sleep(interval - (now - now))` ⇒ gần như **luôn ngủ đủ `interval`**, chu kỳ = công việc + interval.
+   Sửa: lấy `loop_start` ở **đầu vòng** rồi `sleep(interval - (monotonic() - loop_start))`.
+5. Test khoá hồi quy: `tests/test_win_camera_relay.py::TestNhipPhat` — capture GIẢ có `read()` chậm 40 ms,
+   `fps=20`; nhịp đúng ⇒ ~20 FPS, nhịp sai ⇒ công việc + interval = ~11 FPS.
+
+## 📤 Output / Kết quả
+- **Đỏ → xanh (tất định, không phụ thuộc camera)**: test mới trên code CŨ báo
+  `AssertionError: nhịp chỉ 11.0 FPS`; trên code mới xanh (> 15 FPS).
+- **A/B trên camera thật** (`./run relay start`, `--fps` mặc định 20, đo bằng cách poll `/snapshot.jpg`
+  6 s rồi đếm số khung **mới** qua md5, cùng buổi, cách nhau ~2 phút): **16,8 → 19,8 khung/giây** (+18 %,
+  chạm trần `--fps 20`). ⚠️ Nhiễu lớn: cùng một cấu hình đo lúc khác nhau cho 10,6 / 16,8 / 19,8 khung/giây
+  (camera tự phơi sáng + driver vừa mở) ⇒ **một lần A/B chưa đủ kết luận**; bằng chứng chắc là test tất định.
+- Trạng thái hiện tại: `./run relay status` → `{"w":640,"h":480,"fps":21.3,"serving":true}`.
+- Lệnh kiểm tra: `./run lint` xanh; `./run test` → **878 passed, 5 deselected** (96,8 s).
+- File thay đổi:
+  - `scripts/win_camera_relay.py` — `_reader()` lấy mốc đầu vòng + comment giải thích bug 13-11.
+  - `tests/test_win_camera_relay.py` — `TestNhipPhat.test_read_cham_khong_lam_tut_nhip`.
+
+## 🐞 Vấn đề & cách xử lý
+- **Vì sao phải qua relay**: WSL không thấy webcam (`/dev/video0` không tồn tại, `nb_devices = 0`) — ca usbipd
+  kẹt "exported" đã ghi ở `AGENTS.md` §6. Relay để Windows mở camera rồi phát HTTP; WSL đọc như camera IP.
+- **Đừng dùng luồng MJPEG cho live**: đo 05-11 `read()` 30,2 ms/frame vs snapshot 8,4 ms/frame; hôm nay đo
+  lại `/snapshot.jpg` chỉ **2,6 ms/frame** ⇒ dùng `.../snapshot.jpg`, không dùng `.../video`.
+- **Số FPS của camera không ổn định** (10,6–21 giữa các lần đo): phải nêu khoảng, không trích một con số đẹp.
+
+## 📌 Next steps
+- [ ] Review độc lập cho nhánh `fix/relay-nhip-fps-demo-webcam` rồi merge.
+- [ ] Nếu cần > 20 FPS: `python scripts/win_camera_relay.py --fps 30` (trần thật là camera ~16,6–22 FPS ở 640×480).
+- [ ] Đo lại trần camera khi phòng đủ sáng (auto-exposure làm FPS tụt khi thiếu sáng).

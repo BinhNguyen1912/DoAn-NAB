@@ -61,6 +61,11 @@ def _reader(cam_index: int, fps: float, width: int, height: int, stop: threading
     last = time.monotonic()
     print(f"[relay] camera {cam_index} mở OK: {int(cap.get(3))}x{int(cap.get(4))} — bắt đầu phát")
     while not stop.is_set():
+        # Mốc ĐẦU vòng: nhịp phải trừ cả thời gian `read()` + `imencode()` vừa tốn.
+        # Bug thật 13-11-2026: mốc cũ lấy SAU `imencode` ⇒ `sleep(interval)` mỗi vòng bất kể
+        # camera/encode chậm bao nhiêu ⇒ chu kỳ = công việc + interval ⇒ webcam 16,6 FPS chỉ ra
+        # **10,6 FPS** qua relay (đo `/info`, `--fps` mặc định 20).
+        loop_start = time.monotonic()
         ok, frame = cap.read()
         if not ok:
             time.sleep(0.05)
@@ -73,7 +78,7 @@ def _reader(cam_index: int, fps: float, width: int, height: int, stop: threading
             _LATEST.update(jpeg=buf.tobytes(), w=frame.shape[1], h=frame.shape[0],
                            fps=1.0 / max(1e-6, now - last), t=now)
         last = now
-        time.sleep(max(0.0, interval - (time.monotonic() - now)))
+        time.sleep(max(0.0, interval - (time.monotonic() - loop_start)))
     cap.release()
     print("[relay] đã đóng camera")
 

@@ -94,3 +94,52 @@ class TestKhiChuaCoKhungHinh:
         finally:
             httpd.shutdown()
             httpd.server_close()
+
+
+class TestNhipPhat:
+    """Nhịp `--fps` phải tính cả thời gian đọc + nén frame (bug thật 13-11-2026).
+
+    Đo trên máy này: webcam Windows cho 16,6 FPS ở 640x480, nhưng relay chỉ phát **10,6 FPS**
+    vì `sleep(interval)` không trừ thời gian `read()`+`imencode()` ⇒ chu kỳ = công việc + interval.
+    Test dùng capture GIẢ có `read()` chậm 40 ms: nhịp đúng ⇒ ~20 FPS (camera không phải nút cổ
+    chai), nhịp sai ⇒ ~11 FPS. Không cần webcam thật.
+    """
+
+    def test_read_cham_khong_lam_tut_nhip(self, monkeypatch):
+        import time
+
+        import numpy as np
+
+        class _SlowCap:
+            """`read()` tốn 40 ms như webcam thật; frame 16x16 để `imencode` không đáng kể."""
+
+            def __init__(self, *a, **k):
+                self.released = False
+
+            def isOpened(self):
+                return True
+
+            def get(self, _prop):
+                return 640
+
+            def read(self):
+                time.sleep(0.04)
+                return True, np.full((16, 16, 3), 90, np.uint8)
+
+            def release(self):
+                self.released = True
+
+        monkeypatch.setattr(relay.cv2, "VideoCapture", lambda *a, **k: _SlowCap())
+        stop = threading.Event()
+        thread = threading.Thread(target=relay._reader, args=(0, 20.0, 0, 0, stop), daemon=True)
+        thread.start()
+        time.sleep(1.0)                       # để nhịp ổn định rồi mới đo
+        with relay._LOCK:                     # fps relay tự báo = 1/chu kỳ thật
+            do_duoc = relay._LATEST["fps"]
+        stop.set()
+        thread.join(timeout=5)
+
+        assert not thread.is_alive(), "vòng đọc phải dừng theo stop"
+        assert do_duoc > 15.0, (
+            f"nhịp chỉ {do_duoc:.1f} FPS — `sleep(interval)` đang không trừ thời gian read()+encode()"
+        )
