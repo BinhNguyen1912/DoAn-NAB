@@ -152,3 +152,35 @@ class TestEndpoint:
         probe, _ = _probe(tmp_path)
         source = probe.suggest()["suggested"]
         assert Path(source).exists(), "gợi ý phải trỏ tới đường dẫn/camera thật dùng được"
+
+
+class TestNganSachThoiGian:
+    """Không thử cv2 khi máy không có thiết bị; HTTP có timeout chặt (review/plan 13-11, góc nhìn C)."""
+
+    def test_may_khong_co_dev_video_thi_khong_thu_cv2(self, monkeypatch):
+        """WSL/CI không có `/dev/video*` ⇒ `camera_ok` trả False NGAY (không 90 ms + WARN OpenCV)."""
+        import src.api.adapters.source_probe as sp
+
+        monkeypatch.setattr(sp.glob, "glob", lambda _pattern: [])
+        monkeypatch.setattr(sp.os, "name", "posix")
+
+        def boom(_index):                     # cv2 không bao giờ được gọi tới
+            raise AssertionError("không được mở cv2 khi máy không có /dev/video*")
+
+        import cv2
+
+        monkeypatch.setattr(cv2, "VideoCapture", boom)
+        assert sp.camera_ok(0) is False
+
+    def test_http_qua_han_nhanh_khong_treo(self, monkeypatch):
+        import src.api.adapters.source_probe as sp
+
+        calls = []
+
+        def slow_urlopen(_url, timeout=None):
+            calls.append(timeout)
+            raise TimeoutError("black-hole")
+
+        monkeypatch.setattr("urllib.request.urlopen", slow_urlopen)
+        assert sp.http_snapshot_ok("http://10.0.0.5:8090/snapshot.jpg") is False
+        assert calls == [0.8], "timeout HTTP phải là 0.8 s (ngân sách dò ≤ ~1,6 s cho 2 URL)"

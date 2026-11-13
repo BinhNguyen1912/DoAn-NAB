@@ -9,10 +9,14 @@ Input  : repo_root (để tìm video demo), biến môi trường (tuỳ chọn 
 Output : dict `{"suggested": str, "candidates": [{source,label,kind,available}]}`.
 Lưu ý  : đây là ADAPTER ngoài cùng (chạm cv2 + HTTP). Endpoint gọi nó chạy trong threadpool của
          FastAPI, nên phải CACHE: mỗi lần dò có thể mở webcam (giữ thiết bị) và chờ HTTP tới
-         `timeout_s`. Lần dò đầu ~1,5 s trong trường hợp xấu nhất; sau đó lấy từ cache `CACHE_TTL_S`.
+         `timeout_s`. Ngân sách thời gian: HTTP 0,8 s/URL, webcam bị BỎ QUA nếu máy không có
+         `/dev/video*` ⇒ lần dò chậm nhất ~1,6 s (2 URL); sau đó lấy từ cache `CACHE_TTL_S`.
+         `suggest()` giữ lock trong suốt lần dò ⇒ 10 tab gọi cùng lúc vẫn chỉ 1 lần mở thiết bị
+         (single-flight bằng cách xếp hàng, chấp nhận được vì ai cũng nhận cache mới ngay sau đó).
          KHÔNG dò webcam khi đang có phiên live (mở thêm sẽ tranh thiết bị với phiên đang chạy).
 """
 
+import glob
 import logging
 import os
 import threading
@@ -54,7 +58,7 @@ def default_gateway_ip(route_table: Path = Path("/proc/net/route")) -> str | Non
     return None
 
 
-def http_snapshot_ok(url: str, timeout_s: float = 1.5) -> bool:
+def http_snapshot_ok(url: str, timeout_s: float = 0.8) -> bool:
     """URL có trả ảnh JPEG thật không (relay sống + camera Windows đang mở)."""
     import urllib.request
 
@@ -67,7 +71,14 @@ def http_snapshot_ok(url: str, timeout_s: float = 1.5) -> bool:
 
 
 def camera_ok(index: int) -> bool:
-    """Webcam index này mở được và đọc được 1 frame không (mở rồi ĐÓNG ngay)."""
+    """Webcam index này mở được và đọc được 1 frame không (mở rồi ĐÓNG ngay).
+
+    Trên Linux KHÔNG có `/dev/video*` (WSL khi usbipd kẹt, runner CI) thì trả False NGAY: thử
+    `cv2.VideoCapture` ở đó chỉ tốn ~30 ms/ index kèm một tràng WARN của OpenCV trong log/test —
+    đo 13-11: 3 index = ~90 ms tiếng ồn mà kết quả luôn là False.
+    """
+    if os.name == "posix" and not glob.glob("/dev/video*"):
+        return False
     try:
         import cv2
     except Exception:                     # noqa: BLE001 — thiếu cv2/HAL hỏng đều là "không có camera"

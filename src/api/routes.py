@@ -158,8 +158,9 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             message=status.message,
         )
 
-    @router.get("/api/live/sources", response_model=LiveSourcesResponse)
-    def live_sources() -> LiveSourcesResponse:
+    @router.get("/api/live/sources", response_model=LiveSourcesResponse,
+                responses={200: {"headers": {"Cache-Control": {"schema": {"type": "string"}}}}})
+    def live_sources(response: Response) -> LiveSourcesResponse:
         """Nguồn frame backend dò được, kèm nguồn GỢI Ý — UI tự điền để không phải dán URL.
 
         Dò có thể mở webcam/chờ HTTP ⇒ adapter `SourceProbe` tự cache (`CACHE_TTL_S`), và hàm này
@@ -170,6 +171,7 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
         except Exception:                 # noqa: BLE001 — dò nguồn là TIỆN ÍCH, không được làm 500
             logger.warning("dò nguồn frame thất bại", exc_info=True)
             data = {}
+        response.headers["Cache-Control"] = "no-store"    # kết quả dò là trạng thái SỐNG
         return LiveSourcesResponse(
             suggested=data.get("suggested", ""),
             candidates=[LiveSourceCandidate(**c) for c in data.get("candidates", [])],

@@ -139,8 +139,12 @@ def create_app(settings: ApiSettings | None = None,
     service = service or build_default_service(settings)
     live = live or build_default_live()
     if sources is None:
-        # Bỏ dò webcam khi đang có phiên live: mở thêm thiết bị sẽ tranh với phiên đang chạy.
-        probe = SourceProbe(REPO_ROOT, live_busy=lambda: live.status().state is LiveState.RUNNING)
+        # Bỏ dò webcam khi phiên live đang chạy HOẶC đang nạp (`loading` = worker `track` nạp model
+        # 20–240 s rồi sẽ mở đúng thiết bị đó — mở thêm lúc này là ca "Device busy" ở AGENTS §6).
+        probe = SourceProbe(
+            REPO_ROOT,
+            live_busy=lambda: live.status().state in (LiveState.RUNNING, LiveState.LOADING),
+        )
         sources = probe.suggest
 
     @asynccontextmanager
