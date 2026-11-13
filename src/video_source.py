@@ -5,8 +5,8 @@ Chức năng: cung cấp một interface duy nhất cho 3 nguồn — webcam (in
 điện thoại qua RTSP URL, video file — để phần còn lại của hệ thống (pipeline, headless)
 không cần quan tâm nguồn ở đâu.
 
-Input  : `open_video_source(source)` với source là int (webcam index), đường dẫn file,
-         hoặc chuỗi rtsp://...
+Input  : `open_video_source(source)` với source là int (webcam index) — hoặc chuỗi chỉ gồm
+         chữ số ("0", "1" … do lớp HTTP/UI truyền xuống) —, đường dẫn file, hoặc chuỗi rtsp://...
 Output : adapter kế thừa VideoSource, API:
          - open()            : mở nguồn (lazy — factory trả instance chưa mở)
          - frame_size        : (W, H) kích thước frame
@@ -368,14 +368,25 @@ class RtspVideoSource(_CaptureSource):
 
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:
-    """Factory duy nhất: int → webcam; rtsp:// → RTSP; http(s):// → nguồn mạng MJPEG
-    (hoặc ảnh JPEG rời nếu URL là snapshot); thư mục → dãy ảnh (frames); còn lại → video file.
+    """Factory duy nhất: int (hoặc chuỗi chỉ gồm chữ số) → webcam; rtsp:// → RTSP;
+    http(s):// → nguồn mạng MJPEG (hoặc ảnh JPEG rời nếu URL là snapshot); thư mục → dãy ảnh
+    (frames); còn lại → video file.
 
     Trả về instance CHƯA mở (lazy) — gọi .open() hoặc dùng `with`.
+
+    Vì sao nhận cả chuỗi số: hợp đồng HTTP của web khai `source: str` với "0 = webcam"
+    (`src/api/schemas.py`), và UI mặc định gửi đúng chuỗi `"0"`. Trước 13-11-2026 chuỗi đó rơi
+    vào `FileVideoSource` ⇒ live từ web báo "Không mở được video file: '0'" dù người dùng chọn
+    webcam (cả mode `raw` lẫn `track`). Ưu tiên vẫn là file/thư mục THẬT trùng tên (một file tên
+    "0" là đường dẫn hợp lệ) nên chỉ đổi khi không có gì tồn tại ở tên đó.
     """
     if isinstance(source, (int, np.integer)):
         return CameraVideoSource(int(source))
     text = str(source)
+    stripped = text.strip()
+    # `isdecimal()`, KHÔNG `isdigit()`: "²".isdigit() là True nhưng `int("²")` ném ValueError
+    if stripped.isdecimal() and not os.path.exists(stripped):
+        return CameraVideoSource(int(stripped))
     lower = text.lower()
     if lower.startswith(("rtsp://", "rtspt://")):
         return RtspVideoSource(text, open_timeout_ms=open_timeout_ms)

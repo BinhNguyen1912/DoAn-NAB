@@ -43,8 +43,84 @@ class TestFactoryDinhTuyenKieuNguon:
         from src.video_source import CameraVideoSource, FileVideoSource, RtspVideoSource
 
         assert isinstance(open_video_source(0), CameraVideoSource)
-        assert isinstance(open_video_source("1"), FileVideoSource)  # chuỗi thường xem là path
         assert isinstance(open_video_source("rtsp://192.168.1.10:554/stream"), RtspVideoSource)
+        assert isinstance(open_video_source("/tmp/khong-ton-tai.avi"), FileVideoSource)
+
+
+class TestChuoiSoTuWebLaWebcam:
+    """Lỗi thật 13-11-2026: live trên web chọn webcam (ô nguồn mặc định "0") → API trả
+    "Không mở được nguồn 0: Không mở được video file: '0'".
+
+    Vì sao: hợp đồng HTTP khai `source: str` ("0 = webcam"), UI gửi đúng chuỗi `"0"`, nhưng
+    factory chỉ coi **int** là webcam ⇒ chuỗi rơi vào `FileVideoSource`. Hỏng cả mode `raw`
+    (`OpenCvFrameSource`) lẫn `track` (`live_worker` → `LiveTrackingSession`).
+    """
+
+    def test_chuoi_chi_gom_chu_so_la_index_webcam(self):
+        from src.video_source import CameraVideoSource
+
+        assert isinstance(open_video_source("0"), CameraVideoSource)
+        assert isinstance(open_video_source("1"), CameraVideoSource)
+        assert isinstance(open_video_source(" 0 "), CameraVideoSource)   # client gửi kèm khoảng trắng
+
+    def test_chuoi_khong_phai_so_thap_phan_khong_lam_no(self):
+        """"²".isdigit() là True nhưng `int("²")` ném ValueError ⇒ phải dùng `isdecimal()`."""
+        from src.video_source import FileVideoSource
+
+        assert isinstance(open_video_source("²"), FileVideoSource)
+
+    def test_file_that_trung_ten_van_la_file(self, tmp_path, monkeypatch):
+        """Một file/thư mục TỒN TẠI tên "0" vẫn phải là đường dẫn (không bị đổi thành webcam)."""
+        from src.video_source import FileVideoSource
+
+        (tmp_path / "0").write_bytes(b"khong-phai-video")
+        monkeypatch.chdir(tmp_path)
+        assert isinstance(open_video_source("0"), FileVideoSource)
+
+    def test_thu_muc_that_trung_ten_van_la_day_anh(self, tmp_path, monkeypatch):
+        """Nhánh thư mục ảnh: `os.path.exists` → `isdir` ⇒ `FramesVideoSource`, không thành webcam."""
+        from src.video_source import FramesVideoSource
+
+        (tmp_path / "0").mkdir()
+        (tmp_path / "0" / "00000.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        monkeypatch.chdir(tmp_path)
+        assert isinstance(open_video_source("0"), FramesVideoSource)
+
+    def test_live_raw_tu_web_mo_duoc_camera(self, monkeypatch):
+        """Đường đi THẬT của web: adapter `raw` nhận chuỗi "0" ⇒ phải gọi camera, không FileVideoSource."""
+        import numpy as np
+
+        import src.video_source as vs
+        from src.api.adapters import OpenCvFrameSource
+
+        opened = []
+
+        class FakeCap:
+            def __init__(self, index, backend=None):
+                opened.append(index)
+
+            def isOpened(self):
+                return True
+
+            def set(self, *a, **k):
+                return True
+
+            def read(self):
+                return True, np.full((16, 16, 3), 90, np.uint8)
+
+            def release(self):
+                pass
+
+        monkeypatch.setattr(vs.cv2, "VideoCapture", lambda index, *a, **k: FakeCap(index))
+        source = OpenCvFrameSource("0")
+        source.start()
+        try:
+            # Trước khi sửa: mở được (FakeCap luôn isOpened) NHƯNG index truyền xuống là chuỗi
+            # '0' ⇒ đỏ ở `assert opened == [0]` bên dưới, không phải ở dòng start().
+            assert source.read_jpeg() is not None
+            assert opened == [0]                      # index int, không phải chuỗi
+        finally:
+            source.stop()
 
 
 class TestNguonLoi:
