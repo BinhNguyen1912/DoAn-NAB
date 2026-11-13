@@ -52,6 +52,9 @@ export function LivePanel(): JSX.Element {
   // Theo dõi `frames` để biết ảnh có ĐỨNG không (relay giữ frame cuối ⇒ state vẫn `running`).
   const lastFramesRef = useRef<{ frames: number; at: number }>({ frames: -1, at: 0 })
   const [stalledSeconds, setStalledSeconds] = useState(0)
+  // Đồng hồ phía client cho lúc NẠP MODEL (20–60 s trên CPU): không có nó thì màn hình chỉ có một
+  // dòng chữ tiếng Anh "loading" đúng lúc người xem tưởng treo.
+  const [loadingSeconds, setLoadingSeconds] = useState(0)
 
   const stopPolling = (): void => {
     if (timerRef.current !== null) {
@@ -154,25 +157,45 @@ export function LivePanel(): JSX.Element {
   }
 
   const running = status?.state === 'running'
+  const loadingNow = status?.state === 'loading'
+
+  // Đồng hồ lúc NẠP MODEL: màn hình có số giây đang chạy thì không ai nghĩ là treo.
+  useEffect(() => {
+    if (!loadingNow) {
+      setLoadingSeconds(0)
+      return
+    }
+    const moc = Date.now()
+    const id = window.setInterval(() => setLoadingSeconds((Date.now() - moc) / 1000), 1000)
+    return () => window.clearInterval(id)
+  }, [loadingNow])
   // Đang nạp nguồn (worker `track` 20–240 s): nút "Dừng" PHẢI bấm được (backend huỷ được giữa lúc
   // nạp — `src/api/live.py`), và "Bật phát" phải tắt (bấm nữa chỉ nhận 409 `LiveBusy`, hiện banner
   // lỗi trong lúc đang nạp bình thường — ticket 16).
-  const loading = status?.state === 'loading'
   const maskLine = maskRhythmLine(status)
   const driftText = driftLine(status)
   const deviceText = deviceLine(status)
   const displayFps = shownFps(status)
   const usable = sources?.candidates.filter((c) => c.available) ?? []
-  const suggestedLabel = usable.find((c) => c.source === source)?.label ?? ''
+  const chosen = sources?.candidates.find((c) => c.source === source)
+  const suggestedLabel = chosen?.label ?? ''
+  // `kind` của CHÍNH nguồn đang chọn, không đoán theo chuỗi: khi relay tắt, backend gợi ý video
+  // mẫu trong `data/` — để người xem tưởng đó là camera là lời nói dối đắt nhất của tính năng này.
+  const isSampleSource = chosen?.kind === 'file'
+  const missing = (sources?.candidates ?? []).filter((c) => !c.available)
 
   return (
     <section className="card">
       <div className="card-head">
-        <span className="step">4</span>
+        <span className="step live-step">▶</span>
         <h2>Phát trực tiếp</h2>
+        {(running || loadingNow) && (isSampleSource ? (
+          <span className="pill warn-pill">ĐANG PHÁT VIDEO MẪU (không phải camera)</span>
+        ) : (
+          <span className="pill ok">CAMERA THẬT</span>
+        ))}
         {mode === 'track' && <span className="pill ok">đang bám đối tượng</span>}
-        {running && mode === 'raw' && <span className="pill ok">đang phát</span>}
-        {loading && <span className="pill">đang mở nguồn…</span>}
+        {loadingNow && <span className="pill">đang nạp model…</span>}
         {status?.state === 'error' && <span className="pill bad">lỗi</span>}
       </div>
 
@@ -187,7 +210,7 @@ export function LivePanel(): JSX.Element {
             Nguồn gợi ý (backend tự dò)
             <select
               value={usable.some((c) => c.source === source) ? source : ''}
-              disabled={running || loading || picking}
+              disabled={running || loadingNow || picking}
               onChange={(event) => {
                 if (!event.target.value) return
                 touchedRef.current = true
@@ -203,7 +226,7 @@ export function LivePanel(): JSX.Element {
             </select>
           </label>
           <button type="button" className="button ghost" onClick={detectSources}
-                  disabled={running || loading}>
+                  disabled={running || loadingNow}>
             Dò lại
           </button>
         </div>
@@ -219,12 +242,12 @@ export function LivePanel(): JSX.Element {
               touchedRef.current = true
               setSource(event.target.value)
             }}
-            disabled={running || loading || picking}
+            disabled={running || loadingNow || picking}
             style={{ minWidth: '260px' }}
           />
         </label>
         <button type="button" onClick={() => void onStart()}
-                disabled={running || loading || picking || !source.trim()}>
+                disabled={running || loadingNow || picking || !source.trim()}>
           Bật phát
         </button>
         <button
@@ -236,12 +259,23 @@ export function LivePanel(): JSX.Element {
           Chọn đối tượng để bám
         </button>
         <button type="button" className="button ghost danger" onClick={() => void onStop()}
-                disabled={!running && !picking && !loading}>
+                disabled={!running && !picking && !loadingNow}>
           Dừng
         </button>
       </div>
 
-      {suggestedLabel && !running && (
+      {!running && !loadingNow && missing.length > 0 && usable.length > 0 && (
+        // Chẩn đoán thay vì để người dùng mò: liệt kê nguồn không dùng được + việc cần làm.
+        <p className="hint">
+          Không dùng được: {missing.map((c) => `${c.label} ✗`).join(' · ')}
+          {' — '}
+          {missing.some((c) => c.kind === 'relay')
+            ? 'bật relay trên Windows: ./run relay (rồi bấm "Dò lại")'
+            : 'cắm webcam hoặc bật relay (./run relay) rồi bấm "Dò lại"'}
+        </p>
+      )}
+
+      {suggestedLabel && !running && !loadingNow && (
         // "available" chỉ là "thử được lúc dò" — in mốc thời gian + bằng chứng + độ trễ, KHÔNG in
         // chữ "đã kiểm" trống rỗng (nó không chứng minh ảnh còn mới).
         <p className="hint">
@@ -351,7 +385,22 @@ export function LivePanel(): JSX.Element {
         </>
       )}
 
-      {!running && !picking && (
+      {loadingNow && (
+        <div className="stage empty">
+          <div className="empty-inner">
+            <div className="empty-icon">◔</div>
+            <p style={{ fontSize: '1.05rem', fontWeight: 600 }}>
+              Đang nạp model… {loadingSeconds.toFixed(0)} s
+            </p>
+            <p className="hint">
+              CPU nạp SAM 2 mất ~20–60 s (máy chậm tới 240 s). Trong lúc chờ, hình từ camera sẽ hiện
+              lại ngay khi worker sẵn sàng — bấm “Dừng” để huỷ bất cứ lúc nào.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {!running && !loadingNow && !picking && (
         <div className="stage empty">
           <div className="empty-inner">
             <div className="empty-icon">◉</div>

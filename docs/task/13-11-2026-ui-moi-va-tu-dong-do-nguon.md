@@ -89,6 +89,17 @@ Góc nhìn **chất lượng & đo** và **độ bền** bắt đúng các chỗ
 | Relay giữ frame CUỐI khi camera hỏng ⇒ `state` vẫn `running`, ảnh đứng, HUD vẫn ghi "live" | Thêm `stallLine()` (web/src/live.ts) + `data-testid="stall-line"`: **"Không có frame mới trong 3,4 s (frame đứng ở 120 …)"** — cấm chữ "nguồn đã chết" (cảnh tĩnh cũng đứng) | 3 test vitest + 2 test cho nhãn nguồn |
 | `--reload` làm mất cache mỗi lần lưu file | Đã ghi trong docstring adapter; ngân sách 1,4 s nên chấp nhận được | — |
 
+Góc nhìn **sản phẩm & bằng chứng bảo vệ** (demo trước hội đồng) bổ 4 việc rẻ, đã làm:
+
+| Việc | Đã làm | Vì sao |
+|---|---|---|
+| Nhãn THẬT/MẪU | `<pill>` xanh **"CAMERA THẬT"** khi nguồn là `camera`/`relay`; vàng **"ĐANG PHÁT VIDEO MẪU (không phải camera)"** khi relay tắt và backend gợi ý video trong `data/` | Không có nhãn này, hội đồng vẫy tay vào video lặp = mất điểm nặng nhất |
+| Số liệu đọc được từ máy chiếu | `.stat .v` 1,12rem → **2rem (32 px)**, `.stat .k` 0,72rem uppercase → 0,85rem thường | Ở 1280×720 từ ghế thứ 3, cỡ cũ (18 px) không đọc được ⇒ "yêu cầu 6" của đề cương vô hình |
+| Lúc NẠP MODEL không còn màn hình trống | thêm overlay **"Đang nạp model… N s"** (đồng hồ client, đếm mỗi giây) + nút "Dừng" bấm được | 20–60 s nạp model là lúc hội đồng đang nhìn; trước đó chỉ có một dòng chữ tiếng Anh |
+| Chẩn đoán khi dò trượt | một dòng liệt kê nguồn ✗ + việc cần làm (`bật relay trên Windows: ./run relay (rồi bấm "Dò lại")`) | Trước hội đồng không ai phải mò nguyên nhân |
+| Badge LIVE + tỉ lệ khung | badge sang **góc trên-phải** (worker vẽ HUD ở góc trên-trái: `cv2.putText(..., (8, 28))`); bỏ `aspect-ratio: 4/3` cứng (video demo 16:9 từng bị viền đen); giảm vignette 90px → 40px | Badge cũ che đúng dòng FPS/VOS/LK của chính hệ thống; viền tối làm mất mask ở mép khung (case "vật chạm mép" của đề cương) |
+| Bỏ số "Bước 4" trên card live | đổi thành icon ▶ | Live giờ đứng ĐẦU trang, đánh số 4 thì hội đồng hỏi "bước 1 2 3 đâu" |
+
 Không làm (đưa vào Next steps): script đo `scripts/measure_live_sources.py` (p95 gọi đầu ≤ 500 ms, cache-hit ≤ 50 ms,
 first-frame ≤ 1500 ms) và đo LCP/CLS trong E2E — cần thêm thời gian, chưa chặn merge.
 
@@ -98,6 +109,11 @@ first-frame ≤ 1500 ms) và đo LCP/CLS trong E2E — cần thêm thời gian, 
 - [ ] `scripts/measure_live_sources.py`: p95 gọi đầu ≤ 500 ms, cache-hit ≤ 50 ms, first-frame ≤ 1500 ms
       (artifact có `git_rev`/`lenh`/`do_luc`/`git_dirty_code`), và LCP ≤ 1500 ms / CLS ≤ 0,1 đo trong E2E.
 - [ ] Auto-fill nguồn cũng nên chạy lại sau `Dừng` và sau `start` lỗi (hiện chỉ lúc mount + nút "Dò lại").
+- [ ] Thêm `image_size`/`vos_every` vào `LiveStatusResponse` để UI in đúng "provenance" (live = 192, form
+      upload = 256 — hai số này lệch nhau và rất dễ bị hỏi trong buổi bảo vệ).
+- [ ] Card "tổng kết phiên" + giữ frame cuối sau khi bấm Dừng (hội đồng thường hỏi đúng lúc đó).
+- [ ] Ô "mất dấu" thành ô KPI riêng (hiện nằm trong dòng `mask-rhythm`), và `p95` độ trễ chỉ có khi đọc CSV
+      từ worker — chưa hứa trên HUD.
 - [ ] Ticket P2-5 (từ log trước): relay báo khoẻ khi camera chết giữa phiên (`age_ms` + `streaming()`).
 - [ ] Nếu API chạy trên VPS công khai: rà lại việc `/api/live/sources` trả đường dẫn tuyệt đối của `data/`
       (đang trả, phục vụ demo nội bộ).
