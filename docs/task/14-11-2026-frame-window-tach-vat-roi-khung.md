@@ -78,8 +78,20 @@
     artifact cũ mất tính tái lập vì đổi default bbox; thiếu log phiên.
   - P3: ví dụ bbox cũ còn trong README/cheatsheet/`run`/colab; test chưa phủ phần nối artifact;
     số `image_size 320` ghi 0,29 (thực 0,28–0,32).
-- **Vòng 2**: review lại đúng phần vừa sửa (`git diff a750f7f..HEAD`) — kết quả ghi ở dòng tiếp theo
-  khi agent trả về; nếu còn P1 thì ticket + nêu trong PR.
+- **Vòng 2**: agent `reviewer` thứ hai (read-only), phạm vi `git diff a750f7f..HEAD`.
+  **Kết luận: ĐỒNG Ý MERGE — cả 2 P1 vòng 1 đóng đúng, 0 P0/P1 mới.** Reviewer kiểm bằng cách suy luận
+  từng ca revert (revert `profile_stages.py` về `300,275,150,410` ⇒ test "ô không suy biến" đỏ; revert
+  `min(nums)<0` ⇒ test `0:-5` đỏ; revert `thong_ke_mau` trả `0.0` ⇒ test khung rỗng đỏ) và mở ảnh
+  `docs/media/frames/binh1_bbox_300-275-150-410.jpg` để xác nhận khung `0:110 ∪ 165:262` khớp nội dung.
+  - **3 P2 còn lại — đã đóng trong cùng PR (commit `a9d114d`)**: `docs/tom-tat-do-an.md` vẫn viết
+    "binh2 lỗi ở model"; 3 comment code còn "0,0 % trong khung"; artifact lần đo bẩn
+    `data/khung_chai_binh1_lan1_metrics.json` vẫn nằm trong nhánh.
+  - **11 P3 — đã sửa hết**: in khối khung khi không có CSV; `so_vong` dùng max(frame phát, frame worker)
+    (lệch 316 vs 335); `_so_frame_clip` trả `None` khi nguồn là 1 ảnh; thêm hàm thuần
+    `_gop_khung`/`_canh_bao_lap` + test (trước đó revert `action="append"` vẫn xanh); test khung chồng
+    nhau; `ValueError` khi không khai khung nào; notebook Colab `BBOX`; số `256` = 0,34–0,36; nhãn cột
+    `mask/s`.
+  - Test sau khi đóng review: `./run lint` xanh · `./run test` **950 passed** (đầu phiên: 906).
 - Mọi P2/P3 **đã sửa trong cùng PR** (không để nợ), trừ mục notebook Colab (chưa đụng vì có test
   `tests/test_notebook_colab.py`) — ghi vào Next steps.
 
