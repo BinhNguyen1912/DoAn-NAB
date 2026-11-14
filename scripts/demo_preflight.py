@@ -375,23 +375,21 @@ def _rehearsal(args, source) -> Check:
                          {"source": str(source), "mode": "track", "bbox": bbox})
     if started is None:
         return Check("diễn tập phiên", False, f"POST /api/live/start thất bại ở {base}")
-    deadline = time.perf_counter() + args.full_timeout
-    status = {}
-    while time.perf_counter() < deadline:
-        status = _http_json(f"{base}/api/live/status") or {}
+    # `finally` gửi stop: phiên live **không** được sống tiếp sau khi preflight kết thúc (giữ webcam,
+    # bỏ lại worker mồ côi nếu API không do chính script dựng). Đã start được thì phải dọn được.
+    try:
+        status = _wait_running(base, args.full_timeout)
         if status.get("state") == "error":
             return Check("diễn tập phiên", False, str(status.get("message") or "worker báo lỗi"))
-        if status.get("state") == "running":
-            break
-        time.sleep(1.0)
-    else:
-        return Check("diễn tập phiên", False,
-                     f"không vào `running` sau {args.full_timeout:.0f} s "
-                     f"(state={status.get('state')!r})")
-    first = int(status.get("frames") or 0)
-    time.sleep(args.sample_s)
-    status = _http_json(f"{base}/api/live/status") or {}
-    _http_post(f"{base}/api/live/stop", {})
+        if status.get("state") != "running":
+            return Check("diễn tập phiên", False,
+                         f"không vào `running` sau {args.full_timeout:.0f} s "
+                         f"(state={status.get('state')!r})")
+        first = int(status.get("frames") or 0)
+        time.sleep(args.sample_s)
+        status = _http_json(f"{base}/api/live/status") or {}
+    finally:
+        _http_post(f"{base}/api/live/stop", {})
     gained = int(status.get("frames") or 0) - first
     mask_fps = status.get("mask_fps") or 0
     if gained <= 0:
@@ -403,6 +401,18 @@ def _rehearsal(args, source) -> Check:
     return Check("diễn tập phiên", True,
                  f"+{gained} frame / {args.sample_s:.0f} s, mask {float(mask_fps):.1f} FPS, "
                  f"bbox {bbox}")
+
+
+def _wait_running(base: str, timeout_s: float) -> dict:
+    """Chờ tới `running`; trả trạng thái CUỐI (để caller tự quyết error/timeout)."""
+    deadline = time.perf_counter() + timeout_s
+    status = {}
+    while time.perf_counter() < deadline:
+        status = _http_json(f"{base}/api/live/status") or {}
+        if status.get("state") in ("error", "running"):
+            return status
+        time.sleep(1.0)
+    return status
 
 
 MANUAL_STEPS = """\

@@ -11,6 +11,7 @@ Nguyên tắc được ghim trong test này:
 import socket
 
 import numpy as np
+import pytest
 
 from scripts import demo_preflight as dp
 
@@ -252,6 +253,27 @@ class TestDienTapFull:
         monkeypatch.setattr(dp, "_http_json", lambda *a, **k: seq.pop(0) if seq else {})
         c = dp._rehearsal(self._args(), "0")
         assert c.ok and "8.5" in c.chi_tiet
+
+    def test_phien_duoc_dung_du_dien_tap_nem_giua_duong(self, monkeypatch):
+        """`finally` phải gửi stop: preflight không được để phiên live sống tiếp (giữ webcam)."""
+        posts = []
+        monkeypatch.setattr(dp, "_http_post", lambda url, *a, **k: posts.append(url) or {})
+        monkeypatch.setattr(dp, "_http_json",
+                            lambda *a, **k: {"state": "running", "frames": 5, "mask_fps": 9.0})
+
+        def boom(_s):
+            raise RuntimeError("mất mạng giữa lúc lấy mẫu")
+
+        monkeypatch.setattr(dp.time, "sleep", boom)
+        with pytest.raises(RuntimeError):
+            dp._rehearsal(self._args(), "0")
+        assert any(u.endswith("/api/live/stop") for u in posts), posts
+
+    def test_khong_start_duoc_thi_khong_gui_stop(self, monkeypatch):
+        posts = []
+        monkeypatch.setattr(dp, "_http_post", lambda url, *a, **k: posts.append(url) or None)
+        c = dp._rehearsal(self._args(), "0")
+        assert not c.ok and not any(u.endswith("/api/live/stop") for u in posts)
 
     def test_start_that_bai_thi_loi(self, monkeypatch):
         monkeypatch.setattr(dp, "_http_post", lambda *a, **k: None)
