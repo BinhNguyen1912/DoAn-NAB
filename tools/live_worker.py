@@ -27,6 +27,7 @@ from src.live_tracking import (  # noqa: E402
     LiveTrackConfig,
     LiveTrackStats,
     LiveTrackingSession,
+    session_exit_code,
     status_payload,
     write_json_atomic,
 )
@@ -155,7 +156,12 @@ def main() -> int:
     stats = LiveTrackingSession(engine, config).run(stop)
     print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "
           f"display {stats.measured_fps} FPS | VOS {stats.vos_fps} FPS", flush=True)
-    return 0
+    # Mã thoát là tín hiệu DUY NHẤT còn lại cho phụ huynh (systemd, subprocess runner, test): trả 0
+    # cho một phiên kết thúc vì lỗi là nói dối, và `worker_source.health()` phân biệt "người dùng bấm
+    # Dừng" với "chết vì lỗi" CHÍNH BẰNG mã thoát (14-11).
+    if stats.state == STATE_ERROR:
+        print(f"[LOI] phiên kết thúc vì lỗi: {stats.message}", flush=True)
+    return session_exit_code(stats)
 
 
 if __name__ == "__main__":

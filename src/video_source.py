@@ -19,6 +19,7 @@ Lưu ý  : RTSP/webcam là adapter mỏng — kiểm chứng thủ công; test t
 """
 from abc import ABC, abstractmethod
 import os
+from pathlib import Path
 import sys
 import urllib.request
 
@@ -365,6 +366,28 @@ class RtspVideoSource(_CaptureSource):
             f"Không kết nối được RTSP nguồn '{self._url}' trong {self._timeout_ms} ms "
             f"(camera offline, sai URL, hoặc mạng yếu — kiểm tra lại)"
         )
+
+
+FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")   # một nguồn sự thật cho mọi nơi cần
+
+
+def looks_like_file(source) -> bool:
+    """Nguồn có ĐIỂM KẾT THÚC (file video / thư mục ảnh) ⇒ "hết rồi lặp lại" có nghĩa.
+
+    Webcam (int hoặc chuỗi số), RTSP, HTTP ⇒ `False`: `read()` trả `None` ở đó là mất tín hiệu, mở
+    lại thiết bị giữa phiên là bắn vào chân (relay/`usbipd` còn giữ ⇒ "Device busy", AGENTS §6).
+
+    Một chỗ định nghĩa cho cả `LiveTrackingSession._rewind` (đường `track`) và
+    `opencv_source._looks_like_file` (đường `raw`) — trước 14-11 hai đường lệch chuẩn nhau.
+    """
+    if isinstance(source, (int, np.integer)):
+        return False
+    text = str(source)
+    stripped = text.strip()
+    if stripped.isdecimal() and not os.path.exists(stripped):
+        return False                               # "0" = index webcam (xem factory dưới)
+    path = Path(text)
+    return path.suffix.lower() in FILE_SUFFIXES or path.is_file() or path.is_dir()
 
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:

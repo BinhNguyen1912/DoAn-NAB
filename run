@@ -169,6 +169,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     web            Build frontend React → API tự phục vụ ở "/" (một lệnh là có demo)
     webdev         Chạy Vite dev server (cần ./run api ở terminal khác)
     webtest        Test frontend bằng vitest (toán học canvas, hàm thuần)
+    democheck      Soi 9 thứ có thể làm hỏng buổi demo (≤ 120 s, KHÔNG nạp model);
+                   thêm --full --bbox x,y,w,h để diễn tập thật (có nạp model)
     e2e            E2E TRÌNH DUYỆT THẬT: Chrome/Edge lái giao diện, kéo chuột chọn vật,
                    chờ job xong, kiểm video + bảng số liệu + tải CSV (cần Windows + playwright)
 
@@ -395,6 +397,11 @@ EOF
   webtest)
     cd "$ROOT/web" 2>/dev/null || { echo "[LOI] chưa có thư mục web/"; exit 1; }
     exec npm test -- "$@"
+    ;;
+  democheck)
+    # Preflight trước buổi demo: 9 mục, KHÔNG nạp model (≤ 120 s). `--full` mới nạp model.
+    activate_env
+    exec "$PYTHON" scripts/demo_preflight.py "$@"
     ;;
   e2e)
     # E2E bằng TRÌNH DUYỆT THẬT: server chạy trong WSL, Chrome/Edge lái từ Windows qua cmd.exe.

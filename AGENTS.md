@@ -115,6 +115,11 @@ DOAN-NAB/
    - **E2E trình duyệt thật** (Chrome/Edge + Playwright, cần Windows): `./run e2e` — bắt buộc trước khi
      báo "xong" cho bất kỳ thay đổi nào ở UI/API (nó đã bắt được 3 bug thật ngày 08-11: canvas
      300×150, codec mp4v không phát được, và job báo `done` trước khi xuất H.264).
+   - **Trước buổi demo:** `./run democheck` — 9 mục, **không nạp model**, ≤ 120 s (checkpoint, clip,
+     `web/dist` cũ, API, cổng, tệp phiên cũ, nguồn đọc được, **frame có đổi**, `git_rev`).
+     `--full --bbox x,y,w,h` = diễn tập thật (có nạp model, tự dựng API) và kiểm `frames` tăng +
+     `mask_fps > 0`. "OK" ở mục nguồn chỉ nghĩa *"đọc được frame lúc kiểm"*, **không** phải "bám đúng" —
+     và `--full` **bắt buộc** `--bbox` vì hộp mặc định hay rơi vào nền (AGENTS §6, ca Colab 13-11).
 5. **Tạo/cập nhật file log trong `docs/task/` theo mục 2** (template: `docs/task/_template.md`) — bước BẮT BUỘC cuối mỗi phiên. Log phải ghi cả **kết quả review độc lập** (mục 9.1) và **quyết định plan** (mục 9.2).
 6. Tóm tắt lại cho người dùng: đã làm gì, file nào thay đổi, bước tiếp theo.
 
@@ -307,6 +312,13 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
   (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho
   cả cửa sổ. So sánh số cũ với số mới phải nêu định nghĩa, nếu không là so hai đại lượng khác nhau.
+- **`POST /api/live/start` CHẶN tới khi model nạp xong** (`routes.py` → `live.start()` →
+  `WorkerFrameSource.start()` → `_wait_first_frame()`): đo trên máy này **3,4–4,1 s** với checkpoint
+  tiny (cache ấm). Đừng đặt timeout 5 s cho request đó — biên chỉ ~1 s, và `cv2`/torch cache lạnh hay
+  checkpoint `small`/`base` sẽ vượt; hỏng timeout **không** có nghĩa server chưa dựng phiên (nó vẫn
+  dựng sau lưng client ⇒ worker giữ webcam mà không ai gửi stop). `scripts/measure_live_relay.py`
+  dùng `timeout=600`, `scripts/demo_preflight.py --full` dùng `max(30 s, --full-timeout)`.
+
 
 ## 7. Các repo/model tham khảo
 

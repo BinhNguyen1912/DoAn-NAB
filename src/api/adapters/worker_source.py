@@ -189,10 +189,15 @@ class WorkerFrameSource(FrameSource):
         code = proc.poll()
         if code is not None:
             message = str(status.get("message") or "")
-            if state == STATE_STOPPED:
+            # `state == stopped` do chính worker ghi trong `finally` — kể cả khi nó CHẾT vì ngoại lệ
+            # (bản cũ chỉ nhìn `state` nên traceback + mã thoát 1 vẫn báo "đã kết thúc phiên", người
+            # xem không phân biệt được với việc bấm Dừng). Mã thoát KHÁC 0 ⇒ phải là ERROR.
+            if state == STATE_STOPPED and code == 0:
                 return SourceHealth(LiveState.STOPPED,
                                     message or "worker đã kết thúc phiên")
-            detail = f": {message}" if message else ""
+            # Nêu rõ đây là status CUỐI worker kịp ghi: worker chết lúc đang nạp để lại câu
+            # "Đang nạp model..." và đọc trơn sẽ tưởng phiên vẫn đang nạp bình thường (review P3).
+            detail = f": status cuối: {message}" if message else ""
             return SourceHealth(
                 LiveState.ERROR,
                 f"worker đã dừng (mã {code}){detail} — xem {self._log}",
