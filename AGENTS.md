@@ -293,6 +293,18 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
   `docs/demo-clip-va-o-chon.md`.
 
+- **Chu kỳ VOS đã tách được từng pha — `queue` gần bằng 0 nên "chỉnh cadence" KHÔNG phải nút thắt.**
+  Đo 14-11 (1 vòng `binh1`, @192, `vos_every 3`, `git_dirty_code=false`, artifact
+  `data/chu_ky_chai_binh1_1vong_metrics.json`): `cycle_ms` **105,6** = `vos_ms` **92,5** (model) +
+  `pre_ms` **14,3** (tiền xử lý) + `idle_ms` 5,2 + `queue_ms` **0,33** + `post_ms` 0,46.
+  ⇒ (a) frame **không** phải chờ trong worker (queue 0,3 ms) nên bỏ hẳn hướng đổi cadence/`--vos-hz`;
+  (b) chỗ còn cắt được thật là **tiền xử lý 14 ms** (13 % chu kỳ) chứ không phải phần sau model;
+  (c) `vos_ms` **không gồm** `pre_ms` (đo riêng, `TrackingResult.pre_ms`) — đừng cộng đôi.
+- **Hai định nghĩa tuổi mask, đừng trộn:** `mask_age_cu_ms` = age + `vos_ms` (**định nghĩa cũ**, số
+  trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
+  (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho
+  cả cửa sổ. So sánh số cũ với số mới phải nêu định nghĩa, nếu không là so hai đại lượng khác nhau.
+
 ## 7. Các repo/model tham khảo
 
 - SAM 2: https://github.com/facebookresearch/sam2

@@ -113,3 +113,43 @@
 - `AGENTS.md` §4, §6 (bảng số đã đo), §9.1 (review độc lập), §9.4 (checklist kết thúc phiên).
 - Artifact: `data/sach_chai_binh{1,2}_1vong_metrics.json`, `data/lan2_*_metrics.json`,
   `data/drift_samples_*_2026-11-14_*.{csv,meta.json}`, ảnh `docs/media/{bbox,frames}/*.jpg`.
+
+## 🔁 Bổ sung cùng phiên — việc #4 của plan: tách CHU KỲ VOS (đóng hướng cadence bằng số)
+
+### Đã làm
+- `src/tracker_engine.py`: `TrackingResult.pre_ms` (thời gian tiền xử lý), đo **riêng** — KHÔNG cộng
+  vào `elapsed_ms` để mọi số `vos_ms` cũ vẫn so được.
+- `src/live_tracking.py`: hàm thuần `_tach_pha()` → `queue_ms` (frame chờ trong worker),
+  `cycle_ms` (1/`vos_fps` thực), `idle_ms` (luồng chờ frame); worker ghi mốc `submit`;
+  `_note_mask_age()` nhận `queue/pre/post`; `_age_window` lưu **từng mẫu** `(total, cu)`.
+- `status.json` thêm `pre_ms`, `queue_ms`, `post_ms`, `cycle_ms`, `idle_ms`, `mask_age_cu_ms`;
+  `measure_live_relay.py::_worker_telemetry` chép các khoá này vào artifact.
+- 7 test mới: `TestTachPhaChuKyVos` (3), `TestTuoiMaskTachKhoan` (2), allowlist `status.json`,
+  reader của bài test lock hiểu mẫu dạng tuple.
+
+### Số đo (`data/chu_ky_chai_binh1_1vong_metrics.json`, 1 vòng `binh1`, @192, `vos_every 3`,
+`git_dirty_code=false`, `git_rev=bafdab8`)
+| Pha | ms | Ghi chú |
+|---|---|---|
+| `vos_ms` (model) | **92,5** | chỉ phần propagate |
+| `pre_ms` (tiền xử lý) | **14,3** | **13 % chu kỳ** — resize PIL + stack tensor; micro-bench cũ chỉ đo resize nên ra 5,65 ms |
+| `idle_ms` (luồng chờ frame) | 5,2 | |
+| `post_ms` (drift + làm mượt) | 0,46 | |
+| `queue_ms` (frame chờ worker) | **0,33** | ⇒ **không** phải frame bị dồn |
+| `cycle_ms` | **105,6** | = `1/vos_fps` (9,6 mask/s) |
+| `mask_age_cu_ms` (định nghĩa cũ) | 107,6 | age + vos |
+| `mask_age_total_ms` (tuổi dữ liệu thật) | 138,4 | queue + pre + vos + post + age |
+| `mask_age_p95` (theo từng mẫu) | 272,2 | của cửa sổ 200 mẫu |
+
+⚠️ Các pha là **mẫu hiện tại** (giống `vos_ms`), không phải trung bình phiên ⇒ tổng 4 pha có thể
+lệch `cycle_ms` vài ms; muốn trung bình thì phải cộng thêm cửa sổ (chưa làm).
+
+### Kết luận (đóng 2 câu hỏi đang treo)
+1. **Bỏ hẳn hướng "đổi cadence cho nhanh hơn"** (kể cả `--vos-hz` đã bị bác trước đó): frame gửi cho
+   worker **không** phải chờ (`queue_ms` 0,33 ms), `idle_ms` 5,2 ms ⇒ chu kỳ gần như = công việc thật.
+2. **Chỗ còn cắt được là tiền xử lý 14,3 ms** (13 %), không phải phần sau model: `np.ascontiguousarray`
+   → `cv2.cvtColor` và `pil.resize` → `cv2.resize` là 2 thay đổi bit-identical đã nêu (ticket riêng).
+3. **Hai định nghĩa tuổi mask** đã tách: `mask_age_cu_ms` (so với số trước 14-11: 271–273 ms) và
+   `mask_age_total_ms` (tuổi dữ liệu thật). Không được trộn hai số trong một bảng.
+
+`./run lint` xanh · `./run test` **955 passed**.
