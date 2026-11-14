@@ -25,6 +25,14 @@ SCRIPTS = [
     "scripts/benchmark_light_trackers.py",
     "scripts/measure_watchdog.py",
 ]
+# `profile_stages.py` parse `x1,y1,x2,y2` (KHÔNG phải x,y,w,h) — đổi nhầm định dạng ở đây từng tạo ra
+# ô có `x2 < x1` (rộng âm) mà test cũ vẫn xanh. Xem `test_o_chon_khong_bi_suy_bien`.
+DINH_DANG = {
+    "scripts/profile_stages.py": "xyxy",
+    "scripts/benchmark_light_trackers.py": "xywh",
+    "scripts/measure_watchdog.py": "xywh",
+}
+O_CHAI_BINH1_XYXY = "300,275,450,685"   # 300,275 + 150×410
 
 
 def _default_bbox(path: str) -> str:
@@ -37,10 +45,29 @@ def _default_bbox(path: str) -> str:
 
 @pytest.mark.parametrize("path", SCRIPTS)
 def test_mac_dinh_bbox_la_o_chai_khong_phai_o_mat(path):
-    assert _default_bbox(path) == O_CHAI_BINH1, (
-        f"{path}: mặc định `--bbox` phải là ô CHAI {O_CHAI_BINH1} "
-        f"(ô {O_MAT_SAI} phủ khuôn mặt — xem docs/demo-clip-va-o-chon.md)"
+    """Mỗi script phải mặc định ô CHAI, ĐÚNG ĐỊNH DẠNG của chính nó."""
+    ky_vong = O_CHAI_BINH1_XYXY if DINH_DANG[path] == "xyxy" else O_CHAI_BINH1
+    assert _default_bbox(path) == ky_vong, (
+        f"{path}: mặc định `--bbox` phải là {ky_vong} (định dạng {DINH_DANG[path]}), "
+        f"ô {O_MAT_SAI} phủ khuôn mặt — xem docs/demo-clip-va-o-chon.md"
     )
+
+
+@pytest.mark.parametrize("path", SCRIPTS)
+def test_o_chon_khong_bi_suy_bien(path):
+    """Ô mặc định phải có chiều rộng/cao DƯƠNG — bắt được lỗi trộn `xywh` vào script parse `xyxy`.
+
+    Lỗi thật 14-11 (review độc lập bắt): đặt mặc định `300,275,150,410` cho `profile_stages.py` (script
+    parse `x1,y1,x2,y2`) ⇒ hộp `(300,275)-(150,410)` tức `x2 < x1`, rộng **âm**; test khoá-chuỗi cũ
+    vẫn xanh nên không ai thấy (AGENTS §6: "hộp cao âm" từng làm hỏng cả một pha đo).
+    """
+    x1, y1, x2, y2 = (int(v) for v in _default_bbox(path).split(","))
+    if DINH_DANG[path] == "xyxy":
+        assert x2 > x1 and y2 > y1, f"{path}: hộp suy biến ({x1},{y1})-({x2},{y2})"
+        assert (x2 - x1, y2 - y1) == (150, 410), f"{path}: kích thước phải là 150×410"
+    else:
+        assert x2 > 0 and y2 > 0, f"{path}: w/h phải dương, đang là {x2}×{y2}"
+        assert (x2, y2) == (150, 410), f"{path}: kích thước phải là 150×410"
 
 
 @pytest.mark.parametrize("path", SCRIPTS)

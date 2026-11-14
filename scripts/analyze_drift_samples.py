@@ -4,7 +4,8 @@ Phân tích các file `data/drift_samples_*.csv` thành một artifact có prove
 Chức năng: đọc TỪNG DÒNG mẫu drift của các lần đo (`scripts/measure_live_relay.py` sinh ra), tính
            phân vị cuộn 200 mẫu, **tỉ lệ cửa sổ báo động**, **độ trễ phát hiện**, và (tuỳ chọn) phép
            đối chứng cảnh TĨNH; rồi ghi 1 artifact JSON + in bảng ra stdout.
-Input  : các file CSV (mặc định: mọi `data/drift_samples_*.csv`), `--window`, `--static <glob>`.
+Input  : các file CSV (mặc định: mọi `data/drift_samples_*.csv`), `--window`, `--static <glob>`,
+         `--frame-window dau:cuoi` (lặp được — khung frame vật còn trong khung).
 Output : `data/drift_series_<mốc>_metrics.json` (git_rev/git_dirty_code/lenh/do_luc + số từng file).
 Lưu ý  : `None` = CHƯA ĐO, không phải 0 (AGENTS §6). `drift_iou` là **độ tự nhất quán** của ô bao
          đang hiển thị, KHÔNG phải độ chính xác — đừng trích nó thành "chất lượng bám".
@@ -27,6 +28,7 @@ from src.drift_samples import (  # noqa: E402
     read_samples,
     static_control,
     summarize,
+    tach_theo_cac_khung,
 )
 
 
@@ -40,7 +42,7 @@ def _meta_for(csv_path: Path):
 
 
 def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False,
-                 windows=()) -> dict:
+                 windows=(), frame_windows=()) -> dict:
     """Một file mẫu → dict số liệu (hàm thuần ngoài việc đọc file; test bằng CSV trong `tmp_path`).
 
     `windows` (danh sách cửa sổ) ⇒ thêm mục `theo_cua_so`: độ trễ phát hiện của p05 **luôn** xấp xỉ
@@ -68,6 +70,10 @@ def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False,
                         if key in ("bao_dong_070", "bao_dong_030", "phat_hien")}
             for size in windows
         }
+    if frame_windows:
+        # Tách "vật còn trong khung" / "ngoài khung đã khai": `empty_frac` gộp cả hai hiện tượng
+        # (14-11: binh1 36 % cả phiên nhưng 0,0 % trong khung) nên số "mất dấu" phải đọc từ đây.
+        ket_qua["theo_khung"] = tach_theo_cac_khung(rows, frame_windows)
     if static:
         ket_qua["doi_chung_canh_tinh"] = static_control(rows)
     return ket_qua
@@ -83,8 +89,23 @@ def main() -> int:
     parser.add_argument("--windows", type=int, nargs="*", default=[],
                         help="quét thêm các cửa sổ khác (ghi vào `theo_cua_so`) — độ trễ phát hiện "
                              "xấp xỉ bằng độ dài cửa sổ nên phải quét mới thấy đánh đổi")
+    parser.add_argument("--frame-window", action="append", default=[], metavar="dau:cuoi",
+                        help="khung frame vật CÒN trong khung (lặp được: binh1 có 0:110 và 165:262)"
+                             " — thêm mục `theo_khung` vào artifact để tách 'mất dấu' khỏi 'vật đã"
+                             " rời khung'. PHẢI lấy khung từ docs/demo-clip-va-o-chon.md, không chọn"
+                             " lại sau khi xem số.")
     parser.add_argument("--out", default="")
     args = parser.parse_args()
+
+    frame_windows = []
+    for text in args.frame_window:
+        try:
+            nums = [int(v) for v in text.replace(":", " ").split()]
+        except ValueError:
+            parser.error(f"--frame-window {text!r} phải là dau:cuoi (số nguyên)")
+        if len(nums) != 2 or min(nums) < 0:
+            parser.error(f"--frame-window {text!r} phải là dau:cuoi với cả hai >= 0")
+        frame_windows.append(nums)
 
     files = [Path(name) for name in args.files] or sorted(
         Path(name) for name in glob.glob(str(_REPO_ROOT / "data" / "drift_samples_*.csv")))
@@ -101,7 +122,7 @@ def main() -> int:
     for path in files:
         la_tinh = path.resolve() in static_files
         ket_qua.append(analyze_file(path, window=args.window, static=la_tinh,
-                                    windows=args.windows))
+                                    windows=args.windows, frame_windows=frame_windows))
 
     stamp = datetime.now().astimezone()
     git_rev, git_dirty, git_dirty_code, git_loi = _git_provenance()
@@ -146,6 +167,14 @@ def main() -> int:
               f"{item['drift_iou_p05']} | {item['empty_frac']} | "
               f"{item['bao_dong_070']['ti_le_bao']} | {item['bao_dong_030']['ti_le_bao']} | "
               f"{'null' if phat_hien is None else phat_hien} |")
+    for item in ket_qua:
+        if "theo_khung" in item:
+            k = item["theo_khung"]
+            khung_txt = " ∪ ".join(f"{a}–{b}" for a, b in k["khung"])
+            print(f"\n{Path(item['file']).name} · KHUNG {khung_txt}: "
+                  f"trong n={k['trong_khung']['n']} rỗng={k['trong_khung']['empty_frac']} "
+                  f"drift_tb={k['trong_khung']['drift_iou_mean']} · "
+                  f"ngoài n={k['ngoai_khung']['n']} rỗng={k['ngoai_khung']['empty_frac']}")
     for item in ket_qua:
         if "doi_chung_canh_tinh" in item:
             control = item["doi_chung_canh_tinh"]

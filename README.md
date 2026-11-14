@@ -643,7 +643,7 @@ Với **vật** (chai, remote, hộp…): vẫn dùng đúng máy trạng thái 
 IMG_SIZE=320 ./run demo --reid-cue object
 
 # headless 1 lệnh: ghi HUD + CSV + JSON (không cần màn hình)
-./run reid data/binh1.mp4 104,308,209,287 --max-frames 130
+./run reid data/binh1.mp4 300,275,150,410 --max-frames 130   # ô CHAI của binh1 (ô cũ 104,308,209,287 phủ khuôn mặt — xem docs/demo-clip-va-o-chon.md)
 ```
 
 | Cờ | Ý nghĩa |

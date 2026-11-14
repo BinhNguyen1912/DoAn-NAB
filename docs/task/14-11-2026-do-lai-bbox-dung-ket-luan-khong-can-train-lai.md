@@ -36,8 +36,8 @@
 | Ca | `empty_runs` % (tổng phiên) | `empty` % **khi vật trong khung** | `drift_iou` (tổng) | `drift_iou` **trong khung** | `vos_fps` (mask/s) | `mask_age_p95` |
 |---|---|---|---|---|---|---|
 | **mặt** (`binh1`, ô cũ) | **0,0** | 0,0 | 0,881 / 0,884 / 0,883 | 0,883 | 7,8–8,2 | 209,3 / 227,6 / 220,0 ms |
-| **chai** (`binh1`, ô mới) | 35,0 / 36,0 / 36,3 | **0,0** (n = 30–32/lần) | 0,454 / 0,447 / 0,464 | 0,419–0,455 | 8,5–8,8 | 215,4 / 217,2 / 221,4 ms |
-| **chai** (`binh2`, ô mới) | 21,7 / 21,8 / 23,4 | **0,0** (n = 38–40/lần) | 0,621 / 0,619 / 0,617 | 0,727–0,753 | 8,1–8,5 | 209,4 / 218,7 / 210,9 ms |
+| **chai** (`binh1`, ô mới) | 36,0 / 36,2 / 36,7 | **1,7–1,8 %** (khung `0:110` ∪ `165:262`, n = 57–59) | 0,454 / 0,460 / 0,460 | **0,475–0,484** | 8,5–8,8 | 215,4 / 217,2 / 221,4 ms |
+| **chai** (`binh2`, ô mới) | 21,7 / 22,2 / 23,4 | **0,0 %** (khung `0:160`, n = 44–45) | 0,621 / 0,619 / 0,617 | 0,702–0,721 | 8,1–8,5 | 209,4 / 218,7 / 210,9 ms |
 
 Artifact: `data/lan2_{mat_binh1,chai_binh1,chai_binh2}_lan{1,2,3}_metrics.json` (+ CSV từng mẫu cùng tem).
 
@@ -61,14 +61,17 @@ lọc định hướng**, không trích như số nghiệm thu. Riêng `image_si
 | **small** (to hơn 1,3×) | 6,7 % rỗng · stability 0,723 · dt 35 057 px | **31,1 % rỗng** · 118,9 ms (+18 %) | 118,9–126,3 |
 
 ### D. Nguyên nhân thật của "mất dấu": VẬT RỜI KHUNG
-- `binh1`: chai chỉ có trong **frame 0–110** (≈3,7 s); từ ≈frame 115 người ta **cất chai đi** — ảnh
+- `binh1`: chai có trong **hai đoạn** — `0:110` và `165:262` (≈3,7 s + 3,2 s); giữa hai đoạn người ta
+  **cất chai đi** — ảnh
   frame 160 và 260 **không có chai**. `binh2`: chai trắng rời khung từ ≈frame 250 (frame 300 chỉ còn
   chai đen ở vị trí khác).
-- Vì vậy khi vật còn trong khung, `empty = 0,0 %` ở **cả ba ca**; toàn bộ 21–37 % "mask rỗng" là
-  **model trả lời đúng** (không có vật). `empty_runs`/`empty_frac_window` **không phân biệt** được
-  "mất dấu do model" với "vật không còn trong khung" — muốn phân biệt phải cắt cửa sổ theo
-  `frame_idx` hoặc theo cờ "vật còn trong khung" của người xem.
-- `drift_iou` **trong khung**: mặt 0,883 > chai `binh2` 0,727–0,753 > chai `binh1` 0,419–0,455
+- Vì vậy khi vật trong khung, `empty` rơi từ **36,0–36,7 %** xuống **1,7–1,8 %** (`binh1`, gộp hai đoạn;
+  riêng `0:110` là **0,0 %**) và từ 21,7–23,4 % xuống **0,0 %** (`binh2`, khung `0:160`); ca mặt là
+  **0,0 %** suốt phiên vì mặt không rời khung. Tức phần lớn "mask rỗng" là **model trả lời đúng**.
+  `empty_runs`/`empty_frac_window` **không phân biệt** được "mất dấu do model" với "vật ngoài khung"
+  ⇒ từ 14-11, `scripts/measure_live_relay.py` có `--frame-window` (lặp cờ được, ghi cả `so_vong`) và
+  `scripts/analyze_drift_samples.py` cũng có, để cắt cửa sổ theo `frame_idx` trước khi trích số.
+- `drift_iou` **trong khung**: mặt 0,883 > chai `binh2` 0,702–0,721 > chai `binh1` 0,475–0,484
   (chai binh1 nhỏ hơn + bị xoay/che bằng ngón tay suốt 3,5 s). Đây là **độ tự nhất quán** giữa ô LK
   và mask VOS kế tiếp, **không** phải độ chính xác (AGENTS §6).
 

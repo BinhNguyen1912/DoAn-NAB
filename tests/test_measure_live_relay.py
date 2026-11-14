@@ -318,16 +318,39 @@ class TestParseFrameWindow:
     """
 
     def test_doc_binh_thuong(self):
-        assert relay._parse_frame_window("0:105") == [0, 105]
+        assert relay._parse_frame_window("0:110") == [[0, 110]]
 
     def test_chuoi_rong_la_khong_hoi_gi(self):
         assert relay._parse_frame_window("") == []
 
     def test_dao_nguoc_van_nhan(self):
-        """`105:0` được chấp nhận (người dùng gõ ngược) — hàm tách khung tự sắp lại."""
-        assert relay._parse_frame_window("105:0") == [105, 0]
+        """`110:0` được chấp nhận (người dùng gõ ngược) — hàm tách khung tự sắp lại."""
+        assert relay._parse_frame_window("110:0") == [[110, 0]]
 
-    @pytest.mark.parametrize("text", ["abc", "1", "1:2:3", "-5:10"])
+    @pytest.mark.parametrize("text", ["abc", "1", "1:2:3", "-5:10", "0:-5"])
     def test_sai_dinh_dang_nem_value_error(self, text):
+        """`0:-5` phải bị từ chối: âm ở ĐUÔI mà chỉ kiểm `dau` thì khung `0…-5` bị hoán thành
+        `-5…0` và artifact báo "0 % rỗng trong khung" từ đúng 1 mẫu vô nghĩa."""
         with pytest.raises(ValueError):
             relay._parse_frame_window(text)
+
+
+class TestSoVong:
+    """`_so_vong` — nguồn file bị LẶP thì "ngoài khung" không đồng nghĩa "vật đã rời khung".
+
+    Đo 14-11 thật: 55 s trên `data/binh1.mp4` (333 frame) cho `frames_cuoi = 1495` = **4,5 vòng**;
+    chỉ vòng 1 nằm trong khung. Không ghi số vòng thì người đọc hiểu sai "ngoài khung".
+    """
+
+    def test_tinh_dung_so_vong(self):
+        assert relay._so_vong(1495, 333) == 4.49
+
+    def test_khong_biet_do_dai_clip_tra_none(self):
+        assert relay._so_vong(1495, None) is None
+
+    def test_chua_co_frame_tra_none(self):
+        assert relay._so_vong(None, 333) is None and relay._so_vong(0, 333) is None
+
+    def test_nguon_mang_khong_do_duoc(self):
+        assert relay._so_frame_clip("http://127.0.0.1:8090/snapshot.jpg") is None
+        assert relay._so_frame_clip("data/khong-ton-tai.mp4") is None

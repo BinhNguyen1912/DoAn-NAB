@@ -168,40 +168,49 @@ def thong_ke_mau(rows) -> dict:
     }
 
 
-def tach_theo_khung(rows, dau: int, cuoi: int) -> dict:
-    """Tách mẫu theo KHUNG frame `[dau, cuoi]` và thống kê mỗi bên — hàm THUẦN.
+def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
+    """Tách mẫu theo NHIỀU khung frame và thống kê mỗi bên — hàm THUẦN.
 
     Vì sao cần: `empty_runs`/`empty_frac_window` **không phân biệt** "model mất dấu" với "vật
-    không còn trong khung". Đo 14-11 trên `data/binh1.mp4` (ô đúng = chai): cả phiên 35–36 % mẫu
-    rỗng, nhưng **0,0 %** khi chai còn trong khung (frame ≤ 105) — 100 % số rỗng là đoạn người ta
-    đã cất chai đi (ảnh frame 160/260 không có chai). Không tách khung thì con số "mất dấu 35 %"
-    bị đọc thành lỗi model.
+    không còn trong khung". Đo 14-11 trên `data/binh1.mp4` (ô đúng = chai): cả phiên 36–37 % mẫu
+    rỗng, nhưng **0,0 %** khi chai còn trong khung — 100 % số rỗng là đoạn người ta đã cất chai đi.
 
-    Cả hai bên **luôn** được trả về cùng nhau để người đọc không thể trích riêng "trong khung" mà
-    giấu phần còn lại. Mẫu không có `frame_idx` (hiếm: `_seq_frame` bị cắt) xếp vào
-    `khong_ro_khung`, **không** bị tính vào bên nào.
+    Một khung LIÊN TỤC là **không đủ**: `binh1` có hai đoạn vật còn trong khung (`0:110` và
+    `165:262`), nên `--frame-window` nhận nhiều khung và mẫu thuộc **bất kỳ** khung nào được tính là
+    "trong khung". Mẫu không có `frame_idx` (hiếm: `_seq_frame` bị cắt) → `khong_ro_khung`.
 
-    Input : `rows` từ `read_samples()`, `dau`/`cuoi` là frame_idx **bao gồm hai đầu**.
-    Output: `{khung, trong_khung, ngoai_khung, khong_ro_khung}` — mỗi nhóm là `thong_ke_mau()`.
+    Input : `rows` từ `read_samples()`; `danh_sach_khung` = list `(dau, cuoi)` — **bao gồm hai đầu**.
+    Output: `{khung: [[dau,cuoi],…], trong_khung, ngoai_khung, khong_ro_khung}` — mỗi nhóm là
+            `thong_ke_mau()`. Không có mẫu ⇒ các số là `None` (chưa đo), KHÔNG phải 0.
     """
-    dau, cuoi = min(int(dau), int(cuoi)), max(int(dau), int(cuoi))
+    khungs = [
+        (min(int(a), int(b)), max(int(a), int(b))) for a, b in danh_sach_khung
+    ]
     trong, ngoai, khong_ro = [], [], []
     for row in rows:
         idx = row.get("frame_idx")
         if idx is None:
             khong_ro.append(row)
-        elif dau <= idx <= cuoi:
+        elif any(dau <= idx <= cuoi for dau, cuoi in khungs):
             trong.append(row)
         else:
             ngoai.append(row)
     return {
-        "khung": [dau, cuoi],
+        "khung": [[a, b] for a, b in khungs],
         "trong_khung": thong_ke_mau(trong),
         "ngoai_khung": thong_ke_mau(ngoai),
         "khong_ro_khung": thong_ke_mau(khong_ro),
-        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau: số rỗng ở `ngoai_khung` là "
-                   "vật đã rời khung, không phải model mất dấu.",
+        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame "
+                   "NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file "
+                   "bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. "
+                   "`so_vong` (khi đọc được độ dài clip) cho biết đã lặp bao nhiêu lần.",
     }
+
+
+def tach_theo_khung(rows, dau: int, cuoi: int) -> dict:
+    """Một khung duy nhất — giữ lại cho chỗ gọi cũ; hình dạng trả về y hệt `tach_theo_cac_khung`."""
+    return tach_theo_cac_khung(rows, [(dau, cuoi)])
+
 
 
 def rolling_p05(values, window: int = WINDOW) -> list:

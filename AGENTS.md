@@ -281,14 +281,15 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 
 - **“Mất dấu” phải tách khỏi “vật đã rời khung” — ô chọn và khung frame phải kiểm bằng ẢNH.**
   Đo 14-11 (đường live, @192, `vos_every 3`, 55 s, 3 lần xen kẽ, `git_dirty_code=false`): ô chai
-  `binh1 300,275,150,410` cho `empty` **35–36 % cả phiên nhưng 0,0 % khi chai trong khung** (`0:110`);
-  `binh2 330,330,150,360` cho 22–23 % nhưng **0,0 %** trong khung `0:160`. Ô **khuôn mặt**
+  `binh1 300,275,150,410` cho `empty` **36,0–36,7 % cả phiên nhưng 1,7–1,8 % khi chai trong khung**
+  (hai đoạn `0:110` ∪ `165:262`; riêng đoạn `0:110` là 0,0 %); `binh2 330,330,150,360` cho 22–23 %
+  nhưng **0,0 %** trong khung `0:160`. Ô **khuôn mặt**
   (`104,308,209,287`, mặc định cũ của `profile_stages.py`/`benchmark_light_trackers.py`/
   `measure_watchdog.py`) cho drift 0,881–0,884 và **0 % rỗng** — vì mặt luôn ở trong khung. ⇒ dùng
   `scripts/measure_live_relay.py --frame-window dau:cuoi` (artifact có `cua_so_frame.trong_khung` /
   `.ngoai_khung`), **cấm** trích tỉ lệ rỗng cả phiên như “model mất dấu”. Không cần train lại model:
   checkpoint `small` cho 31,1 % rỗng vs `tiny` 31,8 % mà chậm +18 %; `image_size` 256/320 làm
-  `drift_iou` **giảm** (0,34/0,29) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
+  `drift_iou` **giảm** (0,35/0,28–0,32) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
   `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
   `docs/demo-clip-va-o-chon.md`.
 
