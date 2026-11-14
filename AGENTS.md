@@ -319,6 +319,13 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   dựng sau lưng client ⇒ worker giữ webcam mà không ai gửi stop). `scripts/measure_live_relay.py`
   dùng `timeout=600`, `scripts/demo_preflight.py --full` dùng `max(30 s, --full-timeout)`.
 
+- **Muốn nói "bám ĐÚNG" thì phải chấm mIoU mask vs GT** (`./run miou`, quy trình trong
+  `docs/thuoc-do-bam-dung.md`): `drift_iou`/`stability` chỉ là độ tự nhất quán. Quy tắc chấm: GT rỗng
+  ⇒ **không chấm**; model rỗng mà GT có vật ⇒ **0,0**; thiếu mask ⇒ *chưa chạy*, không phải bám sai;
+  mIoU trên fixture tổng hợp là **cận trên**. Số "chọn cấu hình" lấy từ `./run bangcau`
+  (`docs/bang-cau-hinh.md`, **3 lần/cấu hình có `±`**); so hai cấu hình thì dùng `./run ab` (chạy chèn
+  kẽ, chênh lệch ≤ `max(std_a, std_b)` ⇒ viết **"không phân biệt được"**).
+
 
 ## 7. Các repo/model tham khảo
 
