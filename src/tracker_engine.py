@@ -55,7 +55,11 @@ class TrackingResult:
     mask: np.ndarray    # (H, W) bool — kích thước frame gốc
     bbox: tuple         # (x1, y1, x2, y2) theo toạ độ frame gốc; (0,0,0,0) nếu mask rỗng
     score: float        # object_score_logits của đối tượng (>0 thường là tin cậy)
-    elapsed_ms: float
+    elapsed_ms: float   # CHỈ phần model (propagate) — không gồm tiền xử lý
+    # Thời gian tiền xử lý (resize sang `image_size` + stack tensor). Tách riêng vì `elapsed_ms`
+    # luôn bỏ khoản này (đo 14-11: 14,25 ms/frame @192), nên tuổi mask thật và chu kỳ VOS không khép
+    # được nếu không cộng nó. Mặc định **`None`** (= CHƯA ĐO) để engine khác không "vô tình" báo 0,0.
+    pre_ms: float | None = None
 
 
 class _StreamingImages:
@@ -182,12 +186,15 @@ class TrackerEngine:
                 f"kích thước frame đổi giữa phiên: nhận {frame_bgr.shape[:2]}, kỳ vọng {self._video_hw}"
             )
         idx = self._frame_count
+        t_pre = time.time()
         self._images.append(self._to_input_tensor(frame_bgr))
+        pre_ms = (time.time() - t_pre) * 1000.0
         self._frame_count = len(self._images)
         self._state["num_frames"] = self._frame_count
         t0 = time.time()
         result = self._propagate_one(idx, t0)
         self._images.free(idx)  # đã xử lý xong — không còn dùng tensor gốc
+        result.pre_ms = pre_ms   # KHÔNG cộng vào `elapsed_ms` (giữ tương thích số cũ)
         return result
 
     def reset(self) -> None:

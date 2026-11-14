@@ -66,7 +66,12 @@ def main() -> int:
     parser.add_argument("--image-size", type=int, default=192)
     parser.add_argument("--frames", type=int, default=12)
     parser.add_argument("--source", default="data/binh1.mp4")
-    parser.add_argument("--bbox", default="104,308,209,287")
+    # Ô CHAI của data/binh1.mp4 nhưng ở định dạng **x1,y1,x2,y2** (script này KHÁC hai script còn
+    # lại: nó parse `x1, y1, x2, y2` ở dưới, không phải `x,y,w,h`). Bản cũ `104,308,209,287` phủ
+    # KHUÔN MẶT (audit 14-11 — docs/demo-clip-va-o-chon.md) nên mọi bảng "ms từng tầng" trước đó đo
+    # trên mặt. 300,275 + 150×410 = x2 450, y2 685.
+    parser.add_argument("--bbox", default="300,275,450,685",
+                        help="x1,y1,x2,y2 (KHÔNG phải x,y,w,h — xem docs/demo-clip-va-o-chon.md)")
     args = parser.parse_args()
 
     engine = TrackerEngine.build_default(device="cpu", image_size=args.image_size)

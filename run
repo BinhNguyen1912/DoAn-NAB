@@ -316,7 +316,7 @@ EOF
     activate_env
     if [ $# -lt 2 ]; then
       echo "[LOI] thiếu tham số. Dùng: ./run reid <video> <x,y,w,h> [--max-frames N]"
-      echo "      Ví dụ: ./run reid data/binh1.mp4 104,308,209,287 --max-frames 130"
+      echo "      Ví dụ: ./run reid data/binh1.mp4 300,275,150,410 --max-frames 130"
       exit 2
     fi
     reid_video="$1"; reid_bbox="$2"

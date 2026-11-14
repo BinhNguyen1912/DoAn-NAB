@@ -185,9 +185,12 @@ def _worker_telemetry(out_dir) -> dict:
     except (OSError, ValueError):
         return {}
     keys = ("state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
-            "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
-            "mask_age_p95", "age_n", "stability", "stability_n", "stability_shown",
-            "stability_shown_n", "empty_runs", "mask_holds", "mask_drops", "lost_streak")
+            # Pha của chu kỳ VOS (14-11): biết 32 ms "thừa" nằm ở đâu thay vì đoán.
+            "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms",
+            "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_cu_ms",
+            "mask_age_total_ms", "mask_age_p95", "age_n", "stability", "stability_n",
+            "stability_shown", "stability_shown_n", "empty_runs", "empty_frac_window",
+            "empty_window_n", "mask_holds", "mask_drops", "lost_streak")
     return {key: data.get(key) for key in keys if key in data}
 
 
@@ -246,6 +249,85 @@ def _ma_thoat(ket_qua: bool) -> int:
     return 0 if ket_qua else 1
 
 
+def _parse_frame_window(text: str) -> list:
+    """`"0:110"` → `[[0, 110]]`; chuỗi rỗng → `[]` (không hỏi gì). Sai định dạng → `ValueError`.
+
+    Cho phép khai NHIỀU khung (mỗi lần `--frame-window`): `binh1` có 2 đoạn vật còn trong khung
+    (`0:110` và `165:262`) — một khung liên tục là không đủ để mô tả clip thật.
+
+    Hàm thuần để test được phần parse (CLI chỉ gọi `parser.error` khi nó ném lỗi).
+    """
+    if not text:
+        return []
+    try:
+        nums = [int(v) for v in text.replace(":", " ").split()]
+    except ValueError as exc:
+        raise ValueError("phải là dau:cuoi (số nguyên, vd 0:110)") from exc
+    if len(nums) != 2:
+        raise ValueError("phải có đúng 2 số: dau:cuoi (vd 0:110)")
+    if min(nums) < 0:
+        raise ValueError("cả `dau` và `cuoi` phải >= 0")
+    return [nums]
+
+
+def _gop_khung(danh_sach_text) -> list:
+    """`["0:110", "165:262"]` → `[[0, 110], [165, 262]]` (gộp nhiều lần `--frame-window`).
+
+    Tách khỏi `main()` để test được việc "lặp cờ ⇒ nhiều khung" (nếu chỉ để trong `main()` thì bỏ
+    `action="append"` sẽ không test nào đỏ — review vòng 2, P3).
+    """
+    windows = []
+    for text in danh_sach_text:
+        windows.extend(_parse_frame_window(text))
+    return windows
+
+
+def _so_vong(frames_cuoi, so_frame_clip):
+    """Số vòng nguồn file đã phát lại — `None` khi không biết (nguồn mạng hoặc không đọc được).
+
+    Vì sao ghi vào artifact: đo 14-11 cho `frames_cuoi = 1495` trên clip **333 frame** ⇒ 55 s là
+    **4,5 vòng**; chỉ vòng 1 nằm trong khung vật còn trong khung, các vòng sau rơi hết vào
+    `ngoai_khung`. Không có số vòng thì người đọc tưởng "ngoài khung = vật đã rời".
+    """
+    if not frames_cuoi or not so_frame_clip:
+        return None
+    return round(float(frames_cuoi) / float(so_frame_clip), 2)
+
+
+def _so_frame_clip(source: str):
+    """Số frame của clip nguồn (chỉ khi là FILE đọc được bằng cv2); nguồn mạng ⇒ `None`.
+
+    `count <= 1` cũng trả `None`: nguồn là **một ảnh** (`--source data/x.jpg`) thì
+    `CAP_PROP_FRAME_COUNT` = 1, chia cho 1 sẽ ra `so_vong` hàng trăm và in cảnh báo lặp vô nghĩa.
+    """
+    if "://" in source:
+        return None
+    candidates = [Path(source), _REPO_ROOT / source]
+    path = next((p for p in candidates if p.exists()), None)
+    if path is None:
+        return None
+    try:
+        import cv2  # import muộn: script không bắt buộc cv2 khi chỉ đo nguồn HTTP
+
+        cap = cv2.VideoCapture(str(path))
+        try:
+            count = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+        finally:
+            cap.release()
+        return count if count > 1 else None
+    except Exception:                     # noqa: BLE001 — thiếu cv2/không đọc được: không kết luận
+        return None
+
+
+def _canh_bao_lap(so_vong) -> bool:
+    """Có nên cảnh báo "nguồn file đã lặp" không — hàm THUẦN (ngưỡng 1,1 bỏ qua frame rơi vãi).
+
+    Không có ngưỡng thì hoặc cảnh báo mọi lần (0,95 vòng cũng kêu) hoặc không bao giờ kêu; cả hai
+    đều làm người đọc bỏ qua cảnh báo thật.
+    """
+    return (so_vong or 0) > 1.1
+
+
 def _verdict(summary: dict) -> tuple[bool, list]:
     """(đạt, danh sách lý do) — điều kiện đăng ký trước của "đường demo thật chạy được"."""
     reasons = []
@@ -272,6 +354,12 @@ def main() -> int:
     parser.add_argument("--out", default="")
     parser.add_argument("--frame-dir", default="")
     parser.add_argument("--out-dir", default="/dev/shm/doan-live-relay")
+    parser.add_argument("--frame-window", action="append", default=[], metavar="dau:cuoi",
+                        help="khung frame mà vật CÒN trong khung (vd 0:110). Lặp cờ để khai NHIỀU "
+                             "khung (binh1 có 2 đoạn: 0:110 và 165:262). Dùng khi vật rời khỏi khung "
+                             "giữa clip: `empty_frac_window` gộp cả hai hiện tượng ⇒ artifact tách "
+                             "`trong_khung`/`ngoai_khung` (log 14-11: binh1 cất chai từ frame ~115 "
+                             "nên ~36% 'mất dấu' là ĐÚNG, không phải lỗi model)")
     parser.add_argument("--device", default=None, choices=["cpu", "cuda"],
                         help="thiết bị chạy model của phiên live (API chuyển xuống worker). "
                              "Đo trên GPU PHẢI có cờ này để artifact biết số FPS là của máy nào")
@@ -280,6 +368,11 @@ def main() -> int:
     bbox = [int(v) for v in args.bbox.replace(",", " ").split()] if args.bbox else []
     if len(bbox) != 4:
         parser.error("--bbox phải là x,y,w,h (đây là mode track)")
+
+    try:
+        frame_windows = _gop_khung(args.frame_window)
+    except ValueError as exc:
+        parser.error(f"--frame-window {exc}")
 
     stamp = datetime.now().astimezone()   # có offset: WSL chạy UTC, tên file theo giờ VN
     out = Path(args.out) if args.out else (
@@ -389,10 +482,27 @@ def main() -> int:
         "device_worker_log": device_log,
     })
     series = None
+    theo_khung = None
+    rows = []
     if drift["csv"]:
         # Đặt bí danh: `summarize` là hàm tóm tắt mẫu `/api/live/status` của chính script này.
         from src.drift_samples import read_samples, summarize as summarize_series
-        series = summarize_series(read_samples(_REPO_ROOT / drift["csv"]))
+        rows = read_samples(_REPO_ROOT / drift["csv"])
+        series = summarize_series(rows)
+    if frame_windows:
+        # Chạy CẢ KHI không có CSV (phiên không ghi mẫu): trả nhóm `n = 0` + `None` (chưa đo) thay
+        # vì `cua_so_frame = null` — null phải có nghĩa duy nhất là "không khai khung nào".
+        from src.drift_samples import tach_theo_cac_khung
+        theo_khung = tach_theo_cac_khung(rows, frame_windows)
+        theo_khung["so_frame_clip"] = _so_frame_clip(args.source)
+        # Đếm bằng SỐ LỚN HƠN giữa frame API đã phát và frame worker đã xử lý: hai bộ đếm lệch nhau
+        # (đo 14-11: 316 vs 335 ⇒ `so_vong` thấp hơn thực ~6 %), nên chỉ dùng frame đã phát sẽ bỏ sót
+        # ca vừa bước sang vòng 2 mà không in cảnh báo.
+        frames_phat = summary.get("frames_cuoi") or 0
+        frames_worker = (_worker_telemetry(args.out_dir) or {}).get("frames") or 0
+        theo_khung["so_vong"] = _so_vong(max(frames_phat, frames_worker),
+                                         theo_khung["so_frame_clip"])
+        theo_khung["so_vong_ghi_chu"] = "ước tính từ frame ĐÃ PHÁT/ĐÃ XỬ LÝ chia số frame của clip"
     artifact = {
         "do_luc": stamp.isoformat(timespec="seconds"),
         "git_rev": git_rev,
@@ -429,6 +539,9 @@ def main() -> int:
         "drift_samples_n_dong": drift["n_dong"],
         "drift_samples_ly_do": drift["ly_do"],
         "drift_series": series,
+        # Tách "vật còn trong khung" / "vật đã rời khung" khi có `--frame-window`. `None` = không
+        # hỏi ⇒ KHÔNG có nghĩa là "0 % rỗng trong khung".
+        "cua_so_frame": theo_khung,
         "anh_frame": frames_saved,
         "anh_frame_loi": frame_errors,
         "mau_cuoi": samples[-3:],
@@ -463,6 +576,20 @@ def main() -> int:
               f"(tỉ lệ báo {series['bao_dong_070']['ti_le_bao']})")
         print(f"  phát hiện: sau {series['phat_hien']['phat_hien_sau_mau']} mẫu kể từ mẫu xấu đầu "
               f"(null = chưa có mẫu xấu nào hoặc chưa đủ cửa sổ)")
+    if theo_khung:
+        khung_txt = " ∪ ".join(f"{a}–{b}" for a, b in theo_khung["khung"])
+        trong, ngoai = theo_khung["trong_khung"], theo_khung["ngoai_khung"]
+        print(f"\nKHUNG {khung_txt} (vật còn trong khung): n={trong['n']} "
+              f"· mask rỗng={trong['empty_frac']} · drift_tb={trong['drift_iou_mean']} "
+              f"(n_drift={trong['n_drift']})")
+        print(f"  NGOÀI khung ĐÃ KHAI: n={ngoai['n']} · mask rỗng={ngoai['empty_frac']} "
+              f"· drift_tb={ngoai['drift_iou_mean']}")
+        # Chỉ cảnh báo khi THẬT SỰ lặp (ngưỡng 1,1 để bỏ qua sai số frame rơi vãi cuối vòng).
+        if _canh_bao_lap(theo_khung.get("so_vong")):
+            print(f"  [CANH BAO] nguồn file đã lặp {theo_khung['so_vong']} vòng "
+                  f"({theo_khung['so_frame_clip']} frame/clip) ⇒ các vòng sau nằm ở "
+                  f"'ngoài khung', KHÔNG phải 'vật đã rời khung'. Đo 1 vòng: "
+                  f"`--seconds` ≤ độ dài clip.")
     else:
         print(f"Dãy mẫu drift: KHÔNG có ({drift['ly_do']})")
     print(f"Ghi: {out}")

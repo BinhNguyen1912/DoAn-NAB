@@ -224,6 +224,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **Hybrid chỉ giữ được ô bao trên một số clip**: binh1 drift 0,88–0,89 (p05 0,66–0,72), simloss 0,87
   (p05 0,64), **binh2 p05 = 0,00 (VOS trả mask rỗng 26 lần; `mask_drops`/`lost_streak` = 0 nên KHÔNG
   phải LK mất dấu)**. Cấm phát biểu "hybrid luôn bám được" — phải nêu clip + drift đo được.
+  **ĐÍNH CHÍNH 14-11**: các số trên đo bằng ô **sai** — `binh1` `104,308,209,287` phủ **khuôn mặt**,
+  `binh2` `200,400,300,500` phủ **2 chai + 2 tay**; và phần lớn "mask rỗng" là **vật đã rời khung**
+  (`binh1` cất chai từ frame ~115). Ô + khung đúng: `docs/demo-clip-va-o-chon.md`.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
 - **`measure_live_relay` báo `ket_qua = true` KHÔNG có nghĩa là bám đúng vật**: nó chỉ kiểm đường ống
@@ -275,6 +278,35 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   đo 13-11 relay khai 16,26 FPS trong khi nhịp đổi thật ~19,9/s ⇒ chỉ dùng `measured_fps`/`display_fps`
   của API/worker. Log + plan: `docs/task/13-11-2026-ui-moi-va-tu-dong-do-nguon.md`,
   `docs/plan/13-11-2026-ui-tu-dong-nguon.md`.
+
+- **“Mất dấu” phải tách khỏi “vật đã rời khung” — ô chọn và khung frame phải kiểm bằng ẢNH.**
+  Đo 14-11 (đường live, @192, `vos_every 3`, 55 s, 3 lần xen kẽ, `git_dirty_code=false`): ô chai
+  `binh1 300,275,150,410` cho `empty` **36,0–36,7 % cả phiên nhưng 1,7–1,8 % khi chai trong khung**
+  (hai đoạn `0:110` ∪ `165:262`; riêng đoạn `0:110` là 0,0 %); `binh2 330,330,150,360` cho 22–23 %
+  nhưng **0,0 %** trong khung `0:160`. Ô **khuôn mặt**
+  (`104,308,209,287`, mặc định cũ của `profile_stages.py`/`benchmark_light_trackers.py`/
+  `measure_watchdog.py`) cho drift 0,881–0,884 và **0 % rỗng** — vì mặt luôn ở trong khung. ⇒ dùng
+  `scripts/measure_live_relay.py --frame-window dau:cuoi` (artifact có `cua_so_frame.trong_khung` /
+  `.ngoai_khung`), **cấm** trích tỉ lệ rỗng cả phiên như “model mất dấu”. Không cần train lại model:
+  checkpoint `small` cho 31,1 % rỗng vs `tiny` 31,8 % mà chậm +18 %; `image_size` 256/320 làm
+  `drift_iou` **giảm** (0,34–0,36/0,28–0,32) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
+  `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
+  `docs/demo-clip-va-o-chon.md`.
+
+- **Chu kỳ VOS tách theo pha: nút thắt là model + tiền xử lý, KHÔNG phải "chờ frame".**
+  Đo 14-11, **3 lần** (1 vòng `binh1`, @192, `vos_every 3`, `git_dirty_code=false`, artifact
+  `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`):
+  `cycle_ms` **101,5–121,6** · `vos_ms` (model) **83,6–103,1** · `pre_ms` **11,6–13,1** ·
+  `post_ms` **0,08–0,98** · `queue_ms` **2,1–75,9** · `idle_ms` **0,01–16,8**.
+  ⇒ (a) **KHÔNG** được nói "queue ≈ 0 ⇒ frame không phải chờ": chạy **một** lần từng ra 0,33 ms nhưng
+  n=3 cho 2,1–75,9 ms (mẫu cuối, phụ thuộc pha submit ↔ VOS) — n=1 ở đây kết luận sai, đúng cảnh báo
+  "n < 2 không kết luận"; (b) kết luận đúng là `cycle ≈ vos_ms + pre_ms` ⇒ tăng tần suất gửi frame chỉ
+  làm `queue` dài thêm, còn muốn nhanh hơn phải cắt **model** hoặc **tiền xử lý** (`pre_ms` 12–13 ms);
+  (c) `vos_ms` **không gồm** `pre_ms` (đo riêng, `TrackingResult.pre_ms`, mặc định `None` = chưa đo).
+- **Hai định nghĩa tuổi mask, đừng trộn:** `mask_age_cu_ms` = age + `vos_ms` (**định nghĩa cũ**, số
+  trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
+  (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho
+  cả cửa sổ. So sánh số cũ với số mới phải nêu định nghĩa, nếu không là so hai đại lượng khác nhau.
 
 ## 7. Các repo/model tham khảo
 

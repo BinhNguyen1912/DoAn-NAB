@@ -150,6 +150,74 @@ def drift_values(rows) -> list:
     return [row["drift_iou"] for row in rows if row.get("drift_iou") is not None]
 
 
+def thong_ke_mau(rows) -> dict:
+    """Thống kê một NHÓM mẫu — hàm THUẦN, tự bảo vệ bẫy "0 ≠ chưa đo".
+
+    `empty_frac` = tỉ lệ mẫu CÓ cờ `empty` (mẫu không có cờ không vào mẫu số); `drift_iou_mean`
+    chỉ tính trên mẫu có `drift_iou`. Không có mẫu nào ⇒ **`None`** (chưa đo), không phải `0,0`.
+    """
+    empty_flags = [row["empty"] for row in rows if row.get("empty") is not None]
+    drifts = drift_values(rows)
+    return {
+        "n": len(rows),
+        "n_empty_do_duoc": len(empty_flags),
+        "empty_frac": round(sum(1 for v in empty_flags if v) / len(empty_flags), 3)
+                      if empty_flags else None,
+        "n_drift": len(drifts),
+        "drift_iou_mean": round(sum(drifts) / len(drifts), 4) if drifts else None,
+    }
+
+
+def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
+    """Tách mẫu theo NHIỀU khung frame và thống kê mỗi bên — hàm THUẦN.
+
+    Vì sao cần: `empty_runs`/`empty_frac_window` **không phân biệt** "model mất dấu" với "vật
+    không còn trong khung". Đo 14-11 trên `data/binh1.mp4` (ô đúng = chai): cả phiên 36–37 % mẫu
+    rỗng, nhưng chỉ **1,7–1,8 %** khi chai còn trong khung (`0:110` ∪ `165:262`; riêng `0:110` là
+    0,0 %) — phần lớn số rỗng là đoạn người ta đã cất chai đi.
+
+    Một khung LIÊN TỤC là **không đủ**: `binh1` có hai đoạn vật còn trong khung (`0:110` và
+    `165:262`), nên `--frame-window` nhận nhiều khung và mẫu thuộc **bất kỳ** khung nào được tính là
+    "trong khung". Mẫu không có `frame_idx` (hiếm: `_seq_frame` bị cắt) → `khong_ro_khung`.
+
+    Input : `rows` từ `read_samples()`; `danh_sach_khung` = list `(dau, cuoi)` — **bao gồm hai đầu**.
+    Output: `{khung: [[dau,cuoi],…], trong_khung, ngoai_khung, khong_ro_khung}` — mỗi nhóm là
+            `thong_ke_mau()`. Không có mẫu ⇒ các số là `None` (chưa đo), KHÔNG phải 0.
+    """
+    if not danh_sach_khung:
+        # Không khai khung nào mà vẫn gọi = lỗi lập trình: nếu trả về "mọi mẫu ngoài khung" thì người
+        # đọc thấy `trong_khung.n = 0` và tưởng là "đã đo, không có mẫu nào đúng" (review vòng 2, P3).
+        raise ValueError("cần ít nhất 1 khung (dau, cuoi) — khung rỗng là lỗi lập trình")
+    khungs = [
+        (min(int(a), int(b)), max(int(a), int(b))) for a, b in danh_sach_khung
+    ]
+    trong, ngoai, khong_ro = [], [], []
+    for row in rows:
+        idx = row.get("frame_idx")
+        if idx is None:
+            khong_ro.append(row)
+        elif any(dau <= idx <= cuoi for dau, cuoi in khungs):
+            trong.append(row)
+        else:
+            ngoai.append(row)
+    return {
+        "khung": [[a, b] for a, b in khungs],
+        "trong_khung": thong_ke_mau(trong),
+        "ngoai_khung": thong_ke_mau(ngoai),
+        "khong_ro_khung": thong_ke_mau(khong_ro),
+        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame "
+                   "NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file "
+                   "bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. "
+                   "`so_vong` (khi đọc được độ dài clip) cho biết đã lặp bao nhiêu lần.",
+    }
+
+
+def tach_theo_khung(rows, dau: int, cuoi: int) -> dict:
+    """Một khung duy nhất — giữ lại cho chỗ gọi cũ; hình dạng trả về y hệt `tach_theo_cac_khung`."""
+    return tach_theo_cac_khung(rows, [(dau, cuoi)])
+
+
+
 def rolling_p05(values, window: int = WINDOW) -> list:
     """p05 của từng cửa sổ `window` mẫu liên tiếp; `None` cho tới khi đủ mẫu.
 

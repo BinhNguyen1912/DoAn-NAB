@@ -22,6 +22,9 @@ from src.drift_samples import (
     rolling_p05,
     static_control,
     summarize,
+    tach_theo_cac_khung,
+    tach_theo_khung,
+    thong_ke_mau,
 )
 from src.drift_samples import _opt_bool
 
@@ -385,3 +388,117 @@ class TestDongFileKhongBiXoa:
         """Cột `empty` chỉ nhận 1/0; chuỗi lạ ⇒ None (chưa đo), không thành False."""
         assert _opt_bool("1") is True and _opt_bool("0") is False
         assert _opt_bool("True") is None and _opt_bool("") is None
+
+
+class TestTachTheoKhung:
+    """`tach_theo_khung` — tách "vật còn trong khung" khỏi "vật đã rời khung" (đo 14-11).
+
+    Lý do tồn tại: `binh1` cất chai từ frame ~115, nên `empty_frac` cả phiên = 35–36 % trong khi
+    **0,0 %** khi vật còn trong khung. Không tách thì con số bị đọc thành "model mất dấu".
+    Số kỳ vọng dưới đây tính tay từ 6 dòng mẫu:
+      frame 0,10,20 (trong khung): empty 0,0,0 · drift 0,9,0,8,0,7
+      frame 200,210,220 (ngoài)  : empty 1,1,0 · drift 0,4,None,0,2
+    """
+
+    @staticmethod
+    def _mau():
+        return [
+            {"frame_idx": 0, "empty": False, "drift_iou": 0.9},
+            {"frame_idx": 10, "empty": False, "drift_iou": 0.8},
+            {"frame_idx": 20, "empty": False, "drift_iou": 0.7},
+            {"frame_idx": 200, "empty": True, "drift_iou": 0.4},
+            {"frame_idx": 210, "empty": True, "drift_iou": None},
+            {"frame_idx": 220, "empty": False, "drift_iou": 0.2},
+        ]
+
+    def test_tach_dung_hai_ben(self):
+        kq = tach_theo_khung(self._mau(), 0, 20)
+        assert kq["khung"] == [[0, 20]]
+        assert kq["trong_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.0,
+                                     "n_drift": 3, "drift_iou_mean": 0.8}
+        assert kq["ngoai_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.667,
+                                     "n_drift": 2, "drift_iou_mean": 0.3}
+        assert kq["khong_ro_khung"]["n"] == 0
+
+    def test_bien_bao_gom_hai_dau(self):
+        """`dau`/`cuoi` là BAO GỒM: frame 0 và frame 20 phải nằm trong khung."""
+        assert tach_theo_khung(self._mau(), 0, 0)["trong_khung"]["n"] == 1
+        assert tach_theo_khung(self._mau(), 20, 20)["trong_khung"]["n"] == 1
+
+    def test_dao_nguoc_dau_cuoi_van_dung(self):
+        """Người dùng gõ `105:0` ⇒ phải hiểu là 0..105, không trả về khung rỗng."""
+        assert tach_theo_khung(self._mau(), 20, 0)["khung"] == [[0, 20]]
+
+    def test_khung_rong_tra_none_khong_phai_0(self):
+        """Không có mẫu nào trong khung ⇒ `None` (chưa đo), KHÔNG được là `0,0`/`0 %`."""
+        kq = tach_theo_khung(self._mau(), 1000, 2000)
+        assert kq["trong_khung"] == {"n": 0, "n_empty_do_duoc": 0, "empty_frac": None,
+                                     "n_drift": 0, "drift_iou_mean": None}
+
+    def test_mau_khong_co_frame_idx_vao_khong_ro_khung(self):
+        """`frame_idx` None (mẫu chờ bị cắt) không được rơi vào bên nào ⇒ không làm sai mẫu số."""
+        mau = self._mau() + [{"frame_idx": None, "empty": True, "drift_iou": None}]
+        kq = tach_theo_khung(mau, 0, 20)
+        assert kq["trong_khung"]["n"] == 3
+        assert kq["ngoai_khung"]["n"] == 3
+        assert kq["khong_ro_khung"]["n"] == 1
+        assert kq["khong_ro_khung"]["empty_frac"] == 1.0
+
+    def test_empty_none_khong_vao_mau_so(self):
+        """Mẫu chưa đo `empty` (None) không được tính là "không rỗng"."""
+        assert thong_ke_mau([{"frame_idx": 1, "empty": None, "drift_iou": 0.5}]) == {
+            "n": 1, "n_empty_do_duoc": 0, "empty_frac": None, "n_drift": 1,
+            "drift_iou_mean": 0.5}
+
+
+class TestNhieuKhung:
+    """`tach_theo_cac_khung` — nhiều khung vì `binh1` có **2 đoạn** vật còn trong khung.
+
+    Số kỳ vọng tính tay trên 5 mẫu:
+      frame 5 (khung 0:10), 20 (khung 15:30), 100 (ngoài) — empty 0,0,1 · drift 0,9,0,8,0,3
+    """
+
+    @staticmethod
+    def _mau():
+        return [
+            {"frame_idx": 5, "empty": False, "drift_iou": 0.9},
+            {"frame_idx": 20, "empty": False, "drift_iou": 0.8},
+            {"frame_idx": 100, "empty": True, "drift_iou": 0.3},
+        ]
+
+    def test_gop_moi_khung_vao_trong_khung(self):
+        kq = tach_theo_cac_khung(self._mau(), [(0, 10), (15, 30)])
+        assert kq["khung"] == [[0, 10], [15, 30]]
+        assert kq["trong_khung"]["n"] == 2
+        assert kq["trong_khung"]["empty_frac"] == 0.0
+        assert kq["trong_khung"]["drift_iou_mean"] == 0.85
+        assert kq["ngoai_khung"]["n"] == 1
+        assert kq["ngoai_khung"]["empty_frac"] == 1.0
+
+    def test_mot_khung_van_chay_nhu_cu(self):
+        kq = tach_theo_cac_khung(self._mau(), [(0, 10)])
+        assert kq["trong_khung"]["n"] == 1
+        assert kq["ngoai_khung"]["n"] == 2
+
+    def test_khong_co_khung_nao_thi_bao_loi(self):
+        """Danh sách rỗng ⇒ `ValueError` (KHÔNG lặng lẽ coi mọi mẫu là 'ngoài khung')."""
+        with pytest.raises(ValueError):
+            tach_theo_cac_khung(self._mau(), [])
+
+
+def test_khung_chong_nhau_khong_dem_hai_lan():
+    """Hai khung chồng nhau ⇒ mẫu nằm trong vùng chồng chỉ được đếm MỘT lần.
+
+    Nếu cài bằng `sum(...)` cho từng khung thay vì `any(...)` thì `n` bị nhân đôi và tỉ lệ rỗng bị
+    bóp méo (review vòng 2, P3).
+    """
+    rows = [{"frame_idx": 7, "empty": False, "drift_iou": 0.9}]
+    kq = tach_theo_cac_khung(rows, [(0, 10), (5, 15)])
+    assert kq["trong_khung"]["n"] == 1
+    assert kq["ngoai_khung"]["n"] == 0
+
+
+def test_khong_khai_khung_nao_la_loi_lap_trinh():
+    """Danh sách khung RỖNG ⇒ `ValueError`, không được lặng lẽ coi "mọi mẫu là ngoài khung"."""
+    with pytest.raises(ValueError):
+        tach_theo_cac_khung([{"frame_idx": 1, "empty": False, "drift_iou": 0.5}], [])

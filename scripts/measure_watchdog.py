@@ -324,8 +324,9 @@ def main() -> int:
     parser.add_argument("--snapshot", default="data/demo_input_frames/00000.jpg",
                         help="ảnh JPEG để làm relay (mode raw)")
     parser.add_argument("--clip", default="data/binh1.mp4")
-    parser.add_argument("--bbox", default="104,308,209,287",
-                        help="x,y,w,h trong khung gốc (mặc định: ô của binh1 trong ./run reid)")
+    parser.add_argument("--bbox", default="300,275,150,410",
+                        help="x,y,w,h trong khung gốc (mặc định: ô CHAI của data/binh1.mp4; ô cũ "
+                             "104,308,209,287 phủ KHUÔN MẶT — sửa 14-11, xem docs/demo-clip-va-o-chon.md)")
     parser.add_argument("--image-size", type=int, default=192)
     parser.add_argument("--vos-every", type=int, default=3)
     parser.add_argument("--lan", type=int, default=3, help="số lần chạy (mỗi lần kill worker một lần)")

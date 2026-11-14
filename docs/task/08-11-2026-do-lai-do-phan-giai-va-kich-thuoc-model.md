@@ -8,6 +8,12 @@
 - Máy: MSI Modern 14 B11MOU — i7-1195G7 (4 nhân/8 luồng), 16 GB, **Iris Xe, không CUDA**.
 - Checkpoint có sẵn: `samurai/sam2/checkpoints/sam2.1_hiera_{tiny,small,base_plus,large}.pt`.
 - Video thật: `data/binh1.mp4`, bbox `104,308,209,287` (vật thể, 640×480).
+  > ⚠️ **ĐÍNH CHÍNH 14-11-2026** (audit bằng ảnh frame 0): `data/binh1.mp4` là **720×1280**, không
+  > phải 640×480, và ô `104,308,209,287` phủ **KHUÔN MẶT người**, không phải vật — chai nằm ngoài
+  > hộp (ảnh: `docs/media/bbox/binh1_bbox_cu*` so với `binh1_bbox_moi*`). Ô đúng cho chai:
+  > `300,275,150,410`. Mọi số của ngày 08-11 đo bằng ô này là số **bám khuôn mặt**; xem
+  > `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md` để biết số tương ứng
+  > khi bám đúng chai và phần nào của bảng vẫn dùng được.
 - Nền tảng: `docs/research/03` (mục tiêu thực dụng **≥10 FPS**), `docs/research/05`, `data/*_summary.json`.
 
 ## 🔨 Công việc đã thực hiện

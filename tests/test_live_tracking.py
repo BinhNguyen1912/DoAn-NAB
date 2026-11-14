@@ -126,6 +126,7 @@ class TestLiveTrackingSession:
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         bat_buoc = {
             "state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+            "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms", "mask_age_cu_ms",
             "stability", "stability_n", "stability_shown", "stability_shown_n",
             "empty_runs", "mask_holds",
             "mask_drops",
@@ -1237,7 +1238,9 @@ class TestCuaSoThongKeChiMotNguonGhiTrongLock:
                     with lock:
                         total = 0.0
                         for value in getattr(session, ten):
-                            total += value
+                            # `_age_window` lưu TỪNG MẪU dạng `(total, cu)` (14-11) — vẫn phải
+                            # duyệt bằng Python trong lock như mọi cửa sổ khác.
+                            total += value[0] if isinstance(value, tuple) else value
                         # Hàm tổng hợp PHẢI gọi trong lock (hậu tố `_locked` tự mô tả điều đó):
                         # gọi ngoài lock thì chính test vi phạm bất biến nó đang kiểm, và có thể
                         # đỏ oan khi numpy duyệt deque trong lúc writer append (review 10-11, P2).
@@ -1631,3 +1634,121 @@ class TestFlushPendingNamTrongRun:
             assert not csv.exists()
             return
         assert len(read_samples(csv)) == stats.vos_runs - 1
+
+
+class TestTachPhaChuKyVos:
+    """`_tach_pha` — tách chu kỳ VOS thành queue/cycle/idle (hàm thuần, số literal tính tay).
+
+    Vì sao: chu kỳ 156 ms đo 14-11 lớn hơn `vos_ms` 124 ms đúng 32 ms mà chưa ai biết nằm ở đâu;
+    không tách thì mọi đề xuất "đổi cadence cho nhanh" đều là đoán.
+    """
+
+    def test_bon_moc_cho_ba_so(self):
+        from src.live_tracking import _tach_pha
+
+        # submitted 1.000 · lần trước bắt đầu 0.900 · lần trước xong 0.980 · nay bắt đầu 1.050
+        pha = _tach_pha(1.050, 1.000, 0.900, 0.980)
+        assert pha == {"queue_ms": 50.0, "cycle_ms": 150.0, "idle_ms": 70.0}
+
+    def test_lan_dau_tien_tra_none_khong_phai_0(self):
+        from src.live_tracking import _tach_pha
+
+        pha = _tach_pha(1.050, 1.040, None, None)
+        assert pha["queue_ms"] == 10.0
+        assert pha["cycle_ms"] is None and pha["idle_ms"] is None
+
+    def test_khong_co_moc_submit_tra_none(self):
+        from src.live_tracking import _tach_pha
+
+        assert _tach_pha(1.0, None, 0.9, 0.95)["queue_ms"] is None
+
+
+class TestTuoiMaskTachKhoan:
+    """`mask_age_total_ms` = queue + pre + vos + post + age; `mask_age_cu_ms` = age + vos (định nghĩa cũ).
+
+    Số literal tính tay: age 100 ms · vos 50 · pre 5 · queue 20 · post 2
+      ⇒ cũ   = 150,0 ms
+      ⇒ total = 177,0 ms  (chênh 27 ms — đúng phần trước 14-11 bị bỏ sót)
+    """
+
+    def test_cong_du_cac_khoan(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        session._note_mask_age(0.100, vos_ms=50.0, pre_ms=5.0, queue_ms=20.0, post_ms=2.0)
+        assert session._stats.mask_age_cu_ms == pytest.approx(150.0)
+        assert session._stats.mask_age_total_ms == pytest.approx(177.0)
+
+    def test_p95_theo_tung_mau_khong_dung_vos_ms_hien_tai(self, video_source, tmp_path):
+        """Mẫu cũ phải giữ phụ phí của CHÍNH nó: 40 mẫu 100 ms (không phụ phí) rồi 1 mẫu có phụ phí.
+
+        Nếu cộng `vos_ms` hiện tại cho toàn cửa sổ (cách cũ) thì p95 của cả 40 mẫu cũ cũng nhảy theo.
+        """
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        for _ in range(40):
+            session._note_mask_age(0.100, vos_ms=0.0)
+        truoc = session._stats.mask_age_p95
+        # Dùng `vos_ms=500` (KHÔNG phải queue_ms): cách cũ cộng `vos_ms` HIỆN TẠI cho mọi mẫu lịch
+        # sử ⇒ p95 sẽ thành 600; cách đúng giữ phụ phí của từng mẫu ⇒ vẫn 100. Nếu ai revert cơ chế
+        # "theo từng mẫu", test này ĐỎ (review vòng 3, P2: bản trước dùng `queue_ms` nên vô răng).
+        session._note_mask_age(0.100, vos_ms=500.0)
+        assert truoc == pytest.approx(100.0)
+        # 1/41 mẫu lớn không làm p95 (mẫu thứ 39/40) nhảy lên 600 ms:
+        assert session._stats.mask_age_p95 == pytest.approx(100.0)
+        assert session._stats.age_n == 41
+
+
+class TestPhaDuocGhiRaStatus:
+    """Phiên THẬT (vos_every=3) phải ghi được 5 pha vào `status.json`.
+
+    Review vòng 3 (P3): trước đó chỉ có test cho hàm thuần `_tach_pha` + allowlist khoá ⇒ nếu
+    `_store_vos` quên set pha thì `status.json` toàn `null` mà **mọi test vẫn xanh**.
+    """
+
+    def test_pha_khong_null_sau_phien(self, video_source, tmp_path):
+        out = tmp_path / "live"
+        _pre_select(out, (5, 5, 20, 16))
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True)).run(stop_event=_StopAfter(12))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["post_ms"] is not None and status["post_ms"] >= 0.0
+        assert status["cycle_ms"] is not None and status["cycle_ms"] > 0.0
+        assert status["queue_ms"] is not None and status["queue_ms"] >= 0.0
+        # `idle_ms` chỉ có khi đã có lần xong TRƯỚC đó ⇒ sau 12 frame phải có.
+        assert status["idle_ms"] is not None
+
+
+class TestPreMsEngineKhongCo:
+    """Engine không cung cấp `pre_ms` ⇒ `status.json` phải ghi `null` (chưa đo), KHÔNG phải 0,0."""
+
+    def test_engine_khong_co_pre_ms_ra_null(self, video_source, tmp_path):
+        class _KhongPre:
+            def __init__(self):
+                self._n = 0
+
+            def start(self, frame, bbox):
+                self._n = 1
+                from src.tracker_engine import TrackingResult
+                h, w = frame.shape[:2]
+                mask = np.zeros((h, w), bool)
+                mask[4:12, 4:12] = True
+                return TrackingResult(frame_idx=0, mask=mask, bbox=(4, 4, 12, 12),
+                                      score=1.0, elapsed_ms=1.0)
+
+            def process(self, frame):
+                self._n += 1
+                h, w = frame.shape[:2]
+                from src.tracker_engine import TrackingResult
+                mask = np.zeros((h, w), bool)
+                mask[4:12, 4:12] = True
+                return TrackingResult(frame_idx=self._n, mask=mask, bbox=(4, 4, 12, 12),
+                                      score=1.0, elapsed_ms=1.0)   # KHÔNG có `pre_ms`
+
+        out = tmp_path / "live"
+        _pre_select(out, (4, 4, 8, 8))
+        LiveTrackingSession(_KhongPre(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True)).run(stop_event=_StopAfter(12))
+
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["pre_ms"] is None, "thiếu `pre_ms` phải là null, không được thành 0,0"

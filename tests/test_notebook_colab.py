@@ -83,3 +83,16 @@ def test_glob_cua_8c_khong_khop_artifact_cpu_dang_co():
     for pattern in patterns:
         khop = [name for name in ung_vien if fnmatch.fnmatch(name, pattern)]
         assert not khop, f"pattern {pattern!r} nhặt cả artifact cũ: {khop[:3]}"
+
+
+def test_bbox_mac_dinh_khong_phai_o_khuon_mat():
+    """`BBOX` mặc định trong notebook phải là ô CHAI của binh1, không phải ô phủ khuôn mặt.
+
+    Notebook này là đường đo GPU chính thức (mục 8 của `docs/colab-gpu.md`); để ô mặt thì mọi số
+    GPU mới lại là "bám khuôn mặt" mà tưởng là bám vật (audit 14-11 — `docs/demo-clip-va-o-chon.md`).
+    """
+    source = "".join(_source(cell) for cell in _cells())
+    assert 'BBOX = "300,275,150,410"' in source, "BBOX mặc định phải là ô CHAI của binh1"
+    assert "docs/demo-clip-va-o-chon.md" in source, (
+        "phải trỏ tài liệu ô chọn để người chạy biết vì sao đổi ô"
+    )

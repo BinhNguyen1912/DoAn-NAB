@@ -1,0 +1,218 @@
+{
+  "do_luc": "2026-11-14T14:16:09+07:00",
+  "git_rev": "ab18c8b523ea4a7a63fa4a91e00cb9bceba914a5",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
+  "lenh": "python scripts/measure_live_relay.py --source data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 --vos-every 3 --seconds 11 --port 8201 --frame-window 0:110 --frame-window 165:262 --out data/chu_ky_chai_binh1_1vong_lan1_metrics.json",
+  "device_yeu_cau": "cpu",
+  "device_worker_log": "cpu",
+  "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với `device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
+  "moi_truong": "WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny; nguồn = data/binh1.mp4",
+  "nguon": "data/binh1.mp4",
+  "thiet_lap": {
+    "bbox_xywh": [
+      300,
+      275,
+      150,
+      410
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "seconds": 11.0
+  },
+  "dieu_kien_dang_ky_truoc": "state=running, frames>0, measured_fps>0, mask_fps>0 (đường camera thật chạy được — KHÔNG phải mục tiêu FPS)",
+  "ket_qua": true,
+  "dat_dieu_kien_do_luong": true,
+  "ly_do_khong_dat": [],
+  "tom_tat": {
+    "n_mau": 22,
+    "state_cuoi": "running",
+    "frames_dau": 1,
+    "frames_cuoi": 314,
+    "measured_fps_max": 29.9,
+    "display_fps_max": 30.0,
+    "display_fps_cuoi": 29.8,
+    "mask_fps_max": 9.7,
+    "mask_fps_cuoi": 9.7,
+    "empty_runs_cuoi": 33,
+    "message_cuoi": "Đang phát từ bám-đối-tượng:data/binh1.mp4"
+  },
+  "worker_status": {
+    "state": "stopped",
+    "device": "cpu",
+    "frames": 333,
+    "vos_runs": 104,
+    "measured_fps": 29.9,
+    "vos_fps": 9.7,
+    "vos_ms": 83.6,
+    "lk_ms": 0.0,
+    "pre_ms": 11.6,
+    "queue_ms": 75.87,
+    "post_ms": 0.08,
+    "cycle_ms": 102.97,
+    "idle_ms": 0.01,
+    "drift_iou": 0.487,
+    "drift_iou_p05": 0.0,
+    "drift_n": 61,
+    "mask_age_ms": 94.0,
+    "mask_age_cu_ms": 182.0,
+    "mask_age_total_ms": 267.0,
+    "mask_age_p95": 268.7,
+    "age_n": 200,
+    "stability": 0.0,
+    "stability_n": 10,
+    "stability_shown": 0.0,
+    "stability_shown_n": 10,
+    "empty_runs": 37,
+    "empty_frac_window": 0.356,
+    "empty_window_n": 104,
+    "mask_holds": 0,
+    "mask_drops": 0,
+    "lost_streak": 9
+  },
+  "drift_samples_csv": "data/drift_samples_binh1_2026-11-14_141609.csv",
+  "drift_samples_meta": "data/drift_samples_binh1_2026-11-14_141609.meta.json",
+  "drift_samples_n_dong": 103,
+  "drift_samples_ly_do": null,
+  "drift_series": {
+    "n_dong": 103,
+    "n_mau_drift": 61,
+    "empty_frac": 0.359,
+    "drift_iou_mean": 0.4866,
+    "drift_iou_p05": 0.0,
+    "bao_dong_070": {
+      "nguong_p05": 0.7,
+      "cua_so": 200,
+      "n_cua_so": 0,
+      "n_bao": 0,
+      "ti_le_bao": null
+    },
+    "bao_dong_030": {
+      "nguong_p05": 0.3,
+      "cua_so": 200,
+      "n_cua_so": 0,
+      "n_bao": 0,
+      "ti_le_bao": null
+    },
+    "phat_hien": {
+      "mau_xau_dau": 5,
+      "phat_hien_sau_mau": null,
+      "p05_luc_phat_hien": null
+    },
+    "p05_thap_va_empty": {
+      "cua_so": 200,
+      "min_mau_do_duoc": 100,
+      "nguong_p05": 0.3,
+      "nguong_empty": 0.03,
+      "n_cua_so_du_mau": 0,
+      "n_p05_thap": 0,
+      "n_p05_thap_va_empty_thap": 0,
+      "co_dieu_kien_ticket_14": null
+    }
+  },
+  "cua_so_frame": {
+    "khung": [
+      [
+        0,
+        110
+      ],
+      [
+        165,
+        262
+      ]
+    ],
+    "trong_khung": {
+      "n": 63,
+      "n_empty_do_duoc": 63,
+      "empty_frac": 0.016,
+      "n_drift": 60,
+      "drift_iou_mean": 0.4929
+    },
+    "ngoai_khung": {
+      "n": 40,
+      "n_empty_do_duoc": 40,
+      "empty_frac": 0.9,
+      "n_drift": 1,
+      "drift_iou_mean": 0.1104
+    },
+    "khong_ro_khung": {
+      "n": 0,
+      "n_empty_do_duoc": 0,
+      "empty_frac": null,
+      "n_drift": 0,
+      "drift_iou_mean": null
+    },
+    "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. `so_vong` (khi đọc được độ dài clip) cho biết đã lặp bao nhiêu lần.",
+    "so_frame_clip": 333,
+    "so_vong": 1.0,
+    "so_vong_ghi_chu": "ước tính từ frame ĐÃ PHÁT/ĐÃ XỬ LÝ chia số frame của clip"
+  },
+  "anh_frame": [
+    "data/live_web_relay_2026-11-14/frame1.jpg",
+    "data/live_web_relay_2026-11-14/frame2.jpg",
+    "data/live_web_relay_2026-11-14/frame3.jpg"
+  ],
+  "anh_frame_loi": [],
+  "mau_cuoi": [
+    {
+      "state": "running",
+      "source": "bám-đối-tượng:data/binh1.mp4",
+      "device": "cpu",
+      "frames": 284,
+      "measured_fps": 29.8,
+      "display_fps": 29.9,
+      "mask_fps": 9.2,
+      "stability": 0.0,
+      "stability_n": 10,
+      "latency_ms": 83.9,
+      "empty_runs": 25,
+      "empty_frac_window": 0.284,
+      "empty_window_n": 88,
+      "drift_p05": 0.0,
+      "drift_n": 60,
+      "message": "Đang phát từ bám-đối-tượng:data/binh1.mp4"
+    },
+    {
+      "state": "running",
+      "source": "bám-đối-tượng:data/binh1.mp4",
+      "device": "cpu",
+      "frames": 299,
+      "measured_fps": 29.8,
+      "display_fps": 29.9,
+      "mask_fps": 9.4,
+      "stability": 0.0,
+      "stability_n": 10,
+      "latency_ms": 96.4,
+      "empty_runs": 30,
+      "empty_frac_window": 0.323,
+      "empty_window_n": 93,
+      "drift_p05": 0.0,
+      "drift_n": 60,
+      "message": "Đang phát từ bám-đối-tượng:data/binh1.mp4"
+    },
+    {
+      "state": "running",
+      "source": "bám-đối-tượng:data/binh1.mp4",
+      "device": "cpu",
+      "frames": 314,
+      "measured_fps": 29.8,
+      "display_fps": 29.8,
+      "mask_fps": 9.7,
+      "stability": 0.615,
+      "stability_n": 10,
+      "latency_ms": 93.5,
+      "empty_runs": 33,
+      "empty_frac_window": 0.337,
+      "empty_window_n": 98,
+      "drift_p05": 0.0,
+      "drift_n": 60,
+      "message": "Đang phát từ bám-đối-tượng:data/binh1.mp4"
+    }
+  ],
+  "n_mau": 22,
+  "loi": null,
+  "worker_log": "…(cắt bớt)…\n [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s][worker] nhận tín hiệu dừng — thoát sạch\n\npropagate in video:   0%|          | 0/1 [00:00<?, ?it/s]\n[worker] kết thúc: 333 frame phát, 104 lần VOS | display 29.9 FPS | VOS 9.7 FPS\n",
+  "api_log": ""
+}
