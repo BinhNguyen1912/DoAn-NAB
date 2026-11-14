@@ -177,3 +177,21 @@ class TestProvenance:
         payload = _json.loads(meta.read_text(encoding="utf-8"))
         assert payload["bbox_dong_dau_x1y1x2y2"] == [288, 287, 431, 734]
         assert payload["anh"].endswith("traj.png")
+
+
+class TestDirtyCode:
+    """Bug thật 14-11: `.strip()` cả khối `git status` làm mất dấu cách đầu dòng ⇒ `docs/media/` không
+    được miễn trừ ⇒ mọi ảnh media tự khai "cây bẩn"."""
+
+    def test_dong_dau_co_dau_cach_van_duoc_mien_tru(self):
+        assert tm._dirty_code(" M docs/media/traj/a.png\n M data/x.json\n") is False
+
+    def test_code_ban_thi_true(self):
+        assert tm._dirty_code(" M docs/media/a.png\n M src/live_tracking.py\n") is True
+
+    def test_untracked_trong_data_va_media_duoc_mien_tru(self):
+        assert tm._dirty_code("?? data/new.json\n?? docs/media/traj/b.json\n") is False
+
+    def test_cay_sach(self):
+        assert tm._dirty_code("") is False
+        assert tm._dirty_code("\n") is False

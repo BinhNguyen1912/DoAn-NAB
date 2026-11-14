@@ -223,6 +223,22 @@ def _canh_bao_bbox(traj: dict, expect: str) -> None:
         print(f"[traj] ô bao khớp --expect-bbox (lệch {lech * 100:.0f}%)")
 
 
+def _dirty_code(status_porcelain: str) -> bool:
+    """Có thay đổi NGOÀI `data/` và `docs/media/` không (= code bẩn, số không tái lập)?
+
+    BUG ĐÃ GẶP: `.strip()` trên cả khối `git status` làm mất **dấu cách đầu dòng** của dòng đầu tiên
+    (`" M docs/…"` → `"M docs/…"`) ⇒ cắt `line[3:]` lệch một ký tự ⇒ `docs/media/...` không được
+    miễn trừ và mọi ảnh media tự khai "cây bẩn". Vì vậy đầu vào ở đây KHÔNG được strip.
+    """
+    for line in status_porcelain.splitlines():
+        if not line.strip():
+            continue
+        path = line[3:] if len(line) > 3 else ""
+        if not path.startswith(("data/", "docs/media/")):
+            return True
+    return False
+
+
 def provenance(csv_path, clip_path, out_path, title: str, bbox_dau) -> dict:
     """Metadata đi kèm ảnh: **ảnh không có provenance thì không kiểm lại được** (và một ảnh sai chú
     thích sống lâu hơn mọi lời giải thích).
@@ -245,20 +261,17 @@ def provenance(csv_path, clip_path, out_path, title: str, bbox_dau) -> dict:
     def _git(args):
         try:
             return subprocess.run(["git", *args], cwd=str(_REPO_ROOT), capture_output=True,
-                                  text=True, check=True).stdout.strip()
+                                  text=True, check=True).stdout
         except Exception:                        # noqa: BLE001 — provenance không được ném
             return None
 
     rev = _git(["rev-parse", "HEAD"])
     changed = _git(["status", "--porcelain"]) or ""
-    # `data/` và `docs/media/` là ĐẦU RA của dụng cụ đo, không phải code: tính chúng là "bẩn" thì
-    # mỗi lần sinh lại ảnh là provenance tự tố cáo mình (vòng lặp không lối thoát).
-    dirty_code = any(not line[3:].startswith(("data/", "docs/media/"))
-                     for line in changed.splitlines())
+    dirty_code = _dirty_code(changed)
     return {
         "do_luc": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(sys.argv),
-        "git_rev": rev, "git_dirty_code": dirty_code,
+        "git_rev": (rev or "").strip() or None, "git_dirty_code": dirty_code,
         "csv": str(csv_path), "csv_sha256_16": _sha(csv_path),
         "clip": str(clip_path) if clip_path else None,
         "clip_sha256_16": _sha(clip_path),
