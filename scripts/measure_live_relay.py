@@ -547,7 +547,8 @@ def main() -> int:
                   f"(n_drift={trong['n_drift']})")
             print(f"  NGOÀI khung ĐÃ KHAI: n={ngoai['n']} · mask rỗng={ngoai['empty_frac']} "
                   f"· drift_tb={ngoai['drift_iou_mean']}")
-            if theo_khung.get("so_vong"):
+            # Chỉ cảnh báo khi THẬT SỰ lặp (ngưỡng 1,1 để bỏ qua sai số frame rơi vãi cuối vòng).
+            if (theo_khung.get("so_vong") or 0) > 1.1:
                 print(f"  [CANH BAO] nguồn file đã lặp {theo_khung['so_vong']} vòng "
                       f"({theo_khung['so_frame_clip']} frame/clip) ⇒ các vòng sau nằm ở "
                       f"'ngoài khung', KHÔNG phải 'vật đã rời khung'. Đo 1 vòng: "
