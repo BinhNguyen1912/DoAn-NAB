@@ -38,6 +38,14 @@ METRIC = [("measured_fps", "FPS phát", 1), ("vos_fps", "Nhịp mask", 1),
           ("vos_ms", "vos_ms", -1), ("mask_age_p95", "Tuổi mask p95", -1)]
 # `uu_tien`: +1 = số LỚN tốt hơn, -1 = số NHỎ tốt hơn (ms).
 
+# SÀN NHIỄU TUYỆT ĐỐI theo chỉ số: khi cả 3 lần lặp TRÙNG KHÍT, `spread = 0` ⇒ ngưỡng 0 ⇒ mọi chênh
+# lệch 0,1 thành "tốt hơn". Đã xảy ra thật: `measured_fps` 29,9 vs 29,8 bị kết luận "A tốt hơn".
+SAN_NHIEU = {"measured_fps": 0.5, "vos_fps": 0.2, "vos_ms": 3.0, "mask_age_p95": 5.0}
+
+# Chỉ số bị CHẶN TRẦN bởi thiết kế (`--max-fps 30`): chênh lệch quanh trần là nhiễu lượng tử, không
+# phải hiệu năng ⇒ in số nhưng CẤM kết luận thắng/thua.
+BI_CHAN_TRAN = {"measured_fps"}
+
 
 def parse_cau_hinh(text: str) -> dict:
     """`"image_size=192,vos_every=3"` → dict (đã kiểm khoảng giá trị). Ném `ValueError` nếu sai."""
@@ -63,36 +71,45 @@ def parse_cau_hinh(text: str) -> dict:
     return out
 
 
-def so_sanh(a_values, b_values, uu_tien: int = 1) -> dict:
-    """So hai dãy số: mean ± std mỗi bên, độ tản (range), ngưỡng nhiễu, kết luận.
+def so_sanh(a_values, b_values, uu_tien: int = 1, key: str | None = None) -> dict:
+    """So hai dãy số: mean ± std mỗi bên, độ tản, **ngưỡng nhiễu**, kết luận.
 
-    Ngưỡng nhiễu = **max(spread_a, spread_b)** với `spread = max − min` — dùng lại
-    `scripts/repeatability.py` (một định nghĩa nhiễu cho cả repo: nó lấy ĐỘ TẢN, rộng hơn `std`, nên
-    ít kết luận "tốt hơn" oan hơn). `n < 2` ở một bên ⇒ **không kết luận được** (không được coi là
-    "bằng nhau").
+    Ngưỡng nhiễu = `max(spread_a, spread_b, SAN_NHIEU[key])` với `spread = max − min` (lấy từ
+    `scripts/repeatability.py` — một định nghĩa nhiễu cho cả repo).
+
+    Vì sao cần **sàn tuyệt đối**: khi 3 lần lặp trùng khít, `spread = 0` ⇒ ngưỡng 0 ⇒ "29,9 vs 29,8
+    fps" thành "A tốt hơn" (đã xảy ra trong artifact 14-11). Và `measured_fps` bị chặn trần
+    `--max-fps` nên mọi chênh lệch quanh trần là nhiễu lượng tử ⇒ **cấm kết luận**.
+
+    `n < 2` ở một bên ⇒ "không kết luận được" (không được coi là "bằng nhau").
     """
     from scripts.repeatability import la_khac_biet, spread
 
     ca = [float(v) for v in a_values if isinstance(v, (int, float))]
     cb = [float(v) for v in b_values if isinstance(v, (int, float))]
+    san = SAN_NHIEU.get(key or "", 0.0)
     if len(ca) < 2 or len(cb) < 2:
         return {"mean_a": ca[0] if ca else None, "mean_b": cb[0] if cb else None,
-                "nhieu": None, "chenh_lech": None, "ket_luan": "không kết luận được (n < 2)"}
+                "n_a": len(ca), "n_b": len(cb), "nhieu": None, "chenh_lech": None,
+                "ket_luan": "không kết luận được (n < 2)"}
     ma, mb = statistics.fmean(ca), statistics.fmean(cb)
     sa = statistics.stdev(ca)
     sb = statistics.stdev(cb)
     ta, tb = spread(ca), spread(cb)
-    nhieu = max(ta["spread"], tb["spread"])
+    nhieu = max(ta["spread"], tb["spread"], san)
     chenh = mb - ma
-    if not la_khac_biet(ma, mb, nhieu, n=min(len(ca), len(cb))):
+    if key in BI_CHAN_TRAN:
+        ket_luan = "không kết luận được (chỉ số bị chặn trần --max-fps, chênh lệch là nhiễu lượng tử)"
+    elif not la_khac_biet(ma, mb, nhieu, n=min(len(ca), len(cb))):
         ket_luan = "không phân biệt được (chênh lệch nằm trong nhiễu)"
     elif (chenh > 0) == (uu_tien > 0):
         ket_luan = "B tốt hơn"
     else:
         ket_luan = "A tốt hơn"
-    return {"mean_a": round(ma, 2), "std_a": round(sa, 2), "spread_a": ta["spread"],
-            "mean_b": round(mb, 2), "std_b": round(sb, 2), "spread_b": tb["spread"],
-            "nhieu": round(nhieu, 2), "chenh_lech": round(chenh, 2), "ket_luan": ket_luan}
+    return {"mean_a": round(ma, 2), "std_a": round(sa, 2), "spread_a": ta["spread"], "n_a": len(ca),
+            "mean_b": round(mb, 2), "std_b": round(sb, 2), "spread_b": tb["spread"], "n_b": len(cb),
+            "nhieu": round(nhieu, 2), "san_nhieu": san, "chenh_lech": round(chenh, 2),
+            "ket_luan": ket_luan}
 
 
 def main(argv=None) -> int:
@@ -144,7 +161,7 @@ def main(argv=None) -> int:
     for key, nhan, uu_tien in METRIC:
         so_a = [r.get(key) for r in runs["a"] if not r.get("loi")]
         so_b = [r.get(key) for r in runs["b"] if not r.get("loi")]
-        ket_qua[key] = {"nhan": nhan, **so_sanh(so_a, so_b, uu_tien)}
+        ket_qua[key] = {"nhan": nhan, **so_sanh(so_a, so_b, uu_tien, key=key)}
 
     from scripts.measure_watchdog import _git_provenance
 
@@ -158,8 +175,10 @@ def main(argv=None) -> int:
             "bbox_xywh": list(bbox), "device": args.device, "lan": args.lan,
             "frames_moi_lan": args.frames, "a": cfg_a, "b": cfg_b,
             "cach_chay": "chèn kẽ A,B,A,B,… (cùng điều kiện trung bình cho cả hai bên)",
-            "nguong_nhieu": "max(spread_a, spread_b) với spread = max−min (scripts/repeatability.py); "
-                            "chênh lệch <= ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC",
+            "nguong_nhieu": "max(spread_a, spread_b, san_nhieu[key]) với spread = max−min "
+                            "(scripts/repeatability.py) + sàn tuyệt đối theo chỉ số; chênh lệch <= "
+                            "ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC",
+            "bi_chan_tran": sorted(BI_CHAN_TRAN),
         },
         "ket_qua": ket_qua,
         "lan_chay": {"a": runs["a"], "b": runs["b"]},
@@ -182,6 +201,14 @@ def main(argv=None) -> int:
         print(f"| {nhan} | {a_txt} | {b_txt} | {kq['chenh_lech']:+g} | {kq['nhieu']:g} | "
               f"{kq['ket_luan']} |")
     print(f"\n[ab] artifact: {out}")
+    loi_a = sum(1 for r in runs["a"] if r.get("loi"))
+    loi_b = sum(1 for r in runs["b"] if r.get("loi"))
+    if loi_a or loi_b:
+        print(f"[ab] lần chạy LỖI: A {loi_a}/{args.lan} · B {loi_b}/{args.lan} "
+              "— lỗi KHÔNG bị bỏ qua khỏi kết luận (n_a/n_b trong artifact)")
+    if loi_a >= args.lan and loi_b >= args.lan:
+        print("[ab] KHÔNG ĐO ĐƯỢC lần nào ở cả hai bên ⇒ thất bại, không phải 'không phân biệt được'")
+        return 1
     if git_loi:
         print(f"[ab] CẢNH BÁO: không lấy được provenance ({git_loi})")
         return 1

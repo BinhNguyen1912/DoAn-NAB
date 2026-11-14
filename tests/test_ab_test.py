@@ -37,11 +37,12 @@ class TestParseCauHinh:
 
 class TestSoSanh:
     def test_chenh_lech_lon_hon_nhieu_thi_co_ket_luan(self):
-        """Ngưỡng nhiễu = max(spread) với spread = max−min (repeatability.py), nên 0,2 ở đây."""
-        kq = ab.so_sanh([9.0, 9.1, 8.9], [4.9, 5.0, 5.1], uu_tien=1)
+        """Ngưỡng nhiễu = max(spread, sàn tuyệt đối); với `vos_fps` sàn là 0,2 nên ngưỡng 0,2."""
+        kq = ab.so_sanh([9.0, 9.1, 8.9], [4.9, 5.0, 5.1], uu_tien=1, key="vos_fps")
         assert kq["ket_luan"] == "A tốt hơn"
         assert kq["nhieu"] == pytest.approx(0.2, abs=1e-9)
         assert kq["spread_a"] == pytest.approx(0.2, abs=1e-9)
+        assert kq["n_a"] == 3 and kq["n_b"] == 3
 
     def test_dung_chung_dinh_nghia_nhieu_voi_repeatability(self):
         """Một định nghĩa nhiễu cho cả repo: `scripts/repeatability.py` nay có caller thật."""
@@ -58,10 +59,28 @@ class TestSoSanh:
 
     def test_uu_tien_am_dao_chieu_ket_luan(self):
         """`vos_ms` nhỏ mới tốt: B chậm hơn ⇒ 'A tốt hơn'."""
-        kq = ab.so_sanh([90.0, 92.0, 88.0], [140.0, 142.0, 138.0], uu_tien=-1)
+        kq = ab.so_sanh([90.0, 92.0, 88.0], [140.0, 142.0, 138.0], uu_tien=-1, key="vos_ms")
         assert kq["ket_luan"] == "A tốt hơn"
         assert kq["chenh_lech"] == pytest.approx(50.0)
         assert kq["nhieu"] == pytest.approx(4.0)          # spread mỗi bên = 4
+
+    def test_ba_lan_trung_khit_van_khong_ket_luan_o_chi_so_bi_chan_tran(self):
+        """P1 review 14-11: `measured_fps` 29,9 vs 29,8 từng bị kết luận "A tốt hơn" — chênh lệch đó là
+        nhiễu lượng tử của `--max-fps 30`, không phải hiệu năng."""
+        kq = ab.so_sanh([29.9] * 3, [29.8] * 3, uu_tien=1, key="measured_fps")
+        assert kq["ket_luan"].startswith("không kết luận được")
+        assert "chặn trần" in kq["ket_luan"]
+
+    def test_lap_trung_khit_van_co_san_nhieu(self):
+        """Hai bên trùng khít (`spread = 0`) mà khác nhau 0,1 ms ⇒ vẫn KHÔNG phân biệt được."""
+        kq = ab.so_sanh([90.0] * 3, [90.1] * 3, uu_tien=-1, key="vos_ms")
+        assert kq["ket_luan"].startswith("không phân biệt được")
+        assert kq["nhieu"] == pytest.approx(3.0)          # sàn của vos_ms
+
+    def test_so_do_that_van_thang_du_co_san(self):
+        """Sàn không được làm câm phát hiện thật: 90 ms vs 250 ms chênh 160 ≫ sàn 3."""
+        kq = ab.so_sanh([90.0] * 3, [250.0] * 3, uu_tien=-1, key="vos_ms")
+        assert kq["ket_luan"] == "A tốt hơn"
 
     def test_n_1_khong_ket_luan_duoc(self):
         kq = ab.so_sanh([9.0], [5.0], uu_tien=1)
@@ -126,3 +145,26 @@ class TestChayThatGia:
         assert "chèn kẽ" in payload
         text = capsys.readouterr().out
         assert "nhiễu" in text and "không phân biệt được" in text
+
+
+class TestLoiKhongBiBoQua:
+    """AGENTS §6: "không phát hiện được là THẤT BẠI, không phải đạt"."""
+
+    def test_toan_bo_lan_chay_loi_thi_exit_1(self, tmp_path, capsys):
+        clip = tmp_path / "a.mp4"
+        clip.write_bytes(b"x")
+        import scripts.measure_watchdog as mw
+
+        mw_orig = mw._git_provenance
+        import scripts.ab_test as ab2
+
+        ab2._run_once = lambda *a, **k: {"loi": "worker thoát mã 1"}
+        try:
+            ma = ab2.main(["--clip", str(clip), "--bbox", "1,1,10,10",
+                           "--a", "image_size=192", "--b", "image_size=320",
+                           "--lan", "2", "--out", str(tmp_path / "ab.json")])
+        finally:
+            del ab2._run_once
+            mw._git_provenance = mw_orig
+        assert ma == 1
+        assert "KHÔNG ĐO ĐƯỢC" in capsys.readouterr().out
