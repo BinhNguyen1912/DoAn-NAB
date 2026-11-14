@@ -130,7 +130,17 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
 - **`--lan 1`**: ban đầu chỉ cảnh báo rồi vẫn chạy ⇒ bảng không có `±`. Đổi thành **từ chối** (n<2 không
   kết luận được gì).
 - **`_is_clip`/suffix list trùng lặp**: gom về `FILE_SUFFIXES` của `src/video_source.py` (một nguồn sự thật).
-- **Review độc lập (§9.1) cho nhánh này:** xem mục dưới.
+- **Review độc lập (§9.1) cho nhánh này: KHÔNG CÓ KẾT QUẢ.** Ba lần gọi `task` (agent `reviewer` bản
+  đầy đủ + bản hẹp "3 điểm rủi ro") đều chỉ báo `running` rồi **không trả kết quả** trong phiên. Đây là
+  **lỗ hổng quy trình**, không phải "đã review": ghi lại để phiên sau chạy lại review trước khi tin nhánh
+  này. Thay thế tạm thời (không tương đương): tự soát 3 điểm rủi ro nhất + toàn bộ cổng tự động:
+  - `_dump_mask` chạy trong **luồng VOS**: chỉ đọc `self._cfg` (bất biến) và `result` của chính luồng đó,
+    ghi tối đa vài chục file ⇒ không race với luồng chính; **đã sửa** ca `mask is None` (trước ghi file
+    1×1 trông như "đã đo" ⇒ nay cảnh báo + bỏ qua).
+  - `score_miou.cham()`: **đã sửa** — mask lệch kích thước/PNG hỏng trước đây ném `ValueError` giết cả
+    lần chấm; nay đếm `so_frame_mask_hong` + nêu lý do từng frame (2 test mới).
+  - `ab_test.so_sanh` ngưỡng/chiều: ngưỡng = `max(spread_a, spread_b)` (`scripts/repeatability.py`);
+    kiểm tay cả 4 ca dấu (`uu_tien` ±1, chênh ±) — đúng chiều.
 - **Plan 3 ý kiến (§9.2):** 3 agent độc lập (chất lượng/sản phẩm/độ bền) đã được gọi nhưng **chưa trả kết
   quả** trong phiên. Việc vẫn làm vì mỗi hạng mục đều có **số đo + tiêu chí nghiệm thu** rõ ràng từ plan
   trước; thiếu sót này được ghi ở đây thay vì im lặng.
