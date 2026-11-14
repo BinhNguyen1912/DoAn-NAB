@@ -434,6 +434,7 @@ class LiveTrackingSession:
         # một khoảng bằng độ trễ suy luận (review 08-11 chỉ ra phép so cũ lệch ~3 frame).
         self._shown_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
         self._seq_frame: dict = {}       # seq → chỉ số frame đã phát lúc gửi cho VOS
+        self._dumped: set = set()        # các frame VIDEO đã ghi mask (để báo frame yêu cầu mà thiếu)
         # (frame_idx, bbox VOS, seq, vos_ms, empty) chờ frame đó được phát để so
         self._pending_drift = None
         # Từng mẫu drift ra CSV (ticket 15): status.json chỉ có mean/p05 ⇒ không đo được độ trễ
@@ -536,6 +537,7 @@ class LiveTrackingSession:
             # Thứ tự `stop_worker → flush → close`: nếu `join(5 s)` timeout mà worker còn sống thì nó
             # có thể ghi thêm dòng giữa flush và close (được), hoặc sau close (bị `_closed` bỏ — mất
             # mẫu cuối, nhưng KHÔNG được mở lại file vì mode `w` sẽ xoá sạch dãy đã ghi).
+            self._canh_bao_mask_thieu()
             self._flush_pending_csv()
             self._drift_log.close()
             # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
@@ -612,8 +614,13 @@ class LiveTrackingSession:
         pha = self._worker.timing if self._worker is not None else {}
         pre = getattr(result, "pre_ms", None)      # engine không có `pre_ms` ⇒ None (CHƯA ĐO), không 0
         pre_ms = None if pre is None else round(float(pre), 2)
-        self._record_vos(result)
+        # PHẢI lấy chỉ số frame VIDEO của phiên TRƯỚC khi pop — `_dump_mask` cần nó để đặt tên file.
+        # `result.frame_idx` là bộ đếm NỘI BỘ của engine (số lần gọi `process()`), KHÔNG phải chỉ số
+        # frame video: với `vos_every=3`, lần VOS thứ 14 là frame video ~42 ⇒ đặt tên theo engine làm
+        # `mask_000013.png` chứa mask của frame 42, ghép với `gt_000013.png` ⇒ mIoU SAI mà không cảnh
+        # báo (P0, review độc lập 14-11). Cùng lý do đã ghi cho CSV drift ở `_measure_drift`.
         frame_idx = self._seq_frame.pop(seq, None)
+        self._record_vos(result, frame_video=frame_idx)
         # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
         self._measure_drift(frame_idx, result, seq)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
@@ -687,14 +694,28 @@ class LiveTrackingSession:
 
     def _after_vos(self, frame, result) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
-        self._record_vos(result)
+        # `frame_video` = chỉ số frame VIDEO của phiên (không phải bộ đếm của engine) — xem P0 review
+        # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
+        self._record_vos(result, frame_video=self._frame_index)
         self._smooth(result)
         self._interp_base_result = result
         self._mask = getattr(result, "mask", None)
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
 
-    def _dump_mask(self, result) -> None:
+    def _canh_bao_mask_thieu(self) -> None:
+        """Frame được yêu cầu dump mà KHÔNG có lần VOS nào ⇒ nói ra, đừng để người dùng tưởng đã đo.
+
+        Với `vos_every > 1`, chỉ frame chia hết cho N mới có mask thật; đòi frame 40 khi `vos_every=3`
+        là chuyện có thật và nếu im lặng thì lần chấm mIoU chỉ còn vài frame mà không ai biết vì sao.
+        """
+        thieu = [f for f in self._cfg.dump_mask_frames if f not in self._dumped]
+        if thieu:
+            print(f"[canh-bao] không có mask cho frame {thieu} — với vos_every="
+                  f"{self._cfg.vos_every} chỉ frame chia hết cho {self._cfg.vos_every} mới có lần VOS "
+                  "(dùng --vos-every 1 khi chấm mIoU)", flush=True)
+
+    def _dump_mask(self, result, frame_video=None) -> None:
         """Ghi mask của frame `result.frame_idx` ra PNG nếu frame đó nằm trong danh sách yêu cầu.
 
         Vì sao chỉ những frame ĐƯỢC CHỌN: chấm mIoU cần GT gán tay, mà gán tay vài chục frame là
@@ -707,7 +728,9 @@ class LiveTrackingSession:
         phải in cảnh báo, không im lặng (bài học "nuốt lỗi trong adapter" 08-11).
         """
         frames = self._cfg.dump_mask_frames
-        frame_idx = getattr(result, "frame_idx", None)
+        # CHỈ số frame VIDEO của phiên mới khớp được với GT (`score_miou.py label` cắt theo số frame
+        # của clip). `result.frame_idx` (bộ đếm engine) chỉ dùng để suy ra frame video cho CSV drift.
+        frame_idx = frame_video
         if not frames or frame_idx is None or int(frame_idx) not in frames:
             return
         out_dir = self._cfg.dump_mask_dir or str(Path(self._cfg.out_dir) / "masks")
@@ -723,11 +746,12 @@ class LiveTrackingSession:
                 return
             arr = (np.asarray(mask) > 0).astype(np.uint8)
             cv2.imwrite(str(target / f"mask_{int(frame_idx):06d}.png"), arr * 255)
+            self._dumped.add(int(frame_idx))
         except Exception as exc:                 # noqa: BLE001 — dụng cụ đo không giết phiên
             print(f"[canh-bao] không ghi được mask frame {frame_idx}: {exc}", flush=True)
 
-    def _record_vos(self, result) -> None:
-        self._dump_mask(result)
+    def _record_vos(self, result, frame_video=None) -> None:
+        self._dump_mask(result, frame_video)
         with self._stats_lock:
             self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
             self._stats.vos_runs += 1
