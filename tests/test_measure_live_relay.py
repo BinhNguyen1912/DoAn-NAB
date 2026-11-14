@@ -313,7 +313,8 @@ class TestParseFrameWindow:
     """`--frame-window dau:cuoi` — khai báo KHUNG frame mà vật còn trong khung.
 
     Vì sao: `empty_frac_window` gộp "model mất dấu" với "vật đã rời khung" (đo 14-11 trên `binh1`:
-    35 % cả phiên nhưng 0,0 % khi chai còn trong khung). Sai định dạng phải ra `ValueError` để CLI
+    36,0–36,7 % cả phiên nhưng 1,7–1,8 % khi chai còn trong khung `0:110` ∪ `165:262`). Sai định dạng
+    phải ra `ValueError` để CLI
     in `--frame-window ...` + thoát, KHÔNG được lặng lẽ coi như "không hỏi gì".
     """
 
@@ -354,3 +355,31 @@ class TestSoVong:
     def test_nguon_mang_khong_do_duoc(self):
         assert relay._so_frame_clip("http://127.0.0.1:8090/snapshot.jpg") is None
         assert relay._so_frame_clip("data/khong-ton-tai.mp4") is None
+
+
+class TestGopKhung:
+    """Lặp cờ `--frame-window` phải ra NHIỀU khung — phần nối này từng không có test (review vòng 2).
+
+    `binh1` có hai đoạn vật còn trong khung (`0:110`, `165:262`); nếu `action="append"` bị đổi thành
+    một giá trị đơn thì chỉ còn 1 khung và các mẫu của đoạn 2 rơi vào `ngoai_khung` mà không ai thấy.
+    """
+
+    def test_lap_co_ra_nhieu_khung(self):
+        assert relay._gop_khung(["0:110", "165:262"]) == [[0, 110], [165, 262]]
+
+    def test_khong_co_co_nao(self):
+        assert relay._gop_khung([]) == []
+
+    def test_mot_co_sai_lam_hong_ca_cum(self):
+        """Có 1 khung sai ⇒ ném lỗi, KHÔNG lặng lẽ bỏ qua khung đó (im lặng = mất đoạn vật)."""
+        with pytest.raises(ValueError):
+            relay._gop_khung(["0:110", "abc"])
+
+
+class TestCanhBaoLap:
+    """Ngưỡng cảnh báo "nguồn file đã lặp": 0,95 vòng là bình thường, > 1,1 mới kêu."""
+
+    @pytest.mark.parametrize("so_vong,ky_vong", [(None, False), (0, False), (0.95, False),
+                                                 (1.0, False), (1.1, False), (1.5, True), (4.49, True)])
+    def test_nguong(self, so_vong, ky_vong):
+        assert relay._canh_bao_lap(so_vong) is ky_vong

@@ -173,7 +173,8 @@ def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
 
     Vì sao cần: `empty_runs`/`empty_frac_window` **không phân biệt** "model mất dấu" với "vật
     không còn trong khung". Đo 14-11 trên `data/binh1.mp4` (ô đúng = chai): cả phiên 36–37 % mẫu
-    rỗng, nhưng **0,0 %** khi chai còn trong khung — 100 % số rỗng là đoạn người ta đã cất chai đi.
+    rỗng, nhưng chỉ **1,7–1,8 %** khi chai còn trong khung (`0:110` ∪ `165:262`; riêng `0:110` là
+    0,0 %) — phần lớn số rỗng là đoạn người ta đã cất chai đi.
 
     Một khung LIÊN TỤC là **không đủ**: `binh1` có hai đoạn vật còn trong khung (`0:110` và
     `165:262`), nên `--frame-window` nhận nhiều khung và mẫu thuộc **bất kỳ** khung nào được tính là
@@ -183,6 +184,10 @@ def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
     Output: `{khung: [[dau,cuoi],…], trong_khung, ngoai_khung, khong_ro_khung}` — mỗi nhóm là
             `thong_ke_mau()`. Không có mẫu ⇒ các số là `None` (chưa đo), KHÔNG phải 0.
     """
+    if not danh_sach_khung:
+        # Không khai khung nào mà vẫn gọi = lỗi lập trình: nếu trả về "mọi mẫu ngoài khung" thì người
+        # đọc thấy `trong_khung.n = 0` và tưởng là "đã đo, không có mẫu nào đúng" (review vòng 2, P3).
+        raise ValueError("cần ít nhất 1 khung (dau, cuoi) — khung rỗng là lỗi lập trình")
     khungs = [
         (min(int(a), int(b)), max(int(a), int(b))) for a, b in danh_sach_khung
     ]

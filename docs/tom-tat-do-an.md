@@ -190,8 +190,13 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
    người ngồi trước máy để kéo chuột) — bằng chứng hiện có là API + camera thật
    (`data/live_web_relay_2026-11-10_metrics.json`) và e2e với nguồn video.
 7. Độ trễ **tăng dần** khi chạy lâu (3,4 s → 8,3 s) vì memory SAM 2 phình ra.
-8. **`binh2` là ca xấu nhất đã đo**: `drift_iou_p05 = 0,000` do VOS trả mask rỗng **26 lần**
-   (`empty_runs`, `mask_drops = 0`) — lỗi ở model, không phải LK; đã ghi rõ trong báo cáo thay vì giấu.
+8. **`binh2` KHÔNG còn là "ca hỏng do model"** (đo lại 14-11, ô đúng `330,330,150,360`, khung
+   `0:160`): mask rỗng **21,7–23,4 % cả phiên nhưng 0,0 % khi chai còn trong khung** ⇒ phần lớn "mất
+   dấu" cũ là **vật rời khung / ô chọn phủ 2 chai + 2 tay**, không phải lỗi model. Số cũ
+   (`p05 = 0,000`, "rỗng 26 lần") đo bằng ô sai nên **không dùng**. Khi nói chất lượng, chỉ trích
+   `empty`/`drift` trong khung (`scripts/measure_live_relay.py --frame-window`), và `drift_iou` là **độ
+   tự nhất quán**, không phải độ chính xác. Chi tiết: `docs/demo-clip-va-o-chon.md`,
+   `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`.
 
 ---
 

@@ -480,9 +480,25 @@ class TestNhieuKhung:
         assert kq["trong_khung"]["n"] == 1
         assert kq["ngoai_khung"]["n"] == 2
 
-    def test_khong_co_khung_nao_thi_tat_ca_la_ngoai(self):
-        """Danh sách rỗng ⇒ mọi mẫu 'ngoài khung' (không được lặng lẽ coi là 'trong khung')."""
-        kq = tach_theo_cac_khung(self._mau(), [])
-        assert kq["trong_khung"]["n"] == 0
-        assert kq["trong_khung"]["empty_frac"] is None      # chưa đo, không phải 0,0
-        assert kq["ngoai_khung"]["n"] == 3
+    def test_khong_co_khung_nao_thi_bao_loi(self):
+        """Danh sách rỗng ⇒ `ValueError` (KHÔNG lặng lẽ coi mọi mẫu là 'ngoài khung')."""
+        with pytest.raises(ValueError):
+            tach_theo_cac_khung(self._mau(), [])
+
+
+def test_khung_chong_nhau_khong_dem_hai_lan():
+    """Hai khung chồng nhau ⇒ mẫu nằm trong vùng chồng chỉ được đếm MỘT lần.
+
+    Nếu cài bằng `sum(...)` cho từng khung thay vì `any(...)` thì `n` bị nhân đôi và tỉ lệ rỗng bị
+    bóp méo (review vòng 2, P3).
+    """
+    rows = [{"frame_idx": 7, "empty": False, "drift_iou": 0.9}]
+    kq = tach_theo_cac_khung(rows, [(0, 10), (5, 15)])
+    assert kq["trong_khung"]["n"] == 1
+    assert kq["ngoai_khung"]["n"] == 0
+
+
+def test_khong_khai_khung_nao_la_loi_lap_trinh():
+    """Danh sách khung RỖNG ⇒ `ValueError`, không được lặng lẽ coi "mọi mẫu là ngoài khung"."""
+    with pytest.raises(ValueError):
+        tach_theo_cac_khung([{"frame_idx": 1, "empty": False, "drift_iou": 0.5}], [])

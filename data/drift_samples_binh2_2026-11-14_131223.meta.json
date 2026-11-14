@@ -1,0 +1,23 @@
+{
+  "do_luc": "2026-11-14T13:12:23+07:00",
+  "git_rev": "ad48cbfdb00c4dc1579b13e940834f66a2f77513",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu": "Mỗi dòng = 1 kết quả VOS của luồng worker (frame_idx, seq, vos_ms, empty, drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
+  "lenh": "python scripts/measure_live_relay.py --source data/binh2.mp4 --bbox 330,330,150,360 --image-size 192 --vos-every 3 --seconds 12 --port 8191 --frame-window 0:160 --out data/sach_chai_binh2_1vong_metrics.json",
+  "nguon": "data/binh2.mp4",
+  "thiet_lap": {
+    "bbox_xywh": [
+      330,
+      330,
+      150,
+      360
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "seconds": 12.0
+  },
+  "device_yeu_cau": "cpu",
+  "device_worker_log": "cpu"
+}

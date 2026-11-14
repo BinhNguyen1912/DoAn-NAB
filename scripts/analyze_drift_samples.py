@@ -72,7 +72,8 @@ def analyze_file(csv_path: Path, *, window: int = WINDOW, static: bool = False,
         }
     if frame_windows:
         # Tách "vật còn trong khung" / "ngoài khung đã khai": `empty_frac` gộp cả hai hiện tượng
-        # (14-11: binh1 36 % cả phiên nhưng 0,0 % trong khung) nên số "mất dấu" phải đọc từ đây.
+        # (14-11: binh1 36,0–36,7 % cả phiên nhưng 1,7–1,8 % trong khung `0:110` ∪ `165:262`) nên
+        # số "mất dấu" phải đọc từ đây.
         ket_qua["theo_khung"] = tach_theo_cac_khung(rows, frame_windows)
     if static:
         ket_qua["doi_chung_canh_tinh"] = static_control(rows)

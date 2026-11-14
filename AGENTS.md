@@ -289,7 +289,7 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `scripts/measure_live_relay.py --frame-window dau:cuoi` (artifact có `cua_so_frame.trong_khung` /
   `.ngoai_khung`), **cấm** trích tỉ lệ rỗng cả phiên như “model mất dấu”. Không cần train lại model:
   checkpoint `small` cho 31,1 % rỗng vs `tiny` 31,8 % mà chậm +18 %; `image_size` 256/320 làm
-  `drift_iou` **giảm** (0,35/0,28–0,32) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
+  `drift_iou` **giảm** (0,34–0,36/0,28–0,32) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
   `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
   `docs/demo-clip-va-o-chon.md`.
 

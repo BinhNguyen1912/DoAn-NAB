@@ -61,7 +61,8 @@
   âm) đều chỉ lộ ra khi **nhìn ảnh** hoặc khi **có người thứ hai đọc code**. Vì vậy kỳ này commit luôn
   ảnh kiểm vào `docs/media/` thay vì để file tạm trong `data/` (bị gitignore).
 - **Số sai phải sửa:** `empty` cả phiên của chai là **36,0–36,7 %** (không phải 35,0–36,3 %);
-  `image_size 256` cho drift **0,35** (không phải 0,34); `binh2` dùng khung **`0:160`** (không phải `0:140`).
+  `image_size 256` cho drift **0,34–0,36** (`data/res256_chai_binh1_lan{1,2}` = 0,3545/0,3587;
+   `data/lan2_chai_binh1_256_lan1` = 0,3408) — đừng ghi 0,34 như một con số duy nhất; `binh2` dùng khung **`0:160`** (không phải `0:140`).
 - **Artifact bẩn:** lần đo đầu tiên có `git_dirty_code=true` (do thư mục rác `D:/` + code chưa commit)
   ⇒ không được trích; đã đo lại trên cây sạch sau khi commit.
 - `drift_iou` ở `ngoai_khung` **không dùng được** làm số (mẫu rỗng chi phối) — đã ghi rõ trong doc.

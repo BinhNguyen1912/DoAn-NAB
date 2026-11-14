@@ -113,5 +113,8 @@ ngay khung `--frame-window` phải cắt ở đâu.
 - [ ] Chưa có clip **quay mới** có vật ở trong khung ≥ 20 s liên tục (mới có 3,7–5,3 s) ⇒ nếu cần demo
       dài bằng file thì phải quay thêm, hoặc ghép (mục 4.2).
 - [ ] Chưa đo trên **webcam rời** thật (mọi số hiện tại là webcam laptop qua relay).
-- [ ] `README.md` / `docs/cheatsheet-lenh.md` / `run` / `docs/colab-gpu.md` vẫn in ví dụ ô **cũ**
-      (`104,308,209,287`) ở một số chỗ — đã sửa ở 3 script đo, còn tài liệu hướng dẫn thì sửa dần.
+- [x] Ví dụ ô cũ đã sửa ở `README.md`, `docs/cheatsheet-lenh.md`, `run` (help), `docs/colab-gpu.md`
+      và `notebooks/colab_gpu_evaluation.ipynb` (kèm test khoá `BBOX`).
+- [ ] Cột "mask/s" trong bảng §3 là **`mask_fps` của mẫu cuối** (`tom_tat.mask_fps_cuoi`), không phải
+      `worker_status.vos_fps` (ca `lan2_chai_binh1_lan1`: `vos_fps` 9,1 · `mask_fps_max` 9,2 · 3 mẫu
+      cuối 7,9/8,4/8,8) — khi trích phải ghi rõ trường nào.
