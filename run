@@ -448,7 +448,7 @@ EOF
     activate_env
     if [ "${1:-}" = "gt" ]; then
       # In đúng mục quy trình gán tay trong tài liệu (một nguồn sự thật, không chép lại ở đây).
-      sed -n '/^## 2\./,/^## 3\./p' "$ROOT/docs/thuoc-do-bam-dung.md"
+      sed -n '/^## 2\./,/^## 3\./{/^## 3\./d;p}' "$ROOT/docs/thuoc-do-bam-dung.md"
       exit 0
     fi
     exec "$PYTHON" scripts/score_miou.py "$@"

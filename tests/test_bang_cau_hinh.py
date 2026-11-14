@@ -111,7 +111,8 @@ class TestCliKiemTraDauVao:
         assert "w,h > 0" in capsys.readouterr().out
 
     def test_lan_1_bi_canh_bao_la_khong_ket_luan_duoc(self, tmp_path, capsys):
-        """`--lan 1` không có std ⇒ bảng không có ngưỡng nhiễu. Vẫn cho chạy nhưng phải NÓI."""
+        """`--lan 1` bị TỪ CHỐI (exit 2): bảng không có `±` sẽ bị trích như "ổn định" (AGENTS §6:
+        n < 2 thì không kết luận được gì)."""
         clip = tmp_path / "a.mp4"
         clip.write_bytes(b"x")
         assert bch.main(["--clip", str(clip), "--bbox", "10,10,20,20", "--lan", "1"]) == 2
@@ -127,8 +128,6 @@ class TestArtifactVaCheck:
         clip = tmp_path / "a.mp4"
         clip.write_bytes(b"x")
         monkeypatch.setattr(bch, "_run_once", lambda *a, **k: _row())
-        monkeypatch.setattr(bch, "_git_provenance", lambda: ("abc1234", False, False, None),
-                            raising=False)
         import scripts.measure_watchdog as mw
 
         monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
@@ -143,7 +142,30 @@ class TestArtifactVaCheck:
         assert payload["cau_hinh"]["192_3"]["so_lan"] == 2
         assert md.is_file()
 
+        # `--check` phải THUẦN ĐỌC: không chạy worker, không ghi file (P2 review 14-11)
+        goi = {"n": 0}
+        monkeypatch.setattr(bch, "_run_once", lambda *a, **k: goi.__setitem__("n", goi["n"] + 1))
+        truoc = out.stat().st_mtime_ns
         assert bch.main(base + ["--check"]) == 0          # khớp
+        assert goi["n"] == 0, "--check không được chạy phiên worker nào"
+        assert out.stat().st_mtime_ns == truoc, "--check không được ghi đè artifact"
         md.write_text(md.read_text(encoding="utf-8").replace("| 192 | 3 |", "| 192 | 3 | (sửa tay)"),
                       encoding="utf-8")
         assert bch.main(base + ["--check"]) == 1          # lệch ⇒ đỏ
+
+
+class TestAgeNTrongArtifact:
+    """P2 review 14-11: cảnh báo nói "p95 trên cửa sổ `age_n`" thì `age_n` phải có trong artifact."""
+
+    def test_tong_hop_giu_age_n_va_frames(self):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row(), _row()]})
+        assert bang["192_3"]["age_n"]["mean"] == 30
+        assert bang["192_3"]["frames"]["mean"] == 60
+
+    def test_bang_markdown_co_cot_age_n(self):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        md = bch.bang_markdown({"do_luc": "x", "moi_truong": "cpu", "git_rev": "abc1234",
+                                "so_lan": 2, "git_dirty_code": False}, bang, [192], [3])
+        header = next(ln for ln in md.splitlines() if ln.startswith("| image_size"))
+        assert "| age_n |" in header
+        assert "| 30 |" in md

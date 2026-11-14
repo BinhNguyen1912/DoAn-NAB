@@ -277,6 +277,11 @@ async function waitJobState(page, wanted, timeout = 240000) {
     .catch(() => '')
   check('HUD cảnh báo MASK CŨ khi tuổi dữ liệu vượt ngưỡng',
     /Mask CŨ: 2\.6 s/.test(ageText), ageText.replace(/\s+/g, ' ') || '(không thấy dòng tuổi mask)')
+  // "Nói TO" là yêu cầu a11y, không phải trang trí: kiểm `role=alert` thì mới chặn được hồi quy làm
+  // cảnh báo thành chữ thường (review độc lập 14-11, P2 — bản trước chỉ so chữ).
+  const ageRole = await liveCard.getByTestId('mask-age').getAttribute('role').catch(() => null)
+  check('cảnh báo mask cũ có role=alert (screen reader đọc ngay)',
+    ageRole === 'alert', `role=${ageRole}`)
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 

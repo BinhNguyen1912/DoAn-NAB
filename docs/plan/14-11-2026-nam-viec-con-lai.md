@@ -58,7 +58,7 @@ Không có (xem trên). Các điểm *đáng lẽ* phải tranh luận, ghi lạ
 - [ ] Đoạn demo ≥ 20 s; chốt phạm vi với GVHD.
 
 ## 📚 Tham chiếu
-- `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md` — plan gốc (5 việc này nằm trong đó).
+- `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md` — plan gốc (5 việc này nằm trong đó).
 - `docs/task/14-11-2026-nam-viec-con-lai-cua-plan.md` — log thực hiện + số đo + review.
 - `docs/bang-cau-hinh.md`, `docs/thuoc-do-bam-dung.md`, `docs/so-lieu-bao-cao.md` — sản phẩm của plan này.
 - `AGENTS.md` §6 (§ố đã đo), §9.1 (review), §9.2 (plan 3 ý kiến).

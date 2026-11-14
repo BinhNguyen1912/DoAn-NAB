@@ -150,8 +150,11 @@ def draw(traj: dict, background=None, title: str = ""):
             j = truoc[-1]
             ax0.plot(cx[j], cy[j], "x", ms=11, mew=2.2, color="red")
         # Một nhãn duy nhất cho cả chú thích (tránh legend 26 dòng "X")
+        # KHÔNG gọi là "mất dấu": AGENTS §6 (đính chính 14-11) — phần lớn mask rỗng là **vật đã rời
+        # khung** (binh1: 36 % cả phiên nhưng chỉ 1,7 % khi chai còn trong khung). Ảnh vào báo cáo mà
+        # nhãn sai thì bị trích thành "mất dấu 170 lần".
         ax0.plot([], [], "x", ms=9, mew=2, color="red",
-                 label=f"mất dấu ({int(empty.sum())} lần VOS trả mask rỗng)")
+                 label=f"mask rỗng ({int(empty.sum())} lần VOS; phần lớn là vật ngoài khung)")
     ax0.set_title("Quỹ đạo tâm ô bao trên khung hình" + (f"\n{title}" if title else ""),
                   fontsize=10)
     if ax0.get_legend_handles_labels()[0]:        # rỗng (0 mẫu) ⇒ đừng gọi, matplotlib cảnh báo
@@ -178,7 +181,7 @@ def draw(traj: dict, background=None, title: str = ""):
         "n_dong": traj["n_dong"],
         "n_co_toa_do": int(co_toa_do.sum()),
         "n_thieu_toa_do": traj["n_thieu_toa_do"],
-        "n_mat_dau": int(empty.sum()),
+        "n_mask_rong": int(empty.sum()),
         "drift_iou_mean": None if not np.isfinite(drift).any() else round(float(np.nanmean(drift)), 3),
         "drift_iou_p05": None if np.isfinite(drift).sum() < 20
         else round(float(np.nanpercentile(drift, 5)), 3),

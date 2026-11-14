@@ -2,7 +2,7 @@
 
 > Nhánh `feat/plan-con-lai` (tách từ `main` 7d0e61b), nối tiếp
 > `docs/task/14-11-2026-crash-error-va-democheck.md` (việc #2, #7). Đây là **toàn bộ phần còn lại** của
-> `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md`: **#5, #6, #8, #9, #11**.
+> `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md`: **#5, #6, #8, #9, #11**.
 
 ## 🎯 Mục tiêu
 - Không còn "số không dùng được cho báo cáo": có **bảng cấu hình** để chọn cấu hình thi (#5), có
@@ -11,7 +11,7 @@
 
 ## 📥 Input
 - `AGENTS.md` §6 (kết luận đã đo), §9.1 (review độc lập), §9.2 (plan 3 ý kiến).
-- `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md`; `docs/so-lieu-bao-cao.md` (bảng số + cột "CẤM trích").
+- `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md`; `docs/so-lieu-bao-cao.md` (bảng số + cột "CẤM trích").
 - `data/drift_samples_*.csv` (mẫu từng lần VOS, có `bbox_x1..y2`), `data/binh1.mp4`, `data/binh2.mp4`.
 - Code: `src/live_tracking.py`, `tools/live_worker.py`, `src/api/*`, `web/src/live.ts`, `scripts/*`.
 
@@ -185,7 +185,7 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
       `cv2.cvtColor`/`cv2.resize` (phải đo chất lượng) · `score` vào `status.json`/CSV.
 
 ## 📚 Tài liệu tham khảo
-- `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md` — plan gốc (#5, #6, #8, #9, #11).
+- `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md` — plan gốc (#5, #6, #8, #9, #11).
 - `docs/task/14-11-2026-crash-error-va-democheck.md` — việc #2, #7 (cùng ngày).
 - `docs/thuoc-do-bam-dung.md` — thước đo mIoU + quy trình gán tay (mới).
 - `docs/bang-cau-hinh.md` — bảng cấu hình sinh từ artifact (mới).

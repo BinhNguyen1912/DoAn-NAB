@@ -84,7 +84,7 @@ class TestDraw:
         fig, thong_ke = tm.draw(traj)
         plt.close(fig)
         assert thong_ke["n_co_toa_do"] == 30
-        assert thong_ke["n_mat_dau"] == 0
+        assert thong_ke["n_mask_rong"] == 0
         assert thong_ke["drift_n"] == 30
         assert thong_ke["drift_iou_p05"] == pytest.approx(0.85, abs=1e-6)
 
@@ -94,7 +94,7 @@ class TestDraw:
         traj = tm.read_traj(_write(tmp_path, self._traj(empty_at=(5, 6))))
         fig, thong_ke = tm.draw(traj)
         plt.close(fig)
-        assert thong_ke["n_mat_dau"] == 2
+        assert thong_ke["n_mask_rong"] == 2
 
     def test_p05_None_khi_chua_du_mau(self, tmp_path):
         """`None` ≠ 0: 10 mẫu không đủ để nói phân vị 5 (AGENTS §6)."""

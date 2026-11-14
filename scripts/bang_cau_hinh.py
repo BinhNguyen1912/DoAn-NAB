@@ -103,6 +103,11 @@ def tong_hop(cau_hinh, sizes, evers, runs: dict):
                     "so_lan_loi": len(loi), "loi": loi[:3]}
             for key, _nhan, _cam in COT:
                 dong[key] = _thong_ke([r.get(key) for r in ok])
+            # `age_n`/`frames` PHẢI có trong artifact: cảnh báo "p95 trên cửa sổ `age_n`" mà field đó
+            # không tồn tại thì người đọc không biết p95 dựa trên bao nhiêu mẫu (review độc lập 14-11,
+            # P2). §ố mẫu nhỏ (vd lần chạy chỉ được 5/60 frame) cũng lộ ra ở đây.
+            dong["age_n"] = _thong_ke([r.get("age_n") for r in ok])
+            dong["frames"] = _thong_ke([r.get("frames") for r in ok])
             bang[f"{size}_{every}"] = dong
     return bang
 
@@ -127,8 +132,8 @@ def bang_markdown(meta: dict, bang: dict, sizes, evers) -> str:
         "> Mỗi cấu hình chạy **{0} lần**; `±` là độ lệch chuẩn giữa các lần ⇒ **chênh lệch nhỏ hơn `±` "
         "thì ghi 'không phân biệt được', cấm ghi 'tốt hơn'**.".format(meta["so_lan"]),
         "",
-        "| image_size | vos_every | FPS phát | Nhịp mask | vos_ms | tuổi mask p95 | lần | lỗi |",
-        "|---|---|---|---|---|---|---|---|",
+        "| image_size | vos_every | FPS phát | Nhịp mask | vos_ms | tuổi mask p95 | age_n | lần | lỗi |",
+        "|---|---|---|---|---|---|---|---|---|",
     ]
     for size in sizes:
         for every in evers:
@@ -142,8 +147,10 @@ def bang_markdown(meta: dict, bang: dict, sizes, evers) -> str:
                     return "—"
                 return f"{s['mean']:g} ± {s['std']:g}" if s.get("std") is not None else f"{s['mean']:g}"
 
+            age_n = (row.get("age_n") or {}).get("mean")
             dong.append(f"| {size} | {every} | {_o('measured_fps')} | {_o('vos_fps')} | "
-                        f"{_o('vos_ms')} | {_o('mask_age_p95')} | {row.get('so_lan')} | "
+                        f"{_o('vos_ms')} | {_o('mask_age_p95')} | "
+                        f"{'—' if age_n is None else f'{age_n:g}'} | {row.get('so_lan')} | "
                         f"{row.get('so_lan_loi')} |")
     dong += ["",
              "**CẤM trích**:",
@@ -160,7 +167,7 @@ def bang_markdown(meta: dict, bang: dict, sizes, evers) -> str:
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Bảng cấu hình image_size × vos_every (số thật).")
     parser.add_argument("--clip", default="data/binh1.mp4")
-    parser.add_argument("--bbox", required=True, help="x,y,w,h — ô chọn trên VẬT THẬT")
+    parser.add_argument("--bbox", required=False, help="x,y,w,h — ô chọn trên VẬT THẬT")
     parser.add_argument("--sizes", default="192,256,320")
     parser.add_argument("--every", default="2,3,6", dest="evers")
     parser.add_argument("--lan", type=int, default=3, help="số lần lặp mỗi cấu hình (>= 2 mới có ±)")
@@ -170,11 +177,42 @@ def main(argv=None) -> int:
     parser.add_argument("--out", default=None)
     parser.add_argument("--md", default=None, help="ghi bảng markdown vào file này")
     parser.add_argument("--check", action="store_true",
-                        help="chỉ kiểm file .md có khớp artifact không (dùng cho CI)")
+                        help="CHỈ ĐỌC: so file .md đã commit với bản sinh lại từ artifact có sẵn "
+                             "(không chạy worker, không ghi file)")
     args = parser.parse_args(argv)
 
-    from scripts.measure_watchdog import _git_provenance
+    out = Path(args.out) if args.out else (
+        _REPO_ROOT / "data" / f"bang_cau_hinh_{datetime.now():%Y-%m-%d}_metrics.json")
+    md_path = Path(args.md) if args.md else _REPO_ROOT / "docs" / "bang-cau-hinh.md"
 
+    if args.check:
+        # `--check` (mô tả là "cho CI") ở bản trước lại CHẠY 27 phiên worker rồi GHI ĐÈ artifact trước
+        # khi so ⇒ vừa tốn 5 phút vừa làm bẩn bằng chứng đã commit, và luôn lệch vì md chứa git_rev
+        # (review độc lập 14-11, P2). Nay chỉ đọc artifact + sinh md từ nó.
+        if not out.is_file():
+            print(f"[bang] KHÔNG có artifact để kiểm: {out}")
+            return 2
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        meta = payload.get("meta", {})
+        sizes = sorted({int(k.split("_")[0]) for k in payload.get("cau_hinh", {})})
+        evers = sorted({int(k.split("_")[1]) for k in payload.get("cau_hinh", {})})
+        md_moi = bang_markdown(meta, payload.get("cau_hinh", {}), sizes, evers)
+        cu = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
+        # So phần THÂN bảng (bỏ dòng provenance chứa git_rev — nó đổi sau mỗi commit, và điều cần
+        # kiểm là "số trong md có khớp artifact không").
+        def _than(text):
+            return [ln for ln in text.splitlines()
+                    if ln.startswith("|") or ln.startswith("- ") or ln.startswith("**")]
+
+        if _than(cu) != _than(md_moi):
+            print(f"[bang] {md_path} LỆCH so với {out} — chạy lại không có --check để sinh lại")
+            return 1
+        print(f"[bang] {md_path} khớp artifact {out.name} (chỉ đọc, không ghi)")
+        return 0
+
+    if not args.bbox:
+        print("[LOI] cần --bbox x,y,w,h (ô chọn trên VẬT THẬT; hộp mặc định hay rơi vào nền)")
+        return 2
     sizes = [int(v) for v in args.sizes.split(",") if v.strip()]
     evers = [int(v) for v in args.evers.split(",") if v.strip()]
     bbox = tuple(int(v) for v in args.bbox.split(","))
@@ -194,9 +232,6 @@ def main(argv=None) -> int:
         print(f"[LOI] không thấy clip {clip}")
         return 2
 
-    out = Path(args.out) if args.out else (
-        _REPO_ROOT / "data" / f"bang_cau_hinh_{datetime.now():%Y-%m-%d}_metrics.json")
-
     runs = {}
     for size in sizes:
         for every in evers:
@@ -206,10 +241,12 @@ def main(argv=None) -> int:
                 runs[(size, every)].append(ket_qua)
                 nhan = "LỖI: " + ket_qua["loi"] if ket_qua.get("loi") else (
                     f"fps {ket_qua.get('measured_fps')} · mask {ket_qua.get('vos_fps')} · "
-                    f"vos {ket_qua.get('vos_ms')} ms")
+                    f"vos {ket_qua.get('vos_ms')} ms · age_n {ket_qua.get('age_n')}")
                 print(f"[{size}/{every}] lần {lan + 1}/{args.lan}: {nhan}", flush=True)
 
     bang = tong_hop(None, sizes, evers, runs)
+    from scripts.measure_watchdog import _git_provenance
+
     rev, dirty, dirty_code, git_loi = _git_provenance()
     meta = {
         "do_luc": datetime.now().isoformat(timespec="seconds"),
@@ -233,14 +270,6 @@ def main(argv=None) -> int:
 
     md = bang_markdown(meta, bang, sizes, evers)
     if args.md:
-        md_path = Path(args.md)
-        if args.check:
-            cu = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
-            if cu.strip() != md.strip():
-                print(f"[bang] {md_path} LỆCH so với artifact — chạy lại không `--check`")
-                return 1
-            print(f"[bang] {md_path} khớp artifact")
-            return 0
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md, encoding="utf-8")
         print(f"[bang] bảng: {md_path}")

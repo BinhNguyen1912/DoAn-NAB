@@ -1,6 +1,6 @@
 # Ngày 14-11-2026 — Crash thành `error` thật + `./run democheck` (việc #2, #7 của plan)
 
-> Nhánh `fix/live-crash-va-democheck`, commit `b94e0c5`, nối tiếp plan `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md`
+> Nhánh `fix/live-crash-va-democheck`, commit `b94e0c5`, nối tiếp plan `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md`
 > (đã merge xong #1/#3/#4/#10). Đây là hai việc **an toàn cho buổi demo** còn lại.
 
 ## 🎯 Mục tiêu
@@ -10,7 +10,7 @@
   thành lời nói suông), **không nạp model**, ≤ 120 s; kèm `--full --bbox x,y,w,h` để **diễn tập thật**.
 
 ## 📥 Input
-- `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md` (việc #2, #7 + ước lượng giờ + lý do).
+- `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md` (việc #2, #7 + ước lượng giờ + lý do).
 - `AGENTS.md` §6 (kết luận đã đo: model nạp 20–240 s; ngưỡng treo; "Device busy" của webcam WSL; `source`
   là chuỗi "0" = webcam) và §9.1 (review độc lập bắt buộc).
 - Code: `src/live_tracking.py` (`run()`, `_rewind()`, `_on_worker_error`), `tools/live_worker.py`,
@@ -183,7 +183,7 @@ phát sinh **2 P2 + 10 P3**, đã sửa tiếp trong cùng nhánh:
       `pre_ms` 12–13 ms → `cv2.cvtColor`/`cv2.resize` (phải đo chất lượng) · `score` vào `status.json`/CSV.
 
 ## 📚 Tài liệu tham khảo
-- `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md` — plan gốc (việc #2, #7 + ước lượng giờ).
+- `docs/plan/14-11-2026-plan-3-y-kien-toi-uu-msi.md` — plan gốc (việc #2, #7 + ước lượng giờ).
 - `AGENTS.md` §6 (kết luận đã đo: "Device busy", ngưỡng treo, `source` chuỗi "0") và §9.1 (review độc lập).
 - `docs/task/09-11-2026-watchdog-live-va-nhanh-raw.md` — nguồn gốc `health()`/watchdog.
 - `docs/task/13-11-2026-colab-t4-lan-2-so-gpu-nhung-bbox-sai.md` — ca `ket_qua = true` mà bbox trỏ vào nền
