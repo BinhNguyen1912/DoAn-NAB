@@ -153,3 +153,17 @@ lệch `cycle_ms` vài ms; muốn trung bình thì phải cộng thêm cửa s�
    `mask_age_total_ms` (tuổi dữ liệu thật). Không được trộn hai số trong một bảng.
 
 `./run lint` xanh · `./run test` **955 passed**.
+
+## 📊 Bổ sung — việc #10 của plan: `docs/so-lieu-bao-cao.md` SINH từ artifact
+
+- `scripts/so_lieu_bao_cao.py`: registry "tuyên bố → artifact + đường dẫn khoá" ⇒ sinh bảng markdown
+  6 cột (Tuyên bố · Số · Đơn vị · Artifact · Khoá · **CẤM trích thành**). Không chép tay con số nào.
+- `docs/so-lieu-bao-cao.md` (13 dòng) gồm: `vos_ms`/`vos_fps`/tuổi mask (2 định nghĩa)/chu kỳ + pha/
+  `queue_ms`/tỉ lệ rỗng **trong khung** (binh1, binh2)/`drift_iou` trong khung/`so_vong`/mIoU fixture/
+  watchdog.
+- `--check` để CI báo khi file lệch artifact (test đã khoá: file sửa tay ⇒ mã thoát 1).
+- Test `tests/test_so_lieu_bao_cao.py` (14 test): `None` in **`null` (chưa đo)**, thiếu artifact/khoá in
+  **`THIẾU`**, cả hai **không bao giờ** in `0`; mọi dòng registry phải trỏ được tới khoá có thật; 2
+  artifact chính phải có `git_dirty_code == false`.
+
+`./run lint` xanh · `./run test` **969 passed**.
