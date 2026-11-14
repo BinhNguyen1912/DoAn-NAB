@@ -17,7 +17,6 @@ gt_do_model_goi_y = false ⇒ hợp lệ để chấm).
 import argparse
 import json
 import sys
-from datetime import datetime
 from pathlib import Path
 
 import cv2
@@ -84,11 +83,12 @@ def main(argv=None) -> int:
         "frames": frames,
         "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
         "gt_do_model_goi_y": False,
-        "tao_luc": datetime.now().isoformat(timespec="seconds"),
         "canh_bao": "Fixture TỔNG HỢP: mIoU chấm trên đây là CẬN TRÊN, cấm trích như mIoU trên "
                     "video thật. Muốn số thật thì gán tay bằng `scripts/score_miou.py label`.",
     }
-    (gt_dir / "index.json").write_text(json.dumps(index_data, ensure_ascii=False, indent=2),
+    # KHÔNG ghi mốc thời gian: `index.json` phải tái lập y hệt mỗi lần sinh (nếu không, mỗi lần
+    # chạy lại script là một diff vô nghĩa và `git status` bẩn ngay trước lúc đo provenance).
+    (gt_dir / "index.json").write_text(json.dumps(index_data, ensure_ascii=False, indent=2) + "\n",
                                        encoding="utf-8")
     print(f"[gt] clip: {clip_path} ({args.frames} frame {SIZE[0]}×{SIZE[1]})")
     print(f"[gt] GT:   {gt_dir} ({args.frames} file gt_*.png + index.json)")
