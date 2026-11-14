@@ -110,30 +110,35 @@ def cham(ds_frame, gt_dir: Path) -> dict:
 
 
 def kiem_index(index: dict, gt_dir: Path):
-    """Trả danh sách LỖI của `index.json` (rỗng = hợp lệ). Dùng cho `--check`/CI."""
-    loi = []
+    """Trả `(chan, mem)`: lỗi CHẶN chấm điểm và cảnh báo MỀM.
+
+    Vì sao phải tách: bản trước **chỉ in cảnh báo rồi vẫn chấm** — một GT do chính model gợi ý vẫn ra
+    artifact mIoU và mã thoát 0, tức "chốt chặn danh nghĩa" đúng như tài liệu nói nó chặn (P1, review
+    độc lập 14-11). Lỗi chặn ⇒ exit 2, KHÔNG ghi artifact; cảnh báo mềm ⇒ vẫn chấm nhưng exit 1.
+    """
+    chan, mem = [], []
     if not index.get("clip"):
-        loi.append("thiếu 'clip'")
+        mem.append("thiếu 'clip'")
     frames = index.get("frames") or []
     if not frames:
-        loi.append("danh sách 'frames' rỗng")
+        chan.append("danh sách 'frames' rỗng — không có gì để chấm")
     seen = set()
     for item in frames:
         idx = item.get("frame_idx")
         if not isinstance(idx, int) or idx < 0:
-            loi.append(f"frame_idx không hợp lệ: {idx!r}")
+            chan.append(f"frame_idx không hợp lệ: {idx!r}")
             continue
         if idx in seen:
-            loi.append(f"frame_idx trùng: {idx}")
+            chan.append(f"frame_idx trùng: {idx}")
         seen.add(idx)
         if not (Path(gt_dir) / f"gt_{idx:06d}.png").is_file():
-            loi.append(f"thiếu file GT cho frame {idx}: gt_{idx:06d}.png")
+            chan.append(f"thiếu file GT cho frame {idx}: gt_{idx:06d}.png")
     if not index.get("nguoi_gan"):
-        loi.append("thiếu 'nguoi_gan' — GT không có người chịu trách nhiệm thì không dùng làm bằng chứng")
+        mem.append("thiếu 'nguoi_gan' — GT không có người chịu trách nhiệm thì không dùng làm bằng chứng")
     if index.get("gt_do_model_goi_y"):
-        loi.append("GT có mask do CHÍNH model gợi ý (gt_do_model_goi_y = true) — mIoU chấm trên đó "
-                   "là đo chính model, không dùng để tuyên bố độ chính xác")
-    return loi
+        chan.append("GT có mask do CHÍNH model gợi ý (gt_do_model_goi_y = true) — mIoU chấm trên đó "
+                    "là đo chính model, không dùng để tuyên bố độ chính xác")
+    return chan, mem
 
 
 # ── lệnh `label` ────────────────────────────────────────────────────────────────────────
@@ -220,12 +225,20 @@ def main(argv=None) -> int:
         print(f"[LOI] không thấy {index_path} — chạy `label` trước, hoặc trỏ --gt")
         return 2
     index = json.loads(index_path.read_text(encoding="utf-8"))
-    loi = kiem_index(index, gt_dir)
+    chan, mem = kiem_index(index, gt_dir)
     if args.check_index:
-        for item in loi:
-            print(f"[gt] LỖI: {item}")
-        print("[gt] hợp lệ" if not loi else f"[gt] {len(loi)} lỗi")
-        return 0 if not loi else 1
+        for item in chan:
+            print(f"[gt] LỖI (chặn chấm): {item}")
+        for item in mem:
+            print(f"[gt] cảnh báo: {item}")
+        print("[gt] hợp lệ" if not (chan or mem) else f"[gt] {len(chan)} lỗi chặn, {len(mem)} cảnh báo")
+        return 0 if not (chan or mem) else 1
+    for item in chan:
+        print(f"[miou] TỪ CHỐI CHẤM: {item}")
+    if chan:
+        print("[miou] không ghi artifact — sửa GT rồi chạy lại "
+              "(xem docs/thuoc-do-bam-dung.md)")
+        return 2
 
     pred_dir = Path(args.pred_dir)
     frames = []
@@ -252,7 +265,7 @@ def main(argv=None) -> int:
                           "GT rỗng không chấm; model rỗng mà GT có vật = 0,0",
         },
         "ket_qua": ket_qua,
-        "canh_bao_gt": loi,
+        "canh_bao_gt": mem, "loi_chan": chan,
     }
     out = Path(args.out) if args.out else (
         _REPO_ROOT / "data" / f"miou_{datetime.now():%Y-%m-%d}_metrics.json")
@@ -263,7 +276,7 @@ def main(argv=None) -> int:
     print(f"[miou] {out}")
     print(f"[miou] mIoU = {kq['mIoU']} trên {kq['n_cham']} frame"
           f" · GT rỗng: {kq['so_frame_gt_rong']} · thiếu mask: {kq['so_frame_thieu_mask']}")
-    for ten_canh_bao in loi:
+    for ten_canh_bao in mem:
         print(f"[miou] CẢNH BÁO: {ten_canh_bao}")
     if kq["so_frame_thieu_mask"] > kq["n_cham"]:
         print(f"[miou] CẢNH BÁO: chỉ chấm được {kq['n_cham']} / "

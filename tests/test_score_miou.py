@@ -124,31 +124,35 @@ class TestKiemIndex:
 
     def test_hop_le(self, tmp_path):
         (tmp_path / "gt_000000.png").write_bytes(b"x")
-        assert sm.kiem_index(self._index(tmp_path), tmp_path) == []
+        assert sm.kiem_index(self._index(tmp_path), tmp_path) == ([], [])
 
-    def test_thieu_file_gt_bao_loi(self, tmp_path):
-        loi = sm.kiem_index(self._index(tmp_path), tmp_path)
-        assert any("thiếu file GT" in x for x in loi)
+    def test_thieu_file_gt_la_loi_CHAN(self, tmp_path):
+        chan, _mem = sm.kiem_index(self._index(tmp_path), tmp_path)
+        assert any("thiếu file GT" in x for x in chan)
 
-    def test_thieu_nguoi_gan_bao_loi(self, tmp_path):
+    def test_thieu_nguoi_gan_chi_la_canh_bao_mem(self, tmp_path):
         (tmp_path / "gt_000000.png").write_bytes(b"x")
-        loi = sm.kiem_index(self._index(tmp_path, nguoi_gan=""), tmp_path)
-        assert any("nguoi_gan" in x for x in loi)
+        chan, mem = sm.kiem_index(self._index(tmp_path, nguoi_gan=""), tmp_path)
+        assert not chan and any("nguoi_gan" in x for x in mem)
 
-    def test_gt_do_model_goi_y_bi_tu_choi(self, tmp_path):
-        """Chấm mIoU trên mask do CHÍNH model sinh ra = đo chính nó, không phải đo chất lượng."""
+    def test_gt_do_model_goi_y_bi_TU_CHOI_chan(self, tmp_path):
+        """Chấm mIoU trên mask do CHÍNH model sinh ra = đo chính nó, không phải đo chất lượng.
+
+        P1 review 14-11: bản trước chỉ in cảnh báo rồi **vẫn chấm và trả 0** ⇒ "chốt chặn danh nghĩa".
+        """
         (tmp_path / "gt_000000.png").write_bytes(b"x")
-        loi = sm.kiem_index(self._index(tmp_path, gt_do_model_goi_y=True), tmp_path)
-        assert any("gợi ý" in x for x in loi)
+        chan, _mem = sm.kiem_index(self._index(tmp_path, gt_do_model_goi_y=True), tmp_path)
+        assert any("gợi ý" in x for x in chan)
 
     def test_frame_trung_va_am(self, tmp_path):
         (tmp_path / "gt_000000.png").write_bytes(b"x")
-        loi = sm.kiem_index(self._index(tmp_path, frames=[{"frame_idx": 0}, {"frame_idx": 0},
-                                                          {"frame_idx": -3}]), tmp_path)
-        assert any("trùng" in x for x in loi) and any("không hợp lệ" in x for x in loi)
+        chan, _mem = sm.kiem_index(self._index(tmp_path, frames=[{"frame_idx": 0}, {"frame_idx": 0},
+                                                                {"frame_idx": -3}]), tmp_path)
+        assert any("trùng" in x for x in chan) and any("không hợp lệ" in x for x in chan)
 
     def test_frames_rong(self, tmp_path):
-        assert any("rỗng" in x for x in sm.kiem_index(self._index(tmp_path, frames=[]), tmp_path))
+        chan, _mem = sm.kiem_index(self._index(tmp_path, frames=[]), tmp_path)
+        assert any("rỗng" in x for x in chan)
 
 
 class TestCli:
@@ -213,3 +217,34 @@ class TestMaskHongKhongLamChetCaLanCham:
         (pred_dir / "mask_000000.png").write_bytes("không phải ảnh".encode())
         kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
         assert kq["so_frame_mask_hong"] == 1 and kq["mIoU"] is None
+
+
+class TestTuChoiChamKhiGtHong:
+    """P1 review 14-11: lỗi GT chặn chấm phải làm script DỪNG (exit 2) và **không** ghi artifact."""
+
+    def test_gt_do_model_goi_y_thi_exit_2_va_khong_ghi_artifact(self, tmp_path, capsys):
+        import cv2
+
+        gt = tmp_path / "gt"
+        gt.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "gt_do_model_goi_y": True,
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        pred = tmp_path / "pred"
+        pred.mkdir()
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        out = tmp_path / "art.json"
+
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+
+        assert ma == 2, "GT do model gợi ý phải bị TỪ CHỐI chấm (không phải chỉ cảnh báo)"
+        assert not out.exists(), "không được ghi artifact khi GT bị từ chối"
+        assert "TỪ CHỐI CHẤM" in capsys.readouterr().out
+
+    def test_thieu_file_gt_thi_exit_2(self, tmp_path):
+        (tmp_path / "index.json").write_text(json.dumps({
+            "clip": "x", "nguoi_gan": "B", "frames": [{"frame_idx": 3}]}), encoding="utf-8")
+        assert sm.main(["score", "--gt", str(tmp_path), "--pred-dir", str(tmp_path),
+                        "--out", str(tmp_path / "a.json")]) == 2
+        assert not (tmp_path / "a.json").exists()
