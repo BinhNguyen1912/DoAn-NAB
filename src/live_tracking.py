@@ -715,7 +715,13 @@ class LiveTrackingSession:
         try:
             target = Path(out_dir)
             target.mkdir(parents=True, exist_ok=True)
-            arr = np.zeros((1, 1), np.uint8) if mask is None else (np.asarray(mask) > 0).astype(np.uint8)
+            if mask is None:
+                # KHÔNG ghi file 1×1: nó trông như "đã đo" nhưng khi chấm sẽ lệch kích thước GT và
+                # biến một ca "không có mask" thành lỗi khó hiểu ở khâu chấm điểm. Bỏ qua + cảnh báo.
+                print(f"[canh-bao] frame {frame_idx}: model không trả mask ⇒ không ghi file "
+                      "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)", flush=True)
+                return
+            arr = (np.asarray(mask) > 0).astype(np.uint8)
             cv2.imwrite(str(target / f"mask_{int(frame_idx):06d}.png"), arr * 255)
         except Exception as exc:                 # noqa: BLE001 — dụng cụ đo không giết phiên
             print(f"[canh-bao] không ghi được mask frame {frame_idx}: {exc}", flush=True)

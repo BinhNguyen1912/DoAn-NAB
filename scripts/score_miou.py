@@ -72,7 +72,7 @@ def doc_mask(path) -> np.ndarray:
 
 def cham(ds_frame, gt_dir: Path) -> dict:
     """Chấm danh sách frame. `ds_frame`: [{"frame_idx": int}] từ `index.json`."""
-    rows, miou, gt_rong, thieu = [], [], 0, 0
+    rows, miou, gt_rong, thieu, hong = [], [], 0, 0, 0
     for item in ds_frame:
         idx = int(item["frame_idx"])
         gt_path = Path(gt_dir) / f"gt_{idx:06d}.png"
@@ -81,9 +81,16 @@ def cham(ds_frame, gt_dir: Path) -> dict:
             thieu += 1
             rows.append({"frame_idx": idx, "iou": None, "ly_do": "thiếu mask của model"})
             continue
-        gt = doc_mask(gt_path)
-        pred = doc_mask(pred_path)
-        gia_tri = iou(pred, gt)
+        try:
+            gt = doc_mask(gt_path)
+            pred = doc_mask(pred_path)
+            gia_tri = iou(pred, gt)
+        except (ValueError, OSError) as exc:
+            # Một frame hỏng (mask lệch kích thước, PNG hỏng) KHÔNG được làm chết cả lần chấm —
+            # nhưng cũng KHÔNG được im lặng: đếm riêng và nêu lý do từng frame.
+            hong += 1
+            rows.append({"frame_idx": idx, "iou": None, "ly_do": f"mask hỏng: {exc}"})
+            continue
         if gia_tri is None:
             gt_rong += 1
             rows.append({"frame_idx": idx, "iou": None, "ly_do": "GT rỗng (không chấm)"})
@@ -97,6 +104,7 @@ def cham(ds_frame, gt_dir: Path) -> dict:
         "n_cham": len(miou),
         "so_frame_gt_rong": gt_rong,
         "so_frame_thieu_mask": thieu,
+        "so_frame_mask_hong": hong,
         "frames": rows,
     }
 

@@ -183,3 +183,33 @@ class TestCli:
         assert payload["ket_qua"]["mIoU"] is None
         assert payload["meta"]["git_rev"] == "abc1234"
         assert "GT rỗng không chấm" in payload["meta"]["dinh_nghia"]
+
+
+class TestMaskHongKhongLamChetCaLanCham:
+    """Mask 1×1 (model không trả mask) từng làm `iou()` ném ValueError ⇒ chết cả lần chấm."""
+
+    def test_lech_kich_thuoc_duoc_dem_rieng(self, tmp_path):
+        import cv2
+
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        cv2.imwrite(str(gt_dir / "gt_000000.png"), np.full((6, 6), 255, np.uint8))
+        cv2.imwrite(str(pred_dir / "mask_000000.png"), np.full((1, 1), 255, np.uint8))
+        cv2.imwrite(str(gt_dir / "gt_000002.png"), np.full((6, 6), 255, np.uint8))
+        cv2.imwrite(str(pred_dir / "mask_000002.png"), np.full((6, 6), 255, np.uint8))
+
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")},
+                      {"frame_idx": 2, "pred_path": str(pred_dir / "mask_000002.png")}], gt_dir)
+        assert kq["so_frame_mask_hong"] == 1
+        assert kq["n_cham"] == 1 and kq["mIoU"] == pytest.approx(1.0)
+        assert "mask hỏng" in kq["frames"][0]["ly_do"]
+
+    def test_png_hong_khong_lam_chet(self, tmp_path):
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        (gt_dir / "gt_000000.png").write_bytes("không phải ảnh".encode())
+        (pred_dir / "mask_000000.png").write_bytes("không phải ảnh".encode())
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["so_frame_mask_hong"] == 1 and kq["mIoU"] is None
