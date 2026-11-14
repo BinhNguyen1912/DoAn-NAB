@@ -178,6 +178,27 @@ None` nghĩa là model **không trả mask**, khác hẳn "trả mask rỗng" (�
 "không có dữ liệu" thành "bám sai", đúng loại lỗi mà AGENTS §6 cấm. Cả hai đường đều không còn làm sập
 lần chấm (đã bắt `ValueError` theo từng frame, đếm `so_frame_mask_hong`).
 
+### Review độc lập **bản hẹp** ("3 điểm rủi ro") — cũng về muộn, trên HEAD `fb32b83`
+
+Chạy trên commit **trước** các bản sửa P0/P1 ở trên, nên phần lớn đã đóng. Đối chiếu từng mục:
+
+| Nó nói | Trạng thái khi đối chiếu |
+|---|---|
+| **P0** tên file mask theo bộ đếm engine ⇒ mIoU ghép sai frame | **Đã đóng** (bản sửa đầy đủ ở mục trên). Nó bổ sung đúng 2 ý **chưa có**, nay đã làm: (a) `live_worker` **TỪ CHỐI** `--dump-mask-frames` khi `vos_every > 1` (trước chỉ cảnh báo cuối phiên) + từ chối frame âm/không phải số (`_kiem_dump_mask_args`, 4 test); (b) **`manifest.json`** cạnh các file mask (nguồn · `image_size` · `vos_every` · `bbox` · `mask_smoothing` · frames yêu cầu) và `score_miou` copy vào `meta.mask_manifest` — trước đây artifact **không** ghi `vos_every`/`image_size`/`bbox` nên không ai kiểm được mask sinh ở cấu hình nào |
+| **P1** `ab_test` nhánh `n < 2` trả dict **thiếu `std_a`** ⇒ `KeyError` sau khi artifact đã ghi | **LỖI THẬT, chưa ai bắt trước đó — đã sửa.** `so_sanh` trả đủ khoá, `main` rẽ nhánh theo `n_a`/`n_b`, `ket_luan` nêu n từng bên. Test ghim ca "2/3 lần lỗi" (in được bảng, `n_a = 1`, kết luận nêu rõ) |
+| **P1** `score_miou` vẫn chấm GT do model gợi ý | **Đã đóng** (exit 2, không ghi artifact) |
+| **P1** một file hỏng giết cả lần chấm | **Đã đóng** (`so_frame_mask_hong` + lý do từng frame) |
+| **P2** `--check-index` chỉ `is_file()` ⇒ "chứng nhận" file 1 byte là hợp lệ (test cũ của repo cũng khẳng định thế) | **LỖI THẬT, đã sửa**: giải mã thật, so `frame_hw` nếu index có, cảnh báo GT toàn đen. 3 test mới |
+| **P2** ngưỡng A/B quá lớn khi có outlier / bên nhiễu hơn đặt ngưỡng cho cả hai | **Đã giảm nhẹ** bằng sàn tuyệt đối; phần "bên nhiễu hơn đặt ngưỡng cho cả hai" **giữ nguyên có chủ ý**: so hai cấu hình thì phải dùng ngưỡng rộng hơn của hai bên, nếu không sẽ tuyên bố "tốt hơn" trên một bên nhiễu |
+| **P2** coverage chỉ in khi thiếu > chấm được | **Đã sửa**: `coverage` vào `ket_qua` + luôn in (5/24 frame ⇒ in `21 %` kèm cảnh báo) |
+| **P3** `cv2.imwrite` không kiểm giá trị trả về | **Đã sửa** (cảnh báo khi trả `False` — file không có sẽ bị đọc thành "chưa chạy") |
+| **P3** ghi PNG nằm trong cửa sổ `post_ms` (dụng cụ đo làm bẩn số đang đo) | **Chưa sửa** — chỉ ảnh hưởng khi dump gần như mọi frame; ghi vào ticket `#26` |
+| **P3** chọn lại ô giữa phiên ghi đè mask cũ | **Chưa tái hiện được** (tên dùng `_frame_index` của **phiên**, không bị reset khi chọn lại) — nhưng cũng **không có test canh**; ghi vào `#26` |
+| **P3** `--gt` mặc định `""` ⇒ `Path(None)` `TypeError` | **Đã sửa** (câu lỗi rõ, `./run miou gt` để xem quy trình) |
+| **"đã kiểm, không phải lỗi"**: chiều kết luận `uu_tien`; ba bẫy `0/None` của `cham`; `git_dirty=true` + `git_dirty_code=false` là đúng quy ước | Đồng ý cả ba |
+
+**Một điểm nó nói đúng mà tôi vẫn giữ nguyên:** mask `None` ⇒ tôi **không** ghi ảnh 0 cùng cỡ (như trên).
+
 ### Góc "độ bền & hiệu năng" của plan trả về **sau khi đã merge** — đối chiếu từng phát hiện
 
 | Phát hiện | Trạng thái |

@@ -49,6 +49,12 @@ python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/run1/m
 ```
 
 Mask dump là mask **thô** của model (trước bước làm mượt `--mask-smoothing`) — đúng cái cần chấm.
+Cạnh các file mask có `manifest.json` (nguồn · `image_size` · `vos_every` · `bbox` · frames yêu cầu);
+`score_miou` copy nó vào `meta.mask_manifest` của artifact ⇒ số mIoU tự trả lời được "mask sinh ra ở
+cấu hình nào" thay vì tin lời người chạy.
+
+`--vos-every` **khác 1 bị CLI từ chối** khi có `--dump-mask-frames`: với N > 1 model không hề thấy
+frame không chia hết cho N ⇒ mask không tồn tại (trước đây chỉ cảnh báo ở cuối phiên, quá muộn).
 
 Lưu ý khi tô: **không** dùng chính SAM 2 để sinh mask rồi sửa lại — nếu dùng thì phải khai
 `--gt-do-model-goi-y` và script sẽ **từ chối** dùng bộ GT đó làm bằng chứng (nó có thể dùng để tự
@@ -64,7 +70,8 @@ python scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /t
     --out data/miou_synthetic_2026-11-14_metrics.json
 ```
 
-Kết quả: **mIoU 0,9354 trên 5 frame** (`data/miou_synthetic_2026-11-14_metrics.json`).
+Kết quả: **mIoU 0,9354 trên 5 frame**, `coverage = 0,208` (5/24 frame có GT được chấm) —
+`data/miou_synthetic_2026-11-14_metrics.json`. Coverage nằm trong artifact, không chỉ in ra màn hình.
 **Đây là CẬN TRÊN**: GT ≡ đúng vùng pixel của ô vuông và prompt là đúng bbox của nó. Cấm trích như
 "mIoU trên video thật/DAVIS" (AGENTS §6).
 
