@@ -60,29 +60,37 @@
 
 ## 📤 Output / Kết quả
 
-**Bảng cấu hình** (`data/bang_cau_hinh_2026-11-14_metrics.json`, `git_rev 548e99b`,
-`git_dirty_code=false`, 9 cấu hình × 3 lần, 0 lỗi, clip `binh1`, bbox 300,275,150,410, CPU tiny):
+**Bảng cấu hình** — `data/bang_cau_hinh_2026-11-14_metrics.json`, `git_rev 5b85077`,
+`git_dirty_code=false`, 9 cấu hình × **3 lần**, 0 lỗi, clip `binh1`, bbox `288,287,431,734` (ô chai
+ĐÚNG), CPU tiny, `age_n = 59` mỗi lần. Bảng đầy đủ: **`docs/bang-cau-hinh.md`** (nguồn duy nhất).
 
 | image_size | vos_every | FPS phát | Nhịp mask | vos_ms | tuổi mask p95 |
 |---|---|---|---|---|---|
-| 192 | 2 | 29,83 ± 0,06 | **9,33 ± 0,15** | 91 ± 10 | **248 ± 17** |
-| 192 | 3 | 29,87 ± 0,06 | 8,87 ± 0,40 | 91 ± 7 | 279 ± 19 |
-| 192 | 6 | 29,83 ± 0,06 | 5,17 ± 0,06 | 98 ± 8 | **301 ± 0,2** |
-| 256 | 3 | 29,33 ± 0,06 | 4,03 ± 0,06 | 186 ± 13 | 581 ± 15 |
-| 320 | 2 | 29,77 ± 0,06 | 3,47 ± 0,15 | 270 ± 25 | 582 ± 20 |
-| 320 | 6 | 29,80 ± 0,00 | 3,53 ± 0,06 | 278 ± 8 | 680 ± 20 |
+| 192 | 2 | 29,7 ± 0,0 | **7,53 ± 0,12** | 102,73 ± 16,61 | **306,57 ± 5,55** |
+| 192 | 3 | 29,7 ± 0,1 | 7,57 ± 0,15 | 100,9 ± 6,46 | 315,8 ± 16,36 |
+| 192 | 6 | 29,73 ± 0,06 | 5,07 ± 0,06 | 131,97 ± 10,68 | 334,67 ± 0,38 |
+| 256 | 3 | 29,7 ± 0,0 | 4,43 ± 0,06 | 220,7 ± 18,12 | 484,13 ± 15,65 |
+| 320 | 3 | 29,77 ± 0,06 | 3,2 ± 0,0 | 287,47 ± 8,13 | 637,43 ± 34,91 |
+| 320 | 6 | 29,77 ± 0,06 | 3,23 ± 0,06 | 285,47 ± 2,56 | 674,47 ± 1,42 |
 
-⇒ **Chọn 192 cho demo** (mask gần gấp ba, tuổi dữ liệu ~300 ms thay vì 580–680 ms); 320 chỉ khi vật nhỏ.
-**FPS phát luôn ~29,8 ở mọi cấu hình** (LK lấp giữa) — lần nữa: **cấm** đọc thành "mask 30 FPS".
+⇒ **Chọn 192 cho demo** (mask gần gấp đôi 320, tuổi dữ liệu ~307–335 ms thay vì 625–674 ms); 320 chỉ
+khi vật nhỏ. **FPS phát ~29,6–29,8 ở mọi cấu hình** (LK lấp giữa) — lần nữa: **cấm** đọc thành
+"mask 30 FPS".
 
-**A/B 192 vs 320** (`data/ab_192_vs_320_2026-11-14_metrics.json`, chèn kẽ 3 vòng):
-nhịp mask **8,07 ± 0,40 vs 3,50 ± 0,00** (chênh −4,57 ≫ nhiễu 0,40 ⇒ **A tốt hơn**); `vos_ms`
-95,3 ± 5,2 vs 281,6 ± 10,5; tuổi mask p95 321 ± 36 vs 604 ± 2 ms. FPS phát 29,77 vs 29,87 (+0,10 so với
-nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói "320 phát mượt hơn").
+**A/B 192 vs 320** — `data/ab_192_vs_320_2026-11-14_metrics.json`, `git_rev 31a450b`,
+`git_dirty_code=false`, chèn kẽ 3 vòng:
 
-**mIoU** (`data/miou_synthetic_2026-11-14_metrics.json`): **0,9354** trên **5 frame** của fixture tổng hợp
-(ô vuông 60 px trên nền nhiễu, `image_size 192`, `vos_every 1`). Cảnh báo `5/24 frame có GT` in rõ ⇒
-**cấm** nói "mIoU trên cả clip", và đây là **cận trên** (GT ≡ pixel ô vuông, prompt = đúng bbox của nó).
+| chỉ số | 192 | 320 | nhiễu | kết luận |
+|---|---|---|---|---|
+| Nhịp mask | 7,5 ± 0,35 | 3,1 ± 0,1 | 0,6 | **192 tốt hơn** (chênh 4,4) |
+| `vos_ms` | 108,03 ± 4,27 | 281,93 ± 6,96 | 13,8 | **192 tốt hơn** |
+| Tuổi mask p95 | 315,2 ± 20,14 | 649,17 ± 18,72 | 36,2 | **192 tốt hơn** |
+| FPS phát | 29,83 ± 0,15 | 29,77 ± 0,06 | 0,5 | **KHÔNG kết luận được** (chỉ số bị chặn trần `--max-fps 30`) |
+
+**mIoU** (`data/miou_synthetic_2026-11-14_metrics.json`, `git_rev 31a450b`, `git_dirty_code=false`):
+**0,9354** trên **5 frame** (24 frame có GT, 19 frame không có mask vì chỉ dump 5 frame theo thiết kế),
+fixture tổng hợp ô vuông 60 px, `image_size 192`, `vos_every 1`. Cảnh báo `5/24` in rõ ⇒ **cấm** nói
+"mIoU trên cả clip"; đây là **cận trên** (GT ≡ pixel ô vuông, prompt = đúng bbox của nó).
 
 **Bổ sung sau khi đọc kết quả plan vòng 1 (góc "chất lượng & số đo"):**
 - **Ngưỡng nhiễu trong AGENTS §6 SAI cho ô chai** (số cũ ±0,004 `drift_iou` / ±3 ms là của ô **khuôn
@@ -144,6 +152,31 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
 - **Plan 3 ý kiến (§9.2):** 3 agent độc lập (chất lượng/sản phẩm/độ bền) đã được gọi nhưng **chưa trả kết
   quả** trong phiên. Việc vẫn làm vì mỗi hạng mục đều có **số đo + tiêu chí nghiệm thu** rõ ràng từ plan
   trước; thiếu sót này được ghi ở đây thay vì im lặng.
+
+### Review độc lập (§9.1) **trả về sau khi đã merge** — 1 P0 + 4 P1, đã đóng hết
+
+Agent `reviewer` chạy trên nhánh `feat/plan-con-lai` (HEAD `b22b7b9` so với `main`) cuối cùng **có** trả
+kết quả (3 lần trước không trả). Kết luận của nó: **CHƯA ĐỒNG Ý MERGE** — và nó đúng, kể cả sau khi nhánh
+đã merge. Đã sửa trong `main`:
+
+| Mức | Phát hiện | Xử lý |
+|---|---|---|
+| **P0** | `_dump_mask` đặt tên file theo **`result.frame_idx` của engine** (số lần gọi `process()`), không phải chỉ số frame video. Với `vos_every=3` (mặc định), `mask_000040.png` chứa mask của frame video ~120 nhưng `score_miou.py label` cắt `gt_000040.png` theo frame **clip** ⇒ **mIoU sai mà không cảnh báo**; đúng thủ tục đang viết trong `docs/thuoc-do-bam-dung.md` | `_store_vos` lấy frame video từ `_seq_frame` **trước** khi pop ⇒ truyền vào `_record_vos`/`_dump_mask`; `_after_vos` (đường `vos_every=1`) cũng truyền (trước đây dump **không chạy** ở đường này). Thêm tập `_dumped` + cảnh báo cuối phiên cho frame được yêu cầu mà không có lần VOS. **5 test mới** (`tests/test_mask_dump_frame_idx.py`). Docs: bắt buộc `--vos-every 1` khi gán GT + ghi rõ dump = mask **thô** |
+| **P1** | `score_miou`: `kiem_index` phát hiện `gt_do_model_goi_y` / thiếu file GT nhưng nhánh `score` **vẫn chấm, vẫn ghi artifact, trả 0** ⇒ "chốt chặn danh nghĩa", trái bảng quy tắc trong docs | `kiem_index` → `(chan, mem)`; lỗi chặn ⇒ in `TỪ CHỐI CHẤM`, `return 2`, **không ghi artifact**; cảnh báo mềm (thiếu `nguoi_gan`) vẫn chấm nhưng exit 1. 2 test mới (exit 2 + không tạo file) |
+| **P1** | A/B: ngưỡng nhiễu = `max(spread)` = **0** khi 3 lần lặp trùng khít ⇒ artifact từng kết luận "A tốt hơn" cho `measured_fps` 29,9 vs 29,8 — một chỉ số **bị chặn trần** `--max-fps 30` ⇒ chênh lệch là nhiễu lượng tử | Thêm **sàn nhiễu tuyệt đối** `SAN_NHIEU` (fps 0,5 · vos_fps 0,2 · vos_ms 3 ms · age 5 ms) + `BI_CHAN_TRAN = {measured_fps}` (in số, **cấm** kết luận) + `n_a`/`n_b` + đếm lần lỗi; toàn bộ lỗi ⇒ exit 1 "KHÔNG ĐO ĐƯỢC". 4 test mới |
+| **P1** | Số trong log/plan/`docs/so-lieu-bao-cao.md` **không khớp artifact đã commit** (bảng 6 dòng vs 9; A/B 8,07/3,50 vs artifact; ngưỡng ± gõ tay "± 0,4"/"± 55 ms" sai) | Bảng trong log/plan **chép lại từ artifact cuối** (`git_rev 5b85077`); A/B đo lại trên cây sạch (`31a450b`); `REGISTRY` bỏ hết số ± gõ tay, thêm trường thứ 6 `{std, n}` ⇒ script **đọc std/age_n/n_cham từ artifact** (không lệch lại được) |
+| **P2** | Nhãn ảnh quỹ đạo gọi **170 lần mask rỗng** là "mất dấu" — AGENTS §6 cấm (phần lớn là vật **ngoài khung**) | Đổi thành "mask rỗng (… phần lớn là vật ngoài khung)", khoá `n_mat_dau` → `n_mask_rong`, sửa cả test |
+| **P2** | `bang_cau_hinh --check` (mô tả "cho CI") chạy **27 phiên worker**, **ghi đè artifact** trước khi so, và luôn lệch vì md chứa `git_rev` | `--check` thành **thuần đọc**: đọc artifact + sinh md + so phần thân bảng; test ghim "không gọi `_run_once`, không đổi mtime artifact" |
+| **P2** | `tong_hop` **mất `age_n`/`frames`** ⇒ cảnh báo "p95 trên cửa sổ `age_n`" trỏ field không tồn tại | Thêm vào artifact + cột `age_n` trong `docs/bang-cau-hinh.md` |
+| **P2** | e2e chỉ so **chữ** "Mask CŨ", không kiểm `role=alert` ⇒ a11y không có test chặn hồi quy | e2e kiểm `getAttribute('role') === 'alert'` |
+| **P3** | 4 chỗ trỏ `docs/plan/14-11-2026-plan-toi-uu-va-audit-bbox.md` (**không tồn tại**); `./run miou gt` in thừa dòng `## 3.`; 2 comment nói "0 ms là mask tươi" | Sửa hết (plan đúng: `14-11-2026-plan-3-y-kien-toi-uu-msi.md`; `sed` loại trừ dòng cuối; comment nói rõ 0 là bất khả thi trên live) |
+| **Nợ → ticket** | Ngưỡng p05 ba giá trị (5/20/30) · `vos_every=1` không ghi `mask_age` · `--expect-bbox` tự đoán dạng hộp | `#23`, `#24`, `#25` trong `.scratch/camera-ai-realtime/issues/` |
+
+**Điều review nói mà tôi KHÔNG sửa (có lý do):** nó đề nghị khi `mask is None` thì ghi **mảng 0 cùng
+kích thước frame** (để "model trả rỗng = đo được, chấm 0,0"). Tôi giữ cách **bỏ qua + cảnh báo**: `mask
+None` nghĩa là model **không trả mask**, khác hẳn "trả mask rỗng" (đo được, IoU 0) — ghi ảnh đen sẽ biến
+"không có dữ liệu" thành "bám sai", đúng loại lỗi mà AGENTS §6 cấm. Cả hai đường đều không còn làm sập
+lần chấm (đã bắt `ValueError` theo từng frame, đếm `so_frame_mask_hong`).
 
 ### Góc "độ bền & hiệu năng" của plan trả về **sau khi đã merge** — đối chiếu từng phát hiện
 

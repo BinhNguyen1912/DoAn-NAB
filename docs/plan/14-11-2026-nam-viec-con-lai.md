@@ -43,12 +43,15 @@ Không có (xem trên). Các điểm *đáng lẽ* phải tranh luận, ghi lạ
 - **Tiêu chí nghiệm thu (có SỐ)** — tất cả đã đạt:
   - [x] `docs/bang-cau-hinh.md` có **9 dòng**, mỗi dòng `mean ± std` từ **3 lần** chạy worker thật;
         artifact `git_dirty_code = false`.
-  - [x] 192 vs 256 vs 320 tách được bằng nhiễu: nhịp mask 8,7–8,9 / 4,0–5,2 / 3,2–3,6 lần/giây
-        (chênh ≫ `±`).
+  - [x] 192 vs 256 vs 320 tách được bằng nhiễu: nhịp mask **7,5–7,6 / 4,3–4,4 / 3,2** lần/giây,
+        `vos_ms` **101–132 / 212–221 / 285–287** ms (số sau khi đo lại trên cây sạch, xem
+        `docs/bang-cau-hinh.md` — nguồn duy nhất, đừng chép tay từ đây).
   - [x] `scripts/score_miou.py` cho **mIoU = 0,9354** trên fixture tổng hợp và in cảnh báo `5/24 frame`.
-  - [x] HUD in `Mask đang hiển thị: N ms tuổi` và **`role=alert`** "Mask CŨ" khi ≥ 1500 ms (1 check e2e).
-  - [x] `scripts/ab_test.py` kết luận theo ngưỡng `max(std_a, std_b)`; A/B 192 vs 320: nhịp mask
-        8,07 ± 0,40 vs 3,50 ± 0,00 ⇒ **A tốt hơn** (chênh 4,57 ≫ nhiễu 0,40).
+  - [x] HUD in `Mask đang hiển thị: N ms tuổi` và **`role=alert`** "Mask CŨ" khi ≥ 1500 ms — e2e kiểm
+        **cả chữ lẫn thuộc tính `role`** (đã bổ sung sau review 14-11: bản đầu chỉ so chữ).
+  - [x] `scripts/ab_test.py` kết luận theo ngưỡng `max(spread_a, spread_b, sàn)`; A/B 192 vs 320:
+        nhịp mask 7,5 ± 0,35 vs 3,1 ± 0,1 ⇒ **A tốt hơn** (chênh 4,4 ≫ nhiễu 0,6). Số đọc từ
+        `data/ab_192_vs_320_2026-11-14_metrics.json` — **không** trích từ tài liệu này.
   - [x] `./run lint` xanh, `./run test` = 1126 passed, `./run webtest` 47, `./run e2e` PASS.
 
 ## 📌 Việc tách ra ticket
