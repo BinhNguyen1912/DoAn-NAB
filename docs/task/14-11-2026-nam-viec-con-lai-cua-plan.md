@@ -145,7 +145,25 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
   quả** trong phiên. Việc vẫn làm vì mỗi hạng mục đều có **số đo + tiêu chí nghiệm thu** rõ ràng từ plan
   trước; thiếu sót này được ghi ở đây thay vì im lặng.
 
+### Góc "độ bền & hiệu năng" của plan trả về **sau khi đã merge** — đối chiếu từng phát hiện
+
+| Phát hiện | Trạng thái |
+|---|---|
+| **Ngưỡng nhiễu trong AGENTS §6 lỗi thời 2–6×** (`vos_fps ±1,2 %`, `mask_age_p95 ±3 ms`, `drift_iou ±0,004`) — đo lại n=3: `vos_fps` Δ0,3–0,5 (**3,3–5,7 %**), `mask_age_p95` Δ**6,0–32,5 ms**, `drift_iou` Δ**0,010–0,019** | **Đã sửa** (AGENTS §6 + bullet "lấy theo ô chọn"); số khớp với phân tích độc lập của tôi (0,010 / 6 ms / 32 ms) |
+| `display_fps` bão hoà 29,8–29,9 ở mọi `image_size` ⇒ không dùng để chọn cấu hình | **Đã ghi** trong AGENTS §6 + bảng cấu hình có cột cảnh báo |
+| `--seconds` đổi chính đại lượng đo (p95 215–228 ms @55 s vs 268–301 ms @11 s) ⇒ cấm trộn độ dài phiên | **Đã tránh**: `bang_cau_hinh.py`/`ab_test.py` dùng **cùng `--frames`** cho mọi cấu hình; cần ghi thành luật khi ai đó đổi sang `--seconds` |
+| Đường live **không** ghi mask ⇒ không chấm được "bám đúng" | **Đã bổ sung** `--dump-mask-frames`/`--dump-mask-dir` (#6) |
+| `status.json` **không** ghi `image_size`/`vos_every` hiệu lực ⇒ override sai khoá là no-op im lặng (xanh giả) | **Còn hở**: CLI `live_worker.py` là argparse (giá trị sai bị từ chối, không no-op như hydra) nên rủi ro thấp hơn, nhưng artifact vẫn **không tự kiểm** được "cấu hình yêu cầu == cấu hình chạy". → ticket dưới |
+| `experiment_occlusion.py` ghi đè tên file cố định, không `git_dirty_code`, n=1, đang bị trích trong `so-lieu-bao-cao.md` | **Còn hở** → ticket dưới (rủi ro: chạy lại @320 là ghi đè số đã công bố) |
+| Wilson CI nên tính **theo khung**, không theo điểm (điểm trong 1 khung tương quan) | **Chưa làm** (`score_miou` báo mIoU + p05 + n, chưa có CI) → ticket dưới |
+| `docs/media/traj/binh1_vat_ra_khung.png` untracked | **Không đúng**: đã commit ở `27f43af` (agent đọc snapshot cũ) |
+| Không có `ffmpeg`/`ffprobe` ⇒ mp4v đen trên Chrome | **Không đúng trên máy này**: `./run e2e` kiểm "trình duyệt GIẢI MÃ được video (H.264)" và PASS ⇒ đường xuất H.264 đang chạy; chỉ là `ffprobe` CLI không có (đừng dùng nó làm nghiệm thu) |
+| `num_maskmem` không có plumbing + không có GT để chứng minh lợi ích | **Đồng ý bỏ khỏi phạm vi** (đã không làm) |
+
 ## 📌 Việc cần làm tiếp (Next steps)
+- [ ] **`status.json` echo cấu hình hiệu lực** (`image_size`, `vos_every`, `mask_age_dinh_nghia`) + test "yêu cầu == hiệu lực" để artifact tự kiểm (phát hiện của góc "độ bền", P2).
+- [ ] **`experiment_occlusion.py`**: thêm `--out` + `git_dirty_code`/`git_rev` top-level, không ghi đè tên file đã có trong `REGISTRY` của `docs/so-lieu-bao-cao.md` (rủi ro ghi đè số đã công bố).
+- [ ] **Wilson CI theo KHUNG** trong `score_miou` (n khung = 5–20; CI theo điểm sẽ thổi phồng).
 - [ ] **Gán tay 10–20 frame** cho `data/binh1.mp4` (theo `docs/thuoc-do-bam-dung.md`, ~20–30 phút) ⇒ có
       **mIoU trên video thật** (hiện chỉ có cận trên trên fixture tổng hợp).
 - [ ] Đo `--full` của `democheck` với **webcam/relay thật** (`source: 0`) — rủi ro "Device busy" do
