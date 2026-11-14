@@ -150,6 +150,60 @@ def drift_values(rows) -> list:
     return [row["drift_iou"] for row in rows if row.get("drift_iou") is not None]
 
 
+def thong_ke_mau(rows) -> dict:
+    """Thống kê một NHÓM mẫu — hàm THUẦN, tự bảo vệ bẫy "0 ≠ chưa đo".
+
+    `empty_frac` = tỉ lệ mẫu CÓ cờ `empty` (mẫu không có cờ không vào mẫu số); `drift_iou_mean`
+    chỉ tính trên mẫu có `drift_iou`. Không có mẫu nào ⇒ **`None`** (chưa đo), không phải `0,0`.
+    """
+    empty_flags = [row["empty"] for row in rows if row.get("empty") is not None]
+    drifts = drift_values(rows)
+    return {
+        "n": len(rows),
+        "n_empty_do_duoc": len(empty_flags),
+        "empty_frac": round(sum(1 for v in empty_flags if v) / len(empty_flags), 3)
+                      if empty_flags else None,
+        "n_drift": len(drifts),
+        "drift_iou_mean": round(sum(drifts) / len(drifts), 4) if drifts else None,
+    }
+
+
+def tach_theo_khung(rows, dau: int, cuoi: int) -> dict:
+    """Tách mẫu theo KHUNG frame `[dau, cuoi]` và thống kê mỗi bên — hàm THUẦN.
+
+    Vì sao cần: `empty_runs`/`empty_frac_window` **không phân biệt** "model mất dấu" với "vật
+    không còn trong khung". Đo 14-11 trên `data/binh1.mp4` (ô đúng = chai): cả phiên 35–36 % mẫu
+    rỗng, nhưng **0,0 %** khi chai còn trong khung (frame ≤ 105) — 100 % số rỗng là đoạn người ta
+    đã cất chai đi (ảnh frame 160/260 không có chai). Không tách khung thì con số "mất dấu 35 %"
+    bị đọc thành lỗi model.
+
+    Cả hai bên **luôn** được trả về cùng nhau để người đọc không thể trích riêng "trong khung" mà
+    giấu phần còn lại. Mẫu không có `frame_idx` (hiếm: `_seq_frame` bị cắt) xếp vào
+    `khong_ro_khung`, **không** bị tính vào bên nào.
+
+    Input : `rows` từ `read_samples()`, `dau`/`cuoi` là frame_idx **bao gồm hai đầu**.
+    Output: `{khung, trong_khung, ngoai_khung, khong_ro_khung}` — mỗi nhóm là `thong_ke_mau()`.
+    """
+    dau, cuoi = min(int(dau), int(cuoi)), max(int(dau), int(cuoi))
+    trong, ngoai, khong_ro = [], [], []
+    for row in rows:
+        idx = row.get("frame_idx")
+        if idx is None:
+            khong_ro.append(row)
+        elif dau <= idx <= cuoi:
+            trong.append(row)
+        else:
+            ngoai.append(row)
+    return {
+        "khung": [dau, cuoi],
+        "trong_khung": thong_ke_mau(trong),
+        "ngoai_khung": thong_ke_mau(ngoai),
+        "khong_ro_khung": thong_ke_mau(khong_ro),
+        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau: số rỗng ở `ngoai_khung` là "
+                   "vật đã rời khung, không phải model mất dấu.",
+    }
+
+
 def rolling_p05(values, window: int = WINDOW) -> list:
     """p05 của từng cửa sổ `window` mẫu liên tiếp; `None` cho tới khi đủ mẫu.
 

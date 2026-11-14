@@ -246,6 +246,24 @@ def _ma_thoat(ket_qua: bool) -> int:
     return 0 if ket_qua else 1
 
 
+def _parse_frame_window(text: str) -> list:
+    """`"0:105"` → `[0, 105]`; chuỗi rỗng → `[]` (không hỏi gì). Sai định dạng → `ValueError`.
+
+    Hàm thuần để test được phần parse (CLI chỉ gọi `parser.error` khi nó ném lỗi).
+    """
+    if not text:
+        return []
+    try:
+        nums = [int(v) for v in text.replace(":", " ").split()]
+    except ValueError as exc:
+        raise ValueError("phải là dau:cuoi (số nguyên, vd 0:105)") from exc
+    if len(nums) != 2:
+        raise ValueError("phải có đúng 2 số: dau:cuoi (vd 0:105)")
+    if nums[0] < 0:
+        raise ValueError("`dau` phải >= 0")
+    return nums
+
+
 def _verdict(summary: dict) -> tuple[bool, list]:
     """(đạt, danh sách lý do) — điều kiện đăng ký trước của "đường demo thật chạy được"."""
     reasons = []
@@ -272,6 +290,11 @@ def main() -> int:
     parser.add_argument("--out", default="")
     parser.add_argument("--frame-dir", default="")
     parser.add_argument("--out-dir", default="/dev/shm/doan-live-relay")
+    parser.add_argument("--frame-window", default="",
+                        help="dau:cuoi — KHUNG frame mà vật CÒN trong khung (vd 0:105). Dùng khi vật "
+                             "rời khỏi khung giữa clip: `empty_frac_window` gộp cả hai hiện tượng "
+                             "⇒ artifact tách `trong_khung`/`ngoai_khung` (log 14-11: binh1 cất chai "
+                             "từ frame ~115 nên 35% 'mất dấu' là ĐÚNG, không phải lỗi model)")
     parser.add_argument("--device", default=None, choices=["cpu", "cuda"],
                         help="thiết bị chạy model của phiên live (API chuyển xuống worker). "
                              "Đo trên GPU PHẢI có cờ này để artifact biết số FPS là của máy nào")
@@ -280,6 +303,13 @@ def main() -> int:
     bbox = [int(v) for v in args.bbox.replace(",", " ").split()] if args.bbox else []
     if len(bbox) != 4:
         parser.error("--bbox phải là x,y,w,h (đây là mode track)")
+
+    frame_window = []
+    if args.frame_window:
+        try:
+            frame_window = _parse_frame_window(args.frame_window)
+        except ValueError as exc:
+            parser.error(f"--frame-window {exc}")
 
     stamp = datetime.now().astimezone()   # có offset: WSL chạy UTC, tên file theo giờ VN
     out = Path(args.out) if args.out else (
@@ -389,10 +419,14 @@ def main() -> int:
         "device_worker_log": device_log,
     })
     series = None
+    theo_khung = None
     if drift["csv"]:
         # Đặt bí danh: `summarize` là hàm tóm tắt mẫu `/api/live/status` của chính script này.
-        from src.drift_samples import read_samples, summarize as summarize_series
-        series = summarize_series(read_samples(_REPO_ROOT / drift["csv"]))
+        from src.drift_samples import read_samples, summarize as summarize_series, tach_theo_khung
+        rows = read_samples(_REPO_ROOT / drift["csv"])
+        series = summarize_series(rows)
+        if frame_window:
+            theo_khung = tach_theo_khung(rows, *frame_window)
     artifact = {
         "do_luc": stamp.isoformat(timespec="seconds"),
         "git_rev": git_rev,
@@ -429,6 +463,9 @@ def main() -> int:
         "drift_samples_n_dong": drift["n_dong"],
         "drift_samples_ly_do": drift["ly_do"],
         "drift_series": series,
+        # Tách "vật còn trong khung" / "vật đã rời khung" khi có `--frame-window`. `None` = không
+        # hỏi ⇒ KHÔNG có nghĩa là "0 % rỗng trong khung".
+        "cua_so_frame": theo_khung,
         "anh_frame": frames_saved,
         "anh_frame_loi": frame_errors,
         "mau_cuoi": samples[-3:],
@@ -463,6 +500,14 @@ def main() -> int:
               f"(tỉ lệ báo {series['bao_dong_070']['ti_le_bao']})")
         print(f"  phát hiện: sau {series['phat_hien']['phat_hien_sau_mau']} mẫu kể từ mẫu xấu đầu "
               f"(null = chưa có mẫu xấu nào hoặc chưa đủ cửa sổ)")
+        if theo_khung:
+            a, b = theo_khung["khung"]
+            trong, ngoai = theo_khung["trong_khung"], theo_khung["ngoai_khung"]
+            print(f"  KHUNG frame {a}–{b} (vật còn trong khung): n={trong['n']} "
+                  f"· mask rỗng={trong['empty_frac']} · drift_tb={trong['drift_iou_mean']} "
+                  f"(n_drift={trong['n_drift']})")
+            print(f"  NGOÀI khung (vật đã rời): n={ngoai['n']} · mask rỗng={ngoai['empty_frac']} "
+                  f"· drift_tb={ngoai['drift_iou_mean']} — rỗng ở đây là ĐÚNG, không phải lỗi model")
     else:
         print(f"Dãy mẫu drift: KHÔNG có ({drift['ly_do']})")
     print(f"Ghi: {out}")

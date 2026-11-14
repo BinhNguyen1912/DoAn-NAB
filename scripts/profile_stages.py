@@ -66,7 +66,9 @@ def main() -> int:
     parser.add_argument("--image-size", type=int, default=192)
     parser.add_argument("--frames", type=int, default=12)
     parser.add_argument("--source", default="data/binh1.mp4")
-    parser.add_argument("--bbox", default="104,308,209,287")
+    # Ô CHAI của data/binh1.mp4. Bản cũ 104,308,209,287 phủ KHUÔN MẶT (audit 14-11 —
+    # docs/demo-clip-va-o-chon.md), nên mọi bảng "ms từng tầng" trước đó đo trên mặt.
+    parser.add_argument("--bbox", default="300,275,150,410")
     args = parser.parse_args()
 
     engine = TrackerEngine.build_default(device="cpu", image_size=args.image_size)

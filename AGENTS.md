@@ -224,6 +224,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **Hybrid chỉ giữ được ô bao trên một số clip**: binh1 drift 0,88–0,89 (p05 0,66–0,72), simloss 0,87
   (p05 0,64), **binh2 p05 = 0,00 (VOS trả mask rỗng 26 lần; `mask_drops`/`lost_streak` = 0 nên KHÔNG
   phải LK mất dấu)**. Cấm phát biểu "hybrid luôn bám được" — phải nêu clip + drift đo được.
+  **ĐÍNH CHÍNH 14-11**: các số trên đo bằng ô **sai** — `binh1` `104,308,209,287` phủ **khuôn mặt**,
+  `binh2` `200,400,300,500` phủ **2 chai + 2 tay**; và phần lớn "mask rỗng" là **vật đã rời khung**
+  (`binh1` cất chai từ frame ~115). Ô + khung đúng: `docs/demo-clip-va-o-chon.md`.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
 - **`measure_live_relay` báo `ket_qua = true` KHÔNG có nghĩa là bám đúng vật**: nó chỉ kiểm đường ống
@@ -275,6 +278,19 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   đo 13-11 relay khai 16,26 FPS trong khi nhịp đổi thật ~19,9/s ⇒ chỉ dùng `measured_fps`/`display_fps`
   của API/worker. Log + plan: `docs/task/13-11-2026-ui-moi-va-tu-dong-do-nguon.md`,
   `docs/plan/13-11-2026-ui-tu-dong-nguon.md`.
+
+- **“Mất dấu” phải tách khỏi “vật đã rời khung” — ô chọn và khung frame phải kiểm bằng ẢNH.**
+  Đo 14-11 (đường live, @192, `vos_every 3`, 55 s, 3 lần xen kẽ, `git_dirty_code=false`): ô chai
+  `binh1 300,275,150,410` cho `empty` **35–36 % cả phiên nhưng 0,0 % khi chai trong khung** (`0:110`);
+  `binh2 330,330,150,360` cho 22–23 % nhưng **0,0 %** trong khung `0:160`. Ô **khuôn mặt**
+  (`104,308,209,287`, mặc định cũ của `profile_stages.py`/`benchmark_light_trackers.py`/
+  `measure_watchdog.py`) cho drift 0,881–0,884 và **0 % rỗng** — vì mặt luôn ở trong khung. ⇒ dùng
+  `scripts/measure_live_relay.py --frame-window dau:cuoi` (artifact có `cua_so_frame.trong_khung` /
+  `.ngoai_khung`), **cấm** trích tỉ lệ rỗng cả phiên như “model mất dấu”. Không cần train lại model:
+  checkpoint `small` cho 31,1 % rỗng vs `tiny` 31,8 % mà chậm +18 %; `image_size` 256/320 làm
+  `drift_iou` **giảm** (0,34/0,29) và chậm 1,8–2,5×; `vos_every` 1/2/3 như nhau. Chi tiết:
+  `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
+  `docs/demo-clip-va-o-chon.md`.
 
 ## 7. Các repo/model tham khảo
 

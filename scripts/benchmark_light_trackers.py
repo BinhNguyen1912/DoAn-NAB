@@ -89,8 +89,10 @@ def bench_opencv_tracker(frames, bbox, factory) -> float:
 def main() -> int:
     ap = argparse.ArgumentParser(description="Đo chi phí tracker nhẹ trên CPU")
     ap.add_argument("--source", default="data/binh1.mp4")
-    ap.add_argument("--bbox", default="104,308,209,287",
-                    help="'x,y,w,h' frame 0 — CÙNG định dạng với tools/run_live.py --bbox")
+    ap.add_argument("--bbox", default="300,275,150,410",
+                    help="'x,y,w,h' frame 0 — CÙNG định dạng với tools/run_live.py --bbox. Mặc định là "
+                         "ô CHAI của data/binh1.mp4; ô cũ 104,308,209,287 phủ KHUÔN MẶT (sửa 14-11, "
+                         "xem docs/demo-clip-va-o-chon.md)")
     ap.add_argument("--frames", type=int, default=200)
     ap.add_argument("--onnx", default=None, help="file ONNX cho TrackerNano (tuỳ chọn)")
     args = ap.parse_args()

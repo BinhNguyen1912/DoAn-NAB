@@ -307,3 +307,27 @@ class TestLuuMauDrift:
         assert relay._ten_clip("data/binh1.mp4") == "binh1"
         assert relay._ten_clip("https://cam/snapshot.jpg") == "relay"
         assert relay._ten_clip("data/my clip (1).mp4") == "my_clip_1_"
+
+
+class TestParseFrameWindow:
+    """`--frame-window dau:cuoi` — khai báo KHUNG frame mà vật còn trong khung.
+
+    Vì sao: `empty_frac_window` gộp "model mất dấu" với "vật đã rời khung" (đo 14-11 trên `binh1`:
+    35 % cả phiên nhưng 0,0 % khi chai còn trong khung). Sai định dạng phải ra `ValueError` để CLI
+    in `--frame-window ...` + thoát, KHÔNG được lặng lẽ coi như "không hỏi gì".
+    """
+
+    def test_doc_binh_thuong(self):
+        assert relay._parse_frame_window("0:105") == [0, 105]
+
+    def test_chuoi_rong_la_khong_hoi_gi(self):
+        assert relay._parse_frame_window("") == []
+
+    def test_dao_nguoc_van_nhan(self):
+        """`105:0` được chấp nhận (người dùng gõ ngược) — hàm tách khung tự sắp lại."""
+        assert relay._parse_frame_window("105:0") == [105, 0]
+
+    @pytest.mark.parametrize("text", ["abc", "1", "1:2:3", "-5:10"])
+    def test_sai_dinh_dang_nem_value_error(self, text):
+        with pytest.raises(ValueError):
+            relay._parse_frame_window(text)
