@@ -109,7 +109,8 @@
 - [ ] Cân nhắc thêm `.gitattributes` (`* text=auto eol=lf`, `*.cmd text eol=crlf`) ở PR riêng để
       chặn CRLF tận gốc.
 - [ ] Nếu cần mở web từ bản cũ: `CAM_BASELINE_TAG=demo-web-e2e-2026-11-08 ./run demobase web`.
-- [ ] PR `feat/run-demobase` → `main` (review độc lập đã xong, P0 = 0).
+- [x] PR `feat/run-demobase` → `main` (review độc lập đã xong, P0 = 0) — merge `b011269` ngày 14-11,
+      đã push `origin/main`; artifact lần chạy thật + mục kiểm tra trước merge đi kèm commit `4690860`.
 - [ ] (P3 còn nợ) Không dùng số đo sinh từ `demobase` làm artifact báo cáo vì `git_dirty = true`.
 
 ## 📚 Tài liệu tham khảo
