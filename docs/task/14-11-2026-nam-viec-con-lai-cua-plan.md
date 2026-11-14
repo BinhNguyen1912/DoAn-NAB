@@ -84,7 +84,21 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
 (ô vuông 60 px trên nền nhiễu, `image_size 192`, `vos_every 1`). Cảnh báo `5/24 frame có GT` in rõ ⇒
 **cấm** nói "mIoU trên cả clip", và đây là **cận trên** (GT ≡ pixel ô vuông, prompt = đúng bbox của nó).
 
-**Kiểm tra:** `./run lint` xanh · `./run test` **1126 passed** (thêm 71 test: 17 bảng cấu hình · 18 mIoU ·
+**Bổ sung sau khi đọc kết quả plan vòng 1 (góc "chất lượng & số đo"):**
+- **Ngưỡng nhiễu trong AGENTS §6 SAI cho ô chai** (số cũ ±0,004 `drift_iou` / ±3 ms là của ô **khuôn
+  mặt**). Tôi tự kiểm lại từ artifact đã commit: ô chai (`data/lan2_chai_binh1_lan1..3_metrics.json`, 55 s)
+  cho `drift_iou` 0,444–0,454 (**±0,010**) và `mask_age_p95` 215,4–221,4 (**±6 ms**); phiên 11 s
+  (`data/chu_ky_chai_binh1_1vong_lan*_metrics.json`) cho **±0,019** và **±32 ms**. Đã sửa AGENTS §6
+  (nói rõ "lấy theo ô chọn") + thêm kết luận `measured_fps` bão hoà ở mọi `image_size`.
+- **Hai định nghĩa "nhiễu" trong repo** (`repeatability.spread` = max−min vs `ab_test` tự tính std) ⇒
+  gom về `scripts/repeatability.py`, nên `ab_test` nay gọi `la_khac_biet`/`spread` (repeatability có
+  caller thật đầu tiên). Đo lại A/B: `FPS phát` 29,8 vs 29,7 chênh −0,1 **nằm trong nhiễu 0,2** ⇒ nay in
+  đúng **"không phân biệt được"** (bản trước kết luận "B tốt hơn" — chính là kiểu sai cần chặn).
+- Ghi nhận (chưa làm, đã có trong Next steps): `src/mask_filter.mask_iou(∅,∅)=1,0` và
+  `experiment_occlusion._mask_iou_or_nan` vẫn là 2 bản sao ngữ nghĩa; nên tách `src/mask_metrics.py` khi
+  có người thứ hai dùng.
+
+**Kiểm tra:** `./run lint` xanh · `./run test` **1127 passed** (thêm 71 test: 17 bảng cấu hình · 18 mIoU ·
 13 media · 17 A/B · 6 vitest cho HUD) · `./run webtest` 47 passed · `npm run build` OK ·
 `./run e2e` **PASS** (thêm 1 check mới: HUD hiện "Mask CŨ: 2,6 s" + `role=alert` khi tuổi dữ liệu 2600 ms).
 
