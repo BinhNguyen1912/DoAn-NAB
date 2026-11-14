@@ -49,12 +49,15 @@ class TestRegistryKhopArtifact:
     """Mọi dòng của registry phải trỏ được tới artifact + khoá có thật trong repo."""
 
     def test_moi_dong_co_du_5_truong(self):
+        """5 trường bắt buộc; trường thứ 6 (tuỳ chọn) là dict `std`/`n` để in `mean ± std (n)`."""
         for row in so_lieu.REGISTRY:
-            assert len(row) == 5, f"dòng thiếu trường: {row}"
+            assert 5 <= len(row) <= 6, f"dòng sai số trường: {row}"
+            if len(row) == 6:
+                assert set(row[5]) <= {"std", "n"}, row
             assert row[4].strip(), f"dòng {row[0]!r} thiếu cảnh báo 'CẤM trích thành'"
 
     def test_artifact_va_khoa_ton_tai(self):
-        for claim, artifact, key, _unit, _cam in so_lieu.REGISTRY:
+        for claim, artifact, key, _unit, _cam, *_ in so_lieu.REGISTRY:
             path = so_lieu._REPO_ROOT / artifact
             assert path.exists(), f"thiếu artifact {artifact} (dòng {claim!r})"
             data = json.loads(path.read_text(encoding="utf-8"))

@@ -73,20 +73,26 @@ REGISTRY = [
     ("Nhịp mask ở `vos_every 2` (cấu hình nhanh nhất, `image_size 192`)",
      "data/bang_cau_hinh_2026-11-14_metrics.json",
      "cau_hinh.192_2.vos_fps.mean", "lần/giây",
-     "mean của 3 lần ± 0,4 (`std` trong cùng artifact). CẤM viết 'mask 30 FPS' và CẤM so với FPS "
-     "phát 29,9 — hai nhịp khác nhau."),
+     "CẤM viết 'mask 30 FPS' và CẤM so với FPS phát 29,7 — hai nhịp khác nhau.",
+     {"std": "cau_hinh.192_2.vos_fps.std", "n": "cau_hinh.192_2.vos_fps.n"}),
     ("Tuổi dữ liệu ảnh p95 ở `image_size 192`, `vos_every 3`", "data/bang_cau_hinh_2026-11-14_metrics.json",
      "cau_hinh.192_3.mask_age_p95.mean", "ms (p95)",
-     "3 lần ± 35 ms. `vos_ms` chỉ là phần model; 'một frame tốn bao lâu' phải cộng `pre_ms`."),
+     "`vos_ms` chỉ là phần model; 'một frame tốn bao lâu' phải cộng `pre_ms`. p95 dựa trên "
+     "`cau_hinh.192_3.age_n` mẫu — đọc kèm, n nhỏ thì p95 ≈ max.",
+     {"std": "cau_hinh.192_3.mask_age_p95.std", "n": "cau_hinh.192_3.age_n.mean"}),
     ("Tuổi dữ liệu ảnh p95 ở `image_size 320`, `vos_every 3` (chi tiết vật nhỏ)",
      "data/bang_cau_hinh_2026-11-14_metrics.json",
      "cau_hinh.320_3.mask_age_p95.mean", "ms (p95)",
-     "3 lần ± 55 ms ⇒ chênh với 192 (302 ms) LỚN HƠN nhiễu nên mới được nói 'cũ hơn hẳn'."),
+     "Chỉ được nói 'cũ hơn hẳn' nếu chênh với 192 LỚN HƠN `std` lớn hơn của hai dòng (đọc `std` ngay "
+     "trong cột này, đừng gõ tay).",
+     {"std": "cau_hinh.320_3.mask_age_p95.std", "n": "cau_hinh.320_3.age_n.mean"}),
     # ── Việc #6 (14-11): mIoU vs GT — thước đo DUY NHẤT nói được đúng/sai ───────────────────────
     ("mIoU mask vs GT trên fixture TỔNG HỢP (ô vuông trên nền nhiễu)", "data/miou_synthetic_2026-11-14_metrics.json",
      "ket_qua.mIoU", "IoU",
-     "CẬN TRÊN: GT ≡ pixel ô vuông, prompt = đúng bbox của nó. CẤM trích như mIoU trên video thật — "
-     "muốn số thật thì gán tay (`scripts/score_miou.py label`)."),
+     "CẬN TRÊN: GT ≡ pixel ô vuông, prompt = đúng bbox của nó. Số này chấm trên `so_frame_cham` "
+     "frame trong tổng `so_frame_gt` — CẤM nói 'mIoU cả clip'. CẤM trích như mIoU trên video thật — "
+     "muốn số thật thì gán tay (`scripts/score_miou.py label`).",
+     {"n": "ket_qua.n_cham"}),
 ]
 
 HEADER = """# Số liệu dùng cho báo cáo — sinh tự động, đừng sửa tay
@@ -143,17 +149,33 @@ def _fmt(value) -> str:
 
 
 def build_table() -> str:
-    """Sinh bảng markdown (hàm thuần, không ghi file) — test so được từng dòng."""
+    """Sinh bảng markdown (hàm thuần, không ghi file) — test so được từng dòng.
+
+    Dòng REGISTRY có thể có **phần tử thứ 6** (dict): `{"std": "khoá.std", "n": "khoá_n"}`. Khi có,
+    script tự in `mean ± std (n)` **đọc từ artifact** thay vì để người viết gõ tay "± 0,4" vào cột
+    cảnh báo — chính các số gõ tay đó đã sai (0,4 là của cấu hình khác; ±55 ms trong khi artifact ghi
+    32,05) — review độc lập 14-11, P1.
+    """
     lines = ["| Tuyên bố | Số | Đơn vị | Artifact | Lệnh / khoá | CẤM trích thành |",
              "|---|---|---|---|---|---|"]
-    for claim, artifact, key, unit, cam in REGISTRY:
+    for row in REGISTRY:
+        claim, artifact, key, unit, cam = row[:5]
+        extra = row[5] if len(row) > 5 else {}
         path = _REPO_ROOT / artifact
         try:
             data = json.loads(path.read_text(encoding="utf-8"))
         except (OSError, ValueError):
             data = None
         value = _THIEU if data is None else _get(data, key)
-        lines.append(f"| {claim} | **{_fmt(value)}** | {unit} | `{artifact}` | "
+        hien = _fmt(value)
+        if data is not None and extra.get("std"):
+            std = _get(data, extra["std"])
+            n = _get(data, extra["n"]) if extra.get("n") else _THIEU
+            if std is not _THIEU and std is not None:
+                hien = f"{hien} ± {_fmt(std).strip('`')}"
+                if n is not _THIEU and n is not None:
+                    hien += f" (n = {_fmt(n)})"
+        lines.append(f"| {claim} | **{hien}** | {unit} | `{artifact}` | "
                      f"`{key}` | {cam} |")
     return "\n".join(lines)
 

@@ -1,14 +1,14 @@
 {
-  "git_rev": "7e8a8cf9cfadf50c15711d1be09371b20078c854",
+  "git_rev": "5b850772f6312aed8dea5c608fad01e8ba15afad",
   "git_dirty": true,
-  "git_dirty_code": false,
+  "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-14T15:36:49",
+    "do_luc": "2026-11-14T18:39:41",
     "lenh": "scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt/masks --out data/miou_synthetic_2026-11-14_metrics.json",
-    "git_rev": "7e8a8cf9cfadf50c15711d1be09371b20078c854",
+    "git_rev": "5b850772f6312aed8dea5c608fad01e8ba15afad",
     "git_dirty": true,
-    "git_dirty_code": false,
+    "git_dirty_code": true,
     "git_loi": null,
     "clip": "data/synthetic_gt.mp4",
     "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
@@ -23,6 +23,7 @@
     "n_cham": 5,
     "so_frame_gt_rong": 0,
     "so_frame_thieu_mask": 19,
+    "so_frame_mask_hong": 0,
     "frames": [
       {
         "frame_idx": 0,
@@ -151,5 +152,6 @@
       }
     ]
   },
-  "canh_bao_gt": []
+  "canh_bao_gt": [],
+  "loi_chan": []
 }

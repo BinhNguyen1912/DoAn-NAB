@@ -35,8 +35,11 @@ python scripts/score_miou.py label --clip data/binh1.mp4 \
 python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/x --check-index
 
 # 4) chạy model trên đúng clip đó, xuất mask tại ĐÚNG các frame đã gán
+#    ⚠ --vos-every 1 là BẮT BUỘC khi gán GT: với vos_every > 1 chỉ frame chia hết cho N mới có lần
+#    VOS, nên frame 40 (N=3) không có mask nào và lần chấm sẽ thiếu frame mà không rõ vì sao.
+#    Tên file mask = **chỉ số frame VIDEO** (không phải bộ đếm nội bộ của engine) — đã sửa 14-11.
 python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 \
-    --image-size 192 --vos-every 3 --dump-mask-frames "0,40,80,120,160,200,240,280" \
+    --image-size 192 --vos-every 1 --dump-mask-frames "0,40,80,120,160,200,240,280" \
     --stop-after-frames 300
 # (ô chọn phải nằm ở /tmp/run1/bbox.json, dạng {"x":…,"y":…,"w":…,"h":…})
 
@@ -44,6 +47,8 @@ python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 \
 python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/run1/masks \
     --out data/miou_binh1_tay_metrics.json
 ```
+
+Mask dump là mask **thô** của model (trước bước làm mượt `--mask-smoothing`) — đúng cái cần chấm.
 
 Lưu ý khi tô: **không** dùng chính SAM 2 để sinh mask rồi sửa lại — nếu dùng thì phải khai
 `--gt-do-model-goi-y` và script sẽ **từ chối** dùng bộ GT đó làm bằng chứng (nó có thể dùng để tự
