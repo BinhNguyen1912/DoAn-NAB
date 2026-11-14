@@ -185,9 +185,12 @@ def _worker_telemetry(out_dir) -> dict:
     except (OSError, ValueError):
         return {}
     keys = ("state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
-            "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
-            "mask_age_p95", "age_n", "stability", "stability_n", "stability_shown",
-            "stability_shown_n", "empty_runs", "mask_holds", "mask_drops", "lost_streak")
+            # Pha của chu kỳ VOS (14-11): biết 32 ms "thừa" nằm ở đâu thay vì đoán.
+            "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms",
+            "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_cu_ms",
+            "mask_age_total_ms", "mask_age_p95", "age_n", "stability", "stability_n",
+            "stability_shown", "stability_shown_n", "empty_runs", "empty_frac_window",
+            "empty_window_n", "mask_holds", "mask_drops", "lost_streak")
     return {key: data.get(key) for key in keys if key in data}
 
 
