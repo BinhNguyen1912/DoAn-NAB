@@ -332,10 +332,13 @@ kéo chuột → *Bám đối tượng*.
 > **Nội suy LK giữ ô bao tốt đến đâu** (đo 08-11, `image_size=192`, 900 frame/cấu hình, 3 lần/cấu
 > hình): `drift_iou` = IoU giữa ô bao **người xem đã thấy ở đúng frame đó** và ô bao VOS sửa lại —
 > binh1: **0,88–0,89** (p05 0,66–0,72); binh1_simloss: 0,87 (p05 0,64).
-> **Tuổi dữ liệu ảnh người xem thực thấy** (`mask_age_total_ms` = tuổi mask + thời gian suy luận)
-> p95 = **210–250 ms ở mọi `vos_every` ∈ {2, 3, 6}** — vì VOS chỉ chạy được 7,5–8,7 lần/giây
-> (`vos_ms` ≈ 130 ms), nên giảm `vos_every` **không** làm mask mới hơn. HUD 30 FPS nhưng mask/ô bao
-> lấy từ kết quả model cũ khoảng **0,2 giây** — không được mô tả là "mask 30 FPS".
+> **Tuổi dữ liệu ảnh người xem thực thấy** — có **hai định nghĩa**, đừng trộn (từ 14-11):
+> `mask_age_cu_ms` = tuổi mask + thời gian suy luận (**định nghĩa cũ**): p95 **210–250 ms** ở mọi
+> `vos_every` ∈ {2, 3, 6} — vì VOS chỉ chạy được 7,5–9,7 lần/giây (`vos_ms` 84–130 ms), nên giảm
+> `vos_every` **không** làm mask mới hơn. `mask_age_total_ms` = queue + pre + vos + post + age
+> (**tuổi dữ liệu thật**, đo 14-11: p95 **268,7–301,2 ms**, 3 lần, `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`).
+> HUD 30 FPS nhưng mask/ô bao lấy từ kết quả model cũ khoảng **0,25–0,3 giây** — không được mô tả là
+> "mask 30 FPS".
 > ⚠️ Trên `binh2`: drift p05 = **0,00** (VOS trả mask rỗng 26 lần) ⇒ **không** được nói "hybrid luôn
 > bám được". Ngưỡng nhiễu (3 lần cùng cấu hình): `drift_iou` ±0,004, `drift_iou_p05` ±0,057,
 > `vos_fps` ±1,2 %, `measured_fps` ±0,3 %, `mask_age_p95` ±3 ms.

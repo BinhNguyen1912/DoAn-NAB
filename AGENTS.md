@@ -293,13 +293,16 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`,
   `docs/demo-clip-va-o-chon.md`.
 
-- **Chu kỳ VOS đã tách được từng pha — `queue` gần bằng 0 nên "chỉnh cadence" KHÔNG phải nút thắt.**
-  Đo 14-11 (1 vòng `binh1`, @192, `vos_every 3`, `git_dirty_code=false`, artifact
-  `data/chu_ky_chai_binh1_1vong_metrics.json`): `cycle_ms` **105,6** = `vos_ms` **92,5** (model) +
-  `pre_ms` **14,3** (tiền xử lý) + `idle_ms` 5,2 + `queue_ms` **0,33** + `post_ms` 0,46.
-  ⇒ (a) frame **không** phải chờ trong worker (queue 0,3 ms) nên bỏ hẳn hướng đổi cadence/`--vos-hz`;
-  (b) chỗ còn cắt được thật là **tiền xử lý 14 ms** (13 % chu kỳ) chứ không phải phần sau model;
-  (c) `vos_ms` **không gồm** `pre_ms` (đo riêng, `TrackingResult.pre_ms`) — đừng cộng đôi.
+- **Chu kỳ VOS tách theo pha: nút thắt là model + tiền xử lý, KHÔNG phải "chờ frame".**
+  Đo 14-11, **3 lần** (1 vòng `binh1`, @192, `vos_every 3`, `git_dirty_code=false`, artifact
+  `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`):
+  `cycle_ms` **101,5–121,6** · `vos_ms` (model) **83,6–103,1** · `pre_ms` **11,6–13,1** ·
+  `post_ms` **0,08–0,98** · `queue_ms` **2,1–75,9** · `idle_ms` **0,01–16,8**.
+  ⇒ (a) **KHÔNG** được nói "queue ≈ 0 ⇒ frame không phải chờ": chạy **một** lần từng ra 0,33 ms nhưng
+  n=3 cho 2,1–75,9 ms (mẫu cuối, phụ thuộc pha submit ↔ VOS) — n=1 ở đây kết luận sai, đúng cảnh báo
+  "n < 2 không kết luận"; (b) kết luận đúng là `cycle ≈ vos_ms + pre_ms` ⇒ tăng tần suất gửi frame chỉ
+  làm `queue` dài thêm, còn muốn nhanh hơn phải cắt **model** hoặc **tiền xử lý** (`pre_ms` 12–13 ms);
+  (c) `vos_ms` **không gồm** `pre_ms` (đo riêng, `TrackingResult.pre_ms`, mặc định `None` = chưa đo).
 - **Hai định nghĩa tuổi mask, đừng trộn:** `mask_age_cu_ms` = age + `vos_ms` (**định nghĩa cũ**, số
   trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
   (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho

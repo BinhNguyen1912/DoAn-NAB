@@ -80,10 +80,27 @@ def test_check_bao_lech_khi_file_khac_ban_sinh(tmp_path, monkeypatch):
     assert so_lieu.main() == 0
 
 
-@pytest.mark.parametrize("artifact", ["data/chu_ky_chai_binh1_1vong_metrics.json",
-                                      "data/sach_chai_binh2_1vong_metrics.json"])
+def test_doc_da_commit_khop_artifact():
+    """`docs/so-lieu-bao-cao.md` ĐÃ COMMIT phải khớp bản sinh ra (CI không chạy `--check`).
+
+    Không có test này thì file có thể trôi khỏi artifact mà không gì đỏ (review vòng 3, P2).
+    """
+    da_commit = (so_lieu._REPO_ROOT / "docs/so-lieu-bao-cao.md").read_text(encoding="utf-8")
+    assert da_commit == so_lieu.build_document(), (
+        "docs/so-lieu-bao-cao.md lệch artifact — chạy `python scripts/so_lieu_bao_cao.py` rồi commit"
+    )
+
+
+@pytest.mark.parametrize("artifact", sorted({row[1] for row in so_lieu.REGISTRY}))
 def test_artifact_trong_bang_phai_co_provenance(artifact):
-    """Số trong bảng chỉ trích được khi có `git_rev` + `git_dirty_code == false` (AGENTS §6)."""
+    """Mọi artifact được trích phải có `git_rev` và KHÔNG bẩn (AGENTS §6).
+
+    Chấp nhận `git_dirty_code == false` (artifact mới) **hoặc** `git_dirty == false` (artifact cũ chỉ
+    có trường này, ví dụ `data/occlusion_metrics_320_metrics.json`).
+    """
     data = json.loads((so_lieu._REPO_ROOT / artifact).read_text(encoding="utf-8"))
-    assert data.get("git_rev"), "artifact thiếu git_rev"
-    assert data.get("git_dirty_code") is False, "artifact phải có git_dirty_code == false"
+    assert data.get("git_rev"), f"{artifact} thiếu git_rev"
+    assert data.get("git_loi") in (None, ""), f"{artifact} có git_loi ⇒ không có provenance"
+    assert data.get("git_dirty_code") is False or data.get("git_dirty") is False, (
+        f"{artifact} được đo trên cây bẩn ⇒ không được trích"
+    )
