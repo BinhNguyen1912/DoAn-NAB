@@ -25,8 +25,16 @@ import {
   type LiveSources,
   type LiveStatus,
 } from '../api'
-import { deviceLine, driftLine, maskRhythmLine, shownFps, sourceCheckLine, stallLine }
-  from '../live'
+import {
+  deviceLine,
+  driftLine,
+  maskAgeIsStale,
+  maskAgeLine,
+  maskRhythmLine,
+  shownFps,
+  sourceCheckLine,
+  stallLine,
+} from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
 const POLL_MS = 1000
@@ -185,6 +193,8 @@ export function LivePanel(): JSX.Element {
   // nạp — `src/api/live.py`), và "Bật phát" phải tắt (bấm nữa chỉ nhận 409 `LiveBusy`, hiện banner
   // lỗi trong lúc đang nạp bình thường — ticket 16).
   const maskLine = maskRhythmLine(status)
+  const ageLine = maskAgeLine(status)
+  const ageCu = maskAgeIsStale(status)
   const driftText = driftLine(status)
   const deviceText = deviceLine(status)
   const displayFps = shownFps(status)
@@ -364,6 +374,15 @@ export function LivePanel(): JSX.Element {
         // Hiện cả hai để không ai đọc nhầm "30 FPS" thành "mask 30 FPS".
         <p className="hint" data-testid="mask-rhythm">
           {maskLine}
+        </p>
+      )}
+
+      {ageLine && (
+        // Tuổi dữ liệu ảnh người xem đang thấy: HUD 30 FPS nhưng mask chỉ ~9 lần/giây nên ảnh luôn
+        // cũ hơn "hiện tại" vài trăm ms. Cũ quá ngưỡng thì phải NÓI TO, không chỉ in số.
+        <p className={ageCu ? 'error' : 'hint'} data-testid="mask-age"
+           role={ageCu ? 'alert' : undefined}>
+          {ageLine}
         </p>
       )}
 

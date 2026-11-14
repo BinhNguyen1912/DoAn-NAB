@@ -69,6 +69,24 @@ REGISTRY = [
     ("Watchdog phát hiện worker chết (mode worker, `kill -9`)", "data/watchdog_2026-11-09_metrics.json",
      "tom_tat.tg_bao_error_ms.mean", "ms",
      "Nhanh vì `proc.poll()` bắt được; ca \"sống mà treo\" mất ~15 s, CẤM trích 0,1 s cho ca đó."),
+    # ── Việc #5 (14-11): bảng cấu hình đo bằng 3 lần chạy worker thật trên máy CPU này ──────────
+    ("Nhịp mask ở `vos_every 2` (cấu hình nhanh nhất, `image_size 192`)",
+     "data/bang_cau_hinh_2026-11-14_metrics.json",
+     "cau_hinh.192_2.vos_fps.mean", "lần/giây",
+     "mean của 3 lần ± 0,4 (`std` trong cùng artifact). CẤM viết 'mask 30 FPS' và CẤM so với FPS "
+     "phát 29,9 — hai nhịp khác nhau."),
+    ("Tuổi dữ liệu ảnh p95 ở `image_size 192`, `vos_every 3`", "data/bang_cau_hinh_2026-11-14_metrics.json",
+     "cau_hinh.192_3.mask_age_p95.mean", "ms (p95)",
+     "3 lần ± 35 ms. `vos_ms` chỉ là phần model; 'một frame tốn bao lâu' phải cộng `pre_ms`."),
+    ("Tuổi dữ liệu ảnh p95 ở `image_size 320`, `vos_every 3` (chi tiết vật nhỏ)",
+     "data/bang_cau_hinh_2026-11-14_metrics.json",
+     "cau_hinh.320_3.mask_age_p95.mean", "ms (p95)",
+     "3 lần ± 55 ms ⇒ chênh với 192 (302 ms) LỚN HƠN nhiễu nên mới được nói 'cũ hơn hẳn'."),
+    # ── Việc #6 (14-11): mIoU vs GT — thước đo DUY NHẤT nói được đúng/sai ───────────────────────
+    ("mIoU mask vs GT trên fixture TỔNG HỢP (ô vuông trên nền nhiễu)", "data/miou_synthetic_2026-11-14_metrics.json",
+     "ket_qua.mIoU", "IoU",
+     "CẬN TRÊN: GT ≡ pixel ô vuông, prompt = đúng bbox của nó. CẤM trích như mIoU trên video thật — "
+     "muốn số thật thì gán tay (`scripts/score_miou.py label`)."),
 ]
 
 HEADER = """# Số liệu dùng cho báo cáo — sinh tự động, đừng sửa tay

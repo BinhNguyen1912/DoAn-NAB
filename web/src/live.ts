@@ -44,6 +44,37 @@ export function maskRhythmLine(status: Rhythm | null | undefined): string | null
   return `Mask mới: ${fps} lần/giây · ${flicker} · độ trễ model: ${latency} ms${lost}`
 }
 
+type MaskAge = Pick<LiveStatus, 'mask_age_total_ms' | 'mask_age_p95' | 'age_n'>
+
+/** Ngưỡng coi mask là "CŨ" (ms). Đo trên máy này: tuổi dữ liệu THẬT p95 = 268–301 ms ở
+ * `image_size 192` (`data/chu_ky_chai_binh1_*_metrics.json`). 1500 ms ≈ 5× mức bình thường ⇒ lúc đó
+ * vật đã đi chỗ khác và mask đang chỉ vào chỗ cũ, phải nói to chứ không chỉ in số. */
+export const MASK_AGE_CANH_BAO_MS = 1500
+
+/** Dòng "mask đang hiển thị cũ bao nhiêu" — `null` khi chỉ số CHƯA ĐO.
+ *
+ * Vì sao phải hiện: HUD báo 30 FPS nhưng mask chỉ mới ~8–9 lần/giây, nên ảnh người xem thấy là dữ
+ * liệu cũ cỡ 0,2–0,3 s (`mask_age_total_ms`). Không in ra thì người xem (và người viết báo cáo) sẽ
+ * hiểu "mask 30 FPS". `null` KHÁC `0`: `0` là mask tươi tuyệt đối, `null` là worker bản cũ chưa ghi.
+ */
+export function maskAgeLine(status: MaskAge | null | undefined): string | null {
+  if (!status) return null
+  const total = status.mask_age_total_ms
+  if (total == null || !Number.isFinite(total) || total < 0) return null
+  const coP95 = status.age_n > 0 && status.mask_age_p95 != null
+  const p95 = coP95 ? ` · p95 ${Math.round(status.mask_age_p95 as number)} ms của ${status.age_n} mẫu` : ''
+  if (total >= MASK_AGE_CANH_BAO_MS) {
+    return `Mask CŨ: ${(total / 1000).toFixed(1)} s (vật có thể đã di chuyển)${p95}`
+  }
+  return `Mask đang hiển thị: ${Math.round(total)} ms tuổi${p95}`
+}
+
+/** Có nên tô cảnh báo cho dòng mask age không (dùng cho class CSS/role alert). */
+export function maskAgeIsStale(status: MaskAge | null | undefined): boolean {
+  const total = status?.mask_age_total_ms
+  return total != null && Number.isFinite(total) && total >= MASK_AGE_CANH_BAO_MS
+}
+
 type Drift = Pick<LiveStatus, 'mask_fps' | 'drift_p05' | 'drift_n'>
 
 /** Dòng chẩn đoán "ô bao đang hiển thị khớp lần VOS kế tiếp bao nhiêu"; `null` khi không có model.

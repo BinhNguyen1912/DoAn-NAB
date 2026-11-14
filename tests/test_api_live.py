@@ -176,6 +176,8 @@ class TestLiveRoutes:
                              # 4 trường chẩn đoán (09-11): drift + tỉ lệ mất dấu theo cửa sổ
                              "drift_p05", "drift_n", "empty_frac_window", "empty_window_n",
                              "mask_fps", "stability", "stability_n", "latency_ms", "empty_runs",
+                             # 3 trường tuổi dữ liệu ảnh (14-11, việc #8): mask cũ bao nhiêu ms
+                             "mask_age_total_ms", "mask_age_p95", "age_n",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -992,3 +994,73 @@ class TestStabilityNoneDiQuaCaChuoi:
         assert chua_do["stability"] is None and chua_do["stability_n"] == 0
         assert do_duoc["stability"] == 0.0 and do_duoc["stability_n"] == 150, \
             "0,0 ĐO ĐƯỢC không được biến thành null (và ngược lại)"
+
+
+class TestMaskAgeQuaApi:
+    """Việc #8 (14-11): tuổi dữ liệu ảnh (`mask_age_total_ms`/`mask_age_p95`/`age_n`) phải đi từ
+    `status.json` của worker → `LiveTelemetry` → `LiveStatus` → DTO HTTP, và **giữ nguyên `None`**.
+
+    Vì sao phải ghim cả đường: cùng một lỗi đã xảy ra 3 lần trong repo — `float(x or 0.0)` biến
+    "CHƯA ĐO" thành "0 ms tuổi" = "mask tươi tuyệt đối" (AGENTS §6). Adapter đúng mà service/DTO
+    quên chuyển thì UI vẫn hiện số sai.
+    """
+
+    def _telemetry(self, tmp_path, **fields):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps(fields), encoding="utf-8")
+        return WorkerFrameSource("0", out_dir=tmp_path).telemetry()
+
+    def test_ba_khoa_di_qua_adapter(self, tmp_path):
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.6,
+                                 mask_age_total_ms=301.2, mask_age_p95=305.4, age_n=200)
+        assert detail.mask_age_total_ms == pytest.approx(301.2)
+        assert detail.mask_age_p95 == pytest.approx(305.4)
+        assert detail.age_n == 200
+
+    def test_worker_ban_cu_khong_co_khoa_thi_None_khong_phai_0(self, tmp_path):
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.6)
+        assert detail.mask_age_total_ms is None
+        assert detail.mask_age_p95 is None
+        assert detail.age_n == 0
+
+    def test_age_0_do_duoc_van_la_0(self, tmp_path):
+        detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.6,
+                                 mask_age_total_ms=0.0, mask_age_p95=0.0, age_n=7)
+        assert detail.mask_age_total_ms == 0.0 and detail.age_n == 7
+
+    def test_dto_http_co_ba_truong_va_null_trung_thuc(self, live_client, monkeypatch):
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(mask_fps=8.6, mask_age_total_ms=None,
+                                     mask_age_p95=None, age_n=0)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["mask_age_total_ms"] is None, "chưa đo phải là null, không phải 0"
+        assert body["mask_age_p95"] is None
+        assert body["age_n"] == 0
+
+    def test_dto_http_chuyen_so_that(self, live_client, monkeypatch):
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(mask_fps=9.0, mask_age_total_ms=268.7,
+                                     mask_age_p95=301.2, age_n=190)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["mask_age_total_ms"] == pytest.approx(268.7)
+        assert body["mask_age_p95"] == pytest.approx(301.2)
+        assert body["age_n"] == 190

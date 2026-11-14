@@ -127,6 +127,10 @@ class LiveStatus:
     # nhất quán**, KHÔNG phải độ chính xác (AGENTS §6). `drift_n` < 30 ⇒ None.
     drift_p05: float | None = None
     drift_n: int = 0
+    # Tuổi dữ liệu ảnh của mask đang hiển thị (ms) + p95 của cửa sổ; `None` = CHƯA ĐO.
+    mask_age_total_ms: float | None = None
+    mask_age_p95: float | None = None
+    age_n: int = 0
     message: str = ""
 
 
@@ -147,6 +151,12 @@ class LiveTelemetry:
     empty_window_n: int = 0
     drift_p05: float | None = None
     drift_n: int = 0
+    # Tuổi dữ liệu ảnh người xem đang thấy: `mask_age_total_ms` = queue + pre + vos + post + age của
+    # MẪU CUỐI (số đúng để nói "mask cũ bao nhiêu"), `mask_age_p95` = phân vị 95 trên cửa sổ
+    # (`age_n` mẫu; 0 ⇒ chưa đo, KHÔNG phải "0 ms").
+    mask_age_total_ms: float | None = None
+    mask_age_p95: float | None = None
+    age_n: int = 0
 
 
 @dataclass(frozen=True)

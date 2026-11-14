@@ -264,12 +264,19 @@ async function waitJobState(page, wanted, timeout = 240000) {
   await page.route('**/api/live/status', async (route) => {
     await route.fulfill({ status: 200, contentType: 'application/json',
       body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
-                             device: 'cuda', message: 'stub' }) })
+                             device: 'cuda', message: 'stub',
+                             // Tuổi dữ liệu ảnh (việc #8): 2,6 s = vượt ngưỡng ⇒ HUD phải nói TO
+                             mask_age_total_ms: 2600, mask_age_p95: 900, age_n: 40 }) })
   })
   const deviceText = await liveCard.getByTestId('device-line').innerText({ timeout: 8000 })
     .catch(() => '')
   check('HUD hiện thiết bị model (cuda) lấy từ /api/live/status', /cuda/.test(deviceText),
     deviceText.replace(/\s+/g, ' ') || '(không thấy dòng thiết bị)')
+  // Cùng lý do với dòng thiết bị: phải đi hết chuỗi status.json → telemetry → schema → HUD.
+  const ageText = await liveCard.getByTestId('mask-age').innerText({ timeout: 8000 })
+    .catch(() => '')
+  check('HUD cảnh báo MASK CŨ khi tuổi dữ liệu vượt ngưỡng',
+    /Mask CŨ: 2\.6 s/.test(ageText), ageText.replace(/\s+/g, ' ') || '(không thấy dòng tuổi mask)')
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 

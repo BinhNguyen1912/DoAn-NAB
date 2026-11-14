@@ -181,6 +181,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     light [khung]   Thí nghiệm ĐỔI ÁNH SÁNG: IoU theo mức sáng (yêu cầu 11) → data/charts/
     occl  [khung]   Thí nghiệm BỊ CHE KHUẤT: IoU theo khung → data/charts/
     summary         In tóm tắt các file *_summary.json đang có (kèm CPU/RAM)
+    bangcau         Bảng cấu hình image_size × vos_every (3 lần/cấu hình, có ± nhiễu)
+    ab              A/B hai cấu hình, chạy CHÈN KẼ, chênh lệch ≤ nhiễu ⇒ 'không phân biệt được'
+    miou            Chấm mIoU mask vs GT gán tay (thước đo BÁM ĐÚNG: ./run miou gt cho quy trình)
     gpu             In link Colab + lệnh chạy GPU
 
   KHÁC
@@ -429,6 +432,26 @@ EOF
     for _ in $(seq 1 25); do curl -sf "localhost:$port/health" >/dev/null && break; sleep 1; done
     win_root="$(wslpath -w "$ROOT")"
     cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& node scripts\\e2e_web.js"
+    ;;
+  bangcau)
+    # Bảng cấu hình: mặc định 192/256/320 × 2/3/6, 3 lần mỗi cấu hình (~5 phút trên CPU).
+    activate_env
+    exec "$PYTHON" scripts/bang_cau_hinh.py "$@"
+    ;;
+  ab)
+    # A/B chèn kẽ. Bắt buộc --bbox (ô chọn trên VẬT THẬT) — hộp mặc định hay rơi vào nền.
+    activate_env
+    exec "$PYTHON" scripts/ab_test.py "$@"
+    ;;
+  miou)
+    # Chấm mIoU vs GT. `./run miou gt` in quy trình gán tay (docs/thuoc-do-bam-dung.md).
+    activate_env
+    if [ "${1:-}" = "gt" ]; then
+      # In đúng mục quy trình gán tay trong tài liệu (một nguồn sự thật, không chép lại ở đây).
+      sed -n '/^## 2\./,/^## 3\./p' "$ROOT/docs/thuoc-do-bam-dung.md"
+      exit 0
+    fi
+    exec "$PYTHON" scripts/score_miou.py "$@"
     ;;
   raw)
     activate_env

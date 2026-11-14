@@ -135,6 +135,16 @@ class LiveStatusResponse(BaseModel):
     mask_fps: float = Field(default=0, ge=0,
                             description="nhịp MASK MỚI (số lần model chạy/giây) — nhỏ hơn "
                                         "measured_fps khi chạy hybrid VOS + LK")
+    mask_age_total_ms: float | None = Field(
+        default=None, ge=0,
+        description="Tuổi dữ liệu ảnh của mask ĐANG HIỂN THỊ (ms) = queue + pre + vos + post + age "
+                    "của mẫu cuối; `null` = CHƯA ĐO (worker bản cũ), KHÁC 0 = mask tươi tuyệt đối",
+    )
+    mask_age_p95: float | None = Field(
+        default=None, ge=0,
+        description="Phân vị 95 tuổi dữ liệu trên cửa sổ `age_n` mẫu; `null` khi chưa đủ mẫu",
+    )
+    age_n: int = Field(default=0, ge=0, description="số mẫu của cửa sổ tuổi dữ liệu (0 ⇒ chưa đo)")
     stability: float | None = Field(
         default=None, ge=0, le=1,
         description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy). `null` = CHƯA ĐO "

@@ -319,6 +319,24 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   dựng sau lưng client ⇒ worker giữ webcam mà không ai gửi stop). `scripts/measure_live_relay.py`
   dùng `timeout=600`, `scripts/demo_preflight.py --full` dùng `max(30 s, --full-timeout)`.
 
+- **Muốn nói "bám ĐÚNG" thì phải chấm mIoU mask vs GT** (`./run miou`, quy trình trong
+  `docs/thuoc-do-bam-dung.md`): `drift_iou`/`stability` chỉ là độ tự nhất quán. Quy tắc chấm: GT rỗng
+  ⇒ **không chấm**; model rỗng mà GT có vật ⇒ **0,0**; thiếu mask ⇒ *chưa chạy*, không phải bám sai;
+  mIoU trên fixture tổng hợp là **cận trên**. Số "chọn cấu hình" lấy từ `./run bangcau`
+  (`docs/bang-cau-hinh.md`, **3 lần/cấu hình có `±`**); so hai cấu hình thì dùng `./run ab` (chạy chèn
+  kẽ, chênh lệch ≤ `max(std_a, std_b)` ⇒ viết **"không phân biệt được"**).
+
+- **Ngưỡng nhiễu phải lấy THEO Ô CHỌN — số cũ chỉ đúng cho ô khuôn mặt.** Dòng
+  "`drift_iou` ±0,004, `mask_age_p95` ±3 ms" (đo 08-11) là của ô phủ **khuôn mặt**. Đo lại trên artifact
+  đã commit: ô **chai** (`data/lan2_chai_binh1_lan1..3_metrics.json`, 55 s) cho `drift_iou` 0,444–0,454
+  (**±0,010** — gấp 2,5×) và `mask_age_p95` 215,4–221,4 (**±6 ms**); phiên ngắn 11 s
+  (`data/chu_ky_chai_binh1_1vong_lan*_metrics.json`) cho **±0,019** và **±32 ms**. Dùng ±0,004 cho ô chai
+  là gọi chênh lệch 0,005 thành "khác thật".
+- **`measured_fps`/`display_fps` bão hoà ~29,8–29,9 ở MỌI `image_size`** (bảng 9 cấu hình:
+  `data/bang_cau_hinh_2026-11-14_metrics.json`) vì LK lấp phần giữa ⇒ **không** dùng nó để chọn cấu hình;
+  chọn theo `vos_fps` + `mask_age_p95` (`docs/bang-cau-hinh.md`). Riêng `mask_age_p95` (mean 3 lần):
+  192 → **266,6 ms** (every 2) / **304,2** (every 3); 320 → **559,5** / **605,1** / **769,1** (every 2/3/6).
+
 
 ## 7. Các repo/model tham khảo
 
