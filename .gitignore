@@ -54,3 +54,6 @@ data/e2e_*
 # Git để "% cửa sổ báo oan" và "phát hiện sau N mẫu" trong báo cáo kiểm chứng lại được.
 !data/drift_samples_*.csv
 !data/drift_samples_*.meta.json
+
+# Bản cũ chạy bằng `./run demobase` (git worktree tại .baseline/) — sinh tự động, không commit
+/.baseline/

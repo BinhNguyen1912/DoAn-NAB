@@ -33,6 +33,101 @@ activate_env() {
   fi
 }
 
+# --- Bản cũ (tag demo-baseline-…) chạy trong worktree riêng: cứu cánh khi bản web lỗi ---
+BASELINE_TAG="${CAM_BASELINE_TAG:-demo-baseline-2026-11-08}"
+# CAM_BASELINE_DIR chỉ để test được (trỏ thư mục tạm) — mặc định .baseline/ trong repo.
+BASELINE_DIR="${CAM_BASELINE_DIR:-$ROOT/.baseline}"
+BASELINE_MARK="$BASELINE_DIR/.demobase-tag"
+
+_baseline_link_resources() {
+  # Tài nguyên KHÔNG track trong git (.gitignore: samurai, models, data/*.mp4) → symlink
+  # sang bản dùng chung; thiếu checkpoint/model thì bản cũ không chạy được.
+  # `-sfn` + `-L`: link ĐỨT (bản dùng chung bị clone lại) phải tạo lại được — `-e` đi theo link
+  # nên link đứt trông như "không tồn tại" với `ln -s` thường (review độc lập 14-11, P2).
+  for _d in samurai models; do
+    if [ -e "$ROOT/$_d" ] && { [ ! -e "$BASELINE_DIR/$_d" ] || [ -L "$BASELINE_DIR/$_d" ]; }; then
+      ln -sfn "../$_d" "$BASELINE_DIR/$_d"
+    fi
+  done
+  # Video demo: chỉ link file bản cũ CHƯA có — không ghi đè/xoá file nào.
+  if [ -d "$ROOT/data" ] && [ -d "$BASELINE_DIR/data" ]; then
+    for _f in "$ROOT"/data/*.mp4; do
+      [ -e "$_f" ] || continue
+      _name="$(basename "$_f")"
+      if [ ! -e "$BASELINE_DIR/data/$_name" ] || [ -L "$BASELINE_DIR/data/$_name" ]; then
+        ln -sfn "../../data/$_name" "$BASELINE_DIR/data/$_name"
+      fi
+    done
+  fi
+  chmod +x "$BASELINE_DIR/run" 2>/dev/null
+  return 0
+}
+
+_baseline_write_mark() {
+  echo "$BASELINE_TAG" > "$BASELINE_MARK" 2>/dev/null
+  # ĐÃ THỬ và KHÔNG dùng được cách dọn `git status` của bản cũ: git KHÔNG đọc `info/exclude`
+  # của git-dir thuộc worktree (đo 14-11: `git -C .baseline check-ignore -v .demobase-tag`
+  # thoát 1), còn ghi vào `.git/info/exclude` DÙNG CHUNG thì sẽ che cả repo chính.
+  # ⇒ `.baseline` tự hiện `?? .demobase-tag/?? samurai/?? models` — chỉ là rác trong thư mục
+  # sinh tự động, repo chính vẫn sạch (`/.baseline/` trong .gitignore).
+  return 0
+}
+
+ensure_baseline() {
+  # Nhánh NHANH (đã đúng bản): chỉ cần bảo đảm symlink tài nguyên còn sống (rẻ, idempotent).
+  # Không đòi tag phải có trong repo: `.baseline` có thể dựng từ máy khác rồi copy sang.
+  if [ -x "$BASELINE_DIR/run" ] && [ "$(cat "$BASELINE_MARK" 2>/dev/null)" = "$BASELINE_TAG" ]; then
+    _baseline_link_resources
+    _baseline_write_mark
+    return 0
+  fi
+  # Cần DỰNG hoặc ĐỔI bản → tag phải có THẬT. Kiểm TRƯỚC mọi lệnh git khác: review độc lập 14-11
+  # (P1) bắt được ca HAI `rev-parse` cùng rỗng bị coi là "khớp" ⇒ ghi mark cho tag KHÔNG tồn tại
+  # rồi chạy nhầm code cũ mãi mãi, thoát 0.
+  local want
+  want="$(git -C "$ROOT" rev-parse --verify --quiet "${BASELINE_TAG}^{commit}" 2>/dev/null)"
+  if [ -z "$want" ]; then
+    echo "[demobase] không thấy tag $BASELINE_TAG trong repo này."
+    echo "           lấy tag về: git fetch --tags origin    |    xem tag có: git tag"
+    return 1
+  fi
+  if [ -x "$BASELINE_DIR/run" ]; then
+    if ! git -C "$BASELINE_DIR" rev-parse --git-dir >/dev/null 2>&1; then
+      echo "[demobase] $BASELINE_DIR có code nhưng KHÔNG phải bản git (dựng bằng archive)."
+      echo "           Muốn đổi sang tag $BASELINE_TAG: rm -rf \"$BASELINE_DIR\" && git worktree prune"
+      echo "           (hoặc bỏ dòng CAM_BASELINE_TAG để dùng lại bản đang có)."
+      return 1
+    fi
+    echo "[demobase] đổi bản cũ: $(cat "$BASELINE_MARK" 2>/dev/null || echo '?') → $BASELINE_TAG"
+    # `checkout -f`: dọn luôn cây checkout dở (Ctrl+C giữa lúc dựng) thay vì tin là đủ file.
+    git -C "$BASELINE_DIR" checkout -f --detach "$BASELINE_TAG" >/dev/null 2>&1 || {
+      echo "[demobase] không checkout được tag $BASELINE_TAG trong $BASELINE_DIR"
+      echo "           Sửa: rm -rf \"$BASELINE_DIR\" && git worktree prune   (rồi chạy lại)"
+      return 1
+    }
+    _baseline_link_resources
+    _baseline_write_mark
+    return 0
+  fi
+  echo "[demobase] dựng bản cũ $BASELINE_TAG ở $BASELINE_DIR (không đổi nhánh, không đụng web/)…"
+  # Worktree đã "chết" (thư mục bị xoá tay) không được chặn `worktree add`.
+  git -C "$ROOT" worktree prune >/dev/null 2>&1
+  # Worktree riêng ⇒ nhánh đang làm + web/dist giữ nguyên. Git trong WSL ghi LF
+  # (repo đã đặt core.autocrlf=false) nên ./run trong đó chạy được, không bị "bash\r".
+  if ! git -C "$ROOT" worktree add --detach "$BASELINE_DIR" "$BASELINE_TAG" >/dev/null 2>&1; then
+    # Dự phòng khi không dùng được worktree: trích thẳng nội dung tag ra thư mục.
+    echo "[demobase] không tạo được worktree → trích nội dung tag bằng git archive."
+    mkdir -p "$BASELINE_DIR" || return 1
+    git -C "$ROOT" archive "$BASELINE_TAG" | tar -x -C "$BASELINE_DIR" || {
+      echo "[demobase] git archive thất bại — kiểm tag: git tag | grep $BASELINE_TAG"
+      return 1
+    }
+  fi
+  _baseline_link_resources
+  _baseline_write_mark
+  echo "[demobase] xong → $BASELINE_DIR ($BASELINE_TAG)"
+}
+
 usage() {
   cat <<'EOF'
 Lệnh tắt của đồ án Camera AI — ./run <lệnh>
@@ -45,6 +140,10 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     fast            Demo bản nhanh (image_size 256 → ~6,5 FPS) + TỰ GHI
                     data/fast_<mốc-giờ>.mp4 + CSV/JSON + run_info để xem lại/phân tích
                     (mặc định cue=object — bám VẬT; đổi: --reid-cue face|both)
+    demobase [lệnh] Chạy BẢN CŨ (mặc định tag demo-baseline-2026-11-08) trong worktree .baseline/ —
+                    dự phòng khi bản web lỗi. Không đổi nhánh, không đụng web/.
+                    Mặc định: demoip (camera qua relay). Đổi tag: CAM_BASELINE_TAG=<tag>
+                    File ghi ra: .baseline/data/   Ví dụ: ./run demobase video data/binh1.mp4
 
   NGUỒN CAMERA
     check [nguồn]   Kiểm nguồn 5 giây (mặc định 0 = webcam)
@@ -112,6 +211,29 @@ EOF
   demo5)
     activate_env
     bash scripts/demo_webcam.sh --max-frames 5 "$@"
+    ;;
+  demobase)
+    # Dự phòng "bản demo cũ chạy được" khi bản web gặp sự cố: chạy NGUYÊN code của tag cũ
+    # trong worktree .baseline/, nhánh đang làm và web/dist không bị đụng tới.
+    #   ./run demobase                      → bản cũ: ./run demoip  (webcam qua relay)
+    #   ./run demobase demoip --max-frames 100
+    #   ./run demobase video data/binh1.mp4
+    #   ./run demobase help                 → bảng lệnh của bản cũ
+    if [ $# -eq 0 ] || [ "${1#-}" != "$1" ]; then
+      # Không có lệnh con (hoặc mở đầu bằng cờ) → mặc định demoip. Riêng -h/--help thì in help,
+      # KHÔNG bật relay chỉ để xem trợ giúp (review độc lập 14-11, P3).
+      case "${1:-}" in
+        -h|--help) _sub="help"; shift || true ;;
+        *) _sub="demoip" ;;
+      esac
+    else
+      _sub="$1"; shift
+    fi
+    ensure_baseline || exit 1
+    printf '[demobase] %s: ./run %s' "$BASELINE_TAG" "$_sub"
+    if [ $# -gt 0 ]; then printf ' %q' "$@"; fi
+    printf '\n[demobase] file ghi ra: %s/data/\n' "$BASELINE_DIR"
+    exec bash "$BASELINE_DIR/run" "$_sub" "$@"
     ;;
   view)
     activate_env

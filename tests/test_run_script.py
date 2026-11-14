@@ -13,7 +13,7 @@ class TestRunHelp:
         r = _run("help")
         assert r.returncode == 0
         for cmd in ("demo", "demo5", "check", "phone", "test", "lint", "charts", "gpu", "env",
-                    "reid"):
+                    "reid", "demobase"):
             assert cmd in r.stdout, f"thiếu lệnh '{cmd}' trong help"
 
     def test_reid_thieu_tham_so_bao_loi_ro_rang(self):
@@ -90,3 +90,67 @@ class TestRunSubcommands:
         r = _run("aliases")
         assert r.returncode == 0
         assert "alias demo=" in r.stdout and "/.bashrc" in r.stdout
+
+
+class TestDemobase:
+    """`./run demobase` — chạy bản demo cũ trong worktree .baseline/ (dự phòng khi web lỗi).
+
+    Dùng `CAM_BASELINE_DIR` + `CAM_BASELINE_TAG` để test hermetic: không tạo worktree thật,
+    không đụng `.baseline/` của máy dev.
+    """
+
+    @staticmethod
+    def _fake_baseline(tmp_path, tag="fake-tag"):
+        """Dựng 'bản cũ' giả: thư mục có `run` in ra lệnh con + tham số nó nhận."""
+        base = tmp_path / "baseline"
+        base.mkdir()
+        run = base / "run"
+        run.write_text('#!/usr/bin/env bash\necho "SUB=$1"\nshift || true\nfor a in "$@"; do echo "ARG=$a"; done\n')
+        run.chmod(0o755)
+        (base / ".demobase-tag").write_text(tag)
+        return base
+
+    def _run_env(self, *args, **env_extra):
+        import os
+        env = {**os.environ, **env_extra}
+        return subprocess.run(["bash", ROOT_RUN, *args], capture_output=True, text=True,
+                              timeout=60, env=env)
+
+    def test_mac_dinh_lay_demoip(self, tmp_path):
+        base = self._fake_baseline(tmp_path)
+        r = self._run_env("demobase", CAM_BASELINE_DIR=str(base), CAM_BASELINE_TAG="fake-tag")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "SUB=demoip" in r.stdout
+
+    def test_tham_so_di_nguyen_vao_lenh_con(self, tmp_path):
+        base = self._fake_baseline(tmp_path, tag="fake-tag")
+        r = self._run_env("demobase", "demoip", "--max-frames", "5",
+                          CAM_BASELINE_DIR=str(base), CAM_BASELINE_TAG="fake-tag")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "SUB=demoip" in r.stdout
+        assert "ARG=--max-frames" in r.stdout and "ARG=5" in r.stdout
+
+    def test_lenh_con_tu_chon(self, tmp_path):
+        base = self._fake_baseline(tmp_path, tag="fake-tag")
+        r = self._run_env("demobase", "video", "data/binh1.mp4",
+                          CAM_BASELINE_DIR=str(base), CAM_BASELINE_TAG="fake-tag")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "SUB=video" in r.stdout and "ARG=data/binh1.mp4" in r.stdout
+
+    def test_help_cua_ban_cu_khong_bat_relay(self, tmp_path):
+        """`./run demobase -h` phải in help của bản cũ, KHÔNG chạy demoip (không bật relay)."""
+        base = self._fake_baseline(tmp_path, tag="fake-tag")
+        r = self._run_env("demobase", "-h", CAM_BASELINE_DIR=str(base),
+                          CAM_BASELINE_TAG="fake-tag")
+        assert r.returncode == 0, r.stdout + r.stderr
+        assert "SUB=help" in r.stdout
+
+    def test_tag_khong_ton_tai_bao_loi_ma_1(self, tmp_path):
+        """Review độc lập 14-11 (P1): tag lạ + thư mục .baseline rỗng từng bị hai `rev-parse`
+        cùng rỗng coi là 'khớp' → chạy code cũ và ghi mark cho tag không tồn tại, thoát 0."""
+        base = tmp_path / "baseline"          # CHƯA có code → nhánh dựng mới
+        r = self._run_env("demobase", "help", CAM_BASELINE_DIR=str(base),
+                          CAM_BASELINE_TAG="khong-co-tag-nay")
+        assert r.returncode == 1
+        assert "không thấy tag khong-co-tag-nay" in r.stdout, r.stdout
+        assert not (base / ".demobase-tag").exists()
