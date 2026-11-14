@@ -71,8 +71,8 @@
    `./run democheck` trước buổi demo, kèm cảnh báo "OK ở mục nguồn ≠ bám đúng" và "--full bắt buộc --bbox".
 
 ### Kiểm tra & diễn tập
-10. `./run lint` xanh; `./run test` = **1046 passed**, 5 deselected. Test mới: `tests/test_live_crash.py`
-    (20 test), `tests/test_demo_preflight.py` (48 test).
+10. `./run lint` xanh; `./run test` = **1054 passed**, 5 deselected. Test mới: `tests/test_live_crash.py`
+    (21 test), `tests/test_demo_preflight.py` (55 test).
 11. **Hai lần diễn tập thật** (`--full`, nguồn `data/binh1.mp4`, bbox 300,275,150,410, mẫu 12 s):
 
 ## 📤 Output / Kết quả
@@ -85,8 +85,10 @@
 | 2 | **+330** | **9,0 FPS** | 8 OK · 2 cảnh báo · 0 LỖI | 0 |
 | 3 (sau khi sửa P0) | **+355** | **9,1 FPS** | **9 OK · 1 cảnh báo** · 0 LỖI | 0 |
 
-Hai cảnh báo đúng như thiết kế: `mã nguồn` (cây bẩn khi đang phát triển) và `tệp phiên cũ` (lần 2 thấy
-`bbox.json` còn lại từ lần 1 — đúng thứ cần dọn trước khi demo).
+Cảnh báo `mã nguồn` (cây bẩn khi đang phát triển) là cảnh báo **đúng như thiết kế**. Cảnh báo
+`tệp phiên cũ` ở lần 2 (thấy `bbox.json` còn lại của lần 1) hoá ra là **nhiễu**: `_prepare_dir()` xoá
+`bbox.json` trước mỗi lần start nên nó không bao giờ làm phiên sau bám sai — **đã bỏ cảnh báo đó ở
+`219b792`** và thay bằng kiểm `worker.pid` còn sống (worker mồ côi mới thật sự giữ webcam).
 
 **`./run democheck` trên nguồn webcam (máy này):** `nguồn video` = **LỖI** "Không mở được camera index 0
 (bận hoặc không tồn tại)" và `frame có đổi` = LỖI "cần ≥ 2 frame để so" ⇒ verdict `CHƯA DEMO ĐƯỢC`.
@@ -103,7 +105,7 @@ minh preflight bắt được đúng ca "mở webcam hỏng" mà không nạp mo
 - `scripts/demo_preflight.py` — **mới**: 9 mục + `--full` + 3 bước tay in ở cuối.
 - `run` — case `democheck` + help.
 - `AGENTS.md` §5 — bắt buộc `./run democheck` trước buổi demo.
-- `tests/test_live_crash.py`, `tests/test_demo_preflight.py` — **mới** (68 test).
+- `tests/test_live_crash.py`, `tests/test_demo_preflight.py` — **mới** (76 test).
 - `docs/task/14-11-2026-crash-error-va-democheck.md` — log này.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
@@ -148,12 +150,28 @@ Reviewer cũng **xác nhận không phải lỗi** 9 nghi vấn của phiên cha
 worker chết không kịp ghi status vẫn ERROR, `_rewind` không phá hành vi cũ, `--full` đã dọn phiên khi ném
 giữa đường…) — chi tiết ở báo cáo review trong phiên.
 
-**Chưa xử lý (ghi lại, không im lặng):** rủi ro còn lại reviewer nêu — `--full` với **webcam WSL** (`source: 0`)
-chưa đo: `probe_source` mở/đóng webcam ngay trước khi worker mở lại, có thể "Device busy" (cùng lớp lỗi
-AGENTS §6). Cần đo khi có relay thật.
+### Review vòng 2 (commit `219b792` → sửa tiếp)
+
+**Kết luận: ĐỒNG Ý MERGE.** P0 + 2 P1 của vòng 1 **đã đóng đúng** (reviewer đối chiếu 14/14 mục đề xuất);
+phát sinh **2 P2 + 10 P3**, đã sửa tiếp trong cùng nhánh:
+
+| Mức | Phát hiện vòng 2 | Cách xử lý |
+|---|---|---|
+| **P2** | Khi POST start trả 4xx (**409 đang bận**, **422 bbox sai**) thì server **chưa chạm phiên nào**, nhưng `finally`/best-effort của tôi vẫn gửi `/api/live/stop` ⇒ **giết phiên đang chạy của người khác** | chỉ gửi stop khi kết cục **không xác định** (lỗi mạng/timeout, không phải `HTTP 4xx`); thêm chặn sớm: `GET /api/live/status` thấy `running` / `loading` ⇒ **từ chối diễn tập** (vì `live.start()` luôn `_stop_locked()` ⇒ `--full` sẽ cướp phiên) |
+| **P2** | `_pid_alive` bằng `os.kill(pid, 0)`: trên **Windows** đó là `TerminateProcess` ⇒ "phép dò" **giết** tiến trình (và test tự giết pytest) | dùng lại helper của adapter: `_read_pid` (chặn pid ≤ 0) + `_pid_alive` (zombie = chết) + `_is_our_live_worker` (argv có `--out-dir` đúng thư mục) |
+| P3 | `--full-timeout 60` ⇒ POST timeout 60 s < trần nạp model của server (240 s) ⇒ hỏng oan | `timeout = max(MODEL_LOAD_TIMEOUT_S, --full-timeout)` |
+| P3 | Nhánh `HTTPError` của `_http_post` **không có test** | 3 test mới (400 + `detail`, 500 thân không phải JSON, `URLError`) |
+| P3 | stop trong `finally` timeout 5 s < `LiveStreamService.stop()` (~7 s) | `timeout=15 s` |
+| P3 | `_start_api`: `Popen` ném ⇒ rò fd file log | `try/except OSError: handle.close(); raise` |
+| P3 | pidfile: pid âm / pid tái chế / zombie bị báo oan | đã đóng bằng cách dùng helper adapter (P2 ở trên) + 3 test |
+| P3 | `--port 8011` mà `--base-url` hardcode 8010 ⇒ "cổng bận" được báo **đạt** (âm tính giả) | `--base-url` mặc định suy từ `--port` |
+| P3 | Tiền tố `status cuối:` không có test | test mới (`status.json` còn "Đang nạp model…") |
+| P3 | "Thiếu `web/src`" trả `ok=True` ⇒ in đạt cho thứ chưa so | thành **cảnh báo** + test |
+| P3 | di vật comment trong `opencv_source.py`, import tách rời trong `_is_clip` | đã dọn |
+| P3 | Log mâu thuẫn (khen cảnh báo `bbox.json`) + header thiếu commit sau review | đã sửa (mục "Output" + header) |
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [x] Đóng các mục P0/P1 của review độc lập **trong cùng nhánh này** (P0/P1/P2 + 7 P3 đã sửa, xem bảng trên).
+- [x] Đóng các mục P0/P1 của review độc lập **trong cùng nhánh này** (vòng 1: P0/P1/P2 + 7 P3; vòng 2: 2 P2 + 9 P3 — xem hai bảng trên).
 - [ ] Đo `--full` với **webcam/relay thật** (`source: 0` / `http://…/snapshot.jpg`) — rủi ro "Device busy"
       do `probe_source` mở/đóng nguồn ngay trước worker (review 14-11 nêu, chưa đo được trên máy này).
 - [ ] Việc còn lại của plan: **#5** bảng cấu hình, **#6** thước đo "bám đúng", **#8** HUD, **#9** media, **#11** A/B.

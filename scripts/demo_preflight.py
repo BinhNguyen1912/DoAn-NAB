@@ -16,7 +16,6 @@ Lưu ý  : "OK" ở mục nguồn chỉ có nghĩa *"đọc được frame lúc 
 
 import argparse
 import json
-import os
 import socket
 import sys
 import time
@@ -97,7 +96,7 @@ def check_webbuild(web_dist: Path, web_src: Path) -> Check:
         return Check("web/dist", False, f"chưa build ({index} không có) — chạy ./run web")
     src_files = [p.stat().st_mtime for p in Path(web_src).rglob("*") if p.is_file()]
     if not src_files:
-        return Check("web/dist", True, f"{index.parent} (không có {web_src} để so độ mới)",
+        return Check("web/dist", False, f"{index.parent} — KHÔNG so được độ mới (thiếu {web_src})",
                      bat_buoc=False)
     newest = max(src_files)
     if index.stat().st_mtime < newest:
@@ -144,24 +143,27 @@ def check_stale_state(out_dir: Path) -> Check:
     **Đừng** cảnh báo `bbox.json`: `WorkerFrameSource._prepare_dir()` xoá `bbox.json`/`frame.jpg`/
     `status.json`/pidfile trước MỖI lần start (`worker_source.py:51,217`) ⇒ nó không bao giờ làm
     phiên sau bám sai, và cảnh báo nó biến preflight thành "luôn có 1 cảnh báo" sau mỗi buổi demo
-    (review độc lập 14-11, P2).
+    (review vòng 1, P2).
 
     Thứ đáng cảnh báo là **worker mồ côi**: pidfile còn sống ⇒ có tiến trình đang giữ webcam, phiên
-    mới sẽ tranh thiết bị ("Device busy", AGENTS §6). Và `state = loading|running` còn trong
-    `status.json` ⇒ phiên trước chưa dọn.
+    mới sẽ tranh thiết bị ("Device busy", AGENTS §6). Dùng lại đúng ba hàm của adapter
+    (`_read_pid` chặn pid ≤ 0, `_pid_alive` coi zombie là chết, `_is_our_live_worker` đòi argv có
+    `--out-dir` đúng thư mục này) — **không** tự `os.kill(pid, 0)`:
+    trên Windows, `os.kill` với sig 0 là `TerminateProcess` ⇒ "phép dò" đó **giết** tiến trình
+    (review vòng 2, P2).
     """
+    from src.api.adapters.worker_source import _is_our_live_worker, _pid_alive, _read_cmdline, _read_pid
+
     out_dir = Path(out_dir)
     if not out_dir.is_dir():
         return Check("tệp phiên cũ", True, f"{out_dir} chưa có (sẽ tạo khi chạy)")
     notes = []
-    pidfile = out_dir / "worker.pid"
-    pid = None
-    try:
-        pid = int(pidfile.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        pid = None
-    if pid and _pid_alive(pid):
-        notes.append(f"worker.pid = {pid} CÒN SỐNG (worker mồ côi đang giữ nguồn?)")
+    pid = _read_pid(out_dir / "worker.pid")
+    if pid is not None:
+        if _pid_alive(pid) and _is_our_live_worker(_read_cmdline(pid), out_dir):
+            notes.append(f"worker.pid = {pid} CÒN SỐNG (worker mồ côi đang giữ nguồn?)")
+        elif _pid_alive(pid) and not _read_cmdline(pid):
+            notes.append(f"worker.pid = {pid} còn sống nhưng không đọc được argv — kiểm tay")
     status = out_dir / "status.json"
     if status.is_file():
         try:
@@ -174,17 +176,6 @@ def check_stale_state(out_dir: Path) -> Check:
         return Check("tệp phiên cũ", False, "; ".join(notes) + " — dọn trước khi demo", bat_buoc=False)
     extra = f", worker.pid {pid} đã chết" if pid else ""
     return Check("tệp phiên cũ", True, f"{out_dir} sạch{extra}")
-
-
-def _pid_alive(pid: int) -> bool:
-    """PID còn sống? (`os.kill(pid, 0)`: PermissionError = sống nhưng không phải của ta.)"""
-    try:
-        os.kill(int(pid), 0)
-    except ProcessLookupError:
-        return False
-    except (PermissionError, OSError):
-        return True
-    return True
 
 
 def probe_source(source, read_frames, n: int = 8, timeout_s: float = 8.0):
@@ -250,11 +241,15 @@ def _start_api(port: int, timeout_s: float = 25.0):
     log = _REPO_ROOT / "data" / "democheck_server.log"
     log.parent.mkdir(parents=True, exist_ok=True)
     handle = log.open("wb")
-    proc = subprocess.Popen(
-        [sys.executable, "-m", "uvicorn", "src.api.main:app",
-         "--host", "127.0.0.1", "--port", str(port)],
-        cwd=str(_REPO_ROOT), stdout=handle, stderr=subprocess.STDOUT,
-    )
+    try:
+        proc = subprocess.Popen(
+            [sys.executable, "-m", "uvicorn", "src.api.main:app",
+             "--host", "127.0.0.1", "--port", str(port)],
+            cwd=str(_REPO_ROOT), stdout=handle, stderr=subprocess.STDOUT,
+        )
+    except OSError:
+        handle.close()                  # Popen ném (thiếu uvicorn/quyền) ⇒ đừng rò fd
+        raise
     proc._log_handle = handle            # giữ để đóng sau khi kill (không rò fd)
     deadline = time.perf_counter() + timeout_s
     while time.perf_counter() < deadline:
@@ -383,9 +378,7 @@ def _out_dir(_source: str) -> Path:
 
 def _is_clip(source) -> bool:
     """Nguồn có phải CLIP demo (file video) không — dùng chung định nghĩa với `_rewind`."""
-    from src.video_source import looks_like_file
-
-    from src.video_source import FILE_SUFFIXES
+    from src.video_source import FILE_SUFFIXES, looks_like_file
 
     return looks_like_file(source) and Path(str(source)).suffix.lower() in FILE_SUFFIXES
 
@@ -430,19 +423,33 @@ def _rehearsal(args, source) -> Check:
     except ValueError:
         return Check("diễn tập phiên", False, f"--bbox phải là x,y,w,h; nhận {args.bbox!r}")
     bbox = {"x": x, "y": y, "w": w, "h": h}
+    current = _live_status(base)
+    if current.get("state") in ("running", "loading"):
+        # `live.start()` LUÔN `_stop_locked()` trước khi mở phiên mới ⇒ diễn tập trên API đang phục
+        # vụ sẽ **cướp phiên** của người đang demo. Từ chối sớm, đừng phá rồi báo lỗi.
+        return Check("diễn tập phiên", False,
+                     f"API đang có phiên '{current.get('state')}' — dừng nó rồi chạy lại "
+                     "(hoặc dùng API riêng cho diễn tập)")
     # `POST /api/live/start` **chặn tới khi model nạp xong** (`routes.py:190` → `live.start()` →
     # `WorkerFrameSource.start()` → `_wait_first_frame()`), đo trên máy này **3,4–4,1 s** với tiny;
     # checkpoint `small`/`base`, cache lạnh hoặc `image_size` lớn thì vượt xa. Timeout 5 s của
     # `_http_post` (mặc định) sẽ báo hỏng oan VÀ để phiên sống tiếp phía server — chính là ca
     # "không ai gửi stop" (review độc lập 14-11, P0). Dùng cùng mức với vòng chờ `running`.
-    timeout = max(30.0, float(args.full_timeout))
+    # Trần nạp model của server là `startup_timeout=240 s` (`worker_source.py:70,291`) ⇒ timeout của
+    # POST phải phủ TRẦN ĐÓ, không phải một con số "trông đủ to": `--full-timeout 60` sẽ báo hỏng oan
+    # đúng lúc worker đang nạp hợp lệ (review vòng 2, P3).
+    timeout = max(MODEL_LOAD_TIMEOUT_S, float(args.full_timeout))
     started, start_err = _http_post(f"{base}/api/live/start",
                                     {"source": str(source), "mode": "track", "bbox": bbox},
                                     timeout=timeout)
     if started is None:
-        # Timeout KHÔNG có nghĩa là server không dựng phiên: nó có thể đang/chạy xong sau lưng ta.
-        # Gửi stop best-effort để không bỏ lại worker giữ webcam.
-        _http_post(f"{base}/api/live/stop", {})
+        # Timeout/5xx = kết cục KHÔNG xác định: server có thể đã dựng phiên sau lưng ta ⇒ gửi stop
+        # best-effort để không bỏ lại worker giữ webcam. Nhưng 4xx = server TỪ CHỐI trước khi chạm
+        # phiên (409 đang bận, 422 bbox sai) ⇒ **không** được stop, vì stop đó sẽ giết phiên đang
+        # chạy của người khác (review vòng 2, P2).
+        status_code = str(start_err or "").split()[1] if str(start_err or "").startswith("HTTP ") else ""
+        if not status_code.startswith("4"):
+            _http_post(f"{base}/api/live/stop", {}, timeout=max(10.0, args.sample_s))
         return Check("diễn tập phiên", False,
                      f"POST /api/live/start thất bại ở {base}: {start_err} (timeout {timeout:.0f} s)")
     # `finally` gửi stop: phiên live **không** được sống tiếp sau khi preflight kết thúc (giữ webcam,
@@ -459,13 +466,16 @@ def _rehearsal(args, source) -> Check:
         time.sleep(args.sample_s)
         status = _http_json(f"{base}/api/live/status") or {}
     finally:
-        _http_post(f"{base}/api/live/stop", {})
+        # `LiveStreamService.stop()` join thread + `killpg` tới ~7 s (`src/api/main.py:162`) ⇒ stop
+        # với timeout mặc định 5 s là mất response (stop vẫn tới nơi nhưng ta không biết).
+        _http_post(f"{base}/api/live/stop", {}, timeout=15.0)
     # Phiên có thể CHẾT trong lúc lấy mẫu: `frames`/`mask_fps` khi đó là số "dính" từ trước khi chết
     # ⇒ kiểm `state` TRƯỚC khi kết luận "OK" (review độc lập 14-11, P1).
     if status.get("state") != "running":
         return Check("diễn tập phiên", False,
-                     f"phiên đổi trạng thái trong {args.sample_s:.0f} s lấy mẫu: "
-                     f"state={status.get('state')!r} — {status.get('message') or 'không có message'}")
+                     f"không phải 'running' sau {args.sample_s:.0f} s lấy mẫu: "
+                     f"state={status.get('state')!r} — "
+                     f"{status.get('message') or 'API không trả trạng thái / không có message'}")
     gained = int(status.get("frames") or 0) - first
     mask_fps = status.get("mask_fps") or 0
     if gained <= 0:
@@ -477,6 +487,15 @@ def _rehearsal(args, source) -> Check:
     return Check("diễn tập phiên", True,
                  f"+{gained} frame / {args.sample_s:.0f} s, mask {float(mask_fps):.1f} FPS, "
                  f"bbox {bbox}")
+
+
+def _live_status(base: str) -> dict:
+    """Trạng thái hiện tại của phiên live (`{}` nếu API không trả lời).
+
+    Gọi TRƯỚC khi start: `live.start()` luôn `_stop_locked()` trước khi mở phiên mới, nên diễn tập
+    trên API đang phục vụ sẽ **cướp phiên** của người đang demo (review vòng 2, P2).
+    """
+    return _http_json(f"{base}/api/live/status") or {}
 
 
 def _wait_running(base: str, timeout_s: float) -> dict:
@@ -503,7 +522,8 @@ def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Kiểm tra trước buổi demo (không nạp model).")
     parser.add_argument("--source", help="nguồn video (mặc định: configs/default.yaml)")
     parser.add_argument("--checkpoint")
-    parser.add_argument("--base-url", default=f"http://127.0.0.1:{DEFAULT_PORT}")
+    parser.add_argument("--base-url", default=None,
+                        help=f"URL của API (mặc định suy từ --port; {DEFAULT_PORT} nếu không đổi)")
     parser.add_argument("--port", type=int, default=DEFAULT_PORT)
     parser.add_argument("--out-dir")
     parser.add_argument("--timeout", type=float, default=8.0, help="giây cho mục nguồn video")
@@ -512,6 +532,10 @@ def main(argv=None) -> int:
     parser.add_argument("--full-timeout", type=float, default=MODEL_LOAD_TIMEOUT_S)
     parser.add_argument("--sample-s", type=float, default=10.0)
     args = parser.parse_args(argv)
+    if not args.base_url:
+        # Suy từ CÙNG cổng mà mục `cổng API` kiểm — trước đây base-url hardcode 8010 nên `--port 8011`
+        # khiến cổng 8011 bận được báo "đang phục vụ API của ta" dù là tiến trình lạ (P3 review vòng 2).
+        args.base_url = f"http://127.0.0.1:{args.port}"
 
     server = None
     try:

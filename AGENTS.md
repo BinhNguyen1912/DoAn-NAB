@@ -312,6 +312,13 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
   (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho
   cả cửa sổ. So sánh số cũ với số mới phải nêu định nghĩa, nếu không là so hai đại lượng khác nhau.
+- **`POST /api/live/start` CHẶN tới khi model nạp xong** (`routes.py` → `live.start()` →
+  `WorkerFrameSource.start()` → `_wait_first_frame()`): đo trên máy này **3,4–4,1 s** với checkpoint
+  tiny (cache ấm). Đừng đặt timeout 5 s cho request đó — biên chỉ ~1 s, và `cv2`/torch cache lạnh hay
+  checkpoint `small`/`base` sẽ vượt; hỏng timeout **không** có nghĩa server chưa dựng phiên (nó vẫn
+  dựng sau lưng client ⇒ worker giữ webcam mà không ai gửi stop). `scripts/measure_live_relay.py`
+  dùng `timeout=600`, `scripts/demo_preflight.py --full` dùng `max(30 s, --full-timeout)`.
+
 
 ## 7. Các repo/model tham khảo
 

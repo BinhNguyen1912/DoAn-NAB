@@ -264,6 +264,16 @@ class TestHealthPhanBietMaThoat:
         assert health is not None and health.state is LiveState.ERROR
         assert "(mã 1)" in health.message
 
+    def test_status_cuoi_duoc_neu_ro_khi_chet_luc_dang_nap(self, tmp_path):
+        """Worker chết lúc đang nạp để lại message "Đang nạp model..." — đọc trơn tưởng vẫn đang nạp."""
+        from src.api.domain import LiveState
+
+        self._write(tmp_path, state="stopped", message="Đang nạp model (image_size=1024)...")
+        health = self._source(tmp_path, 1).health()
+        assert health is not None and health.state is LiveState.ERROR
+        assert "status cuối:" in health.message, health.message
+        assert "Đang nạp model" in health.message
+
     def test_status_ghi_error_du_tien_trinh_con_song_van_la_error(self, tmp_path):
         from src.api.domain import LiveState
 

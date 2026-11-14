@@ -87,6 +87,13 @@ class TestWebDist:
         (dist / "index.html").write_text("<html>", encoding="utf-8")
         assert dp.check_webbuild(dist, src).ok
 
+    def test_thieu_web_src_thi_khong_bao_dat(self, tmp_path):
+        dist = tmp_path / "dist"
+        dist.mkdir()
+        (dist / "index.html").write_text("<html>", encoding="utf-8")
+        c = dp.check_webbuild(dist, tmp_path / "khong_co_src")
+        assert not c.ok and not c.bat_buoc and "KHÔNG so được" in c.chi_tiet
+
     def test_dist_cu_chi_canh_bao(self, tmp_path):
         """dist cũ từng làm e2e "PASS" trên mã CŨ (12-11) — phải cảnh báo, nhưng không chặn."""
         src, dist = tmp_path / "src", tmp_path / "dist"
@@ -141,13 +148,22 @@ class TestTepPhienCu:
                                             encoding="utf-8")
         assert dp.check_stale_state(tmp_path).ok
 
-    def test_worker_mo_coi_con_song_la_canh_bao(self, tmp_path):
-        """pidfile còn sống ⇒ có tiến trình đang giữ nguồn, phiên mới sẽ tranh thiết bị."""
+    def test_pidfile_cua_tien_trinh_khac_khong_phai_worker_thi_sach(self, tmp_path):
+        """pid tồn tại nhưng argv không phải `live_worker.py --out-dir <dir>` ⇒ KHÔNG phải mồ côi.
+
+        Dùng lại `_is_our_live_worker` của adapter: chỉ `os.kill(pid, 0)` thì pid tái chế (hoặc pid 1)
+        bị báo oan là "worker mồ côi" (review vòng 2, P3).
+        """
         import os
 
         (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         c = dp.check_stale_state(tmp_path)
-        assert not c.ok and not c.bat_buoc and "CÒN SỐNG" in c.chi_tiet
+        assert c.ok, c.chi_tiet
+
+    def test_pid_am_trong_pidfile_khong_bao_gio_bao_dong(self, tmp_path):
+        """`os.kill(-1, 0)` là dò CẢ process group (hoặc tệ hơn) ⇒ pidfile phải qua `_read_pid`."""
+        (tmp_path / "worker.pid").write_text("-1", encoding="utf-8")
+        assert dp.check_stale_state(tmp_path).ok
 
     def test_pidfile_cu_da_chet_thi_sach(self, tmp_path):
         (tmp_path / "worker.pid").write_text("999999", encoding="utf-8")
@@ -238,8 +254,58 @@ class TestGit:
         assert not c.ok and not c.bat_buoc and "git" in c.chi_tiet
 
 
+class _FakeUrlopen:
+    """`urlopen` giả: ném `HTTPError` có thân JSON `{"detail": ...}` như FastAPI."""
+
+    def __init__(self, code, body):
+        self._code = code
+        self._body = body.encode("utf-8")
+
+    def __call__(self, *_a, **_k):
+        import io
+        import urllib.error
+
+        raise urllib.error.HTTPError("http://x/api/live/start", self._code, "Bad Request",
+                                     {}, io.BytesIO(self._body))
+
+
+class TestHttpPostGiuThanLoi:
+    def test_400_giu_detail_cua_fastapi(self, monkeypatch):
+        """Ca hỏng thật ("Device busy", bbox sai) trả 400 + `detail` — nuốt mất là mất lý do."""
+        import urllib.request
+
+        monkeypatch.setattr(urllib.request, "urlopen",
+                            _FakeUrlopen(400, '{"detail": "không mở được camera index 0"}'))
+        body, err = dp._http_post("http://x/api/live/start", {})
+        assert body is None
+        assert "HTTP 400" in err and "camera index 0" in err, err
+
+    def test_than_loi_khong_phai_json_van_neu_ma_loi(self, monkeypatch):
+        import urllib.request
+
+        monkeypatch.setattr(urllib.request, "urlopen", _FakeUrlopen(500, "<html>boom</html>"))
+        body, err = dp._http_post("http://x/api/live/start", {})
+        assert body is None and "HTTP 500" in err
+
+    def test_loi_mang_tra_loi_kieu_loi(self, monkeypatch):
+        import urllib.error
+        import urllib.request
+
+        def boom(*_a, **_k):
+            raise urllib.error.URLError("mất mạng")
+
+        monkeypatch.setattr(urllib.request, "urlopen", boom)
+        body, err = dp._http_post("http://x/api/live/start", {})
+        assert body is None and "URLError" in err
+
+
 class TestDienTapFull:
     """`--full`: có nạp model, nên test chỉ kiểm HỢP ĐỒNG (không chạy model thật)."""
+
+    @pytest.fixture(autouse=True)
+    def _api_ranh(self, monkeypatch):
+        """Mặc định: API không có phiên nào. Test nào cần "đang có phiên" thì patch lại."""
+        monkeypatch.setattr(dp, "_live_status", lambda _base: {})
 
     def _args(self, **kw):
         import argparse
@@ -275,7 +341,8 @@ class TestDienTapFull:
 
         start_calls = [t for url, t in posts if url.endswith("/api/live/start")]
         assert start_calls, posts
-        assert start_calls[0] >= 30.0, f"timeout {start_calls[0]} quá ngắn cho POST start"
+        assert start_calls[0] >= dp.MODEL_LOAD_TIMEOUT_S, \
+            f"timeout {start_calls[0]} phải phủ trần nạp model {dp.MODEL_LOAD_TIMEOUT_S}"
 
     def test_worker_bao_loi_thi_neu_message(self, monkeypatch):
         monkeypatch.setattr(dp, "_http_post", self._posts([]))
@@ -331,17 +398,43 @@ class TestDienTapFull:
             dp._rehearsal(self._args(), "0")
         assert any(url.endswith("/api/live/stop") for url, _t in posts), posts
 
+    def test_tu_choi_dien_tap_khi_api_dang_co_phien(self, monkeypatch):
+        """`live.start()` luôn `_stop_locked()` ⇒ diễn tập sẽ CƯỚP phiên của người đang demo."""
+        posts = []
+        monkeypatch.setattr(dp, "_http_post", self._posts(posts))
+        monkeypatch.setattr(dp, "_live_status", lambda _base: {"state": "running", "frames": 9})
+        c = dp._rehearsal(self._args(), "0")
+        assert not c.ok and "đang có phiên" in c.chi_tiet
+        assert not posts, "không được POST start/stop khi đang có phiên khác"
+
+    def test_409_bi_tu_choi_thi_khong_gui_stop(self, monkeypatch):
+        """409 = server từ chối TRƯỚC khi chạm phiên ⇒ stop của ta sẽ giết phiên người khác."""
+        posts = []
+
+        def fake(url, payload=None, timeout=5.0, **_kw):
+            posts.append((url, timeout))
+            if url.endswith("/api/live/start"):
+                return None, "HTTP 409: đang mở một phiên live khác (nạp model)"
+            return {}, None
+
+        monkeypatch.setattr(dp, "_http_post", fake)
+        monkeypatch.setattr(dp, "_http_json", lambda *a, **k: {"state": "stopped"})
+        c = dp._rehearsal(self._args(), "0")
+        assert not c.ok and "409" in c.chi_tiet
+        assert not any(url.endswith("/api/live/stop") for url, _t in posts), posts
+
     def test_start_that_bai_van_gui_stop_best_effort(self, monkeypatch):
         """Timeout POST **không** chứng minh server chưa dựng phiên ⇒ vẫn phải gửi stop."""
         posts = []
 
         def fake(url, payload=None, timeout=5.0, **_kw):
             posts.append((url, timeout))
-            return None, "HTTP 400: không mở được camera index 0"
+            # Lỗi KHÔNG xác định kết cục (mạng đứt) — khác 4xx: server có thể đã dựng phiên.
+            return None, "URLError: mất mạng giữa lúc gửi"
 
         monkeypatch.setattr(dp, "_http_post", fake)
         c = dp._rehearsal(self._args(), "0")
-        assert not c.ok and "camera index 0" in c.chi_tiet
+        assert not c.ok and "URLError" in c.chi_tiet
         assert any(url.endswith("/api/live/stop") for url, _t in posts), posts
 
 
