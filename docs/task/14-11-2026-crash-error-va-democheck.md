@@ -71,8 +71,8 @@
    `./run democheck` trước buổi demo, kèm cảnh báo "OK ở mục nguồn ≠ bám đúng" và "--full bắt buộc --bbox".
 
 ### Kiểm tra & diễn tập
-10. `./run lint` xanh; `./run test` = **1037 passed**, 5 deselected. Test mới: `tests/test_live_crash.py`
-    (18 test), `tests/test_demo_preflight.py` (41 test).
+10. `./run lint` xanh; `./run test` = **1046 passed**, 5 deselected. Test mới: `tests/test_live_crash.py`
+    (20 test), `tests/test_demo_preflight.py` (48 test).
 11. **Hai lần diễn tập thật** (`--full`, nguồn `data/binh1.mp4`, bbox 300,275,150,410, mẫu 12 s):
 
 ## 📤 Output / Kết quả
@@ -83,6 +83,7 @@
 |---|---|---|---|---|
 | 1 | **+357** (~29,8 FPS hiển thị) | **8,8 FPS** | 8 OK · 2 cảnh báo · 0 LỖI | 0 |
 | 2 | **+330** | **9,0 FPS** | 8 OK · 2 cảnh báo · 0 LỖI | 0 |
+| 3 (sau khi sửa P0) | **+355** | **9,1 FPS** | **9 OK · 1 cảnh báo** · 0 LỖI | 0 |
 
 Hai cảnh báo đúng như thiết kế: `mã nguồn` (cây bẩn khi đang phát triển) và `tệp phiên cũ` (lần 2 thấy
 `bbox.json` còn lại từ lần 1 — đúng thứ cần dọn trước khi demo).
@@ -102,7 +103,7 @@ minh preflight bắt được đúng ca "mở webcam hỏng" mà không nạp mo
 - `scripts/demo_preflight.py` — **mới**: 9 mục + `--full` + 3 bước tay in ở cuối.
 - `run` — case `democheck` + help.
 - `AGENTS.md` §5 — bắt buộc `./run democheck` trước buổi demo.
-- `tests/test_live_crash.py`, `tests/test_demo_preflight.py` — **mới** (59 test).
+- `tests/test_live_crash.py`, `tests/test_demo_preflight.py` — **mới** (68 test).
 - `docs/task/14-11-2026-crash-error-va-democheck.md` — log này.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
@@ -120,11 +121,41 @@ minh preflight bắt được đúng ca "mở webcam hỏng" mà không nạp mo
   (AGENTS §6 đã ghi đúng ca này ở Colab 13-11) ⇒ **bắt buộc** truyền `--bbox`, từ chối chạy nếu thiếu.
 - **cv2 in cảnh báo `Camera index out of range` ra stderr** khi dò webcam — giữ nguyên (thông tin thật, và
   mục `nguồn video` đã nói lại bằng tiếng Việt kèm gợi ý index khác).
-- **Review độc lập (§9.1) — agent `reviewer`, nhánh `b94e0c5` so với `main`:** kết quả ghi ở mục dưới khi
-  agent trả về; P0 = ? (xem "Kết quả review").
+- **Review độc lập (§9.1) — agent `reviewer`, commit `b94e0c5` so với `main`:** verdict đầu
+  "chưa merge được", **1 P0 + 2 P1 + 6 P2 + 6 P3**. Reviewer **không có shell** nên chỉ đọc mã (nó nói
+  rõ điều này). Đã sửa **toàn bộ P0/P1/P2 + 7 P3** trong cùng nhánh:
+
+| Mức | Phát hiện | Cách xử lý (đã làm) |
+|---|---|---|
+| **P0** | `POST /api/live/start` **chặn tới khi model nạp xong** (`routes.py:190` → `live.start()` → `WorkerFrameSource.start()` → `_wait_first_frame()`), trong khi `_http_post` mặc định **timeout 5 s** ⇒ `--full` báo hỏng oan **và** để phiên sống tiếp phía server (không ai gửi stop) | **Đo lại: POST chặn 3,4–4,1 s** với checkpoint tiny trên máy này (biên chỉ ~1 s!) ⇒ timeout nay `max(30 s, --full-timeout)`; khi POST hỏng vẫn gửi `/api/live/stop` **best-effort** + in `HTTP <code>: <detail>` |
+| **P1** | `_rehearsal` không kiểm `state` **sau** khi lấy mẫu: phiên chết trong 10 s vẫn "OK" vì `frames`/`mask_fps` là số dính từ trước khi chết | kiểm `state != running` ⇒ LỖI kèm `message`; test `test_phien_chet_trong_luc_lay_mau_thi_khong_bao_ok` |
+| **P1** | 2 test ghim "hợp đồng không có thật" (start trả dict tức thì; "start lỗi thì không stop") | viết lại theo hợp đồng thật (`_posts` giả ghi `(url, timeout)`); thêm test **timeout ≥ 30 s** và test **start lỗi vẫn stop** |
+| **P2** | `_start_api` nằm **ngoài** `try/finally` ⇒ Ctrl-C/ngoại lệ để uvicorn mồ côi | bọc cả đoạn dựng API trong `try` |
+| **P2** | `_http_post` nuốt **thân lỗi HTTP** ⇒ ca hỏng thật chỉ in "POST thất bại", mất đúng lý do | trả `(body, lỗi)`, giữ `HTTP 400: detail` cho `start` |
+| **P2** | `check_stale_state` cảnh báo `bbox.json` cũ — **sai**: `_prepare_dir()` xoá nó trước mỗi lần start ⇒ sau mỗi buổi demo luôn có 1 cảnh báo vô nghĩa; đồng thời bỏ sót `worker.pid` (worker mồ côi giữ webcam) | bỏ cảnh báo bbox; thêm **pidfile còn sống** (`os.kill(pid, 0)`) + state `loading`; test 4 ca |
+| **P2** | Thiếu test cho ngoại lệ **có chủ đích** của `looks_like_file`: chuỗi số khi CÓ file/thư mục thật trùng tên | test mới (`monkeypatch.chdir`, tạo file `0`) |
+| **P2** | `_is_clip` khai lại danh sách đuôi video; `opencv_source._FILE_SUFFIXES` thành **chết** | export `FILE_SUFFIXES` từ `src/video_source.py`, dùng ở cả hai nơi |
+| **P3** | `check_port` báo "cổng bận" đúng lúc API của ta **đang chạy** (trạng thái chuẩn bị demo) | chỉ cảnh báo khi cổng bận **và** `/health` không trả lời |
+| **P3** | `check_source_moving` cho **đạt** khi hai frame **khác kích thước** | thành cảnh báo "nguồn đang đổi cấu hình" |
+| **P3** | `check_webbuild` "đạt" khi **không có** `web/src` để so | cảnh báo "không so được" |
+| **P3** | `_set_error` để lỗi sau ghi đè lỗi trước ⇒ `status.json` nêu sai nguồn gốc | **lỗi đầu tiên thắng** (+ test) |
+| **P3** | `_default_checkpoint()` hardcode `tiny` trong khi `configs/default.yaml` là nguồn sự thật | đọc config, `tiny` chỉ là fallback |
+| **P3** | Worker chết lúc đang nạp ⇒ message đọc như "đang nạp bình thường" | thêm tiền tố `status cuối:` |
+| **P3** | Assert theo chuỗi thông điệp trong test | **giữ nguyên** (reviewer cũng ghi "chấp nhận được"): mục đích của hai test đó là *hai nguồn lỗi phải phân biệt được* |
+| Note | đếm test sai (41 → 43) | log đã sửa thành số đếm thật (48 + 20) |
+
+Reviewer cũng **xác nhận không phải lỗi** 9 nghi vấn của phiên cha (SIGTERM/Ctrl-C không bị báo ERROR oan,
+worker chết không kịp ghi status vẫn ERROR, `_rewind` không phá hành vi cũ, `--full` đã dọn phiên khi ném
+giữa đường…) — chi tiết ở báo cáo review trong phiên.
+
+**Chưa xử lý (ghi lại, không im lặng):** rủi ro còn lại reviewer nêu — `--full` với **webcam WSL** (`source: 0`)
+chưa đo: `probe_source` mở/đóng webcam ngay trước khi worker mở lại, có thể "Device busy" (cùng lớp lỗi
+AGENTS §6). Cần đo khi có relay thật.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] Đóng các mục P0/P1 của review độc lập (nếu có) **trong cùng nhánh này**.
+- [x] Đóng các mục P0/P1 của review độc lập **trong cùng nhánh này** (P0/P1/P2 + 7 P3 đã sửa, xem bảng trên).
+- [ ] Đo `--full` với **webcam/relay thật** (`source: 0` / `http://…/snapshot.jpg`) — rủi ro "Device busy"
+      do `probe_source` mở/đóng nguồn ngay trước worker (review 14-11 nêu, chưa đo được trên máy này).
 - [ ] Việc còn lại của plan: **#5** bảng cấu hình, **#6** thước đo "bám đúng", **#8** HUD, **#9** media, **#11** A/B.
 - [ ] **2 lần diễn tập trên CAMERA THẬT** (relay Windows → `/snapshot.jpg`) + **kéo chuột trên web**: script
       không tự làm được, đã in 3 bước tay ở cuối `democheck`. Hiện chỉ mới diễn tập trên clip `binh1.mp4`.

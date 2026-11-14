@@ -16,6 +16,7 @@ Lưu ý  : "OK" ở mục nguồn chỉ có nghĩa *"đọc được frame lúc 
 
 import argparse
 import json
+import os
 import socket
 import sys
 import time
@@ -94,7 +95,11 @@ def check_webbuild(web_dist: Path, web_src: Path) -> Check:
     index = Path(web_dist) / "index.html"
     if not index.is_file():
         return Check("web/dist", False, f"chưa build ({index} không có) — chạy ./run web")
-    newest = max((p.stat().st_mtime for p in Path(web_src).rglob("*") if p.is_file()), default=0.0)
+    src_files = [p.stat().st_mtime for p in Path(web_src).rglob("*") if p.is_file()]
+    if not src_files:
+        return Check("web/dist", True, f"{index.parent} (không có {web_src} để so độ mới)",
+                     bat_buoc=False)
+    newest = max(src_files)
     if index.stat().st_mtime < newest:
         return Check("web/dist", False,
                      "dist CŨ hơn web/src — chạy lại ./run web (dist cũ ⇒ demo chạy mã cũ)",
@@ -112,47 +117,74 @@ def check_api(base_url: str, http_json, bat_buoc: bool = False) -> Check:
     return Check("API /health", True, json.dumps(payload, ensure_ascii=False)[:80])
 
 
-def check_port(port: int, owned: bool = False) -> Check:
-    """Cổng phải trống để `./run api` tự dựng được (cổng bận = API cũ/á quân đang giữ).
+def check_port(port: int, owned: bool = False, api_alive: bool = False) -> Check:
+    """Cổng phải trống để `./run api` tự dựng được — TRỪ KHI thứ đang giữ cổng chính là API của ta.
 
-    `owned=True`: chính `--full` vừa dựng API trên cổng đó ⇒ bận là ĐÚNG, không phải cảnh báo.
+    `owned=True`: `--full` vừa dựng API đó. `api_alive=True`: `/health` trên cổng đã trả lời ⇒ đây
+    đúng là trạng thái chuẩn bị demo (API đang chạy), cảnh báo "cổng bận" ở đây là báo oan và mâu
+    thuẫn với chính mục `API /health`.
     """
     if owned:
         return Check("cổng API", True, f"{port} do democheck tự dựng cho --full")
     with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as sock:
         sock.settimeout(0.5)
         busy = sock.connect_ex(("127.0.0.1", int(port))) == 0
+    if busy and api_alive:
+        return Check("cổng API", True, f"{port} đang phục vụ API của ta")
     if busy:
         return Check("cổng API", False,
-                     f"{port} đang bận — hoặc dùng lại (--base-url), hoặc tắt tiến trình cũ trước",
+                     f"{port} đang bận nhưng KHÔNG trả /health — tiến trình lạ giữ cổng, tắt trước",
                      bat_buoc=False)
     return Check("cổng API", True, f"{port} trống")
 
 
 def check_stale_state(out_dir: Path) -> Check:
-    """Tệp phiên cũ trong `out_dir`: `bbox.json` cũ làm phiên mới bám SAI vật ngay từ frame đầu."""
+    """Rác phiên trước trong thư mục chia sẻ.
+
+    **Đừng** cảnh báo `bbox.json`: `WorkerFrameSource._prepare_dir()` xoá `bbox.json`/`frame.jpg`/
+    `status.json`/pidfile trước MỖI lần start (`worker_source.py:51,217`) ⇒ nó không bao giờ làm
+    phiên sau bám sai, và cảnh báo nó biến preflight thành "luôn có 1 cảnh báo" sau mỗi buổi demo
+    (review độc lập 14-11, P2).
+
+    Thứ đáng cảnh báo là **worker mồ côi**: pidfile còn sống ⇒ có tiến trình đang giữ webcam, phiên
+    mới sẽ tranh thiết bị ("Device busy", AGENTS §6). Và `state = loading|running` còn trong
+    `status.json` ⇒ phiên trước chưa dọn.
+    """
     out_dir = Path(out_dir)
     if not out_dir.is_dir():
         return Check("tệp phiên cũ", True, f"{out_dir} chưa có (sẽ tạo khi chạy)")
-    bbox = out_dir / "bbox.json"
-    status = out_dir / "status.json"
     notes = []
-    if bbox.is_file():
-        try:
-            data = json.loads(bbox.read_text(encoding="utf-8"))
-            notes.append(f"bbox.json cũ {tuple(data.get(k) for k in ('x', 'y', 'w', 'h'))}")
-        except (OSError, ValueError):
-            notes.append("bbox.json hỏng")
+    pidfile = out_dir / "worker.pid"
+    pid = None
+    try:
+        pid = int(pidfile.read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        pid = None
+    if pid and _pid_alive(pid):
+        notes.append(f"worker.pid = {pid} CÒN SỐNG (worker mồ côi đang giữ nguồn?)")
+    status = out_dir / "status.json"
     if status.is_file():
         try:
             data = json.loads(status.read_text(encoding="utf-8"))
-            if data.get("state") in ("running", "tracking", "waiting_selection"):
+            if data.get("state") in ("loading", "running", "tracking", "waiting_selection"):
                 notes.append(f"status.json còn '{data.get('state')}' (phiên trước chưa dọn)")
         except (OSError, ValueError):
             notes.append("status.json hỏng")
     if notes:
-        return Check("tệp phiên cũ", False, "; ".join(notes) + " — xoá trước khi demo", bat_buoc=False)
-    return Check("tệp phiên cũ", True, f"{out_dir} sạch")
+        return Check("tệp phiên cũ", False, "; ".join(notes) + " — dọn trước khi demo", bat_buoc=False)
+    extra = f", worker.pid {pid} đã chết" if pid else ""
+    return Check("tệp phiên cũ", True, f"{out_dir} sạch{extra}")
+
+
+def _pid_alive(pid: int) -> bool:
+    """PID còn sống? (`os.kill(pid, 0)`: PermissionError = sống nhưng không phải của ta.)"""
+    try:
+        os.kill(int(pid), 0)
+    except ProcessLookupError:
+        return False
+    except (PermissionError, OSError):
+        return True
+    return True
 
 
 def probe_source(source, read_frames, n: int = 8, timeout_s: float = 8.0):
@@ -184,7 +216,10 @@ def check_source_moving(frames) -> Check:
         return Check("frame có đổi", False, "cần ≥ 2 frame để so")
     a, b = frames[0], frames[-1]
     if getattr(a, "shape", None) != getattr(b, "shape", None):
-        return Check("frame có đổi", True, "kích thước frame đổi giữa hai lần đọc")
+        # Đổi kích thước giữa hai frame là BẤT THƯỜNG (nguồn đổi độ phân giải/cắt khung), không phải
+        # bằng chứng "nguồn sống" ⇒ cảnh báo, không tính là đạt.
+        return Check("frame có đổi", False,
+                     "kích thước frame đổi giữa hai lần đọc — nguồn đang đổi cấu hình?", bat_buoc=False)
     diff = float(np.abs(a.astype(np.int16) - b.astype(np.int16)).mean())
     if diff < 0.01:
         return Check("frame có đổi", False,
@@ -262,14 +297,22 @@ def _http_json(url, timeout=2.0):
 
 
 def _http_post(url, payload, timeout=5.0):
+    """Trả `(body, lỗi)`. Ca hỏng của `--full` ("Device busy", bbox ngoài khung, worker error) trả
+    **400 kèm `detail`** — nuốt thân lỗi là ném đi đúng câu giải thích mà preflight tồn tại để đưa."""
     data = json.dumps(payload).encode("utf-8")
     req = urllib.request.Request(url, data=data, headers={"Content-Type": "application/json"},
                                  method="POST")
     try:
         with urllib.request.urlopen(req, timeout=timeout) as resp:
-            return json.loads(resp.read().decode("utf-8") or "{}")
-    except (urllib.error.URLError, OSError, ValueError):
-        return None
+            return json.loads(resp.read().decode("utf-8") or "{}"), None
+    except urllib.error.HTTPError as exc:
+        try:
+            detail = json.loads(exc.read().decode("utf-8")).get("detail")
+        except Exception:                            # noqa: BLE001 — thân lỗi không phải JSON
+            detail = exc.reason
+        return None, f"HTTP {exc.code}: {detail}"
+    except (urllib.error.URLError, OSError, ValueError) as exc:
+        return None, f"{type(exc).__name__}: {exc}"
 
 
 def read_frames(source, n, timeout_s):
@@ -316,6 +359,18 @@ def _default_source() -> str:
 
 
 def _default_checkpoint() -> Path:
+    """Checkpoint từ `configs/default.yaml` (nguồn sự thật — README hướng dẫn đổi sang `small`/`base`);
+    `tiny` chỉ là fallback khi không đọc được config."""
+    try:
+        import yaml
+
+        data = yaml.safe_load((_REPO_ROOT / "configs" / "default.yaml").read_text(encoding="utf-8"))
+        value = (data or {}).get("checkpoint")
+        if value:
+            path = Path(str(value))
+            return path if path.is_absolute() else _REPO_ROOT / path
+    except Exception:                               # noqa: BLE001
+        pass
     return _REPO_ROOT / "samurai" / "sam2" / "checkpoints" / "sam2.1_hiera_tiny.pt"
 
 
@@ -330,20 +385,24 @@ def _is_clip(source) -> bool:
     """Nguồn có phải CLIP demo (file video) không — dùng chung định nghĩa với `_rewind`."""
     from src.video_source import looks_like_file
 
-    return looks_like_file(source) and Path(str(source)).suffix.lower() in (".mp4", ".avi", ".mov", ".mkv")
+    from src.video_source import FILE_SUFFIXES
+
+    return looks_like_file(source) and Path(str(source)).suffix.lower() in FILE_SUFFIXES
 
 
 def run_checks(args) -> list:
     """9 mục kiểm + (tuỳ chọn) diễn tập `--full`. Tách khỏi `main()` để test gọi thẳng."""
     source = args.source or _default_source()
     frames, err, took_ms = probe_source(source, read_frames, timeout_s=args.timeout)
+    api_ok = _http_json(f"{args.base_url.rstrip('/')}/health", timeout=2.0) is not None
     checks = [
         check_checkpoint(Path(args.checkpoint) if args.checkpoint else _default_checkpoint()),
         check_clip(Path(source)) if _is_clip(source)
         else Check("clip demo", True, f"nguồn {source} — không phải clip, bỏ qua"),
         check_webbuild(_REPO_ROOT / "web" / "dist", _REPO_ROOT / "web" / "src"),
         check_api(args.base_url, _http_json, bat_buoc=args.full),
-        check_port(args.port, owned=bool(getattr(args, "port_owned", False))),
+        check_port(args.port, owned=bool(getattr(args, "port_owned", False)),
+                   api_alive=api_ok),
         check_stale_state(Path(args.out_dir) if args.out_dir else _out_dir(source)),
         check_source_frames(source, frames, err, took_ms, timeout_s=args.timeout),
         check_source_moving(frames),
@@ -371,10 +430,21 @@ def _rehearsal(args, source) -> Check:
     except ValueError:
         return Check("diễn tập phiên", False, f"--bbox phải là x,y,w,h; nhận {args.bbox!r}")
     bbox = {"x": x, "y": y, "w": w, "h": h}
-    started = _http_post(f"{base}/api/live/start",
-                         {"source": str(source), "mode": "track", "bbox": bbox})
+    # `POST /api/live/start` **chặn tới khi model nạp xong** (`routes.py:190` → `live.start()` →
+    # `WorkerFrameSource.start()` → `_wait_first_frame()`), đo trên máy này **3,4–4,1 s** với tiny;
+    # checkpoint `small`/`base`, cache lạnh hoặc `image_size` lớn thì vượt xa. Timeout 5 s của
+    # `_http_post` (mặc định) sẽ báo hỏng oan VÀ để phiên sống tiếp phía server — chính là ca
+    # "không ai gửi stop" (review độc lập 14-11, P0). Dùng cùng mức với vòng chờ `running`.
+    timeout = max(30.0, float(args.full_timeout))
+    started, start_err = _http_post(f"{base}/api/live/start",
+                                    {"source": str(source), "mode": "track", "bbox": bbox},
+                                    timeout=timeout)
     if started is None:
-        return Check("diễn tập phiên", False, f"POST /api/live/start thất bại ở {base}")
+        # Timeout KHÔNG có nghĩa là server không dựng phiên: nó có thể đang/chạy xong sau lưng ta.
+        # Gửi stop best-effort để không bỏ lại worker giữ webcam.
+        _http_post(f"{base}/api/live/stop", {})
+        return Check("diễn tập phiên", False,
+                     f"POST /api/live/start thất bại ở {base}: {start_err} (timeout {timeout:.0f} s)")
     # `finally` gửi stop: phiên live **không** được sống tiếp sau khi preflight kết thúc (giữ webcam,
     # bỏ lại worker mồ côi nếu API không do chính script dựng). Đã start được thì phải dọn được.
     try:
@@ -390,6 +460,12 @@ def _rehearsal(args, source) -> Check:
         status = _http_json(f"{base}/api/live/status") or {}
     finally:
         _http_post(f"{base}/api/live/stop", {})
+    # Phiên có thể CHẾT trong lúc lấy mẫu: `frames`/`mask_fps` khi đó là số "dính" từ trước khi chết
+    # ⇒ kiểm `state` TRƯỚC khi kết luận "OK" (review độc lập 14-11, P1).
+    if status.get("state") != "running":
+        return Check("diễn tập phiên", False,
+                     f"phiên đổi trạng thái trong {args.sample_s:.0f} s lấy mẫu: "
+                     f"state={status.get('state')!r} — {status.get('message') or 'không có message'}")
     gained = int(status.get("frames") or 0) - first
     mask_fps = status.get("mask_fps") or 0
     if gained <= 0:
@@ -438,16 +514,19 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     server = None
-    if args.full and _http_json(f"{args.base_url.rstrip('/')}/health") is None:
-        # `--full` tự dựng API: diễn tập mà bắt người dùng mở terminal thứ hai thì trên thực tế
-        # người ta sẽ bỏ qua bước diễn tập (và đó đúng là bước cần nhất trước buổi thi).
-        args.base_url = f"http://127.0.0.1:{args.port}"
-        print(f"[democheck] API chưa chạy — tự dựng ở cổng {args.port} (log: data/democheck_server.log)")
-        server = _start_api(args.port)
-        args.port_owned = server is not None and server.poll() is None
     try:
+        if args.full and _http_json(f"{args.base_url.rstrip('/')}/health") is None:
+            # `--full` tự dựng API: diễn tập mà bắt người dùng mở terminal thứ hai thì trên thực tế
+            # người ta sẽ bỏ qua bước diễn tập (và đó đúng là bước cần nhất trước buổi thi).
+            args.base_url = f"http://127.0.0.1:{args.port}"
+            print(f"[democheck] API chưa chạy — tự dựng ở cổng {args.port} "
+                  f"(log: data/democheck_server.log)")
+            server = _start_api(args.port)
+            args.port_owned = server is not None and server.poll() is None
         checks = run_checks(args)
     finally:
+        # Bọc CẢ đoạn dựng API: Ctrl-C/ngoại lệ trong `_start_api` cũng không để uvicorn mồ côi
+        # (review độc lập 14-11, P2).
         _stop_api(server)
     print(f"\n=== democheck ({len(checks)} mục) ===")
     for c in checks:

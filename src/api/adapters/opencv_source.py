@@ -24,8 +24,6 @@ from src.video_source import looks_like_file, open_video_source
 logger = logging.getLogger("doan.api.opencv_source")
 
 # Đuôi file được coi là video (để quyết định có lặp lại hay không)
-_FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
-
 # Nguồn sống chết ra sao: `read()` trả None liên tục quá lâu. Kết luận cần ĐỒNG THỜI quá `STALE_S`
 # **và** ≥ `MISS_MIN` lần trượt liên tiếp (xem hằng số dưới) — **một** lần im lặng > 3 s KHÔNG đủ
 # (read-timeout của nguồn là 5 s, lớn hơn 3 s: kết luận ngay sẽ giết phiên khoẻ).

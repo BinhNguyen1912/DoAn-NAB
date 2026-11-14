@@ -112,6 +112,14 @@ class TestApiVaCong:
         c = dp.check_api("http://x", lambda *a, **k: {"status": "ok"})
         assert c.ok and "ok" in c.chi_tiet
 
+    def test_cong_ban_nhung_api_cua_ta_thi_khong_canh_bao(self, monkeypatch):
+        monkeypatch.setattr(dp, "_http_json", lambda *a, **k: {"status": "ok"})
+        with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
+            srv.bind(("127.0.0.1", 0))
+            srv.listen(1)
+            port = srv.getsockname()[1]
+            assert dp.check_port(port, api_alive=True).ok
+
     def test_cong_ban_chi_canh_bao(self):
         with socket.socket(socket.AF_INET, socket.SOCK_STREAM) as srv:
             srv.bind(("127.0.0.1", 0))
@@ -125,13 +133,32 @@ class TestTepPhienCu:
     def test_thu_muc_chua_co_thi_ok(self, tmp_path):
         assert dp.check_stale_state(tmp_path / "chua_co").ok
 
-    def test_bbox_cu_la_canh_bao(self, tmp_path):
+    def test_bbox_cu_khong_lam_canh_bao(self, tmp_path):
+        """`_prepare_dir()` xoá `bbox.json` trước mỗi lần start ⇒ cảnh báo nó là nhiễu (review P2)."""
         import json
 
         (tmp_path / "bbox.json").write_text(json.dumps({"x": 1, "y": 2, "w": 3, "h": 4}),
                                             encoding="utf-8")
+        assert dp.check_stale_state(tmp_path).ok
+
+    def test_worker_mo_coi_con_song_la_canh_bao(self, tmp_path):
+        """pidfile còn sống ⇒ có tiến trình đang giữ nguồn, phiên mới sẽ tranh thiết bị."""
+        import os
+
+        (tmp_path / "worker.pid").write_text(str(os.getpid()), encoding="utf-8")
         c = dp.check_stale_state(tmp_path)
-        assert not c.ok and not c.bat_buoc and "bbox.json" in c.chi_tiet
+        assert not c.ok and not c.bat_buoc and "CÒN SỐNG" in c.chi_tiet
+
+    def test_pidfile_cu_da_chet_thi_sach(self, tmp_path):
+        (tmp_path / "worker.pid").write_text("999999", encoding="utf-8")
+        c = dp.check_stale_state(tmp_path)
+        assert c.ok and "đã chết" in c.chi_tiet
+
+    def test_status_loading_cung_la_rac_phien_truoc(self, tmp_path):
+        import json
+
+        (tmp_path / "status.json").write_text(json.dumps({"state": "loading"}), encoding="utf-8")
+        assert not dp.check_stale_state(tmp_path).ok
 
     def test_status_dang_chay_la_canh_bao(self, tmp_path):
         import json
@@ -186,10 +213,12 @@ class TestFrameCoDoi:
     def test_mot_frame_thi_khong_ket_luan_duoc(self):
         assert not dp.check_source_moving([np.zeros((4, 4, 3), np.uint8)]).ok
 
-    def test_kich_thuoc_doi_cung_la_doi(self):
+    def test_kich_thuoc_doi_la_canh_bao_khong_phai_dang(self):
+        """Đổi kích thước giữa hai frame là bất thường, KHÔNG phải bằng chứng nguồn sống."""
         a = np.zeros((8, 8, 3), np.uint8)
         b = np.zeros((10, 10, 3), np.uint8)
-        assert dp.check_source_moving([a, b]).ok
+        c = dp.check_source_moving([a, b])
+        assert not c.ok and not c.bat_buoc
 
 
 class TestGit:
@@ -220,19 +249,43 @@ class TestDienTapFull:
         base.update(kw)
         return argparse.Namespace(**base)
 
+    @staticmethod
+    def _posts(box):
+        """Ghi lại (url, timeout) của mọi lần POST; trả body giả cho `start`."""
+        def fake(url, payload=None, timeout=5.0, **_kw):
+            box.append((url, timeout))
+            if url.endswith("/api/live/start"):
+                return {"state": "loading"}, None
+            return {}, None
+
+        return fake
+
     def test_thieu_bbox_thi_tu_choi_ngay(self):
         c = dp._rehearsal(self._args(bbox=None), "0")
         assert not c.ok and "--bbox" in c.chi_tiet
 
+    def test_post_start_dung_timeout_dai_vi_endpoint_chan_toi_khi_nap_xong(self, monkeypatch):
+        """P0 review 14-11: POST start chặn 3,4–4,1 s (đo được) ⇒ timeout 5 s báo hỏng oan."""
+        posts = []
+        monkeypatch.setattr(dp, "_http_post", self._posts(posts))
+        monkeypatch.setattr(dp, "_http_json", lambda *a, **k: {"state": "loading"})
+        monkeypatch.setattr(dp.time, "sleep", lambda _s: None)
+        monkeypatch.setattr(dp.time, "perf_counter", _Clock())
+        dp._rehearsal(self._args(full_timeout=0.0), "0")
+
+        start_calls = [t for url, t in posts if url.endswith("/api/live/start")]
+        assert start_calls, posts
+        assert start_calls[0] >= 30.0, f"timeout {start_calls[0]} quá ngắn cho POST start"
+
     def test_worker_bao_loi_thi_neu_message(self, monkeypatch):
-        monkeypatch.setattr(dp, "_http_post", lambda *a, **k: {})
+        monkeypatch.setattr(dp, "_http_post", self._posts([]))
         monkeypatch.setattr(dp, "_http_json",
                             lambda *a, **k: {"state": "error", "message": "lỗi trong vòng lặp chính"})
         c = dp._rehearsal(self._args(), "0")
         assert not c.ok and "vòng lặp chính" in c.chi_tiet
 
     def test_khong_vao_running_thi_loi(self, monkeypatch):
-        monkeypatch.setattr(dp, "_http_post", lambda *a, **k: {})
+        monkeypatch.setattr(dp, "_http_post", self._posts([]))
         monkeypatch.setattr(dp, "_http_json", lambda *a, **k: {"state": "loading"})
         monkeypatch.setattr(dp.time, "sleep", lambda _s: None)
         monkeypatch.setattr(dp.time, "perf_counter", _Clock())
@@ -242,22 +295,31 @@ class TestDienTapFull:
     def test_running_nhung_mask_fps_0_bi_bat(self, monkeypatch):
         """`running` + frame tăng mà mask = 0: đường ống sống nhưng model không trả mask."""
         seq = [{"state": "running", "frames": 10}, {"state": "running", "frames": 40, "mask_fps": 0}]
-        monkeypatch.setattr(dp, "_http_post", lambda *a, **k: {})
+        monkeypatch.setattr(dp, "_http_post", self._posts([]))
         monkeypatch.setattr(dp, "_http_json", lambda *a, **k: seq.pop(0) if seq else {})
         c = dp._rehearsal(self._args(), "0")
         assert not c.ok and "mask_fps = 0" in c.chi_tiet
 
     def test_running_va_mask_co_thi_ok(self, monkeypatch):
         seq = [{"state": "running", "frames": 10}, {"state": "running", "frames": 40, "mask_fps": 8.5}]
-        monkeypatch.setattr(dp, "_http_post", lambda *a, **k: {})
+        monkeypatch.setattr(dp, "_http_post", self._posts([]))
         monkeypatch.setattr(dp, "_http_json", lambda *a, **k: seq.pop(0) if seq else {})
         c = dp._rehearsal(self._args(), "0")
         assert c.ok and "8.5" in c.chi_tiet
 
+    def test_phien_chet_trong_luc_lay_mau_thi_khong_bao_ok(self, monkeypatch):
+        """P1 review 14-11: `frames`/`mask_fps` sau khi phiên chết là số "dính" từ trước ⇒ phải đỏ."""
+        seq = [{"state": "running", "frames": 10, "mask_fps": 9.0},
+               {"state": "error", "frames": 40, "mask_fps": 9.0, "message": "worker đã dừng (mã 1)"}]
+        monkeypatch.setattr(dp, "_http_post", self._posts([]))
+        monkeypatch.setattr(dp, "_http_json", lambda *a, **k: seq.pop(0) if seq else {})
+        c = dp._rehearsal(self._args(), "0")
+        assert not c.ok and "mã 1" in c.chi_tiet
+
     def test_phien_duoc_dung_du_dien_tap_nem_giua_duong(self, monkeypatch):
         """`finally` phải gửi stop: preflight không được để phiên live sống tiếp (giữ webcam)."""
         posts = []
-        monkeypatch.setattr(dp, "_http_post", lambda url, *a, **k: posts.append(url) or {})
+        monkeypatch.setattr(dp, "_http_post", self._posts(posts))
         monkeypatch.setattr(dp, "_http_json",
                             lambda *a, **k: {"state": "running", "frames": 5, "mask_fps": 9.0})
 
@@ -267,18 +329,20 @@ class TestDienTapFull:
         monkeypatch.setattr(dp.time, "sleep", boom)
         with pytest.raises(RuntimeError):
             dp._rehearsal(self._args(), "0")
-        assert any(u.endswith("/api/live/stop") for u in posts), posts
+        assert any(url.endswith("/api/live/stop") for url, _t in posts), posts
 
-    def test_khong_start_duoc_thi_khong_gui_stop(self, monkeypatch):
+    def test_start_that_bai_van_gui_stop_best_effort(self, monkeypatch):
+        """Timeout POST **không** chứng minh server chưa dựng phiên ⇒ vẫn phải gửi stop."""
         posts = []
-        monkeypatch.setattr(dp, "_http_post", lambda url, *a, **k: posts.append(url) or None)
-        c = dp._rehearsal(self._args(), "0")
-        assert not c.ok and not any(u.endswith("/api/live/stop") for u in posts)
 
-    def test_start_that_bai_thi_loi(self, monkeypatch):
-        monkeypatch.setattr(dp, "_http_post", lambda *a, **k: None)
+        def fake(url, payload=None, timeout=5.0, **_kw):
+            posts.append((url, timeout))
+            return None, "HTTP 400: không mở được camera index 0"
+
+        monkeypatch.setattr(dp, "_http_post", fake)
         c = dp._rehearsal(self._args(), "0")
-        assert not c.ok and "start" in c.chi_tiet
+        assert not c.ok and "camera index 0" in c.chi_tiet
+        assert any(url.endswith("/api/live/stop") for url, _t in posts), posts
 
 
 class _Clock:

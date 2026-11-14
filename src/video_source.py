@@ -368,7 +368,7 @@ class RtspVideoSource(_CaptureSource):
         )
 
 
-_FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")
+FILE_SUFFIXES = (".mp4", ".avi", ".mov", ".mkv")   # một nguồn sự thật cho mọi nơi cần
 
 
 def looks_like_file(source) -> bool:
@@ -387,7 +387,7 @@ def looks_like_file(source) -> bool:
     if stripped.isdecimal() and not os.path.exists(stripped):
         return False                               # "0" = index webcam (xem factory dưới)
     path = Path(text)
-    return path.suffix.lower() in _FILE_SUFFIXES or path.is_file() or path.is_dir()
+    return path.suffix.lower() in FILE_SUFFIXES or path.is_file() or path.is_dir()
 
 
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:

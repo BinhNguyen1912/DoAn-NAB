@@ -122,6 +122,18 @@ class TestNgoaiLeThanhError:
         assert stats.state == STATE_ERROR
 
 
+class TestLoiDauTienThang:
+    def test_loi_thu_hai_khong_ghi_de_message_cua_loi_dau(self, video_source, tmp_path):
+        """Luồng chính và luồng VOS có thể cùng chết; `status.json` phải nêu NGUỒN GỐC đầu tiên."""
+        _pre_select(tmp_path / "live")
+        session = LiveTrackingSession(_FakeEngine(), _config(video_source, tmp_path))
+        session._set_error(RuntimeError("nguồn mất"), "lỗi trong vòng lặp chính")
+        session._set_error(RuntimeError("OOM"), "model lỗi trong luồng VOS")
+        assert "nguồn mất" in session._stats.message
+        assert "OOM" not in session._stats.message
+        assert session._stats.state == STATE_ERROR
+
+
 class TestRewindChiChoNguonCoDiemKetThuc:
     def test_read_none_tren_nguon_kieu_camera_khong_mo_lai_thiet_bi(self, tmp_path, monkeypatch):
         """Webcam/RTSP/HTTP: `read()` trả None **không** được mở lại nguồn.
@@ -192,6 +204,20 @@ class TestLooksLikeFile:
         from src.video_source import looks_like_file
 
         assert looks_like_file(source) is False
+
+    def test_chuoi_so_nhung_CO_file_that_trung_ten_thi_la_file(self, tmp_path, monkeypatch):
+        """Ngoại lệ có chủ đích của factory: một file tên `0` là đường dẫn hợp lệ (AGENTS §6).
+
+        Thiếu test này thì lần sau ai "dọn gọn" điều kiện `not os.path.exists(...)` cũng không ai
+        biết — và web gửi chuỗi `"0"` sẽ mở nhầm file trong repo thay vì webcam (hoặc ngược lại).
+        """
+        from src.video_source import looks_like_file
+
+        (tmp_path / "0").write_bytes(b"x")
+        monkeypatch.chdir(tmp_path)
+        assert looks_like_file("0") is True
+        (tmp_path / "1").mkdir()
+        assert looks_like_file("1") is True
 
     def test_file_va_thu_muc(self, tmp_path):
         from src.video_source import looks_like_file

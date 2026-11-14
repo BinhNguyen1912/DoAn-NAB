@@ -565,10 +565,13 @@ class LiveTrackingSession:
         self._set_error(exc, "lỗi trong vòng lặp chính")
 
     def _set_error(self, exc, where: str) -> None:
-        self._error = exc
+        """Lỗi ĐẦU TIÊN thắng: luồng chính và luồng VOS có thể cùng chết, và nếu lỗi sau ghi đè thì
+        `status.json` nêu sai nguồn gốc (ca thật: VOS chết vì OOM sau khi nguồn đã mất)."""
         with self._stats_lock:
+            if self._error is None:
+                self._error = exc
+                self._stats.message = f"{where}: {exc}"
             self._stats.state = STATE_ERROR
-            self._stats.message = f"{where}: {exc}"
 
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
