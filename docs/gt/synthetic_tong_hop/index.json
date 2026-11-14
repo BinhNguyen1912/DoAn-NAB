@@ -1,0 +1,226 @@
+{
+  "clip": "data/synthetic_gt.mp4",
+  "ten": "synthetic_tong_hop",
+  "frames": [
+    {
+      "frame_idx": 0,
+      "bbox_xywh": [
+        20,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 1,
+      "bbox_xywh": [
+        29,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 2,
+      "bbox_xywh": [
+        38,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 3,
+      "bbox_xywh": [
+        47,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 4,
+      "bbox_xywh": [
+        56,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 5,
+      "bbox_xywh": [
+        65,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 6,
+      "bbox_xywh": [
+        75,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 7,
+      "bbox_xywh": [
+        84,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 8,
+      "bbox_xywh": [
+        93,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 9,
+      "bbox_xywh": [
+        102,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 10,
+      "bbox_xywh": [
+        111,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 11,
+      "bbox_xywh": [
+        120,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 12,
+      "bbox_xywh": [
+        130,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 13,
+      "bbox_xywh": [
+        139,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 14,
+      "bbox_xywh": [
+        148,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 15,
+      "bbox_xywh": [
+        157,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 16,
+      "bbox_xywh": [
+        166,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 17,
+      "bbox_xywh": [
+        175,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 18,
+      "bbox_xywh": [
+        185,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 19,
+      "bbox_xywh": [
+        194,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 20,
+      "bbox_xywh": [
+        203,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 21,
+      "bbox_xywh": [
+        212,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 22,
+      "bbox_xywh": [
+        221,
+        90,
+        60,
+        60
+      ]
+    },
+    {
+      "frame_idx": 23,
+      "bbox_xywh": [
+        230,
+        90,
+        60,
+        60
+      ]
+    }
+  ],
+  "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
+  "gt_do_model_goi_y": false,
+  "tao_luc": "2026-11-14T15:18:16",
+  "canh_bao": "Fixture TỔNG HỢP: mIoU chấm trên đây là CẬN TRÊN, cấm trích như mIoU trên video thật. Muốn số thật thì gán tay bằng `scripts/score_miou.py label`."
+}

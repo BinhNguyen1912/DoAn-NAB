@@ -92,6 +92,11 @@ def main() -> int:
                         help="thiết bị chạy model: cpu (mặc định) | cuda (NVIDIA/Colab)")
     parser.add_argument("--stop-after-frames", type=int, default=None,
                         help="tự thoát sau N frame đã bám (dùng cho test/thử nhanh)")
+    # Xuất mask tại vài frame để chấm mIoU vs GT gán tay (việc #6). Mặc định KHÔNG ghi gì.
+    parser.add_argument("--dump-mask-frames", default="",
+                        help='xuất mask tại các frame này, vd "0,50,120" (để chấm mIoU với GT)')
+    parser.add_argument("--dump-mask-dir", default="",
+                        help="thư mục ghi mask (mặc định <out-dir>/masks)")
     args = parser.parse_args()
 
     # Validate ở cửa vào: trước đây CLI clamp im lặng 0.0 → 0.05 còn schema API lại cho 0.0
@@ -152,6 +157,8 @@ def main() -> int:
         mask_smoothing=args.mask_smoothing,
         trajectory_len=args.trajectory_len,
         stop_after_frames=args.stop_after_frames,
+        dump_mask_frames=args.dump_mask_frames,
+        dump_mask_dir=args.dump_mask_dir,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
     print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "

@@ -80,12 +80,18 @@ class LiveTrackConfig:
     # API và HUD đều không biết phiên đang chạy CPU hay GPU, trong khi mọi số FPS trong báo cáo phải
     # gắn với một thiết bị cụ thể (ticket 21).
     device: str = "cpu"
+    # Xuất mask THẬT tại đúng những `frame_idx` này để chấm mIoU so với GT gán tay (việc #6).
+    # Chuỗi "0,50,120" hoặc bộ int. Rỗng = không xuất (mặc định: chấm điểm là việc CHỦ ĐỘNG, không
+    # phải việc âm thầm ghi hàng trăm MB mask mỗi phiên).
+    dump_mask_frames: tuple = ()
+    dump_mask_dir: str = ""
 
     def __post_init__(self) -> None:
         """Kiểm tra tham số ở MỘT chỗ — trước đây schema API cho 0.0 còn worker clamp 0.05,
         hai bên hiểu khác nhau (lỗi P2, review 08-11)."""
         # Cùng hàm chuẩn hoá với CLI/API/worker ⇒ `--device CUDA ` cũng thành `cuda`.
         self.device = normalize_device(self.device)
+        self.dump_mask_frames = _parse_frame_list(self.dump_mask_frames)
         if not 0.0 < float(self.mask_smoothing) <= 1.0:
             raise ValueError(
                 f"mask_smoothing phải trong khoảng (0, 1]; nhận {self.mask_smoothing!r} "
@@ -181,6 +187,30 @@ def write_bytes_atomic(path: Path, data: bytes) -> None:
     with open(tmp, "wb") as handle:
         handle.write(data)
     os.replace(tmp, path)
+
+
+def _parse_frame_list(value) -> tuple:
+    """`"0, 50,120"` / `(0,50)` / `[]` → tuple int dương, sắp tăng, bỏ trùng.
+
+    Chấp nhận cả chuỗi vì CLI truyền chuỗi; từ chối giá trị âm ngay tại đây thay vì lặng lẽ không
+    khớp frame nào (im lặng bỏ qua = "chấm 0 mẫu mà tưởng đã chấm").
+    """
+    if value is None or value == "" or value == ():
+        return ()
+    if isinstance(value, str):
+        parts = [p for p in value.replace(";", ",").split(",") if p.strip()]
+        nums = []
+        for part in parts:
+            try:
+                nums.append(int(part))
+            except ValueError as exc:
+                raise ValueError(f"dump_mask_frames: {part!r} không phải số nguyên") from exc
+    else:
+        nums = [int(v) for v in value]
+    am = [n for n in nums if n < 0]
+    if am:
+        raise ValueError(f"dump_mask_frames: frame_idx không âm; nhận {am}")
+    return tuple(sorted(set(nums)))
 
 
 def session_exit_code(stats: "LiveTrackStats") -> int:
@@ -664,7 +694,34 @@ class LiveTrackingSession:
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
 
+    def _dump_mask(self, result) -> None:
+        """Ghi mask của frame `result.frame_idx` ra PNG nếu frame đó nằm trong danh sách yêu cầu.
+
+        Vì sao chỉ những frame ĐƯỢC CHỌN: chấm mIoU cần GT gán tay, mà gán tay vài chục frame là
+        ngưỡng chịu được của con người. Ghi mask mọi frame sẽ ngốn hàng trăm MB và không ai dùng.
+
+        Mask RỖNG vẫn phải ghi (file toàn 0): "model trả rỗng" là kết quả ĐO ĐƯỢC, và khi GT có vật
+        thì nó phải chấm 0,0 — không có file sẽ bị đọc thành "chưa đo" (AGENTS §6).
+
+        Lỗi ghi file KHÔNG được làm chết phiên bám (đây là dụng cụ đo, không phải đường demo) nhưng
+        phải in cảnh báo, không im lặng (bài học "nuốt lỗi trong adapter" 08-11).
+        """
+        frames = self._cfg.dump_mask_frames
+        frame_idx = getattr(result, "frame_idx", None)
+        if not frames or frame_idx is None or int(frame_idx) not in frames:
+            return
+        out_dir = self._cfg.dump_mask_dir or str(Path(self._cfg.out_dir) / "masks")
+        mask = getattr(result, "mask", None)
+        try:
+            target = Path(out_dir)
+            target.mkdir(parents=True, exist_ok=True)
+            arr = np.zeros((1, 1), np.uint8) if mask is None else (np.asarray(mask) > 0).astype(np.uint8)
+            cv2.imwrite(str(target / f"mask_{int(frame_idx):06d}.png"), arr * 255)
+        except Exception as exc:                 # noqa: BLE001 — dụng cụ đo không giết phiên
+            print(f"[canh-bao] không ghi được mask frame {frame_idx}: {exc}", flush=True)
+
     def _record_vos(self, result) -> None:
+        self._dump_mask(result)
         with self._stats_lock:
             self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
             self._stats.vos_runs += 1

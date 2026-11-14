@@ -1,0 +1,151 @@
+{
+  "meta": {
+    "do_luc": "2026-11-14T15:18:29",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/dump_demo/masks --out data/miou_synthetic_2026-11-14_metrics.json",
+    "git_rev": "ed80996b6fcd0949bdf2a458ee173a930a731723",
+    "git_dirty": true,
+    "git_dirty_code": true,
+    "git_loi": null,
+    "clip": "data/synthetic_gt.mp4",
+    "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
+    "gt": "docs/gt/synthetic_tong_hop",
+    "pred_dir": "/tmp/dump_demo/masks",
+    "gt_do_model_goi_y": false,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0"
+  },
+  "ket_qua": {
+    "mIoU": 0.9354,
+    "mIoU_p05": 0.9239,
+    "n_cham": 5,
+    "so_frame_gt_rong": 0,
+    "so_frame_thieu_mask": 19,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.946,
+        "dien_tich_gt": 3600,
+        "dien_tich_pred": 3503
+      },
+      {
+        "frame_idx": 1,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 2,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 3,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 4,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 5,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 6,
+        "iou": 0.9324,
+        "dien_tich_gt": 3600,
+        "dien_tich_pred": 3747
+      },
+      {
+        "frame_idx": 7,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 8,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 9,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 10,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 11,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 12,
+        "iou": 0.9377,
+        "dien_tich_gt": 3600,
+        "dien_tich_pred": 3771
+      },
+      {
+        "frame_idx": 13,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 14,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 15,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 16,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 17,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 18,
+        "iou": 0.939,
+        "dien_tich_gt": 3600,
+        "dien_tich_pred": 3772
+      },
+      {
+        "frame_idx": 19,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 20,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 21,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 22,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 23,
+        "iou": 0.9218,
+        "dien_tich_gt": 3600,
+        "dien_tich_pred": 3847
+      }
+    ]
+  },
+  "canh_bao_gt": []
+}

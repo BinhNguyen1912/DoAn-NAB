@@ -1,8 +1,8 @@
 {
   "meta": {
-    "do_luc": "2026-11-14T15:13:47",
+    "do_luc": "2026-11-14T15:18:03",
     "lenh": "scripts/bang_cau_hinh.py --bbox 300,275,150,410 --sizes 192,256,320 --every 2,3,6 --lan 3 --frames 60 --md docs/bang-cau-hinh.md",
-    "git_rev": "af00303f3944c99f762ecf7ab078edac076a9cd9",
+    "git_rev": "ed80996b6fcd0949bdf2a458ee173a930a731723",
     "git_dirty": true,
     "git_dirty_code": true,
     "git_loi": null,
@@ -27,62 +27,6 @@
       "loi": [],
       "measured_fps": {
         "n": 3,
-        "mean": 29.83,
-        "std": 0.06,
-        "min": 29.8,
-        "max": 29.9
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 9.33,
-        "std": 0.15,
-        "min": 9.2,
-        "max": 9.5
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 91.27,
-        "std": 10.46,
-        "min": 83.7,
-        "max": 103.2
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 14.45,
-        "std": 0.44,
-        "min": 14.17,
-        "max": 14.95
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 107.44,
-        "std": 2.36,
-        "min": 105.35,
-        "max": 110.0
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 190.07,
-        "std": 38.74,
-        "min": 167.1,
-        "max": 234.8
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 247.53,
-        "std": 17.41,
-        "min": 236.4,
-        "max": 267.6
-      }
-    },
-    "192_3": {
-      "image_size": 192,
-      "vos_every": 3,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
         "mean": 29.87,
         "std": 0.06,
         "min": 29.8,
@@ -90,386 +34,50 @@
       },
       "vos_fps": {
         "n": 3,
-        "mean": 8.87,
+        "mean": 8.5,
         "std": 0.4,
-        "min": 8.4,
-        "max": 9.1
+        "min": 8.1,
+        "max": 8.9
       },
       "vos_ms": {
         "n": 3,
-        "mean": 91.07,
-        "std": 7.36,
-        "min": 83.5,
-        "max": 98.2
+        "mean": 110.6,
+        "std": 10.85,
+        "min": 98.3,
+        "max": 118.8
       },
       "pre_ms": {
         "n": 3,
-        "mean": 13.63,
-        "std": 0.82,
-        "min": 12.76,
-        "max": 14.38
+        "mean": 14.18,
+        "std": 1.61,
+        "min": 12.62,
+        "max": 15.83
       },
       "cycle_ms": {
         "n": 3,
-        "mean": 113.41,
-        "std": 3.09,
-        "min": 110.56,
-        "max": 116.69
+        "mean": 126.64,
+        "std": 8.94,
+        "min": 116.38,
+        "max": 132.78
       },
       "mask_age_total_ms": {
         "n": 3,
-        "mean": 235.37,
-        "std": 57.04,
-        "min": 169.5,
-        "max": 268.4
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 279.13,
-        "std": 19.02,
-        "min": 268.1,
-        "max": 301.1
-      }
-    },
-    "192_6": {
-      "image_size": 192,
-      "vos_every": 6,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.83,
-        "std": 0.06,
-        "min": 29.8,
-        "max": 29.9
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 5.17,
-        "std": 0.06,
-        "min": 5.1,
-        "max": 5.2
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 97.63,
-        "std": 7.82,
-        "min": 92.2,
-        "max": 106.6
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 27.15,
-        "std": 2.24,
-        "min": 24.58,
-        "max": 28.67
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 201.94,
-        "std": 0.57,
-        "min": 201.29,
-        "max": 202.38
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 166.67,
-        "std": 1.01,
-        "min": 165.5,
-        "max": 167.3
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 300.67,
-        "std": 0.23,
-        "min": 300.4,
-        "max": 300.8
-      }
-    },
-    "256_2": {
-      "image_size": 256,
-      "vos_every": 2,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.73,
-        "std": 0.15,
-        "min": 29.6,
-        "max": 29.9
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 4.73,
-        "std": 0.81,
-        "min": 3.8,
-        "max": 5.3
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 190.73,
-        "std": 39.07,
-        "min": 163.5,
-        "max": 235.5
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 14.28,
-        "std": 1.71,
-        "min": 12.9,
-        "max": 16.2
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 241.4,
-        "std": 78.22,
-        "min": 190.71,
-        "max": 331.48
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 413.47,
-        "std": 102.71,
-        "min": 301.6,
-        "max": 503.5
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 448.07,
-        "std": 79.44,
-        "min": 402.0,
-        "max": 539.8
-      }
-    },
-    "256_3": {
-      "image_size": 256,
-      "vos_every": 3,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.33,
-        "std": 0.06,
-        "min": 29.3,
-        "max": 29.4
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 4.03,
-        "std": 0.06,
-        "min": 4.0,
-        "max": 4.1
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 185.7,
-        "std": 12.93,
-        "min": 176.6,
-        "max": 200.5
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 20.11,
-        "std": 3.17,
-        "min": 17.44,
-        "max": 23.62
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 246.62,
-        "std": 25.43,
-        "min": 226.85,
-        "max": 275.31
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 301.0,
-        "std": 57.78,
-        "min": 263.1,
-        "max": 367.5
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 581.33,
-        "std": 14.54,
-        "min": 564.6,
-        "max": 590.9
-      }
-    },
-    "256_6": {
-      "image_size": 256,
-      "vos_every": 6,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.2,
-        "std": 0.2,
-        "min": 29.0,
-        "max": 29.4
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 4.1,
-        "std": 0.17,
-        "min": 3.9,
-        "max": 4.2
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 221.37,
-        "std": 53.08,
-        "min": 175.7,
-        "max": 279.6
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 17.99,
-        "std": 1.31,
-        "min": 16.65,
-        "max": 19.26
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 261.31,
-        "std": 30.41,
-        "min": 229.96,
-        "max": 290.69
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 396.17,
-        "std": 23.74,
-        "min": 371.7,
-        "max": 419.1
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 631.4,
-        "std": 50.6,
-        "min": 597.0,
-        "max": 689.5
-      }
-    },
-    "320_2": {
-      "image_size": 320,
-      "vos_every": 2,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.77,
-        "std": 0.06,
-        "min": 29.7,
-        "max": 29.8
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 3.47,
-        "std": 0.15,
-        "min": 3.3,
-        "max": 3.6
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 270.07,
-        "std": 25.0,
-        "min": 250.1,
-        "max": 298.1
-      },
-      "pre_ms": {
-        "n": 3,
-        "mean": 15.71,
-        "std": 0.33,
-        "min": 15.5,
-        "max": 16.09
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 300.23,
-        "std": 4.16,
-        "min": 295.5,
-        "max": 303.3
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 502.0,
-        "std": 133.55,
-        "min": 368.2,
-        "max": 635.3
-      },
-      "mask_age_p95": {
-        "n": 3,
-        "mean": 582.23,
-        "std": 19.81,
-        "min": 568.9,
-        "max": 605.0
-      }
-    },
-    "320_3": {
-      "image_size": 320,
-      "vos_every": 3,
-      "so_lan": 3,
-      "so_lan_loi": 0,
-      "loi": [],
-      "measured_fps": {
-        "n": 3,
-        "mean": 29.83,
-        "std": 0.06,
-        "min": 29.8,
-        "max": 29.9
-      },
-      "vos_fps": {
-        "n": 3,
-        "mean": 3.57,
-        "std": 0.06,
-        "min": 3.5,
-        "max": 3.6
-      },
-      "vos_ms": {
-        "n": 3,
-        "mean": 272.2,
-        "std": 26.06,
-        "min": 249.2,
+        "mean": 256.87,
+        "std": 37.8,
+        "min": 234.1,
         "max": 300.5
       },
-      "pre_ms": {
-        "n": 3,
-        "mean": 17.15,
-        "std": 2.46,
-        "min": 14.6,
-        "max": 19.51
-      },
-      "cycle_ms": {
-        "n": 3,
-        "mean": 298.74,
-        "std": 18.6,
-        "min": 277.31,
-        "max": 310.69
-      },
-      "mask_age_total_ms": {
-        "n": 3,
-        "mean": 469.7,
-        "std": 173.29,
-        "min": 368.7,
-        "max": 669.8
-      },
       "mask_age_p95": {
         "n": 3,
-        "mean": 613.83,
-        "std": 22.52,
-        "min": 599.7,
-        "max": 639.8
+        "mean": 278.9,
+        "std": 18.71,
+        "min": 267.6,
+        "max": 300.5
       }
     },
-    "320_6": {
-      "image_size": 320,
-      "vos_every": 6,
+    "192_3": {
+      "image_size": 192,
+      "vos_every": 3,
       "so_lan": 3,
       "so_lan_loi": 0,
       "loi": [],
@@ -482,45 +90,443 @@
       },
       "vos_fps": {
         "n": 3,
-        "mean": 3.53,
-        "std": 0.06,
-        "min": 3.5,
-        "max": 3.6
+        "mean": 8.6,
+        "std": 0.36,
+        "min": 8.2,
+        "max": 8.9
       },
       "vos_ms": {
         "n": 3,
-        "mean": 278.33,
-        "std": 8.18,
-        "min": 268.9,
-        "max": 283.4
+        "mean": 94.43,
+        "std": 6.37,
+        "min": 87.1,
+        "max": 98.6
       },
       "pre_ms": {
         "n": 3,
-        "mean": 15.32,
-        "std": 0.76,
-        "min": 14.44,
-        "max": 15.81
+        "mean": 14.14,
+        "std": 1.44,
+        "min": 12.49,
+        "max": 15.15
       },
       "cycle_ms": {
         "n": 3,
-        "mean": 303.13,
-        "std": 13.63,
-        "min": 293.93,
-        "max": 318.79
+        "mean": 113.86,
+        "std": 3.99,
+        "min": 109.87,
+        "max": 117.85
       },
       "mask_age_total_ms": {
         "n": 3,
-        "mean": 569.07,
-        "std": 200.65,
-        "min": 368.2,
-        "max": 769.5
+        "mean": 201.57,
+        "std": 57.79,
+        "min": 167.7,
+        "max": 268.3
       },
       "mask_age_p95": {
         "n": 3,
-        "mean": 679.9,
-        "std": 19.5,
-        "min": 668.0,
-        "max": 702.4
+        "mean": 302.73,
+        "std": 35.27,
+        "min": 268.2,
+        "max": 338.7
+      }
+    },
+    "192_6": {
+      "image_size": 192,
+      "vos_every": 6,
+      "so_lan": 3,
+      "so_lan_loi": 2,
+      "loi": [
+        "lỗi trong vòng lặp chính: 'LiveTrackingSession' object has no attribute '_dump_mask'",
+        "lỗi trong vòng lặp chính: 'LiveTrackingSession' object has no attribute '_dump_mask'"
+      ],
+      "measured_fps": {
+        "n": 1,
+        "mean": 29.7,
+        "std": null,
+        "min": 29.7,
+        "max": 29.7
+      },
+      "vos_fps": {
+        "n": 1,
+        "mean": 5.2,
+        "std": null,
+        "min": 5.2,
+        "max": 5.2
+      },
+      "vos_ms": {
+        "n": 1,
+        "mean": 92.7,
+        "std": null,
+        "min": 92.7,
+        "max": 92.7
+      },
+      "pre_ms": {
+        "n": 1,
+        "mean": 19.06,
+        "std": null,
+        "min": 19.06,
+        "max": 19.06
+      },
+      "cycle_ms": {
+        "n": 1,
+        "mean": 200.92,
+        "std": null,
+        "min": 200.92,
+        "max": 200.92
+      },
+      "mask_age_total_ms": {
+        "n": 1,
+        "mean": 168.3,
+        "std": null,
+        "min": 168.3,
+        "max": 168.3
+      },
+      "mask_age_p95": {
+        "n": 1,
+        "mean": 301.2,
+        "std": null,
+        "min": 301.2,
+        "max": 301.2
+      }
+    },
+    "256_2": {
+      "image_size": 256,
+      "vos_every": 2,
+      "so_lan": 3,
+      "so_lan_loi": 2,
+      "loi": [
+        "lỗi trong vòng lặp chính: 'LiveTrackingSession' object has no attribute '_dump_mask'",
+        "lỗi trong vòng lặp chính: 'LiveTrackingSession' object has no attribute '_dump_mask'"
+      ],
+      "measured_fps": {
+        "n": 1,
+        "mean": 29.8,
+        "std": null,
+        "min": 29.8,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 1,
+        "mean": 4.8,
+        "std": null,
+        "min": 4.8,
+        "max": 4.8
+      },
+      "vos_ms": {
+        "n": 1,
+        "mean": 189.9,
+        "std": null,
+        "min": 189.9,
+        "max": 189.9
+      },
+      "pre_ms": {
+        "n": 1,
+        "mean": 14.45,
+        "std": null,
+        "min": 14.45,
+        "max": 14.45
+      },
+      "cycle_ms": {
+        "n": 1,
+        "mean": 203.81,
+        "std": null,
+        "min": 203.81,
+        "max": 203.81
+      },
+      "mask_age_total_ms": {
+        "n": 1,
+        "mean": 368.5,
+        "std": null,
+        "min": 368.5,
+        "max": 368.5
+      },
+      "mask_age_p95": {
+        "n": 1,
+        "mean": 406.0,
+        "std": null,
+        "min": 406.0,
+        "max": 406.0
+      }
+    },
+    "256_3": {
+      "image_size": 256,
+      "vos_every": 3,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 29.8,
+        "std": 0.0,
+        "min": 29.8,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 4.67,
+        "std": 0.21,
+        "min": 4.5,
+        "max": 4.9
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 191.3,
+        "std": 20.87,
+        "min": 173.8,
+        "max": 214.4
+      },
+      "pre_ms": {
+        "n": 3,
+        "mean": 16.79,
+        "std": 3.74,
+        "min": 13.63,
+        "max": 20.91
+      },
+      "cycle_ms": {
+        "n": 3,
+        "mean": 212.59,
+        "std": 26.66,
+        "min": 195.62,
+        "max": 243.32
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 367.0,
+        "std": 98.47,
+        "min": 267.5,
+        "max": 464.4
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 449.87,
+        "std": 41.4,
+        "min": 402.1,
+        "max": 475.4
+      }
+    },
+    "256_6": {
+      "image_size": 256,
+      "vos_every": 6,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 29.77,
+        "std": 0.06,
+        "min": 29.7,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 4.8,
+        "std": 0.17,
+        "min": 4.6,
+        "max": 4.9
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 173.63,
+        "std": 11.48,
+        "min": 163.9,
+        "max": 186.3
+      },
+      "pre_ms": {
+        "n": 3,
+        "mean": 16.6,
+        "std": 2.45,
+        "min": 13.78,
+        "max": 18.25
+      },
+      "cycle_ms": {
+        "n": 3,
+        "mean": 208.71,
+        "std": 2.04,
+        "min": 207.3,
+        "max": 211.05
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 369.93,
+        "std": 1.96,
+        "min": 368.3,
+        "max": 372.1
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 430.73,
+        "std": 73.79,
+        "min": 376.2,
+        "max": 514.7
+      }
+    },
+    "320_2": {
+      "image_size": 320,
+      "vos_every": 2,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 29.8,
+        "std": 0.0,
+        "min": 29.8,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 3.47,
+        "std": 0.06,
+        "min": 3.4,
+        "max": 3.5
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 270.7,
+        "std": 18.84,
+        "min": 250.9,
+        "max": 288.4
+      },
+      "pre_ms": {
+        "n": 3,
+        "mean": 15.98,
+        "std": 2.0,
+        "min": 14.17,
+        "max": 18.13
+      },
+      "cycle_ms": {
+        "n": 3,
+        "mean": 288.92,
+        "std": 14.77,
+        "min": 272.8,
+        "max": 301.82
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 591.9,
+        "std": 39.15,
+        "min": 568.8,
+        "max": 637.1
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 581.87,
+        "std": 18.57,
+        "min": 569.3,
+        "max": 603.2
+      }
+    },
+    "320_3": {
+      "image_size": 320,
+      "vos_every": 3,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 29.6,
+        "std": 0.26,
+        "min": 29.3,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 3.2,
+        "std": 0.26,
+        "min": 2.9,
+        "max": 3.4
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 294.9,
+        "std": 14.86,
+        "min": 279.7,
+        "max": 309.4
+      },
+      "pre_ms": {
+        "n": 3,
+        "mean": 17.4,
+        "std": 1.26,
+        "min": 16.51,
+        "max": 18.85
+      },
+      "cycle_ms": {
+        "n": 3,
+        "mean": 325.75,
+        "std": 44.7,
+        "min": 289.98,
+        "max": 375.86
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 608.3,
+        "std": 67.81,
+        "min": 569.1,
+        "max": 686.6
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 669.57,
+        "std": 55.39,
+        "min": 636.0,
+        "max": 733.5
+      }
+    },
+    "320_6": {
+      "image_size": 320,
+      "vos_every": 6,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 29.77,
+        "std": 0.06,
+        "min": 29.7,
+        "max": 29.8
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 3.3,
+        "std": 0.26,
+        "min": 3.0,
+        "max": 3.5
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 294.5,
+        "std": 4.18,
+        "min": 289.7,
+        "max": 297.3
+      },
+      "pre_ms": {
+        "n": 3,
+        "mean": 16.59,
+        "std": 2.66,
+        "min": 14.0,
+        "max": 19.31
+      },
+      "cycle_ms": {
+        "n": 3,
+        "mean": 299.93,
+        "std": 20.4,
+        "min": 285.21,
+        "max": 323.22
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 635.47,
+        "std": 119.63,
+        "min": 565.9,
+        "max": 773.6
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 685.77,
+        "std": 52.58,
+        "min": 640.0,
+        "max": 743.2
       }
     }
   },
