@@ -59,6 +59,14 @@ các vòng sau rơi hết vào `ngoai_khung` (artifact ghi `cua_so_frame.so_vong
   `data/drift_samples_binh1_2026-11-14_{115745,120047,120349}.csv`,
   `data/drift_samples_binh2_2026-11-14_{115845,120148,120450}.csv`.
 - Cách tính: `scripts/analyze_drift_samples.py ... --frame-window ...` (§2), không chép tay.
+- **Đo đúng 1 vòng clip** (không lặp nguồn) để số không bị nhiễu vòng lặp, `git_dirty_code=false`:
+
+  | Lần đo | `so_vong` | `trong_khung` | `ngoai_khung` |
+  |---|---|---|---|
+  | `data/sach_chai_binh1_1vong_metrics.json` (`--seconds 11`, khung `0:110` ∪ `165:262`) | 0,95 | n = 64 · **rỗng 1,6 %** · drift 0,4895 (n_drift 61) | n = 40 · rỗng 90 % |
+  | `data/sach_chai_binh2_1vong_metrics.json` (`--seconds 12`, khung `0:160`) | 0,93 | n = 50 · **rỗng 0,0 %** · drift 0,726 (n_drift 50) | n = 64 · rỗng 34,4 % |
+
+  `drift_iou` ở `ngoai_khung` **không dùng** được (mẫu rỗng chi phối) — chỉ đọc `trong_khung`.
 - Kết luận (không cần train lại model): `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`.
 
 ## 4. Chuẩn bị cho buổi demo
