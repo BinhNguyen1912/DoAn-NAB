@@ -190,7 +190,9 @@ class LiveStreamService:
                             empty_runs=detail.empty_runs,
                             empty_frac_window=detail.empty_frac_window,
                             empty_window_n=detail.empty_window_n,
-                            drift_p05=detail.drift_p05, drift_n=detail.drift_n)
+                            drift_p05=detail.drift_p05, drift_n=detail.drift_n,
+                            mask_age_total_ms=detail.mask_age_total_ms,
+                            mask_age_p95=detail.mask_age_p95, age_n=detail.age_n)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

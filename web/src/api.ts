@@ -148,6 +148,13 @@ export interface LiveStatus {
   drift_p05: number | null
   /** số mẫu drift (0 ⇒ chưa đo, KHÔNG phải "drift = 0") */
   drift_n: number
+  /** tuổi dữ liệu ảnh của mask ĐANG HIỂN THỊ (ms, queue+pre+vos+post+age của mẫu cuối);
+   *  `null` = CHƯA ĐO (worker bản cũ) — khác `0` = mask tươi tuyệt đối */
+  mask_age_total_ms: number | null
+  /** phân vị 95 tuổi dữ liệu trên cửa sổ `age_n` mẫu; `null` khi chưa đủ mẫu */
+  mask_age_p95: number | null
+  /** số mẫu của cửa sổ tuổi dữ liệu (0 ⇒ chưa đo) */
+  age_n: number
   message: string
 }
 

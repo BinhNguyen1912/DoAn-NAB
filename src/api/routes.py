@@ -155,6 +155,9 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             empty_window_n=status.empty_window_n,
             drift_p05=status.drift_p05,
             drift_n=status.drift_n,
+            mask_age_total_ms=status.mask_age_total_ms,
+            mask_age_p95=status.mask_age_p95,
+            age_n=status.age_n,
             message=status.message,
         )
 

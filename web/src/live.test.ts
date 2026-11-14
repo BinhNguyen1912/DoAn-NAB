@@ -1,6 +1,15 @@
 import { describe, expect, it } from 'vitest'
 
-import { deviceLine, driftLine, maskRhythmLine, shownFps, sourceCheckLine, stallLine } from './live'
+import {
+  deviceLine,
+  driftLine,
+  maskAgeIsStale,
+  maskAgeLine,
+  maskRhythmLine,
+  shownFps,
+  sourceCheckLine,
+  stallLine,
+} from './live'
 
 describe('maskRhythmLine', () => {
   it('hiện đủ hai nhịp khi nguồn báo mask_fps', () => {
@@ -184,5 +193,46 @@ describe('sourceCheckLine — bằng chứng đo được thay cho chữ "đã k
 
   it('chưa dò thì nói chưa dò, không bịa bằng chứng', () => {
     expect(sourceCheckLine(null)).toBe('chưa dò nguồn')
+  })
+})
+
+describe('maskAgeLine', () => {
+  // Số nền: đo trên máy này, tuổi dữ liệu THẬT p95 = 268–301 ms ở image_size 192
+  // (`data/chu_ky_chai_binh1_*_metrics.json`) ⇒ 300 ms là bình thường, 1500 ms là bất thường.
+  it('in tuổi dữ liệu + số mẫu khi đã đo', () => {
+    const line = maskAgeLine({ mask_age_total_ms: 301.2, mask_age_p95: 305.4, age_n: 200 })
+    expect(line).toBe('Mask đang hiển thị: 301 ms tuổi · p95 305 ms của 200 mẫu')
+  })
+
+  it('null = CHƯA ĐO, không được in "0 ms"', () => {
+    // `0 ms` là một lời khẳng định sai (mask tươi tuyệt đối) — bẫy 0/None của AGENTS §6.
+    expect(maskAgeLine({ mask_age_total_ms: null, mask_age_p95: null, age_n: 0 })).toBeNull()
+    expect(maskAgeLine({ mask_age_total_ms: undefined as any, mask_age_p95: null, age_n: 0 }))
+      .toBeNull()
+  })
+
+  it('0 ms là số ĐO ĐƯỢC (mask tươi) và phải hiện', () => {
+    expect(maskAgeLine({ mask_age_total_ms: 0, mask_age_p95: 0, age_n: 5 }))
+      .toBe('Mask đang hiển thị: 0 ms tuổi · p95 0 ms của 5 mẫu')
+  })
+
+  it('chưa đủ mẫu thì không in p95 (không bịa số nền)', () => {
+    const line = maskAgeLine({ mask_age_total_ms: 250, mask_age_p95: null, age_n: 0 })
+    expect(line).toBe('Mask đang hiển thị: 250 ms tuổi')
+  })
+
+  it('vượt ngưỡng thì NÓI TO là mask cũ kèm số giây', () => {
+    const line = maskAgeLine({ mask_age_total_ms: 2600, mask_age_p95: 900, age_n: 40 })
+    expect(line).toContain('Mask CŨ: 2.6 s')
+    expect(maskAgeIsStale({ mask_age_total_ms: 2600, mask_age_p95: null, age_n: 0 })).toBe(true)
+    expect(maskAgeIsStale({ mask_age_total_ms: 300, mask_age_p95: null, age_n: 0 })).toBe(false)
+    expect(maskAgeIsStale({ mask_age_total_ms: null, mask_age_p95: null, age_n: 0 })).toBe(false)
+  })
+
+  it('NaN/âm từ API cũ là chưa đo, không vẽ ra số vô nghĩa', () => {
+    for (const total of [NaN, -1]) {
+      const line = maskAgeLine({ mask_age_total_ms: total, mask_age_p95: null, age_n: 0 })
+      expect(line).toBeNull()
+    }
   })
 })

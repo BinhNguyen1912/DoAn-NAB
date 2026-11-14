@@ -161,6 +161,11 @@ class WorkerFrameSource(FrameSource):
             empty_window_n=int(status.get("empty_window_n") or 0),
             drift_p05=_so_hoac_none(status.get("drift_iou_p05")),
             drift_n=int(status.get("drift_n") or 0),
+            # Tuổi dữ liệu ảnh: `None` giữ nguyên "chưa đo" (worker bản cũ chưa ghi khoá này) —
+            # `float(... or 0.0)` sẽ biến chưa-đo thành "0 ms" = "mask tươi tuyệt đối" (AGENTS §6).
+            mask_age_total_ms=_so_hoac_none(status.get("mask_age_total_ms")),
+            mask_age_p95=_so_hoac_none(status.get("mask_age_p95")),
+            age_n=int(status.get("age_n") or 0),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource
