@@ -172,3 +172,25 @@ lệch `cycle_ms` vài ms; muốn trung bình thì phải cộng thêm cửa s�
   artifact chính phải có `git_dirty_code == false`.
 
 `./run lint` xanh · `./run test` **969 passed**.
+
+## 🔎 Review độc lập vòng 3 (4 commit cuối) + tự bác một kết luận
+
+Agent `reviewer` thứ ba, phạm vi `git diff 53576fb..HEAD` (telemetry pha + `so_lieu_bao_cao`).
+**Kết quả: 0 P0 · 1 P1 · 4 P2 · 9 P3.** Đã sửa hết trong cùng nhánh (`ab18c8b`, `14561ae`):
+
+- **P1**: `README.md` gán số của **định nghĩa cũ** (210–250 ms) cho **tên** `mask_age_total_ms` (nay là
+  tuổi dữ liệu thật) — doc-regression do chính PR này gây ra ⇒ tách 2 định nghĩa, nêu số mới
+  (268,7–301,2 ms, n=3).
+- **P2 — kết luận của tôi SAI vì n=1**: tôi đã ghi "queue ≈ 0 ⇒ bỏ hẳn hướng cadence". Đo lại **3 lần**
+  cho `queue_ms` **2,1–75,9 ms** (lần đầu 0,33 ms là may). Kết luận đúng: `cycle ≈ vos_ms + pre_ms`
+  ⇒ tăng tần suất gửi frame chỉ làm queue dài thêm; nút thắt là **model (84–103 ms) + tiền xử lý
+  (12–13 ms)**. Đã sửa `AGENTS.md`, plan, log, registry và **xoá artifact n=1** khỏi nhánh.
+- **P2**: test p95 trước đó **không có răng** (dùng `queue_ms=500` nên cách cũ vẫn xanh) → đổi sang
+  `vos_ms=500` (revert cơ chế ⇒ đỏ) + assert `age_n`.
+- **P2**: `--check` chưa nối CI ⇒ thêm test "doc đã commit == `build_document()`".
+- **P3 đã sửa**: `pre_ms` mặc định `None` (engine không đo ⇒ `null`, không phải `0,0`); gom
+  `pre/queue/post` vào **cùng snapshot** `_vos_state` (trước đó trộn pha 2 lần chạy: chênh 30,8 ms);
+  `post_ms` đo từ đầu `_store_vos` (gồm cả `_measure_stability`); registry in kèm `n`; test provenance
+  parametrize **mọi** artifact trong registry; ghi rõ tên file `sach_lap27vong` thực ra là 2,71 vòng.
+
+`./run lint` xanh · `./run test` **978 passed**.
