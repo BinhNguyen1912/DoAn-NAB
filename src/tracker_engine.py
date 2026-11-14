@@ -90,13 +90,16 @@ class _StreamingImages:
 class TrackerEngine:
     """Streaming per-frame trên 1 đối tượng (single object, theo ADR-0001)."""
 
-    def __init__(self, predictor, mask_threshold=0.0):
+    def __init__(self, predictor, mask_threshold=0.0, image_size=None):
         """mask_threshold: ngưỡng logit để cắt rìa mờ của mask (0.0 = lấy hết phần model cho là
         đối tượng; 0.5–2.0 = chỉ giữ phần tự tin → mask co lại, bớt "ăn" tóc/viền)."""
         self._predictor = predictor
         self._mask_threshold = float(mask_threshold)
         self._state = None
         self._images = None
+        # `image_size` hiệu lực — CHỈ để truy nguyên (manifest của mask dump / báo cáo); None = mặc
+        # định của model_cfg (1024). Trước đây engine không lưu ⇒ manifest ghi `null` dù đã chạy 192.
+        self.image_size = image_size
         self._tmpdir = None
         self._frame_count = 0   # số frame đã nạp (0-index; frame 0 = start)
         self._video_hw = None   # (H, W) của frame gốc — tham chiếu resize mask đầu ra
@@ -127,7 +130,7 @@ class TrackerEngine:
             apply_postprocessing=apply_postprocessing,
             hydra_overrides_extra=build_overrides(image_size),
         )
-        return cls(predictor, mask_threshold=mask_threshold)
+        return cls(predictor, mask_threshold=mask_threshold, image_size=image_size)
 
     # ---------- preprocessing (đối chiếu _load_img_as_tensor của SAM 2) ----------
 

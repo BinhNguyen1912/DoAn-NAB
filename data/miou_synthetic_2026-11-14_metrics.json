@@ -1,20 +1,40 @@
 {
-  "git_rev": "31a450bb7ae88adaceb2ee01a8e26586adb8d1a6",
+  "git_rev": "b16408f9cb3f3da015323d6eef5949412320b3b9",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-14T18:40:52",
-    "lenh": "scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt2/masks --out data/miou_synthetic_2026-11-14_metrics.json",
-    "git_rev": "31a450bb7ae88adaceb2ee01a8e26586adb8d1a6",
+    "do_luc": "2026-11-14T18:53:04",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt3/masks --out data/miou_synthetic_2026-11-14_metrics.json",
+    "git_rev": "b16408f9cb3f3da015323d6eef5949412320b3b9",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
     "clip": "data/synthetic_gt.mp4",
     "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
     "gt": "docs/gt/synthetic_tong_hop",
-    "pred_dir": "/tmp/demo_gt2/masks",
+    "pred_dir": "/tmp/demo_gt3/masks",
     "gt_do_model_goi_y": false,
+    "mask_manifest": {
+      "nguon": "data/synthetic_gt.mp4",
+      "image_size": null,
+      "vos_every": 1,
+      "mask_smoothing": 1.0,
+      "bbox_xywh": [
+        20,
+        90,
+        60,
+        60
+      ],
+      "frames_yeu_cau": [
+        0,
+        6,
+        12,
+        18,
+        23
+      ],
+      "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO"
+    },
     "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0"
   },
   "ket_qua": {
@@ -24,6 +44,8 @@
     "so_frame_gt_rong": 0,
     "so_frame_thieu_mask": 19,
     "so_frame_mask_hong": 0,
+    "so_frame_tong": 24,
+    "coverage": 0.2083,
     "frames": [
       {
         "frame_idx": 0,
