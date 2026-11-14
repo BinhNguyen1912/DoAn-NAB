@@ -64,29 +64,34 @@ def parse_cau_hinh(text: str) -> dict:
 
 
 def so_sanh(a_values, b_values, uu_tien: int = 1) -> dict:
-    """So hai dãy số: mean ± std mỗi bên, chênh lệch, ngưỡng nhiễu, kết luận.
+    """So hai dãy số: mean ± std mỗi bên, độ tản (range), ngưỡng nhiễu, kết luận.
 
-    Ngưỡng nhiễu = **max(std_a, std_b)** (chặt hơn tổng hai std, tránh kết luận sớm). `n < 2` ở một
-    bên ⇒ không có std ⇒ **không kết luận được** (không được coi là "bằng nhau").
+    Ngưỡng nhiễu = **max(spread_a, spread_b)** với `spread = max − min` — dùng lại
+    `scripts/repeatability.py` (một định nghĩa nhiễu cho cả repo: nó lấy ĐỘ TẢN, rộng hơn `std`, nên
+    ít kết luận "tốt hơn" oan hơn). `n < 2` ở một bên ⇒ **không kết luận được** (không được coi là
+    "bằng nhau").
     """
+    from scripts.repeatability import la_khac_biet, spread
+
     ca = [float(v) for v in a_values if isinstance(v, (int, float))]
     cb = [float(v) for v in b_values if isinstance(v, (int, float))]
     if len(ca) < 2 or len(cb) < 2:
         return {"mean_a": ca[0] if ca else None, "mean_b": cb[0] if cb else None,
                 "nhieu": None, "chenh_lech": None, "ket_luan": "không kết luận được (n < 2)"}
     ma, mb = statistics.fmean(ca), statistics.fmean(cb)
-    sa = statistics.stdev(ca) if len(ca) > 1 else 0.0
-    sb = statistics.stdev(cb) if len(cb) > 1 else 0.0
-    nhieu = max(sa, sb)
+    sa = statistics.stdev(ca)
+    sb = statistics.stdev(cb)
+    ta, tb = spread(ca), spread(cb)
+    nhieu = max(ta["spread"], tb["spread"])
     chenh = mb - ma
-    if abs(chenh) <= nhieu:
+    if not la_khac_biet(ma, mb, nhieu, n=min(len(ca), len(cb))):
         ket_luan = "không phân biệt được (chênh lệch nằm trong nhiễu)"
     elif (chenh > 0) == (uu_tien > 0):
         ket_luan = "B tốt hơn"
     else:
         ket_luan = "A tốt hơn"
-    return {"mean_a": round(ma, 2), "std_a": round(sa, 2),
-            "mean_b": round(mb, 2), "std_b": round(sb, 2),
+    return {"mean_a": round(ma, 2), "std_a": round(sa, 2), "spread_a": ta["spread"],
+            "mean_b": round(mb, 2), "std_b": round(sb, 2), "spread_b": tb["spread"],
             "nhieu": round(nhieu, 2), "chenh_lech": round(chenh, 2), "ket_luan": ket_luan}
 
 
@@ -153,7 +158,8 @@ def main(argv=None) -> int:
             "bbox_xywh": list(bbox), "device": args.device, "lan": args.lan,
             "frames_moi_lan": args.frames, "a": cfg_a, "b": cfg_b,
             "cach_chay": "chèn kẽ A,B,A,B,… (cùng điều kiện trung bình cho cả hai bên)",
-            "nguong_nhieu": "max(std_a, std_b); chênh lệch <= ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC",
+            "nguong_nhieu": "max(spread_a, spread_b) với spread = max−min (scripts/repeatability.py); "
+                            "chênh lệch <= ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC",
         },
         "ket_qua": ket_qua,
         "lan_chay": {"a": runs["a"], "b": runs["b"]},

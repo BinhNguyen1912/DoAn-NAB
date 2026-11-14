@@ -37,11 +37,22 @@ class TestParseCauHinh:
 
 class TestSoSanh:
     def test_chenh_lech_lon_hon_nhieu_thi_co_ket_luan(self):
+        """Ngưỡng nhiễu = max(spread) với spread = max−min (repeatability.py), nên 0,2 ở đây."""
         kq = ab.so_sanh([9.0, 9.1, 8.9], [4.9, 5.0, 5.1], uu_tien=1)
         assert kq["ket_luan"] == "A tốt hơn"
-        assert kq["nhieu"] == pytest.approx(0.1, abs=1e-9)
+        assert kq["nhieu"] == pytest.approx(0.2, abs=1e-9)
+        assert kq["spread_a"] == pytest.approx(0.2, abs=1e-9)
+
+    def test_dung_chung_dinh_nghia_nhieu_voi_repeatability(self):
+        """Một định nghĩa nhiễu cho cả repo: `scripts/repeatability.py` nay có caller thật."""
+        from scripts import repeatability as rp
+
+        kq = ab.so_sanh([1.0, 2.0, 3.0], [5.0, 6.0, 7.0], uu_tien=1)
+        assert kq["nhieu"] == pytest.approx(max(rp.spread([1, 2, 3])["spread"],
+                                                rp.spread([5, 6, 7])["spread"]))
 
     def test_chenh_lech_nho_hon_nhieu_la_khong_phan_biet_duoc(self):
+        """Hai dãy chồng nhau: chênh mean 0,3 nhưng độ tản mỗi bên 1,4–1,6 ⇒ inconclusive."""
         kq = ab.so_sanh([9.0, 9.8, 8.2], [9.3, 9.9, 8.7], uu_tien=1)
         assert kq["ket_luan"].startswith("không phân biệt được")
 
@@ -50,6 +61,7 @@ class TestSoSanh:
         kq = ab.so_sanh([90.0, 92.0, 88.0], [140.0, 142.0, 138.0], uu_tien=-1)
         assert kq["ket_luan"] == "A tốt hơn"
         assert kq["chenh_lech"] == pytest.approx(50.0)
+        assert kq["nhieu"] == pytest.approx(4.0)          # spread mỗi bên = 4
 
     def test_n_1_khong_ket_luan_duoc(self):
         kq = ab.so_sanh([9.0], [5.0], uu_tien=1)
