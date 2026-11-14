@@ -37,7 +37,7 @@ from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src.light_tracker import LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
-from src.video_source import open_video_source
+from src.video_source import looks_like_file, open_video_source
 
 FRAME_NAME = "frame.jpg"
 STATUS_NAME = "status.json"
@@ -181,6 +181,16 @@ def write_bytes_atomic(path: Path, data: bytes) -> None:
     with open(tmp, "wb") as handle:
         handle.write(data)
     os.replace(tmp, path)
+
+
+def session_exit_code(stats: "LiveTrackStats") -> int:
+    """Mã thoát của tiến trình worker cho một phiên đã kết thúc: `0` bình thường, `1` nếu lỗi.
+
+    Vì sao không để `main()` tự quyết: `worker_source.health()` phân biệt "người dùng bấm Dừng" với
+    "chết vì lỗi" bằng **mã thoát** (mã ≠ 0 ⇒ `error`). Một chỗ định nghĩa + test được ⇒ không có
+    chuyện nhánh nào đó quên trả 1 (điều đã xảy ra tới 14-11: mọi phiên, kể cả crash, đều trả 0).
+    """
+    return 1 if stats.state == STATE_ERROR else 0
 
 
 def read_bbox(path: Path):
@@ -431,10 +441,12 @@ class LiveTrackingSession:
         out_dir.mkdir(parents=True, exist_ok=True)
         self._publish_status(out_dir)
 
-        self._source = open_video_source(self._cfg.source).open()
         interval = 1.0 / max(1.0, float(self._cfg.display_fps))
         started = False
         try:
+            # Mở nguồn TRONG `try`: bản cũ để ngoài nên `.open()` ném ⇒ `status.json` kẹt ở
+            # `loading` trong khi tiến trình đã chết, người đọc tưởng model còn đang nạp.
+            self._source = open_video_source(self._cfg.source).open()
             while not (stop_event is not None and stop_event.is_set()):
                 began = time.perf_counter()
                 frame = self._source.read()
@@ -475,6 +487,11 @@ class LiveTrackingSession:
                 if self._cfg.stop_after_frames and self._stats.frames >= self._cfg.stop_after_frames:
                     break
                 self._sleep(interval, began)
+        except Exception as exc:                 # noqa: BLE001 — lỗi phải THÀNH TRẠNG THÁI, không im
+            # Bản cũ: ngoại lệ ở luồng chính (mở nguồn, `engine.start` với ô chọn xấu, `read()` ném,
+            # `_annotate`) thoát khỏi vòng lặp rồi `finally` ghi `stopped` ⇒ đầu kia API báo "worker đã
+            # kết thúc phiên" và người xem không phân biệt được với việc bấm Dừng (review vòng 1/3).
+            self._on_loop_error(exc)
         finally:
             # Hợp đồng: `stopped` phải có trong `status.json` TRƯỚC khi join luồng VOS (`_stop_worker()`
             # chờ tới 5 s). Hiện ngưỡng treo của watchdog là ≥ 15 s nên cửa sổ này chưa đủ để báo oan,
@@ -537,10 +554,21 @@ class LiveTrackingSession:
 
     def _on_worker_error(self, exc) -> None:
         """Lỗi trong luồng VOS: ghi trạng thái error để API/UI biết, KHÔNG phát mask đứng yên."""
+        self._set_error(exc, "model lỗi trong luồng VOS")
+
+    def _on_loop_error(self, exc) -> None:
+        """Ngoại lệ ở luồng chính (mở nguồn, `engine.start`, `read()`, vẽ): phải thành `error`.
+
+        Thông điệp cố ý KHÁC nhánh luồng VOS để người đọc `status.json` biết lỗi đến từ đâu; cả hai
+        đều đi qua `_set_error` nên chỉ có MỘT nơi ghi `state = error`.
+        """
+        self._set_error(exc, "lỗi trong vòng lặp chính")
+
+    def _set_error(self, exc, where: str) -> None:
         self._error = exc
         with self._stats_lock:
             self._stats.state = STATE_ERROR
-            self._stats.message = f"model lỗi trong luồng VOS: {exc}"
+            self._stats.message = f"{where}: {exc}"
 
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
@@ -1008,8 +1036,14 @@ class LiveTrackingSession:
         return round((len(stamps) - 1) / span, 1) if span > 0 else 0.0
 
     def _rewind(self):
-        """Mở lại file từ đầu (demo live bằng video); nguồn thật hoặc lỗi → None."""
-        if not self._cfg.loop_files:
+        """Mở lại file từ đầu (demo live bằng video); nguồn thật hoặc lỗi → None.
+
+        `loop_files=True` (mặc định) chỉ có nghĩa với nguồn **có điểm kết thúc**: file video hoặc
+        thư mục ảnh. Với webcam/RTSP/snapshot HTTP, một lần `read()` trả `None` mà mở lại thiết bị
+        là tự bắn vào chân: relay/`usbipd` còn đang giữ thiết bị ⇒ "Device busy" và phiên đang khoẻ
+        chết theo (AGENTS §6; đường `raw` đã có guard này từ trước — `opencv_source._looks_like_file`).
+        """
+        if not self._cfg.loop_files or not looks_like_file(self._cfg.source):
             return None
         try:
             source, self._source = self._source, None

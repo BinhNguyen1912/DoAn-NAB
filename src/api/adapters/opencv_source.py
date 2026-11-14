@@ -15,12 +15,11 @@ Lưu ý  : đây là NƠI DUY NHẤT của nhánh live import cv2 (qua video_sou
 
 import logging
 import time
-from pathlib import Path
 
 import cv2
 
 from src.api.domain import LiveState, SourceHealth
-from src.video_source import open_video_source
+from src.video_source import looks_like_file, open_video_source
 
 logger = logging.getLogger("doan.api.opencv_source")
 
@@ -182,7 +181,4 @@ class OpenCvFrameSource:
         hết, và `health()` báo `ERROR "không trả frame"` cho một phiên kết thúc bình thường — đáng lẽ
         `STOPPED "nguồn đã hết"` (review độc lập 09-11, P2).
         """
-        if not isinstance(source, str):
-            return False
-        path = Path(source)
-        return path.suffix.lower() in _FILE_SUFFIXES or path.is_file() or path.is_dir()
+        return looks_like_file(source)         # một định nghĩa duy nhất (src/video_source.py)
