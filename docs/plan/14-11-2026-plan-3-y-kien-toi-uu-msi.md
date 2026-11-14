@@ -89,6 +89,29 @@
 | GT mask dày 10 clip × 100–200 frame | không đề xuất (quá đắt) | bác (20–40 h) | không nhắc | **Bác** — thay bằng 5–10 frame nhãn tay trên clip đúng bbox (tuỳ chọn 2–4 h) |
 | Port re-ID vào đường live | không nhắc | bác (rủi ro phá mốc realtime) | không nhắc | **Bác trong 2 tuần này**; phải **nói trước** với hội đồng: cơ chế có ở đường CLI, đường web chưa nối |
 
+## 🔬 Bổ sung cùng ngày — việc #3 đã ĐO XONG (và câu "train lại model" đã có câu trả lời)
+
+Đo đường live thật (`scripts/measure_live_relay.py`, @192, `vos_every 3`, 55 s, 3 lần xen kẽ,
+`git_dirty_code=false`, `git_rev=34b512b`). Chi tiết + CSV: log
+`docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`.
+
+| Ca | `empty` % cả phiên | `empty` % **khi vật trong khung** | `drift_iou` trong khung | mask/s | `mask_age_p95` |
+|---|---|---|---|---|---|
+| **mặt người** (ô cũ `binh1`) | 0,0 | 0,0 | **0,883** | 7,8–8,2 | 209–228 ms |
+| **chai** (`binh1`, ô mới) | 35,0–36,3 | **0,0** | **0,419–0,455** | 8,5–8,8 | 215–221 ms |
+| **chai** (`binh2`, ô mới) | 21,7–23,4 | **0,0** | **0,727–0,753** | 8,1–8,5 | 209–219 ms |
+
+**Ba kết luận làm thay đổi plan:**
+1. **"Mất dấu 21–37 %" KHÔNG phải model hỏng** — đó là số đoạn clip **không còn vật trong khung**
+   (`binh1` cất chai từ ≈frame 115; `binh2` từ ≈frame 250). Khi vật còn trong khung: `empty = 0,0 %`
+   ở cả 3 ca. ⇒ việc #3 coi như **xong**; phải sửa câu chữ "binh2 mất dấu" ở `AGENTS.md` §6 và
+   thêm cờ "vật còn trong khung" vào cách tính `empty_frac_window`.
+2. **Không đổi model / không train lại** (bằng chứng: khi vật trong khung rỗng 0 %; checkpoint
+   `small` 31,1 % vs `tiny` 31,8 % mà chậm +18 %; `image_size` 256/320 làm `drift_iou` **giảm**
+   0,34/0,29 và chậm 1,8–2,5×; cadence 1/2/3 như nhau). Lý do đầy đủ: log cùng ngày, mục cuối.
+3. **Việc mới phát sinh, chen trước #4:** *chọn/thu clip demo có vật ở trong khung suốt* và
+   *dùng cửa sổ đo theo `frame_idx`* — rẻ, và không có nó thì mọi số "mất dấu" đều vô nghĩa.
+
 ## ✅ Quyết định
 
 - **Chọn:** thứ tự **1 → 7** dưới đây (core **≈ 18 h**), phần "tuỳ chọn" chỉ làm khi còn giờ:
