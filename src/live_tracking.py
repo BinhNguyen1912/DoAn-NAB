@@ -409,7 +409,9 @@ class LiveTrackingSession:
         # tái nhập: đang giữ nó thì cấm gọi hàm có `with self._stats_lock` (dùng biến thể
         # `*_locked` cho phần dùng chung, như `_apply_drift_locked`).
         self._stats_lock = threading.Lock()
-        self._vos_state = None          # (seq, result, gray, produced_at, vos_ms) lần VOS gần nhất
+        # (seq, result, gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms) — lần VOS gần nhất;
+        # 3 khoản cuối đi CÙNG snapshot để tuổi mask không trộn pha của lần chạy khác.
+        self._vos_state = None
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
         self._seq = 0
@@ -500,8 +502,10 @@ class LiveTrackingSession:
 
     def _start_worker(self, frame, gray) -> None:
         with self._lock:                      # mốc nội suy ban đầu = frame start(), đặt TRƯỚC submit
+            # 8 phần tử: 5 phần tử cũ + (pre_ms, queue_ms, post_ms) — `None` = chưa có lần VOS nào.
             self._vos_state = (0, self._interp_base_result, gray, time.perf_counter(),
-                               float(getattr(self._interp_base_result, "elapsed_ms", 0.0)))
+                               float(getattr(self._interp_base_result, "elapsed_ms", 0.0)),
+                               None, None, None)
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1
@@ -540,23 +544,32 @@ class LiveTrackingSession:
 
     def _store_vos(self, seq, result, gray) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
+        # `post_ms` bắt đầu TRƯỚC `_record_vos` (bên trong có `_measure_stability` ⇒ `mask_iou`
+        # mask thô ~0,2–1 ms); nếu đo sau nó thì `post_ms` thiếu đúng khoản đó và chuỗi pha không
+        # khép được (review vòng 3, P3).
+        bat_dau_post = time.perf_counter()
+        pha = self._worker.timing if self._worker is not None else {}
+        pre = getattr(result, "pre_ms", None)      # engine không có `pre_ms` ⇒ None (CHƯA ĐO), không 0
+        pre_ms = None if pre is None else round(float(pre), 2)
         self._record_vos(result)
         frame_idx = self._seq_frame.pop(seq, None)
-        bat_dau_post = time.perf_counter()
         # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
         self._measure_drift(frame_idx, result, seq)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0, 2)
-        pha = self._worker.timing if self._worker is not None else {}
+        queue_ms = pha.get("queue_ms")
         with self._stats_lock:
             self._stats.cycle_ms = pha.get("cycle_ms")
-            self._stats.queue_ms = pha.get("queue_ms")
+            self._stats.queue_ms = queue_ms
             self._stats.idle_ms = pha.get("idle_ms")
-            self._stats.pre_ms = round(float(getattr(result, "pre_ms", 0.0)), 2)
+            self._stats.pre_ms = pre_ms
             self._stats.post_ms = post_ms
         with self._lock:
+            # Gom pha của CHÍNH lần VOS này vào snapshot: `_result_threaded` chỉ đọc tuple này nên
+            # không trộn pha của lần chạy khác vào mẫu tuổi mask (review vòng 3, P3).
             self._vos_state = (seq, result, gray, time.perf_counter(),
-                               float(getattr(result, "elapsed_ms", 0.0)))
+                               float(getattr(result, "elapsed_ms", 0.0)),
+                               pre_ms, queue_ms, post_ms)
 
     def _result_threaded(self, frame):
         """Frame này: gửi cho VOS (nếu tới lượt) rồi vẽ bằng mask mới nhất + LK tới frame hiện tại."""
@@ -575,12 +588,12 @@ class LiveTrackingSession:
         if state is None:
             return self._interp_base_result
 
-        seq, base_result, base_gray, produced_at, vos_ms = state
-        # Truyền ĐỦ các khoản đã đo được: chờ trong worker + tiền xử lý + suy luận + vẽ.
+        seq, base_result, base_gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms = state
+        # Truyền ĐỦ các khoản của ĐÚNG lần VOS này (lấy từ snapshot, không đọc `_stats` — tránh lệch
+        # thế hệ khi một VOS mới vừa xong).
         self._note_mask_age(time.perf_counter() - produced_at, vos_ms,
-                            pre_ms=float(getattr(base_result, "pre_ms", 0.0) or 0.0),
-                            queue_ms=self._stats.queue_ms or 0.0,
-                            post_ms=self._stats.post_ms or 0.0)
+                            pre_ms=pre_ms or 0.0, queue_ms=queue_ms or 0.0,
+                            post_ms=post_ms or 0.0)
         base_bbox = xyxy_to_xywh(base_result.bbox)
         self._interp.reset(base_gray, base_bbox)      # mốc LUÔN là frame VOS → sai số không tích luỹ
         began = time.perf_counter()

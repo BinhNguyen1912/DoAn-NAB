@@ -57,9 +57,9 @@ class TrackingResult:
     score: float        # object_score_logits của đối tượng (>0 thường là tin cậy)
     elapsed_ms: float   # CHỈ phần model (propagate) — không gồm tiền xử lý
     # Thời gian tiền xử lý (resize sang `image_size` + stack tensor). Tách riêng vì `elapsed_ms`
-    # luôn bỏ khoản này (đo 14-11: 5,65 ms/frame @192 = 4,5 % `vos_ms`), nên "tuổi mask" thật và
-    # "chu kỳ VOS" không khép được nếu không cộng nó. Mặc định 0 để code cũ (và test) không đổi.
-    pre_ms: float = 0.0
+    # luôn bỏ khoản này (đo 14-11: 14,25 ms/frame @192), nên tuổi mask thật và chu kỳ VOS không khép
+    # được nếu không cộng nó. Mặc định **`None`** (= CHƯA ĐO) để engine khác không "vô tình" báo 0,0.
+    pre_ms: float | None = None
 
 
 class _StreamingImages:
