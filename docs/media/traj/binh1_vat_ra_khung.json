@@ -1,0 +1,20 @@
+{
+  "do_luc": "2026-11-14T18:15:10",
+  "lenh": "scripts/make_trajectory_media.py --csv data/drift_samples_binh1_2026-11-14_113103.csv --clip data/binh1.mp4 --expect-bbox 300,275,150,410 --title binh1 — bbox 300,275,150,410 (dung vat), vat di ra/vao khung --out docs/media/traj/binh1_vat_ra_khung.png",
+  "git_rev": "c0eabfd35c16254fa3cd82adc42617d195d1f1a5",
+  "git_dirty_code": true,
+  "csv": "data/drift_samples_binh1_2026-11-14_113103.csv",
+  "csv_sha256_16": "a6e2d917a8b4b303",
+  "clip": "data/binh1.mp4",
+  "clip_sha256_16": "914e1873cff8aa01",
+  "bbox_dong_dau_x1y1x2y2": [
+    288,
+    287,
+    431,
+    734
+  ],
+  "tieu_de": "binh1 — bbox 300,275,150,410 (dung vat), vat di ra/vao khung",
+  "anh": "docs/media/traj/binh1_vat_ra_khung.png",
+  "anh_sha256_16": "412f094866558c7e",
+  "canh_bao": "Độ tự nhất quán (drift_iou) KHÔNG phải độ chính xác — xem AGENTS §6."
+}

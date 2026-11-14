@@ -251,7 +251,10 @@ def provenance(csv_path, clip_path, out_path, title: str, bbox_dau) -> dict:
 
     rev = _git(["rev-parse", "HEAD"])
     changed = _git(["status", "--porcelain"]) or ""
-    dirty_code = any(not line[3:].startswith("data/") for line in changed.splitlines())
+    # `data/` và `docs/media/` là ĐẦU RA của dụng cụ đo, không phải code: tính chúng là "bẩn" thì
+    # mỗi lần sinh lại ảnh là provenance tự tố cáo mình (vòng lặp không lối thoát).
+    dirty_code = any(not line[3:].startswith(("data/", "docs/media/"))
+                     for line in changed.splitlines())
     return {
         "do_luc": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(sys.argv),
