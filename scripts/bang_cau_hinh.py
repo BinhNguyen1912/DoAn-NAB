@@ -40,7 +40,8 @@ COT = [
 ]
 
 
-def _run_once(clip: Path, bbox, size, every, frames: int, device: str, timeout: float) -> dict:
+def _run_once(clip: Path, bbox, size, every, frames: int, device: str, timeout: float,
+              mask_smoothing: float = 1.0) -> dict:
     """Chạy MỘT phiên worker thật rồi đọc `status.json` cuối. Trả dict số đo + lỗi (nếu có)."""
     with tempfile.TemporaryDirectory(prefix="bang_cau_hinh_") as tmp:
         out = Path(tmp)
@@ -49,6 +50,7 @@ def _run_once(clip: Path, bbox, size, every, frames: int, device: str, timeout: 
         cmd = [sys.executable, str(_REPO_ROOT / "tools" / "live_worker.py"),
                "--source", str(clip), "--out-dir", str(out),
                "--image-size", str(size), "--vos-every", str(every),
+               "--mask-smoothing", str(mask_smoothing),
                "--device", device, "--stop-after-frames", str(frames)]
         began = time.perf_counter()
         try:
