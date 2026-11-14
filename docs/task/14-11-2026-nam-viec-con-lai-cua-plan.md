@@ -160,6 +160,16 @@ nhiễu 0,06 ⇒ chênh chỉ ~1,7 lần nhiễu — **không** dùng để nói
 | Không có `ffmpeg`/`ffprobe` ⇒ mp4v đen trên Chrome | **Không đúng trên máy này**: `./run e2e` kiểm "trình duyệt GIẢI MÃ được video (H.264)" và PASS ⇒ đường xuất H.264 đang chạy; chỉ là `ffprobe` CLI không có (đừng dùng nó làm nghiệm thu) |
 | `num_maskmem` không có plumbing + không có GT để chứng minh lợi ích | **Đồng ý bỏ khỏi phạm vi** (đã không làm) |
 
+### Góc "sản phẩm & bằng chứng bảo vệ" trả về **sau khi merge** — 3 việc đã đóng, 2 đính chính
+
+| Phát hiện | Trạng thái |
+|---|---|
+| **Media không có provenance** ⇒ không ai kiểm được ảnh sinh từ CSV đo bằng **ô nào** (nguy cơ: ảnh từ ô phủ khuôn mặt trông y như ảnh đúng) | **Đã sửa**: `make_trajectory_media.py --meta` ghi `git_rev`/`git_dirty_code`/`sha256`(CSV, clip, ảnh)/**bbox dòng đầu** + cảnh báo "drift_iou không phải độ chính xác"; ảnh cũ (`docs/media/traj/binh1_vat_ra_khung.{png,json}`) sinh lại với `--expect-bbox 288,287,431,734` ⇒ **khớp 0 %**, `git_dirty_code=false` |
+| Ảnh traj được cho là sinh từ CSV **ô khuôn mặt** `104,308,209,287` | **Không đúng**: ảnh đã commit sinh từ `drift_samples_binh1_2026-11-14_113103.csv` (dòng đầu `288,287,431,734` = ô chai đúng). Nhưng **thiếu provenance là lỗi thật** ⇒ nay đã có file `.json` để đối chiếu thay vì tin lời |
+| "p95 của 256/320 là **định nghĩa cũ**" ⇒ không ghép được vào bảng với 192 | **Đã tránh bằng cấu trúc**: bảng `docs/bang-cau-hinh.md` đo **cả 9 cấu hình trong cùng một lần chạy**, cùng mã, cùng `--frames 60`, `git_rev 548e99b` ⇒ không trộn định nghĩa. (Số `387,5 ms` cũ **không** được dùng ở đâu.) |
+| **Bug phát hiện khi làm provenance**: `.strip()` cả khối `git status` làm mất dấu cách đầu dòng (`" M docs/…"` → `"M docs/…"`) ⇒ `docs/media/` không được miễn trừ ⇒ mọi ảnh tự khai "cây bẩn" | **Đã sửa** + tách hàm thuần `_dirty_code()` + 4 test |
+| Độ dài clip: repo ghi "3,7–5,3 s" | **Đính chính**: clip `binh1` dài **11,1 s** (333 frame), `binh2` **12,0 s**; 3,7–5,3 s là **cửa sổ vật còn trong khung** (`0:110` ∪ `165:262`). Hệ quả: cần clip **liên tục ≥ 20 s** nếu muốn demo bằng file mà không cắt |
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **`status.json` echo cấu hình hiệu lực** (`image_size`, `vos_every`, `mask_age_dinh_nghia`) + test "yêu cầu == hiệu lực" để artifact tự kiểm (phát hiện của góc "độ bền", P2).
 - [ ] **`experiment_occlusion.py`**: thêm `--out` + `git_dirty_code`/`git_rev` top-level, không ghi đè tên file đã có trong `REGISTRY` của `docs/so-lieu-bao-cao.md` (rủi ro ghi đè số đã công bố).
