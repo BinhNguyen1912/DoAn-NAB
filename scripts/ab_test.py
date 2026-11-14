@@ -89,9 +89,13 @@ def so_sanh(a_values, b_values, uu_tien: int = 1, key: str | None = None) -> dic
     cb = [float(v) for v in b_values if isinstance(v, (int, float))]
     san = SAN_NHIEU.get(key or "", 0.0)
     if len(ca) < 2 or len(cb) < 2:
-        return {"mean_a": ca[0] if ca else None, "mean_b": cb[0] if cb else None,
+        # PHẢI trả ĐỦ khoá: `main` in `kq['std_a']` ⇒ thiếu khoá là `KeyError` ngay sau khi artifact
+        # đã ghi (bảng không in, tiến trình chết bằng traceback) — P1 review hẹp 14-11. Ngoài ra
+        # `mean_a` ở nhánh này chỉ là MỘT mẫu đơn, nên `main` rẽ nhánh theo `n_*`, không theo `mean_*`.
+        return {"mean_a": round(ca[0], 2) if ca else None, "mean_b": round(cb[0], 2) if cb else None,
+                "std_a": None, "std_b": None, "spread_a": None, "spread_b": None,
                 "n_a": len(ca), "n_b": len(cb), "nhieu": None, "chenh_lech": None,
-                "ket_luan": "không kết luận được (n < 2)"}
+                "ket_luan": f"không kết luận được (n < 2: A n={len(ca)}, B n={len(cb)})"}
     ma, mb = statistics.fmean(ca), statistics.fmean(cb)
     sa = statistics.stdev(ca)
     sb = statistics.stdev(cb)
@@ -193,7 +197,7 @@ def main(argv=None) -> int:
     print("|---|---|---|---|---|---|")
     for key, nhan, _uu in METRIC:
         kq = ket_qua[key]
-        if kq["mean_a"] is None or kq["mean_b"] is None:
+        if kq["n_a"] < 2 or kq["n_b"] < 2:            # n < 2 ⇒ KHÔNG phải "bằng nhau"
             print(f"| {nhan} | — | — | — | — | {kq['ket_luan']} |")
             continue
         a_txt = f"{kq['mean_a']:g} ± {kq['std_a']:g}"

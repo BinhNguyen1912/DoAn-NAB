@@ -130,3 +130,23 @@ def test_parse_dump_frames_tu_choi_so_am():
 def test_parse_dump_frames_bo_trung_va_sap_xep():
     cfg = LiveTrackConfig(source="0", out_dir=Path("x"), dump_mask_frames="12, 3;3,0")
     assert cfg.dump_mask_frames == (0, 3, 12)
+
+
+def test_manifest_ghi_dieu_kien_sinh_mask(video_source, tmp_path):
+    """Manifest trả lời "mask này sinh ở image_size/vos_every/ô chọn nào" — nếu thiếu, artifact mIoU
+    không tự kiểm được cấu hình (P0/P2 review hẹp 14-11)."""
+    import json
+
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(20))
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "image_size" in man and man["vos_every"] == 1
+    assert man["bbox_xywh"] == [2, 2, 12, 12]
+    assert "THÔ" in man["ghi_chu"]

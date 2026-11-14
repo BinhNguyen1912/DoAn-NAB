@@ -497,6 +497,7 @@ class LiveTrackingSession:
                         continue
                     # bbox.json là (x, y, w, h); SAM 2 nhận box (x1, y1, x2, y2) — BUG thật 10-11:
                     # trước đây truyền thẳng nên hộp chọn trên live bị seed sai (w,h thành x2,y2)
+                    self._chon_bbox = tuple(bbox)      # vào manifest.json của mask dump
                     result = self._engine.start(frame, xywh_to_xyxy(bbox))
                     self._after_vos(frame, result)
                     if self._use_lk:
@@ -745,10 +746,40 @@ class LiveTrackingSession:
                       "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)", flush=True)
                 return
             arr = (np.asarray(mask) > 0).astype(np.uint8)
-            cv2.imwrite(str(target / f"mask_{int(frame_idx):06d}.png"), arr * 255)
+            # `imwrite` KHÔNG ném khi ghi hỏng (đĩa đầy/quyền) — nó trả False ⇒ file không có, và khâu
+            # chấm sẽ báo "thiếu mask của model" = "chưa chạy", đúng cái bẫy docstring này nói phải
+            # tránh (P3 review hẹp 14-11).
+            if not cv2.imwrite(str(target / f"mask_{int(frame_idx):06d}.png"), arr * 255):
+                print(f"[canh-bao] cv2.imwrite trả False cho frame {frame_idx} (đĩa/quyền?) — file "
+                      "KHÔNG được ghi", flush=True)
+                return
             self._dumped.add(int(frame_idx))
+            self._write_mask_manifest(target)
         except Exception as exc:                 # noqa: BLE001 — dụng cụ đo không giết phiên
             print(f"[canh-bao] không ghi được mask frame {frame_idx}: {exc}", flush=True)
+
+    def _write_mask_manifest(self, target: Path) -> None:
+        """Ghi `manifest.json` cạnh các file mask: **mask sinh ra trong điều kiện nào**.
+
+        Không có nó thì artifact mIoU không tự kiểm được là mask tới từ `image_size`/`vos_every`/ô chọn
+        nào — đúng loại "số không truy được về cấu hình" mà repo đã gặp (P0/P2 review 14-11).
+        """
+        import json
+
+        payload = {
+            "nguon": str(self._cfg.source),
+            # `image_size` thuộc ENGINE (hydra override), không phải session config
+            "image_size": getattr(self._engine, "image_size", None),
+            "vos_every": self._cfg.vos_every, "mask_smoothing": self._cfg.mask_smoothing,
+            "bbox_xywh": list(self._chon_bbox) if getattr(self, "_chon_bbox", None) else None,
+            "frames_yeu_cau": list(self._cfg.dump_mask_frames),
+            "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO",
+        }
+        try:
+            (target / "manifest.json").write_text(
+                json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
+        except OSError as exc:
+            print(f"[canh-bao] không ghi được manifest.json: {exc}", flush=True)
 
     def _record_vos(self, result, frame_video=None) -> None:
         self._dump_mask(result, frame_video)

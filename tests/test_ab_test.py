@@ -84,7 +84,10 @@ class TestSoSanh:
 
     def test_n_1_khong_ket_luan_duoc(self):
         kq = ab.so_sanh([9.0], [5.0], uu_tien=1)
-        assert kq["ket_luan"] == "không kết luận được (n < 2)"
+        assert kq["ket_luan"].startswith("không kết luận được (n < 2")
+        assert kq["n_a"] == 1 and kq["n_b"] == 1
+        # PHẢI có đủ khoá: thiếu `std_a` từng làm `main` chết `KeyError` SAU khi artifact đã ghi
+        assert kq["std_a"] is None and kq["std_b"] is None and kq["chenh_lech"] is None
         assert kq["nhieu"] is None
 
     def test_none_bi_bo_khong_thanh_0(self):
@@ -168,3 +171,36 @@ class TestLoiKhongBiBoQua:
             mw._git_provenance = mw_orig
         assert ma == 1
         assert "KHÔNG ĐO ĐƯỢC" in capsys.readouterr().out
+
+
+class TestBangKhongCrashKhiMotBenCo1Mau:
+    """P1 review hẹp 14-11: `so_sanh` nhánh `n < 2` trả dict **thiếu** `std_a`/`std_b`, nhưng `main`
+    rẽ nhánh theo `mean_*` ⇒ `KeyError` ngay sau khi artifact đã ghi: bảng không in, tiến trình chết
+    bằng traceback. Kích hoạt thật khi `_run_once` trả `{"loi": …}` ở 2/3 lần (state=error/timeout) —
+    log 14-11 đã ghi "3 lần đo đầu có lỗi rải rác"."""
+
+    def test_2_tren_3_lan_loi_thi_van_in_bang(self, tmp_path, capsys):
+        import scripts.ab_test as ab2
+
+        good = {"measured_fps": 29.7, "vos_fps": 7.5, "vos_ms": 100.0, "mask_age_p95": 320.0}
+        dem = {"a": 0}
+
+        def fake(clip, bbox, image_size, vos_every, frames, device, timeout, **kw):
+            if image_size == 192:
+                dem["a"] += 1
+                return {"loi": "worker thoát mã 1"} if dem["a"] <= 2 else dict(good)
+            return dict(good, vos_fps=3.1, vos_ms=280.0, mask_age_p95=650.0)
+
+        ab2.__dict__["_run_once"] = fake
+        try:
+            clip = tmp_path / "a.mp4"
+            clip.write_bytes(b"x")
+            ma = ab2.main(["--clip", str(clip), "--bbox", "1,1,10,10",
+                           "--a", "image_size=192", "--b", "image_size=320",
+                           "--lan", "3", "--out", str(tmp_path / "ab.json")])
+        finally:
+            del ab2._run_once
+        out = capsys.readouterr().out
+        assert "| chỉ số |" in out, "bảng phải in được (trước đây KeyError)"
+        assert "lần chạy LỖI: A 2/3" in out
+        assert ma == 0

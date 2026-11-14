@@ -98,6 +98,7 @@ def cham(ds_frame, gt_dir: Path) -> dict:
         miou.append(gia_tri)
         rows.append({"frame_idx": idx, "iou": round(gia_tri, 4),
                      "dien_tich_gt": int(gt.sum()), "dien_tich_pred": int(pred.sum())})
+    tong = len(ds_frame)
     return {
         "mIoU": None if not miou else round(float(np.mean(miou)), 4),
         "mIoU_p05": None if len(miou) < 5 else round(float(np.percentile(miou, 5)), 4),
@@ -105,8 +106,23 @@ def cham(ds_frame, gt_dir: Path) -> dict:
         "so_frame_gt_rong": gt_rong,
         "so_frame_thieu_mask": thieu,
         "so_frame_mask_hong": hong,
+        # Coverage vào artifact, KHÔNG chỉ in ra màn hình: 5/10 frame thiếu mask từng được in mIoU mà
+        # không cảnh báo, và người đọc artifact sau không biết mẫu nhỏ đến đâu.
+        "so_frame_tong": tong,
+        "coverage": None if not tong else round(len(miou) / tong, 4),
         "frames": rows,
     }
+
+
+def _doc_manifest(pred_dir: Path):
+    """Đọc `manifest.json` cạnh các file mask (nếu có) — chỉ để truy nguyên, không ảnh hưởng điểm."""
+    path = Path(pred_dir) / "manifest.json"
+    if not path.is_file():
+        return None
+    try:
+        return json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
 
 
 def kiem_index(index: dict, gt_dir: Path):
@@ -131,8 +147,23 @@ def kiem_index(index: dict, gt_dir: Path):
         if idx in seen:
             chan.append(f"frame_idx trùng: {idx}")
         seen.add(idx)
-        if not (Path(gt_dir) / f"gt_{idx:06d}.png").is_file():
+        gt_path = Path(gt_dir) / f"gt_{idx:06d}.png"
+        if not gt_path.is_file():
             chan.append(f"thiếu file GT cho frame {idx}: gt_{idx:06d}.png")
+            continue
+        # `is_file()` KHÔNG đủ: test cũ của chính repo coi một file 1 byte là "hợp lệ", trong khi
+        # `score` sẽ chết vì không giải mã được (review hẹp 14-11, P2 — "chứng nhận" một bộ GT mà
+        # khâu chấm không dùng được). Giải mã + kiểm cỡ thật.
+        try:
+            mask = doc_mask(gt_path)
+        except ValueError as exc:
+            chan.append(f"GT không đọc được ở frame {idx}: {exc}")
+            continue
+        hw = index.get("frame_hw")
+        if isinstance(hw, (list, tuple)) and len(hw) == 2 and tuple(mask.shape) != tuple(hw):
+            chan.append(f"GT frame {idx} sai kích thước {mask.shape} (index ghi frame_hw = {tuple(hw)})")
+        if not mask.any():
+            mem.append(f"GT frame {idx} toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')")
     if not index.get("nguoi_gan"):
         mem.append("thiếu 'nguoi_gan' — GT không có người chịu trách nhiệm thì không dùng làm bằng chứng")
     if index.get("gt_do_model_goi_y"):
@@ -219,7 +250,13 @@ def main(argv=None) -> int:
         print(f"[gt] index: {gt_dir / 'index.json'} — nhớ điền --nguoi-gan trước khi chấm điểm")
         return 0
 
-    gt_dir = Path(args.gt) if args.gt else None
+    # `--gt` mặc định "" ⇒ `gt_dir = None` ⇒ trước đây `Path(None)` ném `TypeError` (và tìm
+    # `./index.json` theo CWD) — review hẹp 14-11, P3. Nói thẳng và dừng.
+    if not args.gt:
+        print("[miou] thiếu --gt <thư mục GT> (phải có index.json bên trong; xem "
+              "`./run miou gt`)")
+        return 2
+    gt_dir = Path(args.gt)
     index_path = (gt_dir or Path()) / "index.json"
     if not index_path.is_file():
         print(f"[LOI] không thấy {index_path} — chạy `label` trước, hoặc trỏ --gt")
@@ -261,6 +298,9 @@ def main(argv=None) -> int:
             else str(gt_dir),
             "pred_dir": str(pred_dir),
             "gt_do_model_goi_y": bool(index.get("gt_do_model_goi_y")),
+            # Manifest của thư mục mask (image_size/vos_every/bbox/source) ⇒ artifact tự trả lời được
+            # "mask này sinh trong điều kiện nào" (P0/P2 review hẹp 14-11).
+            "mask_manifest": _doc_manifest(pred_dir),
             "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; "
                           "GT rỗng không chấm; model rỗng mà GT có vật = 0,0",
         },
@@ -278,9 +318,12 @@ def main(argv=None) -> int:
           f" · GT rỗng: {kq['so_frame_gt_rong']} · thiếu mask: {kq['so_frame_thieu_mask']}")
     for ten_canh_bao in mem:
         print(f"[miou] CẢNH BÁO: {ten_canh_bao}")
-    if kq["so_frame_thieu_mask"] > kq["n_cham"]:
-        print(f"[miou] CẢNH BÁO: chỉ chấm được {kq['n_cham']} / "
-              f"{kq['n_cham'] + kq['so_frame_thieu_mask']} frame có GT — "
+    # LUÔN in coverage (trước đây chỉ in khi thiếu > chấm được ⇒ 5/10 frame thiếu vẫn in mIoU "sạch",
+    # review hẹp 14-11). Coverage 100 % mới được nói "trên cả clip".
+    print(f"[miou] coverage: {kq['n_cham']}/{kq['so_frame_tong']} frame có mask "
+          f"({kq['coverage']:.0%})" if kq.get("coverage") is not None else "")
+    if kq.get("coverage") is not None and kq["coverage"] < 1.0:
+        print(f"[miou] CẢNH BÁO: chỉ chấm được {kq['n_cham']} / {kq['so_frame_tong']} frame có GT — "
               "CẤM nói 'mIoU trên cả clip' với con số này")
     if kq["mIoU"] is None:
         print("[miou] KHÔNG chấm được frame nào ⇒ mIoU = None (KHÔNG phải 0)")

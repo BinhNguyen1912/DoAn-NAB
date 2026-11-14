@@ -123,15 +123,40 @@ class TestKiemIndex:
         return base
 
     def test_hop_le(self, tmp_path):
-        (tmp_path / "gt_000000.png").write_bytes(b"x")
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
         assert sm.kiem_index(self._index(tmp_path), tmp_path) == ([], [])
+
+    def test_file_gt_byte_rac_la_LOI_chan(self, tmp_path):
+        """`is_file()` không đủ: một file 1 byte từng được "chứng nhận hợp lệ" trong khi `score` sẽ
+        chết vì không giải mã được (review hẹp 14-11, P2)."""
+        (tmp_path / "gt_000000.png").write_bytes(b"x")
+        chan, _mem = sm.kiem_index(self._index(tmp_path), tmp_path)
+        assert any("không đọc được" in x for x in chan)
+
+    def test_gt_sai_kich_thuoc_la_LOI_chan(self, tmp_path):
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        chan, _mem = sm.kiem_index(self._index(tmp_path, frame_hw=[8, 8]), tmp_path)
+        assert any("sai kích thước" in x for x in chan)
+
+    def test_gt_toan_den_chi_la_canh_bao(self, tmp_path):
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.zeros((4, 4), np.uint8))
+        chan, mem = sm.kiem_index(self._index(tmp_path), tmp_path)
+        assert not chan and any("toàn đen" in x for x in mem)
 
     def test_thieu_file_gt_la_loi_CHAN(self, tmp_path):
         chan, _mem = sm.kiem_index(self._index(tmp_path), tmp_path)
         assert any("thiếu file GT" in x for x in chan)
 
     def test_thieu_nguoi_gan_chi_la_canh_bao_mem(self, tmp_path):
-        (tmp_path / "gt_000000.png").write_bytes(b"x")
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
         chan, mem = sm.kiem_index(self._index(tmp_path, nguoi_gan=""), tmp_path)
         assert not chan and any("nguoi_gan" in x for x in mem)
 
@@ -140,7 +165,9 @@ class TestKiemIndex:
 
         P1 review 14-11: bản trước chỉ in cảnh báo rồi **vẫn chấm và trả 0** ⇒ "chốt chặn danh nghĩa".
         """
-        (tmp_path / "gt_000000.png").write_bytes(b"x")
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
         chan, _mem = sm.kiem_index(self._index(tmp_path, gt_do_model_goi_y=True), tmp_path)
         assert any("gợi ý" in x for x in chan)
 

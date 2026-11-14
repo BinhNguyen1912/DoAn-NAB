@@ -69,6 +69,34 @@ def _device_note(device: str) -> str:
         return ""
 
 
+def _kiem_dump_mask_args(parser, dump_frames, vos_every) -> list[int]:
+    """Validate `--dump-mask-frames` ở cửa vào; trả danh sách frame đã kiểm (hàm thuần + `parser.error`).
+
+    Vì sao chặn hẳn khi `vos_every > 1`: model **không hề thấy** frame không chia hết cho N ⇒ mask của
+    frame đó không tồn tại. Cho chạy rồi cảnh báo cuối phiên là quá muộn — người dùng đã tưởng có mask
+    của frame 40 và chấm GT vào thư mục thiếu file (P0/P2 review hẹp 14-11).
+    """
+    n = max(1, int(vos_every))
+    if n > 1:
+        parser.error(
+            f"--dump-mask-frames cần --vos-every 1 (đang là {n}): với vos_every={n} chỉ frame chia hết "
+            f"cho {n} mới có lần VOS, nên mask của các frame khác KHÔNG tồn tại — chấm mIoU sẽ ghép GT "
+            "với mask của frame khác. Dùng --vos-every 1 khi chấm điểm.")
+    ra = []
+    for phan in str(dump_frames).replace(";", ",").split(","):
+        phan = phan.strip()
+        if not phan:
+            continue
+        try:
+            so = int(phan)
+        except ValueError:
+            parser.error(f"--dump-mask-frames: {phan!r} không phải số nguyên")
+        if so < 0:
+            parser.error(f"--dump-mask-frames: frame {so} âm")
+        ra.append(so)
+    return ra
+
+
 def main() -> int:
     parser = argparse.ArgumentParser(
         description="Worker bám đối tượng trực tiếp (ghi frame.jpg + status.json cho API web)"
@@ -103,6 +131,12 @@ def main() -> int:
     # (lỗi hợp đồng P2, review 08-11).
     if not 0.0 < args.mask_smoothing <= 1.0:
         parser.error("--mask-smoothing phải trong khoảng (0, 1]; 1.0 = tắt làm mượt")
+
+    # Chặn ngay ở cửa vào (P0 review hẹp 14-11): với `vos_every > 1` model **không hề thấy** frame
+    # không chia hết cho N ⇒ không có mask thật để dump. Cho chạy rồi cảnh báo cuối phiên là quá muộn:
+    # người dùng đã tưởng có mask của frame 40 và chấm GT vào một thư mục thiếu file.
+    if args.dump_mask_frames:
+        _kiem_dump_mask_args(parser, args.dump_mask_frames, args.vos_every)
     if args.vos_every < 1:
         parser.error("--vos-every phải >= 1")
     if args.max_fps <= 0:
