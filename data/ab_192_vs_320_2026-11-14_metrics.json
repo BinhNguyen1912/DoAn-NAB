@@ -1,10 +1,10 @@
 {
-  "git_rev": "7e8a8cf9cfadf50c15711d1be09371b20078c854",
+  "git_rev": "70b14256e9606c4a86cbb739c4174bbaaa93fd75",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-14T15:36:48",
+    "do_luc": "2026-11-14T15:44:54",
     "lenh": "scripts/ab_test.py --bbox 300,275,150,410 --a image_size=192,vos_every=3 --b image_size=320,vos_every=3 --lan 3 --frames 60 --out data/ab_192_vs_320_2026-11-14_metrics.json",
     "clip": "data/binh1.mp4",
     "bbox_xywh": [
@@ -25,84 +25,92 @@
       "vos_every": 3
     },
     "cach_chay": "chèn kẽ A,B,A,B,… (cùng điều kiện trung bình cho cả hai bên)",
-    "nguong_nhieu": "max(std_a, std_b); chênh lệch <= ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC"
+    "nguong_nhieu": "max(spread_a, spread_b) với spread = max−min (scripts/repeatability.py); chênh lệch <= ngưỡng ⇒ KHÔNG PHÂN BIỆT ĐƯỢC"
   },
   "ket_qua": {
     "measured_fps": {
       "nhan": "FPS phát",
-      "mean_a": 29.9,
+      "mean_a": 29.8,
       "std_a": 0.0,
-      "mean_b": 29.8,
-      "std_b": 0.0,
-      "nhieu": 0.0,
+      "spread_a": 0.0,
+      "mean_b": 29.7,
+      "std_b": 0.1,
+      "spread_b": 0.2,
+      "nhieu": 0.2,
       "chenh_lech": -0.1,
-      "ket_luan": "A tốt hơn"
+      "ket_luan": "không phân biệt được (chênh lệch nằm trong nhiễu)"
     },
     "vos_fps": {
       "nhan": "Nhịp mask",
-      "mean_a": 8.97,
-      "std_a": 0.25,
-      "mean_b": 3.67,
-      "std_b": 0.12,
-      "nhieu": 0.25,
+      "mean_a": 9.07,
+      "std_a": 0.15,
+      "spread_a": 0.3,
+      "mean_b": 3.77,
+      "std_b": 0.06,
+      "spread_b": 0.1,
+      "nhieu": 0.3,
       "chenh_lech": -5.3,
       "ket_luan": "A tốt hơn"
     },
     "vos_ms": {
       "nhan": "vos_ms",
-      "mean_a": 94.2,
-      "std_a": 6.69,
-      "mean_b": 248.0,
-      "std_b": 4.2,
-      "nhieu": 6.69,
-      "chenh_lech": 153.8,
+      "mean_a": 97.97,
+      "std_a": 9.7,
+      "spread_a": 19.1,
+      "mean_b": 247.67,
+      "std_b": 5.15,
+      "spread_b": 10.2,
+      "nhieu": 19.1,
+      "chenh_lech": 149.7,
       "ket_luan": "A tốt hơn"
     },
     "mask_age_p95": {
       "nhan": "Tuổi mask p95",
-      "mean_a": 279.37,
-      "std_a": 18.3,
-      "mean_b": 581.57,
-      "std_b": 17.96,
-      "nhieu": 18.3,
-      "chenh_lech": 302.2,
+      "mean_a": 269.0,
+      "std_a": 1.76,
+      "spread_a": 3.3,
+      "mean_b": 560.07,
+      "std_b": 15.49,
+      "spread_b": 27.5,
+      "nhieu": 27.5,
+      "chenh_lech": 291.07,
       "ket_luan": "A tốt hơn"
     }
   },
   "lan_chay": {
     "a": [
       {
-        "measured_fps": 29.9,
+        "measured_fps": 29.8,
         "vos_fps": 9.2,
-        "vos_ms": 89.8,
-        "pre_ms": 12.03,
-        "cycle_ms": 104.18,
+        "vos_ms": 89.4,
+        "pre_ms": 11.42,
+        "cycle_ms": 123.96,
         "mask_age_total_ms": 167.0,
-        "mask_age_p95": 268.8,
+        "mask_age_p95": 271.0,
+        "frames": 60,
+        "age_n": 59,
+        "elapsed_s": 5.13
+      },
+      {
+        "measured_fps": 29.8,
+        "vos_fps": 9.1,
+        "vos_ms": 108.5,
+        "pre_ms": 12.96,
+        "cycle_ms": 116.71,
+        "mask_age_total_ms": 268.1,
+        "mask_age_p95": 267.7,
         "frames": 60,
         "age_n": 59,
         "elapsed_s": 5.04
       },
       {
-        "measured_fps": 29.9,
-        "vos_fps": 9.0,
-        "vos_ms": 101.9,
-        "pre_ms": 12.46,
-        "cycle_ms": 117.63,
-        "mask_age_total_ms": 267.4,
-        "mask_age_p95": 268.8,
-        "frames": 60,
-        "age_n": 59,
-        "elapsed_s": 4.87
-      },
-      {
-        "measured_fps": 29.9,
-        "vos_fps": 8.7,
-        "vos_ms": 90.9,
-        "pre_ms": 14.4,
-        "cycle_ms": 111.64,
-        "mask_age_total_ms": 167.1,
-        "mask_age_p95": 300.5,
+        "measured_fps": 29.8,
+        "vos_fps": 8.9,
+        "vos_ms": 96.0,
+        "pre_ms": 13.46,
+        "cycle_ms": 108.97,
+        "mask_age_total_ms": 267.6,
+        "mask_age_p95": 268.3,
         "frames": 60,
         "age_n": 59,
         "elapsed_s": 5.02
@@ -112,38 +120,38 @@
       {
         "measured_fps": 29.8,
         "vos_fps": 3.8,
-        "vos_ms": 249.8,
-        "pre_ms": 12.68,
-        "cycle_ms": 272.35,
-        "mask_age_total_ms": 468.5,
-        "mask_age_p95": 568.8,
+        "vos_ms": 243.0,
+        "pre_ms": 12.75,
+        "cycle_ms": 284.13,
+        "mask_age_total_ms": 472.8,
+        "mask_age_p95": 542.2,
         "frames": 60,
         "age_n": 59,
-        "elapsed_s": 5.07
+        "elapsed_s": 5.1
       },
       {
-        "measured_fps": 29.8,
-        "vos_fps": 3.6,
-        "vos_ms": 251.0,
-        "pre_ms": 13.36,
-        "cycle_ms": 290.56,
-        "mask_age_total_ms": 368.2,
-        "mask_age_p95": 573.8,
+        "measured_fps": 29.6,
+        "vos_fps": 3.8,
+        "vos_ms": 246.8,
+        "pre_ms": 23.63,
+        "cycle_ms": 288.56,
+        "mask_age_total_ms": 478.4,
+        "mask_age_p95": 568.3,
         "frames": 60,
         "age_n": 59,
-        "elapsed_s": 5.2
+        "elapsed_s": 5.17
       },
       {
-        "measured_fps": 29.8,
-        "vos_fps": 3.6,
-        "vos_ms": 243.2,
-        "pre_ms": 14.7,
-        "cycle_ms": 281.92,
-        "mask_age_total_ms": 367.7,
-        "mask_age_p95": 602.1,
+        "measured_fps": 29.7,
+        "vos_fps": 3.7,
+        "vos_ms": 253.2,
+        "pre_ms": 17.3,
+        "cycle_ms": 290.16,
+        "mask_age_total_ms": 469.5,
+        "mask_age_p95": 569.7,
         "frames": 60,
         "age_n": 59,
-        "elapsed_s": 5.21
+        "elapsed_s": 5.23
       }
     ]
   }
