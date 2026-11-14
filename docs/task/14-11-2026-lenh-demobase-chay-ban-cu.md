@@ -56,6 +56,25 @@
   - `tests/test_run_script.py` — chốt tài liệu: help phải có `demobase`.
   - `docs/task/14-11-2026-lenh-demobase-chay-ban-cu.md` — log này.
 
+### Lần chạy thật qua `demobase` (14-11 06:03) — artifact đã lưu
+- Chạy `demoip` của bản cũ (tag `demo-baseline-2026-11-08`) qua relay
+  `http://172.19.176.1:8090/snapshot.jpg`, `image_size 320`, re-ID bật ⇒ sinh frame + bám vật,
+  ghi được 147 frame.
+- Artifact: `data/demoip_1114-060249_{metrics.csv,summary.json,run_info.json}` —
+  `mean_latency_ms` 325,7 · `p95_latency_ms` 387,4 · `effective_fps` 3,07 · `lost_ratio` 0,435
+  (`lost_count` 64) · `reacquired_count` 19 · `rss_mb_peak` 680,8 · CPU 358 % (1 lõi) = 44,8 % máy 8 lõi.
+- `run_info.git_rev = f3cca78` = đúng tag `demo-baseline-2026-11-08` (code **cũ**); code cũ **không**
+  ghi field `git_dirty`. ⇒ **Cấm** trích các số này làm số báo cáo/nghiệm thu; đây chỉ là bằng chứng
+  lệnh `demobase` chạy được. `effective_fps` 3,07 khớp với việc bản cũ chạy VOS **mỗi frame** bằng
+  model @320 trên CPU (chưa có hybrid VOS+LK của `main`) chứ không phải lỗi của `demobase`.
+
+### Kiểm tra lại trước khi merge (14-11)
+- `./run lint` — All checks passed.
+- `./run test` lần 1: **1 failed** `tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_worker_cu_con_song`
+  (`proc.poll()` còn `None` ngay sau khi dọn worker) → nghi flake; chạy riêng class đó **6 passed**,
+  chạy lại cả làn nhanh **906 passed, 5 deselected** ⇒ **flake do tải**, không phải hồi quy của nhánh
+  (nhánh này không chạm `src/api/adapters/worker_source.py`). Chưa sửa test; ghi nhận để xử lý riêng.
+
 ## 🔎 Review độc lập (AGENTS.md mục 9.1)
 - **Ai:** agent `reviewer` (read-only, không phải phiên đã code); phạm vi `git diff main -- run .gitignore tests/test_run_script.py` + log này.
 - **Verdict:** mergeable, **0 P0**; 12 điểm "đã kiểm, không phải lỗi" (symlink tương đối đúng khi đổi CWD; `exec bash` giữ exit code và bản cũ tự `activate_env`; `git checkout` không xoá symlink — reflog `.git/worktrees/-baseline/logs/HEAD` có 2 lần checkout thật; `^{commit}` là bắt buộc vì tag annotated; không đổi nhánh, không đụng `web/`).
@@ -82,7 +101,11 @@
   commit** từ trước phiên này (không phải thay đổi của phiên này) — không đưa vào commit.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] Người dùng chạy `./run demobase` (mặc định `demoip`) với webcam thật, xác nhận ảnh + bám vật.
+- [x] Đã chạy `./run demobase` (mặc định `demoip`) — qua relay (không phải webcam trong WSL, xem
+      AGENTS.md mục 6), có frame + bám vật; artifact ghi ở mục "Lần chạy thật qua `demobase`".
+      **Chưa** có xác nhận bằng mắt trong phiên này (người dùng tự xem cửa sổ).
+- [ ] Flake `TestVeSinhWorkerCu::test_reap_worker_cu_con_song` dưới tải nặng — nới/thay bằng chờ có
+      điều kiện (`proc.wait(timeout=…)`) trong PR riêng.
 - [ ] Cân nhắc thêm `.gitattributes` (`* text=auto eol=lf`, `*.cmd text eol=crlf`) ở PR riêng để
       chặn CRLF tận gốc.
 - [ ] Nếu cần mở web từ bản cũ: `CAM_BASELINE_TAG=demo-web-e2e-2026-11-08 ./run demobase web`.
