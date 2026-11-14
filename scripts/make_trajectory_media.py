@@ -25,6 +25,7 @@ Lưu ý  : `empty = 1` là lần VOS trả mask RỖNG ⇒ KHÔNG có toạ đ�
 
 import argparse
 import csv
+import json
 import sys
 from pathlib import Path
 
@@ -222,12 +223,57 @@ def _canh_bao_bbox(traj: dict, expect: str) -> None:
         print(f"[traj] ô bao khớp --expect-bbox (lệch {lech * 100:.0f}%)")
 
 
+def provenance(csv_path, clip_path, out_path, title: str, bbox_dau) -> dict:
+    """Metadata đi kèm ảnh: **ảnh không có provenance thì không kiểm lại được** (và một ảnh sai chú
+    thích sống lâu hơn mọi lời giải thích).
+
+    Vì sao phải có `bbox_dau` + `sha256` của CSV: 14-11 phát hiện ảnh/media sinh từ CSV đo bằng **ô
+    phủ khuôn mặt** (`104,308,209,287`) trông y như ảnh đo bằng ô chọn đúng vật. Ghi ô bao dòng đầu
+    vào đây thì người đọc đối chiếu được với `--expect-bbox`, không phải tin lời.
+    """
+    import hashlib
+    import subprocess
+
+    def _sha(path):
+        if path is None:
+            return None
+        try:
+            return hashlib.sha256(Path(path).read_bytes()).hexdigest()[:16]
+        except OSError:
+            return None
+
+    def _git(args):
+        try:
+            return subprocess.run(["git", *args], cwd=str(_REPO_ROOT), capture_output=True,
+                                  text=True, check=True).stdout.strip()
+        except Exception:                        # noqa: BLE001 — provenance không được ném
+            return None
+
+    rev = _git(["rev-parse", "HEAD"])
+    changed = _git(["status", "--porcelain"]) or ""
+    dirty_code = any(not line[3:].startswith("data/") for line in changed.splitlines())
+    return {
+        "do_luc": __import__("datetime").datetime.now().isoformat(timespec="seconds"),
+        "lenh": " ".join(sys.argv),
+        "git_rev": rev, "git_dirty_code": dirty_code,
+        "csv": str(csv_path), "csv_sha256_16": _sha(csv_path),
+        "clip": str(clip_path) if clip_path else None,
+        "clip_sha256_16": _sha(clip_path),
+        "bbox_dong_dau_x1y1x2y2": list(bbox_dau) if bbox_dau else None,
+        "tieu_de": title,
+        "anh": str(out_path), "anh_sha256_16": _sha(out_path) if Path(out_path).is_file() else None,
+        "canh_bao": "Độ tự nhất quán (drift_iou) KHÔNG phải độ chính xác — xem AGENTS §6.",
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description="Vẽ ảnh quỹ đạo (đường live) từ CSV mẫu-drift.")
     parser.add_argument("--csv", required=True, help="CSV của drift_samples (worker live ghi ra)")
     parser.add_argument("--clip", help="clip gốc để làm nền (tuỳ chọn)")
     parser.add_argument("--out", default="docs/media/traj/quy_dao.png")
     parser.add_argument("--title", default="")
+    parser.add_argument("--meta", default="",
+                        help="ghi provenance JSON (mặc định: cạnh ảnh, cùng tên .json)")
     parser.add_argument("--expect-bbox", default=None,
                         help="ô bao mong đợi: x1,y1,x2,y2 (hoặc x,y,w,h); lệch >10%% thì CẢNH BÁO "
                              "(ô chọn sai từng làm toàn bộ số Phase 4c vô nghĩa — log 14-11)")
@@ -241,6 +287,17 @@ def main(argv=None) -> int:
     plt.close(fig)
 
     print(f"[traj] {out} ({out.stat().st_size // 1024} KB)")
+    data = traj["data"]
+    bbox_dau = None
+    if data["cx"][0] is not None:
+        cx, cy = float(data["cx"][0]), float(data["cy"][0])
+        w, h = float(data["w"][0]), float(data["h"][0])
+        bbox_dau = (round(cx - w / 2), round(cy - h / 2), round(cx + w / 2), round(cy + h / 2))
+    meta_path = Path(args.meta) if args.meta else out.with_suffix(".json")
+    meta = provenance(args.csv, args.clip, out, args.title, bbox_dau)
+    meta_path.parent.mkdir(parents=True, exist_ok=True)
+    meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"[traj] provenance: {meta_path} (bbox dòng đầu {bbox_dau}, git_rev {meta['git_rev']})")
     print(f"[traj] {thong_ke}")
     if thong_ke["drift_n"] < 20:
         print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None (chưa đủ mẫu)")

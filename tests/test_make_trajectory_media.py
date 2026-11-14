@@ -139,3 +139,41 @@ class TestCanhBaoBbox:
     def test_expect_bbox_sai_dinh_dang_khong_no(self, tmp_path, capsys):
         tm._canh_bao_bbox(self._traj(tmp_path), "không-phải-số")
         assert "x1,y1,x2,y2" in capsys.readouterr().out
+
+
+class TestProvenance:
+    """Ảnh media PHẢI có provenance để người đọc kiểm lại nguồn (E16 của review sản phẩm 14-11:
+    ảnh sinh từ CSV đo bằng **ô phủ khuôn mặt** trông y như ảnh đo bằng ô chọn đúng vật)."""
+
+    def test_ghi_du_thong_tin_kiem_lai_duoc(self, tmp_path):
+        csv_path = tmp_path / "drift.csv"
+        csv_path.write_text("x", encoding="utf-8")
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"video")
+        out = tmp_path / "anh.png"
+        out.write_bytes(b"png")
+
+        meta = tm.provenance(csv_path, clip, out, "tiêu đề", (288, 287, 431, 734))
+        assert meta["csv_sha256_16"] and meta["clip_sha256_16"] and meta["anh_sha256_16"]
+        assert meta["bbox_dong_dau_x1y1x2y2"] == [288, 287, 431, 734]
+        assert meta["git_rev"], "phải có git_rev để truy ảnh về đúng commit"
+        assert "KHÔNG phải độ chính xác" in meta["canh_bao"]
+
+    def test_thieu_clip_van_ghi_duoc(self, tmp_path):
+        csv_path = tmp_path / "d.csv"
+        csv_path.write_text("x", encoding="utf-8")
+        meta = tm.provenance(csv_path, None, tmp_path / "a.png", "", None)
+        assert meta["clip"] is None and meta["bbox_dong_dau_x1y1x2y2"] is None
+        assert meta["git_rev"]
+
+    def test_cli_ghi_json_canh_anh(self, tmp_path):
+        import json as _json
+
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,288,287,431,734",
+                                 "3,2,120.0,0,0.85,290,289,433,736"])
+        out = tmp_path / "traj.png"
+        meta = tmp_path / "traj.json"
+        assert tm.main(["--csv", str(path), "--out", str(out), "--meta", str(meta)]) == 0
+        payload = _json.loads(meta.read_text(encoding="utf-8"))
+        assert payload["bbox_dong_dau_x1y1x2y2"] == [288, 287, 431, 734]
+        assert payload["anh"].endswith("traj.png")
