@@ -229,6 +229,8 @@ def main(argv=None) -> int:
 
     rev, dirty, dirty_code, git_loi = _provenance()
     payload = {
+        # `git_*` TOP LEVEL theo quy ước artifact của repo (AGENTS §6).
+        "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code, "git_loi": git_loi,
         "meta": {
             "do_luc": datetime.now().isoformat(timespec="seconds"),
             "lenh": " ".join(sys.argv),

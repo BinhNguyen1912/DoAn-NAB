@@ -219,7 +219,11 @@ def main(argv=None) -> int:
         "moi_truong": f"{args.device}, checkpoint theo configs/default.yaml, "
                       f"clip {Path(args.clip).name}",
     }
-    payload = {"meta": meta, "cau_hinh": bang,
+    # `git_*` ở TOP LEVEL: quy ước artifact của repo (AGENTS §6) và
+    # `tests/test_so_lieu_bao_cao.py` đọc đúng các khoá đó — để trong `meta` thì artifact trông
+    # "không có provenance" dù có.
+    payload = {**{k: meta[k] for k in ("git_rev", "git_dirty", "git_dirty_code", "git_loi")},
+               "meta": meta, "cau_hinh": bang,
                "cot": [{"khoa": k, "nhan": nhan, "cam_trich_thanh": cam} for k, nhan, cam in COT]}
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
