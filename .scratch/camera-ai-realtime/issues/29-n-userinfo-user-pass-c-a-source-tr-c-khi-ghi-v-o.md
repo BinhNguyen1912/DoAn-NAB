@@ -8,8 +8,27 @@ Cách làm: hàm thuần `an_userinfo(url)` (`urllib.parse.urlsplit` → dựng 
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `cau_hinh.source` (và mọi chỗ echo nguồn vào artifact) không còn chứa userinfo của URL
-- [ ] Có hàm thuần + test cho các dạng: `rtsp://u:p@h/s`, `http://u:p@h/x.jpg`, chuỗi không phải URL, đường dẫn file
-- [ ] Artifact cũ không bị ghi đè; thay đổi chỉ áp cho lần chạy mới
+- [x] `cau_hinh.source` (và mọi chỗ echo nguồn vào artifact) không còn chứa userinfo của URL
+- [x] Có hàm thuần + test cho các dạng: `rtsp://u:p@h/s`, `http://u:p@h/x.jpg`, chuỗi không phải URL, đường dẫn file
+- [x] Artifact cũ không bị ghi đè; thay đổi chỉ áp cho lần chạy mới
+
+## Answer (15-11)
+
+Xong trên nhánh `fix/an-userinfo-nguon` (3 commit: `0ebdb86`, `be835f5`, `0b7f276`), log:
+`docs/task/15-11-2026-che-credential-trong-nguon.md`.
+
+`src/url_safe.py::an_userinfo()` (hàm thuần) che credential ở **mọi sink echo nguồn**: `cau_hinh.source`
+(`status.json`), `meta` artifact mask, `/api/live/status.source` (cả mode `raw` lẫn `track`), thông báo
+lỗi mở nguồn (HTTP `detail` + `message` + `worker.log`), `worker.log`, `data/*_run_info.json`, và 4 khoá
+của `data/*_metrics.json` (`nguon`, `moi_truong`, `lenh`, `thiet_lap`). KHÔNG che ở chỗ mở nguồn (lệnh
+worker giữ URL gốc — có test ghim). `CAM_RELAY_URL` không che được (UI dùng đúng chuỗi đó để gọi
+`/api/live/start`) ⇒ cảnh báo trong log.
+
+Kiểm: `./run lint` · `./run test` **1250 passed** · `./run e2e` PASS · `grep '://user:pass@' data/ docs/`
+= 0 hit (chưa có credential nào trong lịch sử git).
+
+Review độc lập **2 vòng**: vòng 1 bắt 2 P0 + 3 P1 (bản đầu bỏ sót mode `raw` mặc định và `moi_truong`/
+`lenh` của artifact) ⇒ đã vá; vòng 2: 0 P0/P1, 3 P2 ⇒ đã vá nốt. Nợ lại: credential trong **query**
+(`?token=…`) và stderr native của FFmpeg (ghi ở mục Next steps của log).
