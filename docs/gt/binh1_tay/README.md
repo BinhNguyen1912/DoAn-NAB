@@ -49,7 +49,12 @@ python scripts/score_miou.py score --gt docs/gt/binh1_tay \
 
 Mask của model đã có sẵn trong `data/masks_binh1_192_2026-11-15/` (sinh bằng
 `tools/live_worker.py --image-size 192 --vos-every 1 --dump-mask-frames "2,12,…,106"`, ô chọn
-`288,287,431,734`; `manifest.json` ghi `image_size` hiệu lực = **192**, `cau_hinh_lech = []`).
+**`300,275,150,410`** — ô CHUẨN cho chai `binh1` theo `docs/demo-clip-va-o-chon.md`;
+`manifest.json` ghi `image_size` hiệu lực = **192**, `cau_hinh_lech = []`).
+
+> ⚠️ Đừng dùng `288,287,431,734` (ô xuất hiện trong CSV drift và trong bảng cấu hình 14-11/15-11) làm
+> **prompt**: ô đó là ô **LAN TRUYỀN** giữa clip (431×734, phủ chai + tay + thân người), dùng nó làm
+> prompt thì model bám luôn tay/áo — đã gặp 15-11 (mask 168k px thay vì ~40k px).
 
 ## Đọc kết quả cho đúng
 

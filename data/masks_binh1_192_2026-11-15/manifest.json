@@ -5,10 +5,10 @@
   "vos_every": 1,
   "mask_smoothing": 1.0,
   "bbox_xywh": [
-    288,
-    287,
-    431,
-    734
+    300,
+    275,
+    150,
+    410
   ],
   "frames_yeu_cau": [
     2,
