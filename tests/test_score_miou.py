@@ -114,6 +114,45 @@ class TestCham:
         kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
         assert kq["so_frame_gt_rong"] == 1 and kq["n_cham"] == 0 and kq["mIoU"] is None
 
+    # ── `mask_ngoai_gt`: đo phần mask TRÀN RA NGOÀI GT (15-11) ────────────────────────────────
+    def test_mask_nam_hoan_toan_trong_gt_thi_tran_bang_0(self, tmp_path):
+        """Mask nằm gọn trong GT (GT hộp bao) ⇒ `mIoU` bị chặn dưới 1, nhưng `tran` = 0."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        box = np.zeros((10, 10))
+        box[1:9, 1:9] = 1
+        self._gt(gt_dir, 0, box)
+        self._pred(pred_dir, 0, box)
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["frames"][0]["mask_ngoai_gt"] == 0.0
+        assert kq["mask_ngoai_gt_mean"] == 0.0
+
+    def test_mask_tran_mot_nua_thi_tran_bang_0_5(self, tmp_path):
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        gt = np.zeros((4, 4))
+        gt[:, :2] = 1                      # nửa trái
+        pred = np.zeros((4, 4))
+        pred[:, 1:3] = 1                   # 8 px, chỉ 4 px nằm trong GT
+        self._gt(gt_dir, 0, gt)
+        self._pred(pred_dir, 0, pred)
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["frames"][0]["mask_ngoai_gt"] == pytest.approx(0.5)
+        assert kq["mask_ngoai_gt_max_frame"] == 0
+
+    def test_model_rong_thi_tran_la_None_khong_phai_0(self, tmp_path):
+        """Model rỗng ⇒ không có gì để 'tràn' ⇒ `None` (chưa đo), không phải 0,0 "hoàn hảo"."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.zeros((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["frames"][0]["mask_ngoai_gt"] is None
+        assert kq["mask_ngoai_gt_mean"] is None
+
 
 class TestKiemIndex:
     def _index(self, tmp_path, **kw):

@@ -96,12 +96,26 @@ def cham(ds_frame, gt_dir: Path) -> dict:
             rows.append({"frame_idx": idx, "iou": None, "ly_do": "GT rỗng (không chấm)"})
             continue
         miou.append(gia_tri)
+        # Phần mask NẰM NGOÀI GT ("tràn"): với GT là HỘP BAO, `mIoU` bị chặn trên ~0,75-0,85 nên
+        # không nói được model có phủ quá tay không; `tran` thì đo đúng cái đó (thấp = tốt) và KHÔNG
+        # bị thổi phồng bởi GT hộp. Với GT silhouette nó là chỉ báo over-segmentation chuẩn.
+        tran = None
+        if int(pred.sum()):
+            tran = round(1.0 - float((pred & gt).sum()) / float(pred.sum()), 4)
         rows.append({"frame_idx": idx, "iou": round(gia_tri, 4),
-                     "dien_tich_gt": int(gt.sum()), "dien_tich_pred": int(pred.sum())})
+                     "dien_tich_gt": int(gt.sum()), "dien_tich_pred": int(pred.sum()),
+                     "mask_ngoai_gt": tran})
     tong = len(ds_frame)
+    tran_vals = [r["mask_ngoai_gt"] for r in rows if r.get("mask_ngoai_gt") is not None]
     return {
         "mIoU": None if not miou else round(float(np.mean(miou)), 4),
         "mIoU_p05": None if len(miou) < 5 else round(float(np.percentile(miou, 5)), 4),
+        # Tỉ lệ mask nằm NGOÀI GT: trung bình + frame tệ nhất (kèm `frame_idx` để truy lại ảnh).
+        "mask_ngoai_gt_mean": None if not tran_vals else round(float(np.mean(tran_vals)), 4),
+        "mask_ngoai_gt_max": None if not tran_vals else round(float(max(tran_vals)), 4),
+        "mask_ngoai_gt_max_frame": None if not tran_vals else max(
+            (r for r in rows if r.get("mask_ngoai_gt") is not None),
+            key=lambda r: r["mask_ngoai_gt"])["frame_idx"],
         "n_cham": len(miou),
         "so_frame_gt_rong": gt_rong,
         "so_frame_thieu_mask": thieu,
@@ -321,7 +335,9 @@ def main(argv=None) -> int:
             # "mask này sinh trong điều kiện nào" (P0/P2 review hẹp 14-11).
             "mask_manifest": _doc_manifest(pred_dir),
             "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; "
-                          "GT rỗng không chấm; model rỗng mà GT có vật = 0,0",
+                          "GT rỗng không chấm; model rỗng mà GT có vật = 0,0; "
+                          "`mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = tốt, không bị chặn trên "
+                          "bởi GT hộp bao)",
         },
         "ket_qua": ket_qua,
         "canh_bao_gt": mem, "loi_chan": chan,
@@ -341,6 +357,12 @@ def main(argv=None) -> int:
     # review hẹp 14-11). Coverage 100 % mới được nói "trên cả clip".
     print(f"[miou] coverage: {kq['n_cham']}/{kq['so_frame_tong']} frame có mask "
           f"({kq['coverage']:.0%})" if kq.get("coverage") is not None else "")
+    # `mask_ngoai_gt`: phần mask nằm NGOÀI GT — chỉ số KHÔNG bị chặn trên bởi GT hộp bao, nên khi GT là
+    # hộp thì đây mới là chỗ nói được "model có phủ quá tay / trôi ra ngoài vật không".
+    if kq.get("mask_ngoai_gt_mean") is not None:
+        print(f"[miou] mask NGOÀI GT: trung bình {kq['mask_ngoai_gt_mean']:.1%} · tệ nhất "
+              f"{kq['mask_ngoai_gt_max']:.1%} (frame {kq['mask_ngoai_gt_max_frame']}) — "
+              "thấp = tốt; đây KHÔNG phải mIoU")
     if kq.get("coverage") is not None and kq["coverage"] < 1.0:
         print(f"[miou] CẢNH BÁO: chỉ chấm được {kq['n_cham']} / {kq['so_frame_tong']} frame có GT — "
               "CẤM nói 'mIoU trên cả clip' với con số này")
