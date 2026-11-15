@@ -1,5 +1,10 @@
 # GT gán tay cho `data/binh1.mp4` — việc cần NGƯỜI làm
 
+> ⚠️ **BỘ NÀY ĐANG KHÔNG DÙNG ĐƯỢC (15-11).** Khung người vẽ bị lệch ~80 px lên trên và cắt mất phần
+> nhãn chai ⇒ chấm ra mIoU ~0,03–0,08 là **đo sai vùng**, không phải model bám kém. Bộ đang dùng để
+> trích số là `docs/gt/binh1_hopbao` (**hộp bao**, hộp dựng từ ngưỡng màu nhãn tím + sửa tay 1 frame).
+> Muốn có mIoU phân đoạn thật thì quay lại đúng quy trình dưới đây (tô **silhouette**).
+
 > Mục đích: có **mIoU trên video THẬT**. Mọi số "chất lượng" khác trong repo (`drift_iou`,
 > `stability`) chỉ là **độ tự nhất quán**, không nói được "bám đúng hay không" (AGENTS §6).
 

@@ -42,5 +42,8 @@
   "nguoi_gan": "BinhNguyen1912",
   "gt_do_model_goi_y": false,
   "tao_luc": "2026-11-15T13:58:22",
-  "huong_dan": "Tô trắng vùng vật trên frame_<idx>.png rồi lưu thành gt_<idx>.png CÙNG thư mục. Mask phải cùng kích thước frame gốc; nền đen, vật trắng."
+  "huong_dan": "Tô trắng vùng vật trên frame_<idx>.png rồi lưu thành gt_<idx>.png CÙNG thư mục. Mask phải cùng kích thước frame gốc; nền đen, vật trắng.",
+  "dang_gt": "silhouette",
+  "phuong_phap_gt": "người vẽ tay (khung chữ nhật) — CHƯA dùng được: khung lệch ~80 px lên trên và cắt mất phần nhãn; agent đổ đặc để kiểm. Dùng docs/gt/binh1_hopbao cho số 15-11.",
+  "canh_bao": "KHÔNG chấm điểm bằng bộ này: khung vẽ bị lệch so với chai (đo 15-11). Giữ lại làm bản nháp của người gán; bộ dùng để chấm là docs/gt/binh1_hopbao (dạng hộp bao)."
 }

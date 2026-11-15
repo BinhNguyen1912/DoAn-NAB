@@ -1,0 +1,119 @@
+{
+  "clip": "data/binh1.mp4",
+  "ten": "binh1_hopbao",
+  "frames": [
+    {
+      "frame_idx": 2,
+      "hop_bao_xywh": [
+        282,
+        294,
+        156,
+        430
+      ]
+    },
+    {
+      "frame_idx": 12,
+      "hop_bao_xywh": [
+        290,
+        277,
+        127,
+        389
+      ]
+    },
+    {
+      "frame_idx": 22,
+      "hop_bao_xywh": [
+        281,
+        264,
+        143,
+        413
+      ]
+    },
+    {
+      "frame_idx": 32,
+      "hop_bao_xywh": [
+        312,
+        256,
+        155,
+        422
+      ]
+    },
+    {
+      "frame_idx": 42,
+      "hop_bao_xywh": [
+        315,
+        247,
+        143,
+        432
+      ]
+    },
+    {
+      "frame_idx": 52,
+      "hop_bao_xywh": [
+        146,
+        135,
+        155,
+        438
+      ]
+    },
+    {
+      "frame_idx": 62,
+      "hop_bao_xywh": [
+        55,
+        5,
+        140,
+        425
+      ]
+    },
+    {
+      "frame_idx": 72,
+      "hop_bao_xywh": [
+        336,
+        0,
+        159,
+        458
+      ]
+    },
+    {
+      "frame_idx": 82,
+      "hop_bao_xywh": [
+        341,
+        152,
+        162,
+        457
+      ]
+    },
+    {
+      "frame_idx": 92,
+      "hop_bao_xywh": [
+        287,
+        364,
+        143,
+        462
+      ]
+    },
+    {
+      "frame_idx": 100,
+      "hop_bao_xywh": [
+        211,
+        426,
+        145,
+        451
+      ]
+    },
+    {
+      "frame_idx": 106,
+      "hop_bao_xywh": [
+        422,
+        332,
+        146,
+        424
+      ]
+    }
+  ],
+  "nguoi_gan": "đề xuất bằng NGƯỠNG MÀU nhãn tím (không dùng model); soi 12/12 frame bằng mắt",
+  "gt_do_model_goi_y": false,
+  "dang_gt": "hop_bao",
+  "phuong_phap_gt": "hộp bao chai lấy từ ngưỡng màu nhãn tím (HSV) + phần trắng phía trên; KHÔNG dùng mask của model. Đây là DẠNG HỘP BAO ⇒ con số là IoU(mask, hộp), không phải mIoU phân đoạn silhouette; chặn trên bị giới hạn bởi tỉ lệ diện tích chai/hộp (~0,7-0,85); frame 62 (chai nghiêng) sửa tay vì ngưỡng màu bắt dính nền",
+  "huong_dan": "silhouette thật thì dùng scripts/score_miou.py label + tô tay (docs/thuoc-do-bam-dung.md)"
+}

@@ -117,7 +117,7 @@ class TestCham:
 
 class TestKiemIndex:
     def _index(self, tmp_path, **kw):
-        base = {"clip": "data/binh1.mp4", "nguoi_gan": "Bình",
+        base = {"clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "silhouette",
                 "gt_do_model_goi_y": False, "frames": [{"frame_idx": 0}]}
         base.update(kw)
         return base
@@ -127,6 +127,33 @@ class TestKiemIndex:
 
         cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
         assert sm.kiem_index(self._index(tmp_path), tmp_path) == ([], [])
+
+    # ── `dang_gt`: HÌNH DẠNG của GT (15-11) ──────────────────────────────────────────────
+    def test_hop_bao_la_canh_bao_mem_kem_nghia(self, tmp_path):
+        """GT hộp bao vẫn CHẤM được, nhưng artifact/phải nói rõ đây KHÔNG phải mIoU phân đoạn."""
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        chan, mem = sm.kiem_index(self._index(tmp_path, dang_gt="hop_bao"), tmp_path)
+        assert not chan
+        assert any("HỘP BAO" in x and "KHÔNG phải mIoU phân đoạn" in x for x in mem)
+
+    def test_khong_khai_bao_dang_gt_la_canh_bao(self, tmp_path):
+        """GT cũ chưa có khoá này: không chặn, nhưng phải nói "không biết là dạng gì"."""
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        idx = self._index(tmp_path)
+        idx.pop("dang_gt")
+        chan, mem = sm.kiem_index(idx, tmp_path)
+        assert not chan and any("dang_gt" in x for x in mem)
+
+    def test_dang_gt_la_bi_canh_bao(self, tmp_path):
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        _chan, mem = sm.kiem_index(self._index(tmp_path, dang_gt="gi_do"), tmp_path)
+        assert any("lạ" in x for x in mem)
 
     def test_file_gt_byte_rac_la_LOI_chan(self, tmp_path):
         """`is_file()` không đủ: một file 1 byte từng được "chứng nhận hợp lệ" trong khi `score` sẽ
@@ -214,6 +241,31 @@ class TestCli:
         assert payload["ket_qua"]["mIoU"] is None
         assert payload["meta"]["git_rev"] == "abc1234"
         assert "GT rỗng không chấm" in payload["meta"]["dinh_nghia"]
+
+    def test_artifact_ghi_dang_gt_va_phuong_phap(self, tmp_path, monkeypatch):
+        """Không ghi `dang_gt`/`phuong_phap_gt` thì người đọc artifact không biết "0,65" là
+        mIoU phân đoạn hay IoU với hộp bao — đúng loại "số đúng nhưng gắn sai nghĩa"."""
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "hop_bao",
+            "phuong_phap_gt": "ngưỡng màu nhãn tím + sửa tay",
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        out = gt / "art.json"
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["meta"]["dang_gt"] == "hop_bao"
+        assert "ngưỡng màu" in payload["meta"]["phuong_phap_gt"]
+        assert ma == 1, "cảnh báo mềm (GT hộp bao) ⇒ exit 1, không phải 0"
 
 
 class TestMaskHongKhongLamChetCaLanCham:

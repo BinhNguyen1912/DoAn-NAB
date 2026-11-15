@@ -83,6 +83,10 @@ def main(argv=None) -> int:
         "frames": frames,
         "nguoi_gan": "sinh tổng hợp (make_synthetic_gt_clip.py) — GT ≡ pixel ô vuông, KHÔNG gán tay",
         "gt_do_model_goi_y": False,
+        # DẠNG GT: fixture này là mask ô vuông (silhouette của vật tổng hợp) — artifact `miou` sẽ ghi
+        # lại `meta.dang_gt` để người đọc biết con số đo cái gì (15-11).
+        "dang_gt": "silhouette",
+        "phuong_phap_gt": "sinh tổng hợp: GT ≡ đúng pixel ô vuông, prompt = bbox của nó (CẬN TRÊN)",
         "canh_bao": "Fixture TỔNG HỢP: mIoU chấm trên đây là CẬN TRÊN, cấm trích như mIoU trên "
                     "video thật. Muốn số thật thì gán tay bằng `scripts/score_miou.py label`.",
     }

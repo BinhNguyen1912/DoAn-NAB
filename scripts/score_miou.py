@@ -169,6 +169,17 @@ def kiem_index(index: dict, gt_dir: Path):
     if index.get("gt_do_model_goi_y"):
         chan.append("GT có mask do CHÍNH model gợi ý (gt_do_model_goi_y = true) — mIoU chấm trên đó "
                     "là đo chính model, không dùng để tuyên bố độ chính xác")
+    # `dang_gt` = HÌNH DẠNG của GT: `silhouette` (mask vật) | `hop_bao` (hộp chữ nhật bao vật).
+    # Không có khai báo thì chỉ cảnh báo MỀM (GT cũ chưa có khoá này), nhưng artifact LUÔN ghi giá trị
+    # (None = không khai báo) để người đọc biết con số đang đo cái gì.
+    dang = index.get("dang_gt")
+    if dang not in (None, "silhouette", "hop_bao"):
+        mem.append(f"'dang_gt' lạ: {dang!r} (chỉ nhận 'silhouette' | 'hop_bao')")
+    elif dang == "hop_bao":
+        mem.append("GT là HỘP BAO chữ nhật (không phải silhouette) ⇒ con số là IoU(mask, hộp), "
+                   "KHÔNG phải mIoU phân đoạn; chặn trên ~0,75-0,85 do hộp lớn hơn vật")
+    elif dang is None:
+        mem.append("GT không khai báo 'dang_gt' — không biết đây là silhouette hay hộp bao")
     return chan, mem
 
 
@@ -239,6 +250,10 @@ def main(argv=None) -> int:
             "clip": args.clip, "ten": args.ten, "frames": [
                 {"frame_idx": f} for f in sorted(set(frames))],
             "nguoi_gan": args.nguoi_gan, "gt_do_model_goi_y": bool(args.gt_do_model_goi_y),
+            # `label` sinh frame để NGƯỜI tô silhouette ⇒ khai báo luôn DẠNG GT, để artifact chấm điểm
+            # tự nói nó đo silhouette hay hộp bao (`meta.dang_gt`).
+            "dang_gt": "silhouette",
+            "phuong_phap_gt": "người tô tay trên frame gốc (docs/thuoc-do-bam-dung.md)",
             "tao_luc": datetime.now().isoformat(timespec="seconds"),
             "huong_dan": ("Tô trắng vùng vật trên frame_<idx>.png rồi lưu thành gt_<idx>.png CÙNG "
                           "thư mục. Mask phải cùng kích thước frame gốc; nền đen, vật trắng."),
@@ -298,6 +313,10 @@ def main(argv=None) -> int:
             else str(gt_dir),
             "pred_dir": str(pred_dir),
             "gt_do_model_goi_y": bool(index.get("gt_do_model_goi_y")),
+            # Hình dạng GT + cách làm ra GT: KHÔNG có hai khoá này thì người đọc artifact không biết
+            # "0,65" là mIoU phân đoạn hay IoU với hộp bao (bẫy "số đúng nhưng gắn sai nghĩa").
+            "dang_gt": index.get("dang_gt"),
+            "phuong_phap_gt": index.get("phuong_phap_gt"),
             # Manifest của thư mục mask (image_size/vos_every/bbox/source) ⇒ artifact tự trả lời được
             # "mask này sinh trong điều kiện nào" (P0/P2 review hẹp 14-11).
             "mask_manifest": _doc_manifest(pred_dir),
@@ -330,6 +349,13 @@ def main(argv=None) -> int:
         return 1
     if git_loi:
         print(f"[miou] CẢNH BÁO: không lấy được provenance ({git_loi})")
+        return 1
+    # Cảnh báo MỀM (GT hộp bao / thiếu người gán / không khai `dang_gt`) vẫn CHẤM và vẫn ghi artifact,
+    # nhưng mã thoát phải là 1: hợp đồng đã ghi từ review 14-11 là "vẫn chấm nhưng exit 1", còn code
+    # cũ trả 0 ⇒ CI/cổng tự động coi một bộ GT khai báo thiếu là "đạt" (review 15-11).
+    if mem:
+        print(f"[miou] {len(mem)} cảnh báo ⇒ exit 1: số vẫn dùng được nhưng phải đọc kèm "
+              "`meta.dang_gt`/`meta.phuong_phap_gt`/`canh_bao_gt` trong artifact")
         return 1
     return 0
 
