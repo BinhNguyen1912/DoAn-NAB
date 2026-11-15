@@ -23,6 +23,8 @@ from src.api.ports import FrameSource
 from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATE_STOPPED, STATUS_NAME
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
+from src.url_safe import an_userinfo
+
 logger = logging.getLogger("doan.api.worker_source")
 
 DEFAULT_LIVE_DIR = "/dev/shm/doan-live"
@@ -132,7 +134,9 @@ class WorkerFrameSource(FrameSource):
 
     @property
     def label(self) -> str:
-        return f"bám-đối-tượng:{self._source}"
+        # Che `user:pass@` (ticket 29): nhãn này đi thẳng ra `/api/live/status` (`source`) nên credential
+        # của `rtsp://user:pass@host/s` từng hiện trong trình duyệt.
+        return f"bám-đối-tượng:{an_userinfo(str(self._source))}"
 
     # ------------------------------------------------------------------ LiveTelemetrySource
 

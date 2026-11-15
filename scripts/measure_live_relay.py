@@ -36,6 +36,7 @@ if str(_REPO_ROOT) not in sys.path:
 
 from scripts.measure_watchdog import _git_provenance  # noqa: E402 — dùng lại provenance đã có test
 from src.device import ENV_VAR, device_from_env  # noqa: E402 — cùng nguồn sự thật với API/worker
+from src.url_safe import an_userinfo  # noqa: E402 — che credential khi ghi nguồn
 
 POLL_S = 0.5
 WAIT_RUNNING_S = 240.0     # nạp model SAM 2 trên CPU: 20–60 s, chừa rộng cho máy đang tải
@@ -478,7 +479,7 @@ def main() -> int:
                    "drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy "
                    "để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
         "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
-        "nguon": args.source,
+        "nguon": an_userinfo(str(args.source)),
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},
         "device_yeu_cau": device_yeu_cau,
@@ -523,7 +524,7 @@ def main() -> int:
                        else f"device={device_yeu_cau} (xem device_worker_log để "
                             "biết worker thật sự dùng gì)")
                       + "; nguồn = " + args.source,
-        "nguon": args.source,
+        "nguon": an_userinfo(str(args.source)),
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},
         "dieu_kien_dang_ky_truoc": "state=running, frames>0, measured_fps>0, mask_fps>0 "

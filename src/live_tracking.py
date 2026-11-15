@@ -29,6 +29,8 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
+from src.url_safe import an_userinfo
+
 import cv2
 import numpy as np
 
@@ -266,7 +268,9 @@ def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.
     không phải phân biệt schema.
     """
     return {
-        "source": str(source),
+        # Che `user:pass@` (ticket 29): chuỗi này đi vào `status.json` → artifact đã commit (+ HTTP).
+        # Chỉ che khi IN RA; nguồn thật mà worker mở vẫn dùng chuỗi gốc.
+        "source": an_userinfo(str(source)),
         "image_size_yeu_cau": None if image_size is None else int(image_size),
         "image_size_hieu_luc": None,
         # Cờ tường minh thay cho suy luận "`cau_hinh_lech` rỗng ⇒ khớp": rỗng có thể là CHƯA KIỂM
@@ -859,7 +863,7 @@ class LiveTrackingSession:
         import json
 
         payload = {
-            "nguon": str(self._cfg.source),
+            "nguon": an_userinfo(str(self._cfg.source)),
             # `image_size` thuộc ENGINE (hydra override), không phải session config. Ghi CẢ hai: giá trị
             # yêu cầu và giá trị predictor thật sự dùng (`None` = chưa kiểm được).
             "image_size": getattr(self._engine, "image_size", None),
