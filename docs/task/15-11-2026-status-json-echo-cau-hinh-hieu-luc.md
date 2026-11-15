@@ -151,6 +151,8 @@ mục "Next steps" đã có tiêu chí từ plan 14-11.
 - [x] **#27** Chạy lại `./run bangcau` trên cây sạch để artifact **đã commit** có `cau_hinh`, rồi sinh
       lại `docs/bang-cau-hinh.md` + `docs/so-lieu-bao-cao.md` — **xong trong phiên này** (xem mục bổ sung
       dưới). `./run ab` **chưa** chạy lại (đã ghi trong ticket, để lần đo A/B sau).
+- [x] **mIoU trên video THẬT** — xong dạng **hộp bao**: `docs/task/15-11-2026-gt-hop-bao-va-mask-ngoai-gt.md`
+      (IoU 0,6464 · tràn 3,9 % · n=12). Còn nợ: GT **silhouette** để có mIoU phân đoạn.
 - [ ] **#28** Đưa cờ lệch lên `/api/live/status` + HUD (`role="alert"`) để người vận hành thấy.
 - [ ] **#29** Ẩn userinfo của `source` trước khi echo vào `status.json`/artifact.
 - [ ] Cân nhắc đưa `cau_hinh` vào `worker/artifacts.py` cho **job upload** (đường batch hiện chưa có
