@@ -337,6 +337,18 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   chọn theo `vos_fps` + `mask_age_p95` (`docs/bang-cau-hinh.md`). Riêng `mask_age_p95` (mean 3 lần):
   192 → **266,6 ms** (every 2) / **304,2** (every 3); 320 → **559,5** / **605,1** / **769,1** (every 2/3/6).
 
+- **`--image-size` chỉ là YÊU CẦU; `status.json` từ 15-11 echo cả HIỆU LỰC.** `cau_hinh.image_size_yeu_cau`
+  vs `cau_hinh.image_size_hieu_luc` (đọc từ `predictor.image_size`, tức giá trị model **thật sự** dùng).
+  Đo trên máy này (checkpoint tiny, `git_rev 58bb629`): `--image-size 192` → hiệu lực **192**, `cau_hinh_lech []`;
+  **không** truyền `--image-size` → yêu cầu `null`, hiệu lực **1024**, lệch `[]` (null = "không có gì để so").
+  Ba trạng thái KHÔNG được lẫn: `image_size_kiem_duoc = false` / hiệu lực `None` = **CHƯA KIỂM ĐƯỢC**
+  (worker bản cũ, predictor không khai báo) — **cấm** đọc `cau_hinh_lech == []` thành "đã khớp".
+  `scripts/bang_cau_hinh._run_once` (dùng chung `./run bangcau` + `./run ab`) coi lần chạy có hiệu lực khác
+  `--sizes`/`--image-size` **hoặc** hiệu lực `None` là **LỖI** (dòng "—", không có số). Đã diễn tập thật bằng
+  cách cho `build_overrides` trả `[]`: 2/2 lần bị từ chối, `./run bangcau` thoát mã 1.
+  **Artifact sinh TRƯỚC 15-11 (`bang_cau_hinh_2026-11-14`, `ab_192_vs_320`) KHÔNG có `cau_hinh`** ⇒ bảng
+  đang trích trong báo cáo **vẫn chưa** tự kiểm được — phải chạy lại (ticket #27), đừng viết "bảng đã tự kiểm".
+
 
 ## 7. Các repo/model tham khảo
 

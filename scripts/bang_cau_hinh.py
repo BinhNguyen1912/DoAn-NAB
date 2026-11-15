@@ -71,14 +71,25 @@ def _run_once(clip: Path, bbox, size, every, frames: int, device: str, timeout: 
         if proc.returncode != 0:
             return {"loi": f"worker thoát mã {proc.returncode}", "elapsed_s": elapsed,
                     "stderr": proc.stderr[-400:]}
-        # TỰ KIỂM cấu hình: "yêu cầu == hiệu lực". Sai ⇒ lần chạy này KHÔNG dùng được cho bảng,
-        # vì số đo sẽ bị gán cho một cấu hình mà model không hề chạy (lỗi hydra override no-op).
-        lech = status.get("cau_hinh_lech") or []
+        # TỰ KIỂM cấu hình: "yêu cầu == hiệu lực" — so với CHÍNH tham số `size` của lần chạy này,
+        # không chỉ tin bản echo của worker (review độc lập 15-11, P1): worker bản cũ không echo, và
+        # predictor không khai báo `image_size` ⇒ `image_size_hieu_luc = None`; cả hai đều là "CHƯA
+        # KIỂM ĐƯỢC", không phải "khớp". Tin mỗi `cau_hinh_lech` thì hai ca đó lọt vào bảng với số
+        # của một cấu hình model không hề chạy.
+        ch = status.get("cau_hinh") or {}
+        thuc = ch.get("image_size_hieu_luc")
+        lech = list(status.get("cau_hinh_lech") or [])
+        try:
+            khop = size is not None and thuc is not None and int(thuc) == int(size)
+        except (TypeError, ValueError):
+            khop = False
+        if size is not None and not khop:
+            lech.append("image_size")
         if lech:
-            ch = status.get("cau_hinh") or {}
-            return {"loi": f"cấu hình yêu cầu ≠ hiệu lực ở {lech}: yêu cầu image_size="
-                           f"{ch.get('image_size_yeu_cau')}, model chạy "
-                           f"{ch.get('image_size_hieu_luc')}",
+            return {"loi": f"cấu hình yêu cầu ≠ hiệu lực ở {sorted(set(lech))}: yêu cầu "
+                           f"image_size={size} (worker ghi {ch.get('image_size_yeu_cau')!r}), "
+                           f"model chạy {thuc!r} — None = KHÔNG kiểm được (worker bản cũ hoặc "
+                           f"predictor không khai báo image_size)",
                     "elapsed_s": elapsed, "ma_thoat": proc.returncode, "cau_hinh": ch}
         rows = {key: status.get(key) for key, _nhan, _cam in COT}
         rows.update({"frames": status.get("frames"), "age_n": status.get("age_n"),
@@ -105,13 +116,14 @@ def _cau_hinh_chung(ok: list) -> dict:
 
     `image_size_hieu_luc_da_thay` là **danh sách giá trị khác nhau đã thấy**: > 1 phần tử ⇒ cùng
     một dòng bảng mà model chạy ở nhiều độ phân giải ⇒ dòng đó không còn là "một cấu hình".
+    `None` = mọi lần chạy đều **KHÔNG kiểm được** hiệu lực (không được đọc thành "một giá trị").
     """
     if not ok:
         return {}
     thay = sorted({(r.get("cau_hinh") or {}).get("image_size_hieu_luc") for r in ok},
-                  key=lambda v: (v is None, v))
+                  key=lambda v: (v is None, v if isinstance(v, int) else -1))
     ra = dict(ok[0].get("cau_hinh") or {})
-    ra["image_size_hieu_luc_da_thay"] = thay
+    ra["image_size_hieu_luc_da_thay"] = None if thay == [None] else thay
     return ra
 
 
@@ -302,6 +314,14 @@ def main(argv=None) -> int:
         print(f"[bang] bảng: {md_path}")
     print()
     print(md)
+    # Toàn bộ cấu hình · toàn bộ lần chạy đều lỗi ⇒ thất bại, không phải "bảng rỗng": chạy trên CI
+    # hay trước buổi demo mà trả 0 thì người đọc tưởng "chạy xong" (cùng lỗi đã sửa ở `ab_test`).
+    so_lan = sum(d.get("so_lan", 0) for d in bang.values())
+    so_loi = sum(d.get("so_lan_loi", 0) for d in bang.values())
+    if so_lan and so_loi == so_lan:
+        print(f"[bang] KHÔNG ĐO ĐƯỢC lần nào ({so_loi}/{so_lan} lần lỗi) ⇒ thất bại; xem `loi` "
+              "trong artifact")
+        return 1
     if git_loi:
         print(f"[bang] CẢNH BÁO: không lấy được provenance ({git_loi}) — số không truy được về commit")
         return 1

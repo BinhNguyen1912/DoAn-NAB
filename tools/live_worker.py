@@ -43,7 +43,8 @@ def _write_loading(out_dir: Path, message: str = "Đang nạp model...", *, devi
     Mặc định `""` = **chưa biết** — cố tình KHÔNG mặc định `cpu`: ai gọi mà quên truyền thì file
     phải nói "chưa biết", không được khẳng định "cpu" (AGENTS §6; P3 review 12-11).
     `cau_hinh` = cấu hình ĐỊNH chạy (`cau_hinh_yeu_cau`); `image_size_hieu_luc` chỉ có sau khi nạp
-    model, nên giai đoạn này cố tình KHÔNG có (None = chưa kiểm được, không phải "khớp").
+    model, nên giai đoạn này nó **có mặt nhưng luôn `None`** (`image_size_kiem_duoc = False` = chưa
+    kiểm được, KHÔNG phải "khớp").
     """
     write_json_atomic(out_dir / "status.json",
                       status_payload(LiveTrackStats(state=STATE_LOADING, message=message,

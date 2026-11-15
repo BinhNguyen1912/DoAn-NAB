@@ -59,6 +59,9 @@ class TestCauHinhYeuCau:
         assert ch["mask_age_dinh_nghia"] == DINH_NGHIA_TUOI_MASK
         assert "mask_age_total_ms" in ch["mask_age_dinh_nghia"]
         assert "CŨ" in ch["mask_age_dinh_nghia"], "phải nói rõ đây KHÔNG phải định nghĩa cũ"
+        assert "age_n" in ch["mask_age_dinh_nghia"], (
+            "`vos_every=1` không đo tuổi mask ⇒ câu định nghĩa phải nêu để người trích không hỏi "
+            "tại sao age_n=0")
 
     def test_ep_so_nguyen_cho_image_size(self):
         """`--image-size` từ API có thể là chuỗi số ⇒ echo phải chuẩn hoá, không ghi `\"192\"`."""
@@ -70,18 +73,20 @@ class TestSoKhop:
     def test_khop_thi_danh_sach_rong(self):
         ch = cau_hinh_hieu_luc(cau_hinh_yeu_cau(image_size=192), _Engine(192, 192))
         assert ch["image_size_hieu_luc"] == 192
+        assert ch["image_size_kiem_duoc"] is True
         assert so_khop_cau_hinh(ch) == []
 
     def test_override_khong_co_tac_dung_thi_bao_lech(self):
         """Ca thật cần chặn: yêu cầu 192 nhưng predictor chạy 1024 (hydra override no-op)."""
         ch = cau_hinh_hieu_luc(cau_hinh_yeu_cau(image_size=192), _Engine(192, 1024))
+        assert ch["image_size_kiem_duoc"] is True
         assert so_khop_cau_hinh(ch) == ["image_size"]
 
     def test_hieu_luc_none_la_chua_kiem_duoc_khong_phai_khop(self):
         ch = cau_hinh_hieu_luc(cau_hinh_yeu_cau(image_size=192), _Engine(192, None))
         assert ch["image_size_hieu_luc"] is None
+        assert ch["image_size_kiem_duoc"] is False, "cờ tường minh: cấm đọc `lech == []` thành 'khớp'"
         assert so_khop_cau_hinh(ch) == [], "chưa đo được thì không được bịa là lệch"
-        assert ch["image_size_hieu_luc"] is None, "người đọc phải thấy 'chưa kiểm được'"
 
     def test_yeu_cau_none_thi_khong_so(self):
         """`image_size=None` = dùng mặc định model (1024) ⇒ không có gì để so, dù hiệu lực là 1024."""
@@ -161,6 +166,33 @@ class TestArtifactTuKiem:
         assert "loi" not in kq
         assert kq["cau_hinh"]["image_size_hieu_luc"] == 192
 
+    def test_hieu_luc_none_bi_tu_choi_du_lech_rong(self, monkeypatch):
+        """P1 review 15-11: `image_size_hieu_luc = None` + `lech = []` KHÔNG phải "khớp".
+
+        Ca thật: predictor không khai báo `image_size` (hoặc worker bản cũ không echo) ⇒ nếu chỉ tin
+        `cau_hinh_lech` thì dòng "192" trong bảng có thể chứa số của model 1024.
+        """
+        kq = self._run(monkeypatch, {
+            "state": "stopped", "frames": 5, "measured_fps": 29.8,
+            "cau_hinh": {"image_size_yeu_cau": 192, "image_size_hieu_luc": None,
+                         "image_size_kiem_duoc": False},
+            "cau_hinh_lech": []})
+        assert "KHÔNG kiểm được" in kq["loi"]
+        assert "measured_fps" not in kq
+
+    def test_worker_ban_cu_khong_echo_thi_bi_tu_choi(self, monkeypatch):
+        """Worker cũ không có `cau_hinh` ⇒ không có bằng chứng ⇒ không được vào bảng."""
+        kq = self._run(monkeypatch, {"state": "stopped", "frames": 5, "measured_fps": 29.8})
+        assert "hiệu lực" in kq["loi"] and "None" in kq["loi"]
+
+    def test_echo_noi_yeu_cau_khac_tham_so_benchmark_cung_bi_tu_choi(self, monkeypatch):
+        """Echo tự khai `yeu_cau = null` trong khi benchmark truyền 192 ⇒ lệch, phải chặn."""
+        kq = self._run(monkeypatch, {
+            "state": "stopped", "frames": 5,
+            "cau_hinh": {"image_size_yeu_cau": None, "image_size_hieu_luc": 1024},
+            "cau_hinh_lech": []})
+        assert "hiệu lực" in kq["loi"] and "1024" in kq["loi"]
+
     def test_tong_hop_ghi_cac_gia_tri_hieu_luc_da_thay(self):
         ok = [{"measured_fps": 29.8, "age_n": 10, "frames": 30,
                "cau_hinh": {"image_size_yeu_cau": 192, "image_size_hieu_luc": size}}
@@ -169,6 +201,13 @@ class TestArtifactTuKiem:
         ch = bang["192_3"]["cau_hinh"]
         assert ch["image_size_hieu_luc_da_thay"] == [192, 1024], (
             "cùng một dòng bảng mà model chạy hai độ phân giải ⇒ phải thấy trong artifact")
+
+    def test_tong_hop_chua_kiem_duoc_thi_none_chu_khong_phai_danh_sach(self):
+        """`[None]` đọc như một giá trị thật ⇒ phải là `None` (chưa kiểm được) hẳn hỏi."""
+        ok = [{"measured_fps": 29.8, "age_n": 10, "frames": 30,
+               "cau_hinh": {"image_size_yeu_cau": 192, "image_size_hieu_luc": None}}]
+        bang = bch.tong_hop({}, [192], [3], {(192, 3): ok})
+        assert bang["192_3"]["cau_hinh"]["image_size_hieu_luc_da_thay"] is None
 
     def test_tong_hop_khong_co_lan_nao_ok_thi_cau_hinh_rong(self):
         bang = bch.tong_hop({}, [192], [3], {(192, 3): [{"loi": "x"}]})

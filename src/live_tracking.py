@@ -62,7 +62,8 @@ _STAT_MIN_SAMPLES = 30
 # hay định nghĩa cũ (thiếu `vos_ms`).
 DINH_NGHIA_TUOI_MASK = (
     "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); "
-    "mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11)"
+    "mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). "
+    "Pha chưa đo được tính 0; chỉ đo ở đường LK (vos_every > 1) ⇒ vos_every=1 th\u00ec age_n=0"
 )
 # Số mẫu tối thiểu để công bố TỈ LỆ (không phải phân vị) — 5 mẫu đã đủ nói "1/5 lần mất dấu".
 _EMPTY_WINDOW_MIN = 5
@@ -260,13 +261,17 @@ def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.
     hình ĐỊNH chạy — trước đây file chỉ có `device`, ai đọc sớm cũng không biết phiên sẽ chạy
     `image_size`/`vos_every` nào.
     `image_size=None` = KHÔNG override (dùng mặc định của `model_cfg`, hiện là 1024).
-    `image_size_hieu_luc` luôn có mặt và luôn `None` ở đây (chưa nạp model ⇒ **chưa kiểm được**): giữ
-    cùng bộ khoá ở cả hai giai đoạn để người đọc `status.json` không phải phân biệt schema.
+    `image_size_hieu_luc` luôn có mặt và luôn `None` ở đây (chưa nạp model ⇒ **chưa kiểm được**:
+    `image_size_kiem_duoc = False`): giữ cùng bộ khoá ở cả hai giai đoạn để người đọc `status.json`
+    không phải phân biệt schema.
     """
     return {
         "source": str(source),
         "image_size_yeu_cau": None if image_size is None else int(image_size),
         "image_size_hieu_luc": None,
+        # Cờ tường minh thay cho suy luận "`cau_hinh_lech` rỗng ⇒ khớp": rỗng có thể là CHƯA KIỂM
+        # ĐƯỢC (predictor không khai báo). False thì cấm đọc là "đã khớp" (review độc lập 15-11, P2).
+        "image_size_kiem_duoc": False,
         "vos_every": int(vos_every),
         "display_fps": float(display_fps),
         "mask_smoothing": float(mask_smoothing),
@@ -282,9 +287,9 @@ def cau_hinh_hieu_luc(yeu_cau: dict, engine) -> dict:
     khai báo) — KHÔNG phải "khớp".
     """
     ra = dict(yeu_cau)
-    ra["image_size_hieu_luc"] = (
-        getattr(engine, "image_size_hieu_luc", None) if engine is not None else None
-    )
+    thuc = getattr(engine, "image_size_hieu_luc", None) if engine is not None else None
+    ra["image_size_hieu_luc"] = thuc
+    ra["image_size_kiem_duoc"] = thuc is not None
     return ra
 
 
