@@ -119,8 +119,12 @@ class FileVideoSource(_CaptureSource):
         return cv2.VideoCapture(self._path)
 
     def _raise_open_error(self):
+        # Che `user:pass@` (review vòng 2, P2-2): nguồn có scheme LẠ (`rtsps://`, `rtmp://`) hoặc dán
+        # kèm dấu cách đầu sẽ RƠI VÀO ĐÂY thay vì adapter mạng ⇒ chuỗi này đi tiếp vào HTTP 400
+        # (`detail`), `status.json.message` và `worker.log`.
         raise FileNotFoundError(
-            f"Không mở được video file: '{self._path}' (file không tồn tại hoặc codec không đọc được)"
+            f"Không mở được video file: '{an_userinfo(str(self._path))}' "
+            f"(file không tồn tại hoặc codec không đọc được)"
         )
 
 

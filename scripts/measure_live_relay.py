@@ -173,6 +173,13 @@ def _luu_mau_drift(out_dir, clip: str, stamp: datetime, meta: dict) -> dict:
             "n_dong": len(rows), "ly_do": None}
 
 
+def _moi_truong(device_yeu_cau: str, source) -> str:
+    """Mô tả môi trường đo — CÓ kèm nguồn, nên phải che credential (artifact được commit)."""
+    return (("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if device_yeu_cau == "cpu"
+             else f"device={device_yeu_cau} (xem device_worker_log để biết worker thật sự dùng gì)")
+            + "; nguồn = " + an_userinfo(str(source)))
+
+
 def _lenh_an_credential(argv=None) -> str:
     """Chuỗi lệnh ghi vào artifact, đã che `user:pass@` trong TỪNG tham số.
 
@@ -180,8 +187,20 @@ def _lenh_an_credential(argv=None) -> str:
     `data/*_metrics.json` — file được commit (`.gitignore` cho `*_metrics.json` đi qua).
     `an_userinfo` trả nguyên với cờ (`--source`) và đường dẫn file nên không làm hỏng lệnh.
     """
-    args = list(sys.argv[1:] if argv is None else argv)
-    return "python scripts/measure_live_relay.py " + " ".join(an_userinfo(a) for a in args)
+    return "python scripts/measure_live_relay.py " + " ".join(
+        _an_tham_so(a) for a in list(sys.argv[1:] if argv is None else argv))
+
+
+def _an_tham_so(arg: str) -> str:
+    """Che một tham số dòng lệnh, kể cả dạng `--source=URL`.
+
+    `argparse` nhận cả `--source URL` và `--source=URL`; với dạng thứ hai `urlsplit("--source=…")`
+    không có scheme (dấu `-` đầu) ⇒ `netloc` rỗng ⇒ `an_userinfo` trả nguyên (review vòng 2, P2-1).
+    """
+    if arg.startswith("-") and "=" in arg:
+        flag, _, value = arg.partition("=")
+        return f"{flag}={an_userinfo(value)}"
+    return an_userinfo(arg)
 
 
 def _worker_telemetry(out_dir) -> dict:
@@ -424,7 +443,8 @@ def main() -> int:
     try:
         if not _wait_up(base):
             raise RuntimeError("API không khởi động được (xem data/live_relay_api.log)")
-        print(f"[1/3] mở phiên live trên {args.source} (mode=track, bbox={bbox})…", flush=True)
+        print(f"[1/3] mở phiên live trên {an_userinfo(str(args.source))} "
+              f"(mode=track, bbox={bbox})…", flush=True)
         _post(base, "/api/live/start", {
             "source": args.source, "mode": "track",
             "bbox": dict(zip("xywh", bbox)),
@@ -531,10 +551,7 @@ def main() -> int:
         "device_worker_log": device_log,
         "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với "
                           "`device_yeu_cau` ⇒ số FPS ở đây là của máy khác với ý định — đừng trích.",
-        "moi_truong": ("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if device_yeu_cau == "cpu"
-                       else f"device={device_yeu_cau} (xem device_worker_log để "
-                            "biết worker thật sự dùng gì)")
-                      + "; nguồn = " + an_userinfo(str(args.source)),
+        "moi_truong": _moi_truong(device_yeu_cau, args.source),
         "nguon": an_userinfo(str(args.source)),
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},
@@ -569,7 +586,7 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print(f"\nnguồn: {args.source}")
+    print(f"\nnguồn: {an_userinfo(str(args.source))}")
     print("| trường | giá trị |\n|---|---|")
     for key, value in summary.items():
         print(f"| {key} | {value} |")

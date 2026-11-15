@@ -94,6 +94,21 @@ class TestThuTuUuTien:
         assert "http://10.0.0.5:8090/snapshot.jpg" in calls["http"]
 
 
+    def test_cam_relay_url_co_credential_thi_canh_bao(self, tmp_path, caplog):
+        """`source` của nguồn dò được phải giữ NGUYÊN (UI dùng nó để gọi /start) ⇒ không che được,
+        nên phải CẢNH BÁO là credential sẽ hiện trong phản hồi HTTP (review 15-11, P2-3)."""
+        import logging
+
+        url = "http://user:pass@192.168.1.9:8090/snapshot.jpg"
+        probe, _ = _probe(tmp_path, http={url}, env={"CAM_RELAY_URL": url})
+        with caplog.at_level(logging.WARNING, logger="doan.api.source_probe"):
+            found = probe.suggest()
+        assert found["suggested"] == url, "chuỗi phải NGUYÊN vẹn để UI gọi được /api/live/start"
+        # Cảnh báo nói *về* `user:pass@` (tên khái niệm), nhưng KHÔNG được in URL thật
+        assert url not in caplog.text and "user:pass@192.168.1.9" not in caplog.text, caplog.text
+        assert "CAM_RELAY_URL" in caplog.text, "phải nói rõ biến nào để người dùng sửa"
+
+
 class TestKhongTranhThietBi:
     def test_dang_co_phien_live_thi_khong_mo_webcam(self, tmp_path):
         """Mở webcam để dò trong lúc phiên live đang chạy sẽ tranh thiết bị với chính nó."""

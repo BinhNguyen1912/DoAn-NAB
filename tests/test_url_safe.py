@@ -123,18 +123,21 @@ class TestEchoNguonRaNgoai:
         """`lenh` = sys.argv và `moi_truong` cũng echo nguồn (P0 review 15-11).
 
         Artifact `data/live_web_relay_*_metrics.json` được COMMIT ⇒ che mỗi `nguon` là chưa đủ.
+        Import module THẬT (`scripts.measure_live_relay` đã có test riêng import đúng cách) — nạp lại
+        bằng `importlib` sẽ phụ thuộc CWD và tạo bản module thứ hai (review vòng 2, P3-2).
         """
-        import importlib.util
-        from pathlib import Path as _P
+        from scripts.measure_live_relay import _lenh_an_credential, _moi_truong
 
-        path = _P("scripts/measure_live_relay.py")
-        spec = importlib.util.spec_from_file_location("_mlr", path)
-        mod = importlib.util.module_from_spec(spec)
-        spec.loader.exec_module(mod)
-
-        lenh = mod._lenh_an_credential(["--source", self.URL, "--seconds", "10"])
+        lenh = _lenh_an_credential(["--source", self.URL, "--seconds", "10"])
         assert self.URL not in lenh and "pass" not in lenh
         assert "--source" in lenh and self.SACH in lenh, "cờ và tham số khác phải giữ nguyên"
+        # dạng `--source=URL` (argparse nhận cả hai kiểu) — review vòng 2, P2-1
+        lenh_eq = _lenh_an_credential([f"--source={self.URL}", "--seconds", "10"])
+        assert "pass" not in lenh_eq, lenh_eq
+        assert f"--source={self.SACH}" in lenh_eq, lenh_eq
+        # `moi_truong` cũng nhúng nguồn
+        moi_truong = _moi_truong("cpu", self.URL)
+        assert "pass" not in moi_truong and self.SACH in moi_truong
 
 
 class TestNhanRaHttp:
@@ -160,6 +163,17 @@ class TestNhanRaHttp:
             # Vẫn giữ host để người dùng biết sửa cái gì
             assert "cam.local:554" in str(info.value), str(info.value)
 
+    def test_nguon_scheme_la_roi_vao_file_source_van_duoc_che(self):
+        """`rtsps://`/`rtmp://`/chuỗi có dấu cách đầu KHÔNG khớp adapter mạng ⇒ rơi vào
+        `FileVideoSource`, nơi thông báo lỗi từng echo nguyên chuỗi (review vòng 2, P2-2)."""
+        from src.video_source import FileVideoSource
+
+        for nguon in ("rtsps://user:pass@cam.local/s", "rtmp://user:pass@cam.local/live",
+                      " rtsp://user:pass@cam.local/s"):
+            with pytest.raises(FileNotFoundError) as info:
+                FileVideoSource(nguon)._raise_open_error()
+            assert "pass" not in str(info.value), str(info.value)
+
     def test_thong_bao_snapshot_hong_khong_mang_mat_khau(self):
         from src.video_source import HttpSnapshotSource
 
@@ -177,4 +191,6 @@ def test_doctest_trong_module_duoc_chay():
 
     from src import url_safe
 
-    assert doctest.testmod(url_safe, verbose=False).failed == 0
+    ket_qua = doctest.testmod(url_safe, verbose=False)
+    assert ket_qua.failed == 0
+    assert ket_qua.attempted >= 4, "ví dụ >>> trong docstring đã bị xoá — hợp đồng mất hiệu lực"

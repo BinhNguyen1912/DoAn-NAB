@@ -26,6 +26,7 @@ import os
 import threading
 import time
 from pathlib import Path
+from src.url_safe import co_userinfo
 
 logger = logging.getLogger("doan.api.source_probe")
 
@@ -190,6 +191,12 @@ class SourceProbe:
         env = self._env if self._env is not None else os.environ
         explicit = (env.get("CAM_RELAY_URL") or "").strip()
         if explicit:
+            # `source` phải giữ NGUYÊN chuỗi (UI dùng chính nó để gọi `/api/live/start`), nên không che
+            # được ở đây — thay vào đó CẢNH BÁO để người vận hành biết credential đang hiện ra HTTP.
+            if co_userinfo(explicit):
+                logger.warning("CAM_RELAY_URL chứa user:pass@ — chuỗi này được trả nguyên trong "
+                               "GET /api/live/sources; hãy dùng relay không cần xác thực hoặc nhập "
+                               "nguồn ở ô nguồn (chuỗi đó được che khi echo)")
             urls.append(explicit)
         # LUÔN thử cả IP gateway: IP WSL2 đổi sau mỗi lần restart, còn `CAM_RELAY_URL` trong env thì
         # kẹt IP cũ ⇒ nếu chỉ dùng env thì dò hỏng câm đúng lúc người dùng đã "cấu hình đúng".
