@@ -10,9 +10,25 @@ Phạm vi tối thiểu: chỉ đưa **cờ** lệch (hoặc `image_size_hieu_lu
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `/api/live/status` trả thêm cờ lệch (vd `cau_hinh_lech: []` hoặc `image_size_hieu_luc`), có test API cho worker cũ (thiếu khoá ⇒ không lỗi)
-- [ ] HUD hiện cảnh báo `role="alert"` khi phiên có cấu hình lệch (không chỉ nằm trong `worker.log`)
-- [ ] Có test vitest cho nhãn cảnh báo + e2e kiểm `role=alert`
-- [ ] `docs/task`/log ghi rõ đây là hiển thị cho người vận hành, KHÔNG đổi kết luận số đo
+- [x] `/api/live/status` trả thêm cờ lệch (vd `cau_hinh_lech: []` hoặc `image_size_hieu_luc`), có test API cho worker cũ (thiếu khoá ⇒ không lỗi)
+- [x] HUD hiện cảnh báo `role="alert"` khi phiên có cấu hình lệch (không chỉ nằm trong `worker.log`)
+- [x] Có test vitest cho nhãn cảnh báo + e2e kiểm `role=alert`
+- [x] `docs/task`/log ghi rõ đây là hiển thị cho người vận hành, KHÔNG đổi kết luận số đo
+
+## Answer (15-11)
+
+Đã xong trên nhánh `feat/cau-hinh-lech-hud` (commit `10b8758`), log:
+`docs/task/15-11-2026-cau-hinh-lech-len-hud.md`.
+
+`/api/live/status` trả `cau_hinh_lech: list[str] | null` + `image_size_hieu_luc: int | null` với
+**4 trạng thái phân biệt**: `null` = chưa biết (worker bản cũ / khoá null) · `[]` + có số độ phân
+giải = đã kiểm và khớp · `[]` + `image_size_hieu_luc == null` = **chưa kiểm được** (predictor không
+khai `image_size`) · có phần tử = lệch thật ⇒ HUD cảnh báo đỏ `role="alert"`.
+
+Số kiểm: `./run lint` · `./run test` **1217 passed** · `./run webtest` **54** · `npm run build` ·
+`./run e2e` **PASS** (3 check mới, gồm ca âm "khớp thì không hiện dòng nào").
+
+Review độc lập: 0 P0/P1; đã sửa 3 P2 (khoá `null` ⇒ "khớp", thiếu test HTTP cho 2 mắt xích mới,
+mô tả `[]` sai ở 4 chỗ) + 8 P3. Ghi lại 2 P3 chưa làm ở mục Next steps của log.
