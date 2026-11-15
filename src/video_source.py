@@ -25,6 +25,7 @@ import urllib.request
 
 import cv2
 import numpy as np
+from src.url_safe import an_userinfo
 
 
 class VideoSource(ABC):
@@ -249,7 +250,8 @@ class HttpVideoSource(_CaptureSource):
             hint = (" — URL còn là PLACEHOLDER, hãy thay bằng IP thật hiện trên app điện thoại "
                     "(ví dụ http://192.168.1.25:8080/video)")
         raise ConnectionError(
-            f"Không mở được nguồn mạng '{self._url}' trong {self._timeout_ms} ms{hint}. "
+            f"Không mở được nguồn mạng '{an_userinfo(str(self._url))}' trong "
+            f"{self._timeout_ms} ms{hint}. "
             f"Kiểm tra: (1) IP thật + điện thoại và máy cùng mạng Wi-Fi; (2) app đã bấm "
             f"Start server; (3) đúng đường dẫn stream (thường là /video); (4) một số app chỉ "
             f"phát RTSP → dùng rtsp://…"
@@ -291,7 +293,8 @@ class HttpSnapshotSource(VideoSource):
         frame = self._fetch(attempts=3)
         if frame is None:
             raise ConnectionError(
-                f"Không lấy được ảnh JPEG từ '{self._url}' (thử 3 lần). Kiểm tra: relay/camera "
+                f"Không lấy được ảnh JPEG từ '{an_userinfo(str(self._url))}' (thử 3 lần). "
+                f"Kiểm tra: relay/camera "
                 f"đã chạy chưa, đúng IP:port chưa, và đường dẫn có phải ảnh JPEG "
                 f"(ví dụ http://<IP>:8090/snapshot.jpg)"
             )
@@ -363,7 +366,8 @@ class RtspVideoSource(_CaptureSource):
 
     def _raise_open_error(self):
         raise ConnectionError(
-            f"Không kết nối được RTSP nguồn '{self._url}' trong {self._timeout_ms} ms "
+            f"Không kết nối được RTSP nguồn '{an_userinfo(str(self._url))}' trong "
+            f"{self._timeout_ms} ms "
             f"(camera offline, sai URL, hoặc mạng yếu — kiểm tra lại)"
         )
 

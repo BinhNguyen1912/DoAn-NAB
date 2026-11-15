@@ -52,5 +52,12 @@ def an_userinfo(url: str) -> str:
 
 
 def co_userinfo(url: str) -> bool:
-    """`url` có credential nhúng không (dùng để cảnh báo/log, không để in chuỗi gốc)."""
-    return an_userinfo(url) != str(url)
+    """`url` có credential nhúng không (dùng để cảnh báo/log — KHÔNG dùng để in chuỗi gốc).
+
+    Kiểm thẳng `"@" in netloc` thay vì so `an_userinfo(url) != url`: cách so round-trip báo `True` cho
+    cả những chuẩn hoá vô hại của `urlsplit` (hạ chữ thường scheme) — tức là báo động sai.
+    """
+    try:
+        return _AT in urlsplit(str(url)).netloc
+    except ValueError:
+        return False

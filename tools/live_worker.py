@@ -31,7 +31,8 @@ from src.live_tracking import (  # noqa: E402
     session_exit_code,
     status_payload,
     write_json_atomic,
-)
+)  # noqa: E402
+from src.url_safe import an_userinfo  # noqa: E402 — che credential khi in nguồn ra worker.log
 
 
 def _write_loading(out_dir: Path, message: str = "Đang nạp model...", *, device: str = "",
@@ -182,7 +183,10 @@ def main() -> int:
     print(f"[worker] nạp model (image_size={args.image_size or 'mặc định 1024'}, "
           f"device={device}{_device_note(device)})...", flush=True)
     engine = TrackerEngine.build_default(image_size=args.image_size, device=device)
-    print(f"[worker] sẵn sàng | nguồn: {args.source} | out: {out_dir} | device={device}", flush=True)
+    # Che `user:pass@` (ticket 29): dòng này vào `worker.log`, và `worker.log` còn bị
+    # `scripts/measure_live_relay.py` chép vào artifact ĐƯỢC COMMIT.
+    print(f"[worker] sẵn sàng | nguồn: {an_userinfo(str(args.source))} | out: {out_dir} "
+          f"| device={device}", flush=True)
 
     stop = threading.Event()
 

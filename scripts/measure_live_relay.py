@@ -173,6 +173,17 @@ def _luu_mau_drift(out_dir, clip: str, stamp: datetime, meta: dict) -> dict:
             "n_dong": len(rows), "ly_do": None}
 
 
+def _lenh_an_credential(argv=None) -> str:
+    """Chuỗi lệnh ghi vào artifact, đã che `user:pass@` trong TỪNG tham số.
+
+    Vì sao: `--source rtsp://user:pass@host/s` nằm nguyên trong `lenh` của artifact
+    `data/*_metrics.json` — file được commit (`.gitignore` cho `*_metrics.json` đi qua).
+    `an_userinfo` trả nguyên với cờ (`--source`) và đường dẫn file nên không làm hỏng lệnh.
+    """
+    args = list(sys.argv[1:] if argv is None else argv)
+    return "python scripts/measure_live_relay.py " + " ".join(an_userinfo(a) for a in args)
+
+
 def _worker_telemetry(out_dir) -> dict:
     """Đọc thẳng `status.json` của worker — những số KHÔNG đi qua API live (`drift_*`, tuổi mask).
 
@@ -478,7 +489,7 @@ def main() -> int:
         "ghi_chu": "Mỗi dòng = 1 kết quả VOS của luồng worker (frame_idx, seq, vos_ms, empty, "
                    "drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy "
                    "để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
-        "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
+        "lenh": _lenh_an_credential(),
         "nguon": an_userinfo(str(args.source)),
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},
@@ -515,7 +526,7 @@ def main() -> int:
         "git_loi": git_loi,
         "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có "
                            "provenance, đừng trích file này.",
-        "lenh": "python scripts/measure_live_relay.py " + " ".join(sys.argv[1:]),
+        "lenh": _lenh_an_credential(),
         "device_yeu_cau": device_yeu_cau,
         "device_worker_log": device_log,
         "ghi_chu_device": "`device_worker_log` là thiết bị THẬT (đọc từ worker.log); lệch với "
@@ -523,7 +534,7 @@ def main() -> int:
         "moi_truong": ("WSL laptop CPU (Iris Xe), torch CPU, SAM 2.1 tiny" if device_yeu_cau == "cpu"
                        else f"device={device_yeu_cau} (xem device_worker_log để "
                             "biết worker thật sự dùng gì)")
-                      + "; nguồn = " + args.source,
+                      + "; nguồn = " + an_userinfo(str(args.source)),
         "nguon": an_userinfo(str(args.source)),
         "thiet_lap": {"bbox_xywh": bbox, "image_size": args.image_size,
                       "vos_every": args.vos_every, "seconds": args.seconds},

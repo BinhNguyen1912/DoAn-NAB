@@ -6,6 +6,10 @@ Chức năng: trả danh sách nguồn mà backend thật sự dùng được �
            đã KIỂM bằng thử thật (mở webcam / GET ảnh JPEG), và một nguồn gợi ý.
 Input  : repo_root (để tìm video demo), biến môi trường (tuỳ chọn `CAM_RELAY_URL`), các hàm dò
          được tiêm vào (test không cần webcam/mạng thật).
+         **`CAM_RELAY_URL` KHÔNG được chứa `user:pass@`**: `source` ở đây phải giữ NGUYÊN chuỗi vì UI
+         dùng chính nó để gọi `/api/live/start` (che là hỏng phiên) — nên credential trong env sẽ hiện
+         trong phản hồi HTTP của `/api/live/sources` (ticket 29). Nguồn cần xác thực thì nhập tay ở ô
+         nguồn: chuỗi đó được che khi ECHO ra `status.json`/artifact/`/api/live/status`.
 Output : dict `{"suggested": str, "candidates": [{source,label,kind,available}]}`.
 Lưu ý  : đây là ADAPTER ngoài cùng (chạm cv2 + HTTP). Endpoint gọi nó chạy trong threadpool của
          FastAPI, nên phải CACHE: mỗi lần dò có thể mở webcam (giữ thiết bị) và chờ HTTP tới

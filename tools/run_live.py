@@ -52,6 +52,7 @@ from src.metrics_logger import run_info_path_for, write_run_info  # noqa: E402
 from src.video_source import open_video_source               # noqa: E402
 from src.visualizer import Visualizer                        # noqa: E402
 from src.worker import find_ffmpeg, transcode_for_web          # noqa: E402
+from src.url_safe import an_userinfo
 
 WINDOW_NAME = "Camera AI - SAMURAI (keo chuot chon doi tuong)"
 
@@ -366,7 +367,9 @@ def _write_run_info(args):
     write_run_info(
         path,
         git_rev=rev,
-        source=str(getattr(args, "source", "")),
+        # Che `user:pass@` (ticket 29): file `data/*_run_info.json` ĐƯỢC COMMIT
+        # (`.gitignore` có `!data/*_run_info.json`).
+        source=an_userinfo(str(getattr(args, "source", ""))),
         image_size=getattr(args, "image_size", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),

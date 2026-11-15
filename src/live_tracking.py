@@ -29,8 +29,6 @@ from collections import deque
 from dataclasses import dataclass, field, replace
 from pathlib import Path
 
-from src.url_safe import an_userinfo
-
 import cv2
 import numpy as np
 
@@ -40,6 +38,7 @@ from src.light_tracker import LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
 from src.video_source import looks_like_file, open_video_source
+from src.url_safe import an_userinfo
 
 FRAME_NAME = "frame.jpg"
 STATUS_NAME = "status.json"

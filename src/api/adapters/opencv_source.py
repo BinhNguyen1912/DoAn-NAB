@@ -20,6 +20,7 @@ import cv2
 
 from src.api.domain import LiveState, SourceHealth
 from src.video_source import looks_like_file, open_video_source
+from src.url_safe import an_userinfo
 
 logger = logging.getLogger("doan.api.opencv_source")
 
@@ -112,8 +113,13 @@ class OpenCvFrameSource:
 
     @property
     def label(self) -> str:
-        """Mô tả ngắn để hiện trên UI/log."""
-        return f"nguồn {self._source}"
+        """Mô tả ngắn để hiện trên UI/log.
+
+        Che `user:pass@` (ticket 29): đây là adapter của mode **raw** — mode MẶC ĐỊNH của UI — và nhãn
+        này đi thẳng ra `/api/live/status` (`source`) cùng `message` ("Đang phát từ …"), tức là hiện
+        trong trình duyệt.
+        """
+        return f"nguồn {an_userinfo(str(self._source))}"
 
     # ------------------------------------------------------------------ HealthReportingSource
 
@@ -141,7 +147,8 @@ class OpenCvFrameSource:
         if self._exhausted:
             return SourceHealth(LiveState.STOPPED, "nguồn đã hết (không lặp lại)")
         if self._capture is None:
-            return SourceHealth(LiveState.ERROR, f"mất kết nối nguồn {self._source} — xem log API")
+            return SourceHealth(LiveState.ERROR,
+                                f"mất kết nối nguồn {an_userinfo(str(self._source))} — xem log API")
         limit = STALE_S if self._got_frame else WARMUP_S
         age = time.monotonic() - self._last_frame_at
         if age > limit and self._misses >= MISS_MIN:
