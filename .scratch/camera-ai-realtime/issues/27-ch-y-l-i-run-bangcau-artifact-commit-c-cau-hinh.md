@@ -14,8 +14,8 @@ Việc cần làm: chạy lại `./run bangcau --sizes 192,256,320 --every 2,3,6
 
 **Status:** ready-for-agent
 
-- [ ] `data/bang_cau_hinh_*_metrics.json` (bản mới) có `cau_hinh` ở từng dòng, với `image_size_hieu_luc_da_thay` = một phần tử đúng bằng `image_size` của dòng đó
-- [ ] Artifact mới có `git_dirty_code == false` và `git_rev` == commit chứa thay đổi echo cấu hình
-- [ ] `docs/bang-cau-hinh.md` sinh lại từ artifact mới; `./run bangcau --check` xanh
-- [ ] `docs/so-lieu-bao-cao.md` sinh lại; `./run test` xanh (test ghim doc ↔ artifact)
+- [x] `data/bang_cau_hinh_*_metrics.json` (bản mới) có `cau_hinh` ở từng dòng, với `image_size_hieu_luc_da_thay` = một phần tử đúng bằng `image_size` của dòng đó
+- [x] Artifact mới có `git_dirty_code == false` và `git_rev` == commit chứa thay đổi echo cấu hình
+- [x] `docs/bang-cau-hinh.md` sinh lại từ artifact mới; `./run bangcau --check` xanh
+- [x] `docs/so-lieu-bao-cao.md` sinh lại; `./run test` xanh (test ghim doc ↔ artifact)
 - [ ] Nếu `./run ab` cũng chạy lại: mỗi lần chạy trong `lan_chay` có `cau_hinh.image_size_hieu_luc` khớp cấu hình A/B

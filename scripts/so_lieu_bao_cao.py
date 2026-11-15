@@ -71,17 +71,17 @@ REGISTRY = [
      "Nhanh vì `proc.poll()` bắt được; ca \"sống mà treo\" mất ~15 s, CẤM trích 0,1 s cho ca đó."),
     # ── Việc #5 (14-11): bảng cấu hình đo bằng 3 lần chạy worker thật trên máy CPU này ──────────
     ("Nhịp mask ở `vos_every 2` (cấu hình nhanh nhất, `image_size 192`)",
-     "data/bang_cau_hinh_2026-11-14_metrics.json",
+     "data/bang_cau_hinh_2026-11-15_metrics.json",
      "cau_hinh.192_2.vos_fps.mean", "lần/giây",
      "CẤM viết 'mask 30 FPS' và CẤM so với FPS phát 29,7 — hai nhịp khác nhau.",
      {"std": "cau_hinh.192_2.vos_fps.std", "n": "cau_hinh.192_2.vos_fps.n"}),
-    ("Tuổi dữ liệu ảnh p95 ở `image_size 192`, `vos_every 3`", "data/bang_cau_hinh_2026-11-14_metrics.json",
+    ("Tuổi dữ liệu ảnh p95 ở `image_size 192`, `vos_every 3`", "data/bang_cau_hinh_2026-11-15_metrics.json",
      "cau_hinh.192_3.mask_age_p95.mean", "ms (p95)",
      "`vos_ms` chỉ là phần model; 'một frame tốn bao lâu' phải cộng `pre_ms`. p95 dựa trên "
      "`cau_hinh.192_3.age_n` mẫu — đọc kèm, n nhỏ thì p95 ≈ max.",
      {"std": "cau_hinh.192_3.mask_age_p95.std", "n": "cau_hinh.192_3.age_n.mean"}),
     ("Tuổi dữ liệu ảnh p95 ở `image_size 320`, `vos_every 3` (chi tiết vật nhỏ)",
-     "data/bang_cau_hinh_2026-11-14_metrics.json",
+     "data/bang_cau_hinh_2026-11-15_metrics.json",
      "cau_hinh.320_3.mask_age_p95.mean", "ms (p95)",
      "Chỉ được nói 'cũ hơn hẳn' nếu chênh với 192 LỚN HƠN `std` lớn hơn của hai dòng (đọc `std` ngay "
      "trong cột này, đừng gõ tay).",

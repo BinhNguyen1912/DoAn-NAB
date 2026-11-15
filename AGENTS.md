@@ -332,10 +332,16 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   (**±0,010** — gấp 2,5×) và `mask_age_p95` 215,4–221,4 (**±6 ms**); phiên ngắn 11 s
   (`data/chu_ky_chai_binh1_1vong_lan*_metrics.json`) cho **±0,019** và **±32 ms**. Dùng ±0,004 cho ô chai
   là gọi chênh lệch 0,005 thành "khác thật".
-- **`measured_fps`/`display_fps` bão hoà ~29,8–29,9 ở MỌI `image_size`** (bảng 9 cấu hình:
-  `data/bang_cau_hinh_2026-11-14_metrics.json`) vì LK lấp phần giữa ⇒ **không** dùng nó để chọn cấu hình;
-  chọn theo `vos_fps` + `mask_age_p95` (`docs/bang-cau-hinh.md`). Riêng `mask_age_p95` (mean 3 lần):
-  192 → **266,6 ms** (every 2) / **304,2** (every 3); 320 → **559,5** / **605,1** / **769,1** (every 2/3/6).
+- **`measured_fps`/`display_fps` bão hoà ~29,3–29,9 ở MỌI `image_size`** (bảng 9 cấu hình:
+  `data/bang_cau_hinh_2026-11-15_metrics.json`) vì LK lấp phần giữa ⇒ **không** dùng nó để chọn cấu hình;
+  chọn theo `vos_fps` + `mask_age_p95` (`docs/bang-cau-hinh.md`). Riêng `mask_age_p95` (mean 3 lần, 15-11):
+  192 → **390,2 ms** (every 2) / **373,6** (every 3) / **303,6** (every 6); 320 → **603,6** / **656,5** / **707,2**.
+  **Nhưng đừng so số p95 giữa hai artifact**: cùng cấu hình 192/3 đo ngày 14-11 cho 315,8 ± 16,4, ngày 15-11
+  cho 373,6 ± 97,9 và lần lặp 362,4 ± 59,5 (`data/bang_cau_hinh_2026-11-15_lan2_192va320_every3_metrics.json`)
+  ⇒ chênh **~50–60 ms giữa hai phiên** (lớn hơn cả `±` của phiên 14-11). Chỉ so **trong cùng một lần chạy**
+  (`./run ab` chèn kẽ), và độ tươi của mask **không** dùng để nói "cấu hình này tốt hơn" khi chênh < `±`:
+  192/3 vs 192/6 ở lần đo 15-11 chênh 70 ms < `±` 97,9 ⇒ **không phân biệt được** (lần 14-11 lại xếp ngược
+  chiều) — đúng kết luận "`vos_every` không phải nút điều khiển độ tươi của mask".
 
 - **`--image-size` chỉ là YÊU CẦU; `status.json` từ 15-11 echo cả HIỆU LỰC.** `cau_hinh.image_size_yeu_cau`
   vs `cau_hinh.image_size_hieu_luc` (đọc từ `predictor.image_size`, tức giá trị model **thật sự** dùng).
@@ -346,8 +352,10 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `scripts/bang_cau_hinh._run_once` (dùng chung `./run bangcau` + `./run ab`) coi lần chạy có hiệu lực khác
   `--sizes`/`--image-size` **hoặc** hiệu lực `None` là **LỖI** (dòng "—", không có số). Đã diễn tập thật bằng
   cách cho `build_overrides` trả `[]`: 2/2 lần bị từ chối, `./run bangcau` thoát mã 1.
-  **Artifact sinh TRƯỚC 15-11 (`bang_cau_hinh_2026-11-14`, `ab_192_vs_320`) KHÔNG có `cau_hinh`** ⇒ bảng
-  đang trích trong báo cáo **vẫn chưa** tự kiểm được — phải chạy lại (ticket #27), đừng viết "bảng đã tự kiểm".
+  Artifact từ **15-11** trở đi có `cau_hinh` (đo trên cây sạch: `bang_cau_hinh_2026-11-15_metrics.json`,
+  `git_rev 96b0c3e`, `git_dirty_code=false`, 27/27 lần chạy có `image_size_hieu_luc` = `--sizes`).
+  Riêng `bang_cau_hinh_2026-11-14` + `ab_192_vs_320_2026-11-14` sinh **trước** thay đổi ⇒ **không** có
+  `cau_hinh`; đừng trích chúng như "bảng đã tự kiểm cấu hình".
 
 
 ## 7. Các repo/model tham khảo

@@ -148,12 +148,55 @@ có shell) ⇒ các số đó là của phiên này, reviewer không tái lập.
 mục "Next steps" đã có tiêu chí từ plan 14-11.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **#27** Chạy lại `./run bangcau` (+ `./run ab`) trên cây sạch để artifact **đã commit** có
-      `cau_hinh`, rồi sinh lại `docs/bang-cau-hinh.md` + `docs/so-lieu-bao-cao.md`.
+- [x] **#27** Chạy lại `./run bangcau` trên cây sạch để artifact **đã commit** có `cau_hinh`, rồi sinh
+      lại `docs/bang-cau-hinh.md` + `docs/so-lieu-bao-cao.md` — **xong trong phiên này** (xem mục bổ sung
+      dưới). `./run ab` **chưa** chạy lại (đã ghi trong ticket, để lần đo A/B sau).
 - [ ] **#28** Đưa cờ lệch lên `/api/live/status` + HUD (`role="alert"`) để người vận hành thấy.
 - [ ] **#29** Ẩn userinfo của `source` trước khi echo vào `status.json`/artifact.
 - [ ] Cân nhắc đưa `cau_hinh` vào `worker/artifacts.py` cho **job upload** (đường batch hiện chưa có
       echo cấu hình; chưa đo nên chưa làm).
+
+## ➕ Bổ sung sau khi merge — #27 xong: bảng cấu hình MỚI đã tự kiểm cấu hình
+
+Nhánh đã merge vào `main` (`96b0c3e`, không tạo được PR: máy này **không có `gh` CLI lẫn token GitHub**).
+Sau merge, chạy lại bảng cấu hình trên **cây sạch** để artifact đã commit có echo cấu hình:
+
+- Lệnh: `./run bangcau --bbox 288,287,431,734 --sizes 192,256,320 --every 2,3,6 --lan 3 --frames 60`
+  (đúng ô chai trong `docs/demo-clip-va-o-chon.md`).
+- Artifact: `data/bang_cau_hinh_2026-11-15_metrics.json` — `git_rev 96b0c3e`, `git_dirty_code false`,
+  **27/27 lần chạy không lỗi**, mỗi dòng có `cau_hinh.image_size_hieu_luc_da_thay` = **một giá trị duy nhất**
+  đúng bằng `image_size` của dòng đó (192/256/320), `image_size_kiem_duoc = true`.
+- `docs/bang-cau-hinh.md` + `docs/so-lieu-bao-cao.md` sinh lại từ artifact mới (REGISTRY trỏ file mới).
+
+**Số 15-11 (mean ± std, 3 lần, 59 mẫu tuổi mask mỗi lần):**
+
+| image_size | vos_every | FPS phát | Nhịp mask | vos_ms | tuổi mask p95 |
+|---|---|---|---|---|---|
+| 192 | 2 | 29,6 ± 0,26 | 7,2 ± 1,31 | 120,83 ± 26,87 | 390,17 ± 111,31 |
+| 192 | 3 | 29,67 ± 0,32 | 7,4 ± 1,11 | 100,77 ± 14,0 | 373,57 ± 97,85 |
+| 192 | 6 | 29,8 ± 0,1 | 5,17 ± 0,06 | 105,3 ± 10,91 | 303,57 ± 1,44 |
+| 256 | 3 | 29,83 ± 0,06 | 4,77 ± 0,12 | 187,8 ± 6,93 | 447,6 ± 18,34 |
+| 320 | 3 | 29,57 ± 0,49 | 3,2 ± 0,2 | 262,3 ± 12,9 | 656,53 ± 65,09 |
+| 320 | 6 | 29,8 ± 0 | 3,43 ± 0,06 | 295,2 ± 26,53 | 707,17 ± 32,42 |
+
+⇒ Kết luận **giữ nguyên**: chọn **192** cho demo (mask gần **gấp đôi** 320; p95 373–390 ms vs 656–707 ms).
+
+**Phát hiện khi làm #27 (đã ghi vào AGENTS §6) — p95 KHÔNG so được giữa hai phiên:**
+
+| phiên | 192/3 nhịp mask | 192/3 p95 | 320/3 p95 | nguồn |
+|---|---|---|---|---|
+| 14-11 | 7,57 ± 0,15 | 315,8 ± 16,36 | 637,43 ± 34,91 | `data/bang_cau_hinh_2026-11-14_metrics.json` |
+| 15-11 (A) | 7,4 ± 1,11 | **373,57 ± 97,85** | 656,53 ± 65,09 | `data/bang_cau_hinh_2026-11-15_metrics.json` |
+| 15-11 (B, lặp lại 2 cấu hình) | 7,77 ± 0,74 | **362,43 ± 59,52** | 637,27 ± 68,82 | `data/bang_cau_hinh_2026-11-15_lan2_192va320_every3_metrics.json` |
+
+- Cùng cấu hình, cùng commit: p95 chênh **~50–60 ms** giữa 14-11 và 15-11, và **±97,9** ở một phiên ⇒
+  dùng ± của phiên 14-11 (±16,4) để so số 15-11 là **sai**. Chỉ so **trong cùng một lần chạy** (`./run ab`).
+- 192/3 vs 192/6 ở 15-11 chênh 70 ms < `±` 97,9 ⇒ **“không phân biệt được”** (14-11 xếp ngược chiều)
+  ⇒ đúng kết luận cũ: **`vos_every` không phải nút điều khiển độ tươi của mask**.
+- 192 vs 320 thì chênh ~280 ms >> mọi `±` đo được (kể cả phiên nhiễu nhất) ⇒ "192 tươi hơn hẳn" **bền**.
+
+Artifact 14-11 **vẫn giữ** (là bằng chứng lịch sử, các log 14-11 trỏ tới) nhưng REGISTRY + AGENTS nay trỏ
+`2026-11-15`; ghi rõ rằng bảng 14-11 **không** tự kiểm được cấu hình.
 
 ## 📚 Tài liệu tham khảo
 - `docs/task/14-11-2026-nam-viec-con-lai-cua-plan.md` — nguồn của việc này (Next steps + góc "độ bền").
