@@ -29,6 +29,8 @@ import {
   deviceLine,
   driftLine,
   maskAgeIsStale,
+  configMismatchIsAlert,
+  configMismatchLine,
   maskAgeLine,
   maskRhythmLine,
   shownFps,
@@ -194,6 +196,8 @@ export function LivePanel(): JSX.Element {
   // lỗi trong lúc đang nạp bình thường — ticket 16).
   const maskLine = maskRhythmLine(status)
   const ageLine = maskAgeLine(status)
+  const cauHinhLine = configMismatchLine(status)
+  const cauHinhLech = configMismatchIsAlert(status)
   const ageCu = maskAgeIsStale(status)
   const driftText = driftLine(status)
   const deviceText = deviceLine(status)
@@ -374,6 +378,15 @@ export function LivePanel(): JSX.Element {
         // Hiện cả hai để không ai đọc nhầm "30 FPS" thành "mask 30 FPS".
         <p className="hint" data-testid="mask-rhythm">
           {maskLine}
+        </p>
+      )}
+
+      {cauHinhLine && (
+        // Cấu hình yêu cầu ≠ hiệu lực (15-11): mọi số trên HUD đang gắn với cấu hình khác cấu hình
+        // người dùng chọn ⇒ phải NÓI TO (role="alert"), không chỉ nằm trong worker.log.
+        <p className={cauHinhLech ? 'error' : 'hint'} data-testid="config-mismatch"
+           role={cauHinhLech ? 'alert' : undefined}>
+          {cauHinhLine}
         </p>
       )}
 

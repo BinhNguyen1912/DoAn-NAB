@@ -165,6 +165,53 @@ class TestLiveStreamService:
         live_service.stop()
 
 
+class TestCauHinhLechXuyenChuoi:
+    """`status.json` → API (15-11, ticket #28): cờ "cấu hình yêu cầu ≠ hiệu lực" phải đi qua.
+
+    `None` (worker bản cũ, không có khoá) KHÁC `()`/`[]` (đã kiểm và khớp) — cùng bẫy `None` vs `0`.
+    """
+
+    def _status(self, tmp_path, data):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps(data), encoding="utf-8")
+        src = WorkerFrameSource.__new__(WorkerFrameSource)
+        src._out = tmp_path
+        return src.telemetry()
+
+    def test_lech_di_qua_kem_gia_tri_hieu_luc(self, tmp_path):
+        t = self._status(tmp_path, {"cau_hinh_lech": ["image_size"],
+                                    "cau_hinh": {"image_size_yeu_cau": 192,
+                                                 "image_size_hieu_luc": 1024}})
+        assert t.cau_hinh_lech == ("image_size",)
+        assert t.image_size_hieu_luc == 1024
+
+    def test_khop_la_tuple_rong(self, tmp_path):
+        t = self._status(tmp_path, {"cau_hinh_lech": [],
+                                    "cau_hinh": {"image_size_hieu_luc": 192}})
+        assert t.cau_hinh_lech == () and t.image_size_hieu_luc == 192
+
+    def test_worker_ban_cu_khong_co_khoa_la_None(self, tmp_path):
+        """Vắng khoá ⇒ CHƯA BIẾT. Trả `()` ở đây là nói dối "đã kiểm và khớp"."""
+        t = self._status(tmp_path, {"state": "tracking"})
+        assert t.cau_hinh_lech is None and t.image_size_hieu_luc is None
+
+    def test_co_khoa_nhung_null_la_chua_biet(self, tmp_path):
+        """Khoá có mặt + `null` = CHƯA BIẾT (review 15-11, P2-3). `or []` từng biến nó thành "khớp"."""
+        assert self._status(tmp_path, {"cau_hinh_lech": None}).cau_hinh_lech is None
+
+    def test_so_vo_ly_khong_lam_sap(self, tmp_path):
+        """`json.loads` chấp nhận `Infinity` ⇒ `int(float('inf'))` ném OverflowError (P3-8)."""
+        t = self._status(tmp_path, {"cau_hinh_lech": [], "cau_hinh": {"image_size_hieu_luc": 1e999}})
+        assert t.image_size_hieu_luc is None
+
+    def test_gia_tri_rac_khong_lam_sap(self, tmp_path):
+        t = self._status(tmp_path, {"cau_hinh_lech": "image_size", "cau_hinh": "không phải dict"})
+        assert t.cau_hinh_lech == ("image_size",) and t.image_size_hieu_luc is None
+
+
 class TestLiveRoutes:
     def test_start_status_frame_stop(self, live_client):
         r = live_client.post("/api/live/start", json={"source": "0"})
@@ -178,6 +225,9 @@ class TestLiveRoutes:
                              "mask_fps", "stability", "stability_n", "latency_ms", "empty_runs",
                              # 3 trường tuổi dữ liệu ảnh (14-11, việc #8): mask cũ bao nhiêu ms
                              "mask_age_total_ms", "mask_age_p95", "age_n",
+                             # 2 trường cấu hình (15-11): model chạy có đúng cấu hình đã yêu cầu?
+                             # `null` = chưa biết (worker bản cũ) — KHÁC `[]` = đã kiểm và khớp.
+                             "cau_hinh_lech", "image_size_hieu_luc",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -1047,6 +1097,59 @@ class TestMaskAgeQuaApi:
         assert body["mask_age_total_ms"] is None, "chưa đo phải là null, không phải 0"
         assert body["mask_age_p95"] is None
         assert body["age_n"] == 0
+
+    def test_dto_http_cau_hinh_lech_va_gia_tri_hieu_luc(self, live_client, monkeypatch):
+        """Cờ cấu hình lệch phải đi tới HTTP (review 15-11, P2-2).
+
+        Không có test này thì xoá 2 dòng ở `live.py`/`routes.py` vẫn xanh toàn bộ suite + e2e (e2e stub
+        `/api/live/status` phía trình duyệt) ⇒ trường "chết trong adapter" mà không ai biết.
+        """
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(cau_hinh_lech=("image_size",), image_size_hieu_luc=1024)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["cau_hinh_lech"] == ["image_size"]
+        assert body["image_size_hieu_luc"] == 1024
+
+    def test_dto_http_cau_hinh_khop_la_list_rong_khong_phai_null(self, live_client,
+                                                                 monkeypatch):
+        """`()` → `[]` (đã kiểm, không lệch) KHÁC `null` (chưa biết) — gộp là bịa bằng chứng."""
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(cau_hinh_lech=(), image_size_hieu_luc=192)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["cau_hinh_lech"] == []
+        assert body["image_size_hieu_luc"] == 192
+
+    def test_dto_http_cau_hinh_chua_biet_la_null(self, live_client, monkeypatch):
+        """`None` (worker bản cũ) → `null`; đổi thành `[]`/`0` là nói dối "đã kiểm"."""
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry()
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["cau_hinh_lech"] is None
+        assert body["image_size_hieu_luc"] is None
 
     def test_dto_http_chuyen_so_that(self, live_client, monkeypatch):
         class _Source(_TelemetrySource):

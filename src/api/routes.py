@@ -158,6 +158,8 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             mask_age_total_ms=status.mask_age_total_ms,
             mask_age_p95=status.mask_age_p95,
             age_n=status.age_n,
+            cau_hinh_lech=list(status.cau_hinh_lech) if status.cau_hinh_lech is not None else None,
+            image_size_hieu_luc=status.image_size_hieu_luc,
             message=status.message,
         )
 

@@ -145,6 +145,17 @@ class LiveStatusResponse(BaseModel):
         description="Phân vị 95 tuổi dữ liệu trên cửa sổ `age_n` mẫu; `null` khi chưa đủ mẫu",
     )
     age_n: int = Field(default=0, ge=0, description="số mẫu của cửa sổ tuổi dữ liệu (0 ⇒ chưa đo)")
+    cau_hinh_lech: list[str] | None = Field(
+        default=None,
+        description="Khoá mà model chạy KHÁC cấu hình yêu cầu (vd ['image_size']); `null` = CHƯA BIẾT "
+                    "(worker bản cũ / khoá null); `[]` = không khoá nào lệch — NHƯNG `[]` + "
+                    "`image_size_hieu_luc == null` = CHƯA KIỂM ĐƯỢC, không phải 'đã khớp'",
+    )
+    image_size_hieu_luc: int | None = Field(
+        default=None,
+        description="`image_size` model THẬT SỰ dùng (đọc từ predictor); `null` = CHƯA kiểm được — "
+                    "khi đó `cau_hinh_lech == []` KHÔNG chứng minh model chạy đúng cấu hình",
+    )
     stability: float | None = Field(
         default=None, ge=0, le=1,
         description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy). `null` = CHƯA ĐO "

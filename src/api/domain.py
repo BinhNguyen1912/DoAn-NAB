@@ -131,6 +131,12 @@ class LiveStatus:
     mask_age_total_ms: float | None = None
     mask_age_p95: float | None = None
     age_n: int = 0
+    # Cấu hình YÊU CẦU vs HIỆU LỰC (15-11): `cau_hinh_lech` = danh sách khoá model chạy KHÁC yêu cầu;
+    # `image_size_hieu_luc` = độ phân giải model THẬT SỰ dùng. Ba trạng thái: `None` = CHƯA BIẾT (worker
+    # bản cũ), `()` = không khoá nào lệch nhưng `image_size_hieu_luc is None` ⇒ vẫn có thể **chưa kiểm
+    # được**, có phần tử = LỆCH thật. Cấm đọc `()` thành "đã kiểm và khớp" (AGENTS §6).
+    cau_hinh_lech: tuple[str, ...] | None = None
+    image_size_hieu_luc: int | None = None
     message: str = ""
 
 
@@ -157,6 +163,11 @@ class LiveTelemetry:
     mask_age_total_ms: float | None = None
     mask_age_p95: float | None = None
     age_n: int = 0
+    # Xem `LiveStatus.cau_hinh_lech`. `None` = CHƯA BIẾT (worker bản cũ / khoá null); `()` = không khoá
+    # nào lệch (kèm `image_size_hieu_luc is None` thì vẫn là "chưa kiểm được"). `image_size_hieu_luc` đi
+    # kèm để UI nói được "model đang chạy 1024 px".
+    cau_hinh_lech: tuple[str, ...] | None = None
+    image_size_hieu_luc: int | None = None
 
 
 @dataclass(frozen=True)

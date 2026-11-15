@@ -468,6 +468,12 @@ Quy tắc trung thực (đã khoá bằng test — `tests/test_device.py`, `test
   lúc đang nạp model ⇒ không phải đọc `worker.log` để biết phiên chạy CPU hay GPU (ticket 21).
   Chế độ `raw` (không chạy model) trả `device: ""` = **chưa biết**, giao diện ẩn dòng đó — chuỗi
   rỗng nghĩa là "chưa biết", KHÔNG phải "cpu".
+- **Cấu hình yêu cầu ≠ cấu hình hiệu lực (15-11):** `status.json` + `/api/live/status` có
+  `cau_hinh` (`image_size_hieu_luc` đọc từ predictor) và `cau_hinh_lech` = danh sách khoá model chạy
+  KHÁC tham số đã yêu cầu; HUD in cảnh báo đỏ (`role="alert"`) khi lệch, vì mọi số FPS/độ trễ/tuổi
+  mask khi đó gắn với một cấu hình khác. Ba trạng thái KHÔNG gộp được: `null` = **chưa biết** (worker
+  bản cũ), `[]` = không khoá nào lệch — **nhưng `[]` + `image_size_hieu_luc == null` = chưa kiểm
+  được** (HUD in hint, không in "đã khớp"), có phần tử = lệch thật.
 
 ## 4. Đóng góp của sinh viên vs thành phần có sẵn
 

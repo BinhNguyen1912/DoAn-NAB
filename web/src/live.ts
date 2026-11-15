@@ -75,6 +75,50 @@ export function maskAgeIsStale(status: MaskAge | null | undefined): boolean {
   return total != null && Number.isFinite(total) && total >= MASK_AGE_CANH_BAO_MS
 }
 
+/** Ba trường của `/api/live/status` cần cho dòng cấu hình; `state` để KHÔNG báo "chưa kiểm được"
+ * trong lúc worker còn đang nạp model (20–240 s) — đó là bình thường, không phải bất thường. */
+type CauHinh = {
+  cau_hinh_lech?: string[] | null
+  image_size_hieu_luc?: number | null
+  state?: string
+}
+
+/** Dòng cảnh báo "model chạy KHÁC cấu hình đã yêu cầu" — `null` khi không có gì để nói.
+ *
+ * Vì sao phải hiện: `--image-size 192` chỉ là **yêu cầu**; nếu override không được áp thì model chạy
+ * 1024 và mọi số của phiên (FPS, độ trễ, tuổi mask) gắn với một cấu hình KHÁC cấu hình người dùng
+ * chọn (15-11). Trước đây cảnh báo chỉ nằm trong `worker.log` ⇒ người ngồi xem không biết.
+ *
+ * Bốn trạng thái KHÔNG được gộp (AGENTS §6):
+ *  - `cau_hinh_lech == null` ⇒ **CHƯA BIẾT** (worker bản cũ) → không in gì, KHÔNG in "đã khớp";
+ *  - `[]` + `image_size_hieu_luc` có số ⇒ đã kiểm và khớp → không in gì;
+ *  - `[]` + `image_size_hieu_luc == null` ⇒ **CHƯA KIỂM ĐƯỢC** (`so_khop_cau_hinh` trả `[]` cả khi
+ *    không đọc được `image_size` của predictor) → hint, KHÔNG phải "đã khớp" (review 15-11, P2);
+ *  - có phần tử ⇒ cảnh báo đỏ, kèm giá trị thật nếu biết.
+ */
+export function configMismatchLine(status: CauHinh | null | undefined): string | null {
+  const lech = status?.cau_hinh_lech
+  if (!Array.isArray(lech)) return null
+  const thuc = status?.image_size_hieu_luc
+  const bietThuc = thuc != null && Number.isFinite(thuc)
+  if (lech.length === 0) {
+    // "Không khoá nào lệch" ≠ "đã kiểm": giai đoạn `loading` và ca predictor không khai báo
+    // `image_size` đều rơi vào đây.
+    if (bietThuc || status?.state !== 'running') return null
+    return 'Cấu hình: CHƯA kiểm được model chạy ở độ phân giải nào — đừng coi là đã khớp yêu cầu'
+  }
+  const khoa = lech.join(', ')
+  const con = bietThuc ? ` (model đang chạy ${thuc} px)` : ''
+  return `CẤU HÌNH LỆCH (${khoa})${con}: số của phiên này gắn với cấu hình KHÁC cấu hình đã chọn — ` +
+    'dừng và bật lại với đúng tham số trước khi trích số'
+}
+
+/** Có nên tô cảnh báo (role="alert") cho dòng cấu hình không: chỉ khi LỆCH thật. */
+export function configMismatchIsAlert(status: CauHinh | null | undefined): boolean {
+  const lech = status?.cau_hinh_lech
+  return Array.isArray(lech) && lech.length > 0
+}
+
 type Drift = Pick<LiveStatus, 'mask_fps' | 'drift_p05' | 'drift_n'>
 
 /** Dòng chẩn đoán "ô bao đang hiển thị khớp lần VOS kế tiếp bao nhiêu"; `null` khi không có model.

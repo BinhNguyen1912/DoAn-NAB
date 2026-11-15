@@ -266,7 +266,10 @@ async function waitJobState(page, wanted, timeout = 240000) {
       body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
                              device: 'cuda', message: 'stub',
                              // Tuổi dữ liệu ảnh (việc #8): 2,6 s = vượt ngưỡng ⇒ HUD phải nói TO
-                             mask_age_total_ms: 2600, mask_age_p95: 900, age_n: 40 }) })
+                             mask_age_total_ms: 2600, mask_age_p95: 900, age_n: 40,
+                             // Cấu hình lệch (15-11): model chạy 1024 trong khi yêu cầu 192 ⇒ mọi số
+                             // trên HUD gắn với cấu hình khác ⇒ HUD phải cảnh báo, không im lặng.
+                             cau_hinh_lech: ['image_size'], image_size_hieu_luc: 1024 }) })
   })
   const deviceText = await liveCard.getByTestId('device-line').innerText({ timeout: 8000 })
     .catch(() => '')
@@ -282,6 +285,28 @@ async function waitJobState(page, wanted, timeout = 240000) {
   const ageRole = await liveCard.getByTestId('mask-age').getAttribute('role').catch(() => null)
   check('cảnh báo mask cũ có role=alert (screen reader đọc ngay)',
     ageRole === 'alert', `role=${ageRole}`)
+  // Cấu hình lệch phải đi hết chuỗi status.json → LiveTelemetry → schema → api.ts → HUD (15-11).
+  const cfgText = await liveCard.getByTestId('config-mismatch').innerText({ timeout: 8000 })
+    .catch(() => '')
+  check('HUD cảnh báo CẤU HÌNH LỆCH (model đang chạy 1024 px)',
+    /CẤU HÌNH LỆCH/.test(cfgText) && /1024/.test(cfgText),
+    cfgText.replace(/\s+/g, ' ') || '(không thấy dòng cấu hình)')
+  const cfgRole = await liveCard.getByTestId('config-mismatch').getAttribute('role').catch(() => null)
+  check('cảnh báo cấu hình lệch có role=alert (screen reader đọc ngay)',
+    cfgRole === 'alert', `role=${cfgRole}`)
+  // Ca ÂM (review 15-11, P3-9): đã kiểm và KHỚP thì KHÔNG được hiện dòng nào — một hồi quy kiểu
+  // `lech.length >= 0` sẽ render khung rỗng và không ai bắt.
+  await page.unroute('**/api/live/status')
+  await page.route('**/api/live/status', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+                             device: 'cuda', message: 'stub',
+                             cau_hinh_lech: [], image_size_hieu_luc: 192 }) })
+  })
+  await page.waitForTimeout(1300)                    // > 1 chu kỳ poll status (1 s)
+  check('cấu hình KHỚP ([]) thì HUD không hiện dòng cấu hình (không báo oan)',
+    await liveCard.getByTestId('config-mismatch').count() === 0,
+    `số dòng = ${await liveCard.getByTestId('config-mismatch').count()}`)
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 

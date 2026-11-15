@@ -166,6 +166,12 @@ class WorkerFrameSource(FrameSource):
             mask_age_total_ms=_so_hoac_none(status.get("mask_age_total_ms")),
             mask_age_p95=_so_hoac_none(status.get("mask_age_p95")),
             age_n=int(status.get("age_n") or 0),
+            # Cấu hình lệch (15-11): khoá VẮNG MẶT ⇒ `None` = CHƯA BIẾT (worker bản cũ), khác `()` =
+            # "đã kiểm và khớp". Đổi vắng mặt thành `()` sẽ biến "không biết" thành "khớp" — đúng bẫy
+            # `None` vs `0` của AGENTS §6.
+            cau_hinh_lech=_lech_cau_hinh(status),
+            image_size_hieu_luc=_so_nguyen_hoac_none(_gia_tri_cau_hinh(status,
+                                                                         "image_size_hieu_luc")),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource
@@ -389,6 +395,45 @@ def _so_hoac_none(value) -> float | None:
     try:
         return None if value is None else float(value)
     except (TypeError, ValueError):
+        return None
+
+
+def _gia_tri_cau_hinh(status: dict, khoa: str):
+    """Một khoá trong khối `cau_hinh` của status.json (None nếu khối thiếu/không phải dict)."""
+    khoi = status.get("cau_hinh")
+    return khoi.get(khoa) if isinstance(khoi, dict) else None
+
+
+def _lech_cau_hinh(status: dict) -> tuple[str, ...] | None:
+    """`cau_hinh_lech` từ status.json → `tuple` | `None`.
+
+    `None` = **CHƯA BIẾT**: khoá vắng mặt (worker bản cũ) HOẶC khoá có mặt nhưng `null` (cách viết tự
+    nhiên nhất của "chưa biết" trong JSON). `()` = có danh sách và rỗng ⇒ không có khoá nào lệch
+    (nhưng xem `image_size_hieu_luc == None` ⇒ vẫn có thể là CHƯA KIỂM ĐƯỢC). Hai nghĩa này KHÔNG được
+    gộp (AGENTS §6) — `or []` từng biến "không biết" thành "đã khớp" (P2 review 15-11).
+    """
+    if "cau_hinh_lech" not in status:
+        return None
+    gia_tri = status.get("cau_hinh_lech")
+    if gia_tri is None:
+        return None
+    if isinstance(gia_tri, str):                 # phòng khi file bị sửa tay
+        return (gia_tri,)
+    try:
+        return tuple(str(x) for x in gia_tri)
+    except TypeError:
+        return None
+
+
+def _so_nguyen_hoac_none(gia_tri) -> int | None:
+    """int | None — `None` giữ nguyên là "chưa biết", không đổi thành 0.
+
+    Bắt cả `OverflowError`: `json.loads` chấp nhận `Infinity` nên một `status.json` rác có thể làm
+    `int(float("inf"))` ném lỗi (P3 review 15-11).
+    """
+    try:
+        return None if gia_tri is None else int(gia_tri)
+    except (TypeError, ValueError, OverflowError):
         return None
 
 

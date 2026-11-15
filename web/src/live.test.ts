@@ -4,6 +4,8 @@ import {
   deviceLine,
   driftLine,
   maskAgeIsStale,
+  configMismatchIsAlert,
+  configMismatchLine,
   maskAgeLine,
   maskRhythmLine,
   shownFps,
@@ -234,5 +236,59 @@ describe('maskAgeLine', () => {
       const line = maskAgeLine({ mask_age_total_ms: total, mask_age_p95: null, age_n: 0 })
       expect(line).toBeNull()
     }
+  })
+})
+
+describe('configMismatchLine', () => {
+  // 15-11: `--image-size 192` chỉ là YÊU CẦU; nếu override không được áp thì model chạy 1024 và mọi số
+  // trên HUD gắn với cấu hình khác cấu hình người dùng chọn. Trước đây cảnh báo chỉ ở worker.log.
+  it('có lệch thì in rõ khoá + giá trị model đang chạy, và là cảnh báo', () => {
+    const status = { cau_hinh_lech: ['image_size'], image_size_hieu_luc: 1024 }
+    const line = configMismatchLine(status)
+    expect(line).toContain('CẤU HÌNH LỆCH (image_size)')
+    expect(line).toContain('1024 px')
+    expect(line).toContain('KHÁC cấu hình đã chọn')
+    expect(configMismatchIsAlert(status)).toBe(true)
+  })
+
+  it('lệch mà không biết giá trị thật thì vẫn cảnh báo, không bịa số', () => {
+    const line = configMismatchLine({ cau_hinh_lech: ['image_size'], image_size_hieu_luc: null })
+    expect(line).toContain('CẤU HÌNH LỆCH')
+    expect(line).not.toContain('px)')
+    expect(configMismatchIsAlert({ cau_hinh_lech: ['image_size'], image_size_hieu_luc: null }))
+      .toBe(true)
+  })
+
+  it('null = CHƯA BIẾT (worker bản cũ) ⇒ không in gì, KHÔNG in "đã khớp"', () => {
+    // Cùng bẫy None vs 0 của AGENTS §6: "không có dữ liệu" không phải "đã kiểm và khớp".
+    expect(configMismatchLine({ cau_hinh_lech: null, image_size_hieu_luc: null })).toBeNull()
+    expect(configMismatchLine({})).toBeNull()
+    expect(configMismatchLine(null)).toBeNull()
+    expect(configMismatchIsAlert({ cau_hinh_lech: null })).toBe(false)
+  })
+
+  it('rỗng + CÓ số độ phân giải = đã kiểm và khớp ⇒ không in gì', () => {
+    const status = { cau_hinh_lech: [], image_size_hieu_luc: 192, state: 'running' }
+    expect(configMismatchLine(status)).toBeNull()
+    expect(configMismatchIsAlert(status)).toBe(false)
+  })
+
+  it('rỗng mà KHÔNG đọc được độ phân giải = chưa kiểm được ⇒ hint, không phải "đã khớp"', () => {
+    // `so_khop_cau_hinh` trả [] cả khi `image_size_hieu_luc is None` (review 15-11, P2-1):
+    // im lặng ở đây là để người đọc hiểu "đã kiểm và khớp" — một lời khẳng định không có bằng chứng.
+    const status = { cau_hinh_lech: [], image_size_hieu_luc: null, state: 'running' }
+    const line = configMismatchLine(status)
+    expect(line).toContain('CHƯA kiểm được')
+    expect(configMismatchIsAlert(status)).toBe(false)   // hint, KHÔNG phải cảnh báo đỏ
+  })
+
+  it('đang nạp model thì không báo "chưa kiểm được" (chuyện bình thường)', () => {
+    expect(configMismatchLine({ cau_hinh_lech: [], image_size_hieu_luc: null, state: 'loading' }))
+      .toBeNull()
+  })
+
+  it('nhiều khoá lệch thì liệt kê hết', () => {
+    expect(configMismatchLine({ cau_hinh_lech: ['image_size', 'vos_every'] }))
+      .toContain('image_size, vos_every')
   })
 })

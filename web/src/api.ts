@@ -155,6 +155,13 @@ export interface LiveStatus {
   mask_age_p95: number | null
   /** số mẫu của cửa sổ tuổi dữ liệu (0 ⇒ chưa đo) */
   age_n: number
+  /** khoá mà model chạy KHÁC cấu hình đã yêu cầu (vd ['image_size']);
+   *  `null` = CHƯA BIẾT (worker bản cũ / khoá null) — null KHÔNG phải "khớp";
+   *  `[]` = không khoá nào lệch, NHƯNG `[]` + `image_size_hieu_luc == null` = CHƯA KIỂM ĐƯỢC */
+  cau_hinh_lech: string[] | null
+  /** `image_size` model THẬT SỰ dùng; `null` = CHƯA kiểm được (khi đó `[]` ở trên không chứng
+   *  minh model chạy đúng cấu hình) */
+  image_size_hieu_luc: number | null
   message: string
 }
 
