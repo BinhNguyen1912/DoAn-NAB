@@ -21,6 +21,33 @@
 | Không chấm được frame nào | `mIoU = None` | không bao giờ in `0` cho "chưa đo" |
 | GT có phần do **model gợi ý** | **từ chối chấm** | chấm mIoU trên mask model tự sinh = đo chính nó, không phải đo chất lượng |
 
+### 1.1. Dạng GT phải KHAI (`dang_gt`) — nếu không, con số bị gắn sai nghĩa
+
+`index.json` của bộ GT phải khai **hình dạng** GT và cách làm ra nó:
+
+| `dang_gt` | Nghĩa | Con số đo được gì |
+|---|---|---|
+| `silhouette` | mask **của vật** (người tô) | mIoU phân đoạn — so được với báo cáo/DAVIS (với cùng điều kiện) |
+| `hop_bao` | **hộp chữ nhật** bao vật | IoU(mask, hộp) — chỉ nói mask có nằm ĐÚNG VÙNG; **chặn trên ~0,75–0,85** vì hộp > vật |
+
+- Thiếu khoá ⇒ **cảnh báo mềm** ("không biết dạng GT") + **exit 1**.
+- `hop_bao` ⇒ cảnh báo mềm nêu rõ "KHÔNG phải mIoU phân đoạn" + exit 1 (số vẫn ghi vào artifact, nhưng
+  `meta.dang_gt`/`meta.phuong_phap_gt`/`canh_bao_gt` đi kèm).
+- `label` **không** tự khai hộ: phải truyền `--dang-gt silhouette|hop_bao` (trước 15-11 nó ghi cứng
+  `silhouette`, và một bộ GT vẽ bằng **hộp** đã lọt qua cổng với exit 0).
+- `nguon_gt` ghi ai/máy nào dựng GT. Máy đề xuất (ngưỡng màu…) + người soi **vẫn phải** khai, và sai
+  số của bộ dựng GT **chưa đo** thì phải nói ra.
+
+**Mã thoát của `score`:** `0` = chấm xong, không cảnh báo · `1` = chấm được nhưng có cảnh báo (GT hộp
+bao / thiếu người gán / không khai `dang_gt` / `git_loi` / không chấm được frame nào) · `2` = **TỪ CHỐI**
+(thiếu file GT, GT do model gợi ý, index hỏng). Đừng cắm `./run miou` vào CI mà coi exit 1 là đỏ: nó là
+"đọc kèm cảnh báo".
+
+**Chỉ số phụ `mask_ngoai_gt`:** phần mask nằm **ngoài** GT (thấp = không tràn ra ngoài). Nó **một phía**
+— `0` KHÔNG có nghĩa mask phủ đủ vật (mask tí xíu nằm trong hộp cũng cho `0`), và nó không bị chặn trên
+bởi GT hộp bao. Đọc kèm `mask_ngoai_gt_n` (số frame dùng được; frame model trả mask **rỗng** bị loại vì
+không có gì để tràn, trong khi `mIoU` vẫn tính 0,0 cho frame đó).
+
 ## 2. Cách làm GT cho video THẬT (≈ 20–30 phút cho 10–20 frame)
 
 ```bash
@@ -75,12 +102,20 @@ Kết quả: **mIoU 0,9354 trên 5 frame**, `coverage = 0,208` (5/24 frame có G
 **Đây là CẬN TRÊN**: GT ≡ đúng vùng pixel của ô vuông và prompt là đúng bbox của nó. Cấm trích như
 "mIoU trên video thật/DAVIS" (AGENTS §6).
 
-## 4. Vì sao chưa có mIoU trên video thật
+## 4. Trạng thái trên video THẬT (15-11)
 
-Cần **người** gán tay (bước 2 ở trên). Việc này không tự động hoá được một cách trung thực — và
-đó chính là lý do nó chưa có trong repo. Khi có GT tay:
-`mIoU` + `mIoU_p05` + bảng từng frame trong artifact; thêm dòng vào `REGISTRY` của
-`scripts/so_lieu_bao_cao.py` rồi chạy lại script đó để số vào `docs/so-lieu-bao-cao.md`.
+**Chưa có GT `silhouette`** cho video thật (cần người tô theo bước 2 — không tự động hoá trung thực
+được). Đã có **GT hộp bao** cho `binh1` (12 frame): `docs/gt/binh1_hopbao` — dựng từ ngưỡng màu nhãn
+tím + người soi 12/12 frame, sửa tay frame 62.
+
+Số hiện có (`data/miou_binh1_hopbao_2026-11-15_metrics.json`, mask @192, `vos_every 1`):
+**IoU(mask, hộp) = 0,6464** (n=12, min 0,469 @f12, max 0,774 @f92) và **`mask_ngoai_gt` trung bình
+3,9 %** (tệ nhất 29,4 % @f62 — frame GT sửa tay, đọc kèm). Đây **không** phải mIoU phân đoạn; xem
+`docs/so-lieu-bao-cao.md` (cột "cấm trích") trước khi đưa vào slide.
+
+Muốn có mIoU phân đoạn: `score_miou.py label --dang-gt silhouette …` → tô **đặc** silhouette →
+`score --gt docs/gt/<tên>`; thêm 1 dòng vào `REGISTRY` của `scripts/so_lieu_bao_cao.py` rồi chạy lại
+script đó để số vào `docs/so-lieu-bao-cao.md`.
 
 ## 5. Liên quan
 

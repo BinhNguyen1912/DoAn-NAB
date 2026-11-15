@@ -15,6 +15,18 @@
 | `data/binh1.mp4` | 720×1280 · 333 | chai xịt tím | `300,275,150,410` | **`0:110` và `165:262`** (lặp cờ) | giữa clip người ta **cất chai đi** (frame ~125–160) rồi đưa lại; ô `104,308,209,287` là **khuôn mặt**, không dùng |
 | `data/binh2.mp4` | 720×1280 · 360 | chai trắng | `330,330,150,360` | **`0:160`** | chai trắng rời khung 165–240 và sau ~265; ô `200,400,300,500` phủ **2 chai + 2 tay**, không dùng |
 
+### 1.1. Đính chính (15-11): `288,287,431,734` **không phải** ô khác — cùng ô chai nhưng sai ĐỊNH DẠNG
+
+CSSV drift ghi ô dạng **`x1,y1,x2,y2`** = `288,287,719,1021` ⇒ cùng chỗ với ô chai ở bảng trên
+(`300,275,150,410`), nhưng nếu đem nguyên chuỗi `288,287,431,734` vào `--bbox` (`x,y,w,h`) thì thành hộp
+**431×734** (≈316k px, phủ chai + **tay + thân người**) — đúng bẫy `(x,y,w,h) ≠ (x1,y1,x2,y2)` của
+AGENTS §6, và nó đã làm mask model phình lên 168k px khi dùng làm **prompt** (15-11).
+
+Hệ quả cần biết: hai bảng `data/bang_cau_hinh_2026-11-14/15-11_metrics.json` và
+`data/ab_192_vs_320_2026-11-14_metrics.json` được đo bằng `bbox.json = {x:288, y:287, w:431, h:734}`
+(tức hộp 431×734, **không phải** ô chai 150×410). Các số đó là **thời gian/độ trễ** nên vẫn dùng được,
+nhưng đừng gọi đó là "ô chai"; muốn đo lại theo ô chai thì dùng `300,275,150,410`.
+
 Hai ô trên chỉ là **prompt của frame 0** — SAM 2 bám theo vật sau đó, nên không cần cập nhật ô.
 **Đừng** hiểu "ô phải nằm trên vật ở mọi frame": contact sheet cho thấy vật rời khỏi ô ngay từ frame ~25
 (một cách bình thường).

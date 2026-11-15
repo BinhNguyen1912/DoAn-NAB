@@ -111,9 +111,14 @@
       ]
     }
   ],
-  "nguoi_gan": "đề xuất bằng NGƯỠNG MÀU nhãn tím (không dùng model); soi 12/12 frame bằng mắt",
+  "nguoi_gan": "BinhNguyen1912",
   "gt_do_model_goi_y": false,
   "dang_gt": "hop_bao",
-  "phuong_phap_gt": "hộp bao chai lấy từ ngưỡng màu nhãn tím (HSV) + phần trắng phía trên; KHÔNG dùng mask của model. Đây là DẠNG HỘP BAO ⇒ con số là IoU(mask, hộp), không phải mIoU phân đoạn silhouette; chặn trên bị giới hạn bởi tỉ lệ diện tích chai/hộp (~0,7-0,85); frame 62 (chai nghiêng) sửa tay vì ngưỡng màu bắt dính nền",
-  "huong_dan": "silhouette thật thì dùng scripts/score_miou.py label + tô tay (docs/thuoc-do-bam-dung.md)"
+  "phuong_phap_gt": "hộp bao chai dựng từ ngưỡng màu nhãn tím (HSV) + phần trắng phía trên, KHÔNG dùng mask của model; người soi 12/12 frame bằng ảnh, sửa tay frame 62 (chai nghiêng). KHÔNG phải GT gán tay; SAI SỐ của hộp CHƯA ĐO. Đây là dạng HỘP BAO ⇒ con số là IoU(mask, hộp), không phải mIoU phân đoạn silhouette; max IoU quan sát được là 0,774 (frame 92), cận trên lý thuyết max(|vật ∩ hộp|/|hộp|) CHƯA đo.",
+  "huong_dan": "silhouette thật thì dùng scripts/score_miou.py label + tô tay (docs/thuoc-do-bam-dung.md)",
+  "nguon_gt": "máy: ngưỡng màu HSV nhãn tím + phần trắng phía trên; người soi 12/12 frame (sửa tay frame 62)",
+  "frame_hw": [
+    720,
+    1280
+  ]
 }

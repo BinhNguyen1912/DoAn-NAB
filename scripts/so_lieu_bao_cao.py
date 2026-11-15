@@ -89,9 +89,11 @@ REGISTRY = [
     # ── Việc #6 (14-11): mIoU vs GT — thước đo DUY NHẤT nói được đúng/sai ───────────────────────
     ("mIoU mask vs GT trên fixture TỔNG HỢP (ô vuông trên nền nhiễu)", "data/miou_synthetic_2026-11-14_metrics.json",
      "ket_qua.mIoU", "IoU",
-     "CẬN TRÊN: GT ≡ pixel ô vuông, prompt = đúng bbox của nó. Số này chấm trên `so_frame_cham` "
-     "frame trong tổng `so_frame_gt` — CẤM nói 'mIoU cả clip'. CẤM trích như mIoU trên video thật — "
-     "muốn số thật thì gán tay (`scripts/score_miou.py label`).",
+     "CẬN TRÊN: GT ≡ pixel ô vuông, prompt = đúng bbox của nó. Số này chấm trên `ket_qua.n_cham` "
+     "frame trong tổng `ket_qua.so_frame_tong` — CẤM nói 'mIoU cả clip'. CẤM trích như mIoU trên video "
+     "thật — muốn số thật thì gán tay (`scripts/score_miou.py label --dang-gt silhouette`). "
+     "Artifact này sinh TRƯỚC 15-11 nên KHÔNG có `meta.dang_gt`/`mask_ngoai_gt` (GT của nó là "
+     "silhouette theo cấu trúc fixture).",
      {"n": "ket_qua.n_cham"}),
     # ── 15-11: mIoU trên VIDEO THẬT (`binh1`), nhưng GT là HỘP BAO — phải gọi đúng tên ─────────
     ("IoU mask vs HỘP BAO chai trên 12 frame VIDEO THẬT (`binh1`, `image_size 192`, `vos_every 1`)",
@@ -105,8 +107,10 @@ REGISTRY = [
     ("Phần mask TRÀN ra ngoài vùng chai (12 frame thật, `binh1`)",
      "data/miou_binh1_hopbao_2026-11-15_metrics.json",
      "ket_qua.mask_ngoai_gt_mean", "tỉ lệ (thấp = tốt)",
-     "Đây KHÔNG phải mIoU; nó đo over-segmentation (mask ăn sang tay/nền). Đọc kèm "
-     "`mask_ngoai_gt_max` + `mask_ngoai_gt_max_frame` — frame tệ nhất khác hẳn trung bình.",
+     "Đây KHÔNG phải mIoU và nó **một phía**: 0 nghĩa là mask không tràn ra ngoài hộp, KHÔNG có nghĩa "
+     "mask phủ đủ vật (mask tí xíu nằm trong hộp cũng cho 0). Đọc kèm `mask_ngoai_gt_max` + "
+     "`mask_ngoai_gt_max_frame` + `mask_ngoai_gt_n` (mẫu số có thể < `n_cham`); frame tệ nhất ở đây là "
+     "frame GT sửa tay ⇒ đọc kèm, đừng quy hết cho model.",
      {"n": "ket_qua.n_cham"}),
 ]
 

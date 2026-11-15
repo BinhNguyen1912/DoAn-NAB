@@ -112,6 +112,9 @@ def cham(ds_frame, gt_dir: Path) -> dict:
         "mIoU_p05": None if len(miou) < 5 else round(float(np.percentile(miou, 5)), 4),
         # Tỉ lệ mask nằm NGOÀI GT: trung bình + frame tệ nhất (kèm `frame_idx` để truy lại ảnh).
         "mask_ngoai_gt_mean": None if not tran_vals else round(float(np.mean(tran_vals)), 4),
+        # `_n`: mẫu số của trung bình "tràn" KHÁC `n_cham` khi có frame model trả mask RỖNG (không có gì
+        # để tràn). Thiếu `_n` thì con số lạc quan một cách im lặng (luật `*_n` của AGENTS §6).
+        "mask_ngoai_gt_n": len(tran_vals),
         "mask_ngoai_gt_max": None if not tran_vals else round(float(max(tran_vals)), 4),
         "mask_ngoai_gt_max_frame": None if not tran_vals else max(
             (r for r in rows if r.get("mask_ngoai_gt") is not None),
@@ -245,6 +248,12 @@ def main(argv=None) -> int:
     lbl.add_argument("--frames", required=True, help='danh sách frame_idx, vd "0,50,120"')
     lbl.add_argument("--ten", required=True, help="tên bộ GT (thư mục con của docs/gt)")
     lbl.add_argument("--nguoi-gan", default="", help="ai chịu trách nhiệm gán (bắt buộc để dùng làm bằng chứng)")
+    # DẠNG GT phải do NGƯỜI KHAI, không hard-code: bản trước ghi cứng `silhouette` ngay khi sinh frame
+    # ⇒ nếu người vẽ HỘP (ca thật 15-11) thì index khai sai và chốt chặn "GT hộp bao" KHÔNG BAO GIỜ in ra.
+    lbl.add_argument("--dang-gt", choices=["silhouette", "hop_bao"], default=None,
+                     help="silhouette = mask vật (tô tay) | hop_bao = hộp chữ nhật bao vật")
+    lbl.add_argument("--phuong-phap-gt", default="",
+                     help="mô tả cách làm GT (vd 'người tô tay trên frame gốc') — vào meta artifact")
     lbl.add_argument("--gt-do-model-goi-y", action="store_true",
                      help="đánh dấu GT này có phần do model gợi ý (sẽ bị từ chối khi chấm điểm)")
 
@@ -264,10 +273,10 @@ def main(argv=None) -> int:
             "clip": args.clip, "ten": args.ten, "frames": [
                 {"frame_idx": f} for f in sorted(set(frames))],
             "nguoi_gan": args.nguoi_gan, "gt_do_model_goi_y": bool(args.gt_do_model_goi_y),
-            # `label` sinh frame để NGƯỜI tô silhouette ⇒ khai báo luôn DẠNG GT, để artifact chấm điểm
-            # tự nói nó đo silhouette hay hộp bao (`meta.dang_gt`).
-            "dang_gt": "silhouette",
-            "phuong_phap_gt": "người tô tay trên frame gốc (docs/thuoc-do-bam-dung.md)",
+            # `label` sinh frame TRƯỚC khi người tô ⇒ KHÔNG được tự khai dạng GT (`--dang-gt` mới khai).
+            # Không khai thì `kiem_index` cảnh báo "không biết dạng GT" ⇒ exit 1, không công bố im lặng.
+            "dang_gt": args.dang_gt,
+            "phuong_phap_gt": args.phuong_phap_gt or None,
             "tao_luc": datetime.now().isoformat(timespec="seconds"),
             "huong_dan": ("Tô trắng vùng vật trên frame_<idx>.png rồi lưu thành gt_<idx>.png CÙNG "
                           "thư mục. Mask phải cùng kích thước frame gốc; nền đen, vật trắng."),
@@ -336,8 +345,9 @@ def main(argv=None) -> int:
             "mask_manifest": _doc_manifest(pred_dir),
             "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; "
                           "GT rỗng không chấm; model rỗng mà GT có vật = 0,0; "
-                          "`mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = tốt, không bị chặn trên "
-                          "bởi GT hộp bao)",
+                          "`mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; "
+                          "một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là "
+                          "IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn",
         },
         "ket_qua": ket_qua,
         "canh_bao_gt": mem, "loi_chan": chan,
@@ -362,7 +372,11 @@ def main(argv=None) -> int:
     if kq.get("mask_ngoai_gt_mean") is not None:
         print(f"[miou] mask NGOÀI GT: trung bình {kq['mask_ngoai_gt_mean']:.1%} · tệ nhất "
               f"{kq['mask_ngoai_gt_max']:.1%} (frame {kq['mask_ngoai_gt_max_frame']}) — "
-              "thấp = tốt; đây KHÔNG phải mIoU")
+              "thấp = không tràn ra ngoài; KHÔNG nói mask phủ đủ, và KHÔNG phải mIoU")
+        if kq.get("mask_ngoai_gt_n") != kq.get("n_cham"):
+            print(f"[miou] CẢNH BÁO: 'tràn' tính trên {kq.get('mask_ngoai_gt_n')}/"
+                  f"{kq.get('n_cham')} frame — frame model trả mask RỖNG không có gì để tràn nên bị "
+                  "loại khỏi trung bình (mIoU vẫn tính 0,0)")
     if kq.get("coverage") is not None and kq["coverage"] < 1.0:
         print(f"[miou] CẢNH BÁO: chỉ chấm được {kq['n_cham']} / {kq['so_frame_tong']} frame có GT — "
               "CẤM nói 'mIoU trên cả clip' với con số này")

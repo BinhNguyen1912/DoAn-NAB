@@ -142,6 +142,21 @@ class TestCham:
         assert kq["frames"][0]["mask_ngoai_gt"] == pytest.approx(0.5)
         assert kq["mask_ngoai_gt_max_frame"] == 0
 
+    def test_mau_so_tran_loai_frame_mask_rong_va_co_dem_rieng(self, tmp_path):
+        """Frame model trả mask RỖNG vẫn vào `mIoU` (0,0) nhưng KHÔNG vào trung bình "tràn" ⇒ phải có
+        `mask_ngoai_gt_n` để con số không lạc quan một cách im lặng (P2 review 15-11)."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))
+        self._gt(gt_dir, 1, np.ones((4, 4)))
+        self._pred(pred_dir, 1, np.zeros((4, 4)))          # model rỗng ⇒ IoU 0,0, không có "tràn"
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")},
+                      {"frame_idx": 1, "pred_path": str(pred_dir / "mask_000001.png")}], gt_dir)
+        assert kq["n_cham"] == 2
+        assert kq["mask_ngoai_gt_n"] == 1 and kq["mask_ngoai_gt_mean"] == 0.0
+
     def test_model_rong_thi_tran_la_None_khong_phai_0(self, tmp_path):
         """Model rỗng ⇒ không có gì để 'tràn' ⇒ `None` (chưa đo), không phải 0,0 "hoàn hảo"."""
         gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
@@ -246,6 +261,54 @@ class TestKiemIndex:
     def test_frames_rong(self, tmp_path):
         chan, _mem = sm.kiem_index(self._index(tmp_path, frames=[]), tmp_path)
         assert any("rỗng" in x for x in chan)
+
+
+class TestLabelKhongTuKhaiDangGt:
+    """`label` sinh frame TRƯỚC khi người tô ⇒ không được khai `dang_gt = silhouette` (P1 review 15-11).
+
+    Ca thật: người dùng vẽ **hộp** chứ không tô silhouette; index khai sẵn `silhouette` nên cảnh báo
+    "GT hộp bao" không bao giờ in ra và artifact công bố số sai nghĩa với exit 0.
+    """
+
+    def _clip(self, tmp_path):
+        import cv2
+
+        clip = tmp_path / "c.mp4"
+        w = cv2.VideoWriter(str(clip), cv2.VideoWriter_fourcc(*"mp4v"), 5, (32, 24))
+        for _ in range(3):
+            w.write(np.full((24, 32, 3), 90, np.uint8))
+        w.release()
+        return clip
+
+    def test_khong_truyen_dang_gt_thi_index_de_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sm, "GT_DIR", tmp_path)          # KHÔNG ghi vào docs/gt của repo
+        clip = self._clip(tmp_path)
+        gt = tmp_path / "x"
+        assert sm.main(["label", "--clip", str(clip), "--frames", "0,2", "--ten", "x",
+                        "--nguoi-gan", "Bình"]) == 0
+        idx = json.loads((gt / "index.json").read_text(encoding="utf-8"))
+        assert idx["dang_gt"] is None, "phải để người khai, không đoán hộ"
+        assert idx["phuong_phap_gt"] is None
+
+    def test_kiem_index_canh_bao_khi_chua_khai_dang_gt(self, tmp_path, monkeypatch):
+        import cv2
+
+        monkeypatch.setattr(sm, "GT_DIR", tmp_path)
+        clip = self._clip(tmp_path)
+        gt = tmp_path / "x"
+        sm.main(["label", "--clip", str(clip), "--frames", "0", "--ten", "x", "--nguoi-gan", "B"])
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((24, 32), 255, np.uint8))
+        chan, mem = sm.kiem_index(json.loads((gt / "index.json").read_text(encoding="utf-8")), gt)
+        assert not chan and any("dang_gt" in x for x in mem)
+
+    def test_truyen_dang_gt_thi_index_ghi_dung(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(sm, "GT_DIR", tmp_path)
+        clip = self._clip(tmp_path)
+        gt = tmp_path / "x"
+        sm.main(["label", "--clip", str(clip), "--frames", "1", "--ten", "x", "--nguoi-gan", "B",
+                 "--dang-gt", "hop_bao", "--phuong-phap-gt", "ngưỡng màu"])
+        idx = json.loads((gt / "index.json").read_text(encoding="utf-8"))
+        assert idx["dang_gt"] == "hop_bao" and idx["phuong_phap_gt"] == "ngưỡng màu"
 
 
 class TestCli:
