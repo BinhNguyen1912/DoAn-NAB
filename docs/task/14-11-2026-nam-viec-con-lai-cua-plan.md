@@ -225,7 +225,7 @@ Chạy trên commit **trước** các bản sửa P0/P1 ở trên, nên phần l
 | Độ dài clip: repo ghi "3,7–5,3 s" | **Đính chính**: clip `binh1` dài **11,1 s** (333 frame), `binh2` **12,0 s**; 3,7–5,3 s là **cửa sổ vật còn trong khung** (`0:110` ∪ `165:262`). Hệ quả: cần clip **liên tục ≥ 20 s** nếu muốn demo bằng file mà không cắt |
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **`status.json` echo cấu hình hiệu lực** (`image_size`, `vos_every`, `mask_age_dinh_nghia`) + test "yêu cầu == hiệu lực" để artifact tự kiểm (phát hiện của góc "độ bền", P2).
+- [x] **`status.json` echo cấu hình hiệu lực** (`image_size`, `vos_every`, `mask_age_dinh_nghia`) + test "yêu cầu == hiệu lực" để artifact tự kiểm (phát hiện của góc "độ bền", P2) — **xong 15-11**: `docs/task/15-11-2026-status-json-echo-cau-hinh-hieu-luc.md`. Lưu ý còn nợ: artifact 14-11 sinh TRƯỚC nên chưa có echo ⇒ ticket #27 (chạy lại `./run bangcau`).
 - [ ] **`experiment_occlusion.py`**: thêm `--out` + `git_dirty_code`/`git_rev` top-level, không ghi đè tên file đã có trong `REGISTRY` của `docs/so-lieu-bao-cao.md` (rủi ro ghi đè số đã công bố).
 - [ ] **Wilson CI theo KHUNG** trong `score_miou` (n khung = 5–20; CI theo điểm sẽ thổi phồng).
 - [ ] **Gán tay 10–20 frame** cho `data/binh1.mp4` (theo `docs/thuoc-do-bam-dung.md`, ~20–30 phút) ⇒ có
