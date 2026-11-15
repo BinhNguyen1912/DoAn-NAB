@@ -1,0 +1,331 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Tô GT silhouette — binh1 (chai xịt)</title>
+<!--
+  Công cụ tô GT **silhouette** chạy trong trình duyệt (không cần cài gì, không cần mạng).
+
+  Vì sao có: 15-11, GT làm bằng công cụ hình chữ nhật cho ra **viền rỗng** + lệch ~80 px ⇒ mIoU 0,03
+  mà trông như "model bám kém". Công cụ này:
+    - luôn tô ĐẶC bằng cọ (không có công cụ hình chữ nhật ⇒ không tái diễn lỗi đó);
+    - xuất PNG ĐÚNG cỡ frame gốc, nền đen / vật trắng, tên đúng `gt_<6 số>.png` (không lệch cỡ);
+    - nhớ nét đã tô theo từng file (đổi qua lại giữa các frame không mất);
+    - có phím tắt + "tải tất cả" để lưu 1 lượt.
+
+  Cách dùng: mở file này bằng Chrome/Edge (double-click) → "Chọn 12 frame" → chọn cả thư mục
+  docs/gt/binh1_silhouette/frames → tô → "Tải tất cả PNG" → chép vào docs/gt/binh1_silhouette/.
+-->
+<style>
+  :root { color-scheme: dark; }
+  body { margin: 0; font: 14px/1.4 system-ui, sans-serif; background: #14161a; color: #e7e9ee; }
+  header { padding: 10px 14px; background: #1c1f26; display: flex; gap: 14px; flex-wrap: wrap;
+           align-items: center; border-bottom: 1px solid #2c313b; position: sticky; top: 0; z-index: 5; }
+  h1 { font-size: 15px; margin: 0 10px 0 0; font-weight: 600; }
+  button, label.btn {
+    background: #2b3038; color: #e7e9ee; border: 1px solid #3a414d; border-radius: 6px;
+    padding: 6px 10px; cursor: pointer; font: inherit;
+  }
+  button:hover, label.btn:hover { background: #363d47; }
+  button.on { background: #2f6f4f; border-color: #3f8f66; }
+  input[type=range] { width: 120px; vertical-align: middle; }
+  input[type=file] { display: none; }
+  main { display: flex; gap: 14px; padding: 14px; align-items: flex-start; }
+  #wrap { position: relative; flex: 0 0 auto; }
+  canvas#view { background: #000; border: 1px solid #2c313b; border-radius: 6px; cursor: crosshair;
+                max-height: calc(100vh - 130px); }
+  aside { flex: 1 1 260px; max-width: 380px; }
+  .hint { background: #1c1f26; border: 1px solid #2c313b; border-radius: 8px; padding: 10px 12px;
+          margin-bottom: 10px; }
+  .hint b { color: #ffd166; }
+  ol { margin: 6px 0 0 18px; padding: 0; }
+  li { margin: 3px 0; }
+  #status { font-variant-numeric: tabular-nums; }
+  #list { max-height: 42vh; overflow: auto; border: 1px solid #2c313b; border-radius: 8px; }
+  #list div { padding: 5px 9px; border-bottom: 1px solid #23272f; cursor: pointer; display: flex;
+              justify-content: space-between; gap: 8px; }
+  #list div:hover { background: #23272f; }
+  #list div.cur { background: #2c3a4a; }
+  #list .done { color: #6ee7a8; }
+  kbd { background: #2b3038; border: 1px solid #3a414d; border-radius: 4px; padding: 0 4px; }
+  #warn { color: #ff9f68; }
+</style>
+
+<header>
+  <h1>Tô GT silhouette — <code>binh1</code> (chai xịt tím)</h1>
+  <label class="btn">1. Chọn 12 frame…<input id="files" type="file" multiple accept="image/png,image/jpeg"></label>
+  <label class="btn" title="Chọn cả thư mục frames/ (Chrome/Edge)">…hoặc chọn cả thư mục<input id="dir" type="file" webkitdirectory directory multiple></label>
+  <span>Cọ <input id="size" type="range" min="8" max="160" value="48"><span id="sizelab">48 px</span></span>
+  <button id="brush" class="on" title="phím B">Cọ tô (B)</button>
+  <button id="erase" title="phím E">Tẩy (E)</button>
+  <button id="clear" title="phím X">Xoá nét frame này</button>
+  <button id="undo" title="Ctrl+Z">↶ Hoàn tác</button>
+  <button id="save" title="phím S">2. Tải PNG frame này</button>
+  <button id="saveall">3. Tải TẤT CẢ PNG</button>
+  <span id="status">chưa nạp frame</span>
+</header>
+
+<main>
+  <div id="wrap"><canvas id="view" width="720" height="1280"></canvas></div>
+  <aside>
+    <div class="hint">
+      <b>Tô ĐẶC vùng chai</b> — cọ quét kín thân + vòi chai; <b>không</b> cần viền đẹp, chỉ đừng tô
+      sang tay/nền. Nét được nhớ theo từng frame.
+      <ol>
+        <li><b>Chọn 12 frame</b> (nút trên) — chọn cả thư mục <code>frames</code> cho nhanh.</li>
+        <li>Tô từng frame, dùng <kbd>Tab</kbd> / <kbd>←</kbd> <kbd>→</kbd> để chuyển, <kbd>[</kbd>
+          <kbd>]</kbd> đổi cỡ cọ, <kbd>E</kbd> tẩy, <kbd>Ctrl+Z</kbd> hoàn tác.</li>
+        <li><b>Tải TẤT CẢ PNG</b> → chép 12 file <code>gt_XXXXXX.png</code> vào
+          <code>docs\\gt\\binh1_silhouette\\</code>.</li>
+        <li>Kiểm: <code>python scripts/gt_check_silhouette.py --gt docs/gt/binh1_silhouette</code>
+          (phải ra "không thấy dấu hiệu viền rỗng / hình chữ nhật / copy-paste").</li>
+      </ol>
+    </div>
+    <div class="hint">
+      <b>Nếu frame không có chai trong khung</b> (vật đã cất): để trống (đen) — frame đó sẽ KHÔNG được
+      chấm. Đừng tô bừa.
+    </div>
+    <div id="list"></div>
+    <p id="warn"></p>
+  </aside>
+</main>
+
+<script>
+(() => {
+  "use strict";
+  const W = 720, H = 1280;               // cỡ frame gốc của data/binh1.mp4 (quay dọc)
+  const view = document.getElementById("view");
+  const ctx = view.getContext("2d");
+  const statusEl = document.getElementById("status");
+  const listEl = document.getElementById("list");
+  const warnEl = document.getElementById("warn");
+
+  // ảnh gốc (Image) + mask từng frame: Map<tên file base64 PNG, {img, mask:Uint8ClampedArray|null, undo:[]}>
+  const items = new Map();
+  let danhSach = [];                     // thứ tự theo frame_idx
+  let cur = -1;
+  let tool = "brush";
+  let size = 48;
+  let drawing = false, last = null;
+
+  const maskCanvas = document.createElement("canvas");
+  maskCanvas.width = W; maskCanvas.height = H;
+  const mctx = maskCanvas.getContext("2d");
+
+  const fit = () => {                    // canvas hiển thị vừa màn hình nhưng vẽ ở 720×1280
+    const maxH = window.innerHeight - 130;
+    const scale = Math.min(1, maxH / H, (window.innerWidth * 0.55) / W);
+    view.style.width = Math.round(W * scale) + "px";
+    view.style.height = Math.round(H * scale) + "px";
+  };
+  window.addEventListener("resize", fit);
+
+  const frameIdx = (name) => {
+    const m = /(\d{3,})/.exec(name);
+    return m ? parseInt(m[1], 10) : null;
+  };
+
+  // Vẽ ảnh + mask hiện tại lên canvas; mask tô màu xanh bán trong suốt để thấy vùng đã tô.
+  function redraw() {
+    ctx.clearRect(0, 0, W, H);
+    const it = items.get(danhSach[cur]);
+    if (!it) return;
+    ctx.drawImage(it.img, 0, 0, W, H);
+    if (it.mask) {
+      const tmp = document.createElement("canvas");
+      tmp.width = W; tmp.height = H;
+      const t = tmp.getContext("2d");
+      t.putImageData(new ImageData(new Uint8ClampedArray(it.mask), W, H), 0, 0);
+      ctx.save();
+      ctx.globalAlpha = 0.45;
+      ctx.drawImage(tmp, 0, 0);
+      ctx.restore();
+    }
+  }
+
+  function pushUndo(it) {
+    it.undo.push(it.mask ? new Uint8ClampedArray(it.mask) : null);
+    if (it.undo.length > 25) it.undo.shift();
+  }
+
+  // Vẽ nét cọ vào mask (màu trắng, alpha 255) hoặc tẩy (alpha 0).
+  function drawTo(x, y) {
+    const it = items.get(danhSach[cur]);
+    if (!it) return;
+    if (!it.mask) it.mask = new Uint8ClampedArray(W * H * 4);
+    mctx.putImageData(new ImageData(new Uint8ClampedArray(it.mask), W, H), 0, 0);
+    mctx.globalCompositeOperation = "source-over";
+    mctx.strokeStyle = tool === "brush" ? "#fff" : "rgba(0,0,0,1)";
+    mctx.lineWidth = size;
+    mctx.lineCap = "round";
+    mctx.lineJoin = "round";
+    if (tool === "erase") mctx.globalCompositeOperation = "destination-out";
+    mctx.beginPath();
+    if (last) { mctx.moveTo(last.x, last.y); } else { mctx.moveTo(x, y); mctx.lineTo(x + 0.01, y); }
+    mctx.lineTo(x, y);
+    mctx.stroke();
+    it.mask = mctx.getImageData(0, 0, W, H).data;
+    redraw();
+  }
+
+  // Toạ độ chuột → toạ độ FRAME GỐC (canvas có thể bị thu nhỏ bằng CSS).
+  function pos(ev) {
+    const r = view.getBoundingClientRect();
+    return {
+      x: Math.round((ev.clientX - r.left) * (W / r.width)),
+      y: Math.round((ev.clientY - r.top) * (H / r.height)),
+    };
+  }
+
+  view.addEventListener("pointerdown", (ev) => {
+    if (cur < 0) return;
+    view.setPointerCapture(ev.pointerId);
+    drawing = true; last = null;
+    pushUndo(items.get(danhSach[cur]));
+    const p = pos(ev); drawTo(p.x, p.y); last = p;
+  });
+  view.addEventListener("pointermove", (ev) => {
+    if (!drawing) return;
+    const p = pos(ev); drawTo(p.x, p.y); last = p;
+  });
+  const stop = () => { drawing = false; last = null; renderList(); };
+  view.addEventListener("pointerup", stop);
+  view.addEventListener("pointercancel", stop);
+
+  function coNoiDung(it) {
+    if (!it || !it.mask) return 0;
+    let n = 0;
+    for (let i = 3; i < it.mask.length; i += 4) if (it.mask[i] > 0) n++;
+    return n;
+  }
+
+  function renderList() {
+    listEl.innerHTML = "";
+    danhSach.forEach((ten, i) => {
+      const it = items.get(ten);
+      const px = coNoiDung(it);
+      const d = document.createElement("div");
+      if (i === cur) d.className = "cur";
+      d.innerHTML = `<span>frame ${it.idx}</span><span class="${px ? "done" : ""}">` +
+        (px ? `${px.toLocaleString("vi-VN")} px` : "chưa tô") + "</span>";
+      d.onclick = () => chon(i);
+      listEl.appendChild(d);
+    });
+  }
+
+  function chon(i) {
+    if (i < 0 || i >= danhSach.length) return;
+    cur = i;
+    const it = items.get(danhSach[cur]);
+    statusEl.textContent = `frame ${it.idx} (${cur + 1}/${danhSach.length})`;
+    fit(); redraw(); renderList();
+  }
+
+  function napFiles(fileList) {
+    const pngs = [...fileList].filter((f) => /\.(png|jpe?g)$/i.test(f.name));
+    if (!pngs.length) { warnEl.textContent = "Không thấy file ảnh nào."; return; }
+    let conlai = pngs.length;
+    pngs.forEach((f) => {
+      const url = URL.createObjectURL(f);
+      const img = new Image();
+      img.onload = () => {
+        const idx = frameIdx(f.name);
+        if (idx === null) { warnEl.textContent = `Bỏ qua ${f.name} (không đọc được số frame).`; }
+        else {
+          if (img.naturalWidth !== W || img.naturalHeight !== H) {
+            warnEl.textContent = `${f.name} là ${img.naturalWidth}×${img.naturalHeight}`
+              + ` nhưng frame gốc là ${W}×${H} — ảnh sẽ bị co giãn, KIỂM LẠI nguồn.`;
+          }
+          items.set(f.name, { idx, img, mask: null, undo: [] });
+        }
+        if (--conlai === 0) xongNap();
+      };
+      img.onerror = () => { warnEl.textContent = `Không đọc được ${f.name}`; if (--conlai === 0) xongNap(); };
+      img.src = url;
+    });
+  }
+
+  function xongNap() {
+    danhSach = [...items.keys()].sort((a, b) => items.get(a).idx - items.get(b).idx);
+    if (!danhSach.length) return;
+    chon(0);
+  }
+
+  // Xuất mask NHỊ PHÂN, 3 kênh, alpha = 255 (KHÔNG xuất RGBA trong suốt: `score_miou.doc_mask`
+  // lấy `img.max(axis=2)` trên MỌI kênh ⇒ alpha 255 ở khắp nơi sẽ thành "GT phủ cả khung").
+  function xuatPng(it) {
+    const c = document.createElement("canvas");
+    c.width = W; c.height = H;
+    const t = c.getContext("2d");
+    const img = t.createImageData(W, H);
+    const d = img.data;
+    if (it.mask) {
+      for (let i = 0; i < d.length; i += 4) {
+        const v = it.mask[i + 3] > 0 ? 255 : 0;
+        d[i] = d[i + 1] = d[i + 2] = v;
+        d[i + 3] = 255;
+      }
+    } else {
+      for (let i = 3; i < d.length; i += 4) d[i] = 255;      // toàn đen, vẫn đục
+    }
+    t.putImageData(img, 0, 0);
+    return c;
+  }
+
+  function tai(it) {
+    const c = xuatPng(it);
+    const ten = `gt_${String(it.idx).padStart(6, "0")}.png`;
+    c.toBlob((blob) => {
+      const a = document.createElement("a");
+      a.href = URL.createObjectURL(blob);
+      a.download = ten;
+      a.click();
+      setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    }, "image/png");
+  }
+
+  // ── nút + phím tắt ────────────────────────────────────────────────────────────────────
+  document.getElementById("files").onchange = (e) => napFiles(e.target.files);
+  document.getElementById("dir").onchange = (e) => napFiles(e.target.files);
+  document.getElementById("brush").onclick = () => setTool("brush");
+  document.getElementById("erase").onclick = () => setTool("erase");
+  const sizeEl = document.getElementById("size");
+  sizeEl.oninput = () => { size = +sizeEl.value; document.getElementById("sizelab").textContent = size + " px"; };
+  document.getElementById("clear").onclick = () => {
+    const it = items.get(danhSach[cur]); if (!it) return;
+    pushUndo(it); it.mask = null; redraw(); renderList();
+  };
+  document.getElementById("undo").onclick = () => {
+    const it = items.get(danhSach[cur]); if (!it || !it.undo.length) return;
+    it.mask = it.undo.pop(); redraw(); renderList();
+  };
+  document.getElementById("save").onclick = () => {
+    const it = items.get(danhSach[cur]); if (it) tai(it);
+  };
+  document.getElementById("saveall").onclick = async () => {
+    for (const ten of danhSach) {
+      tai(items.get(ten));
+      await new Promise((r) => setTimeout(r, 350));   // trình duyệt chặn nhiều download liền nhau
+    }
+  };
+
+  function setTool(t) {
+    tool = t;
+    document.getElementById("brush").classList.toggle("on", t === "brush");
+    document.getElementById("erase").classList.toggle("on", t === "erase");
+  }
+
+  window.addEventListener("keydown", (ev) => {
+    if (ev.ctrlKey && ev.key.toLowerCase() === "z") { document.getElementById("undo").click(); ev.preventDefault(); return; }
+    const k = ev.key.toLowerCase();
+    if (k === "b") setTool("brush");
+    else if (k === "e") setTool("erase");
+    else if (k === "x") document.getElementById("clear").click();
+    else if (k === "s") { ev.preventDefault(); document.getElementById("save").click(); }
+    else if (k === "tab" || k === "arrowright") { ev.preventDefault(); chon(cur + 1); }
+    else if (k === "arrowleft") { ev.preventDefault(); chon(cur - 1); }
+    else if (k === "[") { sizeEl.value = Math.max(8, size - 8); sizeEl.oninput(); }
+    else if (k === "]") { sizeEl.value = Math.min(160, size + 8); sizeEl.oninput(); }
+  });
+
+  fit();
+})();
+</script>

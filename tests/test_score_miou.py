@@ -169,6 +169,22 @@ class TestCham:
         assert kq["mask_ngoai_gt_mean"] is None
 
 
+class TestAnhGtCoAlpha:
+    """GT xuất từ trình duyệt/Paint.NET là PNG **4 kênh**; alpha 255 khắp nơi không được thành
+    "GT phủ kín khung" (đã xảy ra 15-11 với công cụ vẽ trong trình duyệt: 100 % khung)."""
+
+    def test_alpha_duc_khong_lam_gt_thanh_toan_khung(self, tmp_path):
+        import cv2
+
+        rgba = np.zeros((20, 10, 4), np.uint8)
+        rgba[5:15, 3:7, :3] = 255
+        rgba[:, :, 3] = 255
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), rgba)
+        mask = sm.doc_mask(tmp_path / "gt_000000.png")
+        assert mask.shape == (20, 10)
+        assert int(mask.sum()) == 10 * 4
+
+
 class TestKiemIndex:
     def _index(self, tmp_path, **kw):
         base = {"clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "silhouette",

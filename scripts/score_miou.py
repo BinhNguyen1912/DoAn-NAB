@@ -66,7 +66,10 @@ def doc_mask(path) -> np.ndarray:
     if img is None:
         raise ValueError(f"không đọc được ảnh mask: {path}")
     if img.ndim == 3:
-        img = img.max(axis=2)               # mask 3 kênh (một số tool xuất RGB)
+        # Ảnh 4 kênh (RGBA — Chrome/canvas, một số editor xuất kèm alpha) thì PHẢI BỎ alpha: alpha
+        # thường là 255 khắp nơi, lấy `max` cả 4 kênh sẽ thành "GT phủ kín khung" (đo 15-11 với PNG
+        # xuất từ công cụ vẽ trong trình duyệt: 100 % khung, mIoU sụp còn ~0,1 mà không báo gì).
+        img = img[:, :, :3].max(axis=2)
     return img > 0
 
 
