@@ -12,10 +12,16 @@ Việc cần làm: chạy lại `./run bangcau --sizes 192,256,320 --every 2,3,6
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
 - [x] `data/bang_cau_hinh_*_metrics.json` (bản mới) có `cau_hinh` ở từng dòng, với `image_size_hieu_luc_da_thay` = một phần tử đúng bằng `image_size` của dòng đó
 - [x] Artifact mới có `git_dirty_code == false` và `git_rev` == commit chứa thay đổi echo cấu hình
 - [x] `docs/bang-cau-hinh.md` sinh lại từ artifact mới; `./run bangcau --check` xanh
 - [x] `docs/so-lieu-bao-cao.md` sinh lại; `./run test` xanh (test ghim doc ↔ artifact)
-- [ ] Nếu `./run ab` cũng chạy lại: mỗi lần chạy trong `lan_chay` có `cau_hinh.image_size_hieu_luc` khớp cấu hình A/B
+- [x] Nếu `./run ab` cũng chạy lại: mỗi lần chạy trong `lan_chay` có `cau_hinh.image_size_hieu_luc` khớp cấu hình A/B
+
+## Answer (15-11)
+
+Đã chạy lại `./run bangcau` trên cây SẠCH (`git_dirty_code == false`, `git_rev = de2df57`): 9 dòng × 3
+lần, mỗi dòng có `cau_hinh` với `image_size_hieu_luc_da_thay` == `image_size` của dòng đó;
+`docs/bang-cau-hinh.md` + `docs/so-lieu-bao-cao.md` sinh lại; `./run bangcau --check` xanh.
