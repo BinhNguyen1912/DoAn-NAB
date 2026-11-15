@@ -118,7 +118,8 @@
   "huong_dan": "silhouette thật thì dùng scripts/score_miou.py label + tô tay (docs/thuoc-do-bam-dung.md)",
   "nguon_gt": "máy: ngưỡng màu HSV nhãn tím + phần trắng phía trên; người soi 12/12 frame (sửa tay frame 62)",
   "frame_hw": [
-    720,
-    1280
-  ]
+    1280,
+    720
+  ],
+  "frame_hw_ghi_chu": "shape ảnh = (H, W) = (1280, 720); clip quay dọc"
 }
