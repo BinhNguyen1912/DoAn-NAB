@@ -25,6 +25,15 @@ data/*
 !data/*_run_info.json
 !data/*_calib.json
 
+# Mask model xuất ra để chấm mIoU (mask dump, ~100 KB/bộ): GT gán tay chỉ kiểm chứng được khi
+# mask đi kèm (artifact ghi `manifest` + `cau_hinh` để biết mask sinh ở cấu hình nào).
+!data/masks_*/
+!data/masks_*/*
+
+# ===== GT gán tay: chỉ commit mask GT + index.json =====
+# Frame cắt ra để TÔ (1280x720 PNG, ~10 MB/bộ) tái tạo được bằng `score_miou.py label`.
+docs/gt/*/frames/
+
 # ===== Cấu hình công cụ cá nhân =====
 .pi/
 

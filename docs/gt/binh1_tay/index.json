@@ -1,0 +1,46 @@
+{
+  "clip": "data/binh1.mp4",
+  "ten": "binh1_tay",
+  "frames": [
+    {
+      "frame_idx": 2
+    },
+    {
+      "frame_idx": 12
+    },
+    {
+      "frame_idx": 22
+    },
+    {
+      "frame_idx": 32
+    },
+    {
+      "frame_idx": 42
+    },
+    {
+      "frame_idx": 52
+    },
+    {
+      "frame_idx": 62
+    },
+    {
+      "frame_idx": 72
+    },
+    {
+      "frame_idx": 82
+    },
+    {
+      "frame_idx": 92
+    },
+    {
+      "frame_idx": 100
+    },
+    {
+      "frame_idx": 106
+    }
+  ],
+  "nguoi_gan": "BinhNguyen1912",
+  "gt_do_model_goi_y": false,
+  "tao_luc": "2026-11-15T13:58:22",
+  "huong_dan": "Tô trắng vùng vật trên frame_<idx>.png rồi lưu thành gt_<idx>.png CÙNG thư mục. Mask phải cùng kích thước frame gốc; nền đen, vật trắng."
+}
