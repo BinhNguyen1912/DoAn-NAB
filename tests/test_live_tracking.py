@@ -125,7 +125,8 @@ class TestLiveTrackingSession:
                                                   stop_after_frames=1)).run()
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         bat_buoc = {
-            "state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+            "state", "device", "cau_hinh", "cau_hinh_lech", "frames", "vos_runs",
+            "measured_fps", "vos_fps", "vos_ms", "lk_ms",
             "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms", "mask_age_cu_ms",
             "stability", "stability_n", "stability_shown", "stability_shown_n",
             "empty_runs", "mask_holds",

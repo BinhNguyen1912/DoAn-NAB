@@ -27,24 +27,28 @@ from src.live_tracking import (  # noqa: E402
     LiveTrackConfig,
     LiveTrackStats,
     LiveTrackingSession,
+    cau_hinh_yeu_cau,
     session_exit_code,
     status_payload,
     write_json_atomic,
 )
 
 
-def _write_loading(out_dir: Path, message: str = "Đang nạp model...", *,
-                   device: str = "") -> None:
+def _write_loading(out_dir: Path, message: str = "Đang nạp model...", *, device: str = "",
+                   cau_hinh: dict | None = None) -> None:
     """Ghi trạng thái "loading" bằng CHÍNH payload của phiên chạy (một nguồn schema).
 
     `device` là thiết bị ĐỊNH chạy: người xem phải biết phiên này sẽ chạy CPU hay GPU ngay từ
     lúc nạp (nạp 20–240 s), không phải đọc `worker.log` (ticket 21).
     Mặc định `""` = **chưa biết** — cố tình KHÔNG mặc định `cpu`: ai gọi mà quên truyền thì file
     phải nói "chưa biết", không được khẳng định "cpu" (AGENTS §6; P3 review 12-11).
+    `cau_hinh` = cấu hình ĐỊNH chạy (`cau_hinh_yeu_cau`); `image_size_hieu_luc` chỉ có sau khi nạp
+    model, nên giai đoạn này cố tình KHÔNG có (None = chưa kiểm được, không phải "khớp").
     """
     write_json_atomic(out_dir / "status.json",
                       status_payload(LiveTrackStats(state=STATE_LOADING, message=message,
-                                                    device=device)))
+                                                    device=device,
+                                                    cau_hinh=dict(cau_hinh or {}))))
 
 
 def _cuda_available() -> bool:
@@ -154,7 +158,12 @@ def main() -> int:
         device_hint = normalize_device(args.device)
     except ValueError:
         device_hint = str(args.device)
-    _write_loading(out_dir, device=device_hint)
+    # Cấu hình ĐỊNH chạy — ghi ngay từ giai đoạn nạp (20–240 s), không đợi có engine: người đọc
+    # `status.json` sớm phải biết phiên sẽ chạy `image_size`/`vos_every`/`display_fps` nào.
+    cau_hinh = cau_hinh_yeu_cau(source=args.source, image_size=args.image_size,
+                               vos_every=args.vos_every, display_fps=args.max_fps,
+                               mask_smoothing=args.mask_smoothing, device=device_hint)
+    _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:
         cuda_ok = _cuda_available()
@@ -162,7 +171,8 @@ def main() -> int:
     except ValueError as exc:
         # Lỗi ở CỬA VÀO: ghi status error để UI/watchdog thấy lý do, không nạp checkpoint 156 MB
         write_json_atomic(out_dir / "status.json", status_payload(
-            LiveTrackStats(state=STATE_ERROR, device=device_hint, message=str(exc))))
+            LiveTrackStats(state=STATE_ERROR, device=device_hint, message=str(exc),
+                           cau_hinh=cau_hinh)))
         print(f"[LOI] {exc}", flush=True)
         return 2
 

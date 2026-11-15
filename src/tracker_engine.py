@@ -104,6 +104,17 @@ class TrackerEngine:
         self._frame_count = 0   # số frame đã nạp (0-index; frame 0 = start)
         self._video_hw = None   # (H, W) của frame gốc — tham chiếu resize mask đầu ra
 
+    @property
+    def image_size_hieu_luc(self) -> int | None:
+        """`image_size` mà predictor THẬT SỰ dùng (None nếu predictor không khai báo).
+
+        Khác `self.image_size` = giá trị **đã yêu cầu** qua hydra override. Nếu override không được
+        áp (khoá đổi tên, `model_cfg` bỏ qua…) thì predictor chạy `image_size` của config (1024) mà
+        không báo gì; so hai giá trị này là cách duy nhất phát hiện "cấu hình chạy ≠ cấu hình yêu
+        cầu" (Next steps 14-11, góc "độ bền & hiệu năng").
+        """
+        return getattr(self._predictor, "image_size", None)
+
     @classmethod
     def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
                       model_cfg=MODEL_CFG, image_size=None,

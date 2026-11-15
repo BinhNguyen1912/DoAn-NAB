@@ -185,6 +185,9 @@ def _worker_telemetry(out_dir) -> dict:
     except (OSError, ValueError):
         return {}
     keys = ("state", "device", "frames", "vos_runs", "measured_fps", "vos_fps", "vos_ms", "lk_ms",
+            # Cấu hình yêu cầu + hiệu lực (14-11): artifact “camera thật chạy được” phải kiểm được
+            # là model chạy đúng `image_size` đã yêu cầu, không chỉ tin tham số CLI.
+            "cau_hinh", "cau_hinh_lech",
             # Pha của chu kỳ VOS (14-11): biết 32 ms "thừa" nằm ở đâu thay vì đoán.
             "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_cu_ms",

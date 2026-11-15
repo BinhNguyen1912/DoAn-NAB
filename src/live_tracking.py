@@ -57,6 +57,13 @@ _STAT_WINDOW = 200        # số mẫu giữ để lấy phân vị (p05/p95); 2
 # n = 30 ⇒ chỉ số 1,45 (vẫn gần min), nên CỜ chẩn đoán (nếu có) phải đòi >= 100 mẫu
 # (xem docs/plan/09-11-2026-chan-doan-chat-luong-bam.md).
 _STAT_MIN_SAMPLES = 30
+# Định nghĩa tuổi mask đi kèm MỌI `status.json`: repo có HAI định nghĩa (AGENTS §6) nên file phải tự
+# khai nó đang dùng cái nào — người trích số không phải đi đọc mã để biết `mask_age_p95` là tuổi thật
+# hay định nghĩa cũ (thiếu `vos_ms`).
+DINH_NGHIA_TUOI_MASK = (
+    "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); "
+    "mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11)"
+)
 # Số mẫu tối thiểu để công bố TỈ LỆ (không phải phân vị) — 5 mẫu đã đủ nói "1/5 lần mất dấu".
 _EMPTY_WINDOW_MIN = 5
 _SHOWN_HISTORY = 90       # số frame giữ ô bao đã phát, để tra đúng frame VOS đã thấy
@@ -114,6 +121,14 @@ class LiveTrackStats:
     # `state=error` ở cửa vào (tên thiết bị rác) thì đây là thiết bị **được YÊU CẦU**, có thể
     # ngoài `cpu|cuda` (nguyên văn người dùng gõ) — `message` nói rõ lỗi (P3 review 12-11).
     device: str = "cpu"
+    # Cấu hình phiên: phần ĐƯỢC YÊU CẦU (CLI/API) + `image_size_hieu_luc` đọc từ engine
+    # (`cau_hinh_hieu_luc`). `status.json` echo NGUYÊN khối ⇒ artifact tự kiểm được "cấu hình chạy ==
+    # cấu hình yêu cầu" thay vì tin CLI (Next steps 14-11, góc "độ bền & hiệu năng").
+    # Rỗng = worker bản cũ không ghi (KHÔNG phải "đã kiểm và khớp").
+    cau_hinh: dict = field(default_factory=dict)
+    # Khoá LỆCH giữa yêu cầu và hiệu lực, vd `["image_size"]`. Rỗng = khớp, HOẶC chưa kiểm được
+    # (`image_size_hieu_luc` là None) — người đọc phải xem `cau_hinh.image_size_hieu_luc` để phân biệt.
+    cau_hinh_lech: list = field(default_factory=list)
     frames: int = 0               # số frame ĐÃ PHÁT (nhịp display)
     vos_runs: int = 0             # số lần CHẠY MODEL (mask mới)
     measured_fps: float = 0.0     # FPS phát thực đo
@@ -237,6 +252,59 @@ def read_bbox(path: Path):
     return bbox if bbox[2] > 0 and bbox[3] > 0 else None
 
 
+def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,
+                     mask_smoothing=1.0, device="") -> dict:
+    """Cấu hình **được yêu cầu** (từ CLI/API) ở dạng ghi được vào `status.json`.
+
+    Tách khỏi `LiveTrackStats` để giai đoạn `loading` (chưa có engine, 20–240 s) cũng ghi được cấu
+    hình ĐỊNH chạy — trước đây file chỉ có `device`, ai đọc sớm cũng không biết phiên sẽ chạy
+    `image_size`/`vos_every` nào.
+    `image_size=None` = KHÔNG override (dùng mặc định của `model_cfg`, hiện là 1024).
+    `image_size_hieu_luc` luôn có mặt và luôn `None` ở đây (chưa nạp model ⇒ **chưa kiểm được**): giữ
+    cùng bộ khoá ở cả hai giai đoạn để người đọc `status.json` không phải phân biệt schema.
+    """
+    return {
+        "source": str(source),
+        "image_size_yeu_cau": None if image_size is None else int(image_size),
+        "image_size_hieu_luc": None,
+        "vos_every": int(vos_every),
+        "display_fps": float(display_fps),
+        "mask_smoothing": float(mask_smoothing),
+        "device": str(device),
+        "mask_age_dinh_nghia": DINH_NGHIA_TUOI_MASK,
+    }
+
+
+def cau_hinh_hieu_luc(yeu_cau: dict, engine) -> dict:
+    """Ghép cấu hình yêu cầu với `image_size` mà ENGINE THẬT SỰ chạy (đọc từ predictor).
+
+    `image_size_hieu_luc = None` = **chưa kiểm được** (engine giả trong test, hoặc predictor không
+    khai báo) — KHÔNG phải "khớp".
+    """
+    ra = dict(yeu_cau)
+    ra["image_size_hieu_luc"] = (
+        getattr(engine, "image_size_hieu_luc", None) if engine is not None else None
+    )
+    return ra
+
+
+def so_khop_cau_hinh(cau_hinh: dict) -> list:
+    """Danh sách khoá LỆCH giữa yêu cầu và hiệu lực; `[]` = khớp hoặc chưa kiểm được.
+
+    Chỉ `image_size` có bản "hiệu lực" tách khỏi yêu cầu (`vos_every`/`display_fps`/
+    `mask_smoothing` do chính `LiveTrackConfig` thi hành nên không thể lệch âm thầm). Bỏ qua khi
+    một bên `None`: yêu cầu `None` = dùng mặc định (không có gì để so), hiệu lực `None` = chưa đo.
+    """
+    yeu_cau = cau_hinh.get("image_size_yeu_cau")
+    thuc = cau_hinh.get("image_size_hieu_luc")
+    if yeu_cau is None or thuc is None:
+        return []
+    try:
+        return [] if int(yeu_cau) == int(thuc) else ["image_size"]
+    except (TypeError, ValueError):
+        return ["image_size"]
+
+
 def status_payload(stats: "LiveTrackStats") -> dict:
     """Payload `status.json` — MỘT nguồn duy nhất cho cả trạng thái "loading" lẫn phiên đang chạy.
 
@@ -246,6 +314,10 @@ def status_payload(stats: "LiveTrackStats") -> dict:
     return {
         "state": stats.state,
         "device": stats.device,
+        # Cấu hình yêu cầu + hiệu lực: artifact đọc THẲNG file này để tự kiểm "chạy đúng cấu hình
+        # đã yêu cầu" (xem `cau_hinh_yeu_cau`/`so_khop_cau_hinh`).
+        "cau_hinh": dict(stats.cau_hinh),
+        "cau_hinh_lech": list(stats.cau_hinh_lech),
         "frames": stats.frames,
         "vos_runs": stats.vos_runs,
         "measured_fps": stats.measured_fps,
@@ -420,6 +492,21 @@ class LiveTrackingSession:
         self._lk = lk_tracker or LkBoxTracker()
         self._interp = LkBoxTracker()      # nội suy từ frame VOS gần nhất → frame hiện tại
         self._stats = LiveTrackStats(device=config.device)
+        # Echo cấu hình NGAY khi dựng phiên (engine đã nạp ⇒ `image_size` hiệu lực đã biết): từ đây
+        # `status.json` trả lời được "phiên này chạy cấu hình nào" mà không cần đọc `worker.log`.
+        self._stats.cau_hinh = cau_hinh_hieu_luc(
+            cau_hinh_yeu_cau(source=config.source,
+                             image_size=getattr(engine, "image_size", None),
+                             vos_every=config.vos_every, display_fps=config.display_fps,
+                             mask_smoothing=config.mask_smoothing, device=config.device),
+            engine,
+        )
+        self._stats.cau_hinh_lech = so_khop_cau_hinh(self._stats.cau_hinh)
+        if self._stats.cau_hinh_lech:
+            print(f"[canh-bao] cấu hình YÊU CẦU khác HIỆU LỰC ở {self._stats.cau_hinh_lech}: "
+                  f"image_size yêu cầu {self._stats.cau_hinh['image_size_yeu_cau']}, model chạy "
+                  f"{self._stats.cau_hinh['image_size_hieu_luc']} — số đo của phiên này KHÔNG gắn "
+                  "được với cấu hình đã yêu cầu (override không có tác dụng?)", flush=True)
         self._trail: deque = deque(maxlen=config.trajectory_len)
         self._display_stamps: deque = deque()
         self._vos_stamps: deque = deque()
@@ -768,8 +855,10 @@ class LiveTrackingSession:
 
         payload = {
             "nguon": str(self._cfg.source),
-            # `image_size` thuộc ENGINE (hydra override), không phải session config
+            # `image_size` thuộc ENGINE (hydra override), không phải session config. Ghi CẢ hai: giá trị
+            # yêu cầu và giá trị predictor thật sự dùng (`None` = chưa kiểm được).
             "image_size": getattr(self._engine, "image_size", None),
+            "image_size_hieu_luc": getattr(self._engine, "image_size_hieu_luc", None),
             "vos_every": self._cfg.vos_every, "mask_smoothing": self._cfg.mask_smoothing,
             "bbox_xywh": list(self._chon_bbox) if getattr(self, "_chon_bbox", None) else None,
             "frames_yeu_cau": list(self._cfg.dump_mask_frames),

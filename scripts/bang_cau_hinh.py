@@ -71,9 +71,18 @@ def _run_once(clip: Path, bbox, size, every, frames: int, device: str, timeout: 
         if proc.returncode != 0:
             return {"loi": f"worker thoát mã {proc.returncode}", "elapsed_s": elapsed,
                     "stderr": proc.stderr[-400:]}
+        # TỰ KIỂM cấu hình: "yêu cầu == hiệu lực". Sai ⇒ lần chạy này KHÔNG dùng được cho bảng,
+        # vì số đo sẽ bị gán cho một cấu hình mà model không hề chạy (lỗi hydra override no-op).
+        lech = status.get("cau_hinh_lech") or []
+        if lech:
+            ch = status.get("cau_hinh") or {}
+            return {"loi": f"cấu hình yêu cầu ≠ hiệu lực ở {lech}: yêu cầu image_size="
+                           f"{ch.get('image_size_yeu_cau')}, model chạy "
+                           f"{ch.get('image_size_hieu_luc')}",
+                    "elapsed_s": elapsed, "ma_thoat": proc.returncode, "cau_hinh": ch}
         rows = {key: status.get(key) for key, _nhan, _cam in COT}
         rows.update({"frames": status.get("frames"), "age_n": status.get("age_n"),
-                     "elapsed_s": round(elapsed, 2)})
+                     "elapsed_s": round(elapsed, 2), "cau_hinh": status.get("cau_hinh") or {}})
         return rows
 
 
@@ -89,6 +98,21 @@ def _thong_ke(gia_tri):
         "min": round(min(so), 2),
         "max": round(max(so), 2),
     }
+
+
+def _cau_hinh_chung(ok: list) -> dict:
+    """Echo cấu hình của các lần chạy THÀNH CÔNG vào dòng bảng (để artifact tự truy nguyên).
+
+    `image_size_hieu_luc_da_thay` là **danh sách giá trị khác nhau đã thấy**: > 1 phần tử ⇒ cùng
+    một dòng bảng mà model chạy ở nhiều độ phân giải ⇒ dòng đó không còn là "một cấu hình".
+    """
+    if not ok:
+        return {}
+    thay = sorted({(r.get("cau_hinh") or {}).get("image_size_hieu_luc") for r in ok},
+                  key=lambda v: (v is None, v))
+    ra = dict(ok[0].get("cau_hinh") or {})
+    ra["image_size_hieu_luc_da_thay"] = thay
+    return ra
 
 
 def tong_hop(cau_hinh, sizes, evers, runs: dict):
@@ -108,6 +132,9 @@ def tong_hop(cau_hinh, sizes, evers, runs: dict):
             # P2). §ố mẫu nhỏ (vd lần chạy chỉ được 5/60 frame) cũng lộ ra ở đây.
             dong["age_n"] = _thong_ke([r.get("age_n") for r in ok])
             dong["frames"] = _thong_ke([r.get("frames") for r in ok])
+            # Cấu hình HIỆU LỰC của các lần chạy — không có nó thì artifact vẫn không kiểm được
+            # "9 dòng này do model chạy ở 192 hay 1024" (Next steps 14-11, góc "độ bền").
+            dong["cau_hinh"] = _cau_hinh_chung(ok)
             bang[f"{size}_{every}"] = dong
     return bang
 
