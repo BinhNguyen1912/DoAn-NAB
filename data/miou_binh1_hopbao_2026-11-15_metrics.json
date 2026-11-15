@@ -1,12 +1,12 @@
 {
-  "git_rev": "9138ddbffab8e499b1e87812d9ffabf0ae67198e",
+  "git_rev": "161436db2aaec4be829ab36705dc642c5893ce79",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-15T14:47:12",
+    "do_luc": "2026-11-15T14:50:01",
     "lenh": "scripts/score_miou.py score --gt docs/gt/binh1_hopbao --pred-dir data/masks_binh1_192_2026-11-15 --out data/miou_binh1_hopbao_2026-11-15_metrics.json",
-    "git_rev": "9138ddbffab8e499b1e87812d9ffabf0ae67198e",
+    "git_rev": "161436db2aaec4be829ab36705dc642c5893ce79",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
@@ -45,11 +45,14 @@
       ],
       "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO"
     },
-    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0"
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = tốt, không bị chặn trên bởi GT hộp bao)"
   },
   "ket_qua": {
     "mIoU": 0.6464,
     "mIoU_p05": 0.5058,
+    "mask_ngoai_gt_mean": 0.0391,
+    "mask_ngoai_gt_max": 0.2943,
+    "mask_ngoai_gt_max_frame": 62,
     "n_cham": 12,
     "so_frame_gt_rong": 0,
     "so_frame_thieu_mask": 0,
@@ -61,73 +64,85 @@
         "frame_idx": 2,
         "iou": 0.5698,
         "dien_tich_gt": 67080,
-        "dien_tich_pred": 39196
+        "dien_tich_pred": 39196,
+        "mask_ngoai_gt": 0.0159
       },
       {
         "frame_idx": 12,
         "iou": 0.4695,
         "dien_tich_gt": 49403,
-        "dien_tich_pred": 23195
+        "dien_tich_pred": 23195,
+        "mask_ngoai_gt": 0.0
       },
       {
         "frame_idx": 22,
         "iou": 0.5948,
         "dien_tich_gt": 59059,
-        "dien_tich_pred": 35241
+        "dien_tich_pred": 35241,
+        "mask_ngoai_gt": 0.002
       },
       {
         "frame_idx": 32,
         "iou": 0.6325,
         "dien_tich_gt": 65410,
-        "dien_tich_pred": 41373
+        "dien_tich_pred": 41373,
+        "mask_ngoai_gt": 0.0
       },
       {
         "frame_idx": 42,
         "iou": 0.696,
         "dien_tich_gt": 61776,
-        "dien_tich_pred": 43937
+        "dien_tich_pred": 43937,
+        "mask_ngoai_gt": 0.0126
       },
       {
         "frame_idx": 52,
         "iou": 0.6539,
         "dien_tich_gt": 67890,
-        "dien_tich_pred": 49872
+        "dien_tich_pred": 49872,
+        "mask_ngoai_gt": 0.0664
       },
       {
         "frame_idx": 62,
         "iou": 0.5356,
         "dien_tich_gt": 59500,
-        "dien_tich_pred": 58136
+        "dien_tich_pred": 58136,
+        "mask_ngoai_gt": 0.2943
       },
       {
         "frame_idx": 72,
         "iou": 0.6955,
         "dien_tich_gt": 72822,
-        "dien_tich_pred": 50663
+        "dien_tich_pred": 50663,
+        "mask_ngoai_gt": 0.0002
       },
       {
         "frame_idx": 82,
         "iou": 0.6448,
         "dien_tich_gt": 74034,
-        "dien_tich_pred": 49145
+        "dien_tich_pred": 49145,
+        "mask_ngoai_gt": 0.0174
       },
       {
         "frame_idx": 92,
         "iou": 0.7742,
         "dien_tich_gt": 66066,
-        "dien_tich_pred": 55128
+        "dien_tich_pred": 55128,
+        "mask_ngoai_gt": 0.0407
       },
       {
         "frame_idx": 100,
         "iou": 0.7499,
         "dien_tich_gt": 65395,
-        "dien_tich_pred": 49952
+        "dien_tich_pred": 49952,
+        "mask_ngoai_gt": 0.0104
       },
       {
         "frame_idx": 106,
         "iou": 0.7399,
         "dien_tich_gt": 61904,
-        "dien_tich_pred": 46609
+        "dien_tich_pred": 46609,
+        "mask_ngoai_gt": 0.0099
       }
     ]
   },

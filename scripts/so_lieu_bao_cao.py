@@ -93,6 +93,21 @@ REGISTRY = [
      "frame trong tổng `so_frame_gt` — CẤM nói 'mIoU cả clip'. CẤM trích như mIoU trên video thật — "
      "muốn số thật thì gán tay (`scripts/score_miou.py label`).",
      {"n": "ket_qua.n_cham"}),
+    # ── 15-11: mIoU trên VIDEO THẬT (`binh1`), nhưng GT là HỘP BAO — phải gọi đúng tên ─────────
+    ("IoU mask vs HỘP BAO chai trên 12 frame VIDEO THẬT (`binh1`, `image_size 192`, `vos_every 1`)",
+     "data/miou_binh1_hopbao_2026-11-15_metrics.json",
+     "ket_qua.mIoU", "IoU",
+     "**CẤM gọi là 'mIoU phân đoạn'**: GT là HỘP BAO chữ nhật (không phải silhouette — xem "
+     "`meta.dang_gt = hop_bao`), hộp lớn hơn vật nên **chặn trên ~0,75–0,85**; muốn mIoU phân đoạn "
+     "thì phải tô silhouette (`scripts/score_miou.py label`, `docs/thuoc-do-bam-dung.md`). Số này "
+     "chỉ nói mask có nằm ĐÚNG VÙNG chai — n=12 frame, một clip.",
+     {"n": "ket_qua.n_cham"}),
+    ("Phần mask TRÀN ra ngoài vùng chai (12 frame thật, `binh1`)",
+     "data/miou_binh1_hopbao_2026-11-15_metrics.json",
+     "ket_qua.mask_ngoai_gt_mean", "tỉ lệ (thấp = tốt)",
+     "Đây KHÔNG phải mIoU; nó đo over-segmentation (mask ăn sang tay/nền). Đọc kèm "
+     "`mask_ngoai_gt_max` + `mask_ngoai_gt_max_frame` — frame tệ nhất khác hẳn trung bình.",
+     {"n": "ket_qua.n_cham"}),
 ]
 
 HEADER = """# Số liệu dùng cho báo cáo — sinh tự động, đừng sửa tay
