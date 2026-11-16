@@ -10,7 +10,7 @@ chốt chặn bẫy "ô chọn sai vật" (AGENTS §6: bbox trỏ vào nền v�
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] `"50,100,300,400"` ⇒ báo "không phân biệt được dạng", KHÔNG in "khớp"
 - [ ] Dạng khai tường minh vẫn chạy được (test cho cả hai)
