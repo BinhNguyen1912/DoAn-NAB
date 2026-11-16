@@ -100,7 +100,8 @@ REGISTRY = [
      "data/miou_binh1_hopbao_2026-11-15_metrics.json",
      "ket_qua.mIoU", "IoU",
      "**CẤM gọi là 'mIoU phân đoạn'**: GT là HỘP BAO chữ nhật (không phải silhouette — xem "
-     "`meta.dang_gt = hop_bao`), hộp lớn hơn vật nên **chặn trên ~0,75–0,85**; muốn mIoU phân đoạn "
+     "`ket_qua.gt_dang = hop_bao` / `meta.dang_gt = hop_bao`, kèm `ket_qua.mIoU_dinh_nghia` ngay cạnh "
+     "con số), hộp lớn hơn vật nên **chặn trên ~0,75–0,85**; muốn mIoU phân đoạn "
      "thì phải tô silhouette (`scripts/score_miou.py label`, `docs/thuoc-do-bam-dung.md`). Số này "
      "chỉ nói mask có nằm ĐÚNG VÙNG chai — n=12 frame, một clip.",
      {"n": "ket_qua.n_cham"}),

@@ -37,6 +37,25 @@
   `silhouette`, và một bộ GT vẽ bằng **hộp** đã lọt qua cổng với exit 0).
 - `nguon_gt` ghi ai/máy nào dựng GT. Máy đề xuất (ngưỡng màu…) + người soi **vẫn phải** khai, và sai
   số của bộ dựng GT **chưa đo** thì phải nói ra.
+- Artifact echo dạng GT ở **cả `meta.dang_gt` LẪN `ket_qua.gt_dang`**; khi `dang_gt != silhouette`
+  còn có `ket_qua.mIoU_dinh_nghia` ("IoU(mask, GT dạng 'hop_bao') — KHÔNG phải mIoU phân đoạn
+  silhouette"). Lý do: người ta hay `grep mIoU` rồi copy con số, mà cảnh báo nằm trong `meta` thì
+  không đi theo con số (ticket #30). `--check-index` in thêm **dạng GT + nguồn GT + clip** ngay đầu.
+
+### 1.2. Cổng kiểm bộ GT (ticket #30) — GT phải khớp **chính nó** và khớp **mask**
+
+| Kiểm | Loại | Vì sao |
+|---|---|---|
+| `hop_bao_xywh` đúng định dạng `[x,y,w,h]` số nguyên, w/h > 0 | **CHẶN** (`dang_gt = hop_bao`) | hộp ghi sai ⇒ mIoU vô nghĩa |
+| Hộp không vượt biên khung | **CHẶN** | hộp vượt biên bị cắt ⇒ `sum ≠ w*h` mà không rõ vì sao |
+| `gt.sum() == w*h` | **CHẶN** | GT **lẫn frame khác** hoặc hộp ghi sai |
+| Bao thực của mask đúng `(x, y, w, h)` | **CHẶN** | cùng số pixel nhưng nằm chỗ khác vẫn là GT sai |
+| Khai `hop_bao` mà không có `hop_bao_xywh` | cảnh báo mềm | GT cũ chưa có hộp ⇒ không đối chiếu được |
+| `index.clip` khác `manifest.nguon` của mask | cảnh báo mềm | mIoU đang ghép **hai clip** khác nhau |
+| `index.frames` ngoài `manifest.frames_yeu_cau` | cảnh báo mềm | đúng lớp lỗi "ghép GT với mask của frame khác" (P0 14-11) |
+
+`mask_ngoai_gt_max_frame` khi **hoà** (nhiều frame cùng "tràn" lớn nhất): chọn **frame_idx nhỏ nhất** —
+ghim bằng test để con số không đổi theo thứ tự `index.frames`.
 
 **Mã thoát của `score`:** `0` = chấm xong, không cảnh báo · `1` = chấm được nhưng có cảnh báo (GT hộp
 bao / thiếu người gán / không khai `dang_gt` / `git_loi` / không chấm được frame nào) · `2` = **TỪ CHỐI**
