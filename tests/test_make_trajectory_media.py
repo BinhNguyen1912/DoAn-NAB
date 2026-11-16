@@ -137,8 +137,50 @@ class TestCanhBaoBbox:
         assert "CẢNH BÁO" in out and "SAI VẬT" in out
 
     def test_expect_bbox_sai_dinh_dang_khong_no(self, tmp_path, capsys):
-        tm._canh_bao_bbox(self._traj(tmp_path), "không-phải-số")
-        assert "x1,y1,x2,y2" in capsys.readouterr().out
+        assert tm._canh_bao_bbox(self._traj(tmp_path), "không-phải-số") == "khong_ket_luan"
+        out = capsys.readouterr().out
+        assert "KHÔNG KẾT LUẬN" in out and "expect-bbox-dang" in out
+
+    # ── ticket #25: KHÔNG đoán dạng hộp ────────────────────────────────────────────────────────
+    def test_hop_mo_ho_khong_ket_luan_thay_vi_doan(self, tmp_path, capsys):
+        """`50,100,300,400` là `(x,y,w,h)` hợp lệ **và** cũng đọc được thành `(x1,y1,x2,y2)`.
+        Bản cũ đoán `x1,y1,x2,y2` ⇒ có thể in "ô bao khớp" OAN (ticket #25)."""
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="50,100,350,500"), "50,100,300,400")
+        out = capsys.readouterr().out
+        assert kq == "khong_ket_luan"
+        assert "khớp" not in out and "CẢ hai kiểu" in out
+
+    def test_khai_dang_xywh_thi_so_duoc_hop_mo_ho(self, tmp_path, capsys):
+        """Khai `--expect-bbox-dang xywh` ⇒ `50,100,300,400` = hộp 300×400 tại (50,100)."""
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="50,100,350,500"),
+                               "50,100,300,400", "xywh")
+        assert kq == "khop" and "khớp" in capsys.readouterr().out
+
+    def test_tien_to_xywh_trong_gia_tri_cung_duoc(self, tmp_path, capsys):
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="50,100,350,500"), "xywh:50,100,300,400")
+        assert kq == "khop" and "khớp" in capsys.readouterr().out
+
+    def test_tien_to_xyxy_voi_hop_sai_chieu_thi_bao_loi(self, tmp_path, capsys):
+        """Khai `xyxy:` mà `y2 <= y1` ⇒ nói rõ phải khai `xywh`, không tự đổi hộ."""
+        kq = tm._canh_bao_bbox(self._traj(tmp_path), "xyxy:50,100,300,40")
+        assert kq == "khong_ket_luan" and "xywh" in capsys.readouterr().out
+
+    def test_xyxy_hop_le_van_so_duoc(self, tmp_path, capsys):
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="305,280,445,690"), "xyxy:300,275,450,685")
+        assert kq == "khop" and "khớp" in capsys.readouterr().out
+
+    def test_cli_exit_1_khi_hop_lech(self, tmp_path):
+        """Exit 0 mà ô bao lệch ⇒ script tự động coi là "đạt". Ảnh vẫn ghi nhưng mã thoát phải 1."""
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,100,300,330,660"])
+        ma = tm.main(["--csv", str(path), "--out", str(tmp_path / "a.png"),
+                      "--expect-bbox", "300,275,150,410"])
+        assert ma == 1
+
+    def test_cli_exit_1_khi_khong_ket_luan(self, tmp_path):
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,100,300,330,660"])
+        ma = tm.main(["--csv", str(path), "--out", str(tmp_path / "a.png"),
+                      "--expect-bbox", "50,100,300,400"])
+        assert ma == 1
 
 
 class TestProvenance:

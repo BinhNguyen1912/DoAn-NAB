@@ -191,26 +191,64 @@ def draw(traj: dict, background=None, title: str = ""):
     return fig, thong_ke
 
 
-def _canh_bao_bbox(traj: dict, expect: str) -> None:
+def _doc_hop(expect, dang=None):
+    """Đọc `--expect-bbox` ⇒ `(x1, y1, x2, y2, lỗi | None)`.
+
+    Dạng hộp phải được XÁC ĐỊNH, không đoán: `50,100,300,400` là hộp `(x,y,w,h)` **hợp lệ** nhưng cũng
+    đọc được thành `(x1,y1,x2,y2)` ⇒ đoán sai thì cổng in "ô bao KHỚP" trong khi thực ra không khớp
+    (ticket #25 — đúng loại "cổng báo khớp OAN" mà AGENTS §6 cấm). Ba cách khai:
+    `--expect-bbox-dang xywh`, tiền tố `xywh:50,100,300,400`, hoặc `xyxy:...`.
+    Không khai + không suy ra được chắc chắn ⇒ trả lỗi để người gọi in "KHÔNG KẾT LUẬN".
+    """
+    raw = str(expect).strip()
+    for ten in ("xywh", "xyxy"):
+        if raw.lower().startswith(f"{ten}:"):
+            dang, raw = ten, raw[len(ten) + 1:]
+    try:
+        a, b, c, d = (float(v) for v in raw.replace(";", ",").split(","))
+    except ValueError:
+        return None, (
+            f"--expect-bbox phải là 4 số; nhận {expect!r}. Khai dạng: "
+            "`--expect-bbox-dang xywh|xyxy` hoặc tiền tố `xywh:50,100,300,400`")
+    if dang is None:
+        # Hộp `(x, y, w, h)` mà `w > x` (vd `50,100,300,400`) đọc kiểu nào cũng "hợp lệ" ⇒ KHÔNG ĐOÁN.
+        if c <= a or d <= b:
+            dang = "xywh"          # `x2 <= x1` ⇒ chỉ có thể là (x, y, w, h)
+        else:
+            return None, (
+                f"--expect-bbox {expect} đọc được CẢ hai kiểu (x1,y1,x2,y2) và (x,y,w,h) ⇒ "
+                "KHÔNG so được (không đoán): khai `--expect-bbox-dang xywh` hoặc `xyxy`")
+    if dang == "xywh":
+        x, y, w, h = a, b, c, d
+        if w <= 0 or h <= 0:
+            return None, f"--expect-bbox dạng x,y,w,h mà w/h không dương ({w}, {h})"
+        return (x, y, x + w, y + h), None
+    x1, y1, x2, y2 = a, b, c, d
+    if x2 <= x1 or y2 <= y1:
+        return None, (f"--expect-bbox dạng x1,y1,x2,y2 mà x2<=x1 hoặc y2<=y1 ({x1},{y1},{x2},{y2}) — "
+                      "nếu đây là (x,y,w,h) thì khai `--expect-bbox-dang xywh`")
+    return (x1, y1, x2, y2), None
+
+
+def _canh_bao_bbox(traj: dict, expect: str, dang: str | None = None) -> str:
     """So ô bao dòng ĐẦU của CSV với ô mong đợi; lệch >10 % thì in cảnh báo to.
 
     Vì sao cần: 14-11 phát hiện ô `104,308,209,287` phủ **khuôn mặt** chứ không phải chai, và toàn bộ
     số của một phase đo bằng ô đó là vô nghĩa. CSV không tự khai nó đo vật nào ⇒ người dùng phải khai.
+
+    Trả `"khop" | "lech" | "khong_ket_luan"` — người gọi dùng mã này cho exit code, KHÔNG in "khớp"
+    khi chưa so được (ticket #25).
     """
-    try:
-        x1e, y1e, x2e, y2e = (float(v) for v in str(expect).split(","))
-    except ValueError:
-        print(f"[traj] --expect-bbox phải là x1,y1,x2,y2 (hoặc x,y,w,h); nhận {expect!r}")
-        return
-    if x2e <= x1e or y2e <= y1e:
-        # Chấp nhận CẢ `(x, y, w, h)` — chính cái bẫy đã làm hỏng một phase đo (AGENTS §6: hộp
-        # `300,275,150,410` bị truyền thẳng vào SAM 2 như `x1,y1,x2,y2` ⇒ hộp rộng ÂM).
-        x1e, y1e, x2e, y2e = x1e, y1e, x1e + x2e, y1e + y2e
+    hop, loi = _doc_hop(expect, dang)
+    if loi:
+        print(f"[traj] KHÔNG KẾT LUẬN: {loi}")
+        return "khong_ket_luan"
+    x1e, y1e, x2e, y2e = hop
     data = traj["data"]
     x1 = data["cx"][0], data["cy"][0]
     if x1[0] is None:
         print("[traj] dòng đầu không có toạ độ ⇒ không so được bbox")
-        return
+        return "khong_ket_luan"
     w = float(data["w"][0])
     h = float(data["h"][0])
     cx, cy = float(x1[0]), float(x1[1])
@@ -222,8 +260,9 @@ def _canh_bao_bbox(traj: dict, expect: str) -> None:
         print(f"[traj] CẢNH BÁO: ô bao dòng đầu (tâm {cx:.0f},{cy:.0f} rộng {w:.0f} cao {h:.0f}) "
               f"lệch {lech * 100:.0f}% so với --expect-bbox ⇒ CÓ THỂ ĐANG ĐO SAI VẬT. "
               "Đừng commit ảnh này làm bằng chứng.")
-    else:
-        print(f"[traj] ô bao khớp --expect-bbox (lệch {lech * 100:.0f}%)")
+        return "lech"
+    print(f"[traj] ô bao khớp --expect-bbox (lệch {lech * 100:.0f}%)")
+    return "khop"
 
 
 def _dirty_code(status_porcelain: str) -> bool:
@@ -294,8 +333,12 @@ def main(argv=None) -> int:
     parser.add_argument("--meta", default="",
                         help="ghi provenance JSON (mặc định: cạnh ảnh, cùng tên .json)")
     parser.add_argument("--expect-bbox", default=None,
-                        help="ô bao mong đợi: x1,y1,x2,y2 (hoặc x,y,w,h); lệch >10%% thì CẢNH BÁO "
-                             "(ô chọn sai từng làm toàn bộ số Phase 4c vô nghĩa — log 14-11)")
+                        help="ô bao mong đợi: x1,y1,x2,y2 hoặc x,y,w,h (nên khai kèm "
+                             "--expect-bbox-dang); lệch >10%% thì CẢNH BÁO (ô chọn sai từng làm toàn bộ "
+                             "số Phase 4c vô nghĩa — log 14-11)")
+    parser.add_argument("--expect-bbox-dang", choices=["xywh", "xyxy"], default=None,
+                        help="dạng của --expect-bbox. Không khai và con số đọc được CẢ hai kiểu "
+                             "⇒ script KHÔNG kết luận (không đoán — ticket #25)")
     args = parser.parse_args(argv)
 
     traj = read_traj(args.csv)
@@ -321,7 +364,15 @@ def main(argv=None) -> int:
     if thong_ke["drift_n"] < 20:
         print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None (chưa đủ mẫu)")
     if args.expect_bbox:
-        _canh_bao_bbox(traj, args.expect_bbox)
+        ket_qua_hop = _canh_bao_bbox(traj, args.expect_bbox, args.expect_bbox_dang)
+        if ket_qua_hop != "khop":
+            # Ảnh vẫn được ghi (đã vẽ xong) nhưng mã thoát 1: "ô bao lệch" hoặc "không so được" đều
+            # KHÔNG được dùng làm bằng chứng, mà exit 0 thì script tự động sẽ coi là đạt.
+            print(f"[traj] ô bao KHÔNG đạt (kết luận: {ket_qua_hop}) — đừng dùng ảnh này làm bằng chứng")
+            if thong_ke["n_thieu_toa_do"]:
+                print(f"[traj] {thong_ke['n_thieu_toa_do']} dòng không có toạ độ hợp lệ "
+                      "(bỏ khỏi đường đi)")
+            return 1
     if thong_ke["n_thieu_toa_do"]:
         print(f"[traj] {thong_ke['n_thieu_toa_do']} dòng không có toạ độ hợp lệ (bỏ khỏi đường đi)")
     return 0
