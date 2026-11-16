@@ -1,12 +1,12 @@
 {
-  "git_rev": "e4f96a883486c4a33f1f3f0e9473f0b953e3f421",
+  "git_rev": "d8319af52051714d74914f91565b4cc39d5a8d47",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-16T12:40:22",
+    "do_luc": "2026-11-16T12:45:52",
     "lenh": "scripts/score_miou.py score --gt docs/gt/binh1_hopbao --pred-dir data/masks_binh1_192_2026-11-15 --out data/miou_binh1_hopbao_2026-11-15_metrics.json",
-    "git_rev": "e4f96a883486c4a33f1f3f0e9473f0b953e3f421",
+    "git_rev": "d8319af52051714d74914f91565b4cc39d5a8d47",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
