@@ -10,7 +10,7 @@ Không cần làm lại số: cả ba đều là cổng kiểm/tên khoá, khôn
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] `ket_qua.gt_dang` (echo `dang_gt`) có trong artifact + test; hoặc đổi tên khoá khi `dang_gt != silhouette`
 - [ ] `kiem_index`: khi `dang_gt == hop_bao` và có `hop_bao_xywh` ⇒ CHẶN nếu `gt.sum() != w*h` (test)
