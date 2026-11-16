@@ -1,12 +1,12 @@
 {
-  "git_rev": "17e1c8524d1f78cf4d9a37929ac0fd69654cf615",
+  "git_rev": "d8319af52051714d74914f91565b4cc39d5a8d47",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-15T15:00:49",
+    "do_luc": "2026-11-16T12:45:52",
     "lenh": "scripts/score_miou.py score --gt docs/gt/binh1_hopbao --pred-dir data/masks_binh1_192_2026-11-15 --out data/miou_binh1_hopbao_2026-11-15_metrics.json",
-    "git_rev": "17e1c8524d1f78cf4d9a37929ac0fd69654cf615",
+    "git_rev": "d8319af52051714d74914f91565b4cc39d5a8d47",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
@@ -16,6 +16,7 @@
     "pred_dir": "data/masks_binh1_192_2026-11-15",
     "gt_do_model_goi_y": false,
     "dang_gt": "hop_bao",
+    "nguon_gt": "máy: ngưỡng màu HSV nhãn tím + phần trắng phía trên; người soi 12/12 frame (sửa tay frame 62)",
     "phuong_phap_gt": "hộp bao chai dựng từ ngưỡng màu nhãn tím (HSV) + phần trắng phía trên, KHÔNG dùng mask của model; người soi 12/12 frame bằng ảnh, sửa tay frame 62 (chai nghiêng). KHÔNG phải GT gán tay; SAI SỐ của hộp CHƯA ĐO. Đây là dạng HỘP BAO ⇒ con số là IoU(mask, hộp), không phải mIoU phân đoạn silhouette; max IoU quan sát được là 0,774 (frame 92), cận trên lý thuyết max(|vật ∩ hộp|/|hộp|) CHƯA đo.",
     "mask_manifest": {
       "nguon": "data/binh1.mp4",
@@ -48,6 +49,8 @@
     "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
   },
   "ket_qua": {
+    "gt_dang": "hop_bao",
+    "mIoU_dinh_nghia": "IoU(mask, GT dạng 'hop_bao') — KHÔNG phải mIoU phân đoạn silhouette",
     "mIoU": 0.6464,
     "mIoU_p05": 0.5058,
     "mask_ngoai_gt_mean": 0.0391,

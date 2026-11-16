@@ -168,6 +168,26 @@ class TestCham:
         assert kq["frames"][0]["mask_ngoai_gt"] is None
         assert kq["mask_ngoai_gt_mean"] is None
 
+    def test_hoa_tran_chon_frame_nho_nhat_du_index_xep_nguoc(self, tmp_path):
+        """HOÀ "tràn" lớn nhất: `max()` trơn lấy phần tử ĐẦU theo thứ tự `rows` ⇒ cùng một bộ GT mà
+        index xếp ngược sẽ ra frame khác nhau. Quy ước (ghim ở đây): lấy **frame_idx nhỏ nhất**."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        gt = np.zeros((6, 6))
+        gt[1:5, 1:5] = 1                       # 16 px
+        phu_kin = np.ones((6, 6))              # 36 px ⇒ tràn giống nhau ở cả hai frame
+        for idx in (2, 8):
+            self._gt(gt_dir, idx, gt)
+            self._pred(pred_dir, idx, phu_kin)
+        frames = [{"frame_idx": 2, "pred_path": str(pred_dir / "mask_000002.png")},
+                  {"frame_idx": 8, "pred_path": str(pred_dir / "mask_000008.png")}]
+        kq = sm.cham(frames, gt_dir)
+        assert kq["mask_ngoai_gt_max_frame"] == 2
+        kq_nguoc = sm.cham(list(reversed(frames)), gt_dir)          # đảo thứ tự index
+        assert kq_nguoc["mask_ngoai_gt_max_frame"] == 2, "hoà phải xác định, không phụ thuộc thứ tự"
+        assert kq_nguoc["mask_ngoai_gt_max"] == kq["mask_ngoai_gt_max"]
+
 
 class TestAnhGtCoAlpha:
     """GT xuất từ trình duyệt/Paint.NET là PNG **4 kênh**; alpha 255 khắp nơi không được thành
@@ -278,6 +298,142 @@ class TestKiemIndex:
         chan, _mem = sm.kiem_index(self._index(tmp_path, frames=[]), tmp_path)
         assert any("rỗng" in x for x in chan)
 
+    # ── Cổng "GT hộp bao ↔ `hop_bao_xywh`" (ticket #30) ────────────────────────────────────
+    def _gt_hop(self, tmp_path, idx, x, y, w, h, hw=(10, 10)):
+        import cv2
+
+        mask = np.zeros(hw, np.uint8)
+        mask[y:y + h, x:x + w] = 255
+        cv2.imwrite(str(tmp_path / f"gt_{idx:06d}.png"), mask)
+
+    def test_hop_bao_khop_hop_xywh_thi_khong_chan(self, tmp_path):
+        self._gt_hop(tmp_path, 0, 2, 3, 4, 5)
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [2, 3, 4, 5]}]), tmp_path)
+        assert not chan
+
+    def test_hop_bao_sai_dien_tich_la_LOI_chan(self, tmp_path):
+        """Đây là lớp lỗi "GT lẫn frame khác": mask 16 px trong khi hộp khai 4×4 = 16 px thì khớp,
+        nên dùng mask 4×4 mà hộp 3×3 để chắc chắn lệch."""
+        self._gt_hop(tmp_path, 0, 0, 0, 4, 4)
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [0, 0, 3, 3]}]), tmp_path)
+        assert any("hộp khai" in x and "lẫn frame khác" in x for x in chan)
+
+    def test_hop_bao_sai_vi_tri_la_LOI_chan(self, tmp_path):
+        """Cùng số pixel nhưng nằm chỗ khác ⇒ vẫn là GT sai (sum == w*h KHÔNG đủ)."""
+        self._gt_hop(tmp_path, 0, 5, 5, 2, 2)
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [0, 0, 2, 2]}]), tmp_path)
+        assert any("không phải hình chữ nhật" in x for x in chan)
+
+    def test_hop_bao_vuot_bien_khung_la_LOI_chan(self, tmp_path):
+        self._gt_hop(tmp_path, 0, 0, 0, 2, 2)
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [9, 9, 2, 2]}]), tmp_path)
+        assert any("vượt biên khung" in x for x in chan)
+
+    def test_hop_bao_xywh_dinh_dang_sai_la_LOI_chan(self, tmp_path):
+        self._gt_hop(tmp_path, 0, 0, 0, 2, 2)
+        for hop in ([0, 0, 0, 2], [0, 0, 2], [0, 0, 2.5, 2], [True, 0, 2, 2], "0,0,2,2"):
+            chan, _mem = sm.kiem_index(
+                self._index(tmp_path, dang_gt="hop_bao",
+                            frames=[{"frame_idx": 0, "hop_bao_xywh": hop}]), tmp_path)
+            assert any("hop_bao_xywh' không hợp lệ" in x for x in chan), hop
+
+    def test_hop_bao_thieu_hop_xywh_chi_la_canh_bao(self, tmp_path):
+        """Khai dạng hộp bao mà không có hộp ⇒ không đối chiếu được, nhưng KHÔNG chặn (GT cũ)."""
+        self._gt_hop(tmp_path, 0, 0, 0, 2, 2)
+        chan, mem = sm.kiem_index(self._index(tmp_path, dang_gt="hop_bao"), tmp_path)
+        assert not chan and any("hop_bao_xywh" in x for x in mem)
+
+    def test_hop_bao_xywh_khong_bi_kiem_khi_gt_silhouette(self, tmp_path):
+        """Cổng này CHỈ áp cho `dang_gt = hop_bao`: GT silhouette có thể kèm hộp (chỉ để tham khảo)."""
+        self._gt_hop(tmp_path, 0, 5, 5, 2, 2)
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="silhouette",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [0, 0, 2, 2]}]), tmp_path)
+        assert not chan
+
+    def test_hop_bao_cham_mep_khung_khong_bi_chan(self, tmp_path):
+        """Hộp chạm mép (x+w == W, y+h == H) là HỢP LỆ — chặn oan thì bộ GT thật (frame 72 có y=0)
+        không chấm được (P3 review 16-11)."""
+        self._gt_hop(tmp_path, 0, 6, 8, 4, 4, hw=(12, 10))   # khung 10 cột × 12 hàng, chạm cả 2 mép
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [6, 8, 4, 4]}]), tmp_path)
+        assert not chan
+
+    def test_hop_bao_gt_rong_bao_dung_cach_sua_ro_rang(self, tmp_path):
+        """Vật đã rời khung ⇒ GT rỗng là ĐÚNG; khai hộp cho frame rỗng là mâu thuẫn, và thông điệp
+        phải chỉ cách sửa, không được để người chạy tưởng "GT lẫn frame khác" (P2 review 16-11)."""
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.zeros((10, 10), np.uint8))
+        chan, _mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [1, 1, 4, 4]}]), tmp_path)
+        assert any("RỜI KHUNG" in x and "BỎ 'hop_bao_xywh'" in x for x in chan)
+        assert not any("lẫn frame khác" in x for x in chan)
+
+    def test_bo_gt_hop_bao_da_commit_phai_qua_cong(self):
+        """Tiêu chí nghiệm thu ticket #30: cổng mới KHÔNG được chặn bộ GT đã commit (12 frame).
+
+        Lưu ý: test này MỘT CHIỀU — nó chỉ canh "không chặn oan", không canh "cổng tồn tại" (phần đó
+        do các test `..._la_LOI_chan` ở trên ghim).
+        """
+        gt_dir = sm.GT_DIR / "binh1_hopbao"
+        index = json.loads((gt_dir / "index.json").read_text(encoding="utf-8"))
+        chan, _mem = sm.kiem_index(index, gt_dir)
+        assert chan == []
+
+    def test_gt_rong_bo_hop_khong_bi_dem_la_thieu_hop(self, tmp_path):
+        """Vật đã rời khung ⇒ GT rỗng + BỎ `hop_bao_xywh` là cách sửa ĐÚNG; không được cảnh báo
+        "thêm hộp vào index" (hai câu khuyên ngược nhau — P3 review vòng 2)."""
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.zeros((10, 10), np.uint8))
+        chan, mem = sm.kiem_index(self._index(tmp_path, dang_gt="hop_bao"), tmp_path)
+        assert not chan
+        assert not any("hop_bao_xywh" in x for x in mem), mem
+
+
+class TestKiemKhopManifest:
+    """GT và mask phải là CÙNG clip, CÙNG frame — `manifest.json` của thư mục mask là chỗ kiểm được
+    điều đó (lớp lỗi "ghép GT với mask của frame khác", P0 14-11). Cảnh báo MỀM.
+    """
+
+    _idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 2}, {"frame_idx": 12}]}
+
+    def test_khop_thi_khong_canh_bao(self):
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [2, 12]}
+        assert sm.kiem_khop_manifest(self._idx, man) == []
+
+    def test_clip_khac_nguon_la_canh_bao(self):
+        man = {"nguon": "data/binh2.mp4", "frames_yeu_cau": [2, 12]}
+        mem = sm.kiem_khop_manifest(self._idx, man)
+        assert any("KHÁC nguồn của mask" in x for x in mem)
+
+    def test_frame_ngoai_frames_yeu_cau_la_canh_bao(self):
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [2]}
+        mem = sm.kiem_khop_manifest(self._idx, man)
+        assert any("KHÔNG nằm trong `frames_yeu_cau`" in x and "12" in x for x in mem)
+
+    def test_khong_co_manifest_thi_khong_doan(self):
+        assert sm.kiem_khop_manifest(self._idx, None) == []
+        assert sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4"}) == []
+
+    def test_frames_yeu_cau_dang_chuoi_van_doi_chieu_duoc(self):
+        """Manifest viết tay có thể ghi `"2,12"` — bỏ qua im lặng là fail-open (P3 review 16-11)."""
+        assert sm.kiem_khop_manifest(self._idx, {"frames_yeu_cau": "2,12"}) == []
+        mem = sm.kiem_khop_manifest({"clip": "x", "frames": [{"frame_idx": 5}]},
+                                    {"frames_yeu_cau": "2,12"})
+        assert any("KHÔNG nằm trong `frames_yeu_cau`" in x for x in mem)
+
 
 class TestLabelKhongTuKhaiDangGt:
     """`label` sinh frame TRƯỚC khi người tô ⇒ không được khai `dang_gt = silhouette` (P1 review 15-11).
@@ -383,7 +539,90 @@ class TestCli:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["meta"]["dang_gt"] == "hop_bao"
         assert "ngưỡng màu" in payload["meta"]["phuong_phap_gt"]
+        # `grep mIoU` phải thấy cảnh báo NGAY CẠNH con số (ticket #30): không chỉ nằm trong `meta`.
+        assert payload["ket_qua"]["gt_dang"] == "hop_bao"
+        assert "KHÔNG phải mIoU phân đoạn" in payload["ket_qua"]["mIoU_dinh_nghia"]
         assert ma == 1, "cảnh báo mềm (GT hộp bao) ⇒ exit 1, không phải 0"
+
+    def test_check_index_in_dang_gt_va_nguon_gt(self, tmp_path, capsys):
+        """`--check-index` là chỗ người chạy hay xem nhất ⇒ phải in dạng GT + nguồn GT, không chỉ
+        "hợp lệ" (ticket #30)."""
+        import cv2
+
+        gt = tmp_path / "gt"
+        gt.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "hop_bao",
+            "nguon_gt": "ngưỡng màu HSV nhãn tím",
+            "frames": [{"frame_idx": 0, "hop_bao_xywh": [1, 1, 2, 2]}],
+            "frame_hw": [10, 10]}), encoding="utf-8")
+        mask = np.zeros((10, 10), np.uint8)
+        mask[1:3, 1:3] = 255
+        cv2.imwrite(str(gt / "gt_000000.png"), mask)
+
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(tmp_path / "pred"),
+                      "--check-index"])
+
+        out = capsys.readouterr().out
+        assert "dạng GT: hop_bao" in out and "HỘP BAO" in out
+        assert "nguồn GT: ngưỡng màu HSV nhãn tím" in out
+        assert ma == 1          # vẫn còn cảnh báo mềm "GT hộp bao"
+
+
+class TestManifestDuocGoiTuMain:
+    """`main()` phải THẬT SỰ gọi `kiem_khop_manifest` — xoá dòng gọi thì cảnh báo biến mất mà test nào
+    cũng xanh (P2 review 16-11: "cổng danh nghĩa")."""
+
+    def test_manifest_nguon_khac_thi_artifact_co_canh_bao(self, tmp_path, monkeypatch):
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "silhouette",
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        (pred / "manifest.json").write_text(json.dumps({
+            "nguon": "data/binh2.mp4", "frames_yeu_cau": [0]}), encoding="utf-8")
+        out = tmp_path / "art.json"
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert any("KHÁC nguồn của mask" in x for x in payload["canh_bao_gt"])
+        assert ma == 1, "mIoU ghép hai clip khác nhau ⇒ phải exit 1"
+
+
+class TestArtifactGtDang:
+    def test_dang_gt_khong_khai_van_co_cau_dinh_nghia(self, tmp_path, monkeypatch):
+        """`gt_dang = null` trông y hệt một bộ silhouette hợp lệ nếu không còn câu định nghĩa nào
+        trong `ket_qua` ⇒ người đọc lại gọi con số là "mIoU phân đoạn" (P2 review 16-11)."""
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình",
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        out = tmp_path / "art.json"
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["ket_qua"]["gt_dang"] is None
+        assert "KHÔNG KHAI" in payload["ket_qua"]["mIoU_dinh_nghia"]
+        # `gt_dang`/`mIoU_dinh_nghia` phải đứng TRƯỚC `mIoU` trong file (grep thấy cảnh báo trước số).
+        khoa = list(payload["ket_qua"])
+        assert khoa.index("mIoU_dinh_nghia") < khoa.index("mIoU")
 
 
 class TestMaskHongKhongLamChetCaLanCham:

@@ -20,3 +20,12 @@ python scripts/score_miou.py score --gt docs/gt/binh1_hopbao \
     --out data/miou_binh1_hopbao_2026-11-15_metrics.json
 # exit 1 (cảnh báo "GT hộp bao") là ĐÚNG hợp đồng — xem docs/thuoc-do-bam-dung.md §1.1
 ```
+
+## Cổng kiểm (từ 16-11, ticket #30)
+
+Vì `dang_gt = hop_bao`, mỗi frame có `hop_bao_xywh = [x, y, w, h]` trong `index.json` và mask GT phải
+**đúng là hộp đó**: sai định dạng · vượt biên khung · `số pixel ≠ w*h` · bao thực lệch `(x, y, w, h)`
+⇒ **CHẶN (exit 2, không ghi artifact)**. Hộp chạm mép khung (`x+w == W`) là hợp lệ.
+Vật đã rời khung thì **bỏ** `hop_bao_xywh` ở frame đó (GT rỗng không chấm, đếm riêng).
+Giới hạn: cổng này kiểm **tự nhất quán** (mask ↔ hộp khai), **không** bắt ca copy-paste cùng một
+hộp+mask cho nhiều frame. Chi tiết: `docs/thuoc-do-bam-dung.md` §1.2.
