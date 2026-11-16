@@ -1,7 +1,7 @@
 {
-  "do_luc": "2026-11-14T18:18:45",
-  "lenh": "scripts/make_trajectory_media.py --csv data/drift_samples_binh1_2026-11-14_113103.csv --clip data/binh1.mp4 --expect-bbox 288,287,431,734 --title binh1 — ô chọn 300,275,150,410 (đúng vật); 170/468 lần VOS trả mask rỗng khi vật ra khỏi khung --out docs/media/traj/binh1_vat_ra_khung.png",
-  "git_rev": "4befc51ed7728b7479d2bf55c0b3ed3d0aebccdc",
+  "do_luc": "2026-11-16T19:09:18",
+  "lenh": "scripts/make_trajectory_media.py --csv data/drift_samples_binh1_2026-11-14_113103.csv --clip data/binh1.mp4 --expect-bbox 288,287,431,734 --expect-bbox-dang xyxy --title binh1 — ô chọn 300,275,150,410 (đúng vật); 170/468 lần VOS trả mask rỗng khi vật ra khỏi khung --out docs/media/traj/binh1_vat_ra_khung.png",
+  "git_rev": "33c11e79eb38f7682bae0cd72043d4d8175c3f47",
   "git_dirty_code": false,
   "csv": "data/drift_samples_binh1_2026-11-14_113103.csv",
   "csv_sha256_16": "a6e2d917a8b4b303",
@@ -15,6 +15,6 @@
   ],
   "tieu_de": "binh1 — ô chọn 300,275,150,410 (đúng vật); 170/468 lần VOS trả mask rỗng khi vật ra khỏi khung",
   "anh": "docs/media/traj/binh1_vat_ra_khung.png",
-  "anh_sha256_16": "79af5aa535aeaeb2",
+  "anh_sha256_16": "9c6c0e6dee2541c4",
   "canh_bao": "Độ tự nhất quán (drift_iou) KHÔNG phải độ chính xác — xem AGENTS §6."
 }
