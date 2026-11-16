@@ -10,10 +10,14 @@ Không cần làm lại số: cả ba đều là cổng kiểm/tên khoá, khôn
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** resolved
 
-- [ ] `ket_qua.gt_dang` (echo `dang_gt`) có trong artifact + test; hoặc đổi tên khoá khi `dang_gt != silhouette`
-- [ ] `kiem_index`: khi `dang_gt == hop_bao` và có `hop_bao_xywh` ⇒ CHẶN nếu `gt.sum() != w*h` (test)
-- [ ] `main`: cảnh báo mềm khi `index.clip` khác `meta.mask_manifest.nguon`, hoặc `index.frames` không nằm trong `frames_yeu_cau` (đúng lớp lỗi 'ghép sai frame')
-- [ ] Test ca hoà `mask_ngoai_gt_max_frame` (hai frame cùng leak lớn nhất ⇒ chọn xác định, ghi rõ chọn frame nào)
-- [ ] `score_miou --check-index` in thêm dạng GT + nguồn GT để người chạy thấy ngay
+- [x] `ket_qua.gt_dang` (echo `dang_gt`) có trong artifact + test; hoặc đổi tên khoá khi `dang_gt != silhouette`
+- [x] `kiem_index`: khi `dang_gt == hop_bao` và có `hop_bao_xywh` ⇒ CHẶN nếu `gt.sum() != w*h` (test)
+- [x] `main`: cảnh báo mềm khi `index.clip` khác `meta.mask_manifest.nguon`, hoặc `index.frames` không nằm trong `frames_yeu_cau` (đúng lớp lỗi 'ghép sai frame')
+- [x] Test ca hoà `mask_ngoai_gt_max_frame` (hai frame cùng leak lớn nhất ⇒ chọn xác định, ghi rõ chọn frame nào)
+- [x] `score_miou --check-index` in thêm dạng GT + nguồn GT để người chạy thấy ngay
+
+## Answer
+
+Xong trên nhánh `fix/gt-hop-bao-cong-kiem` (commit `0ebc520`…`a2f8647`). `--check-index` trên `docs/gt/binh1_hopbao`: **0 lỗi chặn**, 12/12 frame khớp `w*h`; `score` vẫn `mIoU = 0,6464` / `n_cham = 12` / `mask_ngoai_gt_max_frame = 62` (**không đổi số**). Artifact sinh trên cây sạch `git_rev = a2f8647`, `git_dirty_code = false`; `ket_qua` có `gt_dang = hop_bao` + `mIoU_dinh_nghia` đứng TRƯỚC `mIoU`. `./run lint` xanh · `./run test` 1270 passed (5 deselected). Hai vòng review độc lập: vòng 1 = 0 P0/P1 + 5 P2 + 9 P3, vòng 2 = 0 P0/P1 mới (đã đóng cả 5 P2, 4+2 P3); còn nợ 2 P3 ghi ở Next steps của log. Log: `docs/task/16-11-2026-ticket-30-cong-kiem-gt-hop-bao.md`.
