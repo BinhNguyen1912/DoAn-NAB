@@ -1,12 +1,12 @@
 {
-  "git_rev": "6068434cf17a1c5a837e025bf14ae33839d87dd3",
+  "git_rev": "c79e34111c0ec22050891e2d2476a1ecf114c663",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-16T12:56:30",
+    "do_luc": "2026-11-16T13:13:52",
     "lenh": "scripts/score_miou.py score --gt docs/gt/binh1_hopbao --pred-dir data/masks_binh1_192_2026-11-15 --out data/miou_binh1_hopbao_2026-11-15_metrics.json",
-    "git_rev": "6068434cf17a1c5a837e025bf14ae33839d87dd3",
+    "git_rev": "c79e34111c0ec22050891e2d2476a1ecf114c663",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
@@ -46,6 +46,7 @@
       ],
       "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO"
     },
+    "mask_manifest_loi": null,
     "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
   },
   "ket_qua": {

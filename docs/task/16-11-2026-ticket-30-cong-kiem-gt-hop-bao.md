@@ -44,6 +44,14 @@
    thêm mục "Cổng kiểm"; `scripts/so_lieu_bao_cao.py` câu CẤM trích trỏ `ket_qua.gt_dang`.
 6. **Sinh lại artifact trên cây sạch** (chỉ THÊM khoá, không đổi số) + `docs/so-lieu-bao-cao.md`.
 
+6. **Vá 2 P3 còn nợ ngay trong ngày** (ticket #31): (a) `_doc_manifest` trả `(manifest, lỗi)` để phân
+   biệt **"không có manifest"** (bình thường) với **"có manifest nhưng HỎNG"** (không ai biết mask từ
+   clip/frame nào) — lỗi được ghi vào `meta.mask_manifest_loi` và in ở `--check-index`; (b) cảnh báo
+   mềm khi **hai frame khai cùng một `hop_bao_xywh`** (bản hộp bao của `DUP_IOU` trong
+   `gt_check_silhouette`) — nghi copy-paste GT, không chặn vì vật đứng yên vẫn có thể trùng hộp thật.
+   Test: +7 (manifest hỏng JSON, manifest là list, artifact ghi `mask_manifest_loi`, `--check-index` in
+   "HỎNG", hai hộp trùng, hai hộp khác nhau, không có file manifest).
+
 ## 📤 Output / Kết quả
 - `--check-index` trên bộ GT thật: **0 lỗi chặn**, 1 cảnh báo (GT hộp bao) ⇒ exit 1 đúng hợp đồng;
   12/12 file GT đều khớp `w*h` của hộp khai (kiểm độc lập bằng script: f2 67 080 = 156×430 … f106 61 904).
@@ -89,14 +97,26 @@
 - **Vòng 2** (agent `reviewer`, chỉ đọc, chỉ phần vừa sửa): **không P0/P1 mới**; P2-5 (log/ticket) đóng
   bằng file này; 2 P3 sửa luôn (`d8319af`): câu khuyên ngược nhau + `float`/`Infinity` trong
   `frames_yeu_cau`; ghi rõ test "bộ GT đã commit" là **một chiều** (chỉ canh "không chặn oan").
+- **Vòng 3 — ticket #31 (2 P3 còn nợ), agent `reviewer` chỉ đọc:** logic đúng, **0 P0**, nhưng nêu
+  **1 P1** + 2 P2 + 3 P3. Đã sửa hết trước khi merge:
+  - P1: `git_rev` trong artifact là commit **của nhánh** (`c79e341`) ⇒ sau squash sẽ thành con trỏ chết
+    (đúng lỗi `a2f8647`). **Cách sửa: merge bằng MERGE COMMIT (`--no-ff`), không squash** ⇒ `c79e341`
+    sống trong lịch sử `main`. Đây là quy ước mới cho các PR có artifact số đo.
+  - P2: test `--check-index` "manifest HỎNG" vẫn xanh khi revert (câu cũ vẫn in từ vòng `mem`) ⇒ thêm
+    `assert "KHÔNG có manifest" not in out`; test bộ GT đã commit vứt `_mem` ⇒ nay assert
+    **không có** cảnh báo "CÙNG một hộp" (12 hộp khác nhau).
+  - P3: `docs/gt/binh1_hopbao/README.md` còn viết "không bắt copy-paste" (nay chỉ **cảnh báo mềm**) —
+    đã sửa; `docs/thuoc-do-bam-dung.md` nêu rõ cảnh báo chỉ chạy khi `dang_gt = hop_bao` và phải
+    **giống hệt 4 số**; thêm test manifest hợp lệ vẫn vào `meta.mask_manifest` dạng **dict**.
 - **Còn nợ (P3, ghi ở Next steps)**: `_doc_manifest` nuốt lỗi JSON ⇒ manifest **hỏng** in y hệt "không có
   manifest"; cổng không bắt ca **copy-paste** cùng hộp+mask cho nhiều frame (đã ghi giới hạn trong docs).
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] P3: phân biệt "manifest hỏng" vs "không có manifest" (`_doc_manifest` trả kèm lý do) + test
-      `manifest.json` là list / JSON hỏng trên `--check-index`.
-- [ ] P3: cân nhắc dùng `DUP_IOU` của `scripts/gt_check_silhouette.py` cho cả GT `hop_bao` để bắt
-      copy-paste (hiện chỉ ghi giới hạn trong `docs/thuoc-do-bam-dung.md` §1.2).
+- [x] ~~P3: phân biệt "manifest hỏng" vs "không có manifest"~~ — xong (ticket #31): `_doc_manifest`
+      trả `(manifest, lỗi)`, lỗi vào `meta.mask_manifest_loi` + in ở `--check-index`.
+- [x] ~~P3: bắt ca copy-paste hộp+mask~~ — xong (ticket #31) dạng **cảnh báo mềm**: hai frame khai
+      cùng `hop_bao_xywh` ⇒ "CÙNG một hộp … copy-paste?"; GT silhouette vẫn dùng `gt_check_silhouette`
+      (IoU > 0,98) vì nó bắt được cả ca mask giống nhau mà hộp khai khác.
 - [ ] Việc lớn còn lại của plan 14-11: **tô silhouette** cho 10–20 frame `binh1` ⇒ mIoU phân đoạn thật
       (hiện chỉ có IoU với hộp bao 0,6464); đoạn demo ≥ 20 s; chốt phạm vi với GVHD.
 
