@@ -26,6 +26,7 @@ Lưu ý  : `empty = 1` là lần VOS trả mask RỖNG ⇒ KHÔNG có toạ đ�
 import argparse
 import csv
 import json
+import math
 import sys
 from pathlib import Path
 
@@ -192,77 +193,125 @@ def draw(traj: dict, background=None, title: str = ""):
 
 
 def _doc_hop(expect, dang=None):
-    """Đọc `--expect-bbox` ⇒ `(x1, y1, x2, y2, lỗi | None)`.
+    """Đọc `--expect-bbox` ⇒ `((x1, y1, x2, y2) | None, lỗi | None, dạng hiệu lực | None)`.
 
     Dạng hộp phải được XÁC ĐỊNH, không đoán: `50,100,300,400` là hộp `(x,y,w,h)` **hợp lệ** nhưng cũng
     đọc được thành `(x1,y1,x2,y2)` ⇒ đoán sai thì cổng in "ô bao KHỚP" trong khi thực ra không khớp
     (ticket #25 — đúng loại "cổng báo khớp OAN" mà AGENTS §6 cấm). Ba cách khai:
     `--expect-bbox-dang xywh`, tiền tố `xywh:50,100,300,400`, hoặc `xyxy:...`.
     Không khai + không suy ra được chắc chắn ⇒ trả lỗi để người gọi in "KHÔNG KẾT LUẬN".
+    Phần tử thứ ba là **dạng hiệu lực** (`"xywh"`/`"xyxy"`) để provenance ghi cả ca SUY RA.
+
+    Số không hữu hạn (`nan`/`inf`) bị TỪ CHỐI: `max()` bỏ qua NaN và `nan > 0.1` là `False` ⇒ cổng sẽ
+    in "khớp" với một hộp vô nghĩa (P1 review 16-11).
     """
     raw = str(expect).strip()
+    if not raw:
+        return None, "--expect-bbox rỗng ⇒ không có gì để so (bỏ cờ nếu không muốn kiểm)", None
     for ten in ("xywh", "xyxy"):
         if raw.lower().startswith(f"{ten}:"):
             dang, raw = ten, raw[len(ten) + 1:]
+    if dang not in (None, "xywh", "xyxy"):
+        return None, f"dạng hộp lạ: {dang!r} (chỉ nhận 'xywh' | 'xyxy')", None
     try:
         a, b, c, d = (float(v) for v in raw.replace(";", ",").split(","))
     except ValueError:
         return None, (
             f"--expect-bbox phải là 4 số; nhận {expect!r}. Khai dạng: "
-            "`--expect-bbox-dang xywh|xyxy` hoặc tiền tố `xywh:50,100,300,400`")
+            "`--expect-bbox-dang xywh|xyxy` hoặc tiền tố `xywh:50,100,300,400`"), None
+    if not all(math.isfinite(v) for v in (a, b, c, d)):
+        return None, f"--expect-bbox có số không hữu hạn (nan/inf): {expect!r}", None
     if dang is None:
         # Hộp `(x, y, w, h)` mà `w > x` (vd `50,100,300,400`) đọc kiểu nào cũng "hợp lệ" ⇒ KHÔNG ĐOÁN.
         if c <= a or d <= b:
             dang = "xywh"          # `x2 <= x1` ⇒ chỉ có thể là (x, y, w, h)
+            print(f"[traj] dạng hộp SUY RA: xywh (vì x2<=x1 hoặc y2<=y1 trong {expect})")
         else:
             return None, (
                 f"--expect-bbox {expect} đọc được CẢ hai kiểu (x1,y1,x2,y2) và (x,y,w,h) ⇒ "
-                "KHÔNG so được (không đoán): khai `--expect-bbox-dang xywh` hoặc `xyxy`")
+                "KHÔNG so được (không đoán): khai `--expect-bbox-dang xywh` hoặc `xyxy`"), None
     if dang == "xywh":
         x, y, w, h = a, b, c, d
         if w <= 0 or h <= 0:
-            return None, f"--expect-bbox dạng x,y,w,h mà w/h không dương ({w}, {h})"
-        return (x, y, x + w, y + h), None
+            return None, f"--expect-bbox dạng x,y,w,h mà w/h không dương ({w}, {h})", None
+        return (x, y, x + w, y + h), None, dang
     x1, y1, x2, y2 = a, b, c, d
     if x2 <= x1 or y2 <= y1:
         return None, (f"--expect-bbox dạng x1,y1,x2,y2 mà x2<=x1 hoặc y2<=y1 ({x1},{y1},{x2},{y2}) — "
-                      "nếu đây là (x,y,w,h) thì khai `--expect-bbox-dang xywh`")
-    return (x1, y1, x2, y2), None
+                      "nếu đây là (x,y,w,h) thì khai `--expect-bbox-dang xywh`"), None
+    return (x1, y1, x2, y2), None, dang
 
 
-def _canh_bao_bbox(traj: dict, expect: str, dang: str | None = None) -> str:
-    """So ô bao dòng ĐẦU của CSV với ô mong đợi; lệch >10 % thì in cảnh báo to.
+def _iou_hop(a, b) -> float:
+    """IoU của hai hộp `(x1, y1, x2, y2)`."""
+    ix1, iy1 = max(a[0], b[0]), max(a[1], b[1])
+    ix2, iy2 = min(a[2], b[2]), min(a[3], b[3])
+    giao = max(0.0, ix2 - ix1) * max(0.0, iy2 - iy1)
+    hop_a = max(0.0, a[2] - a[0]) * max(0.0, a[3] - a[1])
+    hop_b = max(0.0, b[2] - b[0]) * max(0.0, b[3] - b[1])
+    tong = hop_a + hop_b - giao
+    return 0.0 if tong <= 0 else giao / tong
+
+
+IOU_CUNG_VAT = 0.7       # IoU tối thiểu để coi hai hộp là CÙNG VẬT
+
+
+def _canh_bao_bbox(traj: dict, expect: str, dang: str | None = None,
+                   ghi_nhan: dict | None = None) -> str:
+    """So ô bao dòng ĐẦU của CSV với ô mong đợi ⇒ `"khop" | "lech" | "khong_ket_luan"`.
 
     Vì sao cần: 14-11 phát hiện ô `104,308,209,287` phủ **khuôn mặt** chứ không phải chai, và toàn bộ
     số của một phase đo bằng ô đó là vô nghĩa. CSV không tự khai nó đo vật nào ⇒ người dùng phải khai.
 
-    Trả `"khop" | "lech" | "khong_ket_luan"` — người gọi dùng mã này cho exit code, KHÔNG in "khớp"
-    khi chưa so được (ticket #25).
+    Tiêu chí là **IoU hai hộp ≥ 0,7** (cùng vật), KHÔNG dùng "lệch % từng cạnh": với chai dựng đứng,
+    sai 37 px ở cạnh cao = 9 % trong khi IoU vẫn 0,71 ⇒ ngưỡng theo cạnh vừa báo oan vừa không trả lời
+    "có cùng một vật hay không". Độ lệch từng cạnh vẫn được in như **thông tin**, không quyết định.
+
+    Không in "khớp" khi chưa so được (ticket #25). `ghi_nhan` (tuỳ chọn) được điền `expect_bbox`,
+    `expect_bbox_dang`, `ket_qua_hop`, `iou_bbox` để **provenance JSON ghi lại cổng đã kết luận gì** —
+    câu "đừng dùng ảnh này làm bằng chứng" chỉ ở stdout thì file `.json` còn lại trông y hệt lần đạt
+    (P2 review 16-11).
     """
-    hop, loi = _doc_hop(expect, dang)
+    def _xong(ket_qua: str, iou_hop=None) -> str:
+        if ghi_nhan is not None:
+            ghi_nhan.update({"expect_bbox": expect, "expect_bbox_dang": dang_hieu_luc,
+                             "ket_qua_hop": ket_qua,
+                             "iou_bbox": None if iou_hop is None else round(float(iou_hop), 4)})
+        return ket_qua
+
+    hop, loi, dang_hieu_luc = _doc_hop(expect, dang)
     if loi:
         print(f"[traj] KHÔNG KẾT LUẬN: {loi}")
-        return "khong_ket_luan"
+        return _xong("khong_ket_luan")
     x1e, y1e, x2e, y2e = hop
     data = traj["data"]
-    x1 = data["cx"][0], data["cy"][0]
-    if x1[0] is None:
-        print("[traj] dòng đầu không có toạ độ ⇒ không so được bbox")
-        return "khong_ket_luan"
-    w = float(data["w"][0])
-    h = float(data["h"][0])
-    cx, cy = float(x1[0]), float(x1[1])
+    if not len(data["cx"]) or data["cx"][0] is None:
+        print("[traj] không có ô bao ở dòng đầu CSV ⇒ không so được bbox")
+        return _xong("khong_ket_luan")
+    try:
+        cx, cy = float(data["cx"][0]), float(data["cy"][0])
+        w, h = float(data["w"][0]), float(data["h"][0])
+    except (TypeError, ValueError):
+        print("[traj] ô bao dòng đầu không phải số ⇒ không so được bbox")
+        return _xong("khong_ket_luan")
+    if not all(math.isfinite(v) for v in (cx, cy, w, h)):
+        # CSV có `nan`/`inf` ⇒ mọi phép so đều vô nghĩa (`nan > ngưỡng` luôn False).
+        print(f"[traj] KHÔNG KẾT LUẬN: ô bao dòng đầu có số không hữu hạn ({cx}, {cy}, {w}, {h})")
+        return _xong("khong_ket_luan")
+    hop_csv = (cx - w / 2.0, cy - h / 2.0, cx + w / 2.0, cy + h / 2.0)
+    iou_hop = _iou_hop(hop_csv, (x1e, y1e, x2e, y2e))
     cx_e, cy_e = (x1e + x2e) / 2.0, (y1e + y2e) / 2.0
     lech = max(abs(cx - cx_e) / max(1.0, (x2e - x1e)), abs(cy - cy_e) / max(1.0, (y2e - y1e)),
                abs(w - (x2e - x1e)) / max(1.0, (x2e - x1e)),
                abs(h - (y2e - y1e)) / max(1.0, (y2e - y1e)))
-    if lech > 0.10:
+    if not (iou_hop >= IOU_CUNG_VAT):          # `not >=` để `nan` rơi vào nhánh CẢNH BÁO
         print(f"[traj] CẢNH BÁO: ô bao dòng đầu (tâm {cx:.0f},{cy:.0f} rộng {w:.0f} cao {h:.0f}) "
-              f"lệch {lech * 100:.0f}% so với --expect-bbox ⇒ CÓ THỂ ĐANG ĐO SAI VẬT. "
-              "Đừng commit ảnh này làm bằng chứng.")
-        return "lech"
-    print(f"[traj] ô bao khớp --expect-bbox (lệch {lech * 100:.0f}%)")
-    return "khop"
+              f"chỉ IoU {iou_hop:.2f} < {IOU_CUNG_VAT} với --expect-bbox ⇒ CÓ THỂ ĐANG ĐO SAI VẬT "
+              f"(lệch cạnh tối đa {lech * 100:.0f}%). Đừng commit ảnh này làm bằng chứng.")
+        return _xong("lech", iou_hop)
+    print(f"[traj] ô bao khớp --expect-bbox (CÙNG VẬT): IoU {iou_hop:.2f} >= {IOU_CUNG_VAT} "
+          f"(lệch cạnh tối đa {lech * 100:.0f}%)")
+    return _xong("khop", iou_hop)
 
 
 def _dirty_code(status_porcelain: str) -> bool:
@@ -333,9 +382,9 @@ def main(argv=None) -> int:
     parser.add_argument("--meta", default="",
                         help="ghi provenance JSON (mặc định: cạnh ảnh, cùng tên .json)")
     parser.add_argument("--expect-bbox", default=None,
-                        help="ô bao mong đợi: x1,y1,x2,y2 hoặc x,y,w,h (nên khai kèm "
-                             "--expect-bbox-dang); lệch >10%% thì CẢNH BÁO (ô chọn sai từng làm toàn bộ "
-                             "số Phase 4c vô nghĩa — log 14-11)")
+                        help="ô bao bạn ĐÃ CHỌN cho vật; phải khai kèm --expect-bbox-dang (hoặc tiền tố "
+                             "xywh:/xyxy:). IoU < 0,7 với ô bao dòng đầu CSV ⇒ CẢNH BÁO + exit 1 "
+                             "(ô chọn sai từng làm toàn bộ số Phase 4c vô nghĩa — log 14-11)")
     parser.add_argument("--expect-bbox-dang", choices=["xywh", "xyxy"], default=None,
                         help="dạng của --expect-bbox. Không khai và con số đọc được CẢ hai kiểu "
                              "⇒ script KHÔNG kết luận (không đoán — ticket #25)")
@@ -351,28 +400,30 @@ def main(argv=None) -> int:
     print(f"[traj] {out} ({out.stat().st_size // 1024} KB)")
     data = traj["data"]
     bbox_dau = None
-    if data["cx"][0] is not None:
+    if len(data["cx"]) and data["cx"][0] is not None:
         cx, cy = float(data["cx"][0]), float(data["cy"][0])
         w, h = float(data["w"][0]), float(data["h"][0])
         bbox_dau = (round(cx - w / 2), round(cy - h / 2), round(cx + w / 2), round(cy + h / 2))
     meta_path = Path(args.meta) if args.meta else out.with_suffix(".json")
+    ket_qua_hop = None
+    ghi_nhan: dict = {}
+    if args.expect_bbox is not None:      # `is not None`: cờ rỗng vẫn phải đi qua cổng, không im lặng bỏ
+        ket_qua_hop = _canh_bao_bbox(traj, args.expect_bbox, args.expect_bbox_dang, ghi_nhan)
     meta = provenance(args.csv, args.clip, out, args.title, bbox_dau)
+    if ghi_nhan:
+        meta.update(ghi_nhan)
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[traj] provenance: {meta_path} (bbox dòng đầu {bbox_dau}, git_rev {meta['git_rev']})")
     print(f"[traj] {thong_ke}")
     if thong_ke["drift_n"] < 20:
         print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None (chưa đủ mẫu)")
-    if args.expect_bbox:
-        ket_qua_hop = _canh_bao_bbox(traj, args.expect_bbox, args.expect_bbox_dang)
-        if ket_qua_hop != "khop":
-            # Ảnh vẫn được ghi (đã vẽ xong) nhưng mã thoát 1: "ô bao lệch" hoặc "không so được" đều
-            # KHÔNG được dùng làm bằng chứng, mà exit 0 thì script tự động sẽ coi là đạt.
-            print(f"[traj] ô bao KHÔNG đạt (kết luận: {ket_qua_hop}) — đừng dùng ảnh này làm bằng chứng")
-            if thong_ke["n_thieu_toa_do"]:
-                print(f"[traj] {thong_ke['n_thieu_toa_do']} dòng không có toạ độ hợp lệ "
-                      "(bỏ khỏi đường đi)")
-            return 1
+    if ket_qua_hop is not None and ket_qua_hop != "khop":
+        # Ảnh vẫn được ghi (đã vẽ xong) — kể cả provenance — nhưng mã thoát 1 và JSON ghi
+        # `ket_qua_hop`: "ô bao lệch"/"không so được" KHÔNG được dùng làm bằng chứng, mà exit 0 thì
+        # script tự động sẽ coi là đạt.
+        print(f"[traj] ô bao KHÔNG đạt (kết luận: {ket_qua_hop}) — đừng dùng ảnh này làm bằng chứng")
+        return 1
     if thong_ke["n_thieu_toa_do"]:
         print(f"[traj] {thong_ke['n_thieu_toa_do']} dòng không có toạ độ hợp lệ (bỏ khỏi đường đi)")
     return 0

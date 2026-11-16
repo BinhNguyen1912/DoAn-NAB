@@ -125,10 +125,11 @@ class TestCanhBaoBbox:
         out = capsys.readouterr().out
         assert "khớp" in out and "CẢNH BÁO" not in out
 
-    def test_x_y_w_h_duoc_chap_nhan_nhu_x1_y1_x2_y2(self, tmp_path, capsys):
-        """`300,275,150,410` là (x,y,w,h) — đọc thành (x1,y1,x2,y2) cho hộp rộng ÂM (bẫy AGENTS §6)."""
-        tm._canh_bao_bbox(self._traj(tmp_path, bbox="305,280,445,690"), "300,275,150,410")
-        assert "khớp" in capsys.readouterr().out
+    def test_xywh_suy_ra_duoc_khi_x2_nho_hon_x1(self, tmp_path, capsys):
+        """`300,275,150,410` KHÔNG mơ hồ (x2=150 <= x1=300) ⇒ suy ra `(x,y,w,h)` và nói rõ đã suy ra."""
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="305,280,445,690"), "300,275,150,410")
+        out = capsys.readouterr().out
+        assert kq == "khop" and "SUY RA: xywh" in out
 
     def test_lech_nhieu_thi_canh_bao_to(self, tmp_path, capsys):
         """Ô phủ mặt (100,300 → 330,660) so với ô chọn đúng vật (300,275 → 450,685)."""
@@ -145,7 +146,9 @@ class TestCanhBaoBbox:
     def test_hop_mo_ho_khong_ket_luan_thay_vi_doan(self, tmp_path, capsys):
         """`50,100,300,400` là `(x,y,w,h)` hợp lệ **và** cũng đọc được thành `(x1,y1,x2,y2)`.
         Bản cũ đoán `x1,y1,x2,y2` ⇒ có thể in "ô bao khớp" OAN (ticket #25)."""
-        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="50,100,350,500"), "50,100,300,400")
+        # CSV dòng đầu ĐÚNG BẰNG giá trị mơ hồ ⇒ code cũ (đoán `xyxy`) in "khớp" oan, còn code mới
+        # phải nói "không so được". Đây là ca của ticket #25.
+        kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="50,100,300,400"), "50,100,300,400")
         out = capsys.readouterr().out
         assert kq == "khong_ket_luan"
         assert "khớp" not in out and "CẢ hai kiểu" in out
@@ -168,6 +171,52 @@ class TestCanhBaoBbox:
     def test_xyxy_hop_le_van_so_duoc(self, tmp_path, capsys):
         kq = tm._canh_bao_bbox(self._traj(tmp_path, bbox="305,280,445,690"), "xyxy:300,275,450,685")
         assert kq == "khop" and "khớp" in capsys.readouterr().out
+
+    def test_nan_inf_bi_tu_choi(self, tmp_path, capsys):
+        """`max()` bỏ qua NaN và `nan > 0.1` là False ⇒ nếu không chặn, cổng in "khớp" với hộp vô nghĩa
+        (P1 review 16-11)."""
+        for gia_tri in ("nan,100,300,400", "50,100,inf,400", "50,100,300,-inf"):
+            for dang in ("xywh", "xyxy"):
+                assert tm._canh_bao_bbox(self._traj(tmp_path), gia_tri, dang) == "khong_ket_luan"
+        out = capsys.readouterr().out
+        assert "không hữu hạn" in out and "khớp" not in out
+
+    def test_csv_co_nan_khong_ket_luan(self, tmp_path, capsys):
+        traj = tm.read_traj(_write(tmp_path, ["0,1,120.0,0,0.85,nan,nan,nan,nan"]))
+        kq = tm._canh_bao_bbox(traj, "300,275,150,410")
+        out = capsys.readouterr().out
+        assert kq in ("khong_ket_luan", "lech"), out
+        assert "khớp" not in out
+
+    def test_csv_rong_khong_no(self, tmp_path, capsys):
+        traj = tm.read_traj(_write(tmp_path, []))
+        assert tm._canh_bao_bbox(traj, "300,275,150,410") == "khong_ket_luan"
+        assert "không so được" in capsys.readouterr().out
+
+    def test_cli_co_rong_van_phai_qua_cong(self, tmp_path):
+        """`--expect-bbox ""` (biến shell rỗng) từng là falsy ⇒ **bỏ qua cổng**, exit 0 (P2 review)."""
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,288,287,431,734"])
+        assert tm.main(["--csv", str(path), "--out", str(tmp_path / "a.png"),
+                        "--expect-bbox", ""]) == 1
+
+    def test_cli_exit_0_khi_khop(self, tmp_path):
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,288,287,431,734"])
+        assert tm.main(["--csv", str(path), "--out", str(tmp_path / "a.png"),
+                        "--expect-bbox", "288,287,431,734", "--expect-bbox-dang", "xyxy"]) == 0
+
+    def test_provenance_ghi_ket_luan_cua_cong(self, tmp_path):
+        """Câu "đừng dùng ảnh này làm bằng chứng" chỉ ở stdout thì file `.json` trông y hệt lần đạt
+        ⇒ JSON phải ghi `ket_qua_hop`/`iou_bbox` (P2 review 16-11)."""
+        import json as _json
+
+        path = _write(tmp_path, ["0,1,120.0,0,0.85,100,300,330,660"])
+        meta = tmp_path / "a.json"
+        assert tm.main(["--csv", str(path), "--out", str(tmp_path / "a.png"),
+                        "--meta", str(meta), "--expect-bbox", "300,275,150,410"]) == 1
+        payload = _json.loads(meta.read_text(encoding="utf-8"))
+        assert payload["ket_qua_hop"] == "lech" and payload["expect_bbox_dang"] == "xywh"
+        assert payload["expect_bbox"] == "300,275,150,410"
+        assert payload["iou_bbox"] is not None and payload["iou_bbox"] < tm.IOU_CUNG_VAT
 
     def test_cli_exit_1_khi_hop_lech(self, tmp_path):
         """Exit 0 mà ô bao lệch ⇒ script tự động coi là "đạt". Ảnh vẫn ghi nhưng mã thoát phải 1."""
