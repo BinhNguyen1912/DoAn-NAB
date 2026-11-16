@@ -1,13 +1,13 @@
 {
-  "git_rev": "9851fd1d3ba6291629a9bc7b9fdc1fde4115d8d7",
-  "git_dirty": true,
+  "git_rev": "e4f96a883486c4a33f1f3f0e9473f0b953e3f421",
+  "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-16T12:29:07",
+    "do_luc": "2026-11-16T12:40:22",
     "lenh": "scripts/score_miou.py score --gt docs/gt/binh1_hopbao --pred-dir data/masks_binh1_192_2026-11-15 --out data/miou_binh1_hopbao_2026-11-15_metrics.json",
-    "git_rev": "9851fd1d3ba6291629a9bc7b9fdc1fde4115d8d7",
-    "git_dirty": true,
+    "git_rev": "e4f96a883486c4a33f1f3f0e9473f0b953e3f421",
+    "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
     "clip": "data/binh1.mp4",
@@ -49,6 +49,8 @@
     "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
   },
   "ket_qua": {
+    "gt_dang": "hop_bao",
+    "mIoU_dinh_nghia": "IoU(mask, GT dạng 'hop_bao') — KHÔNG phải mIoU phân đoạn silhouette",
     "mIoU": 0.6464,
     "mIoU_p05": 0.5058,
     "mask_ngoai_gt_mean": 0.0391,
@@ -146,9 +148,7 @@
         "dien_tich_pred": 46609,
         "mask_ngoai_gt": 0.0099
       }
-    ],
-    "gt_dang": "hop_bao",
-    "mIoU_dinh_nghia": "IoU(mask, GT dạng 'hop_bao') — KHÔNG phải mIoU phân đoạn silhouette"
+    ]
   },
   "canh_bao_gt": [
     "GT là HỘP BAO chữ nhật (không phải silhouette) ⇒ con số là IoU(mask, hộp), KHÔNG phải mIoU phân đoạn; chặn trên ~0,75-0,85 do hộp lớn hơn vật"
