@@ -51,6 +51,9 @@
   `mask_ngoai_gt_mean = 0,0391`, `mask_ngoai_gt_max_frame = 62` (**không đổi**).
 - Artifact mới: `git_rev = a2f8647`, `git_dirty_code = false` (tái lập được), `ket_qua` có
   `gt_dang = hop_bao` + `mIoU_dinh_nghia` trước `mIoU`; `meta.nguon_gt` đã có.
+  **Ghi chú (sau khi merge squash PR #21):** `a2f8647` là commit trên nhánh, bị squash nên không còn
+  trong `main` ⇒ artifact được **sinh lại trên `main` sạch** (`git_rev = 6068434`, PR riêng), số không
+  đổi (`mIoU 0,6464`). Quy ước: artifact phải có `git_rev` trỏ tới commit **còn reachable** trong `main`.
 - Cổng bắt đúng ca sai (diễn tập trên `docs/gt/synthetic_tong_hop` + pred-dir của `binh1`): cảnh báo
   "clip của GT KHÁC nguồn của mask" + "21 frame KHÔNG nằm trong `frames_yeu_cau`".
 - Kiểm tra: `./run lint` xanh · `./run test` **1270 passed, 5 deselected** (trước phiên 1263; +7 test
