@@ -171,6 +171,12 @@ def doi_chieu_hop_bao(mask: np.ndarray, hop, idx: int) -> list[str]:
         return [f"hộp frame {idx} vượt biên khung: {w}×{h} tại ({x},{y}) trên khung {rong}×{cao} — "
                 "ghi hộp ĐÃ CẮT theo khung (hoặc sửa hộp) rồi chạy lại"]
     tong = int(mask.sum())
+    if tong == 0:
+        # Ca THẬT (`binh1` cất chai từ frame ~115): vật đã rời khung thì GT rỗng là ĐÚNG. Khai
+        # `hop_bao_xywh` cho frame rỗng là mâu thuẫn ⇒ chặn, nhưng phải nói đúng cách sửa, đừng để
+        # người chạy đọc thành "GT lẫn frame khác" rồi đi sửa sai chỗ.
+        return [f"GT frame {idx} rỗng (toàn đen) nhưng vẫn khai hộp {w}×{h} — nếu vật đã RỜI KHUNG "
+                "thì BỎ 'hop_bao_xywh' ở frame đó (GT rỗng không được chấm, đếm riêng)"]
     if tong != w * h:
         return [f"GT frame {idx} có {tong} pixel nhưng hộp khai {w}×{h} = {w * h} pixel — GT lẫn "
                 "frame khác hoặc hộp ghi sai"]
@@ -208,10 +214,22 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     nguon, clip = manifest.get("nguon"), index.get("clip")
     if nguon and clip and not _cung_nguon(clip, nguon):
         mem.append(f"clip của GT ({clip}) KHÁC nguồn của mask ({nguon}) — mIoU đang ghép hai clip "
-                   "khác nhau")
+                   "khác nhau (không xác minh được nội dung khi file vắng mặt; ghi đường dẫn "
+                   "tương đối từ gốc repo để so được)")
     yeu_cau = manifest.get("frames_yeu_cau")
+    if isinstance(yeu_cau, str):
+        # Manifest viết tay có thể ghi `"2,12,22"`; bỏ qua im lặng là fail-open (cổng danh nghĩa).
+        yeu_cau = [p for p in yeu_cau.replace(";", ",").split(",") if p.strip()]
     if isinstance(yeu_cau, (list, tuple)) and yeu_cau:
-        tap = {int(f) for f in yeu_cau}
+        tap = set()
+        for f in yeu_cau:
+            try:
+                tap.add(int(f))
+            except (TypeError, ValueError):
+                mem.append(f"`frames_yeu_cau` của mask có phần tử không đọc được ({f!r}) ⇒ chỉ đối "
+                           "chiếu được phần đọc được")
+        if not tap:
+            return mem
         thua = []
         for item in index.get("frames") or []:
             idx = item.get("frame_idx") if isinstance(item, dict) else None
@@ -418,9 +436,12 @@ def main(argv=None) -> int:
               + (" ⇒ con số sẽ là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
                  if dang == "hop_bao" else ""))
         print(f"[gt] nguồn GT: {index.get('nguon_gt') or index.get('phuong_phap_gt') or 'KHÔNG KHAI'}")
-        print(f"[gt] clip: {index.get('clip')} · {len(index.get('frames') or [])} frame"
-              + (f" · mask từ {mask_manifest.get('nguon')}" if mask_manifest else
-                 " · KHÔNG có manifest của mask ⇒ chưa đối chiếu được clip/frame"))
+        if isinstance(mask_manifest, dict):
+            nguon_mask = mask_manifest.get("nguon") or "KHÔNG KHAI"
+            duoi = f" · mask từ {nguon_mask}"
+        else:
+            duoi = " · KHÔNG có manifest của mask ⇒ chưa đối chiếu được clip/frame"
+        print(f"[gt] clip: {index.get('clip')} · {len(index.get('frames') or [])} frame{duoi}")
         for item in chan:
             print(f"[gt] LỖI (chặn chấm): {item}")
         for item in mem:
@@ -440,13 +461,23 @@ def main(argv=None) -> int:
         frames.append({"frame_idx": idx,
                        "pred_path": str(pred_dir / f"mask_{idx:06d}.png")})
     ket_qua = cham(frames, gt_dir)
-    # Echo DẠNG GT vào CHÍNH khối `ket_qua` (không chỉ `meta`): người `grep mIoU` rồi copy sẽ thấy
-    # `gt_dang` + `mIoU_dinh_nghia` NGAY CẠNH con số, không phải mở `meta` mới biết 0,6464 là IoU với
-    # hộp bao chứ không phải mIoU phân đoạn (ticket #30 — bẫy "số đúng nhưng trích sai nghĩa").
-    ket_qua["gt_dang"] = index.get("dang_gt")
-    if index.get("dang_gt") not in (None, "silhouette"):
-        ket_qua["mIoU_dinh_nghia"] = (f"IoU(mask, GT dạng '{index.get('dang_gt')}') — "
-                                     "KHÔNG phải mIoU phân đoạn silhouette")
+    # Echo DẠNG GT vào CHÍNH khối `ket_qua` (không chỉ `meta`) và đặt TRƯỚC `mIoU` trong file JSON:
+    # người `grep mIoU` rồi copy sẽ thấy `gt_dang` + `mIoU_dinh_nghia` NGAY CẠNH con số, không phải mở
+    # `meta` mới biết 0,6464 là IoU với hộp bao chứ không phải mIoU phân đoạn (ticket #30).
+    # `dang_gt` KHÔNG KHAI cũng phải có câu định nghĩa: bỏ ra thì artifact `null` trông y hệt một bộ
+    # silhouette hợp lệ, và con số lại được đọc thành "mIoU phân đoạn" (P2 review 16-11).
+    dang_gt = index.get("dang_gt")
+    if dang_gt == "silhouette":
+        dinh_nghia_so = None
+    elif dang_gt is None:
+        dinh_nghia_so = ("dạng GT KHÔNG KHAI — KHÔNG được gọi là mIoU phân đoạn cho đến khi khai "
+                         "`dang_gt` trong index.json")
+    else:
+        dinh_nghia_so = (f"IoU(mask, GT dạng '{dang_gt}') — KHÔNG phải mIoU phân đoạn silhouette")
+    dau = {"gt_dang": dang_gt}
+    if dinh_nghia_so:
+        dau["mIoU_dinh_nghia"] = dinh_nghia_so
+    ket_qua = {**dau, **ket_qua}
 
     rev, dirty, dirty_code, git_loi = _provenance()
     payload = {
