@@ -381,11 +381,25 @@ class TestKiemIndex:
         assert not any("lẫn frame khác" in x for x in chan)
 
     def test_bo_gt_hop_bao_da_commit_phai_qua_cong(self):
-        """Tiêu chí nghiệm thu ticket #30: cổng mới KHÔNG được chặn bộ GT đã commit (12 frame)."""
+        """Tiêu chí nghiệm thu ticket #30: cổng mới KHÔNG được chặn bộ GT đã commit (12 frame).
+
+        Lưu ý: test này MỘT CHIỀU — nó chỉ canh "không chặn oan", không canh "cổng tồn tại" (phần đó
+        do các test `..._la_LOI_chan` ở trên ghim).
+        """
         gt_dir = sm.GT_DIR / "binh1_hopbao"
         index = json.loads((gt_dir / "index.json").read_text(encoding="utf-8"))
         chan, _mem = sm.kiem_index(index, gt_dir)
         assert chan == []
+
+    def test_gt_rong_bo_hop_khong_bi_dem_la_thieu_hop(self, tmp_path):
+        """Vật đã rời khung ⇒ GT rỗng + BỎ `hop_bao_xywh` là cách sửa ĐÚNG; không được cảnh báo
+        "thêm hộp vào index" (hai câu khuyên ngược nhau — P3 review vòng 2)."""
+        import cv2
+
+        cv2.imwrite(str(tmp_path / "gt_000000.png"), np.zeros((10, 10), np.uint8))
+        chan, mem = sm.kiem_index(self._index(tmp_path, dang_gt="hop_bao"), tmp_path)
+        assert not chan
+        assert not any("hop_bao_xywh" in x for x in mem), mem
 
 
 class TestKiemKhopManifest:

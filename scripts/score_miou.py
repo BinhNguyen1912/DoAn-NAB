@@ -224,8 +224,13 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
         tap = set()
         for f in yeu_cau:
             try:
+                if isinstance(f, bool) or not isinstance(f, (int, str, float)):
+                    raise ValueError(f)
+                # Float chỉ nhận khi là số nguyên (2.7 ⇒ 2 im lặng là sai); `Infinity` ⇒ OverflowError.
+                if isinstance(f, float) and not f.is_integer():
+                    raise ValueError(f)
                 tap.add(int(f))
-            except (TypeError, ValueError):
+            except (TypeError, ValueError, OverflowError):
                 mem.append(f"`frames_yeu_cau` của mask có phần tử không đọc được ({f!r}) ⇒ chỉ đối "
                            "chiếu được phần đọc được")
         if not tap:
@@ -301,7 +306,10 @@ def kiem_index(index: dict, gt_dir: Path):
             if dang == "hop_bao":
                 chan.extend(doi_chieu_hop_bao(mask, hop, idx))
         elif dang == "hop_bao":
-            thieu_hop += 1
+            # Frame GT **rỗng** là ca hợp lệ khi vật đã rời khung, và cách sửa đúng là BỎ hộp ⇒ không
+            # được đếm vào cảnh báo "thiếu hop_bao_xywh" (hai câu khuyên ngược nhau, P3 review 16-11).
+            if mask.any():
+                thieu_hop += 1
     if not index.get("nguoi_gan"):
         mem.append("thiếu 'nguoi_gan' — GT không có người chịu trách nhiệm thì không dùng làm bằng chứng")
     if index.get("gt_do_model_goi_y"):
