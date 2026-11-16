@@ -97,6 +97,17 @@
 - **Vòng 2** (agent `reviewer`, chỉ đọc, chỉ phần vừa sửa): **không P0/P1 mới**; P2-5 (log/ticket) đóng
   bằng file này; 2 P3 sửa luôn (`d8319af`): câu khuyên ngược nhau + `float`/`Infinity` trong
   `frames_yeu_cau`; ghi rõ test "bộ GT đã commit" là **một chiều** (chỉ canh "không chặn oan").
+- **Vòng 3 — ticket #31 (2 P3 còn nợ), agent `reviewer` chỉ đọc:** logic đúng, **0 P0**, nhưng nêu
+  **1 P1** + 2 P2 + 3 P3. Đã sửa hết trước khi merge:
+  - P1: `git_rev` trong artifact là commit **của nhánh** (`c79e341`) ⇒ sau squash sẽ thành con trỏ chết
+    (đúng lỗi `a2f8647`). **Cách sửa: merge bằng MERGE COMMIT (`--no-ff`), không squash** ⇒ `c79e341`
+    sống trong lịch sử `main`. Đây là quy ước mới cho các PR có artifact số đo.
+  - P2: test `--check-index` "manifest HỎNG" vẫn xanh khi revert (câu cũ vẫn in từ vòng `mem`) ⇒ thêm
+    `assert "KHÔNG có manifest" not in out`; test bộ GT đã commit vứt `_mem` ⇒ nay assert
+    **không có** cảnh báo "CÙNG một hộp" (12 hộp khác nhau).
+  - P3: `docs/gt/binh1_hopbao/README.md` còn viết "không bắt copy-paste" (nay chỉ **cảnh báo mềm**) —
+    đã sửa; `docs/thuoc-do-bam-dung.md` nêu rõ cảnh báo chỉ chạy khi `dang_gt = hop_bao` và phải
+    **giống hệt 4 số**; thêm test manifest hợp lệ vẫn vào `meta.mask_manifest` dạng **dict**.
 - **Còn nợ (P3, ghi ở Next steps)**: `_doc_manifest` nuốt lỗi JSON ⇒ manifest **hỏng** in y hệt "không có
   manifest"; cổng không bắt ca **copy-paste** cùng hộp+mask cho nhiều frame (đã ghi giới hạn trong docs).
 
