@@ -401,6 +401,27 @@ class TestKiemIndex:
         assert not chan
         assert not any("hop_bao_xywh" in x for x in mem), mem
 
+    def test_hai_frame_cung_mot_hop_la_canh_bao_copy_paste(self, tmp_path):
+        """Bản hộp bao của `DUP_IOU` (gt_check_silhouette): hai frame khai CÙNG hộp ⇒ nghi copy-paste.
+        Cảnh báo MỀM (vật đứng yên vẫn có thể trùng hộp thật) — P3 review 16-11."""
+        self._gt_hop(tmp_path, 0, 2, 3, 4, 5)
+        self._gt_hop(tmp_path, 7, 2, 3, 4, 5)
+        chan, mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [2, 3, 4, 5]},
+                                {"frame_idx": 7, "hop_bao_xywh": [2, 3, 4, 5]}]), tmp_path)
+        assert not chan
+        assert any("CÙNG một hộp" in x and "copy-paste" in x for x in mem), mem
+
+    def test_hai_frame_hop_khac_nhau_thi_khong_canh_bao(self, tmp_path):
+        self._gt_hop(tmp_path, 0, 2, 3, 4, 5)
+        self._gt_hop(tmp_path, 7, 3, 3, 4, 5)
+        _chan, mem = sm.kiem_index(
+            self._index(tmp_path, dang_gt="hop_bao",
+                        frames=[{"frame_idx": 0, "hop_bao_xywh": [2, 3, 4, 5]},
+                                {"frame_idx": 7, "hop_bao_xywh": [3, 3, 4, 5]}]), tmp_path)
+        assert not any("CÙNG một hộp" in x for x in mem), mem
+
 
 class TestKiemKhopManifest:
     """GT và mask phải là CÙNG clip, CÙNG frame — `manifest.json` của thư mục mask là chỗ kiểm được
@@ -567,6 +588,65 @@ class TestCli:
         assert "dạng GT: hop_bao" in out and "HỘP BAO" in out
         assert "nguồn GT: ngưỡng màu HSV nhãn tím" in out
         assert ma == 1          # vẫn còn cảnh báo mềm "GT hộp bao"
+
+
+class TestManifestHong:
+    """"Có manifest nhưng HỎNG" phải KHÁC "không có manifest" — gộp hai ca thì cảnh báo mất nghĩa
+    (P3 review 16-11)."""
+
+    def test_khong_co_file_la_none_khong_loi(self, tmp_path):
+        assert sm._doc_manifest(tmp_path) == (None, None)
+
+    def test_json_hong_bao_loi(self, tmp_path):
+        (tmp_path / "manifest.json").write_text("{không phải json", encoding="utf-8")
+        man, loi = sm._doc_manifest(tmp_path)
+        assert man is None and loi and "không đọc được" in loi
+
+    def test_khong_phai_object_bao_loi(self, tmp_path):
+        (tmp_path / "manifest.json").write_text("[1,2]", encoding="utf-8")
+        man, loi = sm._doc_manifest(tmp_path)
+        assert man is None and loi and "object JSON" in loi
+
+    def test_score_ghi_loi_manifest_vao_artifact(self, tmp_path, monkeypatch):
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "silhouette",
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        (pred / "manifest.json").write_text("{hỏng", encoding="utf-8")
+        out = tmp_path / "art.json"
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["meta"]["mask_manifest"] is None
+        assert payload["meta"]["mask_manifest_loi"]
+        assert any("manifest của mask HỎNG" in x for x in payload["canh_bao_gt"])
+        assert ma == 1
+
+    def test_check_index_in_manifest_hong(self, tmp_path, capsys):
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "silhouette",
+            "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        (pred / "manifest.json").write_text("[1,2]", encoding="utf-8")
+
+        sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--check-index"])
+
+        out = capsys.readouterr().out
+        assert "manifest của mask HỎNG" in out
 
 
 class TestManifestDuocGoiTuMain:

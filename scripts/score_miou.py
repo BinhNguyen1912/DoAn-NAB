@@ -247,14 +247,22 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
 
 
 def _doc_manifest(pred_dir: Path):
-    """Đọc `manifest.json` cạnh các file mask (nếu có) — chỉ để truy nguyên, không ảnh hưởng điểm."""
+    """Đọc `manifest.json` cạnh các file mask ⇒ `(manifest | None, lỗi | None)`.
+
+    Phải TÁCH hai ca: `(None, None)` = **không có file** (bình thường, không có gì để đối chiếu) khác
+    `(None, "…")` = **có file nhưng HỎNG/không phải JSON object**. Bản trước gộp cả hai thành `None`
+    ⇒ manifest sai định dạng được đọc thành "không có manifest" và cảnh báo mất nghĩa (P3 review 16-11).
+    """
     path = Path(pred_dir) / "manifest.json"
     if not path.is_file():
-        return None
+        return None, None
     try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, ValueError):
-        return None
+        data = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError) as exc:
+        return None, f"{path.name} không đọc được ({exc})"
+    if not isinstance(data, dict):
+        return None, f"{path.name} phải là object JSON (đang là {type(data).__name__})"
+    return data, None
 
 
 def kiem_index(index: dict, gt_dir: Path):
@@ -269,6 +277,10 @@ def kiem_index(index: dict, gt_dir: Path):
     # Đọc TRƯỚC vòng lặp vì cổng "hộp bao ↔ mask" bên dưới cần biết dạng GT.
     dang = index.get("dang_gt")
     thieu_hop = 0
+    # Hộp đã thấy (frame_idx → (x, y, w, h)): hai frame cùng MỘT hộp ⇒ nghi copy-paste GT (bản hộp bao
+    # của `DUP_IOU` trong `scripts/gt_check_silhouette.py`). Cảnh báo MỀM: vật đứng yên vẫn có thể
+    # trùng hộp thật, nên không chặn — nhưng một bộ GT 12 frame mà nhiều hộp trùng y hệt thì phải soi lại.
+    hop_da_thay = {}
     if not index.get("clip"):
         mem.append("thiếu 'clip'")
     frames = index.get("frames") or []
@@ -305,6 +317,9 @@ def kiem_index(index: dict, gt_dir: Path):
         if hop is not None:
             if dang == "hop_bao":
                 chan.extend(doi_chieu_hop_bao(mask, hop, idx))
+                box = _hop_bao_hop_le(hop)
+                if box is not None and mask.any():
+                    hop_da_thay.setdefault(box, []).append(idx)
         elif dang == "hop_bao":
             # Frame GT **rỗng** là ca hợp lệ khi vật đã rời khung, và cách sửa đúng là BỎ hộp ⇒ không
             # được đếm vào cảnh báo "thiếu hop_bao_xywh" (hai câu khuyên ngược nhau, P3 review 16-11).
@@ -318,6 +333,11 @@ def kiem_index(index: dict, gt_dir: Path):
     if thieu_hop:
         mem.append(f"{thieu_hop} frame khai GT là hộp bao nhưng KHÔNG có 'hop_bao_xywh' ⇒ không đối "
                    "chiếu được mask GT với hộp (thêm hộp vào index để cổng kiểm chạy)")
+    for box, ds_frame in hop_da_thay.items():
+        if len(ds_frame) > 1:
+            mem.append(f"frame {sorted(ds_frame)} khai CÙNG một hộp {box[2]}×{box[3]} tại "
+                       f"({box[0]},{box[1]}) ⇒ kiểm xem có copy-paste GT giữa các frame không "
+                       "(vật di chuyển thì hộp phải đổi)")
     # `dang_gt` = HÌNH DẠNG của GT: `silhouette` (mask vật) | `hop_bao` (hộp chữ nhật bao vật).
     # Không có khai báo thì chỉ cảnh báo MỀM (GT cũ chưa có khoá này), nhưng artifact LUÔN ghi giá trị
     # (None = không khai báo) để người đọc biết con số đang đo cái gì.
@@ -433,9 +453,13 @@ def main(argv=None) -> int:
     index = json.loads(index_path.read_text(encoding="utf-8"))
     pred_dir = Path(args.pred_dir)
     # Manifest của thư mục mask: đối chiếu "GT có đúng clip/frame của mask không" (cảnh báo MỀM).
-    mask_manifest = _doc_manifest(pred_dir)
+    mask_manifest, loi_manifest = _doc_manifest(pred_dir)
     chan, mem = kiem_index(index, gt_dir)
     mem = mem + kiem_khop_manifest(index, mask_manifest)
+    if loi_manifest:
+        # "Có manifest nhưng HỎNG" KHÁC "không có manifest": ca sau là bình thường, ca trước nghĩa là
+        # không ai biết mask sinh từ clip/frame nào ⇒ phải nói ra (P3 review 16-11).
+        mem.append(f"manifest của mask HỎNG ({loi_manifest}) ⇒ KHÔNG đối chiếu được clip/frame")
     if args.check_index:
         # In DẠNG GT + NGUỒN GT ngay trên đầu: `--check-index` là chỗ người chạy hay xem nhất, mà
         # "hợp lệ" không có nghĩa là "con số sắp in ra là mIoU phân đoạn" (ticket #30).
@@ -444,7 +468,9 @@ def main(argv=None) -> int:
               + (" ⇒ con số sẽ là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
                  if dang == "hop_bao" else ""))
         print(f"[gt] nguồn GT: {index.get('nguon_gt') or index.get('phuong_phap_gt') or 'KHÔNG KHAI'}")
-        if isinstance(mask_manifest, dict):
+        if loi_manifest:
+            duoi = f" · manifest của mask HỎNG ({loi_manifest}) ⇒ chưa đối chiếu được clip/frame"
+        elif isinstance(mask_manifest, dict):
             nguon_mask = mask_manifest.get("nguon") or "KHÔNG KHAI"
             duoi = f" · mask từ {nguon_mask}"
         else:
@@ -508,6 +534,7 @@ def main(argv=None) -> int:
             # Manifest của thư mục mask (image_size/vos_every/bbox/source) ⇒ artifact tự trả lời được
             # "mask này sinh trong điều kiện nào" (P0/P2 review hẹp 14-11).
             "mask_manifest": mask_manifest,
+            "mask_manifest_loi": loi_manifest,
             "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; "
                           "GT rỗng không chấm; model rỗng mà GT có vật = 0,0; "
                           "`mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; "
