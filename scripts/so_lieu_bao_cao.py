@@ -86,6 +86,16 @@ REGISTRY = [
      "Chỉ được nói 'cũ hơn hẳn' nếu chênh với 192 LỚN HƠN `std` lớn hơn của hai dòng (đọc `std` ngay "
      "trong cột này, đừng gõ tay).",
      {"std": "cau_hinh.320_3.mask_age_p95.std", "n": "cau_hinh.320_3.age_n.mean"}),
+    # ── Ticket #24 (17-11): `vos_every = 1` (đơn luồng) nay CŨNG đo tuổi mask ─────────
+    ("Tuổi dữ liệu ảnh p95 ở `vos_every 1` (đơn luồng, KHÔNG LK)",
+     "data/bang_cau_hinh_2026-11-17_every1_metrics.json",
+     "cau_hinh.192_1.mask_age_p95.mean", "ms (p95)",
+     "Ổ **đơn luồng**: `FPS phát` = `Nhịp mask` (mỗi frame đều chạy model, không có LK lấp) ⇒ KHÔNG "
+     "so FPS của dòng này với 29,8 của `vos_every ≥ 2`. Tuổi ≈ `vos_ms + pre_ms + post_ms` (age = 0 "
+     "vì frame vừa VOS chính là frame đang phát); vì sao ~106 chứ không ~95 ms: `pre_ms` (~12 ms) "
+     "nằm TRONG tuổi nhưng NGOÀI `vos_ms`. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
+     "ghi gì (ticket #24).",
+     {"std": "cau_hinh.192_1.mask_age_p95.std", "n": "cau_hinh.192_1.age_n.mean"}),
     # ── Việc #6 (14-11): mIoU vs GT — thước đo DUY NHẤT nói được đúng/sai ───────────────────────
     ("mIoU mask vs GT trên fixture TỔNG HỢP (ô vuông trên nền nhiễu)", "data/miou_synthetic_2026-11-14_metrics.json",
      "ket_qua.mIoU", "IoU",

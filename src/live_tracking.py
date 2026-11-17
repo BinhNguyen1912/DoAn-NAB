@@ -64,7 +64,9 @@ _STAT_MIN_SAMPLES = 30
 DINH_NGHIA_TUOI_MASK = (
     "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); "
     "mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). "
-    "Pha chưa đo được tính 0; chỉ đo ở đường LK (vos_every > 1) ⇒ vos_every=1 th\u00ec age_n=0"
+    "Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) "
+    "⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. "
+    "Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
 )
 # Số mẫu tối thiểu để công bố TỈ LỆ (không phải phân vị) — 5 mẫu đã đủ nói "1/5 lần mất dấu".
 _EMPTY_WINDOW_MIN = 5
@@ -165,7 +167,7 @@ class LiveTrackStats:
     # `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md`). `None` = chưa đo.
     queue_ms: float | None = None   # từ lúc gửi frame cho tới lúc luồng VOS bắt đầu xử lý
     pre_ms: float | None = None     # tiền xử lý (resize + tensor) của lần VOS gần nhất
-    post_ms: float | None = None    # đo drift + làm mượt mask sau khi có kết quả
+    post_ms: float | None = None    # đo drift (nếu có LK) + làm mượt mask sau khi có kết quả
     cycle_ms: float | None = None   # khoảng cách giữa 2 lần VOS bắt đầu liên tiếp (= 1/vos_fps)
     idle_ms: float | None = None    # luồng VOS chờ frame mới (không phải thời gian tính toán)
     empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
@@ -790,14 +792,34 @@ class LiveTrackingSession:
 
     def _after_vos(self, frame, result) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
+        # Đo phần xử lý kết quả (dump mask + làm mượt) để tính tuổi mask — cùng CÁCH ĐO với
+        # `_store_vos`, TRỪ `_measure_drift` (đường đơn luồng không có nội suy LK nên không có cặp
+        # VOS ↔ nội suy để so ⇒ `post_ms` ở đây hệ thống NHỎ HƠN đường LK đúng phần drift + I/O CSV;
+        # đừng so `post_ms` giữa hai đường). Nếu không đo, `vos_every = 1` sẽ không bao giờ có
+        # `mask_age_total_ms` (ticket #24).
+        bat_dau_post = time.perf_counter()
         # `frame_video` = chỉ số frame VIDEO của phiên (không phải bộ đếm của engine) — xem P0 review
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
         self._record_vos(result, frame_video=self._frame_index)
         self._smooth(result)
+        post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0, 2)
         self._interp_base_result = result
         self._mask = getattr(result, "mask", None)
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
+        pre = getattr(result, "pre_ms", None)      # engine không có `pre_ms` ⇒ None (CHƯA ĐO), không 0
+        with self._stats_lock:
+            self._stats.post_ms = post_ms
+            # Ghi `pre_ms` cả ở đường đơn luồng: thiếu nó thì `mask_age_total_ms` (đã gồm pre) không
+            # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
+            # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).
+            self._stats.pre_ms = None if pre is None else round(float(pre), 2)
+        # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
+        # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
+        # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.
+        self._note_mask_age(0.0, float(getattr(result, "elapsed_ms", 0.0) or 0.0),
+                           pre_ms=float(getattr(result, "pre_ms", 0.0) or 0.0),
+                           queue_ms=0.0, post_ms=post_ms)
 
     def _canh_bao_mask_thieu(self) -> None:
         """Frame được yêu cầu dump mà KHÔNG có lần VOS nào ⇒ nói ra, đừng để người dùng tưởng đã đo.

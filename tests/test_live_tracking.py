@@ -27,13 +27,19 @@ from src.live_tracking import (
 
 
 class _Result:
-    """Giống `TrackingResult` của src/tracker_engine (duck-type)."""
+    """Giống `TrackingResult` của src/tracker_engine (duck-type).
 
-    def __init__(self, frame_idx, bbox, mask):
+    `pre_ms` CÓ giá trị (khác `None`): đường đơn luồng phải ghi `pre_ms` vào status/tuối mask, và
+    `None` khi engine không khai. Thiếu hẳn thuộc tính này thì vế `pre` của test tuổi mask thành
+    vô răng (luôn `(stats.pre_ms or 0.0) == 0.0` — review độc lập 17-11, P2).
+    """
+
+    def __init__(self, frame_idx, bbox, mask, elapsed_ms=12.5, pre_ms=7.0):
         self.frame_idx = frame_idx
         self.bbox = bbox
         self.mask = mask
-        self.elapsed_ms = 12.5
+        self.elapsed_ms = elapsed_ms
+        self.pre_ms = pre_ms
 
 
 class FakeEngine:
@@ -916,9 +922,14 @@ class TestDriftVaTuoiMask:
         assert session._stats.age_n == 1
         assert session._stats.mask_age_p95 is None       # 1 mẫu chưa đủ để nói p95
 
-    @pytest.mark.parametrize("every, phai_do", [(1, False), (6, True)])
-    def test_age_n_phan_biet_chua_do_voi_do_duoc(self, textured_video, tmp_path, every, phai_do):
-        """`age_n = 0` ⇒ CHƯA ĐO. Xoá tính năng thì `vos_every=6` cũng ra 0 ⇒ test này đỏ."""
+    @pytest.mark.parametrize("every", [1, 6])
+    def test_age_n_phan_biet_chua_do_voi_do_duoc(self, textured_video, tmp_path, every):
+        """`age_n = 0` ⇒ CHƯA ĐO. Xoá tính năng thì `vos_every=6` cũng ra 0 ⇒ test này đỏ.
+
+        `vos_every=1` nay CŨNG phải đo tuổi mask (ticket #24 — trước đây nhánh inline không ghi gì,
+        nên HUD im lặng ở đúng cấu hình đã dùng để đo mIoU fixture). Tuổi ở đường đơn luồng là 0 vì
+        frame vừa VOS chính là frame đang phát.
+        """
         out = tmp_path / f"live{every}"
         _pre_select(out)
         LiveTrackingSession(FakeEngine(), LiveTrackConfig(
@@ -926,13 +937,15 @@ class TestDriftVaTuoiMask:
             loop_files=True)).run(stop_event=_StopAfter(25))
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
-        if phai_do:
-            assert status["age_n"] > 0, "vos_every=6 phải đo được tuổi mask"
+        assert status["age_n"] > 0, f"vos_every={every} phải đo được tuổi mask (ticket #24)"
+        if every == 1:
+            # Đơn luồng: tuổi = 0 (frame vừa VOS chính là frame đang phát) và KHÔNG có drift
+            # (không nội suy LK ⇒ không có cặp VOS ↔ nội suy; bịa mẫu drift ở đây là làm sai số).
+            assert status["mask_age_ms"] == 0
+            assert status["drift_n"] == 0 and status["drift_iou"] is None
+        else:
             assert status["mask_age_ms"] > 0
             assert 0 <= status["drift_iou"] <= 1
-        else:
-            assert status["age_n"] == 0 and status["mask_age_ms"] is None
-            assert status["drift_n"] == 0 and status["drift_iou"] is None
 
 
 class TestDonWorkerCuPhaiChoChetThat:
@@ -1695,6 +1708,53 @@ class TestTuoiMaskTachKhoan:
         # 1/41 mẫu lớn không làm p95 (mẫu thứ 39/40) nhảy lên 600 ms:
         assert session._stats.mask_age_p95 == pytest.approx(100.0)
         assert session._stats.age_n == 41
+
+
+class TestTuoiMaskDuongDonLuong:
+    """Ticket #24: `vos_every = 1` chạy inline (`_after_vos`) nên TRƯỚC ĐÂY không bao giờ ghi
+    `mask_age_total_ms` ⇒ HUD không hiện tuổi mask ở đúng cấu hình đã dùng cho mIoU fixture.
+
+    Tuổi ở đường đơn luồng phải là **0** (frame vừa VOS chính là frame đang phát) — cộng thêm phần
+    `vos_ms`/`pre_ms`/`post_ms` thành tuổi, không bịa `age` theo một frame khác.
+    """
+
+    def test_chay_hai_frame_thi_co_tuoi_mask(self, video_source, tmp_path):
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}),
+                                     encoding="utf-8")
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path,
+                                                           stop_after_frames=2))
+        stats = session.run()
+
+        assert stats.age_n == 2                      # 1 frame start() + 1 frame process()
+        assert stats.mask_age_total_ms is not None, "vos_every=1 phải ghi tuổi mask (ticket #24)"
+        # age = 0 ⇒ total đúng bằng vos + pre + post của CHÍNH lần VOS đó. `pre_ms` là số CỐ ĐỊNH của
+        # `_Result` (7,0) nên nếu ai truyền `pre_ms=0.0` thay vì `result.pre_ms` thì test này ĐỎ.
+        assert stats.pre_ms == pytest.approx(7.0), "đường đơn luồng phải ghi `pre_ms` (review 17-11)"
+        assert stats.mask_age_total_ms == pytest.approx(
+            12.5 + 7.0 + (stats.post_ms or 0.0), abs=0.3)
+        assert stats.mask_age_p95 is None            # 2 < 30 mẫu ⇒ chưa công bố phân vị
+        assert stats.post_ms is not None             # pha xử lý kết quả cũng phải được ghi
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["pre_ms"] == pytest.approx(7.0)
+
+    def test_tuoi_khong_phai_thoi_gian_ca_vong_lap(self, video_source, tmp_path):
+        """`age` phải là 0 chứ không phải thời gian cả vòng lặp: nếu ai sửa thành
+        `time.perf_counter() - bat_dau_post` thì số thành "tuổi vài chục ms" dù frame vừa VOS."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        session._frame_index = 1
+        session._after_vos(np.full((48, 64, 3), 90, np.uint8),
+                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool),
+                                   elapsed_ms=400.0, pre_ms=10.0))
+        assert session._stats.mask_age_ms == pytest.approx(0.0)
+        # age PHẢI là 0 (không phải thời gian vòng lặp): total = pre + vos + post = 10 + 400 + post.
+        # Nếu ai đổi `age` thành `time.perf_counter() - bat_dau_post` thì con số sẽ khác 400 vì
+        # `elapsed_ms` là giá trị GIẢ CỐ ĐỊNH do test đặt — test ĐỎ (review 17-11, P3).
+        assert session._stats.mask_age_total_ms == pytest.approx(
+            410.0 + (session._stats.post_ms or 0.0), abs=2.0)
 
 
 class TestPhaDuocGhiRaStatus:
