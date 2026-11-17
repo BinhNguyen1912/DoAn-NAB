@@ -16,7 +16,8 @@ Cách dùng:
 Input : checkpoint trong `configs/default.yaml` (mặc định SAM 2.1 tiny), fixture tổng hợp của
         `src/synthetic_video.py` (`generate_tracking_sequence`) — KHÔNG cần video/dữ liệu nặng.
 Output: artifact JSON: mỗi lần chạy là 1 dòng
-        `{lan, iou: {2, 5, 9}, iou_tat_ca, score_min, tong_ms, min_iou, duoi_nguong}` + tóm tắt
+        `{lan, iou: {2, 5, 9}, iou_tat_ca, score_min, score_n, tong_ms, min_iou_cong_test,
+        min_iou_moi_frame, duoi_nguong}` + tóm tắt
         `iou[f]` (mean/std/min/max, số lần dưới ngưỡng 0,5), `min_iou_moi_lan` (cổng mà test dùng:
         min trên {0, 2, 5, 9} — KHÔNG phải chỉ {2, 5, 9}), `cau_hinh` (checkpoint + `image_size`
         yêu cầu/hiệu lực + device) và `git_rev`/`git_dirty_code`/`lenh`/`do_luc`.
@@ -206,7 +207,8 @@ def main(argv=None) -> int:
                                     if ket["iou_tat_ca"][f] < NGUONG_IOU]})
         print(f"[lan {i + 1}/{args.lan}] IoU " + " · ".join(
             f"f{f}={ket['iou'][f]}" for f in FRAME_MAU)
-            + f" · min {ket['min_iou']} · {ket['tong_ms'] / 1000:.1f} s", flush=True)
+            + f" · cổng {ket['min_iou_cong_test']} (min 10 frame {ket['min_iou_moi_frame']})"
+            + f" · {ket['tong_ms'] / 1000:.1f} s", flush=True)
 
     rev, dirty, loi = _git()
     if loi or rev != rev_truoc or dirty:
