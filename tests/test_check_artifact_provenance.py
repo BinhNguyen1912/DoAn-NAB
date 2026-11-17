@@ -10,7 +10,6 @@ tổ tiên của HEAD — cảnh báo), `ok-da-biet` (có trong allowlist kèm l
 
 import json
 
-import pytest
 
 from scripts import check_artifact_provenance as cap
 
@@ -28,8 +27,16 @@ class TestPhanLoai:
         assert cap.phan_loai(None) == "chet"
 
     def test_rev_that_la_ok(self):
-        """`ee9f25672d72` là commit THẬT (commit sinh ra artifact `drift_2026-11-08`)."""
-        assert cap.phan_loai("ee9f25672d72") == "ok"
+        """Rev của `HEAD` là tổ tiên của chính nó ⇒ `ok`.
+
+        KHÔNG dùng một commit cũ cụ thể (`ee9f256…`): job pytest của CI là **shallow** (`fetch-depth`
+        mặc định = 1) nên commit cũ không tồn tại ở đó và test sẽ đỏ oan — đúng bài học "test phụ thuộc
+        môi trường" (CI đỏ lần đầu vì đúng lý do này).
+        """
+        import subprocess
+
+        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True).stdout.strip()
+        assert cap.phan_loai(head) == "ok"
 
     def test_rev_40_hex_bia_la_chet(self):
         assert cap.phan_loai("ee9f256a1e77e6b4de08b0b0b8f4b0f0b8f0b0b8") == "chet"
@@ -87,9 +94,13 @@ class TestMainMaThoat:
     def test_thu_muc_khong_ton_tai_la_ma_2(self, tmp_path):
         assert cap.main(["--thu-muc", str(tmp_path / "khong-co"), "--nghiem"]) == 2
 
-    @pytest.mark.parametrize("ten", ["bang_cau_hinh_2026-11-15_metrics.json"])
-    def test_rev_lech_chi_canh_bao_khong_chan(self, tmp_path, ten):
-        """Rev tồn tại nhưng KHÔNG phải tổ tiên của HEAD ⇒ `lech`, không chặn (artifact cũ hợp lệ)."""
-        _artifact(tmp_path, ten, "ee9f25672d72")
-        ra = cap.quet(tmp_path, cho_phep={})
-        assert ra[0]["trang_thai"] in {"ok", "lech"}
+    def test_rev_lech_chi_canh_bao_khong_chan(self, tmp_path, monkeypatch):
+        """Rev tồn tại nhưng KHÔNG phải tổ tiên của HEAD ⇒ `lech`, không chặn (artifact cũ hợp lệ).
+
+        `phan_loai` được giả lập vì "một commit tồn tại mà không phải tổ tiên" không dựng được chắc
+        chắn trong repo shallow của CI.
+        """
+        _artifact(tmp_path, "cu_metrics.json", "1" * 40)
+        monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
+        assert cap.main(["--thu-muc", str(tmp_path), "--nghiem"]) == 0
+        assert cap.quet(tmp_path, cho_phep={})[0]["trang_thai"] == "lech"
