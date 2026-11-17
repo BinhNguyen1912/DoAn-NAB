@@ -14,7 +14,7 @@ thước đo **phải** dùng ngưỡng khác (vd p05 cần ≥ 20 để có ngh
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** claimed
 
 - [ ] Chỉ còn MỘT hằng ngưỡng cho phân vị (hoặc hằng riêng có lý do + test khoá giá trị)
 - [ ] Artifact in `n` cạnh mọi `*_p05`; p05 có n < ngưỡng ⇒ `None` (không công bố)
