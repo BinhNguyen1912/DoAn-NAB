@@ -48,6 +48,7 @@ class SessionSummary:
 
     @property
     def mean_ms(self) -> float:
+        """Độ trễ trung bình (ms). `0.0` khi chưa có mẫu — xem `mean_n` trước khi trích (ticket #32)."""
         return float(np.mean(self.latencies_ms)) if self.latencies_ms else 0.0
 
     @property
@@ -58,6 +59,11 @@ class SessionSummary:
         `0/None` mà `AGENTS.md` §6 cấm (ticket #32).
         """
         return float(np.percentile(self.latencies_ms, 95)) if self.latencies_ms else None
+
+    @property
+    def mean_n(self) -> int:
+        """Số mẫu của `mean_ms` (`0` ⇒ `0,0` là "chưa đo", không phải "xử lý tức thì")."""
+        return len(self.latencies_ms)
 
     @property
     def p95_n(self) -> int:

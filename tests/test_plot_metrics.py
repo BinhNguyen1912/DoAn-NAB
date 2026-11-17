@@ -74,3 +74,36 @@ class TestP95KhongBiaSoKhiChuaDo:
         s = pm.summarize("rong", {"latency": np.array([]), "lost": np.array([]),
                                   "frame": np.array([])})
         assert s["p95_ms"] is None and s["lost_ratio"] is None
+
+
+class TestPlotCompareKhongVeCot0:
+    """Ticket #32 (P2 review 17-11): file toàn đóng băng KHÔNG được vẽ thành cột `0` trên thang log."""
+
+    def _items(self):
+        import numpy as np
+
+        from scripts import plot_metrics as pm
+
+        binh_thuong = pm.summarize("binh_thuong", {
+            "latency": np.array([100.0, 110.0, 120.0]), "lost": np.zeros(3),
+            "frame": np.arange(3), "frozen": np.zeros(3, bool)})
+        dong_bang = pm.summarize("dong_bang", {
+            "latency": np.zeros(3), "lost": np.ones(3),
+            "frame": np.arange(3), "frozen": np.ones(3, bool)})
+        return [({}, binh_thuong), ({}, dong_bang)]
+
+    def test_it_hon_2_lan_co_mau_thi_khong_ve(self, tmp_path):
+        from scripts import plot_metrics as pm
+
+        assert pm.plot_compare(self._items(), str(tmp_path)) is None
+
+    def test_2_lan_co_mau_thi_van_ve(self, tmp_path):
+        import numpy as np
+
+        from scripts import plot_metrics as pm
+
+        items = self._items()
+        them = pm.summarize("khac", {"latency": np.array([200.0]), "lost": np.zeros(1),
+                                     "frame": np.arange(1), "frozen": np.zeros(1, bool)})
+        p = pm.plot_compare([items[0], ({}, them)], str(tmp_path))
+        assert p and p.endswith("so_sanh_latency.png")

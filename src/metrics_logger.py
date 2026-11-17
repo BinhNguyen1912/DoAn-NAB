@@ -97,7 +97,11 @@ class MetricsLogger:
         if not self.records:
             return {
                 "total_frames": 0,
+                # `mean_latency_ms` giữ `0,0` vì `effective_fps = 1000/mean` là hợp đồng cũ (đổi nó
+                # phải sửa API/web/báo cáo) — nhưng đi kèm `mean_latency_ms_n = 0` để không ai trích
+                # "mean 0 ms" như một số đo được (ticket #32, P2 review 17-11).
                 "mean_latency_ms": 0.0,
+                "mean_latency_ms_n": 0,
                 # `None` = CHƯA ĐO (không có frame nào đo được), khác `0,0` = đo được 0 ms.
                 # `p95_latency_ms_n` là cỡ mẫu — thiếu nó thì người đọc artifact không biết
                 # p95 dựa trên 1 frame hay 600 frame (ticket #32).
@@ -125,6 +129,7 @@ class MetricsLogger:
         return {
             "total_frames": len(self.records),
             "mean_latency_ms": mean_ms,
+            "mean_latency_ms_n": int(latencies.size),
             "p95_latency_ms": p95_ms,
             "p95_latency_ms_n": int(latencies.size),
             "effective_fps": 1000.0 / mean_ms if mean_ms > 0 else 0.0,

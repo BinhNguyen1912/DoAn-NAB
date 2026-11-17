@@ -355,3 +355,28 @@ class TestThongKeKhongBiLechBoiFrameDongBang:
         assert s["mean_latency_ms"] == 0.0
         assert s["effective_fps"] == 0.0
         assert s["frozen_frames"] == 1
+
+
+class TestMeanVaP95CoMauKemTheo:
+    """P2 review 17-11 (ticket #32): `mean_latency_ms` giữ `0,0` khi rỗng nhưng phải kèm `_n`,
+    nếu không người sau vẫn trích được "mean 0 ms" như số đo được."""
+
+    def test_summary_rong_co_mean_n_bang_0(self):
+        s = MetricsLogger().summary()
+        assert s["mean_latency_ms"] == 0.0 and s["mean_latency_ms_n"] == 0
+        assert s["p95_latency_ms"] is None and s["p95_latency_ms_n"] == 0
+
+    def test_mean_n_bang_so_frame_do_duoc(self):
+        logger = MetricsLogger()
+        for r in _records(4):
+            logger.log(r)
+        s = logger.summary()
+        assert s["mean_latency_ms_n"] == 4 and s["p95_latency_ms_n"] == 4
+
+    def test_toan_bo_dong_bang_mean_n_bang_0(self):
+        logger = MetricsLogger()
+        for i in range(3):
+            logger.log(FrameRecord(frame_idx=i, latency_ms=0.0, score=0.0, center=None,
+                                   lost=True, state="lost"))
+        s = logger.summary()
+        assert s["mean_latency_ms_n"] == 0 and s["mean_latency_ms"] == 0.0

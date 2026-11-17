@@ -340,7 +340,9 @@ def _finish_metrics(metrics, args):
         metrics.write_summary_json(args.metrics_summary)
     _write_run_info(args)
     s = metrics.summary()
-    print(f"[metrics] {s['total_frames']} frame | mean={s['mean_latency_ms']:.0f} ms | "
+    mean_txt = ("chưa đo" if not s.get("mean_latency_ms_n")
+                else f"{s['mean_latency_ms']:.0f} ms (n={s['mean_latency_ms_n']})")
+    print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
     res = s.get("resources") or {}
@@ -360,7 +362,8 @@ def _p95_txt(s: dict) -> str:
     """
     if s.get("p95_latency_ms") is None:
         return "chưa đo (0 mẫu đo được)"
-    return f"{s['p95_latency_ms']:.0f} ms (n={s.get('p95_latency_ms_n')})"
+    n = s.get("p95_latency_ms_n")
+    return f"{s['p95_latency_ms']:.0f} ms (n={'?' if n is None else n})"
 
 
 def _write_run_info(args):
@@ -567,7 +570,8 @@ def _run_headless(engine, args):
     print("=" * 60)
     p95_txt = ("chưa đo (0 mẫu)" if summary.p95_ms is None
                else f"{summary.p95_ms:.0f} ms (n={summary.p95_n})")
-    print(f"[kết quả] {summary.total_frames} frame | mean={summary.mean_ms:.0f} ms | "
+    mean_txt = ("chưa đo" if summary.mean_n == 0 else f"{summary.mean_ms:.0f} ms (n={summary.mean_n})")
+    print(f"[kết quả] {summary.total_frames} frame | mean={mean_txt} | "
           f"p95={p95_txt} | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
     print(f"({_device_note(args.device)} — số liệu thực đo theo ADR-0002)")
 

@@ -118,9 +118,14 @@ def plot_one(name, d, out_dir):
 def plot_compare(items, out_dir):
     """So sánh độ trễ trung bình giữa các file (VD CPU vs GPU)."""
     fig, ax = plt.subplots(figsize=(6, 4))
+    # CHỈ vẽ những lần đo CÓ mẫu latency: file toàn đóng băng (hoặc rỗng) có mean/p95 = `None`, vẽ nó
+    # thành cột `0` trên thang log là nói "xử lý tức thì" — đúng thứ ticket #32 cấm (P2 review 17-11).
+    items = [(d, s) for d, s in items if s.get("n_do_ms")]
+    if len(items) < 2:
+        return None
     names = [s["file"] for _, s in items]
-    means = [s["mean_ms"] or 0.0 for _, s in items]
-    p95 = [s["p95_ms"] or 0.0 for _, s in items]
+    means = [s["mean_ms"] for _, s in items]
+    p95 = [s["p95_ms"] for _, s in items]
     x = np.arange(len(names))
     ax.bar(x - 0.18, means, width=0.36, label="Trung bình", color="#4a7ebb")
     ax.bar(x + 0.18, p95, width=0.36, label="p95", color="#e8701a")
@@ -136,6 +141,7 @@ def plot_compare(items, out_dir):
     ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     p = os.path.join(out_dir, "so_sanh_latency.png")
+    # (không vẽ khi < 2 lần đo có mẫu — hàm trả `None` ở trên)
     fig.savefig(p, dpi=130)
     plt.close(fig)
     return p
@@ -181,7 +187,11 @@ def main():
             print(f"  → {p}")
 
     if len(items) >= 2:
-        print(f"  → {plot_compare(items, args.out)}")
+        so_sanh = plot_compare(items, args.out)
+        if so_sanh:
+            print(f"  → {so_sanh}")
+        else:
+            print("  (không vẽ ảnh so sánh: chưa có ≥ 2 lần đo CÓ mẫu latency)")
 
     print(f"\n[done] biểu đồ trong {args.out}/")
 
