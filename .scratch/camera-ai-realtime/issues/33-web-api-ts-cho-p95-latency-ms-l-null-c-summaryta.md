@@ -12,10 +12,10 @@ Việc:
 
 **Vì sao chưa làm trong PR #29:** PR đó là backend + `run summary`; trộn FE vào sẽ phải chạy e2e (Windows/Playwright) và làm PR vượt phạm vi một ticket.
 
-**Status:** claimed
+**Status:** resolved
 
 Acceptance:
-- [ ] `api.ts` cho phép `null` + có `_n` cho p95 và mean
+- [x] `api.ts` cho phép `null` + có `_n` cho p95 và mean
 - [x] `SummaryTable` in `— (0 mẫu)` / `119 ms (n=600)` — có vitest canh cả hai
 - [x] `./run webtest` + `npm run build` + `./run e2e` xanh
 
