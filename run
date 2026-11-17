@@ -501,8 +501,15 @@ for f in files:
     extra = ""
     if res.get("cpu_percent_mean") is not None:
         extra = f" | CPU {res['cpu_percent_mean']:.0f}% (1 lõi) RAM {res['rss_mb_peak']:.0f} MB"
+    # `p95_latency_ms` có thể là `null` (chưa có mẫu latency: phiên mất dấu cả phiên / summary cũ hơn
+    # PR này). `.get(k, 0)` KHÔNG cứu được `null` — nó chỉ áp dụng khi THIẾU khoá ⇒ f-string `{None:7.0f}`
+    # ném TypeError và chết cả vòng lặp này (ticket #32, P1 review 17-11).
+    p95 = d.get("p95_latency_ms")
+    p95_txt = "chưa đo" if p95 is None else f"{p95:7.0f}"
+    n_do = d.get("p95_latency_ms_n")
     print(f"{os.path.basename(f):28} {d.get('total_frames','?'):>4} frame | "
-          f"mean={d.get('mean_latency_ms',0):7.0f} ms | p95={d.get('p95_latency_ms',0):7.0f} | "
+          f"mean={d.get('mean_latency_ms',0):7.0f} ms | p95={p95_txt:>7}"
+          f"{'' if n_do is None else f' (n={n_do})'} | "
           f"FPS={d.get('effective_fps',0):5.2f} | mất dấu={d.get('lost_count',0)}{extra}")
 PY
     ;;

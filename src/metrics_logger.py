@@ -97,8 +97,16 @@ class MetricsLogger:
         if not self.records:
             return {
                 "total_frames": 0,
+                # `mean_latency_ms` giữ `0,0` vì `effective_fps = 1000/mean` là hợp đồng cũ (đổi nó
+                # phải sửa API/web/báo cáo) — nhưng đi kèm `mean_latency_ms_n = 0` để không ai trích
+                # "mean 0 ms" như một số đo được (ticket #32, P2 review 17-11).
                 "mean_latency_ms": 0.0,
-                "p95_latency_ms": 0.0,
+                "mean_latency_ms_n": 0,
+                # `None` = CHƯA ĐO (không có frame nào đo được), khác `0,0` = đo được 0 ms.
+                # `p95_latency_ms_n` là cỡ mẫu — thiếu nó thì người đọc artifact không biết
+                # p95 dựa trên 1 frame hay 600 frame (ticket #32).
+                "p95_latency_ms": None,
+                "p95_latency_ms_n": 0,
                 "effective_fps": 0.0,
                 "mean_score": 0.0,
                 "lost_count": 0,
@@ -114,14 +122,16 @@ class MetricsLogger:
         measured = [r for r in self.records if not is_frozen(r)]
         latencies = np.array([r.latency_ms for r in measured], dtype=float)
         if latencies.size == 0:
-            mean_ms = p95_ms = 0.0
+            mean_ms, p95_ms = 0.0, None
         else:
             mean_ms = float(np.mean(latencies))
             p95_ms = float(np.percentile(latencies, 95))
         return {
             "total_frames": len(self.records),
             "mean_latency_ms": mean_ms,
+            "mean_latency_ms_n": int(latencies.size),
             "p95_latency_ms": p95_ms,
+            "p95_latency_ms_n": int(latencies.size),
             "effective_fps": 1000.0 / mean_ms if mean_ms > 0 else 0.0,
             "mean_score": float(np.mean([r.score for r in self.records])),
             "lost_count": lost_count,

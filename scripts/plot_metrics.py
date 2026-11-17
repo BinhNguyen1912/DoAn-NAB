@@ -44,19 +44,27 @@ def read_metrics(path):
 
 def summarize(name, d):
     measured = ~d["frozen"] if "frozen" in d else np.ones(len(d["latency"]), bool)
-    lat = d["latency"][measured] if measured.any() else d["latency"]
+    # TOÀN BỘ frame đóng băng (mất dấu cả phiên) ⇒ KHÔNG có mẫu latency nào. Bản cũ rơi về
+    # `d["latency"]` (toàn 0) ⇒ bảng in "mean 0 / p95 0" như thể mọi frame chạy tức thì — đúng bẫy
+    # `0/None` (ticket #32). Nay giữ mảng rỗng ⇒ mọi cột là `None`.
+    lat = d["latency"][measured] if measured.any() else np.array([], dtype=float)
     lost = int(d["lost"].sum())
+    n_do = int(len(lat))
     return {
         "file": name,
         "n": len(d["latency"]),
         "frozen": int((~measured).sum()) if "frozen" in d else 0,
-        "mean_ms": float(np.mean(lat)),
-        "p95_ms": float(np.percentile(lat, 95)),
-        "min_ms": float(np.min(lat)),
-        "max_ms": float(np.max(lat)),
-        "fps": 1000.0 / float(np.mean(lat)) if np.mean(lat) > 0 else 0.0,
+        "mean_ms": float(np.mean(lat)) if n_do else None,
+        # `None` = CHƯA ĐO (không còn frame nào đo được sau khi bỏ đóng băng/warmup) — `0 ms` là
+        # một số ĐO ĐƯỢC, không được dùng cho "chưa có mẫu" (ticket #32).
+        "p95_ms": float(np.percentile(lat, 95)) if n_do else None,
+        "n_do_ms": n_do,
+        # min/max/fps cũng `None` khi không còn mẫu nào (np.min([]) ném/nan ⇒ bảng in "nan").
+        "min_ms": (float(np.min(lat)) if n_do else None),
+        "max_ms": (float(np.max(lat)) if n_do else None),
+        "fps": (1000.0 / float(np.mean(lat)) if n_do and float(np.mean(lat)) > 0 else None),
         "lost": lost,
-        "lost_ratio": lost / len(d["latency"]),
+        "lost_ratio": (lost / len(d["latency"])) if len(d["latency"]) else None,
     }
 
 
@@ -110,6 +118,11 @@ def plot_one(name, d, out_dir):
 def plot_compare(items, out_dir):
     """So sánh độ trễ trung bình giữa các file (VD CPU vs GPU)."""
     fig, ax = plt.subplots(figsize=(6, 4))
+    # CHỈ vẽ những lần đo CÓ mẫu latency: file toàn đóng băng (hoặc rỗng) có mean/p95 = `None`, vẽ nó
+    # thành cột `0` trên thang log là nói "xử lý tức thì" — đúng thứ ticket #32 cấm (P2 review 17-11).
+    items = [(d, s) for d, s in items if s.get("n_do_ms")]
+    if len(items) < 2:
+        return None
     names = [s["file"] for _, s in items]
     means = [s["mean_ms"] for _, s in items]
     p95 = [s["p95_ms"] for _, s in items]
@@ -128,6 +141,7 @@ def plot_compare(items, out_dir):
     ax.grid(alpha=0.3, axis="y")
     fig.tight_layout()
     p = os.path.join(out_dir, "so_sanh_latency.png")
+    # (không vẽ khi < 2 lần đo có mẫu — hàm trả `None` ở trên)
     fig.savefig(p, dpi=130)
     plt.close(fig)
     return p
@@ -160,14 +174,24 @@ def main():
                 label = f"{name} (bỏ {args.skip_warmup} frame đầu)"
         s = summarize(label, d)
         items.append((d, s))
-        print(f"{name:28} {s['n']:5d} {s['mean_ms']:8.0f} {s['p95_ms']:8.0f} "
-              f"{s['min_ms']:8.0f} {s['max_ms']:8.0f} {s['fps']:6.2f} "
-              f"{s['lost']:4d}/{s['n']:<4d}")
+        # `None` ⇒ in "—" + cỡ mẫu, KHÔNG in 0 (0 ms là số đo được, ticket #32).
+        # `None` ⇒ in "—" + cỡ mẫu, KHÔNG in 0 (0 ms là số đo được, ticket #32).
+        def _txt(v, dinh_dang="{:.0f}"):
+            return "—" if v is None else dinh_dang.format(v)
+
+        print(f"{name:28} {s['n']:5d} {_txt(s['mean_ms']):>8} {_txt(s['p95_ms']):>8} "
+              f"{_txt(s['min_ms']):>8} {_txt(s['max_ms']):>8} {_txt(s['fps'], '{:.2f}'):>6} "
+              f"{s['lost']:4d}/{s['n']:<4d}"
+              + (f"  (n đo được = {s['n_do_ms']})" if s["p95_ms"] is None else ""))
         for p in plot_one(name, d, args.out):
             print(f"  → {p}")
 
     if len(items) >= 2:
-        print(f"  → {plot_compare(items, args.out)}")
+        so_sanh = plot_compare(items, args.out)
+        if so_sanh:
+            print(f"  → {so_sanh}")
+        else:
+            print("  (không vẽ ảnh so sánh: chưa có ≥ 2 lần đo CÓ mẫu latency)")
 
     print(f"\n[done] biểu đồ trong {args.out}/")
 

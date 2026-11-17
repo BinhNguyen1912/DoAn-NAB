@@ -97,12 +97,35 @@ class TestSummary:
         assert s["lost_ratio"] == pytest.approx(0.3)
 
     def test_summary_rong_khong_crash(self):
+        """Ticket #32: `p95` CHƯA ĐO phải là `None`, không phải `0,0` (0 ms là số đo được)."""
         s = MetricsLogger().summary()
         assert s["total_frames"] == 0
-        assert s["mean_latency_ms"] == 0.0
-        assert s["p95_latency_ms"] == 0.0
+        assert s["mean_latency_ms"] == 0.0     # mean giữ 0,0 vì `effective_fps` hợp đồng cũ
+        assert s["p95_latency_ms"] is None
+        assert s["p95_latency_ms_n"] == 0
         assert s["effective_fps"] == 0.0
         assert s["lost_ratio"] == 0.0
+
+    def test_p95_None_khi_toan_bo_frame_dong_bang(self):
+        """Có frame nhưng TẤT CẢ bị đóng băng (mất dấu → không gọi model) ⇒ không có mẫu latency."""
+        records = [FrameRecord(frame_idx=i, latency_ms=0.0, score=0.0, center=None,
+                               lost=True, state="lost")
+                   for i in range(3)]
+        logger = MetricsLogger()
+        for r in records:
+            logger.log(r)
+        s = logger.summary()
+        assert s["total_frames"] == 3
+        assert s["p95_latency_ms"] is None and s["p95_latency_ms_n"] == 0
+
+    def test_p95_kem_co_mau_de_doc_can_nhau(self):
+        """p95 của 1 frame ≈ chính frame đó ⇒ phải đọc kèm `_n` để biết nó không phải phân vị thật."""
+        logger = MetricsLogger()
+        for r in _records(4):
+            logger.log(r)
+        s = logger.summary()
+        assert s["p95_latency_ms"] is not None
+        assert s["p95_latency_ms_n"] == 4
 
     def test_write_summary_json_doc_lai_duoc(self, tmp_path):
         out = tmp_path / "summary.json"
@@ -332,3 +355,28 @@ class TestThongKeKhongBiLechBoiFrameDongBang:
         assert s["mean_latency_ms"] == 0.0
         assert s["effective_fps"] == 0.0
         assert s["frozen_frames"] == 1
+
+
+class TestMeanVaP95CoMauKemTheo:
+    """P2 review 17-11 (ticket #32): `mean_latency_ms` giữ `0,0` khi rỗng nhưng phải kèm `_n`,
+    nếu không người sau vẫn trích được "mean 0 ms" như số đo được."""
+
+    def test_summary_rong_co_mean_n_bang_0(self):
+        s = MetricsLogger().summary()
+        assert s["mean_latency_ms"] == 0.0 and s["mean_latency_ms_n"] == 0
+        assert s["p95_latency_ms"] is None and s["p95_latency_ms_n"] == 0
+
+    def test_mean_n_bang_so_frame_do_duoc(self):
+        logger = MetricsLogger()
+        for r in _records(4):
+            logger.log(r)
+        s = logger.summary()
+        assert s["mean_latency_ms_n"] == 4 and s["p95_latency_ms_n"] == 4
+
+    def test_toan_bo_dong_bang_mean_n_bang_0(self):
+        logger = MetricsLogger()
+        for i in range(3):
+            logger.log(FrameRecord(frame_idx=i, latency_ms=0.0, score=0.0, center=None,
+                                   lost=True, state="lost"))
+        s = logger.summary()
+        assert s["mean_latency_ms_n"] == 0 and s["mean_latency_ms"] == 0.0

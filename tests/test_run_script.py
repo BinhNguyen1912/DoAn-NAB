@@ -86,6 +86,28 @@ class TestRunSubcommands:
     def test_summary_khong_crash(self):
         assert _run("summary").returncode == 0
 
+    def test_summary_p95_null_khong_crash(self, tmp_path, monkeypatch):
+        """Ticket #32 (P1 review 17-11): summary có `p95_latency_ms: null` từng làm `./run summary`
+        ném `TypeError: unsupported format string passed to NoneType.__format__` — `.get(k, 0)` chỉ
+        cứu khi THIẾU khoá, không cứu `null`. Chết giữa vòng lặp ⇒ các file sau không được in.
+        """
+        import json
+        import os
+
+        # `./run` chạy trong CWD (nó tự `cd "$ROOT"`), còn pytest chạy ở gốc repo ⇒ ghi file tạm vào
+        # `data/` của gốc repo rồi xoá (tiền tố `zz_` để nó nằm cuối danh sách sắp xếp).
+        f = os.path.join("data", "zz_test_null_summary.json")
+        os.makedirs("data", exist_ok=True)
+        with open(f, "w", encoding="utf-8") as fh:
+            json.dump({"total_frames": 3, "mean_latency_ms": 100.0, "p95_latency_ms": None,
+                       "p95_latency_ms_n": 0, "effective_fps": 10.0, "lost_count": 3}, fh)
+        try:
+            r = _run("summary")
+            assert r.returncode == 0, r.stderr
+            assert "chưa đo" in r.stdout
+        finally:
+            os.remove(f)
+
     def test_aliases_in_khoi_lenh_tat(self):
         r = _run("aliases")
         assert r.returncode == 0
