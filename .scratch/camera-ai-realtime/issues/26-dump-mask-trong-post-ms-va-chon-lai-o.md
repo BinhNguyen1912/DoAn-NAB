@@ -18,7 +18,20 @@ từ chối rõ ràng).
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `post_ms` không còn bao gồm thời gian ghi PNG (hoặc `dump_ms` được trừ ra và ghi riêng)
-- [ ] Test: chọn lại ô giữa phiên khi dump bật ⇒ không ghi đè âm thầm (hoặc từ chối)
+- [x] `post_ms` không còn bao gồm thời gian ghi PNG (hoặc `dump_ms` được trừ ra và ghi riêng)
+- [x] Test: chọn lại ô giữa phiên khi dump bật ⇒ không ghi đè âm thầm (hoặc từ chối)
+
+## Answer
+
+Đã xong (17-11, PR #28): `_record_vos` trả `dump_ms` (thời gian THỬ ghi PNG), hai nơi gọi trừ nó khỏi
+`post_ms`; `status.json["dump_ms"]` = `None` khi **không có file nào được ghi** (không yêu cầu dump /
+`mask is None` / `imwrite` fail). Ghi đè file đã tồn tại — kể cả TRONG cùng phiên — in CẢNH BÁO + đếm
+`so_file_ghi_de` + khai vào `manifest.json`; `score_miou` đọc khoá đó và cảnh báo ở chỗ CHẤM. Frame
+`engine.start()` không còn bị dump hai lần ở đường có luồng (test đếm `cv2.imwrite`). `frames_da_ghi`
+trong manifest; `dump_ms` vào allowlist bắt buộc; `cau_hinh.dump_mask_frames` echo cấu hình.
+
+`./run test` 1312 passed. Review độc lập: 2 P1 + 2 P2 + 3 P3 → đã sửa hết (`.scratch/rev26-32.md`).
+Còn nợ: `cycle_ms`/`queue_ms` vẫn chứa dump của lần VOS trước (đã sửa **lời**, cần `_prev_dump_ms` để
+trừ đúng mẫu) — ghi trong log `docs/task/17-11-2026-ticket-26-dump-mask-ngoai-post-ms.md`.
