@@ -16,10 +16,32 @@ thước đo **phải** dùng ngưỡng khác (vd p05 cần ≥ 20 để có ngh
 
 **Status:** claimed
 
-- [ ] Chỉ còn MỘT hằng ngưỡng cho phân vị (hoặc hằng riêng có lý do + test khoá giá trị)
-- [ ] Artifact in `n` cạnh mọi `*_p05`; p05 có n < ngưỡng ⇒ `None` (không công bố)
-- [ ] Test: `mIoU_p05` với 5 frame phải là `None` (hoặc ghi rõ "ngưỡng riêng = 5, lý do …"), không im lặng
+- [x] Chỉ còn MỘT hằng ngưỡng cho phân vị (hoặc hằng riêng có lý do + test khoá giá trị)
+- [x] Artifact in `n` cạnh mọi `*_p05`; p05 có n < ngưỡng ⇒ `None` (không công bố)
+- [x] Test: `mIoU_p05` với 5 frame phải là `None` (hoặc ghi rõ "ngưỡng riêng = 5, lý do …"), không im lặng
 
 ## Comments
 
 14-11 (review độc lập nhánh `feat/plan-con-lai`, P2): phát hiện khi đối chiếu 3 file cùng đại lượng.
+
+## Answer
+
+Đã xong (16-11, `feat/p05-mot-nguong`): mọi phân vị công bố ra artifact đi qua **một** cửa —
+`phan_vi()` trong `src/drift_samples.py` với `MIN_SAMPLES = 30`, ghim bằng test bằng
+`live_tracking._STAT_MIN_SAMPLES`:
+
+- `scripts/score_miou.py`: bỏ hằng `5` → dùng `phan_vi`; artifact có thêm `mIoU_p05_n` +
+  `mIoU_p05_nguong`; CLI in "CHƯA CÔNG BỐ (n < 30)" thay vì im lặng bỏ dòng.
+- `scripts/make_trajectory_media.py`: bỏ hằng `20` → dùng `phan_vi`; `thong_ke` (kèm `nguong_p05`)
+  nay nằm trong file provenance JSON, không chỉ stdout.
+- `static_control`: tiêu chí đạt vẫn dùng `min_samples = 20` (ticket 15), nhưng `p05` chỉ công bố từ
+  30 mẫu.
+
+Hệ quả đã kiểm trên artifact thật (cây sạch, `git_dirty_code = false`):
+`data/miou_binh1_hopbao_2026-11-15_metrics.json` → `mIoU_p05 = None`, `mIoU_p05_n = 12`, ngưỡng 30;
+`docs/media/traj/binh1_vat_ra_khung.json` → `drift_iou_p05 = 0,0` vẫn công bố (`drift_n = 271`), `nguong_p05 = 30`.
+Artifact `miou_synthetic_2026-11-14` (n = 5, p05 = 0,9239) sinh TRƯỚC thay đổi và mask của nó đã mất
+(`/tmp/demo_gt4`) ⇒ không sinh lại được; đã ghi rõ trong `docs/so-lieu-bao-cao.md` là **cấm trích**
+p05 của nó.
+
+Test: 8 test mới; đã kiểm "có răng" — hạ `MIN_SAMPLES` về 20 ⇒ 4 test đỏ, về 5 ⇒ 6 test đỏ.

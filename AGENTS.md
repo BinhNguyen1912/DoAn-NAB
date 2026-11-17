@@ -234,6 +234,15 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   (`binh1` cất chai từ frame ~115). Ô + khung đúng: `docs/demo-clip-va-o-chon.md`.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
+- **Mọi `*_p05` công bố ra artifact đi qua MỘT ngưỡng: 30 mẫu** (`drift_samples.MIN_SAMPLES`, ghim
+  bằng test bằng `live_tracking._STAT_MIN_SAMPLES`). Ngày 16-11 repo có ba ngưỡng (5 ở `score_miou`,
+  20 ở `make_trajectory_media`, 30 ở `status.json`) ⇒ cùng đại lượng mà ba con số không so được với
+  nhau. Nay `mIoU_p05`/`drift_iou_p05` đều `None` khi n < 30, kèm `mIoU_p05_n`/`drift_n` +
+  `*_p05_nguong`; **`None` ở đây nghĩa là "chưa công bố", không phải "p05 = 0"**. Hệ quả phải nhớ:
+  GT thật `binh1` chỉ 12 frame ⇒ `mIoU_p05 = None` (đọc cột `frames` thay vì p05), và artifact
+  `data/miou_synthetic_2026-11-14_metrics.json` (5 frame, p05 0,9239) **sinh trước** đổi này ⇒ cấm
+  trích p05 của nó. `p05` theo **cửa sổ** (`rolling_p05`/`flag_rate`/`low_p05_low_empty`) không bị
+  ngưỡng này chi phối — "đủ mẫu" ở đó do chính cửa sổ quyết định.
 - **`measure_live_relay` báo `ket_qua = true` KHÔNG có nghĩa là bám đúng vật**: nó chỉ kiểm đường ống
   (running, có frame, có mask). Đo trên Colab T4 (13-11) với **bbox trỏ vào nền** cho `ket_qua = true`
   mà `drift_iou` 0,203–0,346 và `stability` 0,27–0,35 — tái lập trên CPU với đúng clip đó cũng ra

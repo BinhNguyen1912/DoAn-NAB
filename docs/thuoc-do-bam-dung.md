@@ -147,6 +147,12 @@ Số hiện có (`data/miou_binh1_hopbao_2026-11-15_metrics.json`, mask @192, `v
 3,9 %** (tệ nhất 29,4 % @f62 — frame GT sửa tay, đọc kèm). Đây **không** phải mIoU phân đoạn; xem
 `docs/so-lieu-bao-cao.md` (cột "cấm trích") trước khi đưa vào slide.
 
+**`mIoU_p05` = `None` trên artifact này** (ticket #23): phân vị 5 % chỉ được công bố khi có ≥ **30**
+frame chấm được — cùng ngưỡng với `drift_iou_p05`/`mask_age_p95` trong `status.json`. Với n = 12,
+"p05" **chính là** frame xấu nhất (chỉ số 0,05 × 11 = 0,55 ⇒ vẫn nằm giữa min và phần tử nhỏ thứ hai)
+⇒ công bố nó thành p05 là làm con số trông đáng tin hơn thực tế. Đọc cột `frames` của artifact để biết
+frame nào xấu nhất; muốn p05 thật thì phải có ≥ 30 frame GT.
+
 Muốn có mIoU phân đoạn: `score_miou.py label --dang-gt silhouette …` → tô **đặc** silhouette →
 `score --gt docs/gt/<tên>`; thêm 1 dòng vào `REGISTRY` của `scripts/so_lieu_bao_cao.py` rồi chạy lại
 script đó để số vào `docs/so-lieu-bao-cao.md`.

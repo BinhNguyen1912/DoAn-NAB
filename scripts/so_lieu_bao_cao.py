@@ -93,7 +93,9 @@ REGISTRY = [
      "frame trong tổng `ket_qua.so_frame_tong` — CẤM nói 'mIoU cả clip'. CẤM trích như mIoU trên video "
      "thật — muốn số thật thì gán tay (`scripts/score_miou.py label --dang-gt silhouette`). "
      "Artifact này sinh TRƯỚC 15-11 nên KHÔNG có `meta.dang_gt`/`mask_ngoai_gt` (GT của nó là "
-     "silhouette theo cấu trúc fixture).",
+     "silhouette theo cấu trúc fixture). ĐỪNG trích `ket_qua.mIoU_p05` của nó (0,9239): chỉ 5 frame "
+     "⇒ từ 16-11 ngưỡng công bố phân vị là 30 (`ticket #23`), và ở n=5 thì \"p05\" chính là frame xấu "
+     "nhất. Artifact mới có `mIoU_p05_n`/`mIoU_p05_nguong` ngay cạnh con số.",
      {"n": "ket_qua.n_cham"}),
     # ── 15-11: mIoU trên VIDEO THẬT (`binh1`), nhưng GT là HỘP BAO — phải gọi đúng tên ─────────
     ("IoU mask vs HỘP BAO chai trên 12 frame VIDEO THẬT (`binh1`, `image_size 192`, `vos_every 1`)",
@@ -103,7 +105,8 @@ REGISTRY = [
      "`ket_qua.gt_dang = hop_bao` / `meta.dang_gt = hop_bao`, kèm `ket_qua.mIoU_dinh_nghia` ngay cạnh "
      "con số), hộp lớn hơn vật nên **chặn trên ~0,75–0,85**; muốn mIoU phân đoạn "
      "thì phải tô silhouette (`scripts/score_miou.py label`, `docs/thuoc-do-bam-dung.md`). Số này "
-     "chỉ nói mask có nằm ĐÚNG VÙNG chai — n=12 frame, một clip.",
+     "chỉ nói mask có nằm ĐÚNG VÙNG chai — n=12 frame, một clip. `mIoU_p05` của artifact này là "
+     "`None` vì 12 < 30 mẫu (ticket #23) — đừng đọc đó là \"chưa đo\" hay \"p05 = 0\".",
      {"n": "ket_qua.n_cham"}),
     ("Phần mask TRÀN ra ngoài vùng chai (12 frame thật, `binh1`)",
      "data/miou_binh1_hopbao_2026-11-15_metrics.json",
