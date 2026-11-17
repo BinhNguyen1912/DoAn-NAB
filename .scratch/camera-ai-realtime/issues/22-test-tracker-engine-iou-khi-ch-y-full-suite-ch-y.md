@@ -39,10 +39,10 @@ Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ 
 - Hai test từng đỏ oan, chạy riêng **10 lần liên tiếp: 10/10 xanh** (tái lập bằng vòng lặp
   `pytest tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau
   tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_khong_cho_zombie_5_giay`, ~50 s/lần).
-- Phân bố IoU của chính test bị đỏ (10 lần chạy, `scripts/measure_flaky_iou.py`,
-  `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 1785fd1`, `git_dirty_code false`):
-  f2 **0,9512 ± 0,0000**, f5 **0,9701 ± 0,0103**, f9 **0,9506 ± 0,0000** ⇒ **0/30 lượt dưới ngưỡng 0,5**.
-  Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **44 σ** (σ lớn nhất = 0,0103 ở f5) ⇒ **ngưỡng 0,5
+- Phân bố IoU của chính test bị đỏ (5 lần chạy trên cây sạch, `scripts/measure_flaky_iou.py`,
+  `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 7f7e806`, `git_dirty_code false`):
+  f2 **0,9512 ± 0,0000**, f5 **0,9652 ± 0,0134**, f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**.
+  Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ** (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5
   đúng, cấm hạ**;
   lần đỏ 10-11 không phải "mask trôi" mà là ngoại lệ của SAM 2 (không tất định, AGENTS §6).
 
