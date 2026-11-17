@@ -13,11 +13,11 @@
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `./run testall` 3 lần liên tiếp xanh trên máy này, HOẶC test được đánh dấu theo cách không còn đỏ oan (kèm số lần đo và lý do chọn)
-- [ ] Ghi vào log số đo thật: tần suất đỏ của test khi chạy full suite (n≥3) và IoU đo được ở mỗi lần
-- [ ] Không nới ngưỡng IoU một cách im lặng: nếu đổi 0,5 → thấp hơn thì phải chứng minh bằng số (phân bố IoU) rằng 0,5 không hợp lý; ưu tiên chạy lại 1 lần (retry) hoặc tách khỏi full suite
+- [x] `./run testall` 3 lần liên tiếp xanh trên máy này, HOẶC test được đánh dấu theo cách không còn đỏ oan (kèm số lần đo và lý do chọn)
+- [x] Ghi vào log số đo thật: tần suất đỏ của test khi chạy full suite (n≥3) và IoU đo được ở mỗi lần
+- [x] Không nới ngưỡng IoU một cách im lặng: nếu đổi 0,5 → thấp hơn thì phải chứng minh bằng số (phân bố IoU) rằng 0,5 không hợp lý; ưu tiên chạy lại 1 lần (retry) hoặc tách khỏi full suite
 
 ## Comments
 
@@ -27,3 +27,30 @@
 - `./run testall` lần 2 (13:05): **820 passed**.
 
 Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ không đi qua `_prepare_dir`, nên gần như chắc chắn flaky sẵn có (không đổi ngưỡng, không sửa test khi chưa có số tần suất). Cần gộp vào phạm vi ticket này: đo tần suất đỏ của CẢ HAI test (n≥3 lần full suite), ưu tiên cách sửa "không đo thời gian tường" (assert `poll() is not None` + `elapsed < ngưỡng rộng theo số CPU, hoặc `pytest.mark.slow`/retry) thay vì nới ngưỡng im lặng.
+
+## Answer
+
+Đã xong (17-11, `fix/test-flaky-tracker-iou`), **không nới ngưỡng nào**:
+
+**Số đo (máy này, cây sạch):**
+- `./run testall` **3 lần liên tiếp: 3/3 xanh**, `1306 passed` mỗi lần, 199,5 / 199,5 / 202,4 s
+  ⇒ hôm nay **0/3 lần đỏ**; không tái hiện được ca 10-11. (Log thô của 3 lần này **không commit** được
+  — `.gitignore` chặn `data/*`; tái lập bằng `./run testall` 3 lần, mỗi lần ~200 s / 1306 passed.)
+- Hai test từng đỏ oan, chạy riêng **10 lần liên tiếp: 10/10 xanh** (tái lập bằng vòng lặp
+  `pytest tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau
+  tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_khong_cho_zombie_5_giay`, ~50 s/lần).
+- Phân bố IoU của chính test bị đỏ (5 lần chạy trên cây sạch, `scripts/measure_flaky_iou.py`,
+  `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 7f7e806`, `git_dirty_code false`):
+  f2 **0,9512 ± 0,0000**, f5 **0,9652 ± 0,0134**, f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**.
+  Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ** (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5
+  đúng, cấm hạ**;
+  lần đỏ 10-11 không phải "mask trôi" mà là ngoại lệ của SAM 2 (không tất định, AGENTS §6).
+
+**Cách xử lý (tiêu chí 3):** `test_process_theo_frames_iou_dat_o_cac_frame_mau` **chạy lại MỘT lần**
+khi lần đầu có frame dưới ngưỡng (`engine.reset()` rồi chạy lại đúng kịch bản). Cả hai lần đều dưới
+ngưỡng ⇒ **vẫn ĐỎ**, và message in IoU của **cả hai lần** để hồi quy thật (mask trôi) không lọt qua
+"retry che lỗi". Không đánh dấu `flaky`/`skip`, không hạ ngưỡng.
+
+**Còn nợ:** `test_reap_khong_cho_zombie_5_giay` đo **thời gian tường** (`elapsed < 3 s`) — đúng gợi ý
+của ticket là nên đổi sang assert `poll() is not None` + ngưỡng rộng theo số CPU, nhưng test đó
+xanh 10/10 lần đo nên **không sửa** ở đây (sửa khi tái hiện được, tránh "sửa mù"); đã ghi vào log.
