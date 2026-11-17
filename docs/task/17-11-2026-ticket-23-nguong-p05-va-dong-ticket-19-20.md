@@ -105,7 +105,7 @@
   "CHƯA CÔNG BỐ" (trước chỉ `cham()` được test ⇒ bỏ dòng in vẫn xanh).
 - **P3 không sửa, có lý do (2)**:
   - `p95` latency của `live_pipeline`/`metrics_logger` trả `0.0` khi rỗng (đúng bẫy `0/None` nhưng khác
-    đại lượng) ⇒ **cần ticket riêng** vì đổi hợp đồng consumer; nhét vào PR này là trộn phạm vi.
+    đại lượng) ⇒ **đã tạo ticket #32** (không nhét vào PR này vì đổi hợp đồng consumer).
   - Không sửa tay `data/miou_synthetic_2026-11-14_metrics.json` để thêm `canh_bao`: file đang khai
     `git_dirty: false` cho đúng lần sinh đó, sửa tay sẽ làm **provenance nói dối** — thà ghi cảnh báo
     ở 4 chỗ đã làm (`AGENTS`, `docs/so-lieu-bao-cao.md`, `docs/thuoc-do-bam-dung.md`, script).
@@ -117,6 +117,7 @@
   `./run lint` xanh · `./run test` **1301 passed**, 5 deselected.
 
 ## 📌 Việc cần làm tiếp (Next steps)
+- [ ] Ticket **#32**: `p95_ms` độ trễ trả `0.0` khi chưa có mẫu (`live_pipeline`/`metrics_logger`).
 - [ ] Ticket **#24**: `vos_every = 1` không bao giờ ghi `mask_age_total_ms` (đúng cấu hình đã dùng cho
       mIoU fixture và các số "1 luồng 8,8 FPS").
 - [ ] Ticket **#26**: `--dump-mask-frames` chạy trong cửa sổ `post_ms` (dụng cụ đo làm bẩn số đang đo);
