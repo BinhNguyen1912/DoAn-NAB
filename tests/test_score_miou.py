@@ -461,6 +461,25 @@ class TestKiemIndex:
         assert not any("CÙNG một hộp" in x for x in mem), mem
 
 
+class TestManifestGhiDeMask:
+    """Ticket #26 (P2 review 17-11): `so_file_ghi_de > 0` phải thành cảnh báo MỀM ở chỗ CHẤM.
+
+    Stdout của worker (nơi in cảnh báo ghi đè) không đi theo artifact ⇒ nếu `score_miou` không đọc
+    khoá này thì "mIoU ghép GT theo số frame" vẫn sai một cách im lặng.
+    """
+
+    def test_co_ghi_de_thi_canh_bao_mem(self):
+        index = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
+        manifest = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "so_file_ghi_de": 2}
+        canh_bao = sm.kiem_khop_manifest(index, manifest)
+        assert any("GHI ĐÈ 2 lần" in c for c in canh_bao), canh_bao
+
+    def test_khong_ghi_de_thi_khong_canh_bao(self):
+        index = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
+        manifest = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "so_file_ghi_de": 0}
+        assert not any("GHI ĐÈ" in c for c in sm.kiem_khop_manifest(index, manifest))
+
+
 class TestKiemKhopManifest:
     """GT và mask phải là CÙNG clip, CÙNG frame — `manifest.json` của thư mục mask là chỗ kiểm được
     điều đó (lớp lỗi "ghép GT với mask của frame khác", P0 14-11). Cảnh báo MỀM.

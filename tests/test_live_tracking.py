@@ -6,7 +6,9 @@ Dùng engine GIẢ (FakeEngine duck-type start/process) — không cần torch, 
 import json
 import sys
 import threading
+import time
 from collections import deque
+from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -139,7 +141,7 @@ class TestLiveTrackingSession:
             "mask_drops",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_total_ms",
             "mask_age_p95", "age_n", "empty_frac_window", "empty_window_n",
-            "lost_streak", "bbox", "message"}
+            "lost_streak", "bbox", "message", "dump_ms"}
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
@@ -1755,6 +1757,139 @@ class TestTuoiMaskDuongDonLuong:
         # `elapsed_ms` là giá trị GIẢ CỐ ĐỊNH do test đặt — test ĐỎ (review 17-11, P3).
         assert session._stats.mask_age_total_ms == pytest.approx(
             410.0 + (session._stats.post_ms or 0.0), abs=2.0)
+
+
+class TestDumpMaskKhongLamBanSoDo:
+    """Ticket #26 (review hẹp 14-11, P3): `_dump_mask` chạy TRONG cửa sổ `post_ms` ⇒ dụng cụ đo làm
+    bẩn đúng số nó định đo (`post_ms` → `mask_age_total_ms`/p95 và `cycle_ms`), và việc chọn lại ô
+    giữa phiên chưa có gì canh nên mask hai lần chọn có thể trộn vào nhau mà không ai biết.
+    """
+
+    def test_dump_ms_duoc_tru_ra_khoi_post_ms(self, video_source, tmp_path, monkeypatch):
+        """`_dump_mask` chậm 60 ms ⇒ `post_ms` KHÔNG được tăng 60 ms; `dump_ms` mới là chỗ chứa nó."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3,
+                              dump_mask_frames=(1,), dump_mask_dir=str(tmp_path / "masks"))
+        session = LiveTrackingSession(FakeEngine(), cfg)
+
+        def ghi_cham(result, frame_video=None):
+            # Giả lập ghi PNG chậm (1080p). Phải trả `True` = "ĐÃ ghi file": từ review 17-11, `dump_ms`
+            # chỉ được khác `None` khi thật sự có file (nếu trả `False`/`None` thì đó là ca
+            # "yêu cầu dump nhưng không ghi được", `dump_ms` phải `None` — xem test kế tiếp).
+            time.sleep(0.060)
+            return True
+
+        monkeypatch.setattr(session, "_dump_mask", ghi_cham)
+        session._frame_index = 1
+        session._after_vos(np.full((48, 64, 3), 90, np.uint8),
+                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool)))
+
+        assert session._stats.dump_ms == pytest.approx(60.0, abs=15.0)
+        # Nếu ai bỏ phép trừ `- dump_ms`, `post_ms` sẽ ≈ 60 ms và test này ĐỎ.
+        assert session._stats.post_ms < 30.0, (
+            f"post_ms = {session._stats.post_ms} ms — đang bao gồm thời gian ghi PNG (ticket #26)")
+
+    def test_dump_fail_thi_dump_ms_None(self, video_source, tmp_path, monkeypatch):
+        """P1 review 17-11: frame nằm trong `--dump-mask-frames` mà KHÔNG có file (mask None /
+        `imwrite` False) thì `dump_ms` phải `None`. Bản đầu tiên khai `0,02` ⇒ đọc thành "đã dump,
+        ghi cực nhanh", trái docstring của chính nó."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3,
+                              dump_mask_frames=(1,), dump_mask_dir=str(tmp_path / "masks"))
+        session = LiveTrackingSession(FakeEngine(), cfg)
+        session._frame_index = 1
+
+        # (a) engine không trả mask
+        session2 = LiveTrackingSession(FakeEngine(), cfg)
+        session2._frame_index = 1
+        session2._after_vos(np.full((48, 64, 3), 90, np.uint8),
+                            _Result(0, (5, 5, 25, 21), None))
+        assert session2._stats.dump_ms is None, "không có mask ⇒ không có file ⇒ dump_ms = None"
+
+        # (b) `cv2.imwrite` trả False (đĩa đầy/quyền)
+        import src.live_tracking as lt
+
+        monkeypatch.setattr(lt.cv2, "imwrite", lambda *a, **k: False)
+        session._after_vos(np.full((48, 64, 3), 90, np.uint8),
+                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool)))
+        assert session._stats.dump_ms is None, "imwrite fail ⇒ không có file ⇒ dump_ms = None"
+        assert session._so_file_ghi_de == 0
+
+    def test_ghi_de_trong_CUNG_phien_phai_canh_bao(self, video_source, tmp_path, capsys):
+        """P1 review 17-11: guard `int(frame_idx) not in self._dumped` bỏ cảnh báo đúng ca ticket #26
+        nhắm tới ("chọn lại ô giữa phiên" ⇒ cùng frame được dump lần hai TRONG cùng phiên)."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3,
+                              dump_mask_frames=(5,), dump_mask_dir=str(tmp_path / "masks"))
+        session = LiveTrackingSession(FakeEngine(), cfg)
+        mask = np.zeros((48, 64), bool)
+        session._dump_mask(_Result(0, (10, 10, 20, 20), mask), 5)
+        assert session._so_file_ghi_de == 0
+
+        # LẦN HAI trong CÙNG phiên, KHÔNG xoá `_dumped` gì cả (đúng đường thật: chọn lại ô ⇒ cùng frame).
+        session._dump_mask(_Result(0, (30, 30, 40, 40), mask), 5)
+        assert "GHI ĐÈ" in capsys.readouterr().out
+        assert session._so_file_ghi_de == 1
+
+    def test_frame_start_khong_bi_dump_hai_lan(self, video_source, tmp_path, monkeypatch):
+        """Frame `engine.start()` ở đường CÓ luồng: `_after_vos` không dump, worker `_store_vos` dump
+        ⇒ mỗi frame đúng MỘT lần ghi (P1 review 17-11)."""
+        import cv2 as _cv2
+
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}), encoding="utf-8")
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3,
+                              dump_mask_frames=(0,), dump_mask_dir=str(tmp_path / "masks"),
+                              stop_after_frames=4)
+        so_lan_ghi = []
+        that = _cv2.imwrite
+
+        def dem(path, arr):
+            if str(path).endswith("mask_000000.png"):
+                so_lan_ghi.append(path)
+            return that(path, arr)
+
+        monkeypatch.setattr("src.live_tracking.cv2.imwrite", dem)
+        LiveTrackingSession(FakeEngine(), cfg).run()
+        assert len(so_lan_ghi) == 1, f"mask_000000.png bị ghi {len(so_lan_ghi)} lần (phải là 1)"
+
+    def test_khong_dump_thi_dump_ms_la_None_khong_phai_0(self, video_source, tmp_path):
+        """`None` = không dump frame này; `0,0` = đã dump nhưng nhanh. Hai nghĩa khác nhau."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
+        session._frame_index = 1
+        session._after_vos(np.full((48, 64, 3), 90, np.uint8),
+                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool)))
+        assert session._stats.dump_ms is None
+
+    def test_ghi_de_file_mask_thi_canh_bao_va_dem(self, video_source, tmp_path, capsys):
+        """Chọn lại ô giữa phiên (giả lập bằng cách quên `_dumped`) ⇒ phải CẢNH BÁO + đếm, không im lặng."""
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        goc = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3)
+        cfg = replace(goc, dump_mask_frames=(5,), dump_mask_dir=str(tmp_path / "masks"))
+        session = LiveTrackingSession(FakeEngine(), cfg)
+        mask = np.zeros((48, 64), bool)
+        mask[10:20, 10:20] = True
+
+        session._dump_mask(_Result(0, (10, 10, 20, 20), mask), 5)
+        assert session._so_file_ghi_de == 0 and "GHI ĐÈ" not in capsys.readouterr().out
+
+        # Lần chọn THỨ HAI cho cùng frame (mask khác): tên file trùng ⇒ phải nói ra.
+        session._dumped.discard(5)
+        mask2 = np.zeros((48, 64), bool)
+        mask2[30:40, 30:40] = True
+        session._dump_mask(_Result(0, (30, 30, 40, 40), mask2), 5)
+
+        assert "GHI ĐÈ" in capsys.readouterr().out
+        assert session._so_file_ghi_de == 1
+        manifest = json.loads((tmp_path / "masks" / "manifest.json").read_text(encoding="utf-8"))
+        assert manifest["so_file_ghi_de"] == 1, "manifest phải tự khai số file bị ghi đè"
 
 
 class TestPhaDuocGhiRaStatus:

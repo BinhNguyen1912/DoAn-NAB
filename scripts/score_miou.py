@@ -230,6 +230,13 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
         mem.append(f"clip của GT ({clip}) KHÁC nguồn của mask ({nguon}) — mIoU đang ghép hai clip "
                    "khác nhau (không xác minh được nội dung khi file vắng mặt; ghi đường dẫn "
                    "tương đối từ gốc repo để so được)")
+    # Mask bị GHI ĐÈ (tên file trùng giữa hai lần chọn ô / hai phiên) ⇒ file đang chấm có thể là của
+    # lần chọn KHÁC. Worker đã in cảnh báo lúc ghi nhưng stdout đó không đi theo artifact; ticket #26
+    # nên `manifest.json` khai `so_file_ghi_de` và chỗ CHẤM phải đọc nó (P2 review 17-11).
+    ghi_de = manifest.get("so_file_ghi_de")
+    if isinstance(ghi_de, int) and not isinstance(ghi_de, bool) and ghi_de > 0:
+        mem.append(f"mask bị GHI ĐÈ {ghi_de} lần trong lúc ghi (`so_file_ghi_de`) — có thể trộn mask "
+                   "của hai lần chọn ô/phiên; dùng `--dump-mask-dir` riêng cho mỗi lần chọn")
     yeu_cau = manifest.get("frames_yeu_cau")
     if isinstance(yeu_cau, str):
         # Manifest viết tay có thể ghi `"2,12,22"`; bỏ qua im lặng là fail-open (cổng danh nghĩa).

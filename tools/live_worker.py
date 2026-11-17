@@ -164,7 +164,8 @@ def main() -> int:
     # `status.json` sớm phải biết phiên sẽ chạy `image_size`/`vos_every`/`display_fps` nào.
     cau_hinh = cau_hinh_yeu_cau(source=args.source, image_size=args.image_size,
                                vos_every=args.vos_every, display_fps=args.max_fps,
-                               mask_smoothing=args.mask_smoothing, device=device_hint)
+                               mask_smoothing=args.mask_smoothing, device=device_hint,
+                               dump_mask_frames=getattr(args, "dump_mask_frames", ()) or ())
     _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:

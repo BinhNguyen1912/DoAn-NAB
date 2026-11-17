@@ -234,6 +234,9 @@ def _worker_telemetry(out_dir) -> dict:
             "cau_hinh", "cau_hinh_lech",
             # Pha của chu kỳ VOS (14-11): biết 32 ms "thừa" nằm ở đâu thay vì đoán.
             "pre_ms", "queue_ms", "post_ms", "cycle_ms", "idle_ms",
+            # Thời gian ghi mask dump (ticket #26): không có nó thì artifact không chứng minh được
+            # phiên đo có bật `--dump-mask-frames` hay không (và `post_ms` đã trừ khoản này).
+            "dump_ms",
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_cu_ms",
             "mask_age_total_ms", "mask_age_p95", "age_n", "stability", "stability_n",
             "stability_shown", "stability_shown_n", "empty_runs", "empty_frac_window",
