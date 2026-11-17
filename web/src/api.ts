@@ -19,8 +19,14 @@ export interface BBox {
 
 export interface JobSummary {
   total_frames?: number
+  /** `0,0` khi chưa có mẫu (hợp đồng `effective_fps = 1000/mean`) — đọc `mean_latency_ms_n` trước. */
   mean_latency_ms?: number
-  p95_latency_ms?: number
+  /** Số mẫu của `mean_latency_ms` (`0` ⇒ `0,0` là "chưa đo", không phải "xử lý tức thì"). */
+  mean_latency_ms_n?: number
+  /** `null` = CHƯA ĐO (phiên rỗng / toàn frame đóng băng), khác `0` = đo được 0 ms (ticket #32). */
+  p95_latency_ms?: number | null
+  /** Số mẫu của `p95_latency_ms` — phải hiện kèm con số, `n` nhỏ thì "p95" ≈ frame xấu nhất. */
+  p95_latency_ms_n?: number
   effective_fps?: number
   mean_score?: number
   /** Tên khoá PHẢI khớp `MetricsLogger._summary_core()` (xem tests/test_api_routes.py). */

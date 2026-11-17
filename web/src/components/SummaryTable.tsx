@@ -8,22 +8,12 @@
  */
 
 import type { JobSummary } from '../api'
-
-function fmt(value: number | undefined, digits = 1, suffix = ''): string {
-  if (value === undefined || value === null || Number.isNaN(value)) return '—'
-  return `${value.toFixed(digits)}${suffix}`
-}
+import { summaryRows } from '../summary'
 
 export function SummaryTable({ summary }: { summary: JobSummary }): JSX.Element {
-  const rows: Array<[string, string]> = [
-    ['Số frame đã xử lý', fmt(summary.total_frames, 0)],
-    ['Độ trễ trung bình', fmt(summary.mean_latency_ms, 0, ' ms')],
-    ['Độ trễ p95', fmt(summary.p95_latency_ms, 0, ' ms')],
-    ['FPS hiệu dụng', fmt(summary.effective_fps, 2)],
-    ['Frame mất dấu', fmt(summary.lost_count, 0)],
-    ['Tỷ lệ mất dấu', summary.lost_ratio === undefined ? '—' : fmt(summary.lost_ratio * 100, 1, ' %')],
-    ['Số lần nhận lại', fmt(summary.reacquired_count, 0)],
-  ]
+  // Câu chữ nằm ở `summary.ts` (hàm thuần) để test headless được: repo không có jsdom, và
+  // "p95 = 119 ms" mà không có `n` là chỗ người đọc báo cáo trích sai cỡ mẫu (ticket #33).
+  const rows = summaryRows(summary)
 
   return (
     <table className="summary">

@@ -12,7 +12,7 @@ Việc:
 
 **Vì sao chưa làm trong PR #29:** PR đó là backend + `run summary`; trộn FE vào sẽ phải chạy e2e (Windows/Playwright) và làm PR vượt phạm vi một ticket.
 
-**Status:** `needs-triage` — chưa ai nhận.
+**Status:** claimed
 
 Acceptance:
 - [ ] `api.ts` cho phép `null` + có `_n` cho p95 và mean
