@@ -94,7 +94,7 @@ REGISTRY = [
      "thật — muốn số thật thì gán tay (`scripts/score_miou.py label --dang-gt silhouette`). "
      "Artifact này sinh TRƯỚC 15-11 nên KHÔNG có `meta.dang_gt`/`mask_ngoai_gt` (GT của nó là "
      "silhouette theo cấu trúc fixture). ĐỪNG trích `ket_qua.mIoU_p05` của nó (0,9239): chỉ 5 frame "
-     "⇒ từ 16-11 ngưỡng công bố phân vị là 30 (`ticket #23`), và ở n=5 thì \"p05\" chính là frame xấu "
+     "⇒ từ 17-11 ngưỡng công bố phân vị là 30 (`ticket #23`), và ở n=5 thì \"p05\" chính là frame xấu "
      "nhất. Artifact mới có `mIoU_p05_n`/`mIoU_p05_nguong` ngay cạnh con số.",
      {"n": "ket_qua.n_cham"}),
     # ── 15-11: mIoU trên VIDEO THẬT (`binh1`), nhưng GT là HỘP BAO — phải gọi đúng tên ─────────

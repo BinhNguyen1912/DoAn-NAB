@@ -235,7 +235,7 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **Số "0,0" trong artifact là cạm bẫy**: `drift_iou`/`mask_age` nay trả **None + `drift_n`/`age_n`**
   khi chưa đo. Khi trích số, phải đọc kèm `*_n`; `n == 0` là **chưa đo**, không phải "đo được 0".
 - **Mọi `*_p05` công bố ra artifact đi qua MỘT ngưỡng: 30 mẫu** (`drift_samples.MIN_SAMPLES`, ghim
-  bằng test bằng `live_tracking._STAT_MIN_SAMPLES`). Ngày 16-11 repo có ba ngưỡng (5 ở `score_miou`,
+  bằng test bằng `live_tracking._STAT_MIN_SAMPLES`). Ngày 17-11 repo có ba ngưỡng (5 ở `score_miou`,
   20 ở `make_trajectory_media`, 30 ở `status.json`) ⇒ cùng đại lượng mà ba con số không so được với
   nhau. Nay `mIoU_p05`/`drift_iou_p05` đều `None` khi n < 30, kèm `mIoU_p05_n`/`drift_n` +
   `*_p05_nguong`; **`None` ở đây nghĩa là "chưa công bố", không phải "p05 = 0"**. Hệ quả phải nhớ:

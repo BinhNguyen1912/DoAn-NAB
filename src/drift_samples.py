@@ -37,7 +37,7 @@ WINDOW = 200
 # công bố p05 từ 20 mẫu thì nó nói một điều mà `status.json` từ chối nói (với n = 20, p05 ≈ min ⇒
 # "một mẫu xui"). Có test khoá `MIN_SAMPLES == live_tracking._STAT_MIN_SAMPLES`.
 #
-# ĐÂY LÀ NGƯỠNG DUY NHẤT (ticket #23). Trước 16-11 repo có ba giá trị cho cùng đại lượng `*_p05`:
+# ĐÂY LÀ NGƯỠNG DUY NHẤT (ticket #23). Trước 17-11 repo có ba giá trị cho cùng đại lượng `*_p05`:
 # 5 (`scripts/score_miou.py::mIoU_p05`), 20 (`make_trajectory_media`), 30 (ở đây) ⇒ người đọc báo
 # cáo không biết con số p05 nào đáng tin. Mọi chỗ công bố phân vị nay đi qua `phan_vi()`:
 #   - `summarize()["drift_iou_p05"]`, `static_control()["drift_iou_p05"]` (file này),

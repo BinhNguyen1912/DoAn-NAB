@@ -26,7 +26,7 @@ thước đo **phải** dùng ngưỡng khác (vd p05 cần ≥ 20 để có ngh
 
 ## Answer
 
-Đã xong (16-11, `feat/p05-mot-nguong`): mọi phân vị công bố ra artifact đi qua **một** cửa —
+Đã xong (17-11, `feat/p05-mot-nguong`): mọi phân vị công bố ra artifact đi qua **một** cửa —
 `phan_vi()` trong `src/drift_samples.py` với `MIN_SAMPLES = 30`, ghim bằng test bằng
 `live_tracking._STAT_MIN_SAMPLES`:
 
