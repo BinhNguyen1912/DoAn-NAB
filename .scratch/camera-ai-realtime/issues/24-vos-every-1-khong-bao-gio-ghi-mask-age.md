@@ -29,9 +29,11 @@ docs/HUD là `vos_every=1` không đo tuổi.
 - Test: `vos_every=1` chạy 2 frame ⇒ `age_n == 2`, `mask_age_total_ms = vos + pre + post`, `p95 None`
   (2 < 30); test cũ `age_n` đổi kỳ vọng cho `every=1` (trước `age_n == 0`) và ghim thêm
   `mask_age_ms == 0` + `drift_n == 0`; thêm 1 test canh "age không phải thời gian cả vòng lặp".
-- Đo thật (cây sạch, `data/bang_cau_hinh_2026-11-17_every1_metrics.json`, `git_rev 1f0c89a`,
+- Đo thật (cây sạch, `data/bang_cau_hinh_2026-11-17_every1_metrics.json`, `git_rev 3cc0248`,
   `git_dirty_code false`, 3 lần × 60 frame, `image_size 192`, ô chai `300,275,150,410`):
-  **9,5 ± 0,5 FPS phát = nhịp mask** · `vos_ms 82,1 ± 3,33` · **`mask_age_p95 105,53 ± 5,4`**
-  (`age_n 60`) ⇒ `--every 1` không còn `mask_age_p95 = None`.
+  **9,33 ± 0,55 FPS phát = nhịp mask** · `vos_ms 87,33 ± 4,52` · `pre_ms 10,96 ± 1,85` ·
+  **`mask_age_p95 109,9 ± 9,32`** (`age_n 60`) ⇒ `--every 1` không còn `mask_age_p95 = None`.
+  *(Bản đo đầu tiên trên nhánh `1f0c89a` — 9,5 ± 0,5 · vos 82,1 · p95 105,53 — đã bị artifact mới
+  thay thế sau khi sửa P1/P2 của review; số dùng là bộ 3cc0248 ở trên.)*
 - Docs: `docs/so-lieu-bao-cao.md` (qua `REGISTRY` + `--check` xanh) và `AGENTS.md` §6 ghi số + cảnh
   báo "FPS phát của dòng đơn luồng không so được với 29,8 của `vos_every ≥ 2`".

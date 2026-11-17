@@ -28,10 +28,12 @@
      định bbox của VOS" vào cùng field, khiến "tắt LK" trông tốt hơn 0,03 một cách vô nghĩa).
 2. **`scripts/repeatability.py`** (mới): `spread()`, `la_khac_biet()`, `danh_gia()` — hàm thuần, có
    test; `n < 2` ⇒ không kết luận được gì.
-3. **Artifact** `data/drift_2026-11-08_metrics.json`: **10 lần chạy**, `git_rev` = commit **chứa code
-   sinh ra số** (kiểm bằng `git show ee9f256:src/live_tracking.py | grep -c drift_iou` = 13),
-   `git_dirty: false`, lệnh cụ thể từng lần, ngưỡng đăng ký trước, ngưỡng nhiễu, `mask_drops`,
-   `lost_streak`.
+3. **Artifact** `data/drift_2026-11-08_metrics.json`: **10 lần chạy**, `git_dirty: false`, lệnh cụ thể
+   từng lần, ngưỡng đăng ký trước, ngưỡng nhiễu, `mask_drops`, `lost_streak`.
+   **ĐÍNH CHÍNH 17-11:** `git_rev` ghi trong artifact (`ee9f256…`) **không tồn tại** trong repo (nghi gõ
+   tay lúc ghi artifact); câu "kiểm bằng `git show ee9f256:…`" ở bản log đầu **không tái lập được** nên
+   đã bỏ. Số trong artifact vẫn dùng được (10 lần chạy thật, có lệnh từng lần), nhưng **cấm dẫn rev** đó.
+   `./run provcheck` liệt kê đúng ca này trong allowlist `scripts/check_artifact_provenance.py`.
 
 ## 📤 Output / Kết quả
 `image_size=192`, 900 frame/cấu hình, laptop CPU, mỗi cấu hình **3 lần**:

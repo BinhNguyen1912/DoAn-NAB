@@ -181,7 +181,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     light [khung]   Thí nghiệm ĐỔI ÁNH SÁNG: IoU theo mức sáng (yêu cầu 11) → data/charts/
     occl  [khung]   Thí nghiệm BỊ CHE KHUẤT: IoU theo khung → data/charts/
     summary         In tóm tắt các file *_summary.json đang có (kèm CPU/RAM)
-    bangcau         Bảng cấu hình image_size × vos_every (3 lần/cấu hình, có ± nhiễu)
+    provcheck       Kiểm `git_rev` trong artifact còn sống + thuộc cây này (allowlist có lý do)
+  bangcau         Bảng cấu hình image_size × vos_every (3 lần/cấu hình, có ± nhiễu)
     ab              A/B hai cấu hình, chạy CHÈN KẼ, chênh lệch ≤ nhiễu ⇒ 'không phân biệt được'
     miou            Chấm mIoU mask vs GT gán tay (thước đo BÁM ĐÚNG: ./run miou gt cho quy trình)
     gpu             In link Colab + lệnh chạy GPU
@@ -433,6 +434,12 @@ EOF
     win_root="$(wslpath -w "$ROOT")"
     cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& node scripts\\e2e_web.js"
     ;;
+  provcheck)
+    # Mọi `git_rev` trong `data/*_metrics.json` phải là tổ tiên của HEAD (hoặc nằm trong allowlist có
+    # lý do). Hôm nay repo dẫn 3 lần một rev đã chết (rebase/squash/artifact sinh lại đè) ⇒ kiểm bằng máy.
+    activate_env
+    exec "$PYTHON" scripts/check_artifact_provenance.py --nghiem "$@"
+    ;;
   bangcau)
     # Bảng cấu hình: mặc định 192/256/320 × 2/3/6, 3 lần mỗi cấu hình (~5 phút trên CPU).
     activate_env
@@ -489,7 +496,9 @@ EOF
     activate_env
     "$PYTHON" - <<'PY'
 import glob, json, os
-files = sorted(glob.glob("data/*_summary.json"))
+# `DOAN_DATA_DIR`: cho test (và người dùng) trỏ sang thư mục khác thay vì `data/` của repo — không có
+# nó thì test phải ghi file rác vào `data/` thật, để lại rác nếu tiến trình bị kill (P3 audit 17-11).
+files = sorted(glob.glob(os.path.join(os.environ.get("DOAN_DATA_DIR", "data"), "*_summary.json")))
 if not files:
     print("Chưa có file *_summary.json — chạy ./run demo hoặc ./run video trước.")
 for f in files:

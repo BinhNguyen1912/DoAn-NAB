@@ -92,8 +92,9 @@ REGISTRY = [
      "cau_hinh.192_1.mask_age_p95.mean", "ms (p95)",
      "Ổ **đơn luồng**: `FPS phát` = `Nhịp mask` (mỗi frame đều chạy model, không có LK lấp) ⇒ KHÔNG "
      "so FPS của dòng này với 29,8 của `vos_every ≥ 2`. Tuổi ≈ `vos_ms + pre_ms + post_ms` (age = 0 "
-     "vì frame vừa VOS chính là frame đang phát); vì sao ~106 chứ không ~95 ms: `pre_ms` (~12 ms) "
-     "nằm TRONG tuổi nhưng NGOÀI `vos_ms`. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
+     "vì frame vừa VOS chính là frame đang phát); vì sao tuổi (98,9) LỚN HƠN `vos_ms` (87,3): "
+     "`pre_ms` (11,0) + `post_ms` (~0,6) nằm TRONG tuổi nhưng NGOÀI `vos_ms` — đọc "
+     "`cau_hinh.192_1.mask_age_total_ms` cạnh hai cột đó. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
      "ghi gì (ticket #24). **Điều kiện**: `image_size 192`, clip `binh1.mp4`, ô chai "
      "`300,275,150,410` (đọc `meta.clip`/`meta.bbox_xywh` trong artifact) — ô khác thì số khác.",
      {"std": "cau_hinh.192_1.mask_age_p95.std", "n": "cau_hinh.192_1.age_n.mean"}),
