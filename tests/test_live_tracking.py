@@ -27,13 +27,19 @@ from src.live_tracking import (
 
 
 class _Result:
-    """Giống `TrackingResult` của src/tracker_engine (duck-type)."""
+    """Giống `TrackingResult` của src/tracker_engine (duck-type).
 
-    def __init__(self, frame_idx, bbox, mask):
+    `pre_ms` CÓ giá trị (khác `None`): đường đơn luồng phải ghi `pre_ms` vào status/tuối mask, và
+    `None` khi engine không khai. Thiếu hẳn thuộc tính này thì vế `pre` của test tuổi mask thành
+    vô răng (luôn `(stats.pre_ms or 0.0) == 0.0` — review độc lập 17-11, P2).
+    """
+
+    def __init__(self, frame_idx, bbox, mask, elapsed_ms=12.5, pre_ms=7.0):
         self.frame_idx = frame_idx
         self.bbox = bbox
         self.mask = mask
-        self.elapsed_ms = 12.5
+        self.elapsed_ms = elapsed_ms
+        self.pre_ms = pre_ms
 
 
 class FakeEngine:
@@ -1723,11 +1729,15 @@ class TestTuoiMaskDuongDonLuong:
 
         assert stats.age_n == 2                      # 1 frame start() + 1 frame process()
         assert stats.mask_age_total_ms is not None, "vos_every=1 phải ghi tuổi mask (ticket #24)"
-        # age = 0 ⇒ total đúng bằng vos + pre + post của chính lần VOS đó (pre/post >= 0).
+        # age = 0 ⇒ total đúng bằng vos + pre + post của CHÍNH lần VOS đó. `pre_ms` là số CỐ ĐỊNH của
+        # `_Result` (7,0) nên nếu ai truyền `pre_ms=0.0` thay vì `result.pre_ms` thì test này ĐỎ.
+        assert stats.pre_ms == pytest.approx(7.0), "đường đơn luồng phải ghi `pre_ms` (review 17-11)"
         assert stats.mask_age_total_ms == pytest.approx(
-            12.5 + (stats.pre_ms or 0.0) + (stats.post_ms or 0.0), abs=0.3)
+            12.5 + 7.0 + (stats.post_ms or 0.0), abs=0.3)
         assert stats.mask_age_p95 is None            # 2 < 30 mẫu ⇒ chưa công bố phân vị
         assert stats.post_ms is not None             # pha xử lý kết quả cũng phải được ghi
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+        assert status["pre_ms"] == pytest.approx(7.0)
 
     def test_tuoi_khong_phai_thoi_gian_ca_vong_lap(self, video_source, tmp_path):
         """`age` phải là 0 chứ không phải thời gian cả vòng lặp: nếu ai sửa thành
@@ -1737,10 +1747,14 @@ class TestTuoiMaskDuongDonLuong:
         session = LiveTrackingSession(FakeEngine(), _config(video_source, tmp_path))
         session._frame_index = 1
         session._after_vos(np.full((48, 64, 3), 90, np.uint8),
-                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool)))
+                           _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool),
+                                   elapsed_ms=400.0, pre_ms=10.0))
         assert session._stats.mask_age_ms == pytest.approx(0.0)
-        # chỉ vos (12,5) + phụ phí, KHÔNG phải cả một frame của vòng lặp (~100 ms ở test này).
-        assert session._stats.mask_age_total_ms < 12.5 + 50
+        # age PHẢI là 0 (không phải thời gian vòng lặp): total = pre + vos + post = 10 + 400 + post.
+        # Nếu ai đổi `age` thành `time.perf_counter() - bat_dau_post` thì con số sẽ khác 400 vì
+        # `elapsed_ms` là giá trị GIẢ CỐ ĐỊNH do test đặt — test ĐỎ (review 17-11, P3).
+        assert session._stats.mask_age_total_ms == pytest.approx(
+            410.0 + (session._stats.post_ms or 0.0), abs=2.0)
 
 
 class TestPhaDuocGhiRaStatus:

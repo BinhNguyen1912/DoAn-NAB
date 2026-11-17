@@ -59,9 +59,15 @@ class TestCauHinhYeuCau:
         assert ch["mask_age_dinh_nghia"] == DINH_NGHIA_TUOI_MASK
         assert "mask_age_total_ms" in ch["mask_age_dinh_nghia"]
         assert "CŨ" in ch["mask_age_dinh_nghia"], "phải nói rõ đây KHÔNG phải định nghĩa cũ"
-        assert "age_n" in ch["mask_age_dinh_nghia"], (
-            "`vos_every=1` không đo tuổi mask ⇒ câu định nghĩa phải nêu để người trích không hỏi "
-            "tại sao age_n=0")
+        # Câu định nghĩa phải mô tả ĐÚNG hành vi hiện tại: từ ticket #24, `vos_every=1` (đơn luồng)
+        # CŨNG đo tuổi mask (age = 0 vì frame vừa VOS chính là frame đang phát). Bản cũ ghim
+        # "vos_every=1 ⇒ age_n = 0" — mâu thuẫn với chính artifact `bangcau --every 1` (age_n = 60)
+        # mà test vẫn xanh vì chỉ kiểm chuỗi con "age_n" (P1 review độc lập 17-11).
+        assert "vos_every=1" in ch["mask_age_dinh_nghia"]
+        assert "age = 0" in ch["mask_age_dinh_nghia"], (
+            "phải nói rõ đường đơn luồng có age = 0 chứ không phải 'age_n = 0' (chưa đo)")
+        assert "không nội suy LK" in ch["mask_age_dinh_nghia"], (
+            "phải nói rõ vos_every=1 KHÔNG có drift_iou (đừng để người sau 'sửa' bằng cách đo drift)")
 
     def test_ep_so_nguyen_cho_image_size(self):
         """`--image-size` từ API có thể là chuỗi số ⇒ echo phải chuẩn hoá, không ghi `\"192\"`."""
