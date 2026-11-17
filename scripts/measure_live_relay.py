@@ -123,6 +123,19 @@ def summarize(samples) -> dict:
     }
 
 
+def _p05_txt(series: dict) -> str:
+    """`p05` của dãy mẫu dạng ĐỌC ĐƯỢC — kèm cỡ mẫu và ngưỡng công bố (ticket #23).
+
+    Trước đây in trần `p05=None` ⇒ người đọc log tưởng "chưa đo", trong khi `None` nghĩa là
+    **chưa công bố** (n < 30 hoặc có giá trị hỏng). Cùng quy tắc với `score_miou`/`make_trajectory_media`.
+    """
+    nguong = series.get("drift_iou_p05_nguong")
+    n = series.get("drift_iou_p05_n", series.get("n_mau_drift"))
+    if series.get("drift_iou_p05") is None:
+        return f"CHƯA CÔNG BỐ (n={n} < {nguong})"
+    return f"{series['drift_iou_p05']} (n={n}, ngưỡng {nguong})"
+
+
 def _is_ancestor(rev: str) -> bool:
     """`rev` có phải tổ tiên của HEAD không (provenance chỉ có nghĩa khi `git show <rev>` chạy được)."""
     try:
@@ -601,7 +614,7 @@ def main() -> int:
     print(f"Ảnh: {frames_saved or '(không chụp được)'}")
     if series:
         print(f"\nDãy mẫu drift ({drift['csv']}, {drift['n_dong']} dòng): "
-              f"mean={series['drift_iou_mean']} · p05={series['drift_iou_p05']} · "
+              f"mean={series['drift_iou_mean']} · p05={_p05_txt(series)} · "
               f"mask rỗng={series['empty_frac']}")
         print(f"  cửa sổ {series['bao_dong_070']['cua_so']} mẫu, p05 < 0,70: "
               f"{series['bao_dong_070']['n_bao']}/{series['bao_dong_070']['n_cua_so']} "

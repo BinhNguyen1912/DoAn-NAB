@@ -141,7 +141,9 @@ def main() -> int:
         "dinh_nghia": {
             "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
             "drift_iou_p05": "p05 trên TOÀN DÃY mẫu của lần đo — KHÁC p05 của 200 mẫu CUỐI trong "
-                              "status.json (cùng định nghĩa phân vị, khác tập mẫu)",
+                              "status.json (cùng định nghĩa phân vị, khác tập mẫu). Chỉ công bố khi "
+                              "`n_mau_drift >= drift_iou_p05_nguong` (30, ticket #23); `null` = "
+                              "CHƯA CÔNG BỐ (không phải p05 = 0)",
             "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",
             "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
             "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",

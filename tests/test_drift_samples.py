@@ -18,6 +18,7 @@ from src.drift_samples import (
     low_p05_low_empty,
     detect_latency,
     flag_rate,
+    phan_vi,
     read_samples,
     rolling_p05,
     static_control,
@@ -355,6 +356,49 @@ class TestCuaSoP05ThapVaEmptyThap:
         assert result["min_mau_do_duoc"] == 10
         assert result["n_cua_so_du_mau"] == 21          # 40 - 20 + 1
         assert result["co_dieu_kien_ticket_14"] is True
+
+
+class TestPhanViCongBoPhanVi:
+    """Ticket #23: cửa DUY NHẤT để công bố `*_p05` (5 / 20 / 30 trước đây).
+
+    Với n nhỏ, phân vị 5 % **chính là** min ⇒ công bố nó thành "p05" là nói dối về độ tin cậy.
+    """
+
+    def test_duoi_nguong_thi_None(self):
+        assert phan_vi([0.9] * (MIN_SAMPLES - 1)) is None
+
+    def test_du_nguong_thi_cong_bo(self):
+        assert phan_vi([0.9] * MIN_SAMPLES) == pytest.approx(0.9)
+
+    def test_mang_rong_va_mot_mau_khong_bia_so(self):
+        assert phan_vi([]) is None
+        assert phan_vi([0.7]) is None          # n = 1 ⇒ "p05" là chính mẫu đó, không phải phân vị
+
+    def test_gia_tri_hong_nan_inf_thi_bao_loi(self):
+        """`inf` không được lọt thành p05: `json.dumps` ghi `Infinity` ⇒ `JSON.parse` của JS chết.
+
+        `None` cũng không được: nó trộn "số đo hỏng" vào "chưa công bố" (P3, review độc lập 17-11).
+        """
+        for hong in (float("inf"), float("nan")):
+            with pytest.raises(ValueError, match="nan/inf"):
+                phan_vi([0.9] * (MIN_SAMPLES - 1) + [hong])
+
+    def test_summarize_va_static_control_ghi_kem_nguong(self):
+        """P2 review 17-11: `drift_iou_p05 = None` mà thiếu khoá ngưỡng thì đọc như "chưa đo"."""
+        tom_tat = summarize(_rows([0.9] * 25))
+        assert tom_tat["drift_iou_p05"] is None
+        assert tom_tat["drift_iou_p05_nguong"] == MIN_SAMPLES
+        assert tom_tat["drift_iou_p05_n"] == 25
+        assert static_control(_rows([1.0] * 25))["drift_iou_p05_nguong"] == MIN_SAMPLES
+
+    def test_tham_so_min_samples_ghi_de_khong_can_doi_hang_so(self):
+        assert phan_vi([0.9] * 10, min_samples=10) == pytest.approx(0.9)
+
+    def test_static_control_khong_ha_nguong_xuong_20(self):
+        """25 mẫu: ĐẠT tiêu chí (ngưỡng 20 của ticket 15) nhưng p05 **chưa** được công bố."""
+        result = static_control(_rows([1.0] * 25))
+        assert result["n"] == 25 and result["dat"] is True
+        assert result["drift_iou_p05"] is None
 
 
 class TestKhoaCuaSoKhopPhien:

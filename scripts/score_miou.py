@@ -17,6 +17,9 @@ Quy tắc chấm (bẫy `0/None` đã gặp 3 lần trong repo):
   - GT RỖNG                      ⇒ **không chấm** frame đó (NaN/Ng), đếm riêng `so_frame_gt_rong`;
   - thiếu file mask của model    ⇒ đếm `so_frame_thieu_mask`, KHÔNG coi là 0 (chưa chạy ≠ bám sai);
   - `mIoU = None` khi không chấm được frame nào (không bao giờ in 0 cho "chưa đo").
+  - `mIoU_p05 = None` khi `n_cham < 30` (ticket #23: ngưỡng công bố phân vị dùng chung với
+    `status.json`). Cỡ mẫu luôn có mặt cạnh con số trong `mIoU_p05_n`: GT thật hiện chỉ 12 frame
+    ⇒ p05 **không** được công bố, thay vì báo "p05" bằng frame xấu nhất.
 
 Định dạng GT (commit vào `docs/gt/<clip>/`):
     docs/gt/index.json                    # {"clip": ..., "frames": [...], "nguoi_gan": ..., ...}
@@ -36,6 +39,12 @@ if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
 GT_DIR = _REPO_ROOT / "docs" / "gt"
+
+# NGUỠNG CÔNG BỐ PHÂN VỊ — một hằng duy nhất cho cả repo (ticket #23). Trước đây file này tự đặt 5
+# ⇒ artifact công bố `mIoU_p05` từ **5 frame**, tức "chính là giá trị xấu nhất", trong khi
+# `status.json` từ chối công bố p05 dưới 30 mẫu. Dùng lại `phan_vi()` của `src/drift_samples.py`
+# để không có cửa thứ hai.
+from src.drift_samples import MIN_SAMPLES, phan_vi  # noqa: E402
 
 
 # ── phần THUẦN (test được, không cần model) ─────────────────────────────────────────────
@@ -112,7 +121,12 @@ def cham(ds_frame, gt_dir: Path) -> dict:
     tran_vals = [r["mask_ngoai_gt"] for r in rows if r.get("mask_ngoai_gt") is not None]
     return {
         "mIoU": None if not miou else round(float(np.mean(miou)), 4),
-        "mIoU_p05": None if len(miou) < 5 else round(float(np.percentile(miou, 5)), 4),
+        # Phân vị 5 % của IoU TỪNG FRAME = "những frame tệ nhất tệ tới đâu". Cỡ mẫu là `n_cham`
+        # (`mIoU_p05_n`), và dưới `MIN_SAMPLES` (30 — dùng chung với `status.json`) thì p05 ≈ min
+        # ⇒ trả `None` thay vì công bố một con số trông đáng tin hơn thực tế (ticket #23).
+        "mIoU_p05": phan_vi(miou),
+        "mIoU_p05_n": len(miou),
+        "mIoU_p05_nguong": MIN_SAMPLES,
         # Tỉ lệ mask nằm NGOÀI GT: trung bình + frame tệ nhất (kèm `frame_idx` để truy lại ảnh).
         "mask_ngoai_gt_mean": None if not tran_vals else round(float(np.mean(tran_vals)), 4),
         # `_n`: mẫu số của trung bình "tràn" KHÁC `n_cham` khi có frame model trả mask RỖNG (không có gì
@@ -553,6 +567,13 @@ def main(argv=None) -> int:
     print(f"[miou] {out}")
     print(f"[miou] mIoU = {kq['mIoU']} trên {kq['n_cham']} frame"
           f" · GT rỗng: {kq['so_frame_gt_rong']} · thiếu mask: {kq['so_frame_thieu_mask']}")
+    # `mIoU_p05` KHÔNG được im lặng biến mất khi thiếu mẫu: im lặng thì người đọc artifact cũ thấy
+    # con số cũ (từ 5 frame) mà không biết nay nó bị từ chối công bố (ticket #23).
+    if kq["mIoU_p05"] is None:
+        print(f"[miou] mIoU_p05 = CHƯA CÔNG BỐ (chỉ {kq['mIoU_p05_n']} frame < {MIN_SAMPLES} mẫu "
+              "— ở cỡ mẫu này p05 ≈ frame xấu nhất; xem `frames` để đọc từng frame)")
+    else:
+        print(f"[miou] mIoU_p05 = {kq['mIoU_p05']} (n = {kq['mIoU_p05_n']} frame)")
     print(f"[miou] dạng GT: {kq['gt_dang'] or 'KHÔNG KHAI'}"
           + (f" — {kq['mIoU_dinh_nghia']}" if kq.get("mIoU_dinh_nghia") else ""))
     for ten_canh_bao in mem:

@@ -18,6 +18,7 @@ Lưu ý  : (1) Ô TRỐNG = **chưa đo**, KHÔNG được đọc thành 0 (AGEN
 """
 
 import csv
+import math
 import threading
 from pathlib import Path
 
@@ -33,9 +34,23 @@ CSV_HEADER = [
 # ĐỊNH NGHĨA của con số trong `status.json`/artifact cũ (độ làm tròn khác: 4 chữ số ở đây, 3 ở
 # `status.json`). Có test khoá `WINDOW == live_tracking._STAT_WINDOW` để hai chỗ không trôi khỏi nhau.
 WINDOW = 200
-# Số mẫu TỐI THIỂU để công bố phân vị — phải bằng `_STAT_MIN_SAMPLES` của phiên (30): nếu CSV công bố
-# p05 từ 20 mẫu thì nó nói một điều mà `status.json` từ chối nói (với n = 20, p05 ≈ min ⇒ "một mẫu
-# xui"). `static_control` dùng ngưỡng riêng 20 vì ticket 15 yêu cầu `drift_n >= 20`.
+# Số mẫu TỐI THIỂU để CÔNG BỐ một phân vị — phải bằng `_STAT_MIN_SAMPLES` của phiên (30): nếu CSV
+# công bố p05 từ 20 mẫu thì nó nói một điều mà `status.json` từ chối nói (với n = 20, p05 ≈ min ⇒
+# "một mẫu xui"). Có test khoá `MIN_SAMPLES == live_tracking._STAT_MIN_SAMPLES`.
+#
+# ĐÂY LÀ NGƯỠNG DUY NHẤT (ticket #23). Trước 17-11 repo có ba giá trị cho cùng đại lượng `*_p05`:
+# 5 (`scripts/score_miou.py::mIoU_p05`), 20 (`make_trajectory_media`), 30 (ở đây) ⇒ người đọc báo
+# cáo không biết con số p05 nào đáng tin. Mọi chỗ công bố phân vị **ra CSV/artifact** nay đi qua
+# `phan_vi()`:
+#   - `summarize()["drift_iou_p05"]`, `static_control()["drift_iou_p05"]` (file này),
+#   - `scripts/score_miou.py::mIoU_p05`, `scripts/make_trajectory_media.py::drift_iou_p05`.
+# Riêng `src/live_tracking.py` (ghi `status.json`) tự gọi `np.percentile` với `_STAT_MIN_SAMPLES` =
+# **cùng giá trị 30** — test khoá `MIN_SAMPLES == _STAT_MIN_SAMPLES`. Sửa `phan_vi` (lọc NaN, đổi làm
+# tròn) thì phải sửa cả đó, đừng tưởng nó đi qua đây.
+# Khoá ngưỡng trong artifact: `<tên số>_nguong` (vd `mIoU_p05_nguong`, `drift_iou_p05_nguong`).
+# KHÁC ĐỊNH NGHĨA (không bị ngưỡng này chi phối): p05 theo CỬA SỔ (`rolling_p05`, `flag_rate`,
+# `low_p05_low_empty`) — ở đó "đủ mẫu" do chính cửa sổ quyết định, và chúng không công bố p05 như
+# một con số của cả lần đo.
 MIN_SAMPLES = 30
 # Số mẫu "đo được" tối thiểu để một cửa sổ được tính p05 trong `low_p05_low_empty`: mặc định
 # `window // 2`, suy từ chính cửa sổ được hỏi (đừng ghim theo `WINDOW` — xem docstring hàm).
@@ -279,6 +294,26 @@ def detect_latency(rows, *, bad: float = BAD_SAMPLE, flag: float = FLAG_P05,
     return {"mau_xau_dau": bad_idx, "phat_hien_sau_mau": None, "p05_luc_phat_hien": None}
 
 
+def phan_vi(values, *, q: float = 5, min_samples: int = MIN_SAMPLES, digits: int = 4):
+    """Phân vị `q` (%) của `values` — `None` khi chưa đủ `min_samples` mẫu.
+
+    Một cửa duy nhất cho mọi con số `*_p05` công bố ra CSV/artifact (ticket #23): với n nhỏ, phân vị
+    5 % **chính là** min (chỉ số 0,05 × (n − 1) nằm giữa min và phần tử nhỏ thứ hai) ⇒ công bố nó
+    thành "p05" là nói dối về độ tin cậy. `None` ≠ 0: `None` nghĩa là **chưa đo được**, không phải
+    "p05 = 0" (bẫy `0/None` của AGENTS §6).
+
+    `nan`/`inf` ⇒ **`ValueError`**: đó là số đo HỎNG, không phải "p05 nhỏ". Im lặng trả `None` sẽ
+    trộn nó vào "chưa công bố", còn để lọt thì `json.dumps` ghi `Infinity` — `JSON.parse` của JS
+    chết và con số vô nghĩa đi vào báo cáo (review độc lập 17-11, P3).
+    """
+    gia_tri = [float(v) for v in values]
+    if len(gia_tri) < int(min_samples):
+        return None
+    if not all(math.isfinite(v) for v in gia_tri):
+        raise ValueError("phan_vi: có giá trị nan/inf — số đo HỎNG, không phải phân vị thấp")
+    return round(float(np.percentile(gia_tri, q)), digits)
+
+
 def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> dict:
     """Đối chứng cảnh TĨNH: vật đứng yên ⇒ nội suy LK và VOS phải trùng nhau (drift ≈ 1,0).
 
@@ -295,7 +330,9 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> d
     values = drift_values(rows)
     n = len(values)
     mean = round(float(np.mean(values)), 4) if n else None
-    p05 = round(float(np.percentile(values, 5)), 4) if n >= min_samples else None
+    # Phân vị vẫn chỉ được CÔNG BỐ từ `MIN_SAMPLES` mẫu (ticket #23), dù tiêu chí đạt của phép kiểm
+    # này đã đủ mẫu từ `min_samples` = 20 (ticket 15 yêu cầu `drift_n >= 20`).
+    p05 = phan_vi(values)
     reasons = []
     if n < min_samples:
         reasons.append(f"chỉ có {n} mẫu (< {min_samples}) — chưa đủ để kết luận")
@@ -309,6 +346,9 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> d
         "n": n,
         "drift_iou_mean": mean,
         "drift_iou_p05": p05,
+        # Ngưỡng công bố đi CÙNG con số (ticket #23): `p05 = None` ở đây có hai nghĩa khác nhau
+        # (chưa đủ 30 mẫu / có giá trị hỏng), và cả hai đều KHÁC "p05 = 0".
+        "drift_iou_p05_nguong": MIN_SAMPLES,
         "nguong_mean": min_drift,
         "dat": not reasons,
         "ly_do": reasons,
@@ -375,8 +415,9 @@ def summarize(rows, *, window: int = WINDOW) -> dict:
         "n_mau_drift": n,
         "empty_frac": round(sum(1 for e in empties if e) / len(empties), 3) if empties else None,
         "drift_iou_mean": round(float(np.mean(values)), 4) if n else None,
-        "drift_iou_p05": (round(float(np.percentile(values, 5)), 4)
-                          if n >= MIN_SAMPLES else None),
+        "drift_iou_p05": phan_vi(values),
+        "drift_iou_p05_nguong": MIN_SAMPLES,
+        "drift_iou_p05_n": n,
         "bao_dong_070": flag_rate(values, threshold=HEALTHY_P05, window=window),
         "bao_dong_030": flag_rate(values, threshold=FLAG_P05, window=window),
         "phat_hien": detect_latency(rows, window=window),

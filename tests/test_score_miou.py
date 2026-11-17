@@ -94,7 +94,43 @@ class TestCham:
         kq = sm.cham(frames, gt_dir)
         assert kq["n_cham"] == 2
         assert kq["mIoU"] == pytest.approx(0.5)
-        assert kq["mIoU_p05"] is None                      # < 5 mẫu ⇒ không bịa p05
+        assert kq["mIoU_p05"] is None                      # < 30 mẫu ⇒ không bịa p05 (ticket #23)
+        assert kq["mIoU_p05_n"] == 2                       # cỡ mẫu LUÔN có mặt cạnh con số
+
+    def test_p05_chi_cong_bo_tu_nguong_dung_chung_30(self, tmp_path):
+        """Ticket #23: trước đây ngưỡng riêng là **5** ⇒ `mIoU_p05` công bố từ 5 frame (≈ min).
+
+        Đây là test bắt hồi quy của bẫy "p05 ở cỡ mẫu nhỏ chính là giá trị xấu nhất": 5 frame phải
+        là `None`, 30 frame mới được công bố, và ngưỡng phải là **cùng hằng** với `status.json`.
+        """
+        from src import drift_samples as ds
+
+        assert sm.MIN_SAMPLES == ds.MIN_SAMPLES
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        hinh = np.zeros((6, 6))
+        hinh[1:3, 1:3] = 1
+
+        def cham_n(n):
+            frames = []
+            for idx in range(n):
+                self._gt(gt_dir, idx, hinh)
+                frames.append({"frame_idx": idx, "pred_path": self._pred(pred_dir, idx, hinh)})
+            return sm.cham(frames, gt_dir)
+
+        nam = cham_n(5)
+        assert nam["n_cham"] == 5
+        assert nam["mIoU_p05"] is None and nam["mIoU_p05_n"] == 5
+        assert nam["mIoU"] == pytest.approx(1.0)     # trung bình VẪN công bố ở n nhỏ
+
+        # 25 frame: đủ cho ngưỡng cũ 20 (và đương nhiên cho 5) ⇒ đây là ca bắt hồi quy thực sự.
+        hai_muoi_lam = cham_n(25)
+        assert hai_muoi_lam["mIoU_p05_n"] == 25 and hai_muoi_lam["mIoU_p05"] is None
+
+        ba_muoi = cham_n(30)
+        assert ba_muoi["mIoU_p05_n"] == 30
+        assert ba_muoi["mIoU_p05"] == pytest.approx(1.0)
 
     def test_thieu_mask_cua_model_khong_bi_coi_la_0(self, tmp_path):
         gt_dir = tmp_path / "gt"
@@ -540,8 +576,6 @@ class TestCli:
         assert "GT rỗng không chấm" in payload["meta"]["dinh_nghia"]
 
     def test_artifact_ghi_dang_gt_va_phuong_phap(self, tmp_path, monkeypatch):
-        """Không ghi `dang_gt`/`phuong_phap_gt` thì người đọc artifact không biết "0,65" là
-        mIoU phân đoạn hay IoU với hộp bao — đúng loại "số đúng nhưng gắn sai nghĩa"."""
         import cv2
 
         gt, pred = tmp_path / "gt", tmp_path / "pred"
@@ -566,6 +600,33 @@ class TestCli:
         assert payload["ket_qua"]["gt_dang"] == "hop_bao"
         assert "KHÔNG phải mIoU phân đoạn" in payload["ket_qua"]["mIoU_dinh_nghia"]
         assert ma == 1, "cảnh báo mềm (GT hộp bao) ⇒ exit 1, không phải 0"
+
+    def test_cli_in_chua_cong_bo_khi_p05_duoi_nguong(self, tmp_path, monkeypatch, capsys):
+        """Ticket #23: `mIoU_p05 = None` phải được NÓI RA, không được im lặng bỏ dòng.
+
+        Trước đây chỉ `cham()` được test ⇒ một refactor bỏ dòng in sẽ vẫn xanh, và người đọc log
+        tưởng p05 cũ (từ 5 frame) còn hiệu lực (P3, review độc lập 17-11).
+        """
+        import cv2
+
+        gt, pred = tmp_path / "gt", tmp_path / "pred"
+        gt.mkdir()
+        pred.mkdir()
+        (gt / "index.json").write_text(json.dumps({
+            "clip": "data/binh1.mp4", "nguoi_gan": "Bình", "dang_gt": "hop_bao",
+            "phuong_phap_gt": "hộp bao", "frames": [{"frame_idx": 0}]}), encoding="utf-8")
+        cv2.imwrite(str(gt / "gt_000000.png"), np.full((4, 4), 255, np.uint8))
+        cv2.imwrite(str(pred / "mask_000000.png"), np.full((4, 4), 255, np.uint8))
+        out = tmp_path / "art.json"
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out)])
+        chu = capsys.readouterr().out
+        assert "CHƯA CÔNG BỐ" in chu and "< 30 mẫu" in chu
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["ket_qua"]["mIoU_p05_nguong"] == 30
+        assert payload["ket_qua"]["mIoU_p05_n"] == 1
 
     def test_check_index_in_dang_gt_va_nguon_gt(self, tmp_path, capsys):
         """`--check-index` là chỗ người chạy hay xem nhất ⇒ phải in dạng GT + nguồn GT, không chỉ

@@ -37,6 +37,13 @@ import matplotlib.pyplot as plt           # noqa: E402
 import numpy as np                        # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+# Ngưỡng công bố phân vị DÙNG CHUNG với `status.json`/`score_miou` (ticket #23): trước đây script này
+# tự đặt 20 ⇒ cùng đại lượng `drift_iou_p05` mà ba ngưỡng khác nhau trong repo.
+from src.drift_samples import MIN_SAMPLES, phan_vi  # noqa: E402
+
 COT_BAT_BUOC = ("frame_idx", "empty", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2")
 
 
@@ -184,8 +191,10 @@ def draw(traj: dict, background=None, title: str = ""):
         "n_thieu_toa_do": traj["n_thieu_toa_do"],
         "n_mask_rong": int(empty.sum()),
         "drift_iou_mean": None if not np.isfinite(drift).any() else round(float(np.nanmean(drift)), 3),
-        "drift_iou_p05": None if np.isfinite(drift).sum() < 20
-        else round(float(np.nanpercentile(drift, 5)), 3),
+        "drift_iou_p05": phan_vi(drift[np.isfinite(drift)], digits=3),
+        # Ngưỡng công bố đi CÙNG con số (ticket #23): người đọc `.json` sau này thấy `None` phải biết
+        # đó là "n < 30" chứ không phải "p05 = 0" hay "quên đo".
+        "drift_iou_p05_nguong": MIN_SAMPLES,
         "drift_n": int(np.isfinite(drift).sum()),
     }
     fig.tight_layout()
@@ -410,14 +419,19 @@ def main(argv=None) -> int:
     if args.expect_bbox is not None:      # `is not None`: cờ rỗng vẫn phải đi qua cổng, không im lặng bỏ
         ket_qua_hop = _canh_bao_bbox(traj, args.expect_bbox, args.expect_bbox_dang, ghi_nhan)
     meta = provenance(args.csv, args.clip, out, args.title, bbox_dau)
+    # Số của ảnh vào CHÍNH file provenance: trước đây `drift_iou_p05`/`drift_n` chỉ in ra stdout ⇒
+    # `.json` đi kèm ảnh không nói được p05 có được công bố hay không (ticket #23: `None` phải đọc
+    # được là "n < 30", không phải "p05 = 0").
+    meta["thong_ke"] = thong_ke
     if ghi_nhan:
         meta.update(ghi_nhan)
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[traj] provenance: {meta_path} (bbox dòng đầu {bbox_dau}, git_rev {meta['git_rev']})")
     print(f"[traj] {thong_ke}")
-    if thong_ke["drift_n"] < 20:
-        print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None (chưa đủ mẫu)")
+    if thong_ke["drift_n"] < MIN_SAMPLES:
+        print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None"
+              f" (chưa đủ {MIN_SAMPLES} mẫu để công bố phân vị)")
     if ket_qua_hop is not None and ket_qua_hop != "khop":
         # Ảnh vẫn được ghi (đã vẽ xong) — kể cả provenance — nhưng mã thoát 1 và JSON ghi
         # `ket_qua_hop`: "ô bao lệch"/"không so được" KHÔNG được dùng làm bằng chứng, mà exit 0 thì

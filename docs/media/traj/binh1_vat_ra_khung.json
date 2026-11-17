@@ -1,7 +1,7 @@
 {
-  "do_luc": "2026-11-16T19:23:36",
+  "do_luc": "2026-11-17T12:55:17",
   "lenh": "scripts/make_trajectory_media.py --csv data/drift_samples_binh1_2026-11-14_113103.csv --clip data/binh1.mp4 --expect-bbox 300,275,150,410 --expect-bbox-dang xywh --title binh1 — ô chọn 300,275,150,410 (đúng vật); 170/468 lần VOS trả mask rỗng khi vật ra khỏi khung --out docs/media/traj/binh1_vat_ra_khung.png",
-  "git_rev": "c5247cf46257249c6968f368ac317883119a0589",
+  "git_rev": "e99e3807122fa2718fe7975433d8da94d88e1fcc",
   "git_dirty_code": false,
   "csv": "data/drift_samples_binh1_2026-11-14_113103.csv",
   "csv_sha256_16": "a6e2d917a8b4b303",
@@ -17,6 +17,16 @@
   "anh": "docs/media/traj/binh1_vat_ra_khung.png",
   "anh_sha256_16": "9c6c0e6dee2541c4",
   "canh_bao": "Độ tự nhất quán (drift_iou) KHÔNG phải độ chính xác — xem AGENTS §6.",
+  "thong_ke": {
+    "n_dong": 468,
+    "n_co_toa_do": 298,
+    "n_thieu_toa_do": 170,
+    "n_mask_rong": 170,
+    "drift_iou_mean": 0.464,
+    "drift_iou_p05": 0.0,
+    "drift_iou_p05_nguong": 30,
+    "drift_n": 271
+  },
   "expect_bbox": "300,275,150,410",
   "expect_bbox_dang": "xywh",
   "ket_qua_hop": "khop",

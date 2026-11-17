@@ -106,6 +106,22 @@ class TestDraw:
         assert thong_ke["drift_n"] == 10 and thong_ke["drift_iou_p05"] is None
         assert thong_ke["drift_iou_mean"] is not None
 
+    def test_nguong_la_30_chung_voi_status_json_khong_phai_20(self, tmp_path):
+        """Ticket #23: script này từng tự đặt ngưỡng **20** ⇒ 29 mẫu vẫn công bố `drift_iou_p05`.
+
+        Cùng một đại lượng mà `status.json` từ chối công bố dưới 30 mẫu ⇒ hai con số p05 trong báo
+        cáo không so được với nhau. 29 mẫu phải là `None`, 30 mẫu mới công bố.
+        """
+        import matplotlib.pyplot as plt
+
+        from src import drift_samples as ds
+
+        assert tm.MIN_SAMPLES == ds.MIN_SAMPLES
+        traj = tm.read_traj(_write(tmp_path, self._traj(n=29)))
+        fig, thong_ke = tm.draw(traj)
+        plt.close(fig)
+        assert thong_ke["drift_n"] == 29 and thong_ke["drift_iou_p05"] is None
+
     def test_anh_nen_sai_kich_thuoc_khong_lam_sap(self, tmp_path):
         import matplotlib.pyplot as plt
 
@@ -268,6 +284,11 @@ class TestProvenance:
         payload = _json.loads(meta.read_text(encoding="utf-8"))
         assert payload["bbox_dong_dau_x1y1x2y2"] == [288, 287, 431, 734]
         assert payload["anh"].endswith("traj.png")
+        # Ticket #23: số của ẢNH phải nằm trong file provenance — `drift_iou_p05 = None` chỉ đọc được
+        # là "n < 30" khi `drift_n`/`drift_iou_p05_nguong` ở ngay cạnh, không phải đoán.
+        thong_ke = payload["thong_ke"]
+        assert thong_ke["drift_iou_p05_nguong"] == tm.MIN_SAMPLES
+        assert thong_ke["drift_n"] == 2 and thong_ke["drift_iou_p05"] is None
 
 
 class TestDirtyCode:
