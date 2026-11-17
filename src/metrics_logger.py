@@ -108,6 +108,12 @@ class MetricsLogger:
                 "p95_latency_ms": None,
                 "p95_latency_ms_n": 0,
                 "effective_fps": 0.0,
+                # `mean_score`/`lost_ratio` giữ `0,0` (KHÔNG `None`): `summary.json` là hợp đồng của
+                # phiên — consumer cũ (`web/src/components/SummaryTable.tsx`, notebook Colab) đọc
+                # thẳng số. `plot_metrics.summarize` trả `None` cho `lost_ratio` rỗng vì nó VẼ hình
+                # (vẽ 0 thành cột thấp là nói "không mất dấu lần nào"). Hai encoding khác nhau là
+                # CHỦ Ý; phân biệt "chưa đo" với "đo được 0" ở đây do `total_frames == 0` + `_n` của
+                # từng số quyết định (P2 review 17-11, ticket #32).
                 "mean_score": 0.0,
                 "lost_count": 0,
                 "lost_ratio": 0.0,

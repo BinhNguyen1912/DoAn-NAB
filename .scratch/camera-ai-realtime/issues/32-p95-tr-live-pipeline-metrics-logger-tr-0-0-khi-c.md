@@ -57,6 +57,6 @@ Review vòng 1: **0 P0, 3 P1/P2 còn lại đã sửa**:
   biến mọi phiên ngắn thành `None` mà không giải quyết bẫy nào. Bù lại: **mọi chỗ in p95 độ trễ nay in
   kèm `n`** (CLI, `run summary`), và ticket ghi rõ ngoại lệ này thay vì để checkbox nói sai.
 - `web/src/api.ts` (`p95_latency_ms?: number`) và `SummaryTable` chưa hiện `n`: là thay đổi FE (cần
-  `./run webtest` + `./run e2e`) ⇒ tách ticket riêng, không trộn vào PR backend.
+  `./run webtest` + `./run e2e`) ⇒ **đã tách thành ticket #33**, không trộn vào PR backend.
 - Số p95 latency đã công bố trong `docs/` đo bằng code cũ (không có `_n`): chúng có `n > 0` nên vẫn
   dùng được, nhưng khi trích phải ghi rõ cỡ mẫu nếu biết.
