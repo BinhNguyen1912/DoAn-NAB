@@ -1,5 +1,7 @@
 # 20: còn 2 cửa sổ `append` ngoài lock (`_shown_iou_window`, `_age_window`)
 
+**Status:** resolved
+
 **What to build:** `src/live_tracking.py`: cùng mẫu sai mà ticket 17 vừa sửa cho `_drift_window`:
 
 - `_shown_iou_window.append(...)` ở nhánh `_smooth` nằm **ngoài** `with self._stats_lock:`, rồi
@@ -27,3 +29,7 @@ Cách sửa: gộp `append` + tính thống kê vào CÙNG khối `with self._st
 - `TestDriftWindowChiMotNguonGhiTrongLock` → `TestCuaSoThongKeChiMotNguonGhiTrongLock`
   (`pytest.mark.parametrize` cho `_drift_window`, `_shown_iou_window`, `_age_window`; deque tự theo
   dõi). Đã kiểm "có răng": trả `append` của từng cửa sổ ra ngoài lock ⇒ đỏ đúng tham số đó.
+
+## Answer
+
+Đã xong: 2 cửa sổ `_shown_iou_window` và `_age_window` nay append/đọc trong `_stats_lock`; 3/3 tiêu chí, có test đa luồng.
