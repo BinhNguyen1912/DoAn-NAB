@@ -496,9 +496,10 @@ EOF
     activate_env
     "$PYTHON" - <<'PY'
 import glob, json, os
-# `DOAN_DATA_DIR`: cho test (và người dùng) trỏ sang thư mục khác thay vì `data/` của repo — không có
-# nó thì test phải ghi file rác vào `data/` thật, để lại rác nếu tiến trình bị kill (P3 audit 17-11).
-files = sorted(glob.glob(os.path.join(os.environ.get("DOAN_DATA_DIR", "data"), "*_summary.json")))
+# `DOAN_DATA_DIR` (CHỈ ảnh hưởng lệnh `summary` này): cho test trỏ sang thư mục khác thay vì `data/` của
+# repo — không có nó thì test phải ghi rác vào `data/` thật và để lại rác nếu tiến trình bị kill.
+# `or "data"`: biến set nhưng RỖNG (`DOAN_DATA_DIR= ./run summary`) không được làm glob quét CWD.
+files = sorted(glob.glob(os.path.join(os.environ.get("DOAN_DATA_DIR") or "data", "*_summary.json")))
 if not files:
     print("Chưa có file *_summary.json — chạy ./run demo hoặc ./run video trước.")
 for f in files:

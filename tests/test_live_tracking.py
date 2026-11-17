@@ -943,8 +943,13 @@ class TestDriftVaTuoiMask:
         # hai đường — thêm một `_note_mask_age` thứ hai thì `age_n` vượt `frames` và `mask_age_p95`
         # lặng lẽ chứa mẫu trùng (P3 audit sau merge 17-11). Đây cũng là test chặn hồi quy cho
         # thay đổi `age_n` 59→60 của đường LK (AGENTS §6).
-        assert status["age_n"] == status["frames"], (
-            f"age_n={status['age_n']} phải bằng frames={status['frames']} (1 mẫu/frame phát)")
+        # `age_n` là độ dài cửa sổ `deque(maxlen=_STAT_WINDOW)` ⇒ bất biến đúng là
+        # `min(frames, _STAT_WINDOW)`, KHÔNG phải `frames` (phiên > 200 frame thì `age_n < frames` một
+        # cách hợp lệ — P3 review 17-11).
+        from src.live_tracking import _STAT_WINDOW
+
+        assert status["age_n"] == min(status["frames"], _STAT_WINDOW), (
+            f"age_n={status['age_n']} phải bằng min(frames={status['frames']}, {_STAT_WINDOW})")
         if every == 1:
             # Đơn luồng: tuổi = 0 (frame vừa VOS chính là frame đang phát) và KHÔNG có drift
             # (không nội suy LK ⇒ không có cặp VOS ↔ nội suy; bịa mẫu drift ở đây là làm sai số).
@@ -1838,6 +1843,10 @@ class TestDumpMaskKhongLamBanSoDo:
         session._dump_mask(_Result(0, (30, 30, 40, 40), mask), 5)
         assert "GHI ĐÈ" in capsys.readouterr().out
         assert session._so_file_ghi_de == 1
+        # Khoá này là thứ `scripts/score_miou.py` ĐỌC ở chỗ chấm (`kiem_khop_manifest`) — phải canh phía
+        # PRODUCER, không chỉ dict dựng tay trong `tests/test_score_miou.py` (P2 review 17-11).
+        man = json.loads((tmp_path / "masks" / "manifest.json").read_text(encoding="utf-8"))
+        assert man["so_file_ghi_de"] == 1
 
     def test_frame_start_khong_bi_dump_hai_lan(self, video_source, tmp_path, monkeypatch):
         """Frame `engine.start()` ở đường CÓ luồng: `_after_vos` không dump, worker `_store_vos` dump

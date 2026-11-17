@@ -19,6 +19,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import subprocess
 import sys
 from pathlib import Path
@@ -30,8 +31,9 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # mà CI không đỏ vì nợ lịch sử.
 CHO_PHEP = {
     ("drift_2026-11-08_metrics.json", "ee9f256a1e77e6b4de08b0b0b8f4b0f0b8f0b0b8"):
-        "rev không tồn tại trong repo (nghi gõ tay lúc ghi artifact 08-11); số đo vẫn dùng được nhưng "
-        "CẤM dẫn rev này — xem `docs/task/08-11-2026-do-cai-gia-noi-suy-lk-va-nguong-nhieu.md`",
+        "field 40-hex KHÔNG tồn tại (nghi gõ tay 08-11), NHƯNG tiền tố `ee9f2567` trỏ tới commit THẬT "
+        "`ee9f25672d72edfbb959726a7da396e01729de90` (commit sinh ra số) ⇒ dùng `ee9f25672d72`, đừng "
+        "trích chuỗi 40 ký tự — xem `docs/task/08-11-2026-do-cai-gia-noi-suy-lk-va-nguong-nhieu.md`",
     # Hai artifact 10-11 đo từ relay webcam THẬT (không sinh lại được nếu không có camera đúng thời
     # điểm) nhưng rev chỉ tồn tại trong object LOCAL — nhánh bị rebase trước khi push, nên trên remote
     # `git cat-file -e` thất bại. Số trong `docs/doi-chieu-yeu-cau-gvhd.md` vẫn dùng được (đo thật),
@@ -51,9 +53,11 @@ def _git(*args: str) -> tuple[int, str]:
 
 def phan_loai(rev: str | None) -> str:
     """`ok` / `lech` / `chet` — xem docstring đầu file."""
-    if not rev:
-        return "chet"                      # không khai rev = không truy được về đâu cả
-    rc, _ = _git("cat-file", "-e", f"{rev}^{{commit}}")
+    # `git_rev = "--help"` từng được chấm `ok`: git hiểu `--help` ở tầng trên ⇒ rc 0 cho cả hai lệnh
+    # (âm tính giả). Chỉ nhận hex ngắn/dài hợp lệ (P3 review 17-11).
+    if not rev or not re.fullmatch(r"[0-9a-fA-F]{7,40}", rev):
+        return "chet"
+    rc, _ = _git("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}")
     if rc != 0:
         return "chet"
     rc, _ = _git("merge-base", "--is-ancestor", rev, "HEAD")
@@ -96,8 +100,10 @@ def main(argv=None) -> int:
 
     ket_qua = quet(thu_muc)
     if not ket_qua:
+        # `0 artifact` KHÔNG phải "đã kiểm" (AGENTS §6). Glob ngừng khớp (đổi tên artifact) hoặc `data/`
+        # rỗng mà job vẫn xanh là đúng bẫy `0/None ≠ đã đo`.
         print(f"[provenance] {thu_muc} không có artifact nào — không phải 'đã kiểm' (AGENTS §6)")
-        return 0
+        return 2
 
     chet = [r for r in ket_qua if r["trang_thai"] == "chet"]
     lech = [r for r in ket_qua if r["trang_thai"] == "lech"]
@@ -112,6 +118,11 @@ def main(argv=None) -> int:
     print(f"\n[provenance] {len(ket_qua)} artifact: "
           f"{len(ket_qua) - len(chet) - len(lech) - len(da_biet)} ok · {len(lech)} lệch · "
           f"{len(da_biet)} chết-đã-biết · {len(chet)} CHẾT-MỚI")
+    ten_file = {r["file"] for r in ket_qua}
+    treo = [k for k in CHO_PHEP if k[0] not in ten_file]
+    for ten, _rev in treo:
+        print(f"[provenance] CẢNH BÁO: allowlist còn mục `{ten}` nhưng không có artifact đó — gỡ khỏi "
+              "`CHO_PHEP` nếu artifact đã bị xoá/đổi tên", file=sys.stderr)
     if chet and not args.nghiem:
         print("[provenance] cảnh báo: có rev chết mới (dùng --nghiem để chặn)", file=sys.stderr)
     if chet:

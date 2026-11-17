@@ -89,3 +89,38 @@ Vì sao: chỉ trong **một ngày** tài liệu/ticket/log đã **3 lần** d�
 - Báo cáo audit: phiên `reviewer` sau merge 17-11 (kết luận "mergeable, 0 P0/P1").
 - AGENTS §6 (`0/None ≠ đã đo`, "số đo phải có `git_rev` == commit đang chạy"), §9.1 (review độc lập).
 - `scripts/check_artifact_provenance.py`, `.github/workflows/checks.yml` (job `provenance`).
+
+## Bổ sung (đợt 2) — review độc lập vòng 1 của PR #35
+
+**P1 (nội dung): câu ĐÍNH CHÍNH của mình SAI.** Reviewer tra `.git/logs/HEAD` và chứng minh
+`ee9f256` **là commit THẬT** (`ee9f25672d72edfbb959726a7da396e01729de90`, "fix(live): review độc lập bắt
+3 P1 + 7 P2 …"). Artifact chỉ hỏng **field** 40 hex (`ee9f256` + `a1e77e6b…`, nghi gõ tay), 7 ký tự đầu
+khớp commit thật ⇒ câu gốc của log 08-11 ("kiểm bằng `git show ee9f256:…`") là **ĐÚNG**, không phải sai
+như bản đính chính đầu tiên của mình nói. Đã viết lại đính chính cho đúng (nêu cả rev thật), và lý do
+allowlist nay nêu `ee9f2567` để người sau truy được — kèm test ghim chuỗi đó. **Bài học**: đính chính
+cũng là một tuyên bố về số/commit ⇒ phải kiểm bằng `git cat-file` trước khi viết.
+
+**P1 (kiểm trước merge): rev chỉ sống trong object local.** Reviewer cảnh báo 2 ca `lech` có thể hoá
+`chet` trong CI. Đúng — mình đã mô phỏng bằng **clone sạch** (`git clone` từ GitHub, fetch `pull/35/head`)
+và cả hai ra `chet`; job CI đã đỏ thật một lần. Xử lý: đưa cả hai vào `CHO_PHEP` kèm lý do "rev chỉ có
+trong object local, CẤM dẫn rev" và **xác nhận lại trong clone sạch**: `44 ok · 3 chết-đã-biết · 0
+chết-mới`, mã thoát 0.
+
+Các mục còn lại đã sửa trong đợt này:
+
+| Mức | Sửa |
+|---|---|
+| P2 job CI thiếu `setup-python` | thêm `actions/setup-python@v5` (3.10) cho job `git_rev của artifact` |
+| P2 `data/` rỗng ⇒ xanh im lặng | `return 2` (kèm test `main(...) == 2`) |
+| P2 **không test nào gọi `main()`** (mã thoát là thứ CI dựa vào) | tách `tests/test_check_artifact_provenance.py`, 13 test có test mã thoát: `--nghiem` + rev chết mới ⇒ 1; không `--nghiem` ⇒ 0; allowlist ⇒ 0; thư mục rỗng/không tồn tại ⇒ 2 |
+| P2 mất test phía **producer** của `manifest["so_file_ghi_de"]` | thêm 1 dòng assert vào test còn sống (`tests/test_live_tracking.py`) |
+| P2 chiến lược merge chưa ghi | `docs/quy-trinh-git.md`: PR có `data/*_metrics.json` phải merge **merge commit**, không squash (squash huỷ commit mà `git_rev` trỏ tới ⇒ main đỏ) |
+| P3 `age_n == frames` chỉ đúng ≤ 200 | bất biến đổi thành `min(frames, _STAT_WINDOW)` |
+| P3 câu "98,9 = 87,3 + 11,0 + 0,6" là **chuỗi tĩnh** ⇒ `--check` không bắt được | `_dien_so()`: câu chữ lấy số **từ artifact** qua mẫu `{{đường.dẫn}}` ⇒ sinh lại artifact là `--check` đỏ; đồng thời ghi rõ "mẫu cuối, KHÔNG phải p95" và "`post_ms` **suy ra**" |
+| P3 `DOAN_DATA_DIR=` rỗng ⇒ glob quét CWD | `os.environ.get("DOAN_DATA_DIR") or "data"`; comment nói rõ chỉ ảnh hưởng `./run summary` |
+| P3 `phan_loai("--help")` từng chấm `ok` | chỉ nhận hex 7–40 ký tự + `git rev-parse --verify --end-of-options`; test `phan_loai("--help") == "chet"` |
+| P3 allowlist không có hạn | cảnh báo khi mục allowlist không còn khớp artifact nào; test đổi tên cho đúng thứ nó kiểm |
+| P3 test provenance nằm nhầm file | tách sang `tests/test_check_artifact_provenance.py` |
+
+`./run lint` xanh · `./run test` **1353 passed**, 5 deselected (1339 → 1353: +13 test provenance, +1
+assert manifest, −1 test trùng đã xoá trước đó).
