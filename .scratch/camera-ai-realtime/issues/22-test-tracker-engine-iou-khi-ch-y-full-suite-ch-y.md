@@ -34,12 +34,16 @@ Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ 
 
 **Số đo (máy này, cây sạch):**
 - `./run testall` **3 lần liên tiếp: 3/3 xanh**, `1306 passed` mỗi lần, 199,5 / 199,5 / 202,4 s
-  (log `data/testall_2026-11-17.log`) ⇒ hôm nay **0/3 lần đỏ**; không tái hiện được ca 10-11.
-- Hai test từng đỏ oan, chạy riêng **10 lần liên tiếp: 10/10 xanh** (`data/flaky_2026-11-17.log`).
+  ⇒ hôm nay **0/3 lần đỏ**; không tái hiện được ca 10-11. (Log thô của 3 lần này **không commit** được
+  — `.gitignore` chặn `data/*`; tái lập bằng `./run testall` 3 lần, mỗi lần ~200 s / 1306 passed.)
+- Hai test từng đỏ oan, chạy riêng **10 lần liên tiếp: 10/10 xanh** (tái lập bằng vòng lặp
+  `pytest tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau
+  tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_khong_cho_zombie_5_giay`, ~50 s/lần).
 - Phân bố IoU của chính test bị đỏ (10 lần chạy, `scripts/measure_flaky_iou.py`,
   `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 1785fd1`, `git_dirty_code false`):
   f2 **0,9512 ± 0,0000**, f5 **0,9701 ± 0,0103**, f9 **0,9506 ± 0,0000** ⇒ **0/30 lượt dưới ngưỡng 0,5**.
-  Ngưỡng 0,5 cách phân bố thật gần **9 lần** độ lệch chuẩn lớn nhất ⇒ **ngưỡng 0,5 đúng, cấm hạ**;
+  Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **44 σ** (σ lớn nhất = 0,0103 ở f5) ⇒ **ngưỡng 0,5
+  đúng, cấm hạ**;
   lần đỏ 10-11 không phải "mask trôi" mà là ngoại lệ của SAM 2 (không tất định, AGENTS §6).
 
 **Cách xử lý (tiêu chí 3):** `test_process_theo_frames_iou_dat_o_cac_frame_mau` **chạy lại MỘT lần**
