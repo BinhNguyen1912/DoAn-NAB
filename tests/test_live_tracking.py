@@ -8,7 +8,6 @@ import sys
 import threading
 import time
 from collections import deque
-from dataclasses import replace
 
 import numpy as np
 import pytest
@@ -940,6 +939,17 @@ class TestDriftVaTuoiMask:
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert status["age_n"] > 0, f"vos_every={every} phải đo được tuổi mask (ticket #24)"
+        # BẤT BIẾN: mỗi frame PHÁT ghi ĐÚNG MỘT mẫu tuổi mask (kể cả frame `engine.start()`), ở cả
+        # hai đường — thêm một `_note_mask_age` thứ hai thì `age_n` vượt `frames` và `mask_age_p95`
+        # lặng lẽ chứa mẫu trùng (P3 audit sau merge 17-11). Đây cũng là test chặn hồi quy cho
+        # thay đổi `age_n` 59→60 của đường LK (AGENTS §6).
+        # `age_n` là độ dài cửa sổ `deque(maxlen=_STAT_WINDOW)` ⇒ bất biến đúng là
+        # `min(frames, _STAT_WINDOW)`, KHÔNG phải `frames` (phiên > 200 frame thì `age_n < frames` một
+        # cách hợp lệ — P3 review 17-11).
+        from src.live_tracking import _STAT_WINDOW
+
+        assert status["age_n"] == min(status["frames"], _STAT_WINDOW), (
+            f"age_n={status['age_n']} phải bằng min(frames={status['frames']}, {_STAT_WINDOW})")
         if every == 1:
             # Đơn luồng: tuổi = 0 (frame vừa VOS chính là frame đang phát) và KHÔNG có drift
             # (không nội suy LK ⇒ không có cặp VOS ↔ nội suy; bịa mẫu drift ở đây là làm sai số).
@@ -1833,6 +1843,10 @@ class TestDumpMaskKhongLamBanSoDo:
         session._dump_mask(_Result(0, (30, 30, 40, 40), mask), 5)
         assert "GHI ĐÈ" in capsys.readouterr().out
         assert session._so_file_ghi_de == 1
+        # Khoá này là thứ `scripts/score_miou.py` ĐỌC ở chỗ chấm (`kiem_khop_manifest`) — phải canh phía
+        # PRODUCER, không chỉ dict dựng tay trong `tests/test_score_miou.py` (P2 review 17-11).
+        man = json.loads((tmp_path / "masks" / "manifest.json").read_text(encoding="utf-8"))
+        assert man["so_file_ghi_de"] == 1
 
     def test_frame_start_khong_bi_dump_hai_lan(self, video_source, tmp_path, monkeypatch):
         """Frame `engine.start()` ở đường CÓ luồng: `_after_vos` không dump, worker `_store_vos` dump
@@ -1866,31 +1880,6 @@ class TestDumpMaskKhongLamBanSoDo:
         session._after_vos(np.full((48, 64, 3), 90, np.uint8),
                            _Result(0, (5, 5, 25, 21), np.zeros((48, 64), bool)))
         assert session._stats.dump_ms is None
-
-    def test_ghi_de_file_mask_thi_canh_bao_va_dem(self, video_source, tmp_path, capsys):
-        """Chọn lại ô giữa phiên (giả lập bằng cách quên `_dumped`) ⇒ phải CẢNH BÁO + đếm, không im lặng."""
-        out = tmp_path / "live"
-        out.mkdir(parents=True, exist_ok=True)
-        goc = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100, vos_every=3)
-        cfg = replace(goc, dump_mask_frames=(5,), dump_mask_dir=str(tmp_path / "masks"))
-        session = LiveTrackingSession(FakeEngine(), cfg)
-        mask = np.zeros((48, 64), bool)
-        mask[10:20, 10:20] = True
-
-        session._dump_mask(_Result(0, (10, 10, 20, 20), mask), 5)
-        assert session._so_file_ghi_de == 0 and "GHI ĐÈ" not in capsys.readouterr().out
-
-        # Lần chọn THỨ HAI cho cùng frame (mask khác): tên file trùng ⇒ phải nói ra.
-        session._dumped.discard(5)
-        mask2 = np.zeros((48, 64), bool)
-        mask2[30:40, 30:40] = True
-        session._dump_mask(_Result(0, (30, 30, 40, 40), mask2), 5)
-
-        assert "GHI ĐÈ" in capsys.readouterr().out
-        assert session._so_file_ghi_de == 1
-        manifest = json.loads((tmp_path / "masks" / "manifest.json").read_text(encoding="utf-8"))
-        assert manifest["so_file_ghi_de"] == 1, "manifest phải tự khai số file bị ghi đè"
-
 
 class TestPhaDuocGhiRaStatus:
     """Phiên THẬT (vos_every=3) phải ghi được 5 pha vào `status.json`.

@@ -28,10 +28,16 @@
      định bbox của VOS" vào cùng field, khiến "tắt LK" trông tốt hơn 0,03 một cách vô nghĩa).
 2. **`scripts/repeatability.py`** (mới): `spread()`, `la_khac_biet()`, `danh_gia()` — hàm thuần, có
    test; `n < 2` ⇒ không kết luận được gì.
-3. **Artifact** `data/drift_2026-11-08_metrics.json`: **10 lần chạy**, `git_rev` = commit **chứa code
-   sinh ra số** (kiểm bằng `git show ee9f256:src/live_tracking.py | grep -c drift_iou` = 13),
-   `git_dirty: false`, lệnh cụ thể từng lần, ngưỡng đăng ký trước, ngưỡng nhiễu, `mask_drops`,
-   `lost_streak`.
+3. **Artifact** `data/drift_2026-11-08_metrics.json`: **10 lần chạy**, `git_dirty: false`, lệnh cụ thể
+   từng lần, ngưỡng đăng ký trước, ngưỡng nhiễu, `mask_drops`, `lost_streak`.
+   **ĐÍNH CHÍNH 17-11 (bản thứ hai — bản đầu viết sai, xin ghi lại cho đúng):** field `git_rev` trong
+   artifact là chuỗi 40 hex **không tồn tại** (`ee9f256a1e77e6b4de08b0b0b8f4b0f0b8f0b0b8` — nghi gõ
+   tay), NHƯNG **tiền tố 7 ký tự `ee9f256` trỏ tới commit CÓ THẬT**
+   `ee9f25672d72edfbb959726a7da396e01729de90` ("fix(live): review độc lập bắt 3 P1 + 7 P2 …"), đúng là
+   commit sinh ra số. Vì thế **câu "kiểm bằng `git show ee9f256:src/live_tracking.py`" ở trên là ĐÚNG**
+   và được giữ nguyên; chỉ **field** `git_rev` bị ghi sai ⇒ đừng trích chuỗi 40 ký tự đó, hãy dùng
+   `ee9f25672d72` (`git cat-file -e ee9f25672d72` = ok). `./run provcheck` giữ ca này trong allowlist
+   `scripts/check_artifact_provenance.py` với lý do ghi đúng như trên.
 
 ## 📤 Output / Kết quả
 `image_size=192`, 900 frame/cấu hình, laptop CPU, mỗi cấu hình **3 lần**:

@@ -91,3 +91,9 @@ Conflict gần như luôn đến từ **file dùng chung** hoặc **file bị re
 1. `./run lint` → sửa hết (chạy `--fix` chỉ khi chắc chắn không đổi hành vi).
 2. `./run test` → đọc test nào đỏ; **không** sửa test để test xanh nếu hành vi thật đang sai.
 3. Chỉ mở PR khi cả hai xanh; PR mở sớm để nhận góp ý thì ghi tiêu đề `[WIP]`.
+
+## Merge commit, không squash (cho PR có `data/*_metrics.json`)
+
+Artifact số đo ghi `git_rev` = commit **trên nhánh** đã sinh ra số. Squash/rebase-merge **huỷ** các commit
+đó ⇒ `./run provcheck` (job CI `git_rev của artifact`) báo rev **chết** và `main` đỏ ngay sau merge. Vì
+vậy: PR nào có `data/*_metrics.json` mới/sửa thì merge bằng **merge commit**.

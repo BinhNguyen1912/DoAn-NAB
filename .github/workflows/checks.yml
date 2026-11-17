@@ -39,3 +39,19 @@ jobs:
       # môi trường này; test nào cần model phải đánh dấu @pytest.mark.slow.
       - name: pytest -m "not slow"
         run: python -m pytest -m "not slow"
+
+  provenance:
+    # `git_rev` trong `data/*_metrics.json` phải còn tồn tại VÀ thuộc cây này. Đã 3 lần trong ngày
+    # 17-11 tài liệu/ticket dẫn một rev đã chết (rebase/squash/artifact sinh lại đè) ⇒ kiểm bằng máy,
+    # không bằng mắt. Rev chết "đã biết" nằm trong `CHO_PHEP` (kèm lý do) của script.
+    name: git_rev của artifact
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0       # cần lịch sử để `merge-base --is-ancestor`
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.10"
+      - name: kiểm provenance
+        run: python scripts/check_artifact_provenance.py --nghiem

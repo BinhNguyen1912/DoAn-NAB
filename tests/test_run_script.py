@@ -92,21 +92,22 @@ class TestRunSubcommands:
         cứu khi THIẾU khoá, không cứu `null`. Chết giữa vòng lặp ⇒ các file sau không được in.
         """
         import json
-        import os
 
-        # `./run` chạy trong CWD (nó tự `cd "$ROOT"`), còn pytest chạy ở gốc repo ⇒ ghi file tạm vào
-        # `data/` của gốc repo rồi xoá (tiền tố `zz_` để nó nằm cuối danh sách sắp xếp).
-        f = os.path.join("data", "zz_test_null_summary.json")
-        os.makedirs("data", exist_ok=True)
-        with open(f, "w", encoding="utf-8") as fh:
-            json.dump({"total_frames": 3, "mean_latency_ms": 100.0, "p95_latency_ms": None,
-                       "p95_latency_ms_n": 0, "effective_fps": 10.0, "lost_count": 3}, fh)
-        try:
-            r = _run("summary")
-            assert r.returncode == 0, r.stderr
-            assert "chưa đo" in r.stdout
-        finally:
-            os.remove(f)
+        # `./run` tự `cd "$ROOT"` nên `monkeypatch.chdir` KHÔNG đủ ⇒ dùng `DOAN_DATA_DIR` trỏ vào
+        # `tmp_path`: trước đây test ghi file vào `data/` của repo, để lại rác nếu bị kill (timeout 120 s)
+        # và không an toàn với `pytest-xdist` (P3 audit sau merge 17-11).
+        d = tmp_path / "data"
+        d.mkdir()
+        (d / "zz_test_null_summary.json").write_text(json.dumps(
+            {"total_frames": 3, "mean_latency_ms": 100.0, "p95_latency_ms": None,
+             "p95_latency_ms_n": 0, "effective_fps": 10.0, "lost_count": 3}), encoding="utf-8")
+        monkeypatch.setenv("DOAN_DATA_DIR", str(d))
+
+        r = _run("summary")
+        assert r.returncode == 0, r.stderr
+        assert "chưa đo" in r.stdout
+        assert sorted(p.name for p in d.glob("*")) == ["zz_test_null_summary.json"], (
+            "test không được ghi gì vào `data/` của repo")
 
     def test_aliases_in_khoi_lenh_tat(self):
         r = _run("aliases")

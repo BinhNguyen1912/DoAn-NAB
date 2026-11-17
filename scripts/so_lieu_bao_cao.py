@@ -15,6 +15,7 @@ Cách dùng:
 """
 
 import argparse
+import re
 import json
 import sys
 from pathlib import Path
@@ -92,8 +93,10 @@ REGISTRY = [
      "cau_hinh.192_1.mask_age_p95.mean", "ms (p95)",
      "Ổ **đơn luồng**: `FPS phát` = `Nhịp mask` (mỗi frame đều chạy model, không có LK lấp) ⇒ KHÔNG "
      "so FPS của dòng này với 29,8 của `vos_every ≥ 2`. Tuổi ≈ `vos_ms + pre_ms + post_ms` (age = 0 "
-     "vì frame vừa VOS chính là frame đang phát); vì sao ~106 chứ không ~95 ms: `pre_ms` (~12 ms) "
-     "nằm TRONG tuổi nhưng NGOÀI `vos_ms`. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
+     "vì frame vừa VOS chính là frame đang phát); vì sao tuổi **mẫu cuối** "
+     "({{cau_hinh.192_1.mask_age_total_ms.mean}} ms, KHÔNG phải p95 ở cột Số) lớn hơn `vos_ms` "
+     "({{cau_hinh.192_1.vos_ms.mean}} ms): `pre_ms` ({{cau_hinh.192_1.pre_ms.mean}} ms) + `post_ms` "
+     "(**suy ra** = tuổi − vos − pre, không có cột riêng) nằm TRONG tuổi nhưng NGOÀI `vos_ms`. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
      "ghi gì (ticket #24). **Điều kiện**: `image_size 192`, clip `binh1.mp4`, ô chai "
      "`300,275,150,410` (đọc `meta.clip`/`meta.bbox_xywh` trong artifact) — ô khác thì số khác.",
      {"std": "cau_hinh.192_1.mask_age_p95.std", "n": "cau_hinh.192_1.age_n.mean"}),
@@ -182,6 +185,28 @@ def _fmt(value) -> str:
     return str(value)
 
 
+_MAU_SO = re.compile(r"\{\{([^}]+)\}\}")
+
+
+def _dien_so(text: str, data) -> str:
+    """Thay `{{đường.dẫn.khoá}}` trong câu chữ bằng số ĐỌC TỪ artifact.
+
+    Vì sao: bản trước để phép cộng trong **chuỗi tĩnh** ("98,9 = 87,3 + 11,0 + 0,6") ⇒ artifact sinh lại
+    thì câu chữ thành sai mà `--check` vẫn xanh (nó chỉ so cột Số). Nay số nằm trong câu cũng là số của
+    artifact nên `--check` đỏ khi lệch (P3 audit sau merge 17-11).
+    """
+    if data is None:
+        return text
+
+    def _thay(m):
+        v = _get(data, m.group(1))
+        if v is _THIEU or v is None:
+            return "CHƯA ĐO"
+        return f"{v:g}" if isinstance(v, (int, float)) and not isinstance(v, bool) else str(v)
+
+    return _MAU_SO.sub(_thay, text)
+
+
 def build_table() -> str:
     """Sinh bảng markdown (hàm thuần, không ghi file) — test so được từng dòng.
 
@@ -209,6 +234,7 @@ def build_table() -> str:
                 hien = f"{hien} ± {_fmt(std).strip('`')}"
                 if n is not _THIEU and n is not None:
                     hien += f" (n = {_fmt(n)})"
+        cam = _dien_so(cam, data)          # câu giải thích nay lấy số TỪ artifact (không còn chuỗi tĩnh)
         lines.append(f"| {claim} | **{hien}** | {unit} | `{artifact}` | "
                      f"`{key}` | {cam} |")
     return "\n".join(lines)
