@@ -42,9 +42,13 @@ Vì sao: chỉ trong **một ngày** tài liệu/ticket/log đã **3 lần** d�
   từng khẳng định "kiểm bằng `git show ee9f256:src/live_tracking.py`" — câu đó **không tái lập được**,
   đã **đính chính** trong log. Artifact để nguyên (không sửa tay bằng chứng đã commit) và nằm trong
   `CHO_PHEP` của script **kèm lý do**.
-- 2 `lech`: `empty_window_2026-11-10_metrics.json` (`eb008e3`), `live_web_relay_2026-11-10_metrics.json`
-  (`da1d671`) — số của chúng vẫn là số dùng trong `docs/doi-chieu-yeu-cau-gvhd.md`, rev thuộc nhánh đã
-  bị thay; ghi nhận, không chặn.
+- 2 artifact còn lại (`empty_window_2026-11-10`, `live_web_relay_2026-11-10`): rev `eb008e3`/`da1d671`
+  **chỉ tồn tại trong object LOCAL** — nhánh bị rebase trước khi push, nên trong **clone sạch** (đúng
+  điều kiện CI) `git cat-file -e` thất bại. Số của chúng là số relay webcam thật dùng trong
+  `docs/doi-chieu-yeu-cau-gvhd.md` (không sinh lại được nếu không có camera đúng thời điểm) ⇒ đưa vào
+  `CHO_PHEP` kèm lý do "CẤM dẫn rev". **Phát hiện này chỉ lộ ra khi chạy trong clone sạch** — trên máy
+  dev chúng hiện là `lech` (object còn trong `.git`), tức máy dev "che" mất lỗi; đây là lý do CI phải
+  chạy kiểm này chứ không thể tin vào lần chạy tay.
 - CI: job mới `git_rev của artifact` (`fetch-depth: 0` + `--nghiem`) ⇒ rev chết **mới** làm đỏ PR.
 
 ### Hai nợ "ngoài phạm vi 4 PR" đã tách ticket

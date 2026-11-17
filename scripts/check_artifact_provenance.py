@@ -32,6 +32,15 @@ CHO_PHEP = {
     ("drift_2026-11-08_metrics.json", "ee9f256a1e77e6b4de08b0b0b8f4b0f0b8f0b0b8"):
         "rev không tồn tại trong repo (nghi gõ tay lúc ghi artifact 08-11); số đo vẫn dùng được nhưng "
         "CẤM dẫn rev này — xem `docs/task/08-11-2026-do-cai-gia-noi-suy-lk-va-nguong-nhieu.md`",
+    # Hai artifact 10-11 đo từ relay webcam THẬT (không sinh lại được nếu không có camera đúng thời
+    # điểm) nhưng rev chỉ tồn tại trong object LOCAL — nhánh bị rebase trước khi push, nên trên remote
+    # `git cat-file -e` thất bại. Số trong `docs/doi-chieu-yeu-cau-gvhd.md` vẫn dùng được (đo thật),
+    # chỉ là không truy được về commit ⇒ CẤM dẫn rev.
+    ("empty_window_2026-11-10_metrics.json", "eb008e3d414d1c4406cc641a1c3a703303017243"):
+        "rev chỉ có trong object local (nhánh rebase trước khi push) — số thật 10-11, CẤM dẫn rev",
+    ("live_web_relay_2026-11-10_metrics.json", "da1d671c3c20be6f98ea4a3f4674714ff1fdae6c"):
+        "rev chỉ có trong object local (nhánh rebase trước khi push) — số relay webcam thật 10-11, "
+        "CẤM dẫn rev",
 }
 
 
