@@ -20,7 +20,7 @@
    - Log thô không commit được (`.gitignore` chặn `data/*`); tái lập bằng chính 2 lệnh trên.
 2. **Đo phân bố IoU** bằng script mới `scripts/measure_flaky_iou.py` (chạy đúng kịch bản của test,
    dùng chính hàm `iou` của test, engine nạp 1 lần): 5 lần trên cây sạch
-   (`data/flaky_iou_2026-11-17_metrics.json`, `git_rev ca46b31`, `git_dirty_code false`) ⇒
+   (`data/flaky_iou_2026-11-17_metrics.json`, `git_rev 472bc6e`, `git_dirty_code false`) ⇒
    f2 **0,9512 ± 0,0000** · f5 **0,9652 ± 0,0134** · f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**,
    giá trị nhỏ nhất cách ngưỡng ~**34 σ**.
 3. **Cách xử lý (tiêu chí 3)**: test IoU **chạy lại MỘT lần** khi lần đầu có frame dưới ngưỡng
@@ -85,7 +85,7 @@ chúng bị `.gitignore` chặn). Phần còn mở đã xử lý trong đợt n�
 | P3 `--lan 1` được nhận dù docstring nói ≥ 3 | từ chối `--lan < 3` (mã thoát 2) |
 | P2 nợ `test_reap_khong_cho_zombie_5_giay` không có ticket | tạo **ticket #34** |
 
-Sinh lại artifact trên cây sạch (`--lan 5`): `git_rev ca46b31`, `git_dirty_code false`,
+Sinh lại artifact trên cây sạch (`--lan 5`): `git_rev 472bc6e`, `git_dirty_code false`,
 `tong_ms` 42,8 / 44,0 / 45,1 / 45,1 / 45,2 s; IoU f2 0,9512 · f5 0,9506–0,9750 · f9 0,9506;
 cổng test (min trên {0,2,5,9}) = **0,928**; **0/5 lần** dưới ngưỡng 0,5.
 

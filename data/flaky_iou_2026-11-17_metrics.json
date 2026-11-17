@@ -1,7 +1,7 @@
 {
-  "do_luc": "2026-11-17T16:24:48+07:00",
+  "do_luc": "2026-11-17T16:46:43+07:00",
   "lenh": "scripts/measure_flaky_iou.py --lan 5 --out data/flaky_iou_2026-11-17_metrics.json",
-  "git_rev": "ca46b31099d1959d10929f2e9dae170362bf2911",
+  "git_rev": "472bc6e29f8a333a44ecf90e19f09f2d14ab7f8f",
   "git_dirty_code": false,
   "git_loi": null,
   "test": "tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau",
@@ -68,7 +68,7 @@
       "score_min": 7.129,
       "score_n": 10,
       "min_iou": 0.9506,
-      "tong_ms": 42788.4,
+      "tong_ms": 43423.1,
       "duoi_nguong": []
     },
     {
@@ -93,7 +93,7 @@
       "score_min": 7.129,
       "score_n": 10,
       "min_iou": 0.9506,
-      "tong_ms": 44035.4,
+      "tong_ms": 44227.2,
       "duoi_nguong": []
     },
     {
@@ -118,7 +118,7 @@
       "score_min": 7.129,
       "score_n": 10,
       "min_iou": 0.928,
-      "tong_ms": 45074.6,
+      "tong_ms": 44243.8,
       "duoi_nguong": []
     },
     {
@@ -143,7 +143,7 @@
       "score_min": 7.129,
       "score_n": 10,
       "min_iou": 0.928,
-      "tong_ms": 45148.4,
+      "tong_ms": 44757.9,
       "duoi_nguong": []
     },
     {
@@ -168,7 +168,7 @@
       "score_min": 7.129,
       "score_n": 10,
       "min_iou": 0.928,
-      "tong_ms": 45190.0,
+      "tong_ms": 45350.3,
       "duoi_nguong": []
     }
   ]
