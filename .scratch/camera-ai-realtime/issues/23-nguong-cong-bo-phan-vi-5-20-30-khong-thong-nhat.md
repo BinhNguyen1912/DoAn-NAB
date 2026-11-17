@@ -14,7 +14,7 @@ thước đo **phải** dùng ngưỡng khác (vd p05 cần ≥ 20 để có ngh
 
 **Blocked by:** None (can start immediately)
 
-**Status:** claimed
+**Status:** resolved
 
 - [x] Chỉ còn MỘT hằng ngưỡng cho phân vị (hoặc hằng riêng có lý do + test khoá giá trị)
 - [x] Artifact in `n` cạnh mọi `*_p05`; p05 có n < ngưỡng ⇒ `None` (không công bố)
@@ -32,16 +32,20 @@ thước đo **phải** dùng ngưỡng khác (vd p05 cần ≥ 20 để có ngh
 
 - `scripts/score_miou.py`: bỏ hằng `5` → dùng `phan_vi`; artifact có thêm `mIoU_p05_n` +
   `mIoU_p05_nguong`; CLI in "CHƯA CÔNG BỐ (n < 30)" thay vì im lặng bỏ dòng.
-- `scripts/make_trajectory_media.py`: bỏ hằng `20` → dùng `phan_vi`; `thong_ke` (kèm `nguong_p05`)
+- `scripts/make_trajectory_media.py`: bỏ hằng `20` → dùng `phan_vi`; `thong_ke` (kèm `drift_iou_p05_nguong`)
   nay nằm trong file provenance JSON, không chỉ stdout.
 - `static_control`: tiêu chí đạt vẫn dùng `min_samples = 20` (ticket 15), nhưng `p05` chỉ công bố từ
   30 mẫu.
 
 Hệ quả đã kiểm trên artifact thật (cây sạch, `git_dirty_code = false`):
 `data/miou_binh1_hopbao_2026-11-15_metrics.json` → `mIoU_p05 = None`, `mIoU_p05_n = 12`, ngưỡng 30;
-`docs/media/traj/binh1_vat_ra_khung.json` → `drift_iou_p05 = 0,0` vẫn công bố (`drift_n = 271`), `nguong_p05 = 30`.
+`docs/media/traj/binh1_vat_ra_khung.json` → `drift_iou_p05 = 0,0` vẫn công bố (`drift_n = 271`), `drift_iou_p05_nguong = 30`.
 Artifact `miou_synthetic_2026-11-14` (n = 5, p05 = 0,9239) sinh TRƯỚC thay đổi và mask của nó đã mất
 (`/tmp/demo_gt4`) ⇒ không sinh lại được; đã ghi rõ trong `docs/so-lieu-bao-cao.md` là **cấm trích**
 p05 của nó.
 
-Test: 8 test mới; đã kiểm "có răng" — hạ `MIN_SAMPLES` về 20 ⇒ 4 test đỏ, về 5 ⇒ 6 test đỏ.
+Test: 11 test mới; đã kiểm "có răng" — hạ `MIN_SAMPLES` về 20 ⇒ 4 test đỏ, về 5 ⇒ 6 test đỏ.
+
+Review độc lập (AGENTS §9.1): **0 P0, 0 P1**, 1 P2 + 6 P3. P2 (thiếu khoá ngưỡng ở
+`summarize`/`static_control`) + 4 P3 đã sửa trong cùng PR #26; P3 còn lại tách thành **ticket #32**
+(`p95_ms` trả `0.0` khi rỗng — đại lượng khác, đổi hợp đồng consumer). Merge commit `c1d6c95`.
