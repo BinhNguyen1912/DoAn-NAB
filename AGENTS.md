@@ -318,15 +318,18 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   làm `queue` dài thêm, còn muốn nhanh hơn phải cắt **model** hoặc **tiền xử lý** (`pre_ms` 12–13 ms);
   (c) `vos_ms` **không gồm** `pre_ms` (đo riêng, `TrackingResult.pre_ms`, mặc định `None` = chưa đo).
 - **`vos_every = 1` (đơn luồng) NAY CŨNG đo tuổi mask** (ticket #24, 17-11): nhánh inline
-  (`_after_vos`) gọi `_note_mask_age(age = 0, vos_ms, pre_ms, queue_ms = 0, post_ms)`; trước đó nó
-  không ghi gì nên HUD im lặng ở đúng cấu hình đã dùng cho mIoU fixture. Đo trên máy này
-  (`data/bang_cau_hinh_2026-11-17_every1_metrics.json`, `git_dirty_code false`, 3 lần × 60 frame):
-  `image_size 192` / `vos_every 1` → **9,5 ± 0,5 FPS phát = nhịp mask** (không có LK lấp),
-  `vos_ms 82,1 ± 3,33`, `mask_age_p95 105,53 ± 5,4` (`age_n 60`). **`FPS phát` của dòng này KHÔNG so
-  được với 29,8 của `vos_every ≥ 2`** (hai đường khác nhau). Tuổi ≈ `vos_ms + pre_ms + post_ms` vì
-  age = 0 — `pre_ms` (~12 ms) nằm NGOÀI `vos_ms` nhưng TRONG tuổi. Đường đơn luồng **không** có
+  (`_after_vos`) gọi `_note_mask_age(age = 0, vos_ms, pre_ms, queue_ms = 0, post_ms)` và ghi cả
+  `pre_ms`/`post_ms` vào `status.json`; trước đó nó không ghi gì nên HUD im lặng ở đúng cấu hình đã
+  dùng cho mIoU fixture. Đo trên máy này (`data/bang_cau_hinh_2026-11-17_every1_metrics.json`,
+  `git_rev 3cc0248`, `git_dirty_code false`, `image_size 192`, 3 lần × 60 frame, clip `binh1.mp4`, ô
+  chai `300,275,150,410`): **9,33 ± 0,55 FPS phát = nhịp mask** (không có LK lấp), `vos_ms 87,33 ± 4,52`,
+  `pre_ms 10,96 ± 1,85`, `mask_age_p95 109,9 ± 9,32` (`age_n 60`). **`FPS phát` của dòng này KHÔNG so
+  được với 29,8 của `vos_every ≥ 2`** (hai đường khác nhau), và tuổi mask ≈ `pre_ms + vos_ms + post_ms`
+  **không phải** chỉ `vos_ms` — đúng lý do phải tách `mask_age_total_ms`. Đường đơn luồng **không** có
   `drift_iou` (không nội suy LK ⇒ không có cặp VOS ↔ nội suy); đừng "sửa" bằng cách gọi
-  `_measure_drift` trong `_after_vos`.
+  `_measure_drift` trong `_after_vos`. Mỗi frame PHÁT (kể cả frame `engine.start()`) ghi **một** mẫu
+  ⇒ bảng 15-11 ghi `age_n 59` (60 frame) còn lần chạy lại ra `60` — chênh 1 mẫu là do mẫu của frame
+  `start()`, không phải bug.
 - **Hai định nghĩa tuổi mask, đừng trộn:** `mask_age_cu_ms` = age + `vos_ms` (**định nghĩa cũ**, số
   trước 14-11 dùng cái này: p95 271–273 ms), `mask_age_total_ms` = queue + pre + vos + post + age
   (**tuổi dữ liệu thật**, từ 14-11). p95 tính **theo từng mẫu** chứ không cộng `vos_ms` hiện tại cho

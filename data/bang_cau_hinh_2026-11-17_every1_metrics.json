@@ -1,12 +1,12 @@
 {
-  "git_rev": "1f0c89a337999da528ba72d6aefc8584a061adff",
+  "git_rev": "3cc0248efaeb02136b811fb96e51f098e815ba51",
   "git_dirty": false,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-17T13:13:31",
+    "do_luc": "2026-11-17T15:24:04",
     "lenh": "scripts/bang_cau_hinh.py --sizes 192 --every 1 --lan 3 --frames 60 --bbox 300,275,150,410 --clip data/binh1.mp4 --out data/bang_cau_hinh_2026-11-17_every1_metrics.json",
-    "git_rev": "1f0c89a337999da528ba72d6aefc8584a061adff",
+    "git_rev": "3cc0248efaeb02136b811fb96e51f098e815ba51",
     "git_dirty": false,
     "git_dirty_code": false,
     "git_loi": null,
@@ -31,31 +31,31 @@
       "loi": [],
       "measured_fps": {
         "n": 3,
-        "mean": 9.5,
-        "std": 0.5,
-        "min": 9.0,
-        "max": 10.0
+        "mean": 9.33,
+        "std": 0.55,
+        "min": 8.8,
+        "max": 9.9
       },
       "vos_fps": {
         "n": 3,
-        "mean": 9.5,
-        "std": 0.5,
-        "min": 9.0,
-        "max": 10.0
+        "mean": 9.33,
+        "std": 0.55,
+        "min": 8.8,
+        "max": 9.9
       },
       "vos_ms": {
         "n": 3,
-        "mean": 82.1,
-        "std": 3.33,
-        "min": 78.3,
-        "max": 84.5
+        "mean": 87.33,
+        "std": 4.52,
+        "min": 82.6,
+        "max": 91.6
       },
       "pre_ms": {
-        "n": 0,
-        "mean": null,
-        "std": null,
-        "min": null,
-        "max": null
+        "n": 3,
+        "mean": 10.96,
+        "std": 1.85,
+        "min": 9.66,
+        "max": 13.07
       },
       "cycle_ms": {
         "n": 0,
@@ -66,17 +66,17 @@
       },
       "mask_age_total_ms": {
         "n": 3,
-        "mean": 92.47,
-        "std": 3.33,
-        "min": 88.9,
-        "max": 95.5
+        "mean": 98.93,
+        "std": 5.35,
+        "min": 92.8,
+        "max": 102.6
       },
       "mask_age_p95": {
         "n": 3,
-        "mean": 105.53,
-        "std": 5.4,
-        "min": 100.0,
-        "max": 110.8
+        "mean": 109.9,
+        "std": 9.32,
+        "min": 101.3,
+        "max": 119.8
       },
       "age_n": {
         "n": 3,
@@ -101,7 +101,7 @@
         "display_fps": 30.0,
         "mask_smoothing": 1.0,
         "device": "cpu",
-        "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Pha chưa đo được tính 0; chỉ đo ở đường LK (vos_every > 1) ⇒ vos_every=1 thì age_n=0",
+        "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)",
         "image_size_hieu_luc_da_thay": [
           192
         ]
