@@ -194,7 +194,7 @@ def draw(traj: dict, background=None, title: str = ""):
         "drift_iou_p05": phan_vi(drift[np.isfinite(drift)], digits=3),
         # Ngưỡng công bố đi CÙNG con số (ticket #23): người đọc `.json` sau này thấy `None` phải biết
         # đó là "n < 30" chứ không phải "p05 = 0" hay "quên đo".
-        "nguong_p05": MIN_SAMPLES,
+        "drift_iou_p05_nguong": MIN_SAMPLES,
         "drift_n": int(np.isfinite(drift).sum()),
     }
     fig.tight_layout()
