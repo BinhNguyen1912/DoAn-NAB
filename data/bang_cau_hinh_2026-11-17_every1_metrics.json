@@ -1,0 +1,148 @@
+{
+  "git_rev": "1f0c89a337999da528ba72d6aefc8584a061adff",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-17T13:13:31",
+    "lenh": "scripts/bang_cau_hinh.py --sizes 192 --every 1 --lan 3 --frames 60 --bbox 300,275,150,410 --clip data/binh1.mp4 --out data/bang_cau_hinh_2026-11-17_every1_metrics.json",
+    "git_rev": "1f0c89a337999da528ba72d6aefc8584a061adff",
+    "git_dirty": false,
+    "git_dirty_code": false,
+    "git_loi": null,
+    "clip": "data/binh1.mp4",
+    "bbox_xywh": [
+      300,
+      275,
+      150,
+      410
+    ],
+    "so_lan": 3,
+    "frames_moi_lan": 60,
+    "device": "cpu",
+    "moi_truong": "cpu, checkpoint theo configs/default.yaml, clip binh1.mp4"
+  },
+  "cau_hinh": {
+    "192_1": {
+      "image_size": 192,
+      "vos_every": 1,
+      "so_lan": 3,
+      "so_lan_loi": 0,
+      "loi": [],
+      "measured_fps": {
+        "n": 3,
+        "mean": 9.5,
+        "std": 0.5,
+        "min": 9.0,
+        "max": 10.0
+      },
+      "vos_fps": {
+        "n": 3,
+        "mean": 9.5,
+        "std": 0.5,
+        "min": 9.0,
+        "max": 10.0
+      },
+      "vos_ms": {
+        "n": 3,
+        "mean": 82.1,
+        "std": 3.33,
+        "min": 78.3,
+        "max": 84.5
+      },
+      "pre_ms": {
+        "n": 0,
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null
+      },
+      "cycle_ms": {
+        "n": 0,
+        "mean": null,
+        "std": null,
+        "min": null,
+        "max": null
+      },
+      "mask_age_total_ms": {
+        "n": 3,
+        "mean": 92.47,
+        "std": 3.33,
+        "min": 88.9,
+        "max": 95.5
+      },
+      "mask_age_p95": {
+        "n": 3,
+        "mean": 105.53,
+        "std": 5.4,
+        "min": 100.0,
+        "max": 110.8
+      },
+      "age_n": {
+        "n": 3,
+        "mean": 60.0,
+        "std": 0.0,
+        "min": 60.0,
+        "max": 60.0
+      },
+      "frames": {
+        "n": 3,
+        "mean": 60.0,
+        "std": 0.0,
+        "min": 60.0,
+        "max": 60.0
+      },
+      "cau_hinh": {
+        "source": "/mnt/d/DOAN-NAB/data/binh1.mp4",
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every": 1,
+        "display_fps": 30.0,
+        "mask_smoothing": 1.0,
+        "device": "cpu",
+        "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Pha chưa đo được tính 0; chỉ đo ở đường LK (vos_every > 1) ⇒ vos_every=1 thì age_n=0",
+        "image_size_hieu_luc_da_thay": [
+          192
+        ]
+      }
+    }
+  },
+  "cot": [
+    {
+      "khoa": "measured_fps",
+      "nhan": "FPS phát",
+      "cam_trich_thanh": "nhịp VẼ frame (LK lấp giữa), KHÔNG phải nhịp model"
+    },
+    {
+      "khoa": "vos_fps",
+      "nhan": "Nhịp mask",
+      "cam_trich_thanh": "số lần model chạy/giây — CẤM gọi là FPS của video"
+    },
+    {
+      "khoa": "vos_ms",
+      "nhan": "vos_ms",
+      "cam_trich_thanh": "chỉ phần model; chưa cộng `pre_ms` (~12 ms) khi nói 'một frame tốn bao lâu'"
+    },
+    {
+      "khoa": "pre_ms",
+      "nhan": "pre_ms",
+      "cam_trich_thanh": "tiền xử lý mỗi frame (resize + tensor), KHÔNG cộng vào `vos_ms`"
+    },
+    {
+      "khoa": "cycle_ms",
+      "nhan": "chu kỳ",
+      "cam_trich_thanh": "1/vos_fps thực — các pha là mẫu của lần VOS gần nhất, đừng cộng 4 pha"
+    },
+    {
+      "khoa": "mask_age_total_ms",
+      "nhan": "tuổi mask (mẫu cuối)",
+      "cam_trich_thanh": "một mẫu, không phải phân vị"
+    },
+    {
+      "khoa": "mask_age_p95",
+      "nhan": "tuổi mask p95",
+      "cam_trich_thanh": "p95 trên cửa sổ `age_n`; n=0 ⇒ chưa đo (None)"
+    }
+  ]
+}
