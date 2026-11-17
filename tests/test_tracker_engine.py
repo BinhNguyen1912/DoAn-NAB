@@ -58,9 +58,10 @@ class TestTrackerEngineStreaming:
         Chạy LẠI MỘT lần khi lần đầu dưới ngưỡng (ticket #22): test này từng ĐỎ trong `./run testall`
         ngày 10-11 mà xanh khi chạy riêng, và `AGENTS.md` §6 ghi **SAM 2 không tất định**. Đo trên máy
         này (`scripts/measure_flaky_iou.py`, 5 lần trên cây sạch, 17-11): IoU ở các frame mẫu
-        **0,9506–0,9750** (f5: std 0,0134) và **giá trị nhỏ nhất của CỔNG test** (min trên
-        {0, 2, 5, 9} — frame 0 trượt nhiều hơn ba frame mẫu) là **0,928**, cách ngưỡng 0,5 khoảng
-        **32 σ** ⇒ ngưỡng 0,5 KHÔNG bị nới. Phân bố trong cùng một tiến trình gần như tất định
+        **0,9506–0,9750**, và **cổng mà test này chấm** (min trên {0, 2, 5, 9}) là **0,9506** ⇒ cách
+        ngưỡng 0,5 khoảng **0,45** (gấp ~33 lần độ lệch lớn nhất đo được của một frame, n = 5) ⇒ ngưỡng
+        0,5 KHÔNG bị nới. Frame tệ nhất của CẢ 10 frame là 0,928 — nhưng đó là **frame 4, ngoài cổng**,
+        đừng trích nó làm "cổng test" (P1 review 17-11). Phân bố trong cùng một tiến trình gần như tất định
         (f2/f9 `std = 0,0000`) ⇒ **chưa** đo được tính không tất định giữa các phiên; một lần đỏ là
         "chưa tái hiện được", không phải "đã chứng minh là ngoại lệ ngẫu nhiên".
 
@@ -82,8 +83,9 @@ class TestTrackerEngineStreaming:
             iou_lan_2 = {i: float(iou(results[i - 1].bbox, fx.bboxes[i])) for i in (2, 5, 9)}
             iou_lan_2[0] = float(iou(res0.bbox, fx.bboxes[0]))
             assert min(iou_lan_2.values()) >= 0.5, (
-                f"Hai lần chạy đều dưới ngưỡng 0,5 (SAM 2 không tất định, nhưng hai lần cùng hỏng là "
-                f"tín hiệu thật): lần 1 {iou_lan_1}, lần 2 {iou_lan_2}")
+                f"Hai lần chạy liên tiếp đều dưới ngưỡng 0,5 ⇒ nghi hồi quy THẬT (không loại trừ được "
+                f"nhiễu giữa phiên: lần đo 17-11 chỉ chạy trong MỘT tiến trình, chưa đo tính tất định "
+                f"giữa các phiên): lần 1 {iou_lan_1}, lần 2 {iou_lan_2}")
 
         # Khoảng trống giữa bbox trả về và đáp án phải nhỏ (nhớ theo index: frames[i-1] trong results)
         for i in (2, 5, 9):

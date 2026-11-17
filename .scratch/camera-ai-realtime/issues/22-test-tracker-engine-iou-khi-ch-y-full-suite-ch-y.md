@@ -40,16 +40,18 @@ Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ 
   `pytest tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau
   tests/test_live_tracking.py::TestVeSinhWorkerCu::test_reap_khong_cho_zombie_5_giay`, ~50 s/lần).
 - Phân bố IoU của chính test bị đỏ (5 lần chạy trên cây sạch, `scripts/measure_flaky_iou.py`,
-  `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 7f7e806`, `git_dirty_code false`):
+  `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 472bc6e`, `git_dirty_code false`):
   f2 **0,9512 ± 0,0000**, f5 **0,9652 ± 0,0134**, f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**.
   **Cổng mà test dùng** là min trên {0, 2, 5, 9} (frame 0 trượt nhiều hơn ba frame mẫu):
-  `tat_ca.min_iou_moi_lan = 0,928`, **0/5 lần chạy** dưới ngưỡng ⇒ cách ngưỡng 0,5 khoảng **32 σ**
-  (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5 đúng, cấm hạ**;
+  `tat_ca.cong_test.min = 0,9506` (min trên **đúng** {0, 2, 5, 9}), **0/20 lượt-frame và 0/5 lần chạy**
+  dưới ngưỡng; frame tệ nhất của cả 10 frame là 0,928 (**frame 4, NGOÀI cổng** — đừng gọi là cổng test)
+  ⇒ **ngưỡng 0,5 đúng, cấm hạ**;
   **Lần đỏ 10-11 không tái hiện được hôm nay.** Trong CÙNG một tiến trình, phân bố gần như tất định
   (f2/f9 `std = 0,0000`, f5 chỉ có 2 giá trị rời) ⇒ 10 lần này **không** đo được tính không tất định
   **giữa các phiên**; chỉ được viết "chưa tái hiện được", không được quy cho "ngoại lệ ngẫu nhiên của
   SAM 2" (P2 review 17-11). Số `git_rev`/`std` phải đọc lại từ artifact sau khi sinh lại — artifact cũ
-  khai `git_rev` tại **thời điểm kết thúc** đo.
+  khai `git_rev` tại **thời điểm kết thúc** đo. *(Đợt 4: `git_rev 472bc6e`, cổng test
+  `tat_ca.cong_test`; bản ghi 0,928/32 σ trước đó lấy min trên 10 frame nên SAI — xem P1 review.)*
 
 **Cách xử lý (tiêu chí 3):** `test_process_theo_frames_iou_dat_o_cac_frame_mau` **chạy lại MỘT lần**
 khi lần đầu có frame dưới ngưỡng (`engine.reset()` rồi chạy lại đúng kịch bản). Cả hai lần đều dưới

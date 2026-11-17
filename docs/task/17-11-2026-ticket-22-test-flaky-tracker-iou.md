@@ -20,6 +20,8 @@
    - Log thô không commit được (`.gitignore` chặn `data/*`); tái lập bằng chính 2 lệnh trên.
 2. **Đo phân bố IoU** bằng script mới `scripts/measure_flaky_iou.py` (chạy đúng kịch bản của test,
    dùng chính hàm `iou` của test, engine nạp 1 lần): 5 lần trên cây sạch
+   ⚠️ **Số ở mục 8–9 dưới đây là bản ĐẦU** (min trên 10 frame, gọi nhầm là "cổng test"); số dùng là
+   mục **"Bổ sung (đợt 3)"** ở cuối file (cổng `tat_ca.cong_test`, `git_rev 472bc6e`).
    (`data/flaky_iou_2026-11-17_metrics.json`, `git_rev 472bc6e`, `git_dirty_code false`) ⇒
    f2 **0,9512 ± 0,0000** · f5 **0,9652 ± 0,0134** · f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**,
    giá trị nhỏ nhất cách ngưỡng ~**34 σ**.
@@ -90,3 +92,30 @@ Sinh lại artifact trên cây sạch (`--lan 5`): `git_rev 472bc6e`, `git_dirty
 cổng test (min trên {0,2,5,9}) = **0,928**; **0/5 lần** dưới ngưỡng 0,5.
 
 `./run lint` xanh · `./run test` **1335 passed**, 5 deselected.
+
+## Bổ sung (đợt 4) — P1/P2/P3 của review vòng 2 (PR #34)
+
+Review vòng 2 bắt đúng **một P1**: `min_iou` lấy min trên **cả 10 frame** rồi được công bố như "cổng
+test", trong khi test chấm **{0, 2, 5, 9}**; `0,928` hoá ra là **frame 4 (ngoài cổng)**. Đã sửa:
+
+- `mot_lan()` tách **`min_iou_cong_test`** (min trên {0,2,5,9} = cổng thật) khỏi
+  **`min_iou_moi_frame`** (min trên 10 frame, chỉ để tham khảo); `duoi_nguong` mỗi lần tính theo cổng.
+- `tom_tat()` → `tat_ca.cong_test` với **hai mẫu số riêng**: `so_luot_frame_duoi_nguong/so_luot_frame`
+  (lượt-frame) và `so_lan_chay_duoi_nguong/n` (lần chạy) — bản trước cộng 4 khoá rồi chia `lan*3` ⇒ trộn
+  hai mẫu số vào một.
+- P2 `cau_hinh.checkpoint`: `load_config()` **không** đọc `configs/default.yaml` (trả `DEFAULTS`) và
+  engine dựng từ `DEFAULT_CKPT` ⇒ nay ghi `checkpoint` = `DEFAULT_CKPT` + `checkpoint_nguon` nói rõ
+  đường đi, `checkpoint_loi` ghi lý do khi không lấy được (bắt **hẹp**, không nuốt lỗi thành `None`).
+- P2 `cau_hinh.device`: `TrackerEngine` **không có** attribute `device` ⇒ trước đây luôn `null`; nay
+  đọc từ `engine._predictor.device` + `str()` (vì `torch.device` không serialize được). `None` vẫn
+  nghĩa "chưa kiểm được", **không** phải "cpu".
+- P3 bỏ khung "σ" (σ là stdev của 5 mẫu ở riêng f5, so với min trên nhiều frame/lần là hai phân bố
+  khác nhau) → viết "cách ngưỡng 0,5 khoảng 0,45 (gấp ~33 lần độ lệch lớn nhất đo được của một frame)".
+- P3 message assert thôi khẳng định "SAM 2 không tất định" như sự thật (lần đo này chạy trong **một**
+  tiến trình) → "nghi hồi quy thật".
+- **Test mới** `tests/test_measure_flaky_iou.py` (6 test, engine giả, làn nhanh): assert `CONG_TEST ==
+  {0,2,5,9}`, `min_iou_cong_test` = min trên đúng 4 frame (engine lệch ở frame 4 ⇒ min 10 frame thấp mà
+  cổng vẫn 1,0), `duoi_nguong` theo cổng, hai mẫu số tách nhau, `score = NaN` ⇒ `score_min is None`,
+  `--lan 2` bị từ chối. **Test này sẽ đỏ nếu ai đưa P1 trở lại.**
+
+`./run lint` xanh · `./run test` gồm 6 test mới.
