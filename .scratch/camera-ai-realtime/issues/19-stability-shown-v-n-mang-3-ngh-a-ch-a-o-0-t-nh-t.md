@@ -1,5 +1,7 @@
 # 19: `stability_shown` vẫn mang 3 nghĩa (chưa đo / màn hình trống / đo được 0)
 
+**Status:** resolved
+
 **What to build:** `src/live_tracking.py`: `stability_shown: float = 0.0` là bản sao đúng lỗi mà
 ticket 18 vừa sửa cho `stability`:
 
@@ -28,3 +30,7 @@ Test: cửa sổ rỗng ⇒ `None`/0; mất dấu khi đã có mẫu ⇒ `0,0`/n
 - `scripts/measure_live_relay.py::_worker_telemetry` giữ thêm `stability_shown(_n)` (không qua API).
 - Test: 3 trong `TestStabilityShownCoEncodingChuaDo` + 2 trong `TestWorkerStatus`; allowlist
   `status.json` đã thêm `stability_shown_n`. Đã kiểm "có răng": trả `0.0` vô điều kiện ⇒ đỏ.
+
+## Answer
+
+Đã xong: `stability_shown` phân biệt 3 trạng thái bằng `stability_shown_n` (0 mẫu ⇒ None; có mẫu rồi mất dấu ⇒ 0.0). 4/4 tiêu chí, 5 test mới, allowlist cập nhật, `./run test` + `./run testall` xanh.
