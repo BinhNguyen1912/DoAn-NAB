@@ -4,6 +4,8 @@ Nguyên tắc: chỉ test hành vi công khai của engine. Đáp án quỹ đ�
 (synthetic square — nguồn độc lập), ngưỡng IoU quy định theo tiêu chí của ticket.
 Chạy chậm (build model + propagation thật) — đánh dấu `slow`.
 """
+import warnings
+
 import numpy as np
 import pytest
 
@@ -61,12 +63,18 @@ class TestTrackerEngineStreaming:
         là ngoại lệ cần chạy lại, không phải tín hiệu "mask trôi".
 
         Điều kiện để test còn "có răng": nếu CẢ HAI lần đều dưới ngưỡng thì vẫn ĐỎ, và message nêu
-        IoU của cả hai lần — hồi quy thật (mask trôi) không thể lọt qua đây.
+        IoU của cả hai lần ⇒ hồi quy **ổn định** (mask trôi ở mọi lần) vẫn bị bắt. KHÔNG bảo đảm bắt
+        hồi quy **gián đoạn**: retry 1 lần cho một hồi quy có xác suất đỏ p mỗi lần lọt với xác suất
+        `1 - p²` (p = 0,5 ⇒ 75 % xanh) — vì thế lần 1 dưới ngưỡng được ghi lại bằng `warnings.warn`
+        để còn dấu vết trong output của pytest (P2 review 17-11).
         """
         res0, results, fx = self._chay_mot_lan(samurai_engine)
         iou_lan_1 = {i: float(iou(results[i - 1].bbox, fx.bboxes[i])) for i in (2, 5, 9)}
         iou_lan_1[0] = float(iou(res0.bbox, fx.bboxes[0]))
         if min(iou_lan_1.values()) < 0.5:
+            # Vẫn xanh nếu lần 2 đạt, nhưng KHÔNG im lặng: warning giữ lại giá trị lần 1 để một hồi
+            # quy gián đoạn còn dấu vết trong log `./run testall`.
+            warnings.warn(f"lần 1 dưới ngưỡng 0,5: {iou_lan_1} — chạy lại một lần", stacklevel=2)
             samurai_engine.reset()
             res0, results, fx = self._chay_mot_lan(samurai_engine)
             iou_lan_2 = {i: float(iou(results[i - 1].bbox, fx.bboxes[i])) for i in (2, 5, 9)}

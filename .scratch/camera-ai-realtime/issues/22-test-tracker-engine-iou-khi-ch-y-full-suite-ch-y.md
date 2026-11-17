@@ -44,13 +44,19 @@ Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ 
   f2 **0,9512 ± 0,0000**, f5 **0,9652 ± 0,0134**, f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**.
   Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ** (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5
   đúng, cấm hạ**;
-  lần đỏ 10-11 không phải "mask trôi" mà là ngoại lệ của SAM 2 (không tất định, AGENTS §6).
+  **Lần đỏ 10-11 không tái hiện được hôm nay.** Trong CÙNG một tiến trình, phân bố gần như tất định
+  (f2/f9 `std = 0,0000`, f5 chỉ có 2 giá trị rời) ⇒ 10 lần này **không** đo được tính không tất định
+  **giữa các phiên**; chỉ được viết "chưa tái hiện được", không được quy cho "ngoại lệ ngẫu nhiên của
+  SAM 2" (P2 review 17-11). Số `git_rev`/`std` phải đọc lại từ artifact sau khi sinh lại — artifact cũ
+  khai `git_rev` tại **thời điểm kết thúc** đo.
 
 **Cách xử lý (tiêu chí 3):** `test_process_theo_frames_iou_dat_o_cac_frame_mau` **chạy lại MỘT lần**
 khi lần đầu có frame dưới ngưỡng (`engine.reset()` rồi chạy lại đúng kịch bản). Cả hai lần đều dưới
-ngưỡng ⇒ **vẫn ĐỎ**, và message in IoU của **cả hai lần** để hồi quy thật (mask trôi) không lọt qua
-"retry che lỗi". Không đánh dấu `flaky`/`skip`, không hạ ngưỡng.
+ngưỡng ⇒ **vẫn ĐỎ**, và message in IoU của **cả hai lần** để hồi quy **ổn định** (mask trôi ở mọi lần)
+không lọt qua "retry che lỗi"; lần 1 dưới ngưỡng còn được ghi bằng `warnings.warn` nên hồi quy **gián
+đoạn** vẫn để lại dấu vết. Không đánh dấu `flaky`/`skip`, không hạ ngưỡng. Không hứa "không thể lọt":
+retry 1 lần cho hồi quy có xác suất đỏ p mỗi lần lọt với xác suất `1 − p²`.
 
-**Còn nợ:** `test_reap_khong_cho_zombie_5_giay` đo **thời gian tường** (`elapsed < 3 s`) — đúng gợi ý
+**Còn nợ:** `test_reap_khong_cho_zombie_5_giay` (đã tách thành **ticket #34** để không trôi) đo **thời gian tường** (`elapsed < 3 s`) — đúng gợi ý
 của ticket là nên đổi sang assert `poll() is not None` + ngưỡng rộng theo số CPU, nhưng test đó
 xanh 10/10 lần đo nên **không sửa** ở đây (sửa khi tái hiện được, tránh "sửa mù"); đã ghi vào log.
