@@ -419,14 +419,19 @@ def main(argv=None) -> int:
     if args.expect_bbox is not None:      # `is not None`: cờ rỗng vẫn phải đi qua cổng, không im lặng bỏ
         ket_qua_hop = _canh_bao_bbox(traj, args.expect_bbox, args.expect_bbox_dang, ghi_nhan)
     meta = provenance(args.csv, args.clip, out, args.title, bbox_dau)
+    # Số của ảnh vào CHÍNH file provenance: trước đây `drift_iou_p05`/`drift_n` chỉ in ra stdout ⇒
+    # `.json` đi kèm ảnh không nói được p05 có được công bố hay không (ticket #23: `None` phải đọc
+    # được là "n < 30", không phải "p05 = 0").
+    meta["thong_ke"] = thong_ke
     if ghi_nhan:
         meta.update(ghi_nhan)
     meta_path.parent.mkdir(parents=True, exist_ok=True)
     meta_path.write_text(json.dumps(meta, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"[traj] provenance: {meta_path} (bbox dòng đầu {bbox_dau}, git_rev {meta['git_rev']})")
     print(f"[traj] {thong_ke}")
-    if thong_ke["drift_n"] < 20:
-        print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None (chưa đủ mẫu)")
+    if thong_ke["drift_n"] < MIN_SAMPLES:
+        print(f"[traj] CẢNH BÁO: chỉ {thong_ke['drift_n']} mẫu drift ⇒ p05 = None"
+              f" (chưa đủ {MIN_SAMPLES} mẫu để công bố phân vị)")
     if ket_qua_hop is not None and ket_qua_hop != "khop":
         # Ảnh vẫn được ghi (đã vẽ xong) — kể cả provenance — nhưng mã thoát 1 và JSON ghi
         # `ket_qua_hop`: "ô bao lệch"/"không so được" KHÔNG được dùng làm bằng chứng, mà exit 0 thì

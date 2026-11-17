@@ -284,6 +284,11 @@ class TestProvenance:
         payload = _json.loads(meta.read_text(encoding="utf-8"))
         assert payload["bbox_dong_dau_x1y1x2y2"] == [288, 287, 431, 734]
         assert payload["anh"].endswith("traj.png")
+        # Ticket #23: số của ẢNH phải nằm trong file provenance — `drift_iou_p05 = None` chỉ đọc được
+        # là "n < 30" khi `drift_n`/`nguong_p05` ở ngay cạnh, không phải đoán.
+        thong_ke = payload["thong_ke"]
+        assert thong_ke["nguong_p05"] == tm.MIN_SAMPLES
+        assert thong_ke["drift_n"] == 2 and thong_ke["drift_iou_p05"] is None
 
 
 class TestDirtyCode:
