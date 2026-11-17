@@ -150,3 +150,27 @@ def test_manifest_ghi_dieu_kien_sinh_mask(video_source, tmp_path):
     assert "image_size" in man and man["vos_every"] == 1
     assert man["bbox_xywh"] == [2, 2, 12, 12]
     assert "THÔ" in man["ghi_chu"]
+
+
+def test_record_vos_khong_tu_gan_dump_ms(video_source, tmp_path):
+    """P3 review độc lập 17-11: `dump_ms` phải gán CÙNG lock với `post_ms` ở người gọi.
+
+    Nếu `_record_vos` tự gán `_stats.dump_ms` rồi người gọi mới gán `post_ms`, một lần VOS chen giữa
+    sẽ khiến `status.json` ghép `post_ms` của lần N với `dump_ms` của lần N+1 (hai pha của hai lần
+    chạy khác nhau, đúng thứ snapshot `_vos_state` sinh ra để chặn).
+    """
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+
+    result = session._engine.start(np.full((40, 60, 3), 90, np.uint8), (2, 2, 14, 14))
+    dump_ms, da_ghi = session._record_vos(result, frame_video=0)
+
+    assert da_ghi is True and dump_ms >= 0.0
+    assert session._stats.dump_ms is None, "`_record_vos` không được tự gán `_stats.dump_ms`"
+
+    session._after_vos(np.full((40, 60, 3), 90, np.uint8), result)
+    assert session._stats.dump_ms is not None, "người gọi gán `dump_ms` cùng lock với `post_ms`"
