@@ -16,13 +16,27 @@ Việc:
 
 Acceptance:
 - [ ] `api.ts` cho phép `null` + có `_n` cho p95 và mean
-- [ ] `SummaryTable` in `— (0 mẫu)` / `119 ms (n=600)` — có vitest canh cả hai
-- [ ] `./run webtest` + `npm run build` + `./run e2e` xanh
+- [x] `SummaryTable` in `— (0 mẫu)` / `119 ms (n=600)` — có vitest canh cả hai
+- [x] `./run webtest` + `npm run build` + `./run e2e` xanh
 
 **Blocked by:** None (can start immediately)
 
-**Status:** ready-for-agent
+**Status:** resolved
 
-- [ ] `web/src/api.ts`: `p95_latency_ms?: number | null` + `p95_latency_ms_n?: number` + `mean_latency_ms_n?: number`
-- [ ] `SummaryTable` in `— (0 mẫu)` khi `p95_latency_ms === null`/thiếu, và `119 ms (n=600)` khi có số — có vitest canh cả hai nhánh
-- [ ] `./run webtest` + `npm run build` + `./run e2e` xanh (thay đổi UI nên e2e là bắt buộc theo AGENTS §5)
+- [x] `web/src/api.ts`: `p95_latency_ms?: number | null` + `p95_latency_ms_n?: number` + `mean_latency_ms_n?: number`
+- [x] `SummaryTable` in `— (0 mẫu)` khi `p95_latency_ms === null`/thiếu, và `119 ms (n=600)` khi có số — có vitest canh cả hai nhánh
+- [x] `./run webtest` + `npm run build` + `./run e2e` xanh (thay đổi UI nên e2e là bắt buộc theo AGENTS §5)
+
+## Answer
+
+Xong (PR #33). Hàm thuần `web/src/summary.ts` (`soDo`/`soNguyen`/`summaryRows`) + `api.ts` cho `null` +
+`_n` + `SummaryTable` gọi hàm thuần. `p95`/`mean` hiện `119 ms (n=600)`; `n = 0` ⇒ `— (0 mẫu)` (kể cả
+`mean = 0,0` — không in `0 ms`); `n = null` ⇒ `(n=?)`; `effective_fps: null` không còn ném TypeError.
+
+Kiểm: `./run webtest` **66 passed** · `npm run build` xanh · **`./run e2e` PASS** (2 check mới trên DOM
+thật: `mean 172 ms (n=5)`, `p95 237 ms (n=5)`) · `./run lint` + `./run test` **1339 passed**.
+
+Review độc lập vòng 1: **0 P0/P1**, 3 P2 + 4 P3 → **cả 3 P2 đã sửa** (`n = 0` quyết định trước `value`;
+2 check e2e canh dây nối component → hàm thuần; `soNguyen` cho 5 dòng còn lại), P3 `n = null` → `(n=?)`.
+Log: `docs/task/17-11-2026-ticket-33-web-in-co-mau-p95.md`. Còn treo (P3, ngoài phạm vi): `./run summary`
+vẫn in `mean=0 ms` cho ca 0 mẫu.

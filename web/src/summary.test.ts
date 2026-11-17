@@ -5,16 +5,22 @@
  */
 import { describe, expect, it } from 'vitest'
 
-import { soDo, summaryRows } from './summary'
+import { soDo, soNguyen, summaryRows } from './summary'
 
 describe('soDo', () => {
   it('có số + có n ⇒ in kèm n', () => {
     expect(soDo(119.4, 600, 0, ' ms')).toBe('119 ms (n=600)')
   })
 
-  it('null + n = 0 ⇒ nói rõ CHƯA ĐO, không in 0', () => {
+  it('n = 0 quyết định TRƯỚC value: `0` + 0 mẫu vẫn là CHƯA ĐO', () => {
     expect(soDo(null, 0, 0, ' ms')).toBe('— (0 mẫu)')
     expect(soDo(undefined, 0, 0, ' ms')).toBe('— (0 mẫu)')
+    // `mean_latency_ms = 0,0` + `n = 0` là "phiên rỗng"; in `0 ms` là nói "xử lý tức thì" (bẫy §6).
+    expect(soDo(0, 0, 0, ' ms')).toBe('— (0 mẫu)')
+  })
+
+  it('n = null (backend khai chưa biết cỡ mẫu) ⇒ giữ số và đánh dấu `?`', () => {
+    expect(soDo(119.4, null, 0, ' ms')).toBe('119 ms (n=?)')
   })
 
   it('0,0 là số ĐO ĐƯỢC (n > 0) — không được biến thành "chưa đo"', () => {
@@ -43,7 +49,8 @@ describe('summaryRows', () => {
     })
     const o = Object.fromEntries(rows)
     expect(o['Độ trễ p95']).toBe('— (0 mẫu)')
-    expect(o['Độ trễ trung bình']).toBe('0 ms (n=0)')
+    // CÙNG một trạng thái "0 mẫu" phải in CÙNG một câu ở cả hai dòng (P2 review 17-11).
+    expect(o['Độ trễ trung bình']).toBe('— (0 mẫu)')
     expect(o['Số frame đã xử lý']).toBe('0')
   })
 
@@ -78,5 +85,39 @@ describe('summaryRows', () => {
       expect(value).not.toMatch(/NaN|undefined/)
     }
     expect(o['Độ trễ p95']).toBe('—')
+  })
+})
+
+describe('soNguyen', () => {
+  it('null/undefined/NaN ⇒ "—", không in chữ "null"', () => {
+    expect(soNguyen(null)).toBe('—')
+    expect(soNguyen(undefined)).toBe('—')
+    expect(soNguyen(Number.NaN)).toBe('—')
+    expect(soNguyen(0)).toBe('0')
+  })
+})
+
+describe('summaryRows null-safe (P2 review 17-11)', () => {
+  it('API trả `null` cho các dòng khác p95 ⇒ "—", KHÔNG ném TypeError', () => {
+    // `effective_fps: null` từng làm `null.toFixed(2)` ném trong render ⇒ trắng card kết quả (repo
+    // không có ErrorBoundary). `Summary` của API là `Optional[dict]` nên không schema nào chặn `null`.
+    const rows = summaryRows({
+      total_frames: null,
+      effective_fps: null,
+      lost_count: null,
+      reacquired_count: null,
+      lost_ratio: Number.NaN,
+    } as never)
+    const o = Object.fromEntries(rows)
+    for (const [nhan, value] of Object.entries(o)) {
+      expect(value, nhan).not.toMatch(/NaN|undefined|null/)
+    }
+    expect(o['FPS hiệu dụng']).toBe('—')
+    expect(o['Tỷ lệ mất dấu']).toBe('—')
+  })
+
+  it('FPS bình thường vẫn 2 chữ số thập phân, không kèm n', () => {
+    const o = Object.fromEntries(summaryRows({ effective_fps: 29.832 }))
+    expect(o['FPS hiệu dụng']).toBe('29.83')
   })
 })

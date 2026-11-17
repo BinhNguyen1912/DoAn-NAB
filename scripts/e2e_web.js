@@ -173,6 +173,13 @@ async function waitJobState(page, wanted, timeout = 240000) {
   const meanRow = rows.find((row) => row.includes('Độ trễ trung bình')) || ''
   const meanValue = Number((meanRow.match(/([\d.]+)\s*ms/) || [])[1])
   check('độ trễ trung bình là số dương', meanValue > 0, meanRow.replace(/\s+/g, ' ').trim())
+  // Cỡ mẫu phải hiện trên DOM: `summary.test.ts` canh hàm thuần, nhưng nó KHÔNG canh dây nối
+  // component → `summaryRows` (revert component về in số trực tiếp thì vitest vẫn xanh). Repo không có
+  // jsdom ⇒ e2e là nơi DUY NHẤT bắt được hồi quy đó (P2 review độc lập 17-11).
+  check('p95 in kèm cỡ mẫu (n=…)', /\(n=\d+\)/.test(meanRow), meanRow.replace(/\s+/g, ' ').trim())
+  const p95Row = rows.find((row) => row.includes('Độ trễ p95')) || ''
+  check('p95 có cỡ mẫu hoặc nói "chưa đo"', /\(n=\d+\)|0 mẫu/.test(p95Row),
+    p95Row.replace(/\s+/g, ' ').trim())
   const fpsRow = rows.find((row) => row.includes('FPS hiệu dụng')) || ''
   check('có dòng FPS hiệu dụng', /\d/.test(fpsRow), fpsRow.replace(/\s+/g, ' ').trim())
 
