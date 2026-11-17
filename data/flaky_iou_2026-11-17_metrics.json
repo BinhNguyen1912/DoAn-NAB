@@ -1,7 +1,7 @@
 {
-  "do_luc": "2026-11-17T15:41:12+07:00",
+  "do_luc": "2026-11-17T15:54:17+07:00",
   "lenh": "scripts/measure_flaky_iou.py --lan 5 --out data/flaky_iou_2026-11-17_metrics.json",
-  "git_rev": "7f7e8060690bb447f6ee40a27f5122214319e3bb",
+  "git_rev": "6ede7dd3e47115ed27e677a7e9a08af74feaa3cf",
   "git_dirty_code": false,
   "git_loi": null,
   "test": "tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau",
@@ -55,7 +55,7 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 43091.3,
+      "ms": 42595.2,
       "duoi_nguong": []
     },
     {
@@ -78,7 +78,7 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 44456.0,
+      "ms": 44157.5,
       "duoi_nguong": []
     },
     {
@@ -101,7 +101,7 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 45346.0,
+      "ms": 45760.2,
       "duoi_nguong": []
     },
     {
@@ -124,7 +124,7 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 45455.1,
+      "ms": 46233.2,
       "duoi_nguong": []
     },
     {
@@ -147,7 +147,7 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 45621.3,
+      "ms": 45848.9,
       "duoi_nguong": []
     }
   ]
