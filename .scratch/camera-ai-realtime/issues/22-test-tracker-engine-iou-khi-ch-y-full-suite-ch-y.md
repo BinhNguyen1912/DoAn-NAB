@@ -42,8 +42,9 @@ Nhánh đó chỉ thêm khoá `device` vào `status.json` + chuỗi API/HUD ⇒ 
 - Phân bố IoU của chính test bị đỏ (5 lần chạy trên cây sạch, `scripts/measure_flaky_iou.py`,
   `data/flaky_iou_2026-11-17_metrics.json`, `git_rev 7f7e806`, `git_dirty_code false`):
   f2 **0,9512 ± 0,0000**, f5 **0,9652 ± 0,0134**, f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**.
-  Giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ** (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5
-  đúng, cấm hạ**;
+  **Cổng mà test dùng** là min trên {0, 2, 5, 9} (frame 0 trượt nhiều hơn ba frame mẫu):
+  `tat_ca.min_iou_moi_lan = 0,928`, **0/5 lần chạy** dưới ngưỡng ⇒ cách ngưỡng 0,5 khoảng **32 σ**
+  (σ lớn nhất = 0,0134 ở f5) ⇒ **ngưỡng 0,5 đúng, cấm hạ**;
   **Lần đỏ 10-11 không tái hiện được hôm nay.** Trong CÙNG một tiến trình, phân bố gần như tất định
   (f2/f9 `std = 0,0000`, f5 chỉ có 2 giá trị rời) ⇒ 10 lần này **không** đo được tính không tất định
   **giữa các phiên**; chỉ được viết "chưa tái hiện được", không được quy cho "ngoại lệ ngẫu nhiên của

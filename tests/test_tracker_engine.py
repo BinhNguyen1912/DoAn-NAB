@@ -58,9 +58,11 @@ class TestTrackerEngineStreaming:
         Chạy LẠI MỘT lần khi lần đầu dưới ngưỡng (ticket #22): test này từng ĐỎ trong `./run testall`
         ngày 10-11 mà xanh khi chạy riêng, và `AGENTS.md` §6 ghi **SAM 2 không tất định**. Đo trên máy
         này (`scripts/measure_flaky_iou.py`, 5 lần trên cây sạch, 17-11): IoU ở các frame mẫu
-        **0,9506–0,9750**
-        (f5: std 0,0134; giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ**) ⇒ ngưỡng 0,5 KHÔNG bị nới, và một lần đỏ
-        là ngoại lệ cần chạy lại, không phải tín hiệu "mask trôi".
+        **0,9506–0,9750** (f5: std 0,0134) và **giá trị nhỏ nhất của CỔNG test** (min trên
+        {0, 2, 5, 9} — frame 0 trượt nhiều hơn ba frame mẫu) là **0,928**, cách ngưỡng 0,5 khoảng
+        **32 σ** ⇒ ngưỡng 0,5 KHÔNG bị nới. Phân bố trong cùng một tiến trình gần như tất định
+        (f2/f9 `std = 0,0000`) ⇒ **chưa** đo được tính không tất định giữa các phiên; một lần đỏ là
+        "chưa tái hiện được", không phải "đã chứng minh là ngoại lệ ngẫu nhiên".
 
         Điều kiện để test còn "có răng": nếu CẢ HAI lần đều dưới ngưỡng thì vẫn ĐỎ, và message nêu
         IoU của cả hai lần ⇒ hồi quy **ổn định** (mask trôi ở mọi lần) vẫn bị bắt. KHÔNG bảo đảm bắt

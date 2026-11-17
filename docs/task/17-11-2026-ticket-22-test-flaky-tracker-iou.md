@@ -20,7 +20,7 @@
    - Log thô không commit được (`.gitignore` chặn `data/*`); tái lập bằng chính 2 lệnh trên.
 2. **Đo phân bố IoU** bằng script mới `scripts/measure_flaky_iou.py` (chạy đúng kịch bản của test,
    dùng chính hàm `iou` của test, engine nạp 1 lần): 5 lần trên cây sạch
-   (`data/flaky_iou_2026-11-17_metrics.json`, `git_rev 7f7e806`, `git_dirty_code false`) ⇒
+   (`data/flaky_iou_2026-11-17_metrics.json`, `git_rev ca46b31`, `git_dirty_code false`) ⇒
    f2 **0,9512 ± 0,0000** · f5 **0,9652 ± 0,0134** · f9 **0,9506 ± 0,0000** ⇒ **0/15 lượt dưới ngưỡng 0,5**,
    giá trị nhỏ nhất cách ngưỡng ~**34 σ**.
 3. **Cách xử lý (tiêu chí 3)**: test IoU **chạy lại MỘT lần** khi lần đầu có frame dưới ngưỡng
@@ -65,3 +65,28 @@
 ## 📚 Tài liệu tham khảo
 - `AGENTS.md` §6 ("SAM 2 không tất định", ngưỡng nhiễu, `n < 2` không kết luận).
 - `.scratch/rev22.md`; `tests/test_tracker_engine.py`; `data/flaky_iou_2026-11-17_metrics.json`.
+
+## Bổ sung (đợt 3) — P2/P3 còn lại của review độc lập ticket #22
+
+Báo cáo review về sau khi PR #30 merge; đối chiếu với cây `main` thì **2 P1 + 2 P2 đã được sửa trong
+chính PR đó** (`@pytest.mark.timeout(300)` cho test có retry; provenance chụp **trước** khi nạp model +
+từ chối ghi artifact nếu rev đổi giữa lúc đo; số σ tính lại; bỏ dẫn hai file log không commit được —
+chúng bị `.gitignore` chặn). Phần còn mở đã xử lý trong đợt này:
+
+| Phát hiện | Đã làm |
+|---|---|
+| P2 artifact **không echo cấu hình** model | `cau_hinh: {checkpoint, image_size_yeu_cau, image_size_hieu_luc, device}` (`_checkpoint_tu_config()` đọc `configs/default.yaml`) |
+| P2 tóm tắt "0/N" **không phải** đại lượng test dùng | thêm `tat_ca.min_iou_moi_lan` = min trên **{0, 2, 5, 9}** + `so_lan_duoi_nguong`; đo được **0,928** (frame 0 trượt nhiều hơn 3 frame mẫu) |
+| P2 lời "hồi quy thật không thể lọt qua" (sai xác suất: retry 1 lần lọt với `1 − p²`) | docstring đổi thành "hồi quy **ổn định** vẫn bị bắt"; nhánh retry thêm `warnings.warn` in IoU lần 1 ⇒ hồi quy **gián đoạn** còn dấu vết trong log `./run testall` |
+| P2 kết luận "lần đỏ 10-11 là ngoại lệ của SAM 2 (không tất định)" vượt dữ liệu | sửa ở test + ticket: trong **cùng một tiến trình** phân bố gần như tất định (f2/f9 `std = 0,0000`) ⇒ chỉ được nói "**chưa tái hiện được**", chưa đo được tính tất định **giữa các phiên** |
+| P3 `ms` mời đọc nhầm (là tổng 10 frame) | đổi tên `tong_ms`, in ra theo giây, docstring nói rõ khác `TrackingResult.elapsed_ms` |
+| P3 `score_min` có thể là `NaN`/`inf` (JSON không hợp lệ với `JSON.parse`) | guard `math.isfinite`, ghi `score_n` |
+| P3 comment "engine reset mỗi lần" nhờ auto-reset của `start()` | gọi `engine.reset()` **tường minh** đầu mỗi vòng |
+| P3 `--lan 1` được nhận dù docstring nói ≥ 3 | từ chối `--lan < 3` (mã thoát 2) |
+| P2 nợ `test_reap_khong_cho_zombie_5_giay` không có ticket | tạo **ticket #34** |
+
+Sinh lại artifact trên cây sạch (`--lan 5`): `git_rev ca46b31`, `git_dirty_code false`,
+`tong_ms` 42,8 / 44,0 / 45,1 / 45,1 / 45,2 s; IoU f2 0,9512 · f5 0,9506–0,9750 · f9 0,9506;
+cổng test (min trên {0,2,5,9}) = **0,928**; **0/5 lần** dưới ngưỡng 0,5.
+
+`./run lint` xanh · `./run test` **1335 passed**, 5 deselected.

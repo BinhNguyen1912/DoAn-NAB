@@ -1,12 +1,18 @@
 {
-  "do_luc": "2026-11-17T15:54:17+07:00",
+  "do_luc": "2026-11-17T16:24:48+07:00",
   "lenh": "scripts/measure_flaky_iou.py --lan 5 --out data/flaky_iou_2026-11-17_metrics.json",
-  "git_rev": "6ede7dd3e47115ed27e677a7e9a08af74feaa3cf",
+  "git_rev": "ca46b31099d1959d10929f2e9dae170362bf2911",
   "git_dirty_code": false,
   "git_loi": null,
   "test": "tests/test_tracker_engine.py::TestTrackerEngineStreaming::test_process_theo_frames_iou_dat_o_cac_frame_mau",
   "fixture": "generate_tracking_sequence(10, (240,320), 40, start=(60,60))",
   "ghi_chu": "IoU bbox vs GT tổng hợp. SAM 2 KHÔNG tất định (AGENTS §6) ⇒ so sánh chỉ có nghĩa trong cùng một lần đo; `so_lan_duoi_nguong > 0` = tần suất đỏ của test.",
+  "cau_hinh": {
+    "checkpoint": "sam2.1_hiera_tiny.pt",
+    "image_size_yeu_cau": null,
+    "image_size_hieu_luc": 1024,
+    "device": null
+  },
   "tat_ca": {
     "2": {
       "n": 5,
@@ -32,7 +38,12 @@
       "max": 0.9506,
       "so_lan_duoi_nguong": 0
     },
-    "nguong": 0.5
+    "nguong": 0.5,
+    "min_iou_moi_lan": {
+      "n": 5,
+      "min": 0.928,
+      "so_lan_duoi_nguong": 0
+    }
   },
   "lan": [
     {
@@ -55,7 +66,9 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 42595.2,
+      "score_n": 10,
+      "min_iou": 0.9506,
+      "tong_ms": 42788.4,
       "duoi_nguong": []
     },
     {
@@ -78,7 +91,9 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 44157.5,
+      "score_n": 10,
+      "min_iou": 0.9506,
+      "tong_ms": 44035.4,
       "duoi_nguong": []
     },
     {
@@ -101,7 +116,9 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 45760.2,
+      "score_n": 10,
+      "min_iou": 0.928,
+      "tong_ms": 45074.6,
       "duoi_nguong": []
     },
     {
@@ -124,7 +141,9 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 46233.2,
+      "score_n": 10,
+      "min_iou": 0.928,
+      "tong_ms": 45148.4,
       "duoi_nguong": []
     },
     {
@@ -147,7 +166,9 @@
         "9": 0.9506
       },
       "score_min": 7.129,
-      "ms": 45848.9,
+      "score_n": 10,
+      "min_iou": 0.928,
+      "tong_ms": 45190.0,
       "duoi_nguong": []
     }
   ]
