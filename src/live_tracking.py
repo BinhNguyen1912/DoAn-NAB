@@ -173,6 +173,10 @@ class LiveTrackStats:
     # dụng cụ đo làm bẩn (~1–3 ms @640×480, 5–15 ms @1080p, hơn nữa khi dump nhiều frame). `None` =
     # **không có file nào được ghi** ở lần VOS này (khác `0,0` = đã ghi, ghi cực nhanh).
     dump_ms: float | None = None
+    # `cycle_ms`/`queue_ms` **vẫn** chứa thời gian dump của lần VOS TRƯỚC (`_dump_mask` chạy trong
+    # callback `_store_vos`, tức bên trong khoảng `bat_dau_i − bat_dau_{i−1}` của worker) ⇒ đo bằng
+    # `--dump-mask-frames` thì `cycle_ms`/`queue_ms` bị phình, chỉ `post_ms` là đã sạch (ticket #26,
+    # P2 review 17-11 — đừng trích `cycle_ms` của phiên có dump làm "chu kỳ VOS").
     cycle_ms: float | None = None   # khoảng cách giữa 2 lần VOS bắt đầu liên tiếp (= 1/vos_fps)
     idle_ms: float | None = None    # luồng VOS chờ frame mới (không phải thời gian tính toán)
     empty_runs: int = 0           # số lần VOS trả mask RỖNG (mất dấu thật) — TRỌN ĐỜI phiên
@@ -262,7 +266,7 @@ def read_bbox(path: Path):
 
 
 def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,
-                     mask_smoothing=1.0, device="") -> dict:
+                     mask_smoothing=1.0, device="", dump_mask_frames=()) -> dict:
     """Cấu hình **được yêu cầu** (từ CLI/API) ở dạng ghi được vào `status.json`.
 
     Tách khỏi `LiveTrackStats` để giai đoạn `loading` (chưa có engine, 20–240 s) cũng ghi được cấu
@@ -286,6 +290,10 @@ def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.
         "display_fps": float(display_fps),
         "mask_smoothing": float(mask_smoothing),
         "device": str(device),
+        # Bật `--dump-mask-frames` hay không: là DỤNG CỤ ĐO (có thể làm phình `dump_ms`), nên artifact
+        # phải tự khai — không có khoá này thì không ai biết số của phiên có bị dump làm bẩn không
+        # (ticket #26, P3 review 17-11).
+        "dump_mask_frames": list(dump_mask_frames or ()),
         "mask_age_dinh_nghia": DINH_NGHIA_TUOI_MASK,
     }
 
@@ -514,7 +522,8 @@ class LiveTrackingSession:
             cau_hinh_yeu_cau(source=config.source,
                              image_size=getattr(engine, "image_size", None),
                              vos_every=config.vos_every, display_fps=config.display_fps,
-                             mask_smoothing=config.mask_smoothing, device=config.device),
+                             mask_smoothing=config.mask_smoothing, device=config.device,
+                             dump_mask_frames=config.dump_mask_frames),
             engine,
         )
         self._stats.cau_hinh_lech = so_khop_cau_hinh(self._stats.cau_hinh)
@@ -606,7 +615,11 @@ class LiveTrackingSession:
                     # trước đây truyền thẳng nên hộp chọn trên live bị seed sai (w,h thành x2,y2)
                     self._chon_bbox = tuple(bbox)      # vào manifest.json của mask dump
                     result = self._engine.start(frame, xywh_to_xyxy(bbox))
-                    self._after_vos(frame, result)
+                    # Đường CÓ luồng: frame `start()` cũng sẽ được worker `process()` lại và
+                    # `_store_vos` ghi mask của nó ⇒ dump Ở ĐÂY nữa là ghi đè chính file đó trong cùng
+                    # phiên (P1 review 17-11: `so_file_ghi_de` sẽ báo oan, hoặc tệ hơn là bị guard cũ
+                    # che mất). Đường đơn luồng không có worker ⇒ dump tại đây.
+                    self._after_vos(frame, result, dump=not self._use_lk)
                     if self._use_lk:
                         self._start_worker(frame, self._gray(frame))
                     with self._stats_lock:
@@ -733,7 +746,8 @@ class LiveTrackingSession:
         self._measure_drift(frame_idx, result, seq)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         # TRỪ thời gian ghi PNG: `--dump-mask-frames` là DỤNG CỤ ĐO, không được làm bẩn `post_ms`
-        # (rồi `mask_age_total_ms`/p95 và `cycle_ms`) của đúng mẫu đang đo (ticket #26).
+        # (rồi `mask_age_total_ms`/p95 của đúng mẫu đó — ticket #26). `cycle_ms`/`queue_ms` lấy từ
+        # worker nên VẪN chứa dump của lần trước; đừng nói chúng "đã sạch".
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0 - dump_ms, 2)
         queue_ms = pha.get("queue_ms")
         with self._stats_lock:
@@ -802,17 +816,22 @@ class LiveTrackingSession:
         self._after_vos(frame, result)
         return result
 
-    def _after_vos(self, frame, result) -> None:
-        """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
-        # Đo phần xử lý kết quả (dump mask + làm mượt) để tính tuổi mask — cùng CÁCH ĐO với
-        # `_store_vos`, TRỪ `_measure_drift` (đường đơn luồng không có nội suy LK nên không có cặp
-        # VOS ↔ nội suy để so ⇒ `post_ms` ở đây hệ thống NHỎ HƠN đường LK đúng phần drift + I/O CSV;
-        # đừng so `post_ms` giữa hai đường). Nếu không đo, `vos_every = 1` sẽ không bao giờ có
-        # `mask_age_total_ms` (ticket #24).
+    def _after_vos(self, frame, result, dump: bool = True) -> None:
+        """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start()).
+
+        `dump=False` khi đường CÓ luồng VOS: chính frame này sẽ được worker xử lý lại và dump ở
+        `_store_vos` ⇒ dump ở đây là ghi đè file của cùng một frame.
+
+        Tuổi mask: `age = 0` ở đường này (frame vừa VOS CHÍNH LÀ frame đang phát) và `post_ms` đo
+        cùng CÁCH ĐO với `_store_vos`, TRỪ `_measure_drift` — đường đơn luồng không có nội suy LK nên
+        không có cặp VOS ↔ nội suy để so ⇒ `post_ms` ở đây hệ thống NHỎ HƠN đường LK đúng phần drift +
+        I/O CSV; đừng so `post_ms` giữa hai đường. KHÔNG đo drift ở đây: bịa một mẫu drift là làm sai
+        số (ticket #24).
+        """
         bat_dau_post = time.perf_counter()
         # `frame_video` = chỉ số frame VIDEO của phiên (không phải bộ đếm của engine) — xem P0 review
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
-        dump_ms = self._record_vos(result, frame_video=self._frame_index)
+        dump_ms = self._record_vos(result, frame_video=self._frame_index if dump else None)
         self._smooth(result)
         # Trừ thời gian ghi PNG (ticket #26): `post_ms` chỉ còn phần XỬ LÝ KẾT QUẢ.
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0 - dump_ms, 2)
@@ -846,7 +865,7 @@ class LiveTrackingSession:
                   f"{self._cfg.vos_every} chỉ frame chia hết cho {self._cfg.vos_every} mới có lần VOS "
                   "(dùng --vos-every 1 khi chấm mIoU)", flush=True)
 
-    def _dump_mask(self, result, frame_video=None) -> None:
+    def _dump_mask(self, result, frame_video=None) -> bool:
         """Ghi mask của frame `result.frame_idx` ra PNG nếu frame đó nằm trong danh sách yêu cầu.
 
         Vì sao chỉ những frame ĐƯỢC CHỌN: chấm mIoU cần GT gán tay, mà gán tay vài chục frame là
@@ -857,13 +876,17 @@ class LiveTrackingSession:
 
         Lỗi ghi file KHÔNG được làm chết phiên bám (đây là dụng cụ đo, không phải đường demo) nhưng
         phải in cảnh báo, không im lặng (bài học "nuốt lỗi trong adapter" 08-11).
+
+        Trả `True` ⇔ **đã ghi ra file**. `status.json["dump_ms"]` chỉ được khác `None` khi hàm này trả
+        `True`: frame nằm trong danh sách yêu cầu mà `mask is None`/`imwrite` thất bại/hỏng thì KHÔNG
+        có file nào, nên khai `dump_ms = 0,02` sẽ đọc thành "đã dump, ghi cực nhanh" (P1 review 17-11).
         """
         frames = self._cfg.dump_mask_frames
         # CHỈ số frame VIDEO của phiên mới khớp được với GT (`score_miou.py label` cắt theo số frame
         # của clip). `result.frame_idx` (bộ đếm engine) chỉ dùng để suy ra frame video cho CSV drift.
         frame_idx = frame_video
         if not frames or frame_idx is None or int(frame_idx) not in frames:
-            return
+            return False
         out_dir = self._cfg.dump_mask_dir or str(Path(self._cfg.out_dir) / "masks")
         mask = getattr(result, "mask", None)
         try:
@@ -874,7 +897,7 @@ class LiveTrackingSession:
                 # biến một ca "không có mask" thành lỗi khó hiểu ở khâu chấm điểm. Bỏ qua + cảnh báo.
                 print(f"[canh-bao] frame {frame_idx}: model không trả mask ⇒ không ghi file "
                       "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)", flush=True)
-                return
+                return False
             arr = (np.asarray(mask) > 0).astype(np.uint8)
             # `imwrite` KHÔNG ném khi ghi hỏng (đĩa đầy/quyền) — nó trả False ⇒ file không có, và khâu
             # chấm sẽ báo "thiếu mask của model" = "chưa chạy", đúng cái bẫy docstring này nói phải
@@ -884,20 +907,28 @@ class LiveTrackingSession:
             # thêm "chọn lại ô giữa phiên" mà reset `_frame_index` thì mask của hai lần chọn sẽ
             # trùng tên — không có cảnh báo thì mask của lần chọn cũ bị thay mà `GT` vẫn ghép theo
             # số frame ⇒ mIoU SAI mà không ai biết (ticket #26).
-            if dich.exists() and int(frame_idx) not in self._dumped:
-                self._so_file_ghi_de += 1
-                print(f"[canh-bao] GHI ĐÈ {dich.name}: file đã có từ lần chọn/phiên TRƯỚC trong cùng "
-                      f"thư mục (đếm {self._so_file_ghi_de} lần). Mask của lần chọn cũ bị thay ⇒ "
-                      "dùng thư mục `--dump-mask-dir` khác cho mỗi lần chọn nếu cần chấm cả hai",
-                      flush=True)
+            # Điều kiện: file ĐÃ TỒN TẠI trên đĩa. KHÔNG loại trừ "frame này phiên này đã ghi" —
+            # chính ca "chọn lại ô giữa phiên" (ticket #26) làm frame đó được ghi LẦN HAI trong cùng
+            # phiên; guard cũ (`... and int(frame_idx) not in self._dumped`) bỏ cảnh báo đúng ca cần
+            # canh (P1 review 17-11). Tên file đi theo chỉ số frame VIDEO của phiên ⇒ ghi đè nghĩa là
+            # mask của lần chọn trước bị thay, mà GT vẫn ghép theo số frame.
+            se_ghi_de = dich.exists()
             if not cv2.imwrite(str(dich), arr * 255):
                 print(f"[canh-bao] cv2.imwrite trả False cho frame {frame_idx} (đĩa/quyền?) — file "
                       "KHÔNG được ghi", flush=True)
-                return
+                return False
+            if se_ghi_de:
+                # Đếm SAU khi ghi thành công (nếu `imwrite` fail thì không có lần ghi đè nào xảy ra).
+                self._so_file_ghi_de += 1
+                print(f"[canh-bao] GHI ĐÈ {dich.name}: file đã có trong thư mục này (đếm "
+                      f"{self._so_file_ghi_de} lần). Mask của lần chọn/phiên trước bị thay ⇒ dùng "
+                      "`--dump-mask-dir` khác cho mỗi lần chọn nếu cần chấm cả hai", flush=True)
             self._dumped.add(int(frame_idx))
             self._write_mask_manifest(target)
+            return True
         except Exception as exc:                 # noqa: BLE001 — dụng cụ đo không giết phiên
             print(f"[canh-bao] không ghi được mask frame {frame_idx}: {exc}", flush=True)
+            return False
 
     def _write_mask_manifest(self, target: Path) -> None:
         """Ghi `manifest.json` cạnh các file mask: **mask sinh ra trong điều kiện nào**.
@@ -916,6 +947,9 @@ class LiveTrackingSession:
             "vos_every": self._cfg.vos_every, "mask_smoothing": self._cfg.mask_smoothing,
             "bbox_xywh": list(self._chon_bbox) if getattr(self, "_chon_bbox", None) else None,
             "frames_yeu_cau": list(self._cfg.dump_mask_frames),
+            # Danh sách ĐÃ GHI (khác "yêu cầu"): không có nó thì không phân biệt được "chấm 12 frame"
+            # với "đã ghi 7/12" (P3 review 17-11).
+            "frames_da_ghi": sorted(getattr(self, "_dumped", set())),
             # > 0 ⇒ có file bị ghi đè (tên trùng giữa hai lần chọn/phiên) — đọc kèm khi chấm.
             "so_file_ghi_de": getattr(self, "_so_file_ghi_de", 0),
             "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO",
@@ -934,19 +968,23 @@ class LiveTrackingSession:
         `post_ms`/`mask_age_total_ms`/`cycle_ms` mà nó định đo (ticket #26).
         """
         bat_dau_dump = time.perf_counter()
-        self._dump_mask(result, frame_video)
+        da_ghi = self._dump_mask(result, frame_video)
         dump_ms = round((time.perf_counter() - bat_dau_dump) * 1000.0, 2)
         with self._stats_lock:
-            self._stats.dump_ms = dump_ms if self._co_dump(frame_video) else None
+            # `None` = **không có file nào được ghi** ở lần VOS này (không yêu cầu dump, mask rỗng,
+            # hoặc `imwrite` fail) — khác `0,0` = đã ghi, ghi cực nhanh.
+            self._stats.dump_ms = dump_ms if da_ghi else None
             self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
             self._stats.vos_runs += 1
             self._vos_stamps.append(time.perf_counter())
             self._trim(self._vos_stamps)
         self._measure_stability(result)
-        return dump_ms if self._co_dump(frame_video) else 0.0
+        # Trả thời gian ĐÃ THỬ ghi (kể cả khi fail) để `post_ms` không bao gồm công việc dump; nhưng
+        # người đọc `status.json` chỉ thấy con số khi CÓ file (`da_ghi`).
+        return dump_ms if da_ghi or self._co_dump(frame_video) else 0.0
 
     def _co_dump(self, frame_video) -> bool:
-        """Frame này có nằm trong `--dump-mask-frames` không (⇒ có ghi file, có `dump_ms`)."""
+        """Frame này có nằm trong `--dump-mask-frames` không (⇒ có THỬ ghi file)."""
         frames = self._cfg.dump_mask_frames
         return bool(frames) and frame_video is not None and int(frame_video) in frames
 
