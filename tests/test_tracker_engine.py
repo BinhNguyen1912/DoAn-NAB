@@ -4,6 +4,8 @@ Nguyên tắc: chỉ test hành vi công khai của engine. Đáp án quỹ đ�
 (synthetic square — nguồn độc lập), ngưỡng IoU quy định theo tiêu chí của ticket.
 Chạy chậm (build model + propagation thật) — đánh dấu `slow`.
 """
+import warnings
+
 import numpy as np
 import pytest
 
@@ -56,24 +58,34 @@ class TestTrackerEngineStreaming:
         Chạy LẠI MỘT lần khi lần đầu dưới ngưỡng (ticket #22): test này từng ĐỎ trong `./run testall`
         ngày 10-11 mà xanh khi chạy riêng, và `AGENTS.md` §6 ghi **SAM 2 không tất định**. Đo trên máy
         này (`scripts/measure_flaky_iou.py`, 5 lần trên cây sạch, 17-11): IoU ở các frame mẫu
-        **0,9506–0,9750**
-        (f5: std 0,0134; giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **34 σ**) ⇒ ngưỡng 0,5 KHÔNG bị nới, và một lần đỏ
-        là ngoại lệ cần chạy lại, không phải tín hiệu "mask trôi".
+        **0,9506–0,9750**, và **cổng mà test này chấm** (min trên {0, 2, 5, 9}) là **0,9506** ⇒ cách
+        ngưỡng 0,5 khoảng **0,45** (gấp ~33 lần độ lệch lớn nhất đo được của một frame, n = 5) ⇒ ngưỡng
+        0,5 KHÔNG bị nới. Frame tệ nhất của CẢ 10 frame là 0,928 — nhưng đó là **frame 4, ngoài cổng**,
+        đừng trích nó làm "cổng test" (P1 review 17-11). Phân bố trong cùng một tiến trình gần như tất định
+        (f2/f9 `std = 0,0000`) ⇒ **chưa** đo được tính không tất định giữa các phiên; một lần đỏ là
+        "chưa tái hiện được", không phải "đã chứng minh là ngoại lệ ngẫu nhiên".
 
         Điều kiện để test còn "có răng": nếu CẢ HAI lần đều dưới ngưỡng thì vẫn ĐỎ, và message nêu
-        IoU của cả hai lần — hồi quy thật (mask trôi) không thể lọt qua đây.
+        IoU của cả hai lần ⇒ hồi quy **ổn định** (mask trôi ở mọi lần) vẫn bị bắt. KHÔNG bảo đảm bắt
+        hồi quy **gián đoạn**: retry 1 lần cho một hồi quy có xác suất đỏ p mỗi lần lọt với xác suất
+        `1 - p²` (p = 0,5 ⇒ 75 % xanh) — vì thế lần 1 dưới ngưỡng được ghi lại bằng `warnings.warn`
+        để còn dấu vết trong output của pytest (P2 review 17-11).
         """
         res0, results, fx = self._chay_mot_lan(samurai_engine)
         iou_lan_1 = {i: float(iou(results[i - 1].bbox, fx.bboxes[i])) for i in (2, 5, 9)}
         iou_lan_1[0] = float(iou(res0.bbox, fx.bboxes[0]))
         if min(iou_lan_1.values()) < 0.5:
+            # Vẫn xanh nếu lần 2 đạt, nhưng KHÔNG im lặng: warning giữ lại giá trị lần 1 để một hồi
+            # quy gián đoạn còn dấu vết trong log `./run testall`.
+            warnings.warn(f"lần 1 dưới ngưỡng 0,5: {iou_lan_1} — chạy lại một lần", stacklevel=2)
             samurai_engine.reset()
             res0, results, fx = self._chay_mot_lan(samurai_engine)
             iou_lan_2 = {i: float(iou(results[i - 1].bbox, fx.bboxes[i])) for i in (2, 5, 9)}
             iou_lan_2[0] = float(iou(res0.bbox, fx.bboxes[0]))
             assert min(iou_lan_2.values()) >= 0.5, (
-                f"Hai lần chạy đều dưới ngưỡng 0,5 (SAM 2 không tất định, nhưng hai lần cùng hỏng là "
-                f"tín hiệu thật): lần 1 {iou_lan_1}, lần 2 {iou_lan_2}")
+                f"Hai lần chạy liên tiếp đều dưới ngưỡng 0,5 ⇒ nghi hồi quy THẬT (không loại trừ được "
+                f"nhiễu giữa phiên: lần đo 17-11 chỉ chạy trong MỘT tiến trình, chưa đo tính tất định "
+                f"giữa các phiên): lần 1 {iou_lan_1}, lần 2 {iou_lan_2}")
 
         # Khoảng trống giữa bbox trả về và đáp án phải nhỏ (nhớ theo index: frames[i-1] trong results)
         for i in (2, 5, 9):
