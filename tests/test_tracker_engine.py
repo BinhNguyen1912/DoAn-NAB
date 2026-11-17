@@ -46,13 +46,17 @@ class TestTrackerEngineStreaming:
         results = [engine.process(fx.frames[i]) for i in range(1, 10)]
         return res0, results, fx
 
+    # `pytest.ini` đặt `--timeout=120` chung; MỘT lượt kịch bản này đo được 44–74 s dưới tải ⇒ lượt
+    # thứ hai (retry) có thể chạm 148 s và bị `pytest-timeout` giết TRƯỚC khi có kết quả, biến test
+    # thành "Timeout >120.0s" thay vì message IoU (P1 review độc lập 17-11). Marker override `--timeout`.
+    @pytest.mark.timeout(300)
     def test_process_theo_frames_iou_dat_o_cac_frame_mau(self, samurai_engine):
         """Tiêu chí 1 (phần process): feed 10 frame giả lập → bbox theo quỹ đạo, IoU ≥ 0.5.
 
         Chạy LẠI MỘT lần khi lần đầu dưới ngưỡng (ticket #22): test này từng ĐỎ trong `./run testall`
         ngày 10-11 mà xanh khi chạy riêng, và `AGENTS.md` §6 ghi **SAM 2 không tất định**. Đo trên máy
         này (`scripts/measure_flaky_iou.py`, 10 lần, 17-11): IoU ở các frame mẫu **0,9506–0,9750**
-        (std ≤ 0,008, cách ngưỡng 0,5 gần **9 lần** độ lệch) ⇒ ngưỡng 0,5 KHÔNG bị nới, và một lần đỏ
+        (f5: std 0,0103; giá trị nhỏ nhất 0,9506 cách ngưỡng 0,5 khoảng **44 σ**) ⇒ ngưỡng 0,5 KHÔNG bị nới, và một lần đỏ
         là ngoại lệ cần chạy lại, không phải tín hiệu "mask trôi".
 
         Điều kiện để test còn "có răng": nếu CẢ HAI lần đều dưới ngưỡng thì vẫn ĐỎ, và message nêu

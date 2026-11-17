@@ -105,6 +105,18 @@ def main(argv=None) -> int:
 
     from src.tracker_engine import TrackerEngine
 
+    # CHỤP PROVENANCE TRƯỚC KHI ĐO. Bản đầu tiên gọi `_git()` ở CUỐI vòng lặp ⇒ artifact khai một
+    # `git_rev`/`git_dirty_code` chỉ đúng ở thời điểm KẾT THÚC, có thể chưa tồn tại lúc bắt đầu
+    # (P1 review 17-11). Số đo trên cây bẩn/đổi giữa lúc đo là số không tái lập được (AGENTS §6).
+    rev_truoc, dirty_truoc, loi_truoc = _git()
+    if loi_truoc:
+        print(f"[LOI] không lấy được provenance git: {loi_truoc}", file=sys.stderr)
+        return 2
+    if dirty_truoc:
+        print("[LOI] cây BẨN (khác data/ và docs/media/) — commit code trước rồi mới đo; số trên cây "
+              "bẩn không tái lập được (AGENTS §6)", file=sys.stderr)
+        return 2
+
     engine = TrackerEngine.build_default()          # nạp model MỘT lần (đắt), engine reset mỗi lần
     lan: list[dict] = []
     for i in range(args.lan):
@@ -115,6 +127,10 @@ def main(argv=None) -> int:
             f"f{f}={ket['iou'][f]}" for f in FRAME_MAU) + f" · {ket['ms']} ms", flush=True)
 
     rev, dirty, loi = _git()
+    if loi or rev != rev_truoc or dirty:
+        print(f"[LOI] code ĐỔI trong lúc đo (rev {str(rev_truoc)[:7]} → {str(rev)[:7]}, dirty={dirty}) "
+              "⇒ KHÔNG ghi artifact; chạy lại trên cây sạch", file=sys.stderr)
+        return 2
     payload = {
         "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
         "lenh": " ".join([str(Path(sys.argv[0])), *sys.argv[1:]]),
