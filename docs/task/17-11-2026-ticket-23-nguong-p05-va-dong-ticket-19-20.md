@@ -53,18 +53,21 @@
 ## 📤 Output / Kết quả
 - **Chỉ còn MỘT hằng ngưỡng** cho phân vị: `MIN_SAMPLES = 30`, ghim bằng test
   `MIN_SAMPLES == live_tracking._STAT_MIN_SAMPLES`; mọi chỗ công bố p05 đi qua `phan_vi()`.
-- Artifact tái lập được: `git_rev b6e7a8d`… `0f8542f`, `git_dirty_code false`; artifact được **sinh lại
-  sau rebase** vì rebase đổi SHA (nếu không `git_rev` thành con trỏ chết — đúng bẫy provenance của repo).
+- Artifact tái lập được: sinh **tại `0f8542f`** (`git_dirty_code false`), commit `b6e7a8d` chỉ chứa 2
+  file đã sinh; artifact được **sinh lại sau rebase** vì rebase đổi SHA (nếu không `git_rev` thành con
+  trỏ chết — đúng bẫy provenance của repo); sau khi sửa review, ảnh quỹ đạo được sinh lại tại `e99e380`.
 - `./run lint` xanh · `./run test` **1298 passed**, 5 deselected (86 s).
-- Test mới (8): `phan_vi` dưới/đủ ngưỡng · mảng rỗng và n = 1 không bịa số · `static_control` 25 mẫu
+- Test mới (**11**, sau khi sửa review): `phan_vi` dưới/đủ ngưỡng · mảng rỗng và n = 1 không bịa số · `static_control` 25 mẫu
   vẫn ĐẠT nhưng p05 `None` · `cham()` với 5 / 25 / 30 frame · `make_trajectory_media` 29 mẫu ⇒ `None` ·
-  CLI traj ghi `thong_ke` vào provenance.
+  CLI traj ghi `thong_ke` vào provenance · `phan_vi` ném lỗi với `nan`/`inf` ·
+  `summarize`/`static_control` ghi kèm `drift_iou_p05_nguong` + `_n` · CLI `score_miou` in "CHƯA CÔNG BỐ".
 - **Kiểm "có răng"**: hạ `MIN_SAMPLES` về **20** ⇒ 4 test đỏ; về **5** ⇒ 6 test đỏ (đã chạy thật, rồi
   khôi phục file).
 - File thay đổi:
   - `src/drift_samples.py` — `phan_vi()`, comment `MIN_SAMPLES`, `static_control`/`summarize` dùng chung
   - `scripts/score_miou.py` — bỏ hằng 5, `mIoU_p05_n`/`mIoU_p05_nguong`, CLI in "CHƯA CÔNG BỐ"
   - `scripts/make_trajectory_media.py` — bỏ hằng 20, `thong_ke` vào provenance, cảnh báo dùng hằng chung
+  - `scripts/analyze_drift_samples.py`, `scripts/measure_live_relay.py` — nói rõ ngưỡng p05 (review)
   - `scripts/so_lieu_bao_cao.py` + `docs/so-lieu-bao-cao.md` — ghi cảnh báo p05 của 2 artifact
   - `AGENTS.md`, `docs/thuoc-do-bam-dung.md` — kết luận ngưỡng 30 + hệ quả
   - `tests/test_drift_samples.py`, `tests/test_score_miou.py`, `tests/test_make_trajectory_media.py` — 8 test
@@ -86,6 +89,32 @@
 - **PR/merge khi không có `gh` CLI**: REST API bằng token của Git Credential Manager
   (`git credential fill`). Bẫy nhỏ: endpoint merge là **PUT**; `urllib` với `data=` mặc định là **POST**
   ⇒ 404 vô nghĩa dù PR `mergeable: true`.
+
+## ✅ Review độc lập (AGENTS §9.1)
+- **Ai:** agent `reviewer` (chỉ đọc, phiên riêng), review `origin/main..HEAD` của nhánh `feat/p05-mot-nguong`.
+- **Kết luận: 0 P0, 0 P1** ⇒ mergeable. **1 P2 + 6 P3**.
+- **P2 (đã sửa):** `summarize()`/`static_control()` công bố `drift_iou_p05` mà **không có khoá ngưỡng**
+  ⇒ `None` đọc thành "chưa đo" thay vì "chưa công bố", trái chính tiêu chí của ticket. Nay cả hai trả
+  `drift_iou_p05_nguong` + `drift_iou_p05_n`; `dinh_nghia` của artifact `drift_series_*.json` nói rõ
+  cổng 30; tên khoá thống nhất `<tên số>_nguong` (đổi `nguong_p05` của ảnh quỹ đạo →
+  `drift_iou_p05_nguong`).
+- **P3 đã sửa (4):** `phan_vi` chặn `nan`/`inf` bằng `ValueError` (lọt ⇒ `json.dumps` ghi `Infinity`,
+  `JSON.parse` của JS chết; trả `None` ⇒ trộn "số đo hỏng" vào "chưa công bố") + test; comment
+  `MIN_SAMPLES` hết nói sai "mọi chỗ đi qua `phan_vi`" (`live_tracking` tự gọi `np.percentile` cùng
+  ngưỡng 30); `measure_live_relay` in p05 kèm `n` + ngưỡng; test CLI `score_miou` bắt buộc phải **in**
+  "CHƯA CÔNG BỐ" (trước chỉ `cham()` được test ⇒ bỏ dòng in vẫn xanh).
+- **P3 không sửa, có lý do (2)**:
+  - `p95` latency của `live_pipeline`/`metrics_logger` trả `0.0` khi rỗng (đúng bẫy `0/None` nhưng khác
+    đại lượng) ⇒ **cần ticket riêng** vì đổi hợp đồng consumer; nhét vào PR này là trộn phạm vi.
+  - Không sửa tay `data/miou_synthetic_2026-11-14_metrics.json` để thêm `canh_bao`: file đang khai
+    `git_dirty: false` cho đúng lần sinh đó, sửa tay sẽ làm **provenance nói dối** — thà ghi cảnh báo
+    ở 4 chỗ đã làm (`AGENTS`, `docs/so-lieu-bao-cao.md`, `docs/thuoc-do-bam-dung.md`, script).
+  - Reviewer cũng xác nhận: `rolling_p05`/`flag_rate`/`low_p05_low_empty` là p05 **theo cửa sổ**, đã
+    được miễn trừ tường minh ⇒ "đã kiểm, không phải lỗi"; web/API/`bang_cau_hinh` **không** chỗ nào giả
+    định p05 khác `None`.
+- **Reviewer không tự chạy được** `./run lint`/`pytest` (không có shell) ⇒ kết luận "test có răng" của
+  họ là suy luận tĩnh; số `1298 passed` và phép thử hạ ngưỡng là do phiên này chạy. Sau khi sửa review:
+  `./run lint` xanh · `./run test` **1301 passed**, 5 deselected.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Ticket **#24**: `vos_every = 1` không bao giờ ghi `mask_age_total_ms` (đúng cấu hình đã dùng cho

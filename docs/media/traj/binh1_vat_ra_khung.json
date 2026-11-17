@@ -1,7 +1,7 @@
 {
-  "do_luc": "2026-11-17T12:46:33",
+  "do_luc": "2026-11-17T12:55:17",
   "lenh": "scripts/make_trajectory_media.py --csv data/drift_samples_binh1_2026-11-14_113103.csv --clip data/binh1.mp4 --expect-bbox 300,275,150,410 --expect-bbox-dang xywh --title binh1 — ô chọn 300,275,150,410 (đúng vật); 170/468 lần VOS trả mask rỗng khi vật ra khỏi khung --out docs/media/traj/binh1_vat_ra_khung.png",
-  "git_rev": "0f8542f8702a485f63f4afce8f05bd4a9f84b0c1",
+  "git_rev": "e99e3807122fa2718fe7975433d8da94d88e1fcc",
   "git_dirty_code": false,
   "csv": "data/drift_samples_binh1_2026-11-14_113103.csv",
   "csv_sha256_16": "a6e2d917a8b4b303",
@@ -24,7 +24,7 @@
     "n_mask_rong": 170,
     "drift_iou_mean": 0.464,
     "drift_iou_p05": 0.0,
-    "nguong_p05": 30,
+    "drift_iou_p05_nguong": 30,
     "drift_n": 271
   },
   "expect_bbox": "300,275,150,410",
