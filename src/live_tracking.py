@@ -790,14 +790,28 @@ class LiveTrackingSession:
 
     def _after_vos(self, frame, result) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start())."""
+        # Đo phần xử lý kết quả (dump mask + làm mượt) để tính tuổi mask — cùng định nghĩa
+        # `post_ms` với đường có luồng VOS (`_consume_vos`); nếu không, `vos_every = 1` sẽ không bao
+        # giờ có `mask_age_total_ms` (ticket #24). KHÔNG đo drift ở đây: `vos_every = 1` không có nội
+        # suy LK nên không có cặp (VOS ↔ nội suy) để so — bịa một mẫu drift ở đây là làm sai số.
+        bat_dau_post = time.perf_counter()
         # `frame_video` = chỉ số frame VIDEO của phiên (không phải bộ đếm của engine) — xem P0 review
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
         self._record_vos(result, frame_video=self._frame_index)
         self._smooth(result)
+        post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0, 2)
         self._interp_base_result = result
         self._mask = getattr(result, "mask", None)
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
+        with self._stats_lock:
+            self._stats.post_ms = post_ms
+        # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
+        # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
+        # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.
+        self._note_mask_age(0.0, float(getattr(result, "elapsed_ms", 0.0) or 0.0),
+                           pre_ms=float(getattr(result, "pre_ms", 0.0) or 0.0),
+                           queue_ms=0.0, post_ms=post_ms)
 
     def _canh_bao_mask_thieu(self) -> None:
         """Frame được yêu cầu dump mà KHÔNG có lần VOS nào ⇒ nói ra, đừng để người dùng tưởng đã đo.
