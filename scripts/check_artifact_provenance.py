@@ -10,6 +10,9 @@ Ba trạng thái, KHÔNG gộp:
            thay bằng rebase) ⇒ số đo thuộc cây khác; **cảnh báo**, không chặn (artifact cũ hợp lệ).
 - `chet` — rev không tồn tại ⇒ không ai lấy lại được mã đã sinh ra số đó: **chặn** (mã thoát 1).
 
+**Cần lịch sử git đầy đủ**: trên clone `--depth 1` (shallow) mọi rev cũ đều "không tồn tại" ⇒ báo chết
+oan. Job CI vì thế đặt `fetch-depth: 0`.
+
 Cách dùng:
     python scripts/check_artifact_provenance.py            # quét `data/*_metrics.json`
     python scripts/check_artifact_provenance.py --gioi-han-lui 3   # chỉ xét artifact đổi trong N commit
