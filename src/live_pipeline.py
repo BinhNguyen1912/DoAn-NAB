@@ -51,8 +51,18 @@ class SessionSummary:
         return float(np.mean(self.latencies_ms)) if self.latencies_ms else 0.0
 
     @property
-    def p95_ms(self) -> float:
-        return float(np.percentile(self.latencies_ms, 95)) if self.latencies_ms else 0.0
+    def p95_ms(self) -> float | None:
+        """Phân vị 95 % độ trễ — `None` khi CHƯA có mẫu (không phải `0,0`).
+
+        `0,0 ms` là một con số ĐO ĐƯỢC (frame xử lý tức thì) ⇒ dùng nó cho "chưa đo" là bẫy
+        `0/None` mà `AGENTS.md` §6 cấm (ticket #32).
+        """
+        return float(np.percentile(self.latencies_ms, 95)) if self.latencies_ms else None
+
+    @property
+    def p95_n(self) -> int:
+        """Số mẫu của `p95_ms` (`0` ⇒ `p95_ms is None`). Cỡ mẫu phải đọc được cùng con số."""
+        return len(self.latencies_ms)
 
     @property
     def effective_fps(self) -> float:

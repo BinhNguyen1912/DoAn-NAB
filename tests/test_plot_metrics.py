@@ -46,3 +46,31 @@ class TestSummarize:
         assert s["p95_ms"] == pytest.approx(119.0)   # nội suy tuyến tính
         assert s["fps"] == pytest.approx(1000 / 110)
         assert s["lost"] == 1 and s["lost_ratio"] == pytest.approx(1 / 3)
+
+
+class TestP95KhongBiaSoKhiChuaDo:
+    """Ticket #32: `p95` của bảng/biểu đồ cũng phải `None` khi KHÔNG có mẫu latency nào.
+
+    Bản cũ rơi về `d["latency"]` (toàn 0 khi mọi frame đóng băng) ⇒ bảng in "p95 0 ms", đọc như
+    "xử lý tức thì" — đúng bẫy `0/None` mà `AGENTS.md` §6 cấm.
+    """
+
+    def test_toan_bo_frame_dong_bang_thi_p95_None(self):
+        import numpy as np
+
+        from scripts import plot_metrics as pm
+
+        s = pm.summarize("dongsong", {"latency": np.zeros(3), "lost": np.ones(3),
+                                      "frame": np.arange(3), "frozen": np.ones(3, bool)})
+        assert s["n"] == 3 and s["frozen"] == 3
+        assert s["p95_ms"] is None and s["mean_ms"] is None and s["n_do_ms"] == 0
+        assert s["fps"] is None
+
+    def test_csv_rong_thi_khong_chia_cho_0(self):
+        import numpy as np
+
+        from scripts import plot_metrics as pm
+
+        s = pm.summarize("rong", {"latency": np.array([]), "lost": np.array([]),
+                                  "frame": np.array([])})
+        assert s["p95_ms"] is None and s["lost_ratio"] is None

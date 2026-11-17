@@ -341,7 +341,7 @@ def _finish_metrics(metrics, args):
     _write_run_info(args)
     s = metrics.summary()
     print(f"[metrics] {s['total_frames']} frame | mean={s['mean_latency_ms']:.0f} ms | "
-          f"p95={s['p95_latency_ms']:.0f} ms | mất dấu {s['lost_count']}/{s['total_frames']} "
+          f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
     res = s.get("resources") or {}
     if res.get("cpu_percent_mean") is not None:
@@ -351,6 +351,16 @@ def _finish_metrics(metrics, args):
         print(f"[metrics] CPU {res['cpu_percent_mean']:.0f}% (1 lõi, "
               f"≈{res['cpu_percent_of_machine_mean']:.0f}% máy) · đỉnh {res['cpu_percent_peak']:.0f}% "
               f"| RAM đỉnh {res['rss_mb_peak']:.0f} MB{gpu_txt}")
+
+
+def _p95_txt(s: dict) -> str:
+    """`p95` của summary dạng đọc được — `None` = CHƯA ĐO, in ra "chưa đo" chứ không phải "0 ms".
+
+    `0 ms` là số đo được (frame tức thì); in `nan`/`0` cho "chưa có mẫu" là bẫy `0/None` (ticket #32).
+    """
+    if s.get("p95_latency_ms") is None:
+        return "chưa đo (0 mẫu đo được)"
+    return f"{s['p95_latency_ms']:.0f} ms (n={s.get('p95_latency_ms_n')})"
 
 
 def _write_run_info(args):
@@ -555,8 +565,10 @@ def _run_headless(engine, args):
         raise SystemExit(0)
 
     print("=" * 60)
+    p95_txt = ("chưa đo (0 mẫu)" if summary.p95_ms is None
+               else f"{summary.p95_ms:.0f} ms (n={summary.p95_n})")
     print(f"[kết quả] {summary.total_frames} frame | mean={summary.mean_ms:.0f} ms | "
-          f"p95={summary.p95_ms:.0f} ms | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
+          f"p95={p95_txt} | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
     print(f"({_device_note(args.device)} — số liệu thực đo theo ADR-0002)")
 
 
