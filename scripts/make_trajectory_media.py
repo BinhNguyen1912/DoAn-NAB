@@ -37,6 +37,13 @@ import matplotlib.pyplot as plt           # noqa: E402
 import numpy as np                        # noqa: E402
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(_REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(_REPO_ROOT))
+
+# Ngưỡng công bố phân vị DÙNG CHUNG với `status.json`/`score_miou` (ticket #23): trước đây script này
+# tự đặt 20 ⇒ cùng đại lượng `drift_iou_p05` mà ba ngưỡng khác nhau trong repo.
+from src.drift_samples import MIN_SAMPLES, phan_vi  # noqa: E402
+
 COT_BAT_BUOC = ("frame_idx", "empty", "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2")
 
 
@@ -184,8 +191,10 @@ def draw(traj: dict, background=None, title: str = ""):
         "n_thieu_toa_do": traj["n_thieu_toa_do"],
         "n_mask_rong": int(empty.sum()),
         "drift_iou_mean": None if not np.isfinite(drift).any() else round(float(np.nanmean(drift)), 3),
-        "drift_iou_p05": None if np.isfinite(drift).sum() < 20
-        else round(float(np.nanpercentile(drift, 5)), 3),
+        "drift_iou_p05": phan_vi(drift[np.isfinite(drift)], digits=3),
+        # Ngưỡng công bố đi CÙNG con số (ticket #23): người đọc `.json` sau này thấy `None` phải biết
+        # đó là "n < 30" chứ không phải "p05 = 0" hay "quên đo".
+        "nguong_p05": MIN_SAMPLES,
         "drift_n": int(np.isfinite(drift).sum()),
     }
     fig.tight_layout()

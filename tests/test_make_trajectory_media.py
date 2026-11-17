@@ -106,6 +106,22 @@ class TestDraw:
         assert thong_ke["drift_n"] == 10 and thong_ke["drift_iou_p05"] is None
         assert thong_ke["drift_iou_mean"] is not None
 
+    def test_nguong_la_30_chung_voi_status_json_khong_phai_20(self, tmp_path):
+        """Ticket #23: script này từng tự đặt ngưỡng **20** ⇒ 29 mẫu vẫn công bố `drift_iou_p05`.
+
+        Cùng một đại lượng mà `status.json` từ chối công bố dưới 30 mẫu ⇒ hai con số p05 trong báo
+        cáo không so được với nhau. 29 mẫu phải là `None`, 30 mẫu mới công bố.
+        """
+        import matplotlib.pyplot as plt
+
+        from src import drift_samples as ds
+
+        assert tm.MIN_SAMPLES == ds.MIN_SAMPLES
+        traj = tm.read_traj(_write(tmp_path, self._traj(n=29)))
+        fig, thong_ke = tm.draw(traj)
+        plt.close(fig)
+        assert thong_ke["drift_n"] == 29 and thong_ke["drift_iou_p05"] is None
+
     def test_anh_nen_sai_kich_thuoc_khong_lam_sap(self, tmp_path):
         import matplotlib.pyplot as plt
 

@@ -94,7 +94,43 @@ class TestCham:
         kq = sm.cham(frames, gt_dir)
         assert kq["n_cham"] == 2
         assert kq["mIoU"] == pytest.approx(0.5)
-        assert kq["mIoU_p05"] is None                      # < 5 mẫu ⇒ không bịa p05
+        assert kq["mIoU_p05"] is None                      # < 30 mẫu ⇒ không bịa p05 (ticket #23)
+        assert kq["mIoU_p05_n"] == 2                       # cỡ mẫu LUÔN có mặt cạnh con số
+
+    def test_p05_chi_cong_bo_tu_nguong_dung_chung_30(self, tmp_path):
+        """Ticket #23: trước đây ngưỡng riêng là **5** ⇒ `mIoU_p05` công bố từ 5 frame (≈ min).
+
+        Đây là test bắt hồi quy của bẫy "p05 ở cỡ mẫu nhỏ chính là giá trị xấu nhất": 5 frame phải
+        là `None`, 30 frame mới được công bố, và ngưỡng phải là **cùng hằng** với `status.json`.
+        """
+        from src import drift_samples as ds
+
+        assert sm.MIN_SAMPLES == ds.MIN_SAMPLES
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        hinh = np.zeros((6, 6))
+        hinh[1:3, 1:3] = 1
+
+        def cham_n(n):
+            frames = []
+            for idx in range(n):
+                self._gt(gt_dir, idx, hinh)
+                frames.append({"frame_idx": idx, "pred_path": self._pred(pred_dir, idx, hinh)})
+            return sm.cham(frames, gt_dir)
+
+        nam = cham_n(5)
+        assert nam["n_cham"] == 5
+        assert nam["mIoU_p05"] is None and nam["mIoU_p05_n"] == 5
+        assert nam["mIoU"] == pytest.approx(1.0)     # trung bình VẪN công bố ở n nhỏ
+
+        # 25 frame: đủ cho ngưỡng cũ 20 (và đương nhiên cho 5) ⇒ đây là ca bắt hồi quy thực sự.
+        hai_muoi_lam = cham_n(25)
+        assert hai_muoi_lam["mIoU_p05_n"] == 25 and hai_muoi_lam["mIoU_p05"] is None
+
+        ba_muoi = cham_n(30)
+        assert ba_muoi["mIoU_p05_n"] == 30
+        assert ba_muoi["mIoU_p05"] == pytest.approx(1.0)
 
     def test_thieu_mask_cua_model_khong_bi_coi_la_0(self, tmp_path):
         gt_dir = tmp_path / "gt"
