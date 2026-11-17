@@ -169,3 +169,86 @@ class TestAgeNTrongArtifact:
         header = next(ln for ln in md.splitlines() if ln.startswith("| image_size"))
         assert "| age_n |" in header
         assert "| 30 |" in md
+
+
+class TestCauHinhDoOCArtifactKhac:
+    """P3 review độc lập ticket #24: bảng chuẩn sinh từ MỘT artifact ⇒ cấu hình đo riêng
+    (`vos_every 1`) biến mất khỏi bảng và người đọc tưởng "chưa ai đo"."""
+
+    def _artifact(self, thu_muc, ten, khoa, git_rev="abc1234", p95=109.9):
+        payload = {"git_rev": git_rev, "git_dirty_code": False,
+                   "meta": {"so_lan": 3},
+                   "cau_hinh": {khoa: {"image_size": int(khoa.split("_")[0]),
+                                       "vos_every": int(khoa.split("_")[1]),
+                                       "mask_age_p95": {"mean": p95, "std": 9.3},
+                                       "age_n": {"mean": 60}, "so_lan": 3}}}
+        (thu_muc / ten).write_text(json.dumps(payload), encoding="utf-8")
+
+    def test_cau_hinh_ngoai_bang_duoc_liet_ke(self, tmp_path):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        self._artifact(tmp_path, "bang_cau_hinh_2026-11-17_every1_metrics.json", "192_1")
+        khac = bch.artifact_khac(bang, tmp_path)
+        assert [r["khoa"] for r in khac] == ["192_1"]
+        assert khac[0]["p95"] == pytest.approx(109.9)
+        assert khac[0]["git_rev"] == "abc1234"
+
+    def test_cau_hinh_da_co_trong_bang_thi_khong_lap(self, tmp_path):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        self._artifact(tmp_path, "bang_cau_hinh_2026-11-15_metrics.json", "192_3")
+        assert bch.artifact_khac(bang, tmp_path) == []
+
+    def test_artifact_hong_khong_lam_chet(self, tmp_path):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        (tmp_path / "bang_cau_hinh_hong_metrics.json").write_text("{khong-phai-json", encoding="utf-8")
+        assert bch.artifact_khac(bang, tmp_path) == []
+
+    def test_bang_markdown_neu_ro_cam_so_sanh(self, tmp_path):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        self._artifact(tmp_path, "bang_cau_hinh_2026-11-17_every1_metrics.json", "192_1")
+        md = bch.bang_markdown({"do_luc": "x", "moi_truong": "cpu", "git_rev": "abc1234",
+                               "so_lan": 2, "git_dirty_code": False}, bang, [192], [3],
+                               khac=bch.artifact_khac(bang, tmp_path))
+        assert "KHÔNG nằm trong bảng trên" in md
+        assert "cấm so trực tiếp" in md.lower()
+        assert "| 192 | 1 | 109.9 ± 9.3 | 60 |" in md
+        assert "bang_cau_hinh_2026-11-17_every1_metrics.json" in md
+
+    def test_khong_co_artifact_khac_thi_bang_giu_nguyen(self):
+        bang = bch.tong_hop(None, [192], [3], {(192, 3): [_row()]})
+        co = bch.bang_markdown({"do_luc": "x", "moi_truong": "cpu", "git_rev": "abc1234",
+                                "so_lan": 2, "git_dirty_code": False}, bang, [192], [3])
+        khong = bch.bang_markdown({"do_luc": "x", "moi_truong": "cpu", "git_rev": "abc1234",
+                                   "so_lan": 2, "git_dirty_code": False}, bang, [192], [3], khac=[])
+        assert co == khong
+        assert "KHÔNG nằm trong bảng trên" not in co
+
+
+class TestRenderTuArtifact:
+    """`--render`: sinh lại .md từ artifact có sẵn — để đổi cách trình bày bảng mà không đo lại
+    27 phiên (5 phút) và không làm bẩn bằng chứng đã commit."""
+
+    def test_render_khong_chay_worker_va_ghi_md(self, tmp_path, monkeypatch):
+        artifact = tmp_path / "bang_cau_hinh_2026-11-15_metrics.json"
+        artifact.write_text(json.dumps({
+            "git_rev": "abc1234", "git_dirty_code": False,
+            "meta": {"so_lan": 3, "moi_truong": "cpu", "git_rev": "abc1234"},
+            "cau_hinh": {"192_3": {"image_size": 192, "vos_every": 3,
+                                   "measured_fps": {"mean": 29.6, "std": 0.3},
+                                   "vos_fps": {"mean": 7.4, "std": 1.1},
+                                   "vos_ms": {"mean": 100.8, "std": 14.0},
+                                   "mask_age_p95": {"mean": 373.6, "std": 97.9},
+                                   "age_n": {"mean": 59}, "so_lan": 3, "so_lan_loi": 0}}}),
+            encoding="utf-8")
+        md = tmp_path / "bang.md"
+
+        def _no_run(*a, **kw):                           # PHẢI không chạy worker nào
+            raise AssertionError("--render không được chạy worker")
+        monkeypatch.setattr(bch, "_run_once", _no_run)
+        rc = bch.main(["--out", str(artifact), "--md", str(md), "--render"])
+        assert rc == 0
+        assert "| 192 | 3 |" in md.read_text(encoding="utf-8")
+
+    def test_render_khong_co_artifact_thi_bao_loi(self, tmp_path, capsys):
+        rc = bch.main(["--out", str(tmp_path / "khong-co.json"), "--render"])
+        assert rc == 2
+        assert "KHÔNG có artifact" in capsys.readouterr().out

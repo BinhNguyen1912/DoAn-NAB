@@ -160,7 +160,35 @@ def chenh_lech_duoi_nhieu(a: dict, b: dict, key: str) -> bool:
     return abs(sa["mean"] - sb["mean"]) <= nhieu
 
 
-def bang_markdown(meta: dict, bang: dict, sizes, evers) -> str:
+def artifact_khac(bang: dict, thu_muc=None) -> list[dict]:
+    """Các cấu hình đã đo ở artifact KHÁC nhưng không có trong bảng này.
+
+    Vì sao cần: `docs/bang-cau-hinh.md` sinh từ **một** artifact, nên cấu hình đo riêng (vd
+    `vos_every 1` — đơn luồng, phải có `--every 1` riêng vì nó đổi hẳn nhịp phát) **không** xuất hiện
+    trong bảng chuẩn ⇒ người đọc tưởng "chưa ai đo", rồi đo lại từ đầu hoặc trích số không có nguồn
+    (review độc lập ticket #24, P3). Quét thư mục artifact thay vì ghi cứng tên file (tên file có ngày).
+    """
+    thu_muc = Path(thu_muc) if thu_muc else (_REPO_ROOT / "data")
+    ra: list[dict] = []
+    for f in sorted(thu_muc.glob("bang_cau_hinh_*_metrics.json")):
+        try:
+            payload = json.loads(f.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            continue                                  # artifact hỏng/đang ghi: bỏ qua, đừng chết
+        for khoa, dong in sorted((payload.get("cau_hinh") or {}).items()):
+            if khoa in bang:
+                continue                              # đã có trong bảng chính
+            p95 = dong.get("mask_age_p95") or {}
+            age_n = (dong.get("age_n") or {}).get("mean")
+            ra.append({"khoa": khoa, "image_size": dong.get("image_size"),
+                       "vos_every": dong.get("vos_every"),
+                       "p95": p95.get("mean"), "p95_std": p95.get("std"), "age_n": age_n,
+                       "file": f.name, "git_rev": (payload.get("git_rev") or "")[:7],
+                       "so_lan": dong.get("so_lan")})
+    return ra
+
+
+def bang_markdown(meta: dict, bang: dict, sizes, evers, khac=None) -> str:
     """Bảng markdown: mỗi dòng một cấu hình, kèm cột `± nhiễu` để người đọc thấy ngưỡng."""
     dong = [
         "# Bảng cấu hình — sinh tự động, đừng sửa tay",
@@ -200,6 +228,21 @@ def bang_markdown(meta: dict, bang: dict, sizes, evers) -> str:
              "(~12 ms) — xem cột trong artifact.",
              "- Tuổi mask p95 = `None` khi chưa đủ mẫu; **`None` không phải `0`**.",
              ""]
+    if khac:
+        dong += ["> **Cấu hình đã đo nhưng KHÔNG nằm trong bảng trên** (mỗi bảng chỉ sinh từ MỘT "
+                 "artifact; số dưới đây của lần chạy khác ⇒ **cấm so trực tiếp** với các dòng trên, "
+                 "chỉ dùng để biết \"đã đo rồi, xem ở đâu\"):",
+                 "",
+                 "| image_size | vos_every | tuổi mask p95 | age_n | lần | artifact (git_rev) |",
+                 "|---|---|---|---|---|---|"]
+        for row in khac:
+            p95 = "—" if row["p95"] is None else (
+                f"{row['p95']:g} ± {row['p95_std']:g}" if row["p95_std"] is not None
+                else f"{row['p95']:g}")
+            age_n = "—" if row["age_n"] is None else f"{row['age_n']:g}"
+            dong.append(f"| {row['image_size']} | {row['vos_every']} | {p95} | {age_n} | "
+                        f"{row['so_lan']} | `{row['file']}` (`{row['git_rev']}`) |")
+        dong.append("")
     return "\n".join(dong)
 
 
@@ -215,16 +258,22 @@ def main(argv=None) -> int:
     parser.add_argument("--timeout", type=float, default=180.0)
     parser.add_argument("--out", default=None)
     parser.add_argument("--md", default=None, help="ghi bảng markdown vào file này")
+    parser.add_argument("--khong-quet", action="store_true",
+                        help="với --check/--render: đừng quét `data/` tìm cấu hình đo ở artifact khác "
+                             "(khi cần so với một bản .md cũ chưa có mục đó)")
     parser.add_argument("--check", action="store_true",
                         help="CHỈ ĐỌC: so file .md đã commit với bản sinh lại từ artifact có sẵn "
                              "(không chạy worker, không ghi file)")
+    parser.add_argument("--render", action="store_true",
+                        help="CHỈ ĐỌC artifact: sinh lại .md từ `--out` (không chạy worker) — dùng khi "
+                             "đổi cách trình bày bảng mà không muốn đo lại 27 phiên")
     args = parser.parse_args(argv)
 
     out = Path(args.out) if args.out else (
         _REPO_ROOT / "data" / f"bang_cau_hinh_{datetime.now():%Y-%m-%d}_metrics.json")
     md_path = Path(args.md) if args.md else _REPO_ROOT / "docs" / "bang-cau-hinh.md"
 
-    if args.check:
+    if args.check or args.render:
         # `--check` (mô tả là "cho CI") ở bản trước lại CHẠY 27 phiên worker rồi GHI ĐÈ artifact trước
         # khi so ⇒ vừa tốn 5 phút vừa làm bẩn bằng chứng đã commit, và luôn lệch vì md chứa git_rev
         # (review độc lập 14-11, P2). Nay chỉ đọc artifact + sinh md từ nó.
@@ -235,7 +284,14 @@ def main(argv=None) -> int:
         meta = payload.get("meta", {})
         sizes = sorted({int(k.split("_")[0]) for k in payload.get("cau_hinh", {})})
         evers = sorted({int(k.split("_")[1]) for k in payload.get("cau_hinh", {})})
-        md_moi = bang_markdown(meta, payload.get("cau_hinh", {}), sizes, evers)
+        md_moi = bang_markdown(meta, payload.get("cau_hinh", {}), sizes, evers,
+                               khac=artifact_khac(payload.get("cau_hinh", {}))
+                               if not args.khong_quet else None)
+        if args.render:
+            md_path.parent.mkdir(parents=True, exist_ok=True)
+            md_path.write_text(md_moi, encoding="utf-8")
+            print(f"[bang] ghi lại {md_path} từ artifact {out.name} (không chạy worker)")
+            return 0
         cu = md_path.read_text(encoding="utf-8") if md_path.is_file() else ""
         # So phần THÂN bảng (bỏ dòng provenance chứa git_rev — nó đổi sau mỗi commit, và điều cần
         # kiểm là "số trong md có khớp artifact không").
@@ -307,7 +363,7 @@ def main(argv=None) -> int:
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
     print(f"\n[bang] artifact: {out}")
 
-    md = bang_markdown(meta, bang, sizes, evers)
+    md = bang_markdown(meta, bang, sizes, evers, khac=artifact_khac(bang))
     if args.md:
         md_path.parent.mkdir(parents=True, exist_ok=True)
         md_path.write_text(md, encoding="utf-8")

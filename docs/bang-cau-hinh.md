@@ -21,3 +21,9 @@
 - `Nhịp mask` mới là số lần model chạy/giây; cấm viết "mask 30 FPS".
 - `vos_ms` chỉ là phần model; nói "một frame tốn bao lâu" thì phải cộng `pre_ms` (~12 ms) — xem cột trong artifact.
 - Tuổi mask p95 = `None` khi chưa đủ mẫu; **`None` không phải `0`**.
+
+> **Cấu hình đã đo nhưng KHÔNG nằm trong bảng trên** (mỗi bảng chỉ sinh từ MỘT artifact; số dưới đây của lần chạy khác ⇒ **cấm so trực tiếp** với các dòng trên, chỉ dùng để biết "đã đo rồi, xem ở đâu"):
+
+| image_size | vos_every | tuổi mask p95 | age_n | lần | artifact (git_rev) |
+|---|---|---|---|---|---|
+| 192 | 1 | 109.9 ± 9.32 | 60 | 3 | `bang_cau_hinh_2026-11-17_every1_metrics.json` (`3cc0248`) |

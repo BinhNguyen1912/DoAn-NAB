@@ -94,7 +94,8 @@ REGISTRY = [
      "so FPS của dòng này với 29,8 của `vos_every ≥ 2`. Tuổi ≈ `vos_ms + pre_ms + post_ms` (age = 0 "
      "vì frame vừa VOS chính là frame đang phát); vì sao ~106 chứ không ~95 ms: `pre_ms` (~12 ms) "
      "nằm TRONG tuổi nhưng NGOÀI `vos_ms`. Trước 17-11 dòng này không tồn tại vì nhánh inline không "
-     "ghi gì (ticket #24).",
+     "ghi gì (ticket #24). **Điều kiện**: `image_size 192`, clip `binh1.mp4`, ô chai "
+     "`300,275,150,410` (đọc `meta.clip`/`meta.bbox_xywh` trong artifact) — ô khác thì số khác.",
      {"std": "cau_hinh.192_1.mask_age_p95.std", "n": "cau_hinh.192_1.age_n.mean"}),
     # ── Việc #6 (14-11): mIoU vs GT — thước đo DUY NHẤT nói được đúng/sai ───────────────────────
     ("mIoU mask vs GT trên fixture TỔNG HỢP (ô vuông trên nền nhiễu)", "data/miou_synthetic_2026-11-14_metrics.json",
