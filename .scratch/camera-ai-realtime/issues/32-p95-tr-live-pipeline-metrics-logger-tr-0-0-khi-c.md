@@ -14,7 +14,7 @@ Phát hiện bởi review độc lập 17-11 (P3, câu hỏi (a): "còn chỗ c�
 
 - [x] `p95_ms` trả `None` (không phải 0.0) khi chưa có mẫu, kèm `p95_ms_n`; test ghim ca n=0 và ca toàn bộ frame đóng băng (KHÔNG có ngưỡng tối thiểu cho `p95` độ trễ — xem Answer)
 - [x] Mọi consumer (`scripts/plot_metrics.py`, `summary.json`, CLI `./run fast`/`demo`) xử lý `None` mà không in '0 ms' hay vẽ đường 0
-- [ ] Số p95 latency trong docs/báo cáo được rà lại: số nào đo bằng code cũ thì ghi rõ hoặc sinh lại artifact
+- [x] Số p95 latency trong docs/báo cáo được rà lại: số nào đo bằng code cũ thì ghi rõ hoặc sinh lại artifact
 
 ## Answer
 
