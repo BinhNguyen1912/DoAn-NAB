@@ -201,7 +201,7 @@ def test_chon_o_MUON_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
     dump_dir = tmp_path / "masks"
     session = LiveTrackingSession(_CountingEngine(), _config(
         video_source, tmp_path, vos_every=1, loop_files=True,
-        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+        dump_mask_frames=(0, 5, 8), dump_mask_dir=str(dump_dir)))
 
     so_lan = {"n": 0}
 
@@ -223,3 +223,21 @@ def test_chon_o_MUON_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
     assert not man.exists(), "không ghi file ⇒ không được ghi manifest như thể đã đo"
     out_txt = capsys.readouterr().out
     assert "TỪ CHỐI dump mask" in out_txt and "ticket #36" in out_txt
+    # Cảnh báo MỘT lần nhưng TỪ CHỐI **mọi** frame yêu cầu: bản trước đặt cả hai trong
+    # `not self._da_canh_bao_offset` ⇒ từ frame yêu cầu thứ hai guard hết tác dụng và ghi đúng thứ
+    # file mà ticket cấm (P1 vòng review 2). Test chỉ xanh khi guard nằm NGOÀI cờ đó.
+    assert out_txt.count("TỪ CHỐI dump mask") == 1, "chỉ cảnh báo một lần"
+    assert "TỪ CHỐI dump 3 frame" in out_txt, "phải nêu CẢ số frame bị từ chối"
+
+
+def test_run_hai_lan_tren_cung_session_bi_tu_choi(video_source, tmp_path):
+    """`run()` lần hai: `_frame_index`/`_dumped` không reset ⇒ tên file tiếp tục từ lần trước (lệch
+    frame) và `_da_canh_bao_offset` đã True nên guard offset mất tác dụng (P3 vòng review 2)."""
+    out = tmp_path / "live"
+    _preselect(out)
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=False))
+    session.run(stop_event=_StopAfter(6))
+
+    with pytest.raises(RuntimeError, match="chỉ được gọi MỘT lần"):
+        session.run(stop_event=_StopAfter(6))

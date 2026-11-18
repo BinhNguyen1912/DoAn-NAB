@@ -142,25 +142,28 @@ def main() -> int:
     if not 0.0 < args.mask_smoothing <= 1.0:
         parser.error("--mask-smoothing phải trong khoảng (0, 1]; 1.0 = tắt làm mượt")
 
-    # `--bbox x,y,w,h` (dạng xywh, cùng dạng bbox.json): ghi bbox.json TRƯỚC khi phiên chạy để phiên
-    # bám từ frame ĐẦU — điều kiện để dump mask có nghĩa (ticket #36).
-    if args.bbox:
-        so = [p.strip() for p in str(args.bbox).split(",")]
+    # `--bbox x,y,w,h` (dạng xywh, cùng dạng bbox.json). KIỂM ngay nhưng GHI SAU khi mọi validate
+    # xong: ghi trước như bản nháp sẽ để lại bbox.json rác khi chính lệnh đó sai tham số (`--vos-every
+    # 0`), rồi lần chạy sau `--dump-mask-frames` (không `--bbox`) lặng lẽ bám ô cũ (P3 review 18-11).
+    def _parse_bbox(text: str) -> dict:
+        so = [p.strip() for p in str(text).split(",")]
         if len(so) != 4:
             parser.error('--bbox phải dạng "x,y,w,h"')
         try:
-            x, y, w, h = (float(v) for v in so)
+            # SỐ NGUYÊN: `read_bbox` đọc bằng `int()` nên `0.5` sẽ thành 0 (hộp rỗng) — và tài liệu đã
+            # quy ước "hộp phải là số nguyên" (`score_miou._hop_bao_hop_le`).
+            vals = [int(v) for v in so]
         except ValueError:
-            parser.error('--bbox phải dạng "x,y,w,h" (bốn số)')
+            parser.error('--bbox phải là bốn SỐ NGUYÊN "x,y,w,h" (không nhận số thực)')
+        x, y, w, h = vals
         if w <= 0 or h <= 0:
             # Lỗi kinh điển của repo: truyền `x1,y1,x2,y2` (AGENTS §6, bug đã làm hỏng cả Phase 4c).
             parser.error("--bbox: w và h phải > 0 (dạng xywh, KHÔNG phải x1,y1,x2,y2)")
-        from src.live_tracking import BBOX_NAME
+        if x < 0 or y < 0:
+            parser.error("--bbox: x và y phải >= 0")
+        return {"x": x, "y": y, "w": w, "h": h}
 
-        out = Path(args.out_dir)
-        out.mkdir(parents=True, exist_ok=True)
-        (out / BBOX_NAME).write_text(json.dumps({"x": x, "y": y, "w": w, "h": h}),
-                                    encoding="utf-8")
+    bbox_ghi = _parse_bbox(args.bbox) if args.bbox else None
 
     # Chặn ngay ở cửa vào (P0 review hẹp 14-11): với `vos_every > 1` model **không hề thấy** frame
     # không chia hết cho N ⇒ không có mask thật để dump. Cho chạy rồi cảnh báo cuối phiên là quá muộn:
@@ -171,17 +174,27 @@ def main() -> int:
         # chưa có, phiên đọc N frame trong lúc chờ chọn ô rồi mới bắt đầu ⇒ `mask_NNNNNN.png` là frame
         # của PHIÊN, không phải của clip; và nguồn `loop_files` quay vòng nên KHÔNG suy ra được frame
         # clip từ N (`offset + idx` phải mod độ dài clip). Chặn thay vì đoán.
-        from src.live_tracking import BBOX_NAME
+        from src.live_tracking import BBOX_NAME, read_bbox
 
-        if not (Path(args.out_dir) / BBOX_NAME).exists():
+        duong = Path(args.out_dir) / BBOX_NAME
+        # `exists()` là chưa đủ: bbox.json hỏng/viết dở (`{"x":1}`) vẫn cho qua cửa, rồi `read_bbox`
+        # trả None ⇒ phiên chờ chọn ô VĨNH VIỄN và dump không có gì (nạp model 20–240 s vô ích).
+        if bbox_ghi is None and read_bbox(duong) is None:
             parser.error(
-                f"--dump-mask-frames cần {Path(args.out_dir) / BBOX_NAME} có SẴN trước khi chạy "
-                "(đặt ô chọn trước: `--bbox x,y,w,h` hoặc tự ghi bbox.json) — nếu phiên chờ chọn ô "
-                "thì tên file mask không còn là frame của clip (ticket #36)")
+                f"--dump-mask-frames cần {duong} ĐỌC ĐƯỢC trước khi chạy (đặt ô chọn trước: "
+                "`--bbox x,y,w,h` hoặc ghi bbox.json) — nếu phiên chờ chọn ô thì tên file mask không "
+                "còn là frame của clip (ticket #36)")
     if args.vos_every < 1:
         parser.error("--vos-every phải >= 1")
     if args.max_fps <= 0:
         parser.error("--max-fps phải > 0")
+
+    if bbox_ghi is not None:
+        # Ghi SAU toàn bộ validate (xem chú thích ở `_parse_bbox`).
+        from src.live_tracking import BBOX_NAME
+
+        (Path(args.out_dir)).mkdir(parents=True, exist_ok=True)
+        (Path(args.out_dir) / BBOX_NAME).write_text(json.dumps(bbox_ghi), encoding="utf-8")
 
     out_dir = Path(args.out_dir)
     out_dir.mkdir(parents=True, exist_ok=True)

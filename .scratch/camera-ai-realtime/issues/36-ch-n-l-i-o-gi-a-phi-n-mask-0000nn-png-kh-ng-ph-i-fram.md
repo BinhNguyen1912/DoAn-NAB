@@ -60,3 +60,14 @@ vẫn xanh. Nay có test **đúng nhánh chờ chọn ô** (`bbox.json` xuất h
 **P3 đã sửa**: log ghi đúng đường tới được (CLI + bbox đến muộn — **không** phải web, web không bao giờ
 dump); `docs/thuoc-do-bam-dung.md` thêm quy tắc "phiên phải bám từ frame đầu" + ví dụ `--bbox`;
 `_da_canh_bao_offset` khai trong `__init__`.
+
+## Bổ sung sau review vòng 2
+
+- **P1 (lỗi thật)**: guard chỉ chặn lần ghi ĐẦU (cờ `_da_canh_bao_offset` chặn luôn cả khối `return
+  False`) ⇒ các frame yêu cầu sau vẫn ghi file lệch frame. Diễn tập lại thấy `mask_000005.png` +
+  `mask_000008.png`. Nay: cảnh báo 1 lần, **từ chối MỌI lần**, ghi `_tu_choi_offset` để báo đúng lý do.
+- **P2**: `kiem_khop_manifest` trả `(chan, mem)` (hết "cổng danh nghĩa" nối bằng tiền tố chuỗi) + 2
+  test mức `main` (exit 2 & không artifact; `--cho-phep-offset` ⇒ exit 1); offset **không đọc được**
+  ⇒ CHẶN; đọc `frames_da_ghi` để bắt mask còn lại từ phiên khác (chỉ xét frame định chấm).
+- **P3**: `--bbox` số nguyên không âm; chặn `bbox.json` hỏng; ghi bbox.json sau validate; `run()` lần
+  hai ⇒ `RuntimeError`; doc sửa câu sai "chọn ô qua web/API" + tách comment nuốt cờ.

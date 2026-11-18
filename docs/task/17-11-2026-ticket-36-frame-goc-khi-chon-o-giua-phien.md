@@ -108,3 +108,52 @@ Kết quả: 30 frame, 12,0 FPS, 5 mask `mask_{000000,000006,000012,000018,00002
 (`0,9354`, 5 frame, `coverage 0,208`) ⇒ cửa vào mới **không** đổi kết quả của workflow chuẩn.
 `--bbox 20,90,60,60` lấy từ `docs/gt/synthetic_tong_hop/index.json` (`frames[0].bbox_xywh`) — bản nháp
 đầu của mình ghi `10,10,60,60` (đoán) sẽ cho mask lệch, không được để vào tài liệu.
+
+## Bổ sung sau review vòng 2 (P1 mới + 3 P2 + 5 P3)
+
+### P1 — guard "TỪ CHỐI" chỉ chặn lần ghi ĐẦU (lỗi thật của mình)
+
+`if self._frame_goc and not self._da_canh_bao_offset:` ⇒ sau lần từ chối đầu, cờ thành `True` nên các
+frame yêu cầu sau **rơi xuống `cv2.imwrite`** và ghi `mask_*.png` mang tên lệch frame — đúng thứ ticket
+cấm. **Diễn tập lại đã thấy thật**: `dump_mask_frames=(0,5,8)`, bbox.json đến ở `is_set()` #3 ⇒ bản cũ
+sinh `mask_000005.png` + `mask_000008.png`. Nay tách hai việc: cảnh báo **một lần**, `return False`
+**mọi lần**; theo dõi `_tu_choi_offset` (set) ⇒ `_canh_bao_mask_thieu` nêu đúng lý do "TỪ CHỐI n frame"
+thay vì khuyên "dùng --vos-every 1" khi `vos_every` đã là 1 (P3).
+
+### P2 — "cổng danh nghĩa" ở `score_miou`
+
+- `kiem_khop_manifest` nay trả **`(chan, mem)`**; `main` cộng `chan` vào lỗi chặn. Trước đây việc CHẶN
+  được nối bằng **so tiền tố chuỗi** `"CHẶN CHẤM: "` ⇒ xoá 2 dòng promotion là block biến mất mà mọi
+  test vẫn xanh. Thêm 2 test mức `main`: offset 37 ⇒ `main(...) == 2` **và `not out.exists()`**;
+  `--cho-phep-offset` ⇒ `== 1`, artifact có, `canh_bao_gt` nêu cờ. **Diễn tập ngược**: đổi `chan +=`
+  thành `mem +=` ⇒ 2/2 đỏ.
+- `frame_goc_cua_phien` **có khoá mà không đọc được** (`2.7`, `"abc"`, `""`, `true`, `[37]`, `inf`) ⇒
+  CHẶN (trước là bỏ qua = fail-open đúng trên khoá dùng để chặn).
+- Đọc thêm **`frames_da_ghi`**: GT định chấm mà phiên này không ghi ⇒ `mask_*.png` còn trên đĩa là của
+  **phiên/lần chọn KHÁC** ⇒ CHẶN. Chỉ xét frame ĐỊNH CHẤM (GT ∩ `frames_yeu_cau`) — bản nháp đầu đòi
+  phủ hết GT nên **CHẶN OAN** demo synthetic (GT 24 frame, chấm 5); phát hiện khi diễn tập lại, đã sửa
+  + có test ghim (GT rộng hơn `frames_yeu_cau` ⇒ `chan == []`).
+
+### P3
+
+`--bbox` đòi **số nguyên** (`0.5` qua cửa rồi `read_bbox` `int()` ⇒ hộp rỗng), chặn `x/y < 0`;
+`bbox.json` hỏng (`{"x":1}`) nay bị chặn ở cửa (kiểm `read_bbox(...) is not None`, không chỉ
+`.exists()`); `bbox.json` chỉ được ghi **sau toàn bộ validate** (trước đây `--vos-every 0` bị từ chối
+nhưng vẫn để lại ô cũ ⇒ lần sau lặng lẽ bám ô đó); `run()` gọi lần hai ⇒ `RuntimeError` (bộ đếm frame
+không reset ⇒ tên file lệch); doc: bỏ câu sai "chọn ô qua web/API" (web không dump) + tách comment
+`#` đang nuốt mất `--vos-every/--dump-mask-frames/--stop-after-frames` trong ví dụ demo.
+
+### Diễn tập lại workflow tài liệu sau khi sửa
+
+```
+live_worker --source data/synthetic_gt.mp4 --out-dir /tmp/demo_gt2 --bbox 20,90,60,60 \
+  --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
+score_miou score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt2/masks
+```
+⇒ 30 frame, 12,2 FPS, 5 mask, `frame_goc_cua_phien = 0`, **mIoU 0,9354 / 5 frame**, `loi_chan = []`
+— trùng số đã công bố, tức cửa vào mới không đổi kết quả workflow chuẩn.
+
+**File thay đổi (vòng này)**: `src/live_tracking.py`, `scripts/score_miou.py`, `tools/live_worker.py`,
+`tests/test_mask_dump_frame_idx.py`, `tests/test_live_worker_cli.py`, `tests/test_score_miou.py`,
+`docs/thuoc-do-bam-dung.md`, ticket #36.
+**Trạng thái**: `./run lint` xanh · `./run test` **1377 passed** (5 deselected).

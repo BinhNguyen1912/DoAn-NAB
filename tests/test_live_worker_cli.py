@@ -115,3 +115,39 @@ class TestDumpMaskCanBBoxCoSan:
             _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(tmp_path / "o"),
                                "--bbox", "100,100,-90,-60"])   # truyền xyxy ⇒ w/h âm
         assert exc.value.code == 2
+
+    def test_bbox_so_thuc_bi_tu_choi(self, tmp_path, monkeypatch):
+        """`read_bbox` đọc bằng `int()` ⇒ `10,20,0.5,0.5` thành hộp RỖNG `w=h=0` lúc chạy.
+
+        Guard `w > 0` trên số thực không bắt được (0.5 > 0), nên phải đòi SỐ NGUYÊN ngay ở cửa vào
+        (P3 vòng review 2; tài liệu đã quy ước "hộp phải là số nguyên").
+        """
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(tmp_path / "o"),
+                               "--bbox", "10,20,0.5,0.5"])
+        assert exc.value.code == 2
+
+    def test_bbox_toa_do_am_bi_tu_choi(self, tmp_path, monkeypatch):
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(tmp_path / "o"),
+                               "--bbox", "-5,10,20,20"])
+        assert exc.value.code == 2
+
+    def test_bbox_hong_trong_file_bi_tu_choi(self, tmp_path, monkeypatch, capsys):
+        """`bbox.json` viết dở (`{"x":1}`) vẫn `.exists()` ⇒ phải kiểm ĐỌC ĐƯỢC, không chỉ tồn tại."""
+        out = tmp_path / "o"
+        out.mkdir()
+        (out / "bbox.json").write_text('{"x":1}', encoding="utf-8")
+        with pytest.raises(SystemExit) as exc:
+            _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                               "--dump-mask-frames", "0", "--vos-every", "1"])
+        assert exc.value.code == 2
+        assert "ĐỌC ĐƯỢC" in capsys.readouterr().err
+
+    def test_bbox_khong_duoc_ghi_khi_lenh_sai_tham_so(self, tmp_path, monkeypatch):
+        """Ghi bbox.json TRƯỚC validate sẽ để lại ô cũ rác cho lần chạy sau (P3 vòng review 2)."""
+        out = tmp_path / "o"
+        with pytest.raises(SystemExit):
+            _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                               "--bbox", "10,20,30,40", "--vos-every", "0"])
+        assert not (out / "bbox.json").exists(), "lệnh bị từ chối thì không được để lại bbox.json"
