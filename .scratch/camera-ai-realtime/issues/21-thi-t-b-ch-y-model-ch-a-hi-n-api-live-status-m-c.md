@@ -15,7 +15,7 @@
 
 - [x] `status.json` có `device`, xuyên chuỗi tới `/api/live/status` và HUD web; allowlist test cập nhật; `./run webtest` + `./run e2e` xanh
 - [ ] Bảng mặc định theo thiết bị (image_size, vos_every) kèm số đo thật trên GPU, có `git_rev` + `device_worker_log`, và ghi ngưỡng nhiễu
-- [ ] Không làm mất đường CPU hiện tại: `./run test` + `testall` xanh, số CPU baseline trong `data/live_gpu_device_cpu_baseline_run1..3_2026-11-10_metrics.json` vẫn tái lập được
+- [x] Không làm mất đường CPU hiện tại: `./run test` + `testall` xanh (**1391 passed**, 18-11), baseline chạy lại 3 lần (`data/live_cpu_baseline_run{1,2,3}_2026-11-18_metrics.json`, `c22c086`, `git_dirty_code false`): `measured_fps` 29,93 ± 0,05 · `vos_ms` 99,5 ± 6,7 · `drift_iou` 0,910 ± 0,000 — log `docs/task/18-11-2026-ticket-21-tai-lap-baseline-cpu.md`
 
 ## Comments
 
