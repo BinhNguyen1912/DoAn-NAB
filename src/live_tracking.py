@@ -560,6 +560,7 @@ class LiveTrackingSession:
         self._shown_iou_window: deque = deque(maxlen=10)
         self._prev_shown_mask = None
         self._prev_raw_mask = None
+        self._prev_vos_frame = None      # frame video của mẫu stability gần nhất (ticket #35)
         self._prev_vos_bbox = None
         self._lock = threading.Lock()          # bảo vệ `_vos_state`
         # Bảo vệ `_stats` + mọi cửa sổ thống kê (luồng VOS ghi, luồng chính đọc). Lock LÁ, KHÔNG
@@ -835,7 +836,8 @@ class LiveTrackingSession:
         bat_dau_post = time.perf_counter()
         # `frame_video` = chỉ số frame VIDEO của phiên (không phải bộ đếm của engine) — xem P0 review
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
-        dump_ms, da_ghi = self._record_vos(result, frame_video=self._frame_index if dump else None)
+        dump_ms, da_ghi = self._record_vos(
+            result, frame_video=self._frame_index, dump=dump)
         self._smooth(result)
         # Trừ thời gian ghi PNG (ticket #26): `post_ms` chỉ còn phần XỬ LÝ KẾT QUẢ.
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0 - dump_ms, 2)
@@ -965,7 +967,7 @@ class LiveTrackingSession:
         except OSError as exc:
             print(f"[canh-bao] không ghi được manifest.json: {exc}", flush=True)
 
-    def _record_vos(self, result, frame_video=None) -> tuple:
+    def _record_vos(self, result, frame_video=None, dump: bool = True) -> tuple:
         """Ghi nhận một lần VOS. Trả `(dump_ms, da_ghi)`: thời gian ĐÃ THỬ ghi mask + có file thật không.
 
         Trả `(dump_ms, da_ghi)` thay vì tự gán `post_ms`/`dump_ms`: người gọi đang đo `post_ms` bao
@@ -978,18 +980,23 @@ class LiveTrackingSession:
         lần N+1 (P3 review độc lập 17-11).
         """
         bat_dau_dump = time.perf_counter()
-        da_ghi = self._dump_mask(result, frame_video)
+        # `dump=False`: đường CÓ luồng, frame `start()` sẽ được worker xử lý lại và dump ở `_store_vos`
+        # ⇒ dump ở đây là ghi đè chính file đó. `frame_video` vẫn được truyền vì nó còn dùng để
+        # `_measure_stability` nhận ra "cùng một frame, hai kết quả VOS" (ticket #35).
+        da_ghi = self._dump_mask(result, frame_video) if dump else False
         dump_ms = round((time.perf_counter() - bat_dau_dump) * 1000.0, 2)
         with self._stats_lock:
             self._stats.vos_ms = round(float(getattr(result, "elapsed_ms", 0.0)), 1)
             self._stats.vos_runs += 1
             self._vos_stamps.append(time.perf_counter())
             self._trim(self._vos_stamps)
-        self._measure_stability(result)
+        # `frame_video`: để `_measure_stability` bỏ mẫu cặp khi worker xử lý LẠI đúng frame `start()`
+        # (ticket #35). `None` (đường đơn luồng khi `dump=False`) ⇒ không so được, vẫn đo bình thường.
+        self._measure_stability(result, frame_video=frame_video)
         # Trả thời gian ĐÃ THỬ ghi (kể cả khi fail) để `post_ms` không bao gồm công việc dump; người
         # đọc `status.json` chỉ thấy con số khi CÓ file (`da_ghi`). Không dump frame này ⇒ 0,0 (không
         # có gì để trừ).
-        return (dump_ms, da_ghi) if self._co_dump(frame_video) else (0.0, False)
+        return (dump_ms, da_ghi) if dump and self._co_dump(frame_video) else (0.0, False)
 
     def _co_dump(self, frame_video) -> bool:
         """Frame này có nằm trong `--dump-mask-frames` không (⇒ có THỬ ghi file)."""
@@ -1159,12 +1166,18 @@ class LiveTrackingSession:
                                         if len(self._age_window) >= _STAT_MIN_SAMPLES
                                         else None)
 
-    def _measure_stability(self, result) -> None:
+    def _measure_stability(self, result, frame_video=None) -> None:
         """IoU giữa hai mask VOS liên tiếp — con số trung thực cho "mask có nhấp nháy không".
 
         Mask RỖNG không vào cửa sổ IoU (`mask_iou(rỗng, rỗng) = 1,0` sẽ biến "mất dấu hoàn toàn"
         thành "độ ổn định 100 %" trên UI — lỗi P2, review 08-11), nhưng chúng **ĐƯỢC ĐẾM** trong
         `_vos_lost_window` (⇒ `empty_frac_window`) và `empty_runs`.
+
+        `frame_video` (ticket #35): frame `engine.start()` được worker `process()` LẠI ⇒ có **hai** kết
+        quả VOS cho **cùng một frame video**. Cặp đó không phải "hai mask liên tiếp" — đo IoU của chúng
+        gần như luôn ≈ 1,0 và làm `stability` bị thổi lên ở đầu phiên. Vì thế: vẫn ĐẾM vào cửa sổ mất
+        dấu (mỗi lần VOS là một lần thật, giữ `empty_window_n == vos_runs`), nhưng **không đẩy mẫu cặp**
+        khi `frame_video` trùng lần trước — chỉ cập nhật mốc.
         """
         raw = getattr(result, "mask", None)
         if raw is None:
@@ -1193,6 +1206,12 @@ class LiveTrackingSession:
         if not raw.any():
             self._prev_raw_mask = None
             return
+        # CÙNG frame video (frame `start()` được worker xử lý lại) không phải cặp "liên tiếp" — xem
+        # docstring. Không đẩy mẫu, chỉ cập nhật mốc.
+        if frame_video is not None and frame_video == self._prev_vos_frame:
+            self._prev_raw_mask = raw
+            return
+        self._prev_vos_frame = frame_video
         if self._prev_raw_mask is not None:
             # `mask_iou` tính NGOÀI lock (cùng lý do như `_smooth`): chỉ `append` + `sum()` cần lock.
             value = mask_iou(self._prev_raw_mask, raw)

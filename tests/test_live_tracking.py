@@ -1957,3 +1957,75 @@ class TestPreMsEngineKhongCo:
 
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
         assert status["pre_ms"] is None, "thiếu `pre_ms` phải là null, không được thành 0,0"
+
+
+class TestMotKetQuaChiDoMotLan:
+    """Ticket #35: frame `engine.start()` được worker `process()` LẠI ⇒ có HAI kết quả VOS cho CÙNG
+    một frame video. Cặp đó không phải "hai mask liên tiếp": `mask_iou` của chúng ≈ 1,0 ⇒ `stability`
+    bị thổi lên ở đầu phiên.
+
+    Cách sửa KHÔNG phải "bỏ đo frame start()": mỗi lần VOS vẫn phải được ĐẾM vào cửa sổ mất dấu
+    (`empty_window_n == vos_runs`), chỉ **không đẩy mẫu cặp** khi `frame_video` trùng lần trước.
+
+    Test đầu kiểm **cơ chế** (gọi thẳng `_measure_stability`, không phụ thuộc mask rỗng do FakeEngine
+    trôi ra ngoài khung); test sau kiểm **bất biến của phiên** (không bỏ sót, không nhân đôi lần đo).
+    """
+
+    @staticmethod
+    def _session(tmp_path):
+        out = tmp_path / "live"
+        out.mkdir(parents=True, exist_ok=True)
+        return LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3)), out
+
+    @staticmethod
+    def _result():
+        mask = np.zeros((48, 64), bool)
+        mask[10:20, 10:20] = True
+        return _Result(0, (10, 10, 20, 20), mask)
+
+    def test_cung_frame_video_khong_day_mau_cap(self, tmp_path):
+        session, _out = self._session(tmp_path)
+        # Frame video 0 được đưa vào HAI lần (một từ `_after_vos`, một từ worker sau khi `process()`
+        # lại chính frame đó): mask y hệt nhau ⇒ nếu đẩy mẫu sẽ được IoU = 1,0 "miễn phí".
+        session._measure_stability(self._result(), frame_video=0)
+        session._measure_stability(self._result(), frame_video=0)
+
+        assert session._stats.stability_n == 0, "cùng frame ⇒ không có cặp nào để so"
+        assert session._stats.empty_window_n == 2, "nhưng vẫn phải ĐẾM đủ 2 lần VOS"
+
+        # Frame video khác ⇒ mới là cặp thật.
+        session._measure_stability(self._result(), frame_video=3)
+        assert session._stats.stability_n == 1
+        assert session._stats.stability == pytest.approx(1.0)
+        assert session._stats.empty_window_n == 3
+
+    def test_duong_co_luong_van_do_du_moi_lan_va_dem_du(self, textured_video, tmp_path,
+                                                        monkeypatch):
+        from src import live_tracking as lt
+
+        goi: list = []
+        goc = lt.LiveTrackingSession._measure_stability
+
+        def _dem(self, result, frame_video=None):
+            goi.append(frame_video)
+            return goc(self, result, frame_video=frame_video)
+
+        monkeypatch.setattr(lt.LiveTrackingSession, "_measure_stability", _dem)
+        out = tmp_path / "live_lk"
+        _pre_select(out)
+        session = lt.LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3, loop_files=True))
+        session.run(stop_event=_StopAfter(40))
+        status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
+
+        assert len(goi) == status["vos_runs"], (
+            f"đo stability {len(goi)} lần cho {status['vos_runs']} lần VOS")
+        assert status["empty_window_n"] == status["vos_runs"], (
+            "bỏ đo ở frame start() KHÔNG được làm mất mẫu cửa sổ mất dấu")
+        assert len(goi) >= 4, "phải có mẫu thật để test không xanh rỗng"
+        # Bản lỗi đẩy thêm 1 mẫu cho cặp cùng frame ⇒ `stability_n` vượt số frame khác nhau − 1.
+        khac = {fv for fv in goi if fv is not None}
+        assert status["stability_n"] <= len(khac) - 1, (
+            f"stability_n={status['stability_n']} > {len(khac)} frame khác nhau − 1 ⇒ "
+            "cặp của cùng frame (IoU ≈ 1,0) đã bị đẩy vào cửa sổ")
