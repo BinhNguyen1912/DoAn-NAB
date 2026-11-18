@@ -30,6 +30,11 @@
 | FPS / độ trễ (`image_size` 320, 6 frame, clip thật) | **4,18 FPS** (mean 240 ms, p95 312 ms) | `data/res_1102_summary.json` |
 | FPS / độ trễ (`image_size` 256, webcam) | **4,6–5,4 FPS** (186–218 ms) | `data/fast_1101-*_summary.json` |
 | FPS trên GPU Colab (T4) | **9,9 FPS** (101 ms) | `data/gpu_summary.json` |
+
+> ⚠ **p95/mean độ trễ của các artifact TRƯỚC 17-11 ở bảng trên sinh bằng code chưa có `*_n`**: số vẫn
+> dùng được nhưng **không nêu được cỡ mẫu**, và bản cũ trả `0,0` thay vì `None` khi chưa có mẫu (ticket
+> #32). Artifact sinh từ 17-11 trở đi có `p95_latency_ms_n`/`mean_latency_ms_n` — khi trích số mới, đọc
+> kèm `_n` (`n == 0` = **chưa đo**, không phải "0 ms").
 | Mức sử dụng CPU | **342 % của 1 lõi ≈ 43 % máy 8 lõi** (đỉnh 390 %) | `data/res_1102_summary.json` → `resources` |
 | Mức sử dụng RAM | **620,7 MB** trung bình, **632,3 MB** đỉnh | nt. |
 | Mức sử dụng GPU | không có GPU NVIDIA trên máy demo (trường `gpu: null`) — số GPU: `docs/colab-gpu.md` | nt. |
