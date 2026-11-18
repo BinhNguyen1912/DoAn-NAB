@@ -28,10 +28,11 @@ Phụ lục `docs/doi-chieu-yeu-cau-gvhd.md` (tài liệu hội đồng đọc) 
    | `binh2` (`0:160`) | **0,0 %** | **0,726** |
 
 2. Bảng phụ lục: đổi dòng "Độ tự nhất quán ô bao (`drift_iou`, p05)" thành **ô CHAI, chỉ trong khung vật
-   có mặt** với `binh1` **0,48–0,50**, `binh2` **0,726** (`empty_frac` 0 %), kèm danh sách artifact.
+   có mặt** với `binh1` **0,49–0,50**, `binh2` **0,726** (`empty_frac` 0 %), kèm danh sách artifact.
 3. Thêm **khối ⚠ ĐÍNH CHÍNH 14-11** ngay dưới bảng: số cũ 0,887 / 0,873 / 0,528 đo bằng ô khuôn mặt/ô
-   sai ⇒ **không** dùng để nói "bám chai"; `p05 = 0,000` của `binh2` **cả phiên** chủ yếu là **vật rời
-   khung** (36 % số lần VOS rỗng), không phải model mất dấu; `drift_iou` vẫn chỉ là **tự nhất quán**.
+   sai ⇒ **không** dùng để nói "bám chai"; tỉ lệ rỗng **cả phiên** là `binh1` **35,2 %** (`37/105`) và
+   `binh2` **19,1 %** (`22/115`) — chủ yếu do **vật rời khung** những đoạn ngoài khung, không phải model
+   mất dấu; `drift_iou` vẫn chỉ là **tự nhất quán**.
 4. Sửa cùng số đó ở dòng 10 (bảng yêu cầu GVHD) và ở `docs/tom-tat-do-an.md:163`.
 
 ## Output / Kết quả
@@ -43,10 +44,13 @@ Phụ lục `docs/doi-chieu-yeu-cau-gvhd.md` (tài liệu hội đồng đọc) 
 
 - **Không** xoá các số cũ khỏi lịch sử (`docs/task/08-11-…`, log 14-11 giữ nguyên theo AGENTS §2.3) — chỉ
   sửa **tài liệu đang dùng để báo cáo**.
-- Vì sao chọn `drift_iou_mean` trong khung thay vì `p05`: `p05` cả phiên trộn "vật ngoài khung" với
-  "model lệch" (đó chính là lý do có `--frame-window`), còn `p05` **trong khung** của `binh1` = 0,000 do bị
-  cắt bởi những lần VOS lúc chai vừa rời khung — trích nó cũng là trích sai. `drift_iou_mean` trong khung
-  là con số duy nhất vừa đúng ô chọn vừa có nghĩa "tự nhất quán của mask khi vật có mặt".
+- Vì sao chọn `drift_iou_mean` trong khung thay vì `p05`: bản nháp đầu của mình viết "`p05` trong khung
+  của `binh1` = 0,000 là do chuyển tiếp lúc chai rời khung" — **SAI, reviewer bắt đúng**: 7/60 mẫu
+  (11,7 %) có `drift_iou = 0` nằm ngay **trong** khung (frame 57/69/72/105/108/171/255), ô bao trôi lên
+  mép chai (`94,0,247,435` …) ⇒ **LK lệch khỏi vật thật**. Vì thế `p05` trong khung = **0,000** với
+  `n = 60 ≥ 30` (ngưỡng 30 mẫu **không** chặn) và **không được** trích như "ổn định". Cách trung thực:
+  công bố `drift_iou_mean` trong khung **và** nói ra đuôi 11,7 % mẫu bằng 0 — đúng như khối ⚠ hiện tại.
+  (`binh2` trong khung có `p05 ≈ 0,275`, không phải 0.)
 
 ## Next steps
 
