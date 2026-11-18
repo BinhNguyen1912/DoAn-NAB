@@ -15,7 +15,7 @@
 
 - [x] `status.json` có `device`, xuyên chuỗi tới `/api/live/status` và HUD web; allowlist test cập nhật; `./run webtest` + `./run e2e` xanh
 - [ ] Bảng mặc định theo thiết bị (image_size, vos_every) kèm số đo thật trên GPU, có `git_rev` + `device_worker_log`, và ghi ngưỡng nhiễu
-- [x] Không làm mất đường CPU hiện tại: `./run test` + `testall` xanh (**1391 passed**, 18-11), baseline chạy lại 3 lần (`data/live_cpu_baseline_run{1,2,3}_2026-11-18_metrics.json`, `c22c086`, `git_dirty_code false`): `measured_fps` 29,93 ± 0,05 · `vos_ms` 99,5 ± 6,7 · `drift_iou` 0,910 ± 0,000 — log `docs/task/18-11-2026-ticket-21-tai-lap-baseline-cpu.md`
+- [x] Không làm mất đường CPU hiện tại: trên cây **`c22c086`** — `./run test` **1386 passed** (5 deselected) và `./run testall` **1391 passed** (gồm 5 test slow); baseline chạy lại 3 lần (`data/live_cpu_baseline_run{1,2,3}_2026-11-18_metrics.json` + CSV mẫu, `git_rev c22c086`, `git_dirty_code false`, `git_loi null`): FPS phát 29,93 ± 0,05 · `vos_fps` 8,3 ± 0,4 · `vos_ms` 99,5 ± 6,7 (`pstdev`) · `drift_iou` 0,910 ± 0,002 (**tự nhất quán**, không phải chất lượng bám). Kết luận **"cùng bậc"**, KHÔNG claim nhanh hơn 10-11 (khác ngày, chưa có ngưỡng nhiễu) — log `docs/task/18-11-2026-ticket-21-tai-lap-baseline-cpu.md`
 
 ## Comments
 
