@@ -41,7 +41,7 @@
 | **Độ tự nhất quán ô bao** (`drift_iou`) — **ô CHAI, chỉ trong khung vật có mặt** | `binh1` **0,48–0,50** (đo 4 lần) · `binh2` **0,726** (khung `0:160`, mask rỗng **0,0 %`) | `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`, `data/sach_chai_binh1_1vong_metrics.json`, `data/sach_chai_binh2_1vong_metrics.json` (`git_dirty_code false`) — **KHÔNG phải độ chính xác** (AGENTS §6) |
 | **mIoU mask vs GT** (fixture tổng hợp, cận trên) | **0,956** / **0,892** khi che 50 % / `null` khi che kín | `data/occlusion_metrics_320_metrics.json` |
 | **Camera THẬT** (relay Windows→WSL): HUD FPS / mask / drift p05 | **30.1** / **6.6–8.4** lần/giây / **0.933** (`drift_n` 171), tuổi dữ liệu p95 **281.6 ms** (`age_n` 200) | `data/live_web_relay_2026-11-10_metrics.json` |
-| **Watchdog** phát hiện nguồn chết | worker `kill -9`: **116–117 ms** · camera mất frame: **3,75 s** | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
+| **Watchdog** phát hiện nguồn chết | worker `kill -9`: **116–117 ms** (bắt bằng `proc.poll()`) · nguồn kiểu **`raw`** mất frame: **3,75 s** (relay ảnh JPEG **localhost**; **chưa đo trên webcam/RTSP thật** — `moi_truong` của artifact) | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
 > ⚠ **`p95`/`mean` độ trễ trong bảng trên đo bằng code TRƯỚC 17-11** (ticket #32): artifact **không có**
 > field `p95_latency_ms_n`/`mean_latency_ms_n`. Cỡ mẫu vẫn suy được: `n = total_frames − frozen_frames` ⇒
 > **6** (`res_1102`) · **25** (`camtest`) · **52** (`demoip_1104-212328`) · **22** (`fast_1101-153223`) ·
