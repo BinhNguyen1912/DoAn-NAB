@@ -2,7 +2,7 @@
 
 > File này là **phụ lục báo cáo**: mỗi yêu cầu trong bảng "Yêu cầu thực hiện của sinh viên" (GVHD giao)
 > được trả lời bằng *file cụ thể* + *số đo cụ thể*, không bằng lời khẳng định.
-> Cập nhật lần cuối: **18-11-2026** (thêm web/API, live hybrid 30 FPS HUD, drift, mIoU fixture,
+> Cập nhật lần cuối: **18-11-2026** (đính chính `drift_iou` theo ô chọn đúng) (thêm web/API, live hybrid 30 FPS HUD, drift, mIoU fixture,
 > watchdog, H.264 — mỗi số trỏ đúng artifact). Chạy lại toàn bộ số trong file: xem mục "Cách tái tạo số liệu".
 >
 > Ký hiệu: ✅ xong có bằng chứng · 🟡 xong phần chính, còn thiếu số đo trên dữ liệu thật · ❌ thiếu
@@ -18,7 +18,7 @@
 | 7 | **Motion Memory**: lưu vị trí, đặc trưng, lịch sử chuyển động | Dùng **nguyên bản** memory bank + Kalman của SAMURAI (`docs/research/01`,`02`; ADR-0001) · phần tự viết quanh nó: `src/identity_guard.py` (phát hiện ô bao nhảy > 25 % đường chéo) + tự phục hồi trong `src/reid.py` (`_is_suspicious_jump` → reset engine, giữ ký ức vật) · độ trễ tăng theo bộ nhớ: đo 366 ms @213 frame (`data/smooth_summary.json`) | 🟡 **rủi ro khi bảo vệ**: chưa có "lịch sử chuyển động" do đồ án tự xây. Cần bàn GVHD nếu muốn tách thành module riêng (quỹ đạo + dự đoán vị trí) |
 | 8 | **Temporal Propagation** + giữ bám khi che khuất/biến dạng | streaming per-frame (ticket 02) · `scripts/experiment_occlusion.py` che 0→100 % → đo IoU từng khung + số khung mất dấu · test `test_experiment_occlusion.py` | ✅ (trên fixture; cảnh thật: cần clip che khuất do người dùng quay) |
 | 9 | **Tích hợp** 3 thành phần + xử lý **mất dấu** + **tái nhận diện** | `src/reid.py` 3 cổng chống "bám nhầm nền rồi kẹt" (ticket 13): `lost_score_threshold`, xác nhận 2 frame, kiểm chứng 2 frame · đo: ca bám nhầm nền (mask 782 px, score +19,40 giả) bị loại, khung 19 bám lại đúng với `reid=0,94` · ngưỡng hiệu chỉnh bằng 2 clip thật (`data/reid_2clip_calib.json`) | ✅ |
-| 10 | **Tối ưu real-time** + đánh giá **FPS, độ trễ, CPU/GPU, độ chính xác** | **live hybrid VOS+LK** (worker riêng + Lucas–Kanade): HUD **30.1 FPS**, mask **6.6–8.4 lần/giây (cao nhất 8.4)**, tuổi dữ liệu ảnh p95 **210 ms** (clip `binh1`, `data/drift_2026-11-08_metrics.json`); **độ tự nhất quán ô bao** `drift_iou` 0,885–0,889 / p05 0,663–0,720 (binh1), 0,873 / 0,644 (simloss), 0,528 / **0,000** (binh2 — VOS trả mask rỗng 26 lần); **watchdog**: worker chết ⇒ API `error` sau **116–117 ms** (`data/watchdog_2026-11-09_metrics.json`), nguồn camera mất frame ⇒ **3,75 s** (`data/watchdog_raw_2026-11-09_metrics.json`) · `src/metrics_logger.py` (CSV từng frame + summary mean/p95/FPS/tỉ lệ mất dấu) · **`src/resource_usage.py` (mới 02-11)**: CPU %, RAM, GPU (đo thật: **CPU 342 % ≈ 43 % máy 8 lõi, RAM đỉnh 632 MB**, không GPU — `data/res_1102_summary.json`) · tối ưu: `image_size` 1024→256 (`docs/research/03`,`05`), `--reanchor-every`, thread đọc camera | ✅ (GPU: chỉ có số trên Colab, xem `docs/colab-gpu.md`) |
+| 10 | **Tối ưu real-time** + đánh giá **FPS, độ trễ, CPU/GPU, độ chính xác** | **live hybrid VOS+LK** (worker riêng + Lucas–Kanade): HUD **30.1 FPS**, mask **6.6–8.4 lần/giây (cao nhất 8.4)**, tuổi dữ liệu ảnh p95 **210 ms** (clip `binh1`, `data/drift_2026-11-08_metrics.json`); **độ tự nhất quán ô bao** `drift_iou` **0,48–0,50** (binh1, **ô chai**, chỉ trong khung vật có mặt) và **0,726** (binh2, khung `0:160`, mask rỗng 0 %) — số cũ 0,885–0,889 / 0,528 đo bằng **ô khuôn mặt/ô sai**, xem đính chính dưới bảng; **watchdog**: worker chết ⇒ API `error` sau **116–117 ms** (`data/watchdog_2026-11-09_metrics.json`), nguồn camera mất frame ⇒ **3,75 s** (`data/watchdog_raw_2026-11-09_metrics.json`) · `src/metrics_logger.py` (CSV từng frame + summary mean/p95/FPS/tỉ lệ mất dấu) · **`src/resource_usage.py` (mới 02-11)**: CPU %, RAM, GPU (đo thật: **CPU 342 % ≈ 43 % máy 8 lõi, RAM đỉnh 632 MB**, không GPU — `data/res_1102_summary.json`) · tối ưu: `image_size` 1024→256 (`docs/research/03`,`05`), `--reanchor-every`, thread đọc camera | ✅ (GPU: chỉ có số trên Colab, xem `docs/colab-gpu.md`) |
 | 11 | **Tích hợp, kiểm thử, hoàn thiện UI** + kiểm thử **chuyển động / che khuất / ánh sáng** | UI: `src/visualizer.py` (mask alpha + ô bao + quỹ đạo + HUD tiếng Việt + banner MẤT DẤU) · **UI web**: `web/src/components/LivePanel.tsx` (chọn ô, phát MJPEG, dòng "nhịp mask" nói rõ FPS phát ≠ nhịp mask) + `./run e2e` **PASS** trên Chrome/Edge thật (23 kiểm, gồm "trình duyệt GIẢI MÃ được video kết quả H.264") · **video demo xuất H.264** phát được trên web (`tools/run_live.py` + `src/worker/web_export.py`) · chuyển động: fixture ô vuông (`src/synthetic_video.py`) · che khuất: `experiment_occlusion` · **ánh sáng (mới 02-11)**: `scripts/experiment_lighting.py` → đo thật 5 mức sáng, **IoU 0,974 → 0,942**, 0/12 khung mất dấu (`data/lighting_iou_320_summary.json`) | ✅ (ánh sáng: fixture tổng hợp, độ tương phản cao — cần clip thật để kết luận về cảnh thật) |
 | 12 | **Báo cáo: tổng quan + cơ sở lý thuyết** | `docs/tom-tat-do-an.md` (bản tóm tắt có số) · `docs/research/02` (lý thuyết SAM 2/SAMURAI), `docs/research/04` (giải thích cho người mới + dàn ý báo cáo) · `docs/adr/0001…0004` (quyết định + lý do) · `docs/team-contribution.md` (phần nào tự làm) · **44 file log** trong `docs/task/` (tính đến 09-11-2026) | 🟡 nội dung đủ, **chưa ghép thành file báo cáo theo mẫu của trường** |
 
@@ -38,7 +38,7 @@
 | Độ ổn định: nhận lại đúng | **17/17** ca đúng được giữ, 1 ca sai bị cổng NCC 0,35 chặn | `data/reid_2clip_calib.json` |
 | Chi phí tìm lại khi mất dấu | **845 ms → 23,8 ms** (cascade NCC, nhanh ~35×) | `docs/task/27-10-2026-*.md` |
 | **Live hybrid**: FPS phát / nhịp mask / tuổi dữ liệu ảnh p95 | **29,9 FPS** / **8,6–8,7 lần/giây** / **210 ms** (clip `binh1`, `vos_every 3`, `image_size 192`) | `data/drift_2026-11-08_metrics.json` |
-| **Độ tự nhất quán ô bao** (`drift_iou`, p05) | 0,887 (0,663–0,720) `binh1` · 0,873 (0,644) `simloss` · 0,528 (**0,000**) `binh2` | nt. — **KHÔNG phải độ chính xác** (AGENTS §6) |
+| **Độ tự nhất quán ô bao** (`drift_iou`) — **ô CHAI, chỉ trong khung vật có mặt** | `binh1` **0,48–0,50** (đo 4 lần) · `binh2` **0,726** (khung `0:160`, mask rỗng **0,0 %`) | `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`, `data/sach_chai_binh1_1vong_metrics.json`, `data/sach_chai_binh2_1vong_metrics.json` (`git_dirty_code false`) — **KHÔNG phải độ chính xác** (AGENTS §6) |
 | **mIoU mask vs GT** (fixture tổng hợp, cận trên) | **0,956** / **0,892** khi che 50 % / `null` khi che kín | `data/occlusion_metrics_320_metrics.json` |
 | **Camera THẬT** (relay Windows→WSL): HUD FPS / mask / drift p05 | **30.1** / **6.6–8.4** lần/giây / **0.933** (`drift_n` 171), tuổi dữ liệu p95 **281.6 ms** (`age_n` 200) | `data/live_web_relay_2026-11-10_metrics.json` |
 | **Watchdog** phát hiện nguồn chết | worker `kill -9`: **116–117 ms** · camera mất frame: **3,75 s** | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
@@ -47,6 +47,14 @@
 > **6** (`res_1102`) · **25** (`camtest`) · **52** (`demoip_1104-212328`) · **22** (`fast_1101-153223`) ·
 > **15** (`gui`). Với `n = 6` thì `p95` gần **max** (res_1102: p95 312 ms, max 340,4, mẫu 225,2) — nên
 > đọc là "p95 của 6 frame", **không** phải phân vị đáng tin.
+> ⚠ **ĐÍNH CHÍNH 14-11 cho `drift_iou` (đọc trước khi trích)**: các số **0,887 / 0,873 / 0,528 (p05 0,000)**
+> lưu hành trước đây đo bằng **ô KHUÔN MẶT** (`binh1`) và ô phủ **2 chai + 2 tay** (`binh2`) — không phải
+> ô chai, nên **không** dùng để nói "bám chai tốt/xấu". Ô chai đúng (`docs/demo-clip-va-o-chon.md`):
+> `binh1` `300,275,150,410` (khung `0:110` ∪ `165:262`), `binh2` `330,330,150,360` (khung `0:160`) ⇒
+> `drift_iou` **0,48–0,50** (`binh1`) và **0,726** (`binh2`), `empty_frac` trong khung **1,6–3,6 %** và
+> **0,0 %**. `p05 = 0,000` của `binh2` **cả phiên** chủ yếu là **vật đã rời khung** (36 % số lần VOS rỗng),
+> không phải model mất dấu. `drift_iou` vẫn chỉ là **tự nhất quán**, không phải độ chính xác — độ chính
+> xác chỉ có mIoU mask vs GT.
 > Từ 17-11: **`*_summary.json`** của `metrics_logger` có thêm `p95_latency_ms_n` (và `mean_latency_ms_n`);
 > `p95` trả **`None`** khi `n = 0`, còn `mean` **vẫn** `0,0` (vì `effective_fps = 1000/mean` là hợp đồng
 > cũ) — đọc kèm `_n`, `n == 0` = **chưa đo**, không phải "0 ms".

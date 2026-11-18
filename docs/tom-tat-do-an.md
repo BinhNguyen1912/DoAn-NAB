@@ -160,7 +160,7 @@ cho vật bất kỳ (ReID học sẵn như OSNet chỉ học cho *người*) �
 | FPS **phát** (HUD) | **29,9** | `data/drift_2026-11-08_metrics.json` |
 | Nhịp **mask mới** (model chạy) | **8,6–8,7 lần/giây** — **KHÔNG phải 30** | nt. |
 | Tuổi dữ liệu ảnh người xem thấy (p95) | **210 ms** | nt. |
-| Độ tự nhất quán ô bao (`drift_iou` / p05) | 0,887 / 0,663–0,720 (`binh1`); 0,873 / 0,644 (`simloss`); 0,528 / **0,000** (`binh2`) | nt. |
+| Độ tự nhất quán ô bao (`drift_iou`) — **ô chai, chỉ trong khung** | **0,48–0,50** (`binh1`, `empty_frac` trong khung 1,6–3,6 %) · **0,726** (`binh2`, khung `0:160`, rỗng 0 %) | `data/chu_ky_chai_binh1_1vong_lan{1,2,3}_metrics.json`, `data/sach_chai_binh1_1vong_metrics.json`, `data/sach_chai_binh2_1vong_metrics.json` |
 | **Camera THẬT** (relay Windows→WSL) | HUD **30.1 FPS** · frame đổi nội dung **681**/25 s · mask **6.6–8.4 lần/giây (cao nhất 8.4)** · drift p05 **0.933** (`drift_n` 171) · 0 mất dấu · tuổi ảnh p95 **281.6 ms** (`age_n` 200) | `data/live_web_relay_2026-11-10_metrics.json` |
 | Watchdog khi nguồn chết | worker `kill -9` ⇒ API `error` sau **116–117 ms**; camera mất frame ⇒ **3,75 s** | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
 
