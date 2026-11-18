@@ -195,6 +195,20 @@ class TestNguonVideo:
         c = dp.check_source_frames("0", [], "RuntimeError: bận", 10.0)
         assert not c.ok and "bận" in c.chi_tiet
 
+    def test_loi_webcam_thi_goi_y_DUNG_duong_thoat(self):
+        """Webcam chết ⇒ máy này KHÔNG cứu được bằng "thử index khác" (AGENTS §6: `Device busy` là cờ
+        kẹt ở DRIVER usbipd-win; đã thử index 1, reboot, unbind/bind đều không khỏi). Gợi ý phải là
+        relay hoặc file, nếu không người trực demo sẽ đi sai đường ngay trước giờ thi."""
+        c = dp.check_source_frames("0", [], "RuntimeError: Không mở được camera index 0", 10.0)
+        assert not c.ok
+        assert "./run relay" in c.chi_tiet, c.chi_tiet
+        assert "--source data/binh1.mp4" in c.chi_tiet, c.chi_tiet
+
+    def test_nguon_la_file_thi_khong_goi_y_relay(self):
+        """Nguồn đã là file/URL ⇒ gợi ý webcam là thừa, chỉ làm rối."""
+        c = dp.check_source_frames("data/binh1.mp4", [], "RuntimeError: không đọc được", 10.0)
+        assert not c.ok and "./run relay" not in c.chi_tiet
+
     def test_du_frame_thi_ok(self):
         frames = [np.zeros((4, 4, 3), np.uint8)] * 8
         assert dp.check_source_frames("0", frames, None, 12.0, n=8).ok

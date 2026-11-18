@@ -157,9 +157,14 @@ class CameraVideoSource(_CaptureSource):
         return cv2.VideoCapture(self._index, backends[0])
 
     def _raise_open_error(self):
+        # KHÔNG khuyên "thử index khác" như bản cũ: trên máy demo này webcam kẹt ở DRIVER usbipd-win
+        # (`Device busy (exported)`), đã thử index 1, `wsl --shutdown`, reboot, unbind/bind, restart
+        # service — không khỏi (AGENTS §6). Hai đường đã chạy được: relay HTTP và file video.
         raise RuntimeError(
             f"Không mở được camera index {self._index} "
-            f"(bận hoặc không tồn tại — thử index khác, ví dụ 1)"
+            "(bận/không tồn tại — nếu máy kẹt driver usbipd thì index khác cũng không cứu được: "
+            "dùng `./run relay` + nguồn `http://<IP-Windows>:8090/snapshot.jpg`, "
+            "hoặc nguồn file `data/binh1.mp4`)"
         )
 
 
