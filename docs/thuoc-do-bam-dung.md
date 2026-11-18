@@ -128,7 +128,7 @@ kiểm đường ống, không để tuyên bố độ chính xác).
 ```bash
 python scripts/make_synthetic_gt_clip.py          # clip + GT biết trước (ô vuông 60 px trên nền nhiễu)
 python tools/live_worker.py --source data/synthetic_gt.mp4 --out-dir /tmp/demo_gt \
-    --bbox 10,10,60,60 --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
+    --bbox 20,90,60,60 --image-size 192   # = bbox_xywh của frame 0 trong index.json --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
 python scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt/masks \
     --out data/miou_synthetic_2026-11-14_metrics.json
 ```

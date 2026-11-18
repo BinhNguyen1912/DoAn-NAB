@@ -92,3 +92,19 @@ quay vòng, "frame N+offset của clip" là **sai**; cả manifest, cảnh báo 
 ticket đổi câu "cảnh báo chặn" → "**từ chối** dump" như issue gốc; bỏ tick tiêu chí "test nêu đúng frame
 của clip" (không đúng khi nguồn quay vòng — nay tiêu chí là "từ chối"), `_da_canh_bao_offset` khai trong
 `__init__`.
+
+### Diễn tập lại workflow tài liệu (`docs/thuoc-do-bam-dung.md` mục 3) — 18-11
+
+Cửa vào mới có thể phá chính workflow mà tài liệu dạy, nên chạy lại nguyên lệnh:
+
+```
+live_worker --source data/synthetic_gt.mp4 --out-dir /tmp/demo_gt --bbox 20,90,60,60 \
+  --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
+score_miou score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt/masks
+```
+
+Kết quả: 30 frame, 12,0 FPS, 5 mask `mask_{000000,000006,000012,000018,000023}.png`,
+`manifest.frame_goc_cua_phien = 0`, **mIoU 0,9354 trên 5 frame** — trùng số đã công bố trong tài liệu
+(`0,9354`, 5 frame, `coverage 0,208`) ⇒ cửa vào mới **không** đổi kết quả của workflow chuẩn.
+`--bbox 20,90,60,60` lấy từ `docs/gt/synthetic_tong_hop/index.json` (`frames[0].bbox_xywh`) — bản nháp
+đầu của mình ghi `10,10,60,60` (đoán) sẽ cho mask lệch, không được để vào tài liệu.
