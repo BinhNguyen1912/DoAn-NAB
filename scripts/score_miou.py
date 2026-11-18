@@ -233,6 +233,14 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     # Mask bị GHI ĐÈ (tên file trùng giữa hai lần chọn ô / hai phiên) ⇒ file đang chấm có thể là của
     # lần chọn KHÁC. Worker đã in cảnh báo lúc ghi nhưng stdout đó không đi theo artifact; ticket #26
     # nên `manifest.json` khai `so_file_ghi_de` và chỗ CHẤM phải đọc nó (P2 review 17-11).
+    # Chọn ô GIỮA phiên: tên file mask đi theo chỉ số frame của PHIÊN, không phải của clip ⇒ ghép GT
+    # theo số frame là lệch đúng `frame_goc_cua_phien` (ticket #36). Thiếu khoá = manifest của bản cũ
+    # (mọi lần dump cũ đều bắt đầu từ frame 0 qua `--bbox`) ⇒ không cảnh báo.
+    goc = manifest.get("frame_goc_cua_phien")
+    if isinstance(goc, int) and not isinstance(goc, bool) and goc > 0:
+        mem.append(f"phiên bắt đầu SAU {goc} frame của nguồn (`frame_goc_cua_phien`) ⇒ "
+                   f"`mask_NNNNNN.png` là frame NNNNNN của PHIÊN, tức frame NNNNNN+{goc} của clip — "
+                   "cắt GT theo offset này, nếu không mIoU ghép lệch frame (ticket #36)")
     ghi_de = manifest.get("so_file_ghi_de")
     if isinstance(ghi_de, int) and not isinstance(ghi_de, bool) and ghi_de > 0:
         mem.append(f"mask bị GHI ĐÈ {ghi_de} lần trong lúc ghi (`so_file_ghi_de`) — có thể trộn mask "

@@ -878,3 +878,28 @@ class TestTuChoiChamKhiGtHong:
         assert sm.main(["score", "--gt", str(tmp_path), "--pred-dir", str(tmp_path),
                         "--out", str(tmp_path / "a.json")]) == 2
         assert not (tmp_path / "a.json").exists()
+
+
+class TestManifestFrameGocChonOGiuaPhien:
+    """Ticket #36: chọn ô GIỮA phiên ⇒ `mask_NNNNNN.png` là frame NNNNNN của PHIÊN, không phải của clip.
+
+    Thiếu cảnh báo này thì mIoU ghép GT theo số frame lệch đúng `frame_goc_cua_phien` — sai mà im lặng.
+    """
+
+    _idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
+
+    def test_offset_duong_thi_canh_bao(self):
+        mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4",
+                                               "frames_yeu_cau": [0], "frame_goc_cua_phien": 37})
+        assert any("SAU 37 frame" in c and "ticket #36" in c for c in mem), mem
+
+    def test_offset_0_thi_khong_canh_bao(self):
+        """Đường CLI `--bbox`: chọn ô ngay frame đầu ⇒ tên file đúng là frame của clip."""
+        mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4",
+                                               "frames_yeu_cau": [0], "frame_goc_cua_phien": 0})
+        assert not any("frame_goc_cua_phien" in c for c in mem), mem
+
+    def test_manifest_cu_thieu_khoa_thi_khong_canh_bao(self):
+        """Artifact sinh trước ticket #36 không có khoá này ⇒ không được đẻ cảnh báo rỗng."""
+        mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0]})
+        assert not any("frame_goc_cua_phien" in c for c in mem), mem

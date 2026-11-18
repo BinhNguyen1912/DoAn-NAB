@@ -174,3 +174,41 @@ def test_record_vos_khong_tu_gan_dump_ms(video_source, tmp_path):
 
     session._after_vos(np.full((40, 60, 3), 90, np.uint8), result)
     assert session._stats.dump_ms is not None, "người gọi gán `dump_ms` cùng lock với `post_ms`"
+
+
+def test_chon_o_giua_phien_thi_manifest_khai_frame_goc(video_source, tmp_path, capsys):
+    """Ticket #36: phiên bắt đầu SAU N frame của nguồn ⇒ manifest phải khai `frame_goc_cua_phien = N`
+    và có cảnh báo, để chỗ CHẤM biết `mask_NNNNNN.png` lệch N frame so với GT của clip."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+
+    # Giả lập "người dùng chọn ô sau khi phiên đã đọc 5 frame" — đúng trạng thái `waiting_selection`.
+    session.run(stop_event=_StopAfter(20))
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert "frame_goc_cua_phien" in man
+    # Chọn ô NGAY (bbox có sẵn từ đầu) ⇒ 0 frame chờ ⇒ tên file vẫn đúng frame của clip.
+    assert man["frame_goc_cua_phien"] == 0
+    assert "SAU" not in capsys.readouterr().out
+
+
+def test_offset_khac_0_canh_bao_va_khai_manifest(video_source, tmp_path, capsys):
+    """Khi `_frame_goc > 0` (chọn ô giữa phiên) ⇒ cảnh báo in ra tên file + frame tương ứng của clip."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+    session._frame_goc = 37                      # như phiên đã đọc 37 frame trước khi có ô chọn
+
+    session.run(stop_event=_StopAfter(20))
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert man["frame_goc_cua_phien"] == 37
+    out_txt = capsys.readouterr().out
+    assert "SAU 37 frame" in out_txt and "ticket #36" in out_txt

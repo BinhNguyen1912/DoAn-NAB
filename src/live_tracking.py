@@ -574,6 +574,10 @@ class LiveTrackingSession:
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
         self._seq = 0
         self._frame_index = 0
+        # Số frame đã ĐỌC từ nguồn trước khi bắt đầu bám (chọn ô GIỮA phiên ⇒ > 0). Tên file mask đi
+        # theo `_frame_index` của PHIÊN, nên khi offset > 0 thì `mask_000042.png` KHÔNG phải frame 42
+        # của clip ⇒ ghép GT theo số frame sẽ SAI (ticket #36). Khai ra để chỗ CHẤM biết.
+        self._frame_goc = 0
         self._source = None
         self._worker = None
         self._error = None              # lỗi từ luồng VOS (không được nuốt im lặng)
@@ -609,6 +613,9 @@ class LiveTrackingSession:
                     if bbox is None:
                         with self._stats_lock:
                             self._stats.state = STATE_WAITING
+                        # Frame này bị đọc trong GIAI ĐOẠN CHỜ CHỌN Ô ⇒ nó KHÔNG được bám. Đếm để
+                        # `manifest.json` khai `frame_goc_cua_phien` (ticket #36).
+                        self._frame_goc += 1
                         self._publish_frame(out_dir, frame)
                         self._sleep(interval, began)
                         continue
@@ -919,6 +926,13 @@ class LiveTrackingSession:
             # phiên; guard cũ (`... and int(frame_idx) not in self._dumped`) bỏ cảnh báo đúng ca cần
             # canh (P1 review 17-11). Tên file đi theo chỉ số frame VIDEO của phiên ⇒ ghi đè nghĩa là
             # mask của lần chọn trước bị thay, mà GT vẫn ghép theo số frame.
+            if getattr(self, "_frame_goc", 0) and not getattr(self, "_da_canh_bao_offset", False):
+                self._da_canh_bao_offset = True
+                print(f"[canh-bao] phiên bắt đầu SAU {self._frame_goc} frame của nguồn (chọn ô giữa "
+                      f"phiên) ⇒ `{dich.name}` là frame {int(frame_idx)} của PHIÊN, tương ứng frame "
+                      f"{int(frame_idx) + self._frame_goc} của clip. Ghép GT theo số frame sẽ SAI "
+                      "(ticket #36) — cắt GT theo `frame_goc_cua_phien` trong manifest.json",
+                      flush=True)
             se_ghi_de = dich.exists()
             if not cv2.imwrite(str(dich), arr * 255):
                 print(f"[canh-bao] cv2.imwrite trả False cho frame {frame_idx} (đĩa/quyền?) — file "
@@ -954,6 +968,10 @@ class LiveTrackingSession:
             "vos_every": self._cfg.vos_every, "mask_smoothing": self._cfg.mask_smoothing,
             "bbox_xywh": list(self._chon_bbox) if getattr(self, "_chon_bbox", None) else None,
             "frames_yeu_cau": list(self._cfg.dump_mask_frames),
+            # 0 = chọn ô NGAY từ frame đầu (đường CLI `--bbox`) ⇒ tên `mask_NNNNNN.png` đúng là frame
+            # NNNNNN của clip. > 0 = người dùng chọn ô giữa phiên ⇒ tên file lệch đúng offset này so
+            # với clip; ghép GT theo số frame là SAI (ticket #36).
+            "frame_goc_cua_phien": getattr(self, "_frame_goc", 0),
             # Danh sách ĐÃ GHI (khác "yêu cầu"): không có nó thì không phân biệt được "chấm 12 frame"
             # với "đã ghi 7/12" (P3 review 17-11).
             "frames_da_ghi": sorted(getattr(self, "_dumped", set())),
