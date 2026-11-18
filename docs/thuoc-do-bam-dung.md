@@ -66,8 +66,11 @@ ghim bằng test để con số không đổi theo thứ tự `index.frames`.
   và hộp chỉnh lệch 1 px thì im lặng ⇒ đừng đọc "đã qua cổng" là "không copy-paste". Với GT
   silhouette, dùng `scripts/gt_check_silhouette.py` (IoU > 0,98 giữa hai frame) — nó bắt được cả ca
   hai mask giống nhau mà hộp khai khác.
-- `manifest.json` chỉ có `nguon` + `frames_yeu_cau` ⇒ cổng so được **tên file/clip**, không chứng minh
-  được mask đúng nội dung frame (ca P0 14-11 "dump mask sai chỉ số frame" nay đã được sửa ở gốc).
+- `manifest.json` khai `nguon` · `bbox_xywh` · `image_size(_hieu_luc)` · `vos_every` · `frames_yeu_cau` ·
+  `frames_da_ghi` · `frame_goc_cua_phien` · `so_file_ghi_de` ⇒ cổng so được **điều kiện sinh mask**
+  (cùng clip, cùng frame, không lẫn phiên), nhưng **không** chứng minh nội dung từng frame — vẫn phải
+  xem `mask_0000NN.png`. (Ca P0 14-11 "dump mask sai chỉ số frame" đã sửa ở gốc; ticket #36 đóng nốt
+  đường "phiên chờ chọn ô" và "nguồn quay vòng".)
 - Tên khoá hộp là `hop_bao_xywh` (không phải `bbox_xywh` như `docs/gt/synthetic_tong_hop`); GT khai
   `dang_gt = hop_bao` mà dùng tên khác sẽ chỉ ra **cảnh báo mềm** chứ không qua cổng.
 - Hộp phải là **số nguyên** (`282`, không phải `282.0`) — JSON viết tay/ công cụ ngoài dễ sinh float.

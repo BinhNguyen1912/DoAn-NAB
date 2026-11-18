@@ -205,3 +205,39 @@ của CLI có thể cướp `bbox.json` của phiên API đang chờ chọn ô (
 
 **Trạng thái**: `./run lint` xanh · `./run test` **1384 passed** (5 deselected) · diễn tập ngược 3/3
 đỏ→xanh (quay vòng, `frames_da_ghi` producer, "file không tồn tại thì không chặn").
+
+## Bổ sung sau review vòng 4 (1 P2 + P3)
+
+### P2 — chẩn đoán SAI ở tổng kết phiên (lỗi thật của mình)
+
+Frame bị từ chối vì **quay vòng** được nhét vào CÙNG set `_tu_choi_offset` với ca "chọn ô muộn" ⇒
+`_canh_bao_mask_thieu` in `"TỪ CHỐI dump n frame … (phiên bắt đầu sau 0 frame) — chạy lại với ô chọn có
+sẵn từ frame đầu"` — vừa sai sự thật (offset = 0) vừa khuyên đúng thứ **không** chữa được nguyên nhân
+(nguồn lặp). Nay hai lý do có **set riêng** (`_tu_choi_offset` / `_tu_choi_quay_vong`) và **hai câu
+riêng**; câu quay vòng khuyên `--stop-after-frames <= độ dài clip`. Test ghim: `"phiên bắt đầu sau 0
+frame" not in out` + `"--stop-after-frames" in out`.
+
+### P3 đã sửa
+
+- **Fail-open trên đúng cổng CHẶN**: `frames_yeu_cau` CÓ mặt mà không parse được phần tử nào (`" "`,
+  `[]` rác) ⇒ `dinh_cham = set()` rỗng ⇒ vòng kiểm `continue` **mọi** frame ⇒ cổng `frames_da_ghi` bị
+  tắt im lặng. Nay: fail-**closed** (`dinh_cham = None` ⇒ kiểm mọi frame GT) + 1 dòng `mem`; 2 test mới
+  (chuỗi rỗng ⇒ vẫn chặn; `pred_dir=None` ⇒ fail-closed, ghim để ai "sửa" thành fail-open sẽ đỏ).
+- **Docstring** `kiem_khop_manifest` khớp hành vi thật: trả `(chan, mem)` (không còn "chỉ cảnh báo
+  mềm"), `pred_dir=None` = fail-closed.
+- **Test producer** `frames_da_ghi` trước đây **không có răng** với hồi quy nguy hiểm hơn (producer ghi
+  *danh sách YÊU CẦU*): yêu cầu `[0,4,9]` mà mọi frame đều ghi ⇒ hai danh sách bằng nhau ⇒ test xanh.
+  Nay dừng phiên trước frame 9 ⇒ `frames_yeu_cau [0,4,9]` vs `frames_da_ghi [0,4]`.
+- **Câu chặn hạ giọng**: cửa sổ `kill -9`/manifest chưa kịp ghi (giữa `imwrite` và
+  `_write_mask_manifest`) từng bị khẳng định chắc chắn "mask của PHIÊN KHÁC" ⇒ nay nêu cả khả năng đó.
+- **`cau_hinh.dump_mask_frames`** lệch giữa `loading` và `running` của **cùng phiên** (`6,0,6` ⇒
+  `[6,0,6]` vs `[0,6]`) ⇒ nay `sorted(set(...))` ở cả hai; test đổi sang `6,0,6 ⇒ [0,6]`.
+- **Doc**: dòng "Giới hạn" của `manifest.json` (vẫn nói "chỉ có `nguon` + `frames_yeu_cau`") nay liệt kê
+  đủ khoá + nói rõ cổng chứng minh *điều kiện sinh mask*, **không** chứng minh nội dung frame.
+- Bỏ **nhãn nội bộ** (`[offset] `) khỏi stdout người đọc; bỏ assert "ghim hành vi xấu" (chuỗi ⇒
+  char-list) trong test `cau_hinh` — nó sẽ đỏ oan nếu sau này ai chuẩn hoá chuỗi đúng chỗ.
+
+**Diễn tập ngược 4/4 đỏ→xanh**: dồn set quay vòng về `_tu_choi_offset`; tắt fail-closed của
+`frames_yeu_cau`; `cau_hinh` truyền `dump_frames` thô; (trước đó) xoá producer `frames_da_ghi`.
+
+**Trạng thái**: `./run lint` xanh · `./run test` **1387 passed** (5 deselected).

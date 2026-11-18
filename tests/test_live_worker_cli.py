@@ -162,8 +162,6 @@ class TestCauHinhDumpMaskLaSo:
         from src.live_tracking import cau_hinh_yeu_cau
 
         assert cau_hinh_yeu_cau(dump_mask_frames=[0, 6, 12])["dump_mask_frames"] == [0, 6, 12]
-        # Ghim BẢN CHẤT lỗi: chuỗi ⇒ char list (nếu ai đổi lại thì test này đỏ ngay tại đây).
-        assert cau_hinh_yeu_cau(dump_mask_frames="0,6,12")["dump_mask_frames"] != [0, 6, 12]
 
     def test_main_truyen_list_so(self, tmp_path, monkeypatch):
         """Đường thật: `--dump-mask-frames "0,6"` ⇒ `cau_hinh` ghi `[0, 6]` (main parse TRƯỚC)."""
@@ -175,6 +173,8 @@ class TestCauHinhDumpMaskLaSo:
         (out / "bbox.json").write_text('{"x":1,"y":1,"w":5,"h":5}', encoding="utf-8")
         with pytest.raises(_DungNgaySauCuaVao):
             _run(monkeypatch, ["--source", str(tmp_path / "khong-co.mp4"), "--out-dir", str(out),
-                               "--dump-mask-frames", "0,6", "--vos-every", "1"])
+                               "--dump-mask-frames", "6,0,6", "--vos-every", "1"])
         cau_hinh = _json.loads((out / "status.json").read_text(encoding="utf-8"))["cau_hinh"]
+        # Đúng bằng tập SẼ THI HÀNH (`LiveTrackConfig` cũng `sorted(set(...))`) ⇒ `loading` và
+        # `running` của cùng phiên không khai hai giá trị khác nhau (P3 vòng review 4).
         assert cau_hinh["dump_mask_frames"] == [0, 6]

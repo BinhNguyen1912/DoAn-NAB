@@ -216,7 +216,10 @@ def main() -> int:
                                mask_smoothing=args.mask_smoothing, device=device_hint,
                                # PHẢI là LIST SỐ: truyền chuỗi `"0,6,12"` thì `cau_hinh_yeu_cau` làm
                                # `list(...)` ⇒ `status.json` khai `['0', ',', '6', ...]` (P3 review 3).
-                               dump_mask_frames=dump_frames)
+                               # `sorted(set(...))`: `status.json` lúc `loading` phải khai ĐÚNG tập sẽ
+                               # thi hành (config của session cũng `sorted(set(...))`); để `6,0,6` thì
+                               # hai giai đoạn của CÙNG phiên khai hai giá trị khác nhau (P3 review 4).
+                               dump_mask_frames=sorted(set(dump_frames)))
     _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:

@@ -581,6 +581,7 @@ class LiveTrackingSession:
         self._da_canh_bao_offset = False   # chỉ cảnh báo "TỪ CHỐI dump" một lần/phiên
         self._da_canh_bao_quay_vong = False
         self._tu_choi_offset: set[int] = set()   # frame bị TỪ CHỐI ghi vì offset ≠ 0
+        self._tu_choi_quay_vong: set[int] = set()   # frame bị TỪ CHỐI vì nguồn đã quay vòng
         self._so_lan_quay_vong = 0               # > 0 ⇒ tên file mask không còn là frame của clip
         self._da_chay = False
         self._source = None
@@ -889,15 +890,22 @@ class LiveTrackingSession:
         thieu = [f for f in self._cfg.dump_mask_frames if f not in self._dumped]
         if not thieu:
             return
+        # MỖI lý do một câu, đọc từ set RIÊNG (P2 vòng review 4): gộp chung `_tu_choi_offset` thì ca
+        # quay vòng in "(phiên bắt đầu sau 0 frame) — chạy lại với ô chọn có sẵn từ frame đầu", vừa sai
+        # sự thật vừa khuyên đúng thứ không chữa được nguyên nhân (nguồn lặp).
         bi_tu_choi = sorted(self._tu_choi_offset)
         if bi_tu_choi:
-            # Nêu ĐÚNG lý do: khuyên "dùng --vos-every 1" trong khi `vos_every` đã là 1 là lời khuyên
-            # vô nghĩa (P3 vòng review 2).
             print(f"[canh-bao] TỪ CHỐI dump {len(bi_tu_choi)} frame {bi_tu_choi} (phiên bắt đầu sau "
                   f"{self._frame_goc} frame) — chạy lại với ô chọn có sẵn từ frame đầu", flush=True)
             thieu = [f for f in thieu if f not in self._tu_choi_offset]
-            if not thieu:
-                return
+        bi_tu_choi_qv = sorted(self._tu_choi_quay_vong)
+        if bi_tu_choi_qv:
+            print(f"[canh-bao] TỪ CHỐI dump {len(bi_tu_choi_qv)} frame {bi_tu_choi_qv} — nguồn đã quay "
+                  f"vòng {self._so_lan_quay_vong} lần nên chỉ số frame của phiên không còn là frame của "
+                  "clip; dùng `--stop-after-frames` <= độ dài clip (hoặc tắt lặp)", flush=True)
+            thieu = [f for f in thieu if f not in self._tu_choi_quay_vong]
+        if not thieu:
+            return
         da_chay = int(getattr(self._stats, "frames", 0) or 0)
         if self._cfg.vos_every == 1:
             # `vos_every` đã đúng: khuyên "dùng --vos-every 1" là câu SAI (P3 vòng review 3). Nêu
@@ -960,7 +968,7 @@ class LiveTrackingSession:
             if self._so_lan_quay_vong:
                 # Tên file = chỉ số frame của PHIÊN, mà nguồn đã quay vòng ⇒ nó không còn là frame của
                 # clip (clip 12 frame: `mask_000015.png` = frame 3). Cùng cơ chế "từ chối" như offset.
-                self._tu_choi_offset.add(int(frame_idx))
+                self._tu_choi_quay_vong.add(int(frame_idx))
                 if not self._da_canh_bao_quay_vong:
                     self._da_canh_bao_quay_vong = True
                     print(f"[canh-bao] TỪ CHỐI dump mask: nguồn đã quay vòng {self._so_lan_quay_vong} "

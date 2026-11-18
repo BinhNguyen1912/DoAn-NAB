@@ -261,7 +261,12 @@ def test_quay_vong_nguon_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
     ten = sorted(p.name for p in dump_dir.glob("mask_*.png"))
     assert ten == [f"mask_{i:06d}.png" for i in range(12)], (
         f"chỉ được ghi mask của 12 frame THẬT của clip, thấy {ten}")
-    assert "quay vòng" in capsys.readouterr().out
+    out_txt = capsys.readouterr().out
+    assert "quay vòng" in out_txt
+    # P2 vòng review 4: câu TỔNG KẾT phải nêu đúng lý do quay vòng, KHÔNG được dùng công thức của ca
+    # "chọn ô muộn" ("phiên bắt đầu sau 0 frame … chạy lại với ô chọn có sẵn từ frame đầu").
+    assert "phiên bắt đầu sau 0 frame" not in out_txt, out_txt
+    assert "TỪ CHỐI dump" in out_txt and "--stop-after-frames" in out_txt
 
 
 def test_manifest_ghim_frames_da_ghi(video_source, tmp_path):
@@ -272,10 +277,13 @@ def test_manifest_ghim_frames_da_ghi(video_source, tmp_path):
     dump_dir = tmp_path / "masks"
     session = LiveTrackingSession(_CountingEngine(), _config(
         video_source, tmp_path, vos_every=1, loop_files=False,
-        dump_mask_frames=(0, 4), dump_mask_dir=str(dump_dir)))
+        dump_mask_frames=(0, 4, 9), dump_mask_dir=str(dump_dir)))
 
-    session.run(stop_event=_StopAfter(20))
+    session.run(stop_event=_StopAfter(6))     # dừng TRƯỚC frame 9
 
     man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    # Hai danh sách PHẢI KHÁC nhau: nếu producer ghi "danh sách YÊU CẦU" thì `frames_da_ghi` == [0,4,9]
+    # và cổng của `score_miou` mất hết ý nghĩa (nó chỉ có giá trị khi hai danh sách khác nhau) —
+    # hồi quy đó test kiểu cũ ([0,4] yêu cầu = [0,4] đã ghi) KHÔNG bắt được (P3 vòng review 4).
+    assert man["frames_yeu_cau"] == [0, 4, 9]
     assert man["frames_da_ghi"] == [0, 4]
-    assert man["frames_yeu_cau"] == [0, 4]

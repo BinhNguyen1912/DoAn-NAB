@@ -1035,3 +1035,23 @@ class TestChanOffsetOMucMain:
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert any("đã --cho-phep-offset" in x for x in payload["canh_bao_gt"])
         assert not payload["loi_chan"]
+
+
+class TestFramesYeuCauKhongDocDuoc:
+    """P3 vòng review 4: khoá CÓ mặt mà không parse được (`" "`, `[]` rác) từng cho `dinh_cham =
+    set()` rỗng ⇒ vòng kiểm `continue` MỌI frame ⇒ **tắt im lặng** đúng cổng dùng để CHẶN."""
+
+    _idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
+
+    def test_chuoi_rong_thi_van_chan(self, tmp_path):
+        (tmp_path / "mask_000000.png").write_bytes(b"x")      # file của phiên KHÁC
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": " ", "frames_da_ghi": []}
+        chan, mem = sm.kiem_khop_manifest(self._idx, man, tmp_path)
+        assert chan, "không đọc được frames_yeu_cau ⇒ phải fail-closed"
+        assert any("KHÔNG đọc được phần tử nào" in c for c in mem), mem
+
+    def test_pred_dir_none_la_fail_closed(self):
+        """`pred_dir=None` ⇒ không kiểm được đĩa ⇒ vẫn chặn (ghim để ai 'sửa' thành fail-open sẽ đỏ)."""
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "frames_da_ghi": []}
+        chan, _ = sm.kiem_khop_manifest(self._idx, man)
+        assert chan, "pred_dir=None phải fail-closed, không được bỏ qua cổng"
