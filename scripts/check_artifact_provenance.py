@@ -4,7 +4,7 @@ Vì sao cần: hôm nay repo đã **ba lần** dẫn một `git_rev` đã chết
 đè) trong tài liệu, ticket và log — người đọc không tái lập được số và không ai biết. `data/*_metrics.json`
 là bằng chứng của báo cáo, nên provenance của nó phải kiểm bằng máy, không bằng mắt.
 
-Ba trạng thái, KHÔNG gộp:
+Ba trạng thái (`ok`/`lech`/`chet`) + MỘT nhãn hạ allowlist (`ok-da-biet`), KHÔNG gộp:
 - `ok`   — rev là tổ tiên (ancestor) của `HEAD` ⇒ số đo thuộc cây đang có.
 - `lech` — rev CÒN tồn tại nhưng không phải tổ tiên của `HEAD` (nhánh chưa merge, commit đã bị
            thay bằng rebase) ⇒ số đo thuộc cây khác; **cảnh báo**, không chặn (artifact cũ hợp lệ).
@@ -19,6 +19,7 @@ oan. Job CI vì thế đặt `fetch-depth: 0`.
 Cách dùng:
     python scripts/check_artifact_provenance.py            # quét `data/*_metrics.json`
     python scripts/check_artifact_provenance.py --nghiem   # CI: mã thoát 1 nếu có rev chết MỚI
+    python scripts/check_artifact_provenance.py --nghiem --nghiem-lech   # chặt hơn: `lech` MỚI cũng chặn
 """
 
 from __future__ import annotations
@@ -151,16 +152,15 @@ def main(argv=None) -> int:
         print(f"[provenance] {len(lech)} rev `lech` — còn sống nhưng KHÔNG thuộc cây đang chạy "
               "(artifact cũ/khác nhánh). Mặc định chỉ cảnh báo; `--nghiem-lech` để chặn.",
               file=sys.stderr)
+    # GOM mã thoát: bản trước `return` sớm ở nhánh `chet` nên `--nghiem-lech` bị NUỐT khi có `chet` mà
+    # không có `--nghiem` (gọi script trực tiếp, không qua `./run provcheck` luôn chèn `--nghiem`).
     if chet:
         print("[provenance] CHẾT = `git_rev` không tồn tại (thường do rebase/squash hoặc artifact bị "
               "sinh lại đè): số đo không tái lập được ⇒ ghi rõ trong tài liệu hoặc sinh lại artifact "
               "trên cây sạch", file=sys.stderr)
-        return 1 if args.nghiem else 0
     if lech and args.nghiem_lech:
-        # Opt-in: cổng chặt cho artifact ĐÃ COMMIT vào `main` (mọi rev phải thuộc cây đang chạy).
-        print("[provenance] --nghiem-lech: có rev `lech` ⇒ thoát 1", file=sys.stderr)
-        return 1
-    return 0
+        print(f"[provenance] --nghiem-lech: {len(lech)} rev `lech` ⇒ thoát 1", file=sys.stderr)
+    return 1 if (chet and args.nghiem) or (lech and args.nghiem_lech) else 0
 
 
 if __name__ == "__main__":

@@ -58,12 +58,19 @@ class TestQuet:
         assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "chet"
 
     def test_moi_record_deu_co_khoa_goc(self, tmp_path):
-        """Schema ĐỒNG NHẤT: record của artifact hỏng cũng có `goc` ⇒ chỗ đọc không phải xử lý riêng."""
+        """Schema ĐỒNG NHẤT + GIÁ TRỊ đúng: artifact hỏng ⇒ `chet`; rev là HEAD ⇒ `ok`.
+
+        (Bản trước dùng rev bịa `abcdef1` nên chỉ chạm nhánh `chet` và assert lỏng `in ("ok","lech",
+        "chet")` — P3 review 18-11.)
+        """
+        import subprocess
+
+        head = subprocess.run(["git", "rev-parse", "HEAD"], capture_output=True, text=True,
+                              cwd=cap._REPO_ROOT).stdout.strip()
         (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
-        _artifact(tmp_path, "ok_metrics.json", "abcdef1")
-        for r in cap.quet(tmp_path, cho_phep={}):
-            assert "goc" in r, r
-            assert r["goc"] in ("ok", "lech", "chet"), r
+        _artifact(tmp_path, "ok_metrics.json", head)
+        goc = {r["file"]: r["goc"] for r in cap.quet(tmp_path, cho_phep={})}
+        assert goc == {"hong_metrics.json": "chet", "ok_metrics.json": "ok"}, goc
 
     def test_artifact_hong_va_thieu_rev_deu_la_chet(self, tmp_path):
         (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
@@ -138,15 +145,33 @@ class TestMainMaThoat:
         cho_phep = {("bi_rebase_metrics.json", "3" * 40): "lý do"}
         assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "lech"
 
-    def test_tong_ket_noi_da_biet_khong_phai_chet_da_biet(self, tmp_path, monkeypatch, capsys):
-        """P2 review 18-11: bản trước in "3 chết-đã-biết" trong khi 2/3 là `lech` (rev còn sống) ⇒ người
-        đọc hiểu sai mức nghiêm trọng."""
+    def test_tong_ket_tach_nhan_goc_lech_va_chet(self, tmp_path, monkeypatch, capsys):
+        """Nhãn IN RA phải giữ trạng thái gốc: `ok-da-biet(lech)` và `ok-da-biet(chet)`.
+
+        Bản trước của test này **không có răng**: nó truyền allowlist cho `quet()` (kết quả vứt đi) còn
+        `main()` dùng `CHO_PHEP` của module ⇒ record là `lech`, và assert `"đã-biết" in out` xanh nhờ
+        dòng tổng kết luôn in literal "0 đã-biết". Phải **vá `CHO_PHEP` trên module** mới đi đúng đường
+        (P2 review 18-11).
+        """
+        _artifact(tmp_path, "a_metrics.json", "2" * 40)      # phan_loai ⇒ lech (rev còn sống)
+        _artifact(tmp_path, "b_metrics.json", "3" * 40)      # phan_loai ⇒ chet (rev mất hẳn)
+        monkeypatch.setattr(cap, "phan_loai", lambda rev: "lech" if rev == "2" * 40 else "chet")
+        monkeypatch.setattr(cap, "CHO_PHEP", {("a_metrics.json", "2" * 40): "lý do lech",
+                                             ("b_metrics.json", "3" * 40): "lý do chet"})
+        assert cap.main(["--thu-muc", str(tmp_path)]) == 0
+        out = capsys.readouterr().out
+        assert "ok-da-biet(lech)" in out, out
+        assert "ok-da-biet(chet)" in out, out
+        assert "2 đã-biết" in out, out
+        assert "chết-đã-biết" not in out, out
+
+    def test_nghiem_lech_khong_do_vi_lech_DA_ALLOWLIST(self, tmp_path, monkeypatch):
+        """`lech` đã nằm trong `CHO_PHEP` KHÔNG được làm `--nghiem-lech` đỏ — nếu không, cờ này đỏ vĩnh
+        viễn trên `main` (nơi có 2 mục 10-11), tức tái hiện đúng lỗi "cảnh báo cố định" mà #44 vừa sửa."""
         _artifact(tmp_path, "a_metrics.json", "2" * 40)
         monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
-        cap.quet(tmp_path, cho_phep={("a_metrics.json", "2" * 40): "lý do"})  # chỉ để chắc nó hạ được
-        cap.main(["--thu-muc", str(tmp_path)])
-        out = capsys.readouterr().out
-        assert "đã-biết" in out and "chết-đã-biết" not in out, out
+        monkeypatch.setattr(cap, "CHO_PHEP", {("a_metrics.json", "2" * 40): "lý do"})
+        assert cap.main(["--thu-muc", str(tmp_path), "--nghiem-lech"]) == 0
 
     def test_nghiem_lech_opt_in(self, tmp_path, monkeypatch):
         """`--nghiem-lech` chặn `lech`; mặc định KHÔNG chặn (lech là trạng thái hợp lệ trước merge)."""
@@ -154,3 +179,18 @@ class TestMainMaThoat:
         monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
         assert cap.main(["--thu-muc", str(tmp_path), "--nghiem"]) == 0
         assert cap.main(["--thu-muc", str(tmp_path), "--nghiem-lech"]) == 1
+
+    def test_nghiem_lech_khong_bi_nuot_khi_co_chet(self, tmp_path, monkeypatch):
+        """`--nghiem-lech` phải còn tác dụng khi có `chet` mà KHÔNG có `--nghiem`.
+
+        Bản trước `return 1 if args.nghiem else 0` ở nhánh `chet` ⇒ cờ bị nuốt, exit 0 (đã diễn tập:
+        trả lại `return` sớm thì exit 0, đúng ca sai). Chỉ với tới được khi gọi script trực tiếp
+        (`./run provcheck` luôn chèn `--nghiem`).
+        """
+        _artifact(tmp_path, "a_metrics.json", "2" * 40)                      # ⇒ lech
+        _artifact(tmp_path, "b_metrics.json", "3" * 40)                      # ⇒ chet
+        monkeypatch.setattr(cap, "phan_loai", lambda rev: "lech" if rev == "2" * 40 else "chet")
+        # Có `chet` nên nhánh cũ `return 1 if args.nghiem else 0` trả 0 NGAY ⇒ `--nghiem-lech` bị nuốt
+        # (diễn tập: trả lại `return` sớm thì ra 0). Đúng phải là 1 vì có `lech` và cờ lech đã bật.
+        assert cap.main(["--thu-muc", str(tmp_path), "--nghiem-lech"]) == 1
+        assert cap.main(["--thu-muc", str(tmp_path)]) == 0                   # không cờ ⇒ chỉ cảnh báo

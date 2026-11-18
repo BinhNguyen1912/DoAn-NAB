@@ -81,9 +81,45 @@ khác sau khi mở PR) kết luận **nội dung merge được**, và bắt:
   nhánh chưa merge) + cảnh báo số `lech` ra stderr; xoá dòng doc rot `--gioi-han-lui` (cờ đó **không**
   tồn tại trong argparse); log thêm danh sách file + mục review này.
 
-**Diễn tập ngược 2/2 đỏ→xanh**: (a) khoá allowlist chỉ theo `rev` ⇒ `test_rev_lech_MOI_van_la_lech` đỏ;
-(b) bỏ `goc` ⇒ `test_rev_lech_trong_allowlist_duoc_ha_xuong_da_biet` đỏ.
+**Diễn tập ngược (5/5 đỏ→xanh, mỗi lần phục hồi)**: (a) khoá allowlist chỉ theo `rev` ⇒
+`test_rev_lech_MOI_van_la_lech` đỏ; (b) bỏ `goc` ⇒ `test_rev_lech_trong_allowlist_…` đỏ; (c) in nhãn
+**không** kèm `goc` (`nhan = r["trang_thai"]`) ⇒ `test_tong_ket_tach_nhan_goc_lech_va_chet` đỏ; (d) trả
+lại `return` sớm ở nhánh `chet` ⇒ `test_nghiem_lech_khong_bi_nuot_khi_co_chet` đỏ (bản cũ nuốt cờ,
+exit 0); (e) `_la_nguon_webcam` (PR khác) — xem log `18-11-2026-democheck-…`.
 
 **Đã kiểm, không phải lỗi** (reviewer): mã thoát của `--nghiem` không đổi; không consumer nào khác đọc
 `trang_thai`; CI `fetch-depth: 0` + allowlist phủ đúng 2 rev ⇒ hành vi CI trước/sau như nhau; khoá
 `(f.name, rev)` không bị nới; `treo` (allowlist còn mục nhưng thiếu artifact) vẫn chỉ cảnh báo.
+
+## Bổ sung sau review vòng 2 (1 P2 + 5 P3)
+
+Reviewer vòng 2 (phiên chỉ-đọc) bắt **đúng một lỗ thật của chính mình**:
+
+- **P2 (test không có răng)**: `test_tong_ket_noi_da_biet_khong_phai_chet_da_biet` truyền allowlist cho
+  `quet()` (**kết quả vứt đi**) trong khi `main()` dùng `CHO_PHEP` của module ⇒ record là `lech`, và
+  assert `"đã-biết" in out` vẫn xanh nhờ dòng tổng kết **luôn** in literal `"0 đã-biết"`. Hệ quả: mutant
+  bỏ `({r['goc']})` ở nhãn in **vẫn xanh cả suite** — đúng chỗ P2-1 cần khoá. Nay test **vá `CHO_PHEP`
+  trên module** với 1 `lech` + 1 `chet` và assert chính xác `ok-da-biet(lech)`, `ok-da-biet(chet)`,
+  `2 đã-biết`. Diễn tập ngược (c): mutant bỏ `goc` ⇒ **đỏ**.
+- **P3-1 (`--nghiem-lech` bị nuốt)**: nhánh `chet` `return 1 if args.nghiem else 0` trả **sớm** ⇒ khi có
+  `chet` mà không có `--nghiem` thì cờ lech không bao giờ được xét. Nay **gom mã thoát** một chỗ:
+  `return 1 if (chet and args.nghiem) or (lech and args.nghiem_lech) else 0`; có test 1 `chet` + 1 `lech`
+  + `--nghiem-lech` ⇒ **1** (bản cũ: 0 — đã diễn tập).
+- **P3-2**: comment trong `.github/workflows/checks.yml` vẫn nói allowlist chỉ cho rev "chết" ⇒ sửa thành
+  "chết/lệch".
+- **P3-3**: docstring đầu file nói "**Ba** trạng thái" nhưng có 4 bullet ⇒ "Ba trạng thái (`ok`/`lech`/
+  `chet`) + MỘT nhãn hạ allowlist".
+- **P3-4**: `--nghiem-lech` không có trong "Cách dùng" của docstring lẫn `./run help` ⇒ thêm; sửa
+  `run:184` ("thuộc cây này" chỉ đúng khi bật cờ — mặc định `lech` **không** chặn).
+- **P3-5**: test `test_moi_record_deu_co_khoa_goc` dùng rev bịa `abcdef1` ⇒ chỉ chạm nhánh `chet` và
+  assert lỏng. Nay dùng rev **HEAD** + assert đúng map `{hong: chet, ok: ok}`.
+- **P3-6**: thiếu test "`lech` **đã allowlist** không làm `--nghiem-lech` đỏ" (nếu không, cờ đỏ vĩnh viễn
+  trên `main` — tái hiện đúng lỗi "cảnh báo cố định" mà PR này vừa sửa). Đã thêm.
+
+**Ghi chú commit**: `5c1139d` (record artifact hỏng cũng có `goc` + test `test_moi_record_deu_co_khoa_goc`)
+được thêm **giữa phiên review** — reviewer đọc lại vùng đó và xác nhận nội dung đúng, chỉ thiếu phần log
+(mục này bổ sung).
+
+**Trạng thái**: `./run lint` xanh · `./run test` **1405 passed** (5 deselected) ·
+`provcheck` = `52 artifact: 49 ok · 0 lệch · 3 đã-biết · 0 CHẾT-MỚI` ·
+`provcheck --nghiem-lech` trên `main` = **exit 0** (2 mục `lech` đã allowlist không làm đỏ).
