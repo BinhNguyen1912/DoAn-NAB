@@ -43,6 +43,9 @@ from src.url_safe import an_userinfo
 FRAME_NAME = "frame.jpg"
 STATUS_NAME = "status.json"
 BBOX_NAME = "bbox.json"
+# PID của worker đang giữ thư mục live (adapter API ghi). Khai ở ĐÂY để CLI (`tools/live_worker.py`)
+# kiểm được "thư mục này đang có phiên khác dùng" mà không phải import module API (ticket #37).
+PID_NAME = "worker.pid"
 
 STATE_LOADING = "loading"            # đang nạp model (20–60 s trên CPU)
 STATE_WAITING = "waiting_selection"  # đã có khung hình, chờ người dùng chọn đối tượng
@@ -263,6 +266,31 @@ def read_bbox(path: Path):
     except (KeyError, TypeError, ValueError):
         return None
     return bbox if bbox[2] > 0 and bbox[3] > 0 else None
+
+
+def pid_con_song(pid: int) -> bool:
+    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT (review #34)."""
+    try:
+        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
+    except (OSError, IndexError):
+        return False
+    return state != "Z"
+
+
+def phien_live_dang_giu(out_dir) -> int | None:
+    """`pid` của một phiên live KHÁC đang giữ `out_dir` (`None` = không ai giữ).
+
+    Vì sao cần: `live_worker --bbox` ghi `<out-dir>/bbox.json`, mà thư mục đó có thể là của một phiên
+    web đang `waiting_selection` ⇒ ghi vào là **cướp ô chọn** của phiên đó, không cảnh báo (ticket #37).
+    Đường API tự dọn `bbox.json` khi bắt đầu phiên; đây là chốt cho ca operator chạy CLI tay.
+    """
+    try:
+        pid = int((Path(out_dir) / PID_NAME).read_text(encoding="utf-8").strip())
+    except (OSError, ValueError):
+        return None
+    if pid == os.getpid():
+        return None
+    return pid if pid_con_song(pid) else None
 
 
 def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,

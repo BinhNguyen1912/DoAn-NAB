@@ -20,7 +20,8 @@ from pathlib import Path
 
 from src.api.domain import LiveState, LiveTelemetry, SourceHealth, SourceUnavailable
 from src.api.ports import FrameSource
-from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATE_STOPPED, STATUS_NAME
+from src.live_tracking import (BBOX_NAME, FRAME_NAME, PID_NAME, STATE_ERROR, STATE_STOPPED,
+                               STATUS_NAME, pid_con_song)
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
 from src.url_safe import an_userinfo
@@ -49,7 +50,6 @@ TERM_WAIT_S = 2.0
 KILL_WAIT_S = 1.0
 
 # File do adapter quản lý trong thư mục live (dọn trước mỗi phiên để không đọc nhầm của phiên cũ)
-PID_NAME = "worker.pid"
 _OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, PID_NAME, "status.json.tmp",
                 "frame.jpg.tmp", LOG_NAME)
 
@@ -385,13 +385,9 @@ def _is_our_live_worker(argv, out_dir: Path) -> bool:
     return False
 
 
-def _pid_alive(pid: int) -> bool:
-    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT."""
-    try:
-        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
-    except (OSError, IndexError):
-        return False
-    return state != "Z"
+# `_pid_alive` chuyển sang `src/live_tracking.pid_con_song` (một bản duy nhất, để CLI cũng dùng được
+# mà không phải import module API — ticket #37).
+_pid_alive = pid_con_song
 
 
 def _so_hoac_none(value) -> float | None:

@@ -192,7 +192,15 @@ def main() -> int:
 
     if bbox_ghi is not None:
         # Ghi SAU toàn bộ validate (xem chú thích ở `_parse_bbox`).
-        from src.live_tracking import BBOX_NAME
+        from src.live_tracking import BBOX_NAME, phien_live_dang_giu
+
+        # KHÔNG cướp ô chọn của phiên khác (ticket #37): `<out-dir>` có thể là thư mục của một phiên web
+        # đang `waiting_selection`; ghi đè `bbox.json` là phiên đó bám ô của mình ngay, không cảnh báo.
+        chu = phien_live_dang_giu(args.out_dir)
+        if chu is not None:
+            parser.error(
+                f"--bbox: {args.out_dir} đang bị một phiên live khác dùng (pid {chu}) ⇒ ghi bbox.json "
+                "vào đó sẽ cướp ô chọn của phiên đó. Dùng `--out-dir` riêng cho lần chạy CLI này")
 
         (Path(args.out_dir)).mkdir(parents=True, exist_ok=True)
         (Path(args.out_dir) / BBOX_NAME).write_text(json.dumps(bbox_ghi), encoding="utf-8")

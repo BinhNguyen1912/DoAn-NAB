@@ -8,7 +8,7 @@ Việc:
 - Bỏ ngưỡng thời gian tuyệt đối; assert `proc.poll() is not None` (tiến trình đã được reap) trong một ngưỡng **rộng** (vd `5 s`, hoặc `max(5, 2 × số CPU)`), và **in** thời gian reap thật khi đỏ để lần sau có số.
 - 5 lần liên tiếp xanh trên máy này khi có tải nền; ghi số đo vào log `docs/task/`.
 
-**Status:** `ready-for-agent`
+**Status:** resolved
 
 **Blocked by:** None (can start immediately)
 

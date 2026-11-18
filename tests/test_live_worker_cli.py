@@ -178,3 +178,45 @@ class TestCauHinhDumpMaskLaSo:
         # Đúng bằng tập SẼ THI HÀNH (`LiveTrackConfig` cũng `sorted(set(...))`) ⇒ `loading` và
         # `running` của cùng phiên không khai hai giá trị khác nhau (P3 vòng review 4).
         assert cau_hinh["dump_mask_frames"] == [0, 6]
+
+
+class TestBboxKhongCuopPhienKhac:
+    """Ticket #37: `--bbox` ghi `<out-dir>/bbox.json` mà thư mục đó có thể là của một phiên API đang
+    `waiting_selection` ⇒ ghi vào là cướp ô chọn của phiên đó, không cảnh báo."""
+
+    def test_tu_choi_khi_co_phien_khac_dang_giu(self, tmp_path, monkeypatch, capsys):
+        import os
+
+        out = tmp_path / "live"
+        out.mkdir()
+        # pid sống thật nhưng KHÔNG phải mình: dùng tiến trình con của chính test.
+        import subprocess
+
+        proc = subprocess.Popen(["sleep", "30"])
+        try:
+            (out / "worker.pid").write_text(str(proc.pid), encoding="utf-8")
+            monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+            with pytest.raises(SystemExit) as exc:
+                _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                                   "--bbox", "10,20,30,40"])
+            assert exc.value.code == 2
+            assert "đang bị một phiên live khác dùng" in capsys.readouterr().err
+            assert not (out / "bbox.json").exists(), "bị chặn thì không được ghi bbox.json"
+        finally:
+            proc.kill()
+            proc.wait()
+            assert proc.pid != os.getpid()
+
+    def test_pid_da_chet_thi_khong_chan(self, tmp_path, monkeypatch):
+        """`worker.pid` của phiên cũ đã chết (kể cả zombie) ⇒ không được chặn oan."""
+        out = tmp_path / "live"
+        out.mkdir()
+        import subprocess
+
+        proc = subprocess.Popen(["true"])
+        proc.wait()                      # đã chết + đã reap ⇒ /proc có thể còn (zombie) hoặc không
+        (out / "worker.pid").write_text(str(proc.pid), encoding="utf-8")
+        monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+        with pytest.raises(_DungNgaySauCuaVao):     # qua được cửa ⇒ không bị chặn vì pid
+            _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                               "--bbox", "10,20,30,40"])

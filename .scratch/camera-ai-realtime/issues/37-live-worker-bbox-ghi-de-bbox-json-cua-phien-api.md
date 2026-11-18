@@ -1,7 +1,7 @@
 # `live_worker --bbox` có thể cướp `bbox.json` của một phiên API đang chờ chọn ô
 
 **Type:** bug (P3, review độc lập vòng 3 ticket #36)
-**Status:** needs-triage
+**Status:** `resolved` (18-11, log `docs/task/18-11-2026-ticket-37-bbox-khong-cuop-phien-api.md`)
 
 ## Vấn đề
 
@@ -25,3 +25,10 @@ bắt đầu phiên), nên đây là ca "operator chạy CLI vào đúng thư m�
 Ticket #36 là "dump mask mang tên sai frame"; việc này là "CLI chiếm thư mục của phiên API" — cùng file
 nhưng khác lớp lỗi, và bản sửa cần bàn về cách nhận biết phiên sống (đã có `_is_our_live_worker` trong
 `src/api/adapters/worker_source.py`, nhưng CLI không được import module API).
+
+## Answer
+
+Đã sửa: `phien_live_dang_giu(out_dir)` + `pid_con_song(pid)` trong `src/live_tracking.py` (adapter API
+nay `_pid_alive = pid_con_song`, một bản duy nhất), `live_worker --bbox` **từ chối** (mã 2) khi
+`<out-dir>/worker.pid` trỏ một tiến trình còn sống khác mình. 2 test (sống ⇒ chặn + không ghi file;
+đã chết/zombie ⇒ không chặn), diễn tập ngược 1/1 đỏ. `./run test` 1388 passed.
