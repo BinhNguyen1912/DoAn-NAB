@@ -84,7 +84,10 @@ def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
         rev = d.get("git_rev") if isinstance(d, dict) else None
         trang_thai = phan_loai(rev)
         ghi_chu = None
-        if trang_thai == "chet" and (f.name, rev) in cho_phep:
+        # `lech` CŨNG phải hạ được: hai artifact 10-11 có rev chỉ tồn tại ở object local (nhánh bị
+        # rebase trước khi push) ⇒ chúng `lech` vĩnh viễn trên máy này, và dòng "2 lệch" cố định sẽ
+        # **che mất một `lech` MỚI** (cổng phải kêu khi có chuyện mới, không kêu mãi một chuyện cũ).
+        if trang_thai in ("chet", "lech") and (f.name, rev) in cho_phep:
             trang_thai, ghi_chu = "ok-da-biet", cho_phep[(f.name, rev)]
         ra.append({"file": f.name, "git_rev": rev, "trang_thai": trang_thai, "ghi_chu": ghi_chu})
     return ra
