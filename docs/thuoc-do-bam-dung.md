@@ -66,16 +66,27 @@ ghim bằng test để con số không đổi theo thứ tự `index.frames`.
   và hộp chỉnh lệch 1 px thì im lặng ⇒ đừng đọc "đã qua cổng" là "không copy-paste". Với GT
   silhouette, dùng `scripts/gt_check_silhouette.py` (IoU > 0,98 giữa hai frame) — nó bắt được cả ca
   hai mask giống nhau mà hộp khai khác.
-- `manifest.json` chỉ có `nguon` + `frames_yeu_cau` ⇒ cổng so được **tên file/clip**, không chứng minh
-  được mask đúng nội dung frame (ca P0 14-11 "dump mask sai chỉ số frame" nay đã được sửa ở gốc).
+- `manifest.json` khai `nguon` · `bbox_xywh` · `image_size(_hieu_luc)` · `vos_every` · `frames_yeu_cau` ·
+  `frames_da_ghi` · `frame_goc_cua_phien` · `so_file_ghi_de` ⇒ cổng so được **điều kiện sinh mask**
+  (cùng clip, cùng frame, không lẫn phiên), nhưng **không** chứng minh nội dung từng frame — vẫn phải
+  xem `mask_0000NN.png`. (Ca P0 14-11 "dump mask sai chỉ số frame" đã sửa ở gốc; ticket #36 đóng nốt
+  đường "phiên chờ chọn ô" và "nguồn quay vòng".)
 - Tên khoá hộp là `hop_bao_xywh` (không phải `bbox_xywh` như `docs/gt/synthetic_tong_hop`); GT khai
   `dang_gt = hop_bao` mà dùng tên khác sẽ chỉ ra **cảnh báo mềm** chứ không qua cổng.
 - Hộp phải là **số nguyên** (`282`, không phải `282.0`) — JSON viết tay/ công cụ ngoài dễ sinh float.
 
 **Mã thoát của `score`:** `0` = chấm xong, không cảnh báo · `1` = chấm được nhưng có cảnh báo (GT hộp
 bao / thiếu người gán / không khai `dang_gt` / `git_loi` / không chấm được frame nào) · `2` = **TỪ CHỐI**
-(thiếu file GT, GT do model gợi ý, index hỏng). Đừng cắm `./run miou` vào CI mà coi exit 1 là đỏ: nó là
-"đọc kèm cảnh báo".
+(thiếu file GT, GT do model gợi ý, index hỏng, **và hai cổng của manifest mask**):
+- `frame_goc_cua_phien > 0` — mask sinh từ phiên bắt đầu SAU khi đọc N frame (chờ chọn ô) ⇒ tên file
+  không phải frame của clip. Khoá **có mặt mà không đọc được** (`"abc"`, `2.7`) cũng chặn.
+  `--cho-phep-offset` hạ cấp **đúng** nhóm này (chỉ dùng khi bạn đã tự cắt GT lệch theo offset); nó
+  **không** hạ cấp được nhóm "không đọc được".
+- `frames_da_ghi` — GT định chấm một frame mà phiên này không ghi, **và file đó còn trên đĩa** ⇒ mask
+  là của phiên/lần chọn khác (hai lần dump vào cùng thư mục). Frame **không có file** thì không chặn:
+  đó là "thiếu mask" (`so_frame_thieu_mask` + `coverage`), đúng hợp đồng.
+
+Đừng cắm `./run miou` vào CI mà coi exit 1 là đỏ: nó là "đọc kèm cảnh báo".
 
 **Chỉ số phụ `mask_ngoai_gt`:** phần mask nằm **ngoài** GT (thấp = không tràn ra ngoài). Nó **một phía**
 — `0` KHÔNG có nghĩa mask phủ đủ vật (mask tí xíu nằm trong hộp cũng cho `0`), và nó không bị chặn trên
@@ -99,10 +110,14 @@ python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/x --ch
 #    ⚠ --vos-every 1 là BẮT BUỘC khi gán GT: với vos_every > 1 chỉ frame chia hết cho N mới có lần
 #    VOS, nên frame 40 (N=3) không có mask nào và lần chấm sẽ thiếu frame mà không rõ vì sao.
 #    Tên file mask = **chỉ số frame VIDEO** (không phải bộ đếm nội bộ của engine) — đã sửa 14-11.
-python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 \
+#    ⚠ Phiên phải bám từ frame ĐẦU: `--bbox x,y,w,h` (dạng xywh, SỐ NGUYÊN) ghi bbox.json TRƯỚC khi
+#    chạy. Nếu chạy CLI trước rồi mới có bbox.json (người dùng chọn ô sau), tên file mask là frame của
+#    PHIÊN chứ không phải của clip — và nguồn quay vòng nên offset cũng không suy ra được ⇒
+#    `live_worker` từ chối chạy, `score_miou` chặn chấm (ticket #36). Đường web KHÔNG dump mask nên
+#    không bị ảnh hưởng.
+python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 --bbox 300,275,150,410 \
     --image-size 192 --vos-every 1 --dump-mask-frames "0,40,80,120,160,200,240,280" \
     --stop-after-frames 300
-# (ô chọn phải nằm ở /tmp/run1/bbox.json, dạng {"x":…,"y":…,"w":…,"h":…})
 
 # 5) chấm
 python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/run1/masks \
@@ -125,8 +140,10 @@ kiểm đường ống, không để tuyên bố độ chính xác).
 
 ```bash
 python scripts/make_synthetic_gt_clip.py          # clip + GT biết trước (ô vuông 60 px trên nền nhiễu)
+# bbox của frame 0 = bbox_xywh trong docs/gt/synthetic_tong_hop/index.json
 python tools/live_worker.py --source data/synthetic_gt.mp4 --out-dir /tmp/demo_gt \
-    --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
+    --bbox 20,90,60,60 --image-size 192 \
+    --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
 python scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt/masks \
     --out data/miou_synthetic_2026-11-14_metrics.json
 ```

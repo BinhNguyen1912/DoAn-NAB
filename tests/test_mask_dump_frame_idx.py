@@ -174,3 +174,116 @@ def test_record_vos_khong_tu_gan_dump_ms(video_source, tmp_path):
 
     session._after_vos(np.full((40, 60, 3), 90, np.uint8), result)
     assert session._stats.dump_ms is not None, "người gọi gán `dump_ms` cùng lock với `post_ms`"
+
+
+def test_chon_o_ngay_tu_dau_thi_manifest_khai_0(video_source, tmp_path, capsys):
+    """Đường CLI `--bbox` (ô chọn có sẵn): offset 0, tên file đúng là frame của clip."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(20))
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert man["frame_goc_cua_phien"] == 0
+    assert (dump_dir / "mask_000000.png").is_file()
+    assert "TỪ CHỐI" not in capsys.readouterr().out
+
+
+def test_chon_o_MUON_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
+    """P1/P2 review 17-11: phiên chờ chọn ô ⇒ tên `mask_NNNNNN.png` KHÔNG phải frame của clip (nguồn
+    còn quay vòng nên `offset + idx` cũng sai) ⇒ **từ chối ghi** thay vì ghi file mang tên sai frame."""
+    out = tmp_path / "live"
+    out.mkdir(parents=True, exist_ok=True)          # KHÔNG đặt bbox.json trước
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=(0, 5, 8), dump_mask_dir=str(dump_dir)))
+
+    so_lan = {"n": 0}
+
+    class _ChonOSau3Lan:
+        """`bbox.json` chỉ xuất hiện ở lần kiểm thứ 3 ⇒ phiên đọc 2 frame trong lúc chờ chọn ô."""
+
+        def is_set(self):
+            so_lan["n"] += 1
+            if so_lan["n"] == 3:
+                _preselect(out)
+            return so_lan["n"] > 12
+
+    session.run(stop_event=_ChonOSau3Lan())
+
+    assert session._frame_goc > 0, "phiên phải đếm được số frame đã đọc lúc chờ chọn ô"
+    assert not list(dump_dir.glob("mask_*.png")), (
+        "phiên chờ chọn ô KHÔNG được ghi mask mang tên frame của phiên")
+    man = dump_dir / "manifest.json"
+    assert not man.exists(), "không ghi file ⇒ không được ghi manifest như thể đã đo"
+    out_txt = capsys.readouterr().out
+    assert "TỪ CHỐI dump mask" in out_txt and "ticket #36" in out_txt
+    # Cảnh báo MỘT lần nhưng TỪ CHỐI **mọi** frame yêu cầu: bản trước đặt cả hai trong
+    # `not self._da_canh_bao_offset` ⇒ từ frame yêu cầu thứ hai guard hết tác dụng và ghi đúng thứ
+    # file mà ticket cấm (P1 vòng review 2). Test chỉ xanh khi guard nằm NGOÀI cờ đó.
+    assert out_txt.count("TỪ CHỐI dump mask") == 1, "chỉ cảnh báo một lần"
+    assert "TỪ CHỐI dump 3 frame" in out_txt, "phải nêu CẢ số frame bị từ chối"
+
+
+def test_run_hai_lan_tren_cung_session_bi_tu_choi(video_source, tmp_path):
+    """`run()` lần hai: `_frame_index`/`_dumped` không reset ⇒ tên file tiếp tục từ lần trước (lệch
+    frame) và `_da_canh_bao_offset` đã True nên guard offset mất tác dụng (P3 vòng review 2)."""
+    out = tmp_path / "live"
+    _preselect(out)
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=False))
+    session.run(stop_event=_StopAfter(6))
+
+    with pytest.raises(RuntimeError, match="chỉ được gọi MỘT lần"):
+        session.run(stop_event=_StopAfter(6))
+
+
+def test_quay_vong_nguon_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
+    """P3 vòng review 3: sau khi nguồn quay vòng (`loop_files`, mặc định BẬT), `_frame_index` tiếp tục
+    tăng ⇒ `mask_000015.png` trên clip 12 frame thực chất là frame 3 ⇒ tên SAI. Không bị guard offset
+    bắt vì `_frame_goc == 0`."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    frames = list(range(0, 20))          # yêu cầu frame vượt quá độ dài clip (12) ⇒ phải quay vòng
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=tuple(frames), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(40))
+
+    assert session._so_lan_quay_vong >= 1, "nguồn phải đã quay vòng"
+    ten = sorted(p.name for p in dump_dir.glob("mask_*.png"))
+    assert ten == [f"mask_{i:06d}.png" for i in range(12)], (
+        f"chỉ được ghi mask của 12 frame THẬT của clip, thấy {ten}")
+    out_txt = capsys.readouterr().out
+    assert "quay vòng" in out_txt
+    # P2 vòng review 4: câu TỔNG KẾT phải nêu đúng lý do quay vòng, KHÔNG được dùng công thức của ca
+    # "chọn ô muộn" ("phiên bắt đầu sau 0 frame … chạy lại với ô chọn có sẵn từ frame đầu").
+    assert "phiên bắt đầu sau 0 frame" not in out_txt, out_txt
+    assert "TỪ CHỐI dump" in out_txt and "--stop-after-frames" in out_txt
+
+
+def test_manifest_ghim_frames_da_ghi(video_source, tmp_path):
+    """P2 vòng review 3: xoá dòng `"frames_da_ghi": sorted(self._dumped)` thì cổng ở `score_miou` biến
+    mất mà KHÔNG test nào đỏ. Ghim producer."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=False,
+        dump_mask_frames=(0, 4, 9), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(6))     # dừng TRƯỚC frame 9
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    # Hai danh sách PHẢI KHÁC nhau: nếu producer ghi "danh sách YÊU CẦU" thì `frames_da_ghi` == [0,4,9]
+    # và cổng của `score_miou` mất hết ý nghĩa (nó chỉ có giá trị khi hai danh sách khác nhau) —
+    # hồi quy đó test kiểu cũ ([0,4] yêu cầu = [0,4] đã ghi) KHÔNG bắt được (P3 vòng review 4).
+    assert man["frames_yeu_cau"] == [0, 4, 9]
+    assert man["frames_da_ghi"] == [0, 4]

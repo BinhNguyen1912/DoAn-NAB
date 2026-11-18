@@ -214,7 +214,38 @@ def _cung_nguon(a, b) -> bool:
         return False
 
 
-def kiem_khop_manifest(index: dict, manifest) -> list[str]:
+def _so_nguyen(value) -> int | None:
+    """`37`, `37.0`, `"37"` ⇒ 37; còn lại ⇒ `None`.
+
+    Bản trước chỉ nhận `isinstance(x, int)` ⇒ bỏ qua im lặng `37.0`/`"37"` (manifest viết tay hoặc do
+    tool cũ sinh) — fail-open đúng ở khoá dùng để CHẶN (P3 review 17-11). Cùng quy ước với
+    `frames_yeu_cau` (chấp nhận float nguyên, từ chối 2.7).
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f.is_integer() else None
+
+
+# Nhãn loại lỗi chặn, để `--cho-phep-offset` hạ cấp ĐÚNG nhóm (dùng nhãn, không so chuỗi con — bản
+# trước so `"frame_goc_cua_phien" not in c` nên hạ cấp luôn ca "khoá có mà KHÔNG đọc được", tức mở khoá
+# đúng ca không biết offset là bao nhiêu; P3 vòng review 3).
+_CHAN_OFFSET = "[offset] "
+_CHAN_OFFSET_KHONG_DOC = "[offset-khong-doc] "
+
+
+def _bo_nhan(text: str) -> str:
+    """Bỏ nhãn nội bộ (`[offset] `, `[offset-khong-doc] `) trước khi in cho người đọc."""
+    for nhan in (_CHAN_OFFSET_KHONG_DOC, _CHAN_OFFSET):
+        if text.startswith(nhan):
+            return text[len(nhan):]
+    return text
+
+
+def kiem_khop_manifest(index: dict, manifest, pred_dir=None) -> tuple[list[str], list[str]]:
     """Đối chiếu bộ GT với `manifest.json` của thư mục mask ⇒ cảnh báo MỀM (không chặn chấm).
 
     mIoU chỉ có nghĩa khi GT và mask là **cùng clip, cùng frame**. `manifest.json` (do
@@ -223,8 +254,8 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     đối chiếu, đừng đẻ cảnh báo rỗng).
     """
     if not isinstance(manifest, dict):
-        return []
-    mem = []
+        return [], []
+    chan, mem = [], []
     nguon, clip = manifest.get("nguon"), index.get("clip")
     if nguon and clip and not _cung_nguon(clip, nguon):
         mem.append(f"clip của GT ({clip}) KHÁC nguồn của mask ({nguon}) — mIoU đang ghép hai clip "
@@ -233,6 +264,74 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     # Mask bị GHI ĐÈ (tên file trùng giữa hai lần chọn ô / hai phiên) ⇒ file đang chấm có thể là của
     # lần chọn KHÁC. Worker đã in cảnh báo lúc ghi nhưng stdout đó không đi theo artifact; ticket #26
     # nên `manifest.json` khai `so_file_ghi_de` và chỗ CHẤM phải đọc nó (P2 review 17-11).
+    # Chọn ô GIỮA phiên: tên file mask đi theo chỉ số frame của PHIÊN, không phải của clip ⇒ ghép GT
+    # theo số frame là lệch đúng `frame_goc_cua_phien` (ticket #36). Thiếu khoá = manifest của bản cũ
+    # (mọi lần dump cũ đều bắt đầu từ frame 0 qua `--bbox`) ⇒ không cảnh báo.
+    co_goc = "frame_goc_cua_phien" in manifest
+    goc = _so_nguyen(manifest.get("frame_goc_cua_phien"))
+    if co_goc and goc is None:
+        # Khoá CÓ MẶT mà không đọc được (`2.7`, `"abc"`, `""`, `true`, `[37]`) ⇒ CHẶN, không bỏ qua:
+        # ở `frames_yeu_cau` "không đọc được" nghĩa là *cảnh báo*, nhưng ở đây nó nghĩa là *bỏ qua
+        # đúng khoá dùng để chặn* = fail-open (P2 vòng review 2).
+        chan.append(_CHAN_OFFSET_KHONG_DOC +
+                    f"`frame_goc_cua_phien` có nhưng KHÔNG đọc được ({manifest.get('frame_goc_cua_phien')!r}) "
+                    "⇒ không biết mask có lệch frame hay không; sửa manifest hoặc chạy lại phiên với ô "
+                    "chọn có sẵn từ frame đầu (ticket #36)")
+    if goc:
+        # CHẶN, không chỉ cảnh báo: khác `so_file_ghi_de` ("có thể" trộn), ở đây mask CHẮC CHẮN lệch
+        # frame khi phiên đã bỏ frame lúc chờ chọn ô — và không có cờ nào để chấm bù (số phải mod độ
+        # dài clip khi nguồn quay vòng). Công bố mIoU trong ca này là số sai im lặng (ticket #36, P2
+        # review 17-11).
+        chan.append(_CHAN_OFFSET + f"`frame_goc_cua_phien` = {goc} ⇒ phiên đã bỏ {goc} frame lúc chờ chọn "
+                   "ô, nên `mask_NNNNNN.png` KHÔNG phải frame NNNNNN của clip ⇒ mIoU sẽ ghép lệch "
+                   "frame (ticket #36). Chạy lại phiên với ô chọn có sẵn từ frame đầu")
+    # `frames_da_ghi` khác `frames_yeu_cau`: hai lần chạy khác bbox vào CÙNG thư mục dump thì file của
+    # lần trước vẫn nằm trên đĩa, mà `frames_yeu_cau` (khoá của lần chạy CUỐI) vẫn khớp GT ⇒ phải đối
+    # chiếu với danh sách ĐÃ GHI THẬT (P2 vòng review 2). Chỉ kiểm khi khoá có mặt (manifest bản cũ).
+    da_ghi = manifest.get("frames_da_ghi")
+    if isinstance(da_ghi, str):
+        # Manifest viết tay có thể ghi `"0,6,12"` — bỏ qua im lặng là fail-open trên ĐÚNG cổng này.
+        da_ghi = [x for x in da_ghi.replace(";", ",").split(",") if x.strip()]
+    if isinstance(da_ghi, (list, tuple)) and "frames_da_ghi" in manifest:
+        tap_ghi = {v for f in da_ghi if (v := _so_nguyen(f)) is not None}
+        # CHỈ xét frame ĐỊNH CHẤM (= GT ∩ `frames_yeu_cau`), không phải mọi frame có GT: bộ GT tổng
+        # hợp/DAVIS khai GT cho CẢ clip trong khi ta chỉ chấm vài frame — đòi `frames_da_ghi` phủ hết
+        # GT sẽ CHẶN OAN mọi lần chấm có `coverage < 1` (bắt được khi diễn tập lại demo synthetic).
+        dinh_cham = None
+        yeu_cau_tap = manifest.get("frames_yeu_cau")
+        if isinstance(yeu_cau_tap, (list, tuple)) and yeu_cau_tap:
+            dinh_cham = {v for f in yeu_cau_tap if (v := _so_nguyen(f)) is not None}
+        elif isinstance(yeu_cau_tap, str):
+            dinh_cham = {v for p in yeu_cau_tap.replace(";", ",").split(",")
+                         if (v := _so_nguyen(p)) is not None}
+        if dinh_cham is not None and not dinh_cham:
+            # Khoá CÓ mặt mà không đọc được phần tử nào (`" "`, `[]` toàn rác) ⇒ `set()` rỗng sẽ làm
+            # vòng dưới `continue` MỌI frame ⇒ tắt im lặng đúng cổng dùng để CHẶN (P3 vòng review 4).
+            # Fail-closed: coi như không biết frame nào được yêu cầu ⇒ kiểm mọi frame GT.
+            dinh_cham = None
+            mem.append("`frames_yeu_cau` có nhưng KHÔNG đọc được phần tử nào ⇒ đối chiếu "
+                       "`frames_da_ghi` trên MỌI frame GT (hướng fail-closed)")
+        lac = []
+        for item in index.get("frames") or []:
+            idx = item.get("frame_idx") if isinstance(item, dict) else None
+            if not isinstance(idx, int) or isinstance(idx, bool):
+                continue
+            if dinh_cham is not None and idx not in dinh_cham:
+                continue
+            if idx in tap_ghi:
+                continue
+            # CHỈ là "mask của PHIÊN KHÁC" khi FILE CÓ THẬT trên đĩa (P2 vòng review 3). Phiên bị cắt
+            # trước frame yêu cầu (Ctrl+C, `--stop-after-frames` nhỏ, `imwrite` fail, `mask is None`)
+            # để lại frame KHÔNG có file ⇒ đó là "thiếu mask" theo hợp đồng (chấm báo
+            # `so_frame_thieu_mask` + `coverage`, exit 1), không phải lỗi chặn.
+            if pred_dir is not None and not (Path(pred_dir) / f"mask_{idx:06d}.png").exists():
+                continue
+            lac.append(idx)
+        if lac:
+            chan.append(f"GT cần frame {sorted(lac)} nhưng `frames_da_ghi` của phiên này chỉ có "
+                        f"{sorted(tap_ghi)} ⇒ các file `mask_*.png` đó CÓ trên đĩa nhưng KHÔNG thuộc "
+                        "phiên này (mask của lần chọn/phiên KHÁC, hoặc manifest chưa kịp cập nhật nếu "
+                        "tiến trình bị kill giữa chừng); dùng thư mục dump riêng cho mỗi phiên")
     ghi_de = manifest.get("so_file_ghi_de")
     if isinstance(ghi_de, int) and not isinstance(ghi_de, bool) and ghi_de > 0:
         mem.append(f"mask bị GHI ĐÈ {ghi_de} lần trong lúc ghi (`so_file_ghi_de`) — có thể trộn mask "
@@ -255,7 +354,7 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
                 mem.append(f"`frames_yeu_cau` của mask có phần tử không đọc được ({f!r}) ⇒ chỉ đối "
                            "chiếu được phần đọc được")
         if not tap:
-            return mem
+            return chan, mem
         thua = []
         for item in index.get("frames") or []:
             idx = item.get("frame_idx") if isinstance(item, dict) else None
@@ -264,7 +363,7 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
         if thua:
             mem.append(f"GT có frame {sorted(thua)} KHÔNG nằm trong `frames_yeu_cau` của mask "
                        f"({sorted(tap)}) — đúng lớp lỗi 'ghép GT với mask của frame khác'")
-    return mem
+    return chan, mem
 
 
 def _doc_manifest(pred_dir: Path):
@@ -434,6 +533,9 @@ def main(argv=None) -> int:
     sco.add_argument("--pred-dir", required=True, help="thư mục mask model xuất (mask_<idx>.png)")
     sco.add_argument("--out", default="", help="artifact JSON (mặc định data/miou_<ngày>_metrics.json)")
     sco.add_argument("--check-index", action="store_true", help="chỉ kiểm GT hợp lệ rồi thoát")
+    sco.add_argument("--cho-phep-offset", action="store_true",
+                     help="vẫn chấm dù manifest khai `frame_goc_cua_phien` > 0 (chỉ khi bạn ĐÃ tự cắt "
+                          "GT lệch đúng offset; nếu không thì mIoU là số sai)")
 
     args = parser.parse_args(argv)
 
@@ -476,7 +578,18 @@ def main(argv=None) -> int:
     # Manifest của thư mục mask: đối chiếu "GT có đúng clip/frame của mask không" (cảnh báo MỀM).
     mask_manifest, loi_manifest = _doc_manifest(pred_dir)
     chan, mem = kiem_index(index, gt_dir)
-    mem = mem + kiem_khop_manifest(index, mask_manifest)
+    chan_m, mem_m = kiem_khop_manifest(index, mask_manifest, pred_dir)
+    chan += chan_m
+    mem += mem_m
+    # `--cho-phep-offset`: người chấm tự nhận trách nhiệm về **đúng** lớp "offset" (đã tự cắt GT lệch
+    # theo `frame_goc_cua_phien`) ⇒ hạ cấp CHỈ nhóm đó. Mask còn lại từ phiên khác (`frames_da_ghi`)
+    # KHÔNG hạ cấp được: không cờ nào biến nó thành đúng.
+    if args.cho_phep_offset:
+        # CHỈ hạ cấp nhóm `[offset]` (= offset > 0, người chấm đã tự cắt GT lệch). Nhóm
+        # `[offset-khong-doc]` GIỮ NGUYÊN: không ai biết offset là bao nhiêu thì không thể cắt bù.
+        mem += [f"cảnh báo (đã --cho-phep-offset): {c[len(_CHAN_OFFSET):]}"
+                for c in chan_m if c.startswith(_CHAN_OFFSET)]
+        chan = [c for c in chan if not c.startswith(_CHAN_OFFSET)]
     if loi_manifest:
         # "Có manifest nhưng HỎNG" KHÁC "không có manifest": ca sau là bình thường, ca trước nghĩa là
         # không ai biết mask sinh từ clip/frame nào ⇒ phải nói ra (P3 review 16-11).
@@ -498,13 +611,13 @@ def main(argv=None) -> int:
             duoi = " · KHÔNG có manifest của mask ⇒ chưa đối chiếu được clip/frame"
         print(f"[gt] clip: {index.get('clip')} · {len(index.get('frames') or [])} frame{duoi}")
         for item in chan:
-            print(f"[gt] LỖI (chặn chấm): {item}")
+            print(f"[gt] LỖI (chặn chấm): {_bo_nhan(item)}")
         for item in mem:
             print(f"[gt] cảnh báo: {item}")
         print("[gt] hợp lệ" if not (chan or mem) else f"[gt] {len(chan)} lỗi chặn, {len(mem)} cảnh báo")
         return 0 if not (chan or mem) else 1
     for item in chan:
-        print(f"[miou] TỪ CHỐI CHẤM: {item}")
+        print(f"[miou] TỪ CHỐI CHẤM: {_bo_nhan(item)}")
     if chan:
         print("[miou] không ghi artifact — sửa GT rồi chạy lại "
               "(xem docs/thuoc-do-bam-dung.md)")
