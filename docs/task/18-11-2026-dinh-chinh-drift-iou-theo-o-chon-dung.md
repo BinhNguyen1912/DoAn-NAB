@@ -74,3 +74,7 @@ Phụ lục `docs/doi-chieu-yeu-cau-gvhd.md` (tài liệu hội đồng đọc) 
    `git_rev`", và **cấm dẫn rev** của 2 file cuối (đúng `CHO_PHEP` của `provcheck`).
 
 Kiểm markdown vẫn đúng: khối bảng phụ lục còn **17 dòng `|`**, **0** dòng chen giữa (lỗi đã gặp ở PR #41).
+
+3. **Hai tài liệu báo cáo khác cũng trích artifact thiếu provenance**: `docs/tom-tat-do-an.md` (8 file trích,
+   3 vấn đề) và `docs/giai-thich-do-an.md` (4 file, 1 vấn đề) ⇒ đã thêm cùng khối ⚠ (ngắn) để ba tài liệu
+   nói **một** giọng. Quét tự động (script trong log này): 15 file trích ở phụ lục, **8 vấn đề**.
