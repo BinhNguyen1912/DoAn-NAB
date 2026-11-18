@@ -57,6 +57,14 @@ class TestDumpMaskCanVosEvery1:
         assert lw._kiem_dump_mask_args(_parser(), "0,4,8", 1) == [0, 4, 8]
 
 
+class _DungNgaySauCuaVao(Exception):
+    """Sentinel: `main()` đã qua các cửa validate VÀ chưa nạp model (CI không có `sam2`)."""
+
+
+def _sentinel():
+    raise _DungNgaySauCuaVao
+
+
 class TestDumpMaskCanBBoxCoSan:
     """P1 review 17-11 (ticket #36): dump mask chỉ đúng khi phiên bám từ frame ĐẦU.
 
@@ -74,28 +82,31 @@ class TestDumpMaskCanBBoxCoSan:
         assert "bbox.json" in capsys.readouterr().err
 
     def test_co_bbox_roi_thi_khong_bi_chan(self, tmp_path, monkeypatch):
-        """Có `bbox.json` ⇒ đi qua cửa validate (rồi dừng ở bước mở nguồn vì file không tồn tại)."""
+        """Có `bbox.json` ⇒ đi QUA cửa validate (dừng ngay sau đó bằng một sentinel).
+
+        Không để chạy tới `TrackerEngine`: CI ubuntu **không có `sam2`** ⇒
+        `ModuleNotFoundError: No module named 'sam2'` chứ không phải lỗi của test này (CI đã bắt đúng
+        18-11). Sentinel đặt ở `_cuda_available` — bước đầu tiên SAU cửa vào.
+        """
         out = tmp_path / "o"
         out.mkdir()
         (out / "bbox.json").write_text('{"x":1,"y":1,"w":5,"h":5}', encoding="utf-8")
-        try:
+        monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+        with pytest.raises(_DungNgaySauCuaVao):
             _run(monkeypatch, ["--source", str(tmp_path / "khong-co.mp4"),
                                "--out-dir", str(out),
                                "--dump-mask-frames", "0", "--vos-every", "1"])
-        except SystemExit as exc:            # chặn Ở BƯỚC KHÁC (không thấy nguồn) là chấp nhận được
-            assert "bbox.json" not in str(exc.value.code)
 
     def test_bbox_giai_ma_va_ghi_bbox_json(self, tmp_path, monkeypatch, capsys):
         """`--bbox x,y,w,h` (dạng xywh) ghi `bbox.json` TRƯỚC khi phiên chạy ⇒ dump đúng frame clip."""
         import json as _json
 
         out = tmp_path / "o"
-        try:
+        monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+        with pytest.raises(_DungNgaySauCuaVao):   # qua được cửa vào ⇒ không bị chặn vì bbox
             _run(monkeypatch, ["--source", str(tmp_path / "khong-co.mp4"),
                                "--out-dir", str(out), "--bbox", "10,20,30,40",
                                "--dump-mask-frames", "0", "--vos-every", "1"])
-        except SystemExit as exc:
-            assert "bbox" not in str(exc.value.code), "không được chặn vì lý do bbox khi đã có --bbox"
         assert _json.loads((out / "bbox.json").read_text()) == {"x": 10, "y": 20, "w": 30, "h": 40}
 
     def test_bbox_xyxy_bi_tu_choi(self, tmp_path, monkeypatch):
