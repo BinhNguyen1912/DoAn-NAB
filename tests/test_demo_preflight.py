@@ -195,6 +195,23 @@ class TestNguonVideo:
         c = dp.check_source_frames("0", [], "RuntimeError: bận", 10.0)
         assert not c.ok and "bận" in c.chi_tiet
 
+    def test_loi_webcam_thi_goi_y_DUNG_duong_thoat(self):
+        """Webcam chết ⇒ máy này KHÔNG cứu được bằng "thử index khác" (AGENTS §6: `Device busy` là cờ
+        kẹt ở DRIVER usbipd-win; đã thử index 1, reboot, unbind/bind đều không khỏi). Gợi ý phải là
+        relay hoặc file, nếu không người trực demo sẽ đi sai đường ngay trước giờ thi."""
+        c = dp.check_source_frames("0", [], "RuntimeError: Không mở được camera index 0", 10.0)
+        assert not c.ok
+        assert "./run relay" in c.chi_tiet, c.chi_tiet
+        assert "cam_relay.sh snapurl" in c.chi_tiet, c.chi_tiet
+        # KHÔNG được lặp lại gợi ý mà chính `CameraVideoSource` đã in (P2-2: một dòng bảng ~380 ký tự,
+        # `./run relay` hiện 2 lần)
+        assert c.chi_tiet.count("./run relay") == 1, c.chi_tiet
+
+    def test_nguon_la_file_thi_khong_goi_y_relay(self):
+        """Nguồn đã là file/URL ⇒ gợi ý webcam là thừa, chỉ làm rối."""
+        c = dp.check_source_frames("data/binh1.mp4", [], "RuntimeError: không đọc được", 10.0)
+        assert not c.ok and "./run relay" not in c.chi_tiet
+
     def test_du_frame_thi_ok(self):
         frames = [np.zeros((4, 4, 3), np.uint8)] * 8
         assert dp.check_source_frames("0", frames, None, 12.0, n=8).ok
@@ -484,3 +501,39 @@ class TestRunChecks:
                     bbox=None, full_timeout=1.0, sample_s=0.0)
         base.update(kw)
         return argparse.Namespace(**base)
+
+
+class TestGoiYPhaiNhatQuan:
+    """P2-2/P2-3/P3-1 (review 18-11): dòng gợi ý không được lặp, không được mâu thuẫn với 3 bước tay, và
+    phần "dùng nguồn NÀO" phải được ghim (bản trước để hở: bỏ URL mà test vẫn xanh)."""
+
+    def test_khong_lap_goi_y_khi_loi_da_co_relay(self):
+        """`CameraVideoSource` đã in relay trong câu lỗi ⇒ preflight KHÔNG được nối thêm lần nữa."""
+        loi = ("RuntimeError: Không mở được camera index 0 (bận hoặc không tồn tại — kiểm tra thiết "
+               "bị…). Nếu máy kẹt driver `usbipd` (WSL)… dùng relay (`./run relay`)…")
+        c = dp.check_source_frames("0", [], loi, 10.0)
+        assert c.chi_tiet.count("./run relay") == 1, c.chi_tiet
+
+    def test_nguon_url_loi_thi_khong_goi_y_relay(self):
+        c = dp.check_source_frames("http://127.0.0.1:8090/snapshot.jpg", [], "URLError: refused", 5.0)
+        assert "relay" not in c.chi_tiet, c.chi_tiet
+
+    def test_ba_buoc_tay_khong_noi_nguon_0_la_relay(self):
+        """Nguồn `0` là webcam TRONG WSL (kẹt driver); relay là URL HTTP — nói `0` = relay là mâu thuẫn
+        với chính dòng gợi ý ở trên (P2-3)."""
+        assert "snapshot.jpg" in dp.MANUAL_STEPS
+        dong2 = dp.MANUAL_STEPS.split("\n")[2]
+        assert "Nguồn `0`" not in dong2, dong2
+
+    def test_webcam_co_file_that_ten_0_thi_khong_goi_y(self, tmp_path, monkeypatch):
+        """Quy ước repo (13-11): chuỗi số là index webcam **trừ khi** có file/thư mục THẬT trùng tên."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "0").write_text("x", encoding="utf-8")
+        for nguon in ("0", " 0 "):
+            c = dp.check_source_frames(nguon, [], "RuntimeError: bận", 5.0)
+            assert "relay" not in c.chi_tiet, (nguon, c.chi_tiet)
+
+    def test_chuoi_khong_phai_so_thap_phan_thi_khong_goi_y(self):
+        """`"²".isdigit()` là True nhưng không phải index camera (factory dùng `isdecimal()`)."""
+        c = dp.check_source_frames("²", [], "RuntimeError: bận", 5.0)
+        assert "relay" not in c.chi_tiet, c.chi_tiet

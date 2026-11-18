@@ -447,3 +447,21 @@ class TestHttpSnapshotSource:
         assert src.read() is not None          # lần 1 OK, sau đó hỏng → trả frame cũ
         assert src.read() is not None
         assert src.read() is None              # đủ 3 lần hỏng liên tiếp → hết nguồn
+
+
+def test_loi_mo_camera_goi_y_dung_duong_thoat():
+    """Webcam chết KHÔNG cứu được bằng "thử index khác" trên máy demo này (AGENTS §6: kẹt ở DRIVER
+    usbipd-win, đã thử index 1/reboot/unbind-bind). Câu lỗi phải chỉ relay/file — nếu không, người trực
+    demo đi sai đường ngay trước giờ thi."""
+    from src.video_source import CameraVideoSource
+
+    with pytest.raises(RuntimeError) as exc:
+        CameraVideoSource(0)._raise_open_error()
+    msg = str(exc.value)
+    # Phần ĐẶC THÙ máy này: relay + URL kiếm được ở đâu (P2-4: đặt trong nháy, `<` trong bash là redirect)
+    assert "./run relay" in msg and "cam_relay.sh snapurl" in msg, msg
+    # Phần TỔNG QUÁT vẫn phải còn (máy khác có 2 camera thì `--source 1` là đúng — P3-3)
+    assert "--source 1" in msg, msg
+    assert "data/binh1.mp4" not in msg, "clip demo không có trong fresh clone (.gitignore `data/*`)"
+    # Không được khẳng định "index khác không cứu" như quy tắc chung
+    assert "ví dụ 1" not in msg, "không được khuyên mù 'thử index khác, ví dụ 1'"
