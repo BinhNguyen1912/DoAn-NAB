@@ -56,6 +56,15 @@
 > (`22/115`) — vì chai **rời khung** ở những đoạn ngoài khung, **không phải** model mất dấu. Đây chính là
 > lý do phải có `--frame-window`: tỉ lệ rỗng **cả phiên không được** trích như "model mất dấu". `drift_iou` vẫn chỉ là **tự nhất quán**, không phải độ chính xác — độ chính
 > xác chỉ có mIoU mask vs GT.
+> ⚠ **Provenance của các artifact trong bảng (rà 18-11)**: 14 file được trích, và **5 file không có
+> `git_rev` truy được** — `data/res_1102_summary.json`, `data/gui_summary.json`,
+> `data/lighting_iou_320_summary.json`, `data/smooth_summary.json`, `data/reid_2clip_calib.json` (sinh
+> trước khi có quy ước provenance, **không có** trường `git_rev`), cộng `data/drift_2026-11-08_metrics.json`
+> (trường `git_rev` là chuỗi 40 ký tự **gõ sai**, commit thật là `ee9f25672d72`) và
+> `data/live_web_relay_2026-11-10_metrics.json` (rev chỉ còn ở object local — nhánh rebase trước khi push).
+> ⇒ Số trong bảng **vẫn là số đo thật**, dùng được khi trích **kèm tên file**; nhưng **không** được nói
+> "tái lập được từ `git_rev`" cho 7 file đó, và **cấm dẫn rev** của hai file cuối. Kiểm lại bằng
+> `./run provcheck`.
 > Từ 17-11: **`*_summary.json`** của `metrics_logger` có thêm `p95_latency_ms_n` (và `mean_latency_ms_n`);
 > `p95` trả **`None`** khi `n = 0`, còn `mean` **vẫn** `0,0` (vì `effective_fps = 1000/mean` là hợp đồng
 > cũ) — đọc kèm `_n`, `n == 0` = **chưa đo**, không phải "0 ms".
