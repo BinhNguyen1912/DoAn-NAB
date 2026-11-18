@@ -214,6 +214,22 @@ def _cung_nguon(a, b) -> bool:
         return False
 
 
+def _so_nguyen(value) -> int | None:
+    """`37`, `37.0`, `"37"` ⇒ 37; còn lại ⇒ `None`.
+
+    Bản trước chỉ nhận `isinstance(x, int)` ⇒ bỏ qua im lặng `37.0`/`"37"` (manifest viết tay hoặc do
+    tool cũ sinh) — fail-open đúng ở khoá dùng để CHẶN (P3 review 17-11). Cùng quy ước với
+    `frames_yeu_cau` (chấp nhận float nguyên, từ chối 2.7).
+    """
+    if value is None or isinstance(value, bool):
+        return None
+    try:
+        f = float(value)
+    except (TypeError, ValueError):
+        return None
+    return int(f) if f.is_integer() else None
+
+
 def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     """Đối chiếu bộ GT với `manifest.json` của thư mục mask ⇒ cảnh báo MỀM (không chặn chấm).
 
@@ -236,11 +252,15 @@ def kiem_khop_manifest(index: dict, manifest) -> list[str]:
     # Chọn ô GIỮA phiên: tên file mask đi theo chỉ số frame của PHIÊN, không phải của clip ⇒ ghép GT
     # theo số frame là lệch đúng `frame_goc_cua_phien` (ticket #36). Thiếu khoá = manifest của bản cũ
     # (mọi lần dump cũ đều bắt đầu từ frame 0 qua `--bbox`) ⇒ không cảnh báo.
-    goc = manifest.get("frame_goc_cua_phien")
-    if isinstance(goc, int) and not isinstance(goc, bool) and goc > 0:
-        mem.append(f"phiên bắt đầu SAU {goc} frame của nguồn (`frame_goc_cua_phien`) ⇒ "
-                   f"`mask_NNNNNN.png` là frame NNNNNN của PHIÊN, tức frame NNNNNN+{goc} của clip — "
-                   "cắt GT theo offset này, nếu không mIoU ghép lệch frame (ticket #36)")
+    goc = _so_nguyen(manifest.get("frame_goc_cua_phien"))
+    if goc:
+        # CHẶN, không chỉ cảnh báo: khác `so_file_ghi_de` ("có thể" trộn), ở đây mask CHẮC CHẮN lệch
+        # frame khi phiên đã bỏ frame lúc chờ chọn ô — và không có cờ nào để chấm bù (số phải mod độ
+        # dài clip khi nguồn quay vòng). Công bố mIoU trong ca này là số sai im lặng (ticket #36, P2
+        # review 17-11).
+        mem.append(f"CHẶN CHẤM: `frame_goc_cua_phien` = {goc} ⇒ phiên đã bỏ {goc} frame lúc chờ chọn "
+                   "ô, nên `mask_NNNNNN.png` KHÔNG phải frame NNNNNN của clip ⇒ mIoU sẽ ghép lệch "
+                   "frame (ticket #36). Chạy lại phiên với ô chọn có sẵn từ frame đầu")
     ghi_de = manifest.get("so_file_ghi_de")
     if isinstance(ghi_de, int) and not isinstance(ghi_de, bool) and ghi_de > 0:
         mem.append(f"mask bị GHI ĐÈ {ghi_de} lần trong lúc ghi (`so_file_ghi_de`) — có thể trộn mask "
@@ -442,6 +462,9 @@ def main(argv=None) -> int:
     sco.add_argument("--pred-dir", required=True, help="thư mục mask model xuất (mask_<idx>.png)")
     sco.add_argument("--out", default="", help="artifact JSON (mặc định data/miou_<ngày>_metrics.json)")
     sco.add_argument("--check-index", action="store_true", help="chỉ kiểm GT hợp lệ rồi thoát")
+    sco.add_argument("--cho-phep-offset", action="store_true",
+                     help="vẫn chấm dù manifest khai `frame_goc_cua_phien` > 0 (chỉ khi bạn ĐÃ tự cắt "
+                          "GT lệch đúng offset; nếu không thì mIoU là số sai)")
 
     args = parser.parse_args(argv)
 
@@ -485,6 +508,14 @@ def main(argv=None) -> int:
     mask_manifest, loi_manifest = _doc_manifest(pred_dir)
     chan, mem = kiem_index(index, gt_dir)
     mem = mem + kiem_khop_manifest(index, mask_manifest)
+    # `kiem_khop_manifest` trả CẢNH BÁO MỀM, nhưng ca "phiên chờ chọn ô" không mềm: mask lệch frame
+    # chắc chắn ⇒ chuyển sang CHẶN (exit 2, không ghi artifact) trừ khi người chấm tự nhận trách nhiệm
+    # bằng `--cho-phep-offset` (P2 review 17-11, ticket #36).
+    chan = chan + [c.replace("CHẶN CHẤM: ", "", 1) for c in mem if c.startswith("CHẶN CHẤM:")]
+    mem = [c for c in mem if not c.startswith("CHẶN CHẤM:")]
+    if args.cho_phep_offset and chan:
+        mem += [f"cảnh báo (đã --cho-phep-offset): {c}" for c in chan if "frame_goc_cua_phien" in c]
+        chan = [c for c in chan if "frame_goc_cua_phien" not in c]
     if loi_manifest:
         # "Có manifest nhưng HỎNG" KHÁC "không có manifest": ca sau là bình thường, ca trước nghĩa là
         # không ai biết mask sinh từ clip/frame nào ⇒ phải nói ra (P3 review 16-11).

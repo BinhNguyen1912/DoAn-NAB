@@ -8,6 +8,12 @@ chuột chọn ô giữa phiên** (web `mode=track`), phiên đã đọc N frame
 `mask_000042.png` là frame 42 của **phiên**, tức frame **42+N của clip** ⇒ ghép với `gt_000042.png` là
 chấm hai frame khác nhau — **mIoU sai mà im lặng**.
 
+**Đường tới được (đính chính so với bản log đầu):** web `mode=track` **không** dump mask
+(`build_live_worker_command` không truyền `--dump-mask-frames`, `LiveTrackConfig.dump_mask_frames` mặc
+định `()`), nên ca thật là `tools/live_worker.py --dump-mask-frames` chạy **trước khi** có
+`bbox.json` (người dùng chạy CLI rồi mới đặt ô chọn) — và nguồn `loop_files=True` mặc định **quay
+vòng** (`binh1.mp4` 333 frame) ⇒ `offset + idx` **không** phải frame của clip khi đã chờ > 11 s.
+
 ## Input
 
 - `src/live_tracking.py::run()`: nhánh `if bbox is None` (trạng thái `waiting_selection`) đọc và phát khung
@@ -59,3 +65,30 @@ sai, và đường CLI (offset 0) không có gì phải đổi. Cảnh báo + kh
 - Ticket #36 · `src/live_tracking.py` (`run`, `_dump_mask`, `_write_mask_manifest`) ·
   `scripts/score_miou.py` (`kiem_khop_manifest`) · ticket #26 (`so_file_ghi_de` — cùng cơ chế cảnh báo ở
   chỗ chấm) · AGENTS §6 ("số sai im lặng" tệ hơn số thiếu).
+
+## Bổ sung sau review vòng 1 (P1 + 2 P2)
+
+Reviewer bắt đúng **P1**: `_frame_goc` là số lần đọc THÔ, không phải offset trong clip — với nguồn
+quay vòng, "frame N+offset của clip" là **sai**; cả manifest, cảnh báo lúc dump và lời dặn của
+`score_miou` đều dựa trên ánh xạ sai đó. Đã đổi sang phương án **từ chối** (ticket #36 cho phép):
+
+1. `tools/live_worker.py`: `--dump-mask-frames` mà `<out-dir>/bbox.json` chưa có ⇒ `parser.error` (mã 2)
+   ngay ở cửa vào — dump chỉ đúng khi bám từ frame đầu.
+2. `LiveTrackingSession._dump_mask`: nếu phiên đã bỏ frame lúc chờ chọn ô ⇒ **TỪ CHỐI GHI** + cảnh báo
+   một lần (không ghi file mang tên sai frame, không ghi manifest như thể đã đo).
+3. `scripts/score_miou.py`: `frame_goc_cua_phien > 0` ⇒ **CHẶN CHẤM** (exit 2, **không ghi artifact**)
+   thay vì "cảnh báo mềm nhưng vẫn công bố mIoU" (P2: số chắc chắn sai, không có cờ nào chấm bù);
+   `--cho-phep-offset` chỉ dùng khi người chấm ĐÃ tự cắt GT lệch. Thêm `_so_nguyen()` để nhận
+   `"37"`/`37.0` — bản trước bỏ qua im lặng (fail-open đúng ở khoá dùng để chặn).
+4. `docs/thuoc-do-bam-dung.md`: thêm quy tắc "phiên phải bám từ frame đầu" + giải thích chặn.
+5. Test: **đúng nhánh chờ chọn ô** (không `_preselect`, `bbox.json` xuất hiện ở lần `is_set()` thứ 3) ⇒
+   `_frame_goc > 0`, **không** có `mask_*.png`, **không** có manifest, có cảnh báo "TỪ CHỐI dump";
+   + 2 test cửa vào `live_worker` (chưa có bbox ⇒ mã 2; có bbox ⇒ không bị chặn vì lý do này);
+   + test `score_miou`: offset `"37"`/`37.0`/`37` ⇒ khoá CHẶN; offset 0/thiếu khoá ⇒ **`mem == []`**
+   (thay vì kiểm theo chuỗi — P3).
+   Diễn tập ngược: tắt guard "TỪ CHỐI" ⇒ test chờ-chọn-ô **đỏ**, phục hồi ⇒ xanh.
+
+**Sửa lời theo P3**: log ghi đúng đường tới được (CLI + `bbox.json` đến muộn, **không** phải web);
+ticket đổi câu "cảnh báo chặn" → "**từ chối** dump" như issue gốc; bỏ tick tiêu chí "test nêu đúng frame
+của clip" (không đúng khi nguồn quay vòng — nay tiêu chí là "từ chối"), `_da_canh_bao_offset` khai trong
+`__init__`.

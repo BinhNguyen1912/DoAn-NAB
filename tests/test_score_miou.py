@@ -888,18 +888,26 @@ class TestManifestFrameGocChonOGiuaPhien:
 
     _idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
 
-    def test_offset_duong_thi_canh_bao(self):
+    def test_offset_duong_thi_CHAN(self):
+        """Chặn (không chỉ cảnh báo): mask lệch frame CHẮC CHẮN, không có cờ nào chấm bù đúng."""
         mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4",
                                                "frames_yeu_cau": [0], "frame_goc_cua_phien": 37})
-        assert any("SAU 37 frame" in c and "ticket #36" in c for c in mem), mem
+        assert any(c.startswith("CHẶN CHẤM:") and "37" in c and "ticket #36" in c for c in mem), mem
+
+    def test_offset_dang_chuoi_hoac_float_van_bi_chan(self):
+        """Manifest viết tay/tool cũ có thể ghi `"37"`/`37.0` — bản trước bỏ qua im lặng (fail-open)."""
+        for gia_tri in ("37", 37.0):
+            mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4",
+                                                   "frames_yeu_cau": [0],
+                                                   "frame_goc_cua_phien": gia_tri})
+            assert any(c.startswith("CHẶN CHẤM:") for c in mem), gia_tri
 
     def test_offset_0_thi_khong_canh_bao(self):
         """Đường CLI `--bbox`: chọn ô ngay frame đầu ⇒ tên file đúng là frame của clip."""
-        mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4",
-                                               "frames_yeu_cau": [0], "frame_goc_cua_phien": 0})
-        assert not any("frame_goc_cua_phien" in c for c in mem), mem
+        manifest = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "frame_goc_cua_phien": 0}
+        assert sm.kiem_khop_manifest(self._idx, manifest) == []
 
     def test_manifest_cu_thieu_khoa_thi_khong_canh_bao(self):
         """Artifact sinh trước ticket #36 không có khoá này ⇒ không được đẻ cảnh báo rỗng."""
-        mem = sm.kiem_khop_manifest(self._idx, {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0]})
-        assert not any("frame_goc_cua_phien" in c for c in mem), mem
+        manifest = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0]}
+        assert sm.kiem_khop_manifest(self._idx, manifest) == []

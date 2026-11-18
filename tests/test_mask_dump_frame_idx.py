@@ -176,9 +176,8 @@ def test_record_vos_khong_tu_gan_dump_ms(video_source, tmp_path):
     assert session._stats.dump_ms is not None, "người gọi gán `dump_ms` cùng lock với `post_ms`"
 
 
-def test_chon_o_giua_phien_thi_manifest_khai_frame_goc(video_source, tmp_path, capsys):
-    """Ticket #36: phiên bắt đầu SAU N frame của nguồn ⇒ manifest phải khai `frame_goc_cua_phien = N`
-    và có cảnh báo, để chỗ CHẤM biết `mask_NNNNNN.png` lệch N frame so với GT của clip."""
+def test_chon_o_ngay_tu_dau_thi_manifest_khai_0(video_source, tmp_path, capsys):
+    """Đường CLI `--bbox` (ô chọn có sẵn): offset 0, tên file đúng là frame của clip."""
     out = tmp_path / "live"
     _preselect(out)
     dump_dir = tmp_path / "masks"
@@ -186,29 +185,41 @@ def test_chon_o_giua_phien_thi_manifest_khai_frame_goc(video_source, tmp_path, c
         video_source, tmp_path, vos_every=1, loop_files=True,
         dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
 
-    # Giả lập "người dùng chọn ô sau khi phiên đã đọc 5 frame" — đúng trạng thái `waiting_selection`.
     session.run(stop_event=_StopAfter(20))
 
     man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert "frame_goc_cua_phien" in man
-    # Chọn ô NGAY (bbox có sẵn từ đầu) ⇒ 0 frame chờ ⇒ tên file vẫn đúng frame của clip.
     assert man["frame_goc_cua_phien"] == 0
-    assert "SAU" not in capsys.readouterr().out
+    assert (dump_dir / "mask_000000.png").is_file()
+    assert "TỪ CHỐI" not in capsys.readouterr().out
 
 
-def test_offset_khac_0_canh_bao_va_khai_manifest(video_source, tmp_path, capsys):
-    """Khi `_frame_goc > 0` (chọn ô giữa phiên) ⇒ cảnh báo in ra tên file + frame tương ứng của clip."""
+def test_chon_o_MUON_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
+    """P1/P2 review 17-11: phiên chờ chọn ô ⇒ tên `mask_NNNNNN.png` KHÔNG phải frame của clip (nguồn
+    còn quay vòng nên `offset + idx` cũng sai) ⇒ **từ chối ghi** thay vì ghi file mang tên sai frame."""
     out = tmp_path / "live"
-    _preselect(out)
+    out.mkdir(parents=True, exist_ok=True)          # KHÔNG đặt bbox.json trước
     dump_dir = tmp_path / "masks"
     session = LiveTrackingSession(_CountingEngine(), _config(
         video_source, tmp_path, vos_every=1, loop_files=True,
         dump_mask_frames=(0,), dump_mask_dir=str(dump_dir)))
-    session._frame_goc = 37                      # như phiên đã đọc 37 frame trước khi có ô chọn
 
-    session.run(stop_event=_StopAfter(20))
+    so_lan = {"n": 0}
 
-    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
-    assert man["frame_goc_cua_phien"] == 37
+    class _ChonOSau3Lan:
+        """`bbox.json` chỉ xuất hiện ở lần kiểm thứ 3 ⇒ phiên đọc 2 frame trong lúc chờ chọn ô."""
+
+        def is_set(self):
+            so_lan["n"] += 1
+            if so_lan["n"] == 3:
+                _preselect(out)
+            return so_lan["n"] > 12
+
+    session.run(stop_event=_ChonOSau3Lan())
+
+    assert session._frame_goc > 0, "phiên phải đếm được số frame đã đọc lúc chờ chọn ô"
+    assert not list(dump_dir.glob("mask_*.png")), (
+        "phiên chờ chọn ô KHÔNG được ghi mask mang tên frame của phiên")
+    man = dump_dir / "manifest.json"
+    assert not man.exists(), "không ghi file ⇒ không được ghi manifest như thể đã đo"
     out_txt = capsys.readouterr().out
-    assert "SAU 37 frame" in out_txt and "ticket #36" in out_txt
+    assert "TỪ CHỐI dump mask" in out_txt and "ticket #36" in out_txt

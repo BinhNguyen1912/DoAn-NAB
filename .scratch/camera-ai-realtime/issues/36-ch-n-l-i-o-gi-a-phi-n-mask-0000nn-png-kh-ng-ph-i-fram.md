@@ -40,3 +40,23 @@ không cần đổi — cảnh báo + khai offset là phương án ít rủi ro 
 
 `./run test` **1360 passed** (+5 test: 2 ở `test_mask_dump_frame_idx`, 3 ở `test_score_miou`).
 Log: `docs/task/17-11-2026-ticket-36-frame-goc-khi-chon-o-giua-phien.md`.
+
+## Bổ sung sau review vòng 1
+
+**P1 (ánh xạ sai frame clip)**: `_frame_goc` là số lần đọc THÔ; nguồn `loop_files=True` mặc định quay
+vòng (`binh1.mp4` = 333 frame) ⇒ "frame N+offset của clip" **sai**. Bỏ hẳn cách ánh xạ, chọn phương án
+ticket cho phép — **từ chối**:
+- `tools/live_worker.py`: `--dump-mask-frames` + chưa có `<out-dir>/bbox.json` ⇒ `parser.error` (mã 2),
+  trừ khi truyền `--bbox x,y,w,h` (nay `live_worker` tự ghi bbox.json ở dạng xywh, chặn `x1,y1,x2,y2`).
+- `LiveTrackingSession._dump_mask`: phiên đã bỏ frame lúc chờ chọn ô ⇒ **TỪ CHỐI GHI** + cảnh báo
+  một lần; không file, không manifest.
+- `score_miou`: `frame_goc_cua_phien > 0` ⇒ **CHẶN** (exit 2, không artifact), `--cho-phep-offset` để
+  người chấm tự nhận trách nhiệm; `_so_nguyen()` nhận `"37"`/`37.0` (trước bỏ qua im lặng — fail-open).
+
+**P2 (test mù + doc sai đường)**: test cũ `_preselect`/gán tay state nên xoá dòng `_frame_goc += 1` mà
+vẫn xanh. Nay có test **đúng nhánh chờ chọn ô** (`bbox.json` xuất hiện ở lần `is_set()` thứ 3 ⇒
+`_frame_goc > 0`, không file mask, không manifest, có "TỪ CHỐI dump"), diễn tập ngược 1/1 đỏ.
+
+**P3 đã sửa**: log ghi đúng đường tới được (CLI + bbox đến muộn — **không** phải web, web không bao giờ
+dump); `docs/thuoc-do-bam-dung.md` thêm quy tắc "phiên phải bám từ frame đầu" + ví dụ `--bbox`;
+`_da_canh_bao_offset` khai trong `__init__`.

@@ -99,10 +99,12 @@ python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/x --ch
 #    ⚠ --vos-every 1 là BẮT BUỘC khi gán GT: với vos_every > 1 chỉ frame chia hết cho N mới có lần
 #    VOS, nên frame 40 (N=3) không có mask nào và lần chấm sẽ thiếu frame mà không rõ vì sao.
 #    Tên file mask = **chỉ số frame VIDEO** (không phải bộ đếm nội bộ của engine) — đã sửa 14-11.
-python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 \
+#    ⚠ Phiên phải bám từ frame ĐẦU: `--bbox x,y,w,h` (dạng xywh) ghi bbox.json TRƯỚC khi chạy. Nếu để
+#    trống rồi chọn ô qua web/API giữa phiên, tên file mask là frame của PHIÊN chứ không phải của clip
+#    (nguồn còn quay vòng) ⇒ `live_worker` từ chối chạy và `score_miou` chặn chấm (ticket #36).
+python tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/run1 --bbox 300,275,150,410 \
     --image-size 192 --vos-every 1 --dump-mask-frames "0,40,80,120,160,200,240,280" \
     --stop-after-frames 300
-# (ô chọn phải nằm ở /tmp/run1/bbox.json, dạng {"x":…,"y":…,"w":…,"h":…})
 
 # 5) chấm
 python scripts/score_miou.py score --gt docs/gt/binh1_tay --pred-dir /tmp/run1/masks \
@@ -126,7 +128,7 @@ kiểm đường ống, không để tuyên bố độ chính xác).
 ```bash
 python scripts/make_synthetic_gt_clip.py          # clip + GT biết trước (ô vuông 60 px trên nền nhiễu)
 python tools/live_worker.py --source data/synthetic_gt.mp4 --out-dir /tmp/demo_gt \
-    --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
+    --bbox 10,10,60,60 --image-size 192 --vos-every 1 --dump-mask-frames "0,6,12,18,23" --stop-after-frames 30
 python scripts/score_miou.py score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt/masks \
     --out data/miou_synthetic_2026-11-14_metrics.json
 ```

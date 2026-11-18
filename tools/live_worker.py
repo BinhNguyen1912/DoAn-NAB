@@ -12,6 +12,7 @@ Lưu ý  : tool này CHẠY BẰNG python có torch (conda env samurai). API KH�
 """
 
 import argparse
+import json
 import signal
 import sys
 import threading
@@ -129,6 +130,9 @@ def main() -> int:
     # Xuất mask tại vài frame để chấm mIoU vs GT gán tay (việc #6). Mặc định KHÔNG ghi gì.
     parser.add_argument("--dump-mask-frames", default="",
                         help='xuất mask tại các frame này, vd "0,50,120" (để chấm mIoU với GT)')
+    parser.add_argument("--bbox", default="",
+                        help='ô chọn có sẵn "x,y,w,h" (dạng xywh như bbox.json) — ghi bbox.json TRƯỚC '
+                             "khi phiên chạy; cần cho `--dump-mask-frames` (xem docs/thuoc-do-bam-dung.md)")
     parser.add_argument("--dump-mask-dir", default="",
                         help="thư mục ghi mask (mặc định <out-dir>/masks)")
     args = parser.parse_args()
@@ -138,11 +142,42 @@ def main() -> int:
     if not 0.0 < args.mask_smoothing <= 1.0:
         parser.error("--mask-smoothing phải trong khoảng (0, 1]; 1.0 = tắt làm mượt")
 
+    # `--bbox x,y,w,h` (dạng xywh, cùng dạng bbox.json): ghi bbox.json TRƯỚC khi phiên chạy để phiên
+    # bám từ frame ĐẦU — điều kiện để dump mask có nghĩa (ticket #36).
+    if args.bbox:
+        so = [p.strip() for p in str(args.bbox).split(",")]
+        if len(so) != 4:
+            parser.error('--bbox phải dạng "x,y,w,h"')
+        try:
+            x, y, w, h = (float(v) for v in so)
+        except ValueError:
+            parser.error('--bbox phải dạng "x,y,w,h" (bốn số)')
+        if w <= 0 or h <= 0:
+            # Lỗi kinh điển của repo: truyền `x1,y1,x2,y2` (AGENTS §6, bug đã làm hỏng cả Phase 4c).
+            parser.error("--bbox: w và h phải > 0 (dạng xywh, KHÔNG phải x1,y1,x2,y2)")
+        from src.live_tracking import BBOX_NAME
+
+        out = Path(args.out_dir)
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": x, "y": y, "w": w, "h": h}),
+                                    encoding="utf-8")
+
     # Chặn ngay ở cửa vào (P0 review hẹp 14-11): với `vos_every > 1` model **không hề thấy** frame
     # không chia hết cho N ⇒ không có mask thật để dump. Cho chạy rồi cảnh báo cuối phiên là quá muộn:
     # người dùng đã tưởng có mask của frame 40 và chấm GT vào một thư mục thiếu file.
     if args.dump_mask_frames:
         _kiem_dump_mask_args(parser, args.dump_mask_frames, args.vos_every)
+        # (P1 review 17-11, ticket #36) dump mask CHỈ đúng khi phiên bám từ frame đầu. Nếu `bbox.json`
+        # chưa có, phiên đọc N frame trong lúc chờ chọn ô rồi mới bắt đầu ⇒ `mask_NNNNNN.png` là frame
+        # của PHIÊN, không phải của clip; và nguồn `loop_files` quay vòng nên KHÔNG suy ra được frame
+        # clip từ N (`offset + idx` phải mod độ dài clip). Chặn thay vì đoán.
+        from src.live_tracking import BBOX_NAME
+
+        if not (Path(args.out_dir) / BBOX_NAME).exists():
+            parser.error(
+                f"--dump-mask-frames cần {Path(args.out_dir) / BBOX_NAME} có SẴN trước khi chạy "
+                "(đặt ô chọn trước: `--bbox x,y,w,h` hoặc tự ghi bbox.json) — nếu phiên chờ chọn ô "
+                "thì tên file mask không còn là frame của clip (ticket #36)")
     if args.vos_every < 1:
         parser.error("--vos-every phải >= 1")
     if args.max_fps <= 0:
