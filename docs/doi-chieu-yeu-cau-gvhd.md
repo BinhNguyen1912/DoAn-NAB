@@ -2,7 +2,7 @@
 
 > File này là **phụ lục báo cáo**: mỗi yêu cầu trong bảng "Yêu cầu thực hiện của sinh viên" (GVHD giao)
 > được trả lời bằng *file cụ thể* + *số đo cụ thể*, không bằng lời khẳng định.
-> Cập nhật lần cuối: **09-11-2026** (thêm web/API, live hybrid 30 FPS HUD, drift, mIoU fixture,
+> Cập nhật lần cuối: **18-11-2026** (thêm web/API, live hybrid 30 FPS HUD, drift, mIoU fixture,
 > watchdog, H.264 — mỗi số trỏ đúng artifact). Chạy lại toàn bộ số trong file: xem mục "Cách tái tạo số liệu".
 >
 > Ký hiệu: ✅ xong có bằng chứng · 🟡 xong phần chính, còn thiếu số đo trên dữ liệu thật · ❌ thiếu
@@ -30,6 +30,7 @@
 | FPS / độ trễ (`image_size` 320, 6 frame, clip thật) | **4,18 FPS** (mean 240 ms, p95 312 ms) | `data/res_1102_summary.json` |
 | FPS / độ trễ (`image_size` 256, webcam) | **4,6–5,4 FPS** (186–218 ms) | `data/fast_1101-*_summary.json` |
 | FPS trên GPU Colab (T4) | **9,9 FPS** (101 ms) | `data/gpu_summary.json` |
+
 | Mức sử dụng CPU | **342 % của 1 lõi ≈ 43 % máy 8 lõi** (đỉnh 390 %) | `data/res_1102_summary.json` → `resources` |
 | Mức sử dụng RAM | **620,7 MB** trung bình, **632,3 MB** đỉnh | nt. |
 | Mức sử dụng GPU | không có GPU NVIDIA trên máy demo (trường `gpu: null`) — số GPU: `docs/colab-gpu.md` | nt. |
@@ -41,6 +42,15 @@
 | **mIoU mask vs GT** (fixture tổng hợp, cận trên) | **0,956** / **0,892** khi che 50 % / `null` khi che kín | `data/occlusion_metrics_320_metrics.json` |
 | **Camera THẬT** (relay Windows→WSL): HUD FPS / mask / drift p05 | **30.1** / **6.6–8.4** lần/giây / **0.933** (`drift_n` 171), tuổi dữ liệu p95 **281.6 ms** (`age_n` 200) | `data/live_web_relay_2026-11-10_metrics.json` |
 | **Watchdog** phát hiện nguồn chết | worker `kill -9`: **116–117 ms** · camera mất frame: **3,75 s** | `data/watchdog_2026-11-09_metrics.json`, `data/watchdog_raw_2026-11-09_metrics.json` |
+> ⚠ **`p95`/`mean` độ trễ trong bảng trên đo bằng code TRƯỚC 17-11** (ticket #32): artifact **không có**
+> field `p95_latency_ms_n`/`mean_latency_ms_n`. Cỡ mẫu vẫn suy được: `n = total_frames − frozen_frames` ⇒
+> **6** (`res_1102`) · **25** (`camtest`) · **52** (`demoip_1104-212328`) · **22** (`fast_1101-153223`) ·
+> **15** (`gui`). Với `n = 6` thì `p95` gần **max** (res_1102: p95 312 ms, max 340,4, mẫu 225,2) — nên
+> đọc là "p95 của 6 frame", **không** phải phân vị đáng tin.
+> Từ 17-11: **`*_summary.json`** của `metrics_logger` có thêm `p95_latency_ms_n` (và `mean_latency_ms_n`);
+> `p95` trả **`None`** khi `n = 0`, còn `mean` **vẫn** `0,0` (vì `effective_fps = 1000/mean` là hợp đồng
+> cũ) — đọc kèm `_n`, `n == 0` = **chưa đo**, không phải "0 ms".
+
 
 ## Việc còn thiếu (nói thẳng, không giấu)
 

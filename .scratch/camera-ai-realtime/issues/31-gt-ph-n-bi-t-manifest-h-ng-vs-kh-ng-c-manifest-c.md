@@ -12,10 +12,10 @@ Kèm: cập nhật `docs/thuoc-do-bam-dung.md` §1.2 (2 dòng mới + nói rõ c
 
 **Status:** resolved
 
-- [ ] `_doc_manifest` trả `(manifest, lỗi)`; `meta.mask_manifest_loi` có trong artifact khi manifest hỏng; `--check-index` in "manifest của mask HỎNG" thay vì "KHÔNG có manifest" (test cho JSON hỏng + manifest là list)
-- [ ] Hai frame khai cùng `hop_bao_xywh` ⇒ cảnh báo MỀM "CÙNG một hộp … copy-paste?" (test ca trùng và ca khác nhau); bộ GT thật `binh1_hopbao` không bị cảnh báo oan
-- [ ] `docs/thuoc-do-bam-dung.md` §1.2 có 2 dòng mới + câu giới hạn đã cập nhật
-- [ ] `./run lint` + `./run test` xanh, artifact sinh lại trên cây sạch
+- [x] `_doc_manifest` trả `(manifest, lỗi)`; `meta.mask_manifest_loi` có trong artifact khi manifest hỏng; `--check-index` in "manifest của mask HỎNG" thay vì "KHÔNG có manifest" (test cho JSON hỏng + manifest là list)
+- [x] Hai frame khai cùng `hop_bao_xywh` ⇒ cảnh báo MỀM "CÙNG một hộp … copy-paste?" (test ca trùng và ca khác nhau); bộ GT thật `binh1_hopbao` không bị cảnh báo oan
+- [x] `docs/thuoc-do-bam-dung.md` §1.2 có 2 dòng mới + câu giới hạn đã cập nhật
+- [x] `./run lint` + `./run test` xanh, artifact sinh lại trên cây sạch
 
 ## Answer
 
