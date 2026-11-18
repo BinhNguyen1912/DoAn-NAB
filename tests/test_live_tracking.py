@@ -736,11 +736,29 @@ class TestVeSinhWorkerCu:
             proc.wait(timeout=5)
 
     def test_reap_khong_cho_zombie_5_giay(self, tmp_path):
-        """Vòng chờ cũ coi zombie là 'còn sống' ⇒ luôn đợi đủ 5 s (review 08-11)."""
+        """Vòng chờ cũ coi zombie là 'còn sống' ⇒ luôn đợi đủ 5 s (review 08-11).
+
+        Ngưỡng thời gian ở đây là **trần rộng**, không phải số đo: trên máy bị chiếm CPU (đúng điều
+        kiện `./run testall`) một lần reap hợp lệ vẫn có thể vượt 3 s ⇒ test đỏ oan vì "đo thời gian
+        tường" (ticket #34). Thứ test PHẢI khẳng định là **hành vi**: tiến trình đã được reap
+        (`proc.poll() is not None`) — còn thời gian chỉ in ra khi đỏ để lần sau có số.
+
+        Trần lấy theo CHÍNH các hằng của code reaper (`TERM_WAIT_S + KILL_WAIT_S` = 3 s là trường hợp
+        xấu nhất: worker bỏ qua SIGTERM), + 1 s biên cho máy tải. Vẫn **phân biệt được** lỗi cũ (chờ
+        zombie luôn ~5 s) — ngưỡng `max(5, 2×CPU)` thì không, vì 5 s lọt qua.
+        """
         import time
 
-        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+        from src.api.adapters.worker_source import (
+            KILL_WAIT_S,
+            PID_NAME,
+            TERM_WAIT_S,
+            WorkerFrameSource,
+        )
 
+        tran = TERM_WAIT_S + KILL_WAIT_S + 1.0
+        # Trần phải NHỎ HƠN 5 s, nếu không lỗi cũ (chờ zombie đúng 5 s) vẫn xanh ⇒ test mất răng.
+        assert tran < 5.0
         proc = self._spawn_fake_worker(tmp_path)
         try:
             (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
@@ -748,8 +766,10 @@ class TestVeSinhWorkerCu:
             WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
             elapsed = time.perf_counter() - began
 
-            assert proc.poll() is not None
-            assert elapsed < 3.0, f"reap mất {elapsed:.1f} s (>2 s là dấu hiệu chờ zombie)"
+            assert proc.poll() is not None, "tiến trình phải được reap (không để zombie)"
+            assert elapsed < tran, (
+                f"reap mất {elapsed:.2f} s (> {tran:.1f} s = TERM_WAIT_S + KILL_WAIT_S + 1 s; "
+                "~5 s là dấu hiệu chờ zombie)")
         finally:
             if proc.poll() is None:
                 proc.kill()
