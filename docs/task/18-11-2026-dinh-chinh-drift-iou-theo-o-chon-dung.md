@@ -57,3 +57,20 @@ Phụ lục `docs/doi-chieu-yeu-cau-gvhd.md` (tài liệu hội đồng đọc) 
 ## Tài liệu tham khảo
 
 - `docs/demo-clip-va-o-chon.md`, `AGENTS.md` §6 (mục 14-11), `data/*chai*_1vong_metrics.json`
+
+## Rà thêm trong cùng PR (2 phát hiện nữa)
+
+1. **Watchdog `3,75 s` bị trích thiếu điều kiện**: artifact `data/watchdog_raw_2026-11-09_metrics.json` có
+   `moi_truong = "mode raw: relay ảnh JPEG qua HTTP (localhost)"` và lệnh `--mode raw`. AGENTS §6 nói rõ
+   **chưa đo trên webcam/RTSP thật**. Phụ lục đã ghi thêm đúng điều kiện đó + `kill -9` bắt bằng
+   `proc.poll()` (không phải "0,1 s cho ca treo").
+2. **Provenance của chính các artifact trong bảng**: quét 14 file được trích ⇒ **7 file không có `git_rev`
+   truy được**:
+   - 5 file **không có trường `git_rev`** (sinh trước quy ước): `res_1102_summary`, `gui_summary`,
+     `lighting_iou_320_summary`, `smooth_summary`, `reid_2clip_calib`;
+   - `drift_2026-11-08_metrics.json`: `git_rev` là chuỗi 40 ký tự **gõ sai** (commit thật `ee9f25672d72`);
+   - `live_web_relay_2026-11-10_metrics.json`: rev chỉ còn ở object local (nhánh rebase trước khi push).
+   ⇒ Đã thêm khối ⚠: số vẫn dùng được **kèm tên file**, nhưng **không** được nói "tái lập được từ
+   `git_rev`", và **cấm dẫn rev** của 2 file cuối (đúng `CHO_PHEP` của `provcheck`).
+
+Kiểm markdown vẫn đúng: khối bảng phụ lục còn **17 dòng `|`**, **0** dòng chen giữa (lỗi đã gặp ở PR #41).
