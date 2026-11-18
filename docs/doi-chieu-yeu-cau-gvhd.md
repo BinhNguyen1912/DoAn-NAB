@@ -51,9 +51,10 @@
 > lưu hành trước đây đo bằng **ô KHUÔN MẶT** (`binh1`) và ô phủ **2 chai + 2 tay** (`binh2`) — không phải
 > ô chai, nên **không** dùng để nói "bám chai tốt/xấu". Ô chai đúng (`docs/demo-clip-va-o-chon.md`):
 > `binh1` `300,275,150,410` (khung `0:110` ∪ `165:262`), `binh2` `330,330,150,360` (khung `0:160`) ⇒
-> `drift_iou` **0,48–0,50** (`binh1`) và **0,726** (`binh2`), `empty_frac` trong khung **1,6–3,6 %** và
-> **0,0 %**. `p05 = 0,000` của `binh2` **cả phiên** chủ yếu là **vật đã rời khung** (36 % số lần VOS rỗng),
-> không phải model mất dấu. `drift_iou` vẫn chỉ là **tự nhất quán**, không phải độ chính xác — độ chính
+> `drift_iou` **0,48–0,50** (`binh1`) và **0,726** (`binh2`), `empty_frac` **trong khung** **1,6–3,3 %** và
+> **0,0 %**; còn **cả phiên** thì `binh1` rỗng **35,2 %** (`37/105` lần VOS) và `binh2` **19,1 %**
+> (`22/115`) — vì chai **rời khung** ở những đoạn ngoài khung, **không phải** model mất dấu. Đây chính là
+> lý do phải có `--frame-window`: tỉ lệ rỗng **cả phiên không được** trích như "model mất dấu". `drift_iou` vẫn chỉ là **tự nhất quán**, không phải độ chính xác — độ chính
 > xác chỉ có mIoU mask vs GT.
 > Từ 17-11: **`*_summary.json`** của `metrics_logger` có thêm `p95_latency_ms_n` (và `mean_latency_ms_n`);
 > `p95` trả **`None`** khi `n = 0`, còn `mean` **vẫn** `0,0` (vì `effective_fps = 1000/mean` là hợp đồng
