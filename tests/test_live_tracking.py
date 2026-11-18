@@ -735,11 +735,28 @@ class TestVeSinhWorkerCu:
             proc.kill()
             proc.wait(timeout=5)
 
-    def test_reap_khong_cho_zombie_5_giay(self, tmp_path):
-        """Vòng chờ cũ coi zombie là 'còn sống' ⇒ luôn đợi đủ 5 s (review 08-11)."""
+    def test_reap_khong_cho_zombie_5_giay(self, tmp_path, monkeypatch):
+        """Vòng chờ cũ coi zombie là 'còn sống' ⇒ luôn đợi đủ 5 s (review 08-11).
+
+        Ticket #34: ngưỡng thời gian **không được** là "ngân sách của reaper" (TERM+KILL = 3 s) — hồi
+        quy "zombie tính là sống" chỉ tốn đúng 2 + 1 = 3 s, tức lọt qua trần 4 s (P1 review 17-11).
+        Nay bám **hành vi**, hai lớp:
+        1. spy `_wait_pid_gone`: lần chờ ĐẦU phải trả `True` (worker giả chết ngay ở SIGTERM) ⇒ không
+           được leo thang SIGKILL;
+        2. `elapsed < TERM_WAIT_S`: không có đường hợp lệ nào tiêu hết 2 s (đo thật 0,22 s).
+
+        `proc.poll() is not None` chỉ nói "đã bị giết rồi (poll thấy thoát)" — chính `poll()` mới là
+        thứ reap, nên nó KHÔNG chứng minh reaper đã chờ tới khi chết; phần đó do 2 lớp trên lo.
+        """
         import time
 
-        from src.api.adapters.worker_source import PID_NAME, WorkerFrameSource
+        from src.api.adapters import worker_source
+        from src.api.adapters.worker_source import PID_NAME, TERM_WAIT_S, WorkerFrameSource
+
+        goi: list = []
+        goc_wait = worker_source._wait_pid_gone        # patch trên MODULE: `_terminate_process` đọc global
+        monkeypatch.setattr(worker_source, "_wait_pid_gone",
+                            lambda pid, timeout: (goi.append(timeout), goc_wait(pid, timeout))[1])
 
         proc = self._spawn_fake_worker(tmp_path)
         try:
@@ -748,11 +765,42 @@ class TestVeSinhWorkerCu:
             WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
             elapsed = time.perf_counter() - began
 
-            assert proc.poll() is not None
-            assert elapsed < 3.0, f"reap mất {elapsed:.1f} s (>2 s là dấu hiệu chờ zombie)"
+            assert proc.poll() is not None, "tiến trình phải bị giết (poll() thấy đã thoát)"
+            assert goi[:1] == [TERM_WAIT_S], f"lần chờ đầu phải là TERM_WAIT_S; nhận {goi}"
+            assert len(goi) == 1, (
+                f"reaper phải thấy tiến trình chết ngay ở SIGTERM; đây đã leo thang thêm {len(goi) - 1} "
+                "lần (SIGKILL) — dấu hiệu `_pid_alive` tính zombie là còn sống")
+            assert elapsed < TERM_WAIT_S, (
+                f"reap mất {elapsed:.2f} s (>= TERM_WAIT_S = {TERM_WAIT_S} s ⇒ đã chờ hết hạn mức, "
+                "dấu hiệu chờ zombie)")
         finally:
             if proc.poll() is None:
                 proc.kill()
+            proc.wait(timeout=5)
+
+    def test_pid_alive_tinh_zombie_la_da_chet(self):
+        """`_pid_alive` là hàm mà hồi quy của nó biến mọi lần reap thành "chờ 3 s" (ticket #34).
+
+        Tiền đề của test: tiến trình con đã thoát nhưng CHƯA được `wait()` ⇒ `/proc/<pid>` vẫn tồn tại
+        ở trạng thái `Z`. Nếu `_pid_alive` chỉ kiểm `/proc` (không kiểm state) thì nó nói "còn sống".
+        """
+        import subprocess
+        from pathlib import Path
+
+        from src.api.adapters.worker_source import _pid_alive
+
+        proc = subprocess.Popen(["true"])
+        try:
+            assert Path(f"/proc/{proc.pid}/stat").exists(), "tiền đề: /proc còn tồn tại sau khi thoát"
+            # Chờ tới khi hạt nhân đánh dấu `Z` (thoát nhưng chưa reap).
+            for _ in range(100):
+                state = Path(f"/proc/{proc.pid}/stat").read_text().rsplit(")", 1)[1].split()[0]
+                if state == "Z":
+                    break
+                time.sleep(0.01)
+            assert state == "Z", f"chưa thành zombie (state={state})"
+            assert _pid_alive(proc.pid) is False, "zombie phải tính là ĐÃ CHẾT"
+        finally:
             proc.wait(timeout=5)
 
     def test_pidfile_hong_thi_bo_qua(self, tmp_path):
