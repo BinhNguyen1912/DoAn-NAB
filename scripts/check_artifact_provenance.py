@@ -85,7 +85,8 @@ def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
         try:
             d = json.loads(f.read_text(encoding="utf-8"))
         except (OSError, ValueError):
-            ra.append({"file": f.name, "git_rev": None, "trang_thai": "chet",
+            # `goc` cho ĐỒNG SCHEMA: mọi record đều có, nơi đọc không phải `KeyError`-theo-nhánh.
+            ra.append({"file": f.name, "git_rev": None, "trang_thai": "chet", "goc": "chet",
                        "ghi_chu": "artifact không đọc được"})
             continue
         rev = d.get("git_rev") if isinstance(d, dict) else None

@@ -57,6 +57,14 @@ class TestQuet:
         cho_phep = {("moi_metrics.json", "deadbeef" + "1" * 32): "lý do"}
         assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "chet"
 
+    def test_moi_record_deu_co_khoa_goc(self, tmp_path):
+        """Schema ĐỒNG NHẤT: record của artifact hỏng cũng có `goc` ⇒ chỗ đọc không phải xử lý riêng."""
+        (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
+        _artifact(tmp_path, "ok_metrics.json", "abcdef1")
+        for r in cap.quet(tmp_path, cho_phep={}):
+            assert "goc" in r, r
+            assert r["goc"] in ("ok", "lech", "chet"), r
+
     def test_artifact_hong_va_thieu_rev_deu_la_chet(self, tmp_path):
         (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
         _artifact(tmp_path, "thieu_metrics.json", None)
