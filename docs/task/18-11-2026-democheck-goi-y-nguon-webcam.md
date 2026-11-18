@@ -30,7 +30,7 @@ không có webcam dùng được (đã biết, AGENTS §6), và **câu gợi ý 
 thoát**. `./run democheck --source data/binh1.mp4`: **7 OK · 2 cảnh báo · 0 LỖI** ("Preflight ĐẠT"), mục
 `nguồn video` = 8 frame/233 ms, `frame có đổi` = khác biệt trung bình 18,51/255.
 
-- `./run lint` xanh · `./run test` **1394 passed** (5 deselected).
+- `./run lint` xanh · `./run test` **1393 passed** (5 deselected).
 - **Diễn tập ngược**: trả 2 thông điệp về bản cũ ⇒ **2/2 test đỏ**; phục hồi ⇒ xanh.
 
 ## Vấn đề & cách xử lý
