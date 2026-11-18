@@ -9,7 +9,7 @@ Việc:
 - Test: `vos_every=3` trên clip ngắn ⇒ `stability_n` không vượt số lần VOS thật; và giá trị `stability` không có mẫu 1,0 "miễn phí" ở đầu phiên.
 - Đo trước/sau trên `data/binh1.mp4` (3 lần, ghi `stability` + `stability_n`) ⇒ nêu rõ chênh lệch có vượt ngưỡng nhiễu không.
 
-**Status:** `ready-for-agent`
+**Status:** resolved
 
 **Blocked by:** None (can start immediately)
 

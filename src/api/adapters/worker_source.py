@@ -20,7 +20,10 @@ from pathlib import Path
 
 from src.api.domain import LiveState, LiveTelemetry, SourceHealth, SourceUnavailable
 from src.api.ports import FrameSource
-from src.live_tracking import BBOX_NAME, FRAME_NAME, STATE_ERROR, STATE_STOPPED, STATUS_NAME
+from src.live_tracking import (BBOX_NAME, FRAME_NAME, PID_NAME, STATE_ERROR, STATE_STOPPED,
+                               STATUS_NAME)
+from src.proc_pid import is_live_worker_for, pid_con_song, read_cmdline as _read_cmdline_impl
+from src.proc_pid import read_pid as _read_pid_impl
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
 from src.url_safe import an_userinfo
@@ -49,7 +52,6 @@ TERM_WAIT_S = 2.0
 KILL_WAIT_S = 1.0
 
 # File do adapter quản lý trong thư mục live (dọn trước mỗi phiên để không đọc nhầm của phiên cũ)
-PID_NAME = "worker.pid"
 _OWNED_FILES = (FRAME_NAME, STATUS_NAME, BBOX_NAME, PID_NAME, "status.json.tmp",
                 "frame.jpg.tmp", LOG_NAME)
 
@@ -353,45 +355,14 @@ def _age_s(path: Path) -> float | None:
         return None
 
 
-def _read_pid(path: Path):
-    """Đọc pidfile; None nếu chưa có/hỏng."""
-    try:
-        pid = int(path.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
+# Ba hàm dưới đây chuyển sang `src/proc_pid.py` (một bản duy nhất, CLI cũng dùng được mà không phải
+# import module API); giữ TÊN cũ vì test + `scripts/demo_preflight.py` import trực tiếp từ đây.
+_read_pid = _read_pid_impl
 
 
-def _read_cmdline(pid: int) -> list[str]:
-    """argv của tiến trình (tách theo NUL); [] nếu không đọc được."""
-    try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
-        return []
-    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
-
-
-def _is_our_live_worker(argv, out_dir: Path) -> bool:
-    """Đúng worker live của thư mục `out_dir`? (so khớp argv, KHÔNG dùng substring)."""
-    names = {Path(arg).name for arg in argv}
-    if "live_worker.py" not in names:
-        return False
-    for index, arg in enumerate(argv):
-        if arg == "--out-dir" and index + 1 < len(argv):
-            try:
-                return Path(argv[index + 1]).resolve() == Path(out_dir).resolve()
-            except OSError:
-                return False
-    return False
-
-
-def _pid_alive(pid: int) -> bool:
-    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT."""
-    try:
-        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
-    except (OSError, IndexError):
-        return False
-    return state != "Z"
+_read_cmdline = _read_cmdline_impl
+_is_our_live_worker = is_live_worker_for
+_pid_alive = pid_con_song
 
 
 def _so_hoac_none(value) -> float | None:

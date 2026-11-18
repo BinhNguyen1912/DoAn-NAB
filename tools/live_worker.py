@@ -190,11 +190,25 @@ def main() -> int:
     if args.max_fps <= 0:
         parser.error("--max-fps phải > 0")
 
+    # KHÔNG dùng chung `<out-dir>` với một phiên live khác (ticket #37) — kiểm VÔ ĐIỀU KIỆN, không chỉ
+    # khi có `--bbox`: cùng thư mục đó thì **mọi** lần chạy CLIđều đụng phiên kia — ghi đè `status.json`
+    # (`loading`), ghi `frame.jpg` xen vào (API phát ảnh trộn), và (không có `--bbox`) đọc luôn
+    # `bbox.json` của phiên kia rồi bám đúng ô đó. Chặn TRƯỚC `mkdir`/`_write_loading` để không đụng
+    # byte nào của phiên đang chạy (P2 review độc lập 18-11).
+    from src.live_tracking import phien_live_dang_giu
+
+    chu = phien_live_dang_giu(args.out_dir)
+    if chu is not None:
+        parser.error(
+            f"--out-dir {args.out_dir} đang bị một phiên live khác dùng (pid {chu}, "
+            f"xem {Path(args.out_dir) / 'worker.pid'}) ⇒ dùng `--out-dir` riêng cho lần chạy CLI này "
+            "(nếu pid đó KHÔNG phải worker live — pid tái chế — thì xoá worker.pid rồi chạy lại)")
+
     if bbox_ghi is not None:
         # Ghi SAU toàn bộ validate (xem chú thích ở `_parse_bbox`).
         from src.live_tracking import BBOX_NAME
 
-        (Path(args.out_dir)).mkdir(parents=True, exist_ok=True)
+        Path(args.out_dir).mkdir(parents=True, exist_ok=True)
         (Path(args.out_dir) / BBOX_NAME).write_text(json.dumps(bbox_ghi), encoding="utf-8")
 
     out_dir = Path(args.out_dir)
