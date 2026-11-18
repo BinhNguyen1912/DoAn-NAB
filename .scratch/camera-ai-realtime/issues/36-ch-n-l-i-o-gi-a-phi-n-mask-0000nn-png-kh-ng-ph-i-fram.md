@@ -20,7 +20,7 @@ Việc:
 - Test: phiên `mode=track` chọn ô sau N frame + `--dump-mask-frames` ⇒ tên file / manifest nêu đúng
   frame của **clip** (hoặc có cảnh báo chặn).
 
-**Status:** `ready-for-agent`
+**Status:** `resolved` — PR #39 merged `2c67143` (18-11); xem log `docs/task/17-11-2026-ticket-36-frame-goc-khi-chon-o-giua-phien.md`
 
 **Blocked by:** None (can start immediately)
 
