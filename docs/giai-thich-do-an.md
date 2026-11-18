@@ -303,6 +303,9 @@ cat data/smooth_summary.json
 python scripts/plot_metrics.py data/smooth_metrics.csv --out data/charts
 ```
 
+> ⚠ **Provenance (rà 18-11)**: `data/smooth_summary.json` (và các `*_summary.json` sinh trước 17-11) **không
+> có** trường `git_rev` ⇒ số dùng được **kèm tên file** nhưng **không** "tái lập được từ rev".
+
 | Muốn xem | Mở file |
 |---|---|
 | Đóng góp cá nhân vs phần có sẵn | `docs/team-contribution.md` |
