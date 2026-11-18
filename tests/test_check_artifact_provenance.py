@@ -51,9 +51,11 @@ class TestQuet:
         assert ra[0]["ghi_chu"] == "field 40-hex gõ tay"
 
     def test_rev_chet_moi_khong_duoc_allowlist(self, tmp_path):
-        """Allowlist khoá theo (file, rev) ⇒ rev chết MỚI trong cùng file vẫn bị bắt."""
+        """Allowlist khoá theo (file, rev) ⇒ rev chết MỚI trong CÙNG file vẫn bị bắt."""
         _artifact(tmp_path, "moi_metrics.json", "deadbeef" + "0" * 32)
-        assert cap.quet(tmp_path, cho_phep={})[0]["trang_thai"] == "chet"
+        # Allowlist có đúng TÊN FILE đó nhưng rev KHÁC ⇒ không được hạ (khoá phải gồm cả rev).
+        cho_phep = {("moi_metrics.json", "deadbeef" + "1" * 32): "lý do"}
+        assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "chet"
 
     def test_artifact_hong_va_thieu_rev_deu_la_chet(self, tmp_path):
         (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
@@ -114,11 +116,33 @@ class TestMainMaThoat:
         cho_phep = {("bi_rebase_metrics.json", "2" * 40): "nhánh rebase trước khi push — CẤM dẫn rev"}
         ra = cap.quet(tmp_path, cho_phep=cho_phep)
         assert ra[0]["trang_thai"] == "ok-da-biet", ra
+        # Nhãn GỐC không được mất: "đã biết" vì rev CHẾT khác với "đã biết" vì rev còn sống mà không
+        # phải tổ tiên (P2 review 18-11: bản trước in "3 chết-đã-biết" trong khi 2/3 là `lech`).
+        assert ra[0]["goc"] == "lech", ra
         assert ra[0]["ghi_chu"]
 
     def test_rev_lech_MOI_van_la_lech(self, tmp_path, monkeypatch):
         """Allowlist không được nuốt `lech` của artifact KHÁC (khoá gồm cả tên file)."""
+        # CÙNG rev, KHÁC tên file: mutant "chỉ so rev" sẽ hạ nhầm mục này ⇒ test phải đỏ.
+        # (Kịch bản thật: nhiều artifact dùng chung một rev — `bang_cau_hinh_*`, `ab_*`.)
         _artifact(tmp_path, "moi_metrics.json", "3" * 40)
         monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
-        cho_phep = {("bi_rebase_metrics.json", "2" * 40): "lý do"}
+        cho_phep = {("bi_rebase_metrics.json", "3" * 40): "lý do"}
         assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "lech"
+
+    def test_tong_ket_noi_da_biet_khong_phai_chet_da_biet(self, tmp_path, monkeypatch, capsys):
+        """P2 review 18-11: bản trước in "3 chết-đã-biết" trong khi 2/3 là `lech` (rev còn sống) ⇒ người
+        đọc hiểu sai mức nghiêm trọng."""
+        _artifact(tmp_path, "a_metrics.json", "2" * 40)
+        monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
+        cap.quet(tmp_path, cho_phep={("a_metrics.json", "2" * 40): "lý do"})  # chỉ để chắc nó hạ được
+        cap.main(["--thu-muc", str(tmp_path)])
+        out = capsys.readouterr().out
+        assert "đã-biết" in out and "chết-đã-biết" not in out, out
+
+    def test_nghiem_lech_opt_in(self, tmp_path, monkeypatch):
+        """`--nghiem-lech` chặn `lech`; mặc định KHÔNG chặn (lech là trạng thái hợp lệ trước merge)."""
+        _artifact(tmp_path, "a_metrics.json", "2" * 40)
+        monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
+        assert cap.main(["--thu-muc", str(tmp_path), "--nghiem"]) == 0
+        assert cap.main(["--thu-muc", str(tmp_path), "--nghiem-lech"]) == 1

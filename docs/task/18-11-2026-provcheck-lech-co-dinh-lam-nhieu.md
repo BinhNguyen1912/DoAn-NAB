@@ -28,14 +28,19 @@ nên một `lech` **mới** (artifact đo trên cây không phải tổ tiên c�
 
 ```
 trước: 52 artifact: 49 ok · 2 lệch · 1 chết-đã-biết · 0 CHẾT-MỚI
-sau  : 52 artifact: 49 ok · 0 lệch · 3 chết-đã-biết · 0 CHẾT-MỚI
+sau  : 52 artifact: 49 ok · 0 lệch · 3 đã-biết · 0 CHẾT-MỚI
 ```
 
-Ba mục `ok-da-biet` đều in kèm lý do (`CẤM dẫn rev`), nên thông tin **không mất** — chỉ là không còn
-tính vào dòng "lệch". `--nghiem` vẫn chỉ chặn `CHẾT-MỚI` (đúng hợp đồng cũ, `test_allowlist_khong_lam_do`
-vẫn xanh).
+Nhãn của từng mục `đã-biết` in kèm **trạng thái gốc**: `ok-da-biet(lech)` cho hai artifact 10-11 (rev còn
+sống ở object local), `ok-da-biet(chet)` cho mục rev mất hẳn — hai chuyện khác nhau.
 
-- `./run lint` xanh · `./run test` **1392 passed** (5 deselected).
+Mọi mục `ok-da-biet` đều in kèm lý do, nên thông tin **không mất**: hai mục 10-11 ghi "CẤM dẫn rev", mục
+`drift_2026-11-08` ghi rev thật cần dùng (`ee9f25672d72`). `--nghiem` vẫn chỉ chặn `CHẾT-MỚI` (đúng hợp
+đồng cũ, `test_allowlist_khong_lam_do` vẫn xanh).
+
+- **File thay đổi**: `scripts/check_artifact_provenance.py`, `tests/test_check_artifact_provenance.py`,
+  log này.
+- `./run lint` xanh · `./run test` **1402 passed** (5 deselected).
 - **Diễn tập ngược**: chỉ hạ `chet` (bản cũ) ⇒ test mới **đỏ**; phục hồi ⇒ xanh.
 
 ## Vấn đề & cách xử lý
@@ -57,3 +62,28 @@ vẫn xanh).
 
 - `scripts/check_artifact_provenance.py`, `tests/test_check_artifact_provenance.py`
 - `AGENTS.md` §6 (artifact phải có `git_rev` truy được; "cổng kiểm kêu cố định" là nhiễu)
+
+## Bổ sung sau review độc lập (2 P2 + 3 P3)
+
+Reviewer (phiên chỉ-đọc; nó còn cảnh báo worktree đổi nhánh giữa phiên — đúng, mình chuyển sang nhánh
+khác sau khi mở PR) kết luận **nội dung merge được**, và bắt:
+
+- **P2-1 (mất thông tin)**: `ok-da-biet` **đè** trạng thái gốc ⇒ dòng tổng kết in "3 **chết**-đã-biết"
+  trong khi 2/3 là `lech` (rev **còn sống** ở object local, chỉ không phải tổ tiên của `HEAD`). Nay record
+  giữ `goc`, nhãn in `ok-da-biet(lech)` / `ok-da-biet(chet)`, tổng kết đổi thành "**đã-biết**"; docstring
+  module + `quet()` + đầu `CHO_PHEP` sửa cho khớp (chúng vẫn nói chỉ áp cho rev "ĐÃ CHẾT").
+- **P2-2 (test không có răng)**: `test_rev_lech_MOI_van_la_lech` dùng **rev khác + tên file khác** ⇒
+  mutant "khoá chỉ theo rev" vẫn xanh. Nay dùng **cùng rev, khác tên file** (kịch bản thật: nhiều
+  artifact dùng chung rev — `bang_cau_hinh_*`, `ab_*`) ⇒ mutant đỏ, đã diễn tập.
+- **P2-3 (có từ trước)**: `test_rev_chet_moi_khong_duoc_allowlist` hứa "cùng file" nhưng truyền
+  `cho_phep={}` ⇒ nay truyền allowlist **cùng tên file, khác rev**.
+- **P3**: thêm cờ **`--nghiem-lech`** (opt-in, **không** đổi mặc định vì `lech` là trạng thái hợp lệ của
+  nhánh chưa merge) + cảnh báo số `lech` ra stderr; xoá dòng doc rot `--gioi-han-lui` (cờ đó **không**
+  tồn tại trong argparse); log thêm danh sách file + mục review này.
+
+**Diễn tập ngược 2/2 đỏ→xanh**: (a) khoá allowlist chỉ theo `rev` ⇒ `test_rev_lech_MOI_van_la_lech` đỏ;
+(b) bỏ `goc` ⇒ `test_rev_lech_trong_allowlist_duoc_ha_xuong_da_biet` đỏ.
+
+**Đã kiểm, không phải lỗi** (reviewer): mã thoát của `--nghiem` không đổi; không consumer nào khác đọc
+`trang_thai`; CI `fetch-depth: 0` + allowlist phủ đúng 2 rev ⇒ hành vi CI trước/sau như nhau; khoá
+`(f.name, rev)` không bị nới; `treo` (allowlist còn mục nhưng thiếu artifact) vẫn chỉ cảnh báo.

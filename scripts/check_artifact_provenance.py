@@ -9,13 +9,16 @@ Ba trạng thái, KHÔNG gộp:
 - `lech` — rev CÒN tồn tại nhưng không phải tổ tiên của `HEAD` (nhánh chưa merge, commit đã bị
            thay bằng rebase) ⇒ số đo thuộc cây khác; **cảnh báo**, không chặn (artifact cũ hợp lệ).
 - `chet` — rev không tồn tại ⇒ không ai lấy lại được mã đã sinh ra số đó: **chặn** (mã thoát 1).
+- `ok-da-biet` — `chet` **hoặc** `lech` nhưng nằm trong `CHO_PHEP` (có lý do ghi kèm). Nhãn in ra giữ
+  trạng thái GỐC: `ok-da-biet(chet)` / `ok-da-biet(lech)` — hai chuyện khác nhau (rev mất hẳn ≠ rev còn
+  sống mà không thuộc cây đang chạy), gộp làm một là mất thông tin.
 
 **Cần lịch sử git đầy đủ**: trên clone `--depth 1` (shallow) mọi rev cũ đều "không tồn tại" ⇒ báo chết
 oan. Job CI vì thế đặt `fetch-depth: 0`.
 
 Cách dùng:
     python scripts/check_artifact_provenance.py            # quét `data/*_metrics.json`
-    python scripts/check_artifact_provenance.py --gioi-han-lui 3   # chỉ xét artifact đổi trong N commit
+    python scripts/check_artifact_provenance.py --nghiem   # CI: mã thoát 1 nếu có rev chết MỚI
 """
 
 from __future__ import annotations
@@ -29,9 +32,10 @@ from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[1]
 
-# `git_rev` ĐÃ CHẾT nhưng artifact giữ nguyên (không sửa tay bằng chứng đã commit) — mỗi mục phải nêu
-# LÝ DO. Có danh sách này thì `--nghiem` vẫn bắt được rev chết MỚI (đúng lớp lỗi repo gặp 3 lần hôm nay)
-# mà CI không đỏ vì nợ lịch sử.
+# Artifact có provenance KHÔNG TRUY ĐƯỢC nhưng giữ nguyên (không sửa tay bằng chứng đã commit) — khoá
+# `(tên_file, git_rev)`, mỗi mục phải nêu LÝ DO. Áp cho cả `chet` (rev mất hẳn) và `lech` (rev còn ở object
+# local nhưng không phải tổ tiên của `HEAD` — ca "nhánh rebase trước khi push"). Có danh sách này thì cổng
+# vẫn bắt được rev chết/lệch MỚI (đúng lớp lỗi repo gặp 3 lần) mà CI không đỏ vì nợ lịch sử.
 CHO_PHEP = {
     ("drift_2026-11-08_metrics.json", "ee9f256a1e77e6b4de08b0b0b8f4b0f0b8f0b0b8"):
         "field 40-hex KHÔNG tồn tại (nghi gõ tay 08-11), NHƯNG tiền tố `ee9f2567` trỏ tới commit THẬT "
@@ -68,9 +72,12 @@ def phan_loai(rev: str | None) -> str:
 
 
 def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
-    """Mỗi artifact `*_metrics.json` → `{file, git_rev, trang_thai, ghi_chu}`.
+    """Mỗi artifact `*_metrics.json` → `{file, git_rev, trang_thai, goc, ghi_chu}`.
 
-    `trang_thai` ∈ `ok` / `lech` / `chet` / `ok-da-biet` (chết nhưng nằm trong `CHO_PHEP`).
+    `trang_thai` ∈ `ok` / `lech` / `chet` / `ok-da-biet` (**`chet` HOẶC `lech`** nhưng nằm trong
+    `CHO_PHEP` — "đã biết, có lý do"). `goc` giữ nhãn TRƯỚC khi hạ allowlist: "đã biết" vì rev **chết**
+    khác với "đã biết" vì rev **còn sống nhưng không phải tổ tiên** — gộp hai thứ đó thành một nhãn
+    "chết-đã-biết" làm mất thông tin (P2 review 18-11).
     """
     cho_phep = CHO_PHEP if cho_phep is None else cho_phep
     ra = []
@@ -87,9 +94,11 @@ def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
         # `lech` CŨNG phải hạ được: hai artifact 10-11 có rev chỉ tồn tại ở object local (nhánh bị
         # rebase trước khi push) ⇒ chúng `lech` vĩnh viễn trên máy này, và dòng "2 lệch" cố định sẽ
         # **che mất một `lech` MỚI** (cổng phải kêu khi có chuyện mới, không kêu mãi một chuyện cũ).
+        goc = trang_thai                               # nhãn GỐC — không được mất khi hạ allowlist
         if trang_thai in ("chet", "lech") and (f.name, rev) in cho_phep:
             trang_thai, ghi_chu = "ok-da-biet", cho_phep[(f.name, rev)]
-        ra.append({"file": f.name, "git_rev": rev, "trang_thai": trang_thai, "ghi_chu": ghi_chu})
+        ra.append({"file": f.name, "git_rev": rev, "trang_thai": trang_thai, "goc": goc,
+                   "ghi_chu": ghi_chu})
     return ra
 
 
@@ -98,6 +107,10 @@ def main(argv=None) -> int:
     ap.add_argument("--thu-muc", default=None, help="thư mục artifact (mặc định `data/`)")
     ap.add_argument("--nghiem", action="store_true",
                     help="thoát 1 nếu có `git_rev` chết MỚI (rev trong `CHO_PHEP` không tính)")
+    ap.add_argument("--nghiem-lech", action="store_true",
+                    help="thoát 1 cả khi có `lech` MỚI (rev còn sống nhưng KHÔNG phải tổ tiên của HEAD). "
+                         "Mặc định TẮT vì `lech` là trạng thái hợp lệ của nhánh chưa merge; bật khi muốn "
+                         "cổng chặt cho artifact đã commit vào `main`")
     args = ap.parse_args(argv)
     thu_muc = Path(args.thu_muc) if args.thu_muc else (_REPO_ROOT / "data")
     if not thu_muc.is_dir():
@@ -118,12 +131,14 @@ def main(argv=None) -> int:
         if r["trang_thai"] == "ok":
             continue                                   # im lặng cho 44 artifact bình thường
         rev = (r["git_rev"] or "")[:7] or "—"
-        print(f"{r['trang_thai']:11} {r['file']:52} {rev}")
+        nhan = (f"{r['trang_thai']}({r['goc']})" if r["trang_thai"] == "ok-da-biet"
+                else r["trang_thai"])
+        print(f"{nhan:18} {r['file']:52} {rev}")
         if r["ghi_chu"]:
             print(f"            └ {r['ghi_chu']}")
     print(f"\n[provenance] {len(ket_qua)} artifact: "
           f"{len(ket_qua) - len(chet) - len(lech) - len(da_biet)} ok · {len(lech)} lệch · "
-          f"{len(da_biet)} chết-đã-biết · {len(chet)} CHẾT-MỚI")
+          f"{len(da_biet)} đã-biết · {len(chet)} CHẾT-MỚI")
     ten_file = {r["file"] for r in ket_qua}
     treo = [k for k in CHO_PHEP if k[0] not in ten_file]
     for ten, _rev in treo:
@@ -131,11 +146,19 @@ def main(argv=None) -> int:
               "`CHO_PHEP` nếu artifact đã bị xoá/đổi tên", file=sys.stderr)
     if chet and not args.nghiem:
         print("[provenance] cảnh báo: có rev chết mới (dùng --nghiem để chặn)", file=sys.stderr)
+    if lech:
+        print(f"[provenance] {len(lech)} rev `lech` — còn sống nhưng KHÔNG thuộc cây đang chạy "
+              "(artifact cũ/khác nhánh). Mặc định chỉ cảnh báo; `--nghiem-lech` để chặn.",
+              file=sys.stderr)
     if chet:
         print("[provenance] CHẾT = `git_rev` không tồn tại (thường do rebase/squash hoặc artifact bị "
               "sinh lại đè): số đo không tái lập được ⇒ ghi rõ trong tài liệu hoặc sinh lại artifact "
               "trên cây sạch", file=sys.stderr)
         return 1 if args.nghiem else 0
+    if lech and args.nghiem_lech:
+        # Opt-in: cổng chặt cho artifact ĐÃ COMMIT vào `main` (mọi rev phải thuộc cây đang chạy).
+        print("[provenance] --nghiem-lech: có rev `lech` ⇒ thoát 1", file=sys.stderr)
+        return 1
     return 0
 
 
