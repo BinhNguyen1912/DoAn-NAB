@@ -184,28 +184,85 @@ class TestBboxKhongCuopPhienKhac:
     """Ticket #37: `--bbox` ghi `<out-dir>/bbox.json` mà thư mục đó có thể là của một phiên API đang
     `waiting_selection` ⇒ ghi vào là cướp ô chọn của phiên đó, không cảnh báo."""
 
-    def test_tu_choi_khi_co_phien_khac_dang_giu(self, tmp_path, monkeypatch, capsys):
-        import os
+    @staticmethod
+    def _gia_lap_worker_dang_chay(out_dir):
+        """Tiến trình SỐNG có argv `… live_worker.py --out-dir <dir>` (không nạp model).
 
+        `pid_con_song` + đối chiếu argv ⇒ phải là tiến trình thật, không phải pid bịa: đó chính là cơ
+        chế chống PID tái chế (P2 review 18-11). `-c` giữ tiến trình ngủ, argv thừa đóng vai worker.
+        """
+        import subprocess
+        import sys
+
+        return subprocess.Popen([sys.executable, "-c", "import time; time.sleep(60)",
+                                 "live_worker.py", "--out-dir", str(out_dir)])
+
+    def test_tu_choi_khi_co_phien_khac_dang_giu(self, tmp_path, monkeypatch, capsys):
         out = tmp_path / "live"
         out.mkdir()
-        # pid sống thật nhưng KHÔNG phải mình: dùng tiến trình con của chính test.
-        import subprocess
-
-        proc = subprocess.Popen(["sleep", "30"])
+        # `status.json` của phiên đang chạy: bị chặn thì KHÔNG được đụng một byte (P3 review 18-11).
+        status = out / "status.json"
+        status.write_text('{"state": "waiting_selection", "giu": "nguyen"}', encoding="utf-8")
+        proc = self._gia_lap_worker_dang_chay(out)
         try:
             (out / "worker.pid").write_text(str(proc.pid), encoding="utf-8")
             monkeypatch.setattr(lw, "_cuda_available", _sentinel)
             with pytest.raises(SystemExit) as exc:
                 _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
                                    "--bbox", "10,20,30,40"])
-            assert exc.value.code == 2
-            assert "đang bị một phiên live khác dùng" in capsys.readouterr().err
+            assert exc.value.code == 2, "phải là mã 2 (argparse), KHÔNG phải lỗi khác"
+            err = capsys.readouterr().err
+            assert "đang bị một phiên live khác dùng" in err and str(proc.pid) in err, err
+            assert "worker.pid" in err, "phải nêu lối thoát khi pid tái chế"
             assert not (out / "bbox.json").exists(), "bị chặn thì không được ghi bbox.json"
+            assert status.read_text(encoding="utf-8") == '{"state": "waiting_selection", "giu": "nguyen"}'
         finally:
             proc.kill()
             proc.wait()
-            assert proc.pid != os.getpid()
+
+    def test_tu_choi_ca_khi_KHONG_co_bbox(self, tmp_path, monkeypatch, capsys):
+        """P2 review 18-11: guard cũ chỉ nằm trong nhánh `--bbox` ⇒ chạy CLI **không** `--bbox` vào
+        thư mục của phiên web vẫn đè `status.json`, ghi `frame.jpg` xen vào và đọc luôn `bbox.json` của
+        phiên đó. Guard phải VÔ ĐIỀU KIỆN."""
+        out = tmp_path / "live"
+        out.mkdir()
+        (out / "bbox.json").write_text('{"x":1,"y":1,"w":5,"h":5}', encoding="utf-8")
+        status = out / "status.json"
+        status.write_text('{"state": "waiting_selection"}', encoding="utf-8")
+        proc = self._gia_lap_worker_dang_chay(out)
+        try:
+            (out / "worker.pid").write_text(str(proc.pid), encoding="utf-8")
+            monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+            with pytest.raises(SystemExit) as exc:
+                _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                                   "--stop-after-frames", "2"])
+            assert exc.value.code == 2
+            assert "đang bị một phiên live khác dùng" in capsys.readouterr().err
+            assert status.read_text(encoding="utf-8") == '{"state": "waiting_selection"}'
+        finally:
+            proc.kill()
+            proc.wait()
+
+    def test_pid_tai_che_khong_chan_oan(self, tmp_path, monkeypatch):
+        """pidfile cũ trỏ một tiến trình KHÁC đang sống (không phải worker) ⇒ không được chặn oan.
+
+        Đây là P2 review 18-11: chặn thì CLI chết vĩnh viễn, câu báo sai sự thật, lối thoát duy nhất là
+        tự xoá pidfile. Cùng tiền lệ `scripts/demo_preflight._is_our_live_worker` (so argv).
+        """
+        import subprocess
+
+        out = tmp_path / "live"
+        out.mkdir()
+        proc = subprocess.Popen(["sleep", "30"])       # sống thật, nhưng KHÔNG phải worker live
+        try:
+            (out / "worker.pid").write_text(str(proc.pid), encoding="utf-8")
+            monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+            with pytest.raises(_DungNgaySauCuaVao):
+                _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
+                                   "--bbox", "10,20,30,40"])
+        finally:
+            proc.kill()
+            proc.wait()
 
     def test_pid_da_chet_thi_khong_chan(self, tmp_path, monkeypatch):
         """`worker.pid` của phiên cũ đã chết (kể cả zombie) ⇒ không được chặn oan."""

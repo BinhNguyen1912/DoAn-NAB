@@ -21,7 +21,9 @@ from pathlib import Path
 from src.api.domain import LiveState, LiveTelemetry, SourceHealth, SourceUnavailable
 from src.api.ports import FrameSource
 from src.live_tracking import (BBOX_NAME, FRAME_NAME, PID_NAME, STATE_ERROR, STATE_STOPPED,
-                               STATUS_NAME, pid_con_song)
+                               STATUS_NAME)
+from src.proc_pid import is_live_worker_for, pid_con_song, read_cmdline as _read_cmdline_impl
+from src.proc_pid import read_pid as _read_pid_impl
 from src.worker import LOG_NAME, REPO_ROOT, build_live_worker_command, start as start_process
 
 from src.url_safe import an_userinfo
@@ -353,40 +355,13 @@ def _age_s(path: Path) -> float | None:
         return None
 
 
-def _read_pid(path: Path):
-    """Đọc pidfile; None nếu chưa có/hỏng."""
-    try:
-        pid = int(path.read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
-        return None
-    return pid if pid > 0 else None
+# Ba hàm dưới đây chuyển sang `src/proc_pid.py` (một bản duy nhất, CLI cũng dùng được mà không phải
+# import module API); giữ TÊN cũ vì test + `scripts/demo_preflight.py` import trực tiếp từ đây.
+_read_pid = _read_pid_impl
 
 
-def _read_cmdline(pid: int) -> list[str]:
-    """argv của tiến trình (tách theo NUL); [] nếu không đọc được."""
-    try:
-        raw = Path(f"/proc/{pid}/cmdline").read_bytes()
-    except OSError:
-        return []
-    return [part for part in raw.decode("utf-8", "replace").split("\0") if part]
-
-
-def _is_our_live_worker(argv, out_dir: Path) -> bool:
-    """Đúng worker live của thư mục `out_dir`? (so khớp argv, KHÔNG dùng substring)."""
-    names = {Path(arg).name for arg in argv}
-    if "live_worker.py" not in names:
-        return False
-    for index, arg in enumerate(argv):
-        if arg == "--out-dir" and index + 1 < len(argv):
-            try:
-                return Path(argv[index + 1]).resolve() == Path(out_dir).resolve()
-            except OSError:
-                return False
-    return False
-
-
-# `_pid_alive` chuyển sang `src/live_tracking.pid_con_song` (một bản duy nhất, để CLI cũng dùng được
-# mà không phải import module API — ticket #37).
+_read_cmdline = _read_cmdline_impl
+_is_our_live_worker = is_live_worker_for
 _pid_alive = pid_con_song
 
 

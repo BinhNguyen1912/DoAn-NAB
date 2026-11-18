@@ -8,6 +8,9 @@ Input  : engine (TrackerEngine hoặc engine giả trong test), LiveTrackConfig.
 Output : `<out_dir>/frame.jpg` (JPEG mới nhất), `<out_dir>/status.json`, `<out_dir>/worker.log`,
          và `<out_dir>/drift_samples.csv` (từng mẫu drift — xem `src/drift_samples.py`; file chỉ
          sinh ra khi phiên thật sự đo được mẫu nào).
+         `<out_dir>/bbox.json` và `<out_dir>/worker.pid` do **phía API** ghi (người chọn ô / adapter
+         `WorkerFrameSource`); module này chỉ **đọc** `bbox.json`. Vì thế CLI và API **không** được dùng
+         chung `--out-dir` — xem `phien_live_dang_giu()` (ticket #37).
 Lưu ý  : đây là phần CHẠY TRONG TIẾN TRÌNH RIÊNG (tools/live_worker.py) — nhờ vậy API vẫn không
          import torch/SAM 2 (ADR-0005).
          **Kiến trúc hybrid (Phase 4c):** VOS (97 ms @image_size 192) không thể chạy mỗi frame
@@ -268,13 +271,9 @@ def read_bbox(path: Path):
     return bbox if bbox[2] > 0 and bbox[3] > 0 else None
 
 
-def pid_con_song(pid: int) -> bool:
-    """Còn sống thật? Zombie (`/proc` vẫn tồn tại) phải tính là ĐÃ CHẾT (review #34)."""
-    try:
-        state = Path(f"/proc/{pid}/stat").read_text(encoding="utf-8").rsplit(")", 1)[1].split()[0]
-    except (OSError, IndexError):
-        return False
-    return state != "Z"
+# Ba hàm đọc tiến trình nằm ở `src/proc_pid.py` (dùng chung với adapter API); re-export để chỗ đang
+# import từ module này không phải đổi.
+from src.proc_pid import is_live_worker_for, pid_con_song, read_cmdline, read_pid  # noqa: E402
 
 
 def phien_live_dang_giu(out_dir) -> int | None:
@@ -284,13 +283,18 @@ def phien_live_dang_giu(out_dir) -> int | None:
     web đang `waiting_selection` ⇒ ghi vào là **cướp ô chọn** của phiên đó, không cảnh báo (ticket #37).
     Đường API tự dọn `bbox.json` khi bắt đầu phiên; đây là chốt cho ca operator chạy CLI tay.
     """
-    try:
-        pid = int((Path(out_dir) / PID_NAME).read_text(encoding="utf-8").strip())
-    except (OSError, ValueError):
+    pid = read_pid(Path(out_dir) / PID_NAME)
+    if pid is None or pid == os.getpid():
         return None
-    if pid == os.getpid():
+    if not pid_con_song(pid):
         return None
-    return pid if pid_con_song(pid) else None
+    # CHỐNG PID TÁI CHẾ (P2 review độc lập 18-11): pidfile cũ trỏ một tiến trình KHÁC đang sống (không
+    # phải worker) thì **không** được coi là "phiên live đang giữ" — nếu không CLI bị chặn vĩnh viễn mà
+    # câu báo lại sai sự thật, lối thoát duy nhất là tự xoá pidfile. Cùng tiền lệ
+    # `scripts/demo_preflight._is_our_live_worker` (đã có 3 test).
+    if not is_live_worker_for(read_cmdline(pid), out_dir):
+        return None
+    return pid
 
 
 def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,
