@@ -82,3 +82,18 @@ Kiểm markdown vẫn đúng: khối bảng phụ lục còn **17 dòng `|`**, *
 3. **Hai tài liệu báo cáo khác cũng trích artifact thiếu provenance**: `docs/tom-tat-do-an.md` (8 file trích,
    3 vấn đề) và `docs/giai-thich-do-an.md` (4 file, 1 vấn đề) ⇒ đã thêm cùng khối ⚠ (ngắn) để ba tài liệu
    nói **một** giọng. Quét tự động (script trong log này): 15 file trích ở phụ lục, **8 vấn đề**.
+
+## Review độc lập PR #46 (reviewer, đọc-only) — 1 P1 + 4 P2 đã sửa, 1 P3 **bị bác bằng số**
+
+| Mức | Nội dung | Xử lý |
+|---|---|---|
+| **P1** | Lý do bỏ `p05` trong log ("bị cắt bởi lần VOS lúc chai rời khung") **sai**: 7/60 mẫu `drift_iou = 0` nằm **trong** khung, 3 mẫu giữa khung `0:110` ⇒ **LK lệch khỏi vật thật**; `n = 60 ≥ 30` nên ngưỡng mẫu **không** chặn | **Đã sửa**: khối ⚠ **nói ra đuôi** 7/60 = 11,7 % (frame 57/69/72/105/108/171/255, ô bao `94,0,247,435` · `239,0,375,439` · `340,0,478,443`), ghi `p05` trong khung = 0,000 **không được trích như "ổn định"**, và `binh2` trong khung có `p05 ≈ 0,275` |
+| **P2** | `tom-tat-do-an.md`: `1,6–3,6 %` mâu thuẫn phụ lục (`3,6 %` không tồn tại) | đổi `1,6–3,3 %` |
+| **P2** | Log còn "36 % số lần VOS rỗng" cho `binh2` (sai — 36 % là của `binh1`) | thay `binh1` **35,2 %** (`37/105`) · `binh2` **19,1 %** (`22/115`) |
+| **P2** | `doi-chieu…md:33` có **dòng trống giữa bảng** ⇒ 10 dòng (gồm dòng `drift_iou` vừa sửa) render **ngoài** bảng | xoá dòng trống; kiểm lại: bảng 17 dòng `|` liền mạch, khối ⚠ nằm **sau** dòng cuối |
+| **P2** | Yêu cầu #10 hỏi "**độ chính xác**" nhưng dòng chỉ còn `drift_iou` | thêm mIoU: **0,6464** (12 frame thật, GT hộp bao) · **0,9354 / 0,892** (fixture, cận trên), trỏ `docs/so-lieu-bao-cao.md` |
+| P3 | "0,48–0,50" | đổi **0,49–0,50** (4 giá trị: 0,4895 · 0,4929 · 0,497 · 0,5036) |
+| P3 | khối ⚠ thiếu đường dẫn artifact | đã thêm danh sách `data/*_1vong_metrics.json` + nêu bộ 55 s cho số hơi khác (0,475–0,484 / 0,702–0,721) |
+| **P3** | Reviewer: "`n = 63` nhưng CSV chỉ 62 dòng, 0 dòng `empty=1` ⇒ `1,6–3,3 %` không tái lập" | **BÁC — sai**: đếm lại 3 CSV đúng cặp với 3 artifact (cột `frame_idx`, khung `0:110`∪`165:262`): `141609` → **63** dòng, **1** `empty=1`, `drift_iou_mean` **0,4929**; `141626` → 60 / 2 / **0,5036**; `141642` → 61 / 1 / **0,497**; `n_drift` = số dòng **có** `drift_iou` (60 / 57 / 59 — 2–3 dòng NaN) ⇒ **khớp tuyệt đối** artifact. Reviewer có lẽ đọc `141626` rồi so với artifact `lan1`, hoặc đếm theo cột khác |
+
+Kết luận: **không** đổi `1,6–3,3 %` (số tái lập được); ghi lại đây để lần sau không "sửa" theo một phép đếm sai.
