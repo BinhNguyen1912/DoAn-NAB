@@ -151,3 +151,30 @@ class TestDumpMaskCanBBoxCoSan:
             _run(monkeypatch, ["--source", str(tmp_path / "a.mp4"), "--out-dir", str(out),
                                "--bbox", "10,20,30,40", "--vos-every", "0"])
         assert not (out / "bbox.json").exists(), "lệnh bị từ chối thì không được để lại bbox.json"
+
+
+class TestCauHinhDumpMaskLaSo:
+    """P3 vòng review 3: `cau_hinh.dump_mask_frames` từng là **danh sách KÝ TỰ** (`['0', ',', '6']`)
+    vì main truyền chuỗi `"0,6"` vào `cau_hinh_yeu_cau` (hàm đó `list(...)`). `status.json` khai sai
+    đúng thứ mà `score_miou` dùng để đối chiếu."""
+
+    def test_truyen_list_so_khong_phai_chuoi(self):
+        from src.live_tracking import cau_hinh_yeu_cau
+
+        assert cau_hinh_yeu_cau(dump_mask_frames=[0, 6, 12])["dump_mask_frames"] == [0, 6, 12]
+        # Ghim BẢN CHẤT lỗi: chuỗi ⇒ char list (nếu ai đổi lại thì test này đỏ ngay tại đây).
+        assert cau_hinh_yeu_cau(dump_mask_frames="0,6,12")["dump_mask_frames"] != [0, 6, 12]
+
+    def test_main_truyen_list_so(self, tmp_path, monkeypatch):
+        """Đường thật: `--dump-mask-frames "0,6"` ⇒ `cau_hinh` ghi `[0, 6]` (main parse TRƯỚC)."""
+        import json as _json
+
+        monkeypatch.setattr(lw, "_cuda_available", _sentinel)
+        out = tmp_path / "o"
+        out.mkdir()
+        (out / "bbox.json").write_text('{"x":1,"y":1,"w":5,"h":5}', encoding="utf-8")
+        with pytest.raises(_DungNgaySauCuaVao):
+            _run(monkeypatch, ["--source", str(tmp_path / "khong-co.mp4"), "--out-dir", str(out),
+                               "--dump-mask-frames", "0,6", "--vos-every", "1"])
+        cau_hinh = _json.loads((out / "status.json").read_text(encoding="utf-8"))["cau_hinh"]
+        assert cau_hinh["dump_mask_frames"] == [0, 6]

@@ -241,3 +241,41 @@ def test_run_hai_lan_tren_cung_session_bi_tu_choi(video_source, tmp_path):
 
     with pytest.raises(RuntimeError, match="chỉ được gọi MỘT lần"):
         session.run(stop_event=_StopAfter(6))
+
+
+def test_quay_vong_nguon_thi_TU_CHOI_dump(video_source, tmp_path, capsys):
+    """P3 vòng review 3: sau khi nguồn quay vòng (`loop_files`, mặc định BẬT), `_frame_index` tiếp tục
+    tăng ⇒ `mask_000015.png` trên clip 12 frame thực chất là frame 3 ⇒ tên SAI. Không bị guard offset
+    bắt vì `_frame_goc == 0`."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    frames = list(range(0, 20))          # yêu cầu frame vượt quá độ dài clip (12) ⇒ phải quay vòng
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=True,
+        dump_mask_frames=tuple(frames), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(40))
+
+    assert session._so_lan_quay_vong >= 1, "nguồn phải đã quay vòng"
+    ten = sorted(p.name for p in dump_dir.glob("mask_*.png"))
+    assert ten == [f"mask_{i:06d}.png" for i in range(12)], (
+        f"chỉ được ghi mask của 12 frame THẬT của clip, thấy {ten}")
+    assert "quay vòng" in capsys.readouterr().out
+
+
+def test_manifest_ghim_frames_da_ghi(video_source, tmp_path):
+    """P2 vòng review 3: xoá dòng `"frames_da_ghi": sorted(self._dumped)` thì cổng ở `score_miou` biến
+    mất mà KHÔNG test nào đỏ. Ghim producer."""
+    out = tmp_path / "live"
+    _preselect(out)
+    dump_dir = tmp_path / "masks"
+    session = LiveTrackingSession(_CountingEngine(), _config(
+        video_source, tmp_path, vos_every=1, loop_files=False,
+        dump_mask_frames=(0, 4), dump_mask_dir=str(dump_dir)))
+
+    session.run(stop_event=_StopAfter(20))
+
+    man = json.loads((dump_dir / "manifest.json").read_text(encoding="utf-8"))
+    assert man["frames_da_ghi"] == [0, 4]
+    assert man["frames_yeu_cau"] == [0, 4]

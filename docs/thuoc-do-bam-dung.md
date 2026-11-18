@@ -74,8 +74,16 @@ ghim bằng test để con số không đổi theo thứ tự `index.frames`.
 
 **Mã thoát của `score`:** `0` = chấm xong, không cảnh báo · `1` = chấm được nhưng có cảnh báo (GT hộp
 bao / thiếu người gán / không khai `dang_gt` / `git_loi` / không chấm được frame nào) · `2` = **TỪ CHỐI**
-(thiếu file GT, GT do model gợi ý, index hỏng). Đừng cắm `./run miou` vào CI mà coi exit 1 là đỏ: nó là
-"đọc kèm cảnh báo".
+(thiếu file GT, GT do model gợi ý, index hỏng, **và hai cổng của manifest mask**):
+- `frame_goc_cua_phien > 0` — mask sinh từ phiên bắt đầu SAU khi đọc N frame (chờ chọn ô) ⇒ tên file
+  không phải frame của clip. Khoá **có mặt mà không đọc được** (`"abc"`, `2.7`) cũng chặn.
+  `--cho-phep-offset` hạ cấp **đúng** nhóm này (chỉ dùng khi bạn đã tự cắt GT lệch theo offset); nó
+  **không** hạ cấp được nhóm "không đọc được".
+- `frames_da_ghi` — GT định chấm một frame mà phiên này không ghi, **và file đó còn trên đĩa** ⇒ mask
+  là của phiên/lần chọn khác (hai lần dump vào cùng thư mục). Frame **không có file** thì không chặn:
+  đó là "thiếu mask" (`so_frame_thieu_mask` + `coverage`), đúng hợp đồng.
+
+Đừng cắm `./run miou` vào CI mà coi exit 1 là đỏ: nó là "đọc kèm cảnh báo".
 
 **Chỉ số phụ `mask_ngoai_gt`:** phần mask nằm **ngoài** GT (thấp = không tràn ra ngoài). Nó **một phía**
 — `0` KHÔNG có nghĩa mask phủ đủ vật (mask tí xíu nằm trong hộp cũng cho `0`), và nó không bị chặn trên

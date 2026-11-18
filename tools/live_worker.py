@@ -168,8 +168,9 @@ def main() -> int:
     # Chặn ngay ở cửa vào (P0 review hẹp 14-11): với `vos_every > 1` model **không hề thấy** frame
     # không chia hết cho N ⇒ không có mask thật để dump. Cho chạy rồi cảnh báo cuối phiên là quá muộn:
     # người dùng đã tưởng có mask của frame 40 và chấm GT vào một thư mục thiếu file.
+    dump_frames: list[int] = []
     if args.dump_mask_frames:
-        _kiem_dump_mask_args(parser, args.dump_mask_frames, args.vos_every)
+        dump_frames = _kiem_dump_mask_args(parser, args.dump_mask_frames, args.vos_every)
         # (P1 review 17-11, ticket #36) dump mask CHỈ đúng khi phiên bám từ frame đầu. Nếu `bbox.json`
         # chưa có, phiên đọc N frame trong lúc chờ chọn ô rồi mới bắt đầu ⇒ `mask_NNNNNN.png` là frame
         # của PHIÊN, không phải của clip; và nguồn `loop_files` quay vòng nên KHÔNG suy ra được frame
@@ -213,7 +214,9 @@ def main() -> int:
     cau_hinh = cau_hinh_yeu_cau(source=args.source, image_size=args.image_size,
                                vos_every=args.vos_every, display_fps=args.max_fps,
                                mask_smoothing=args.mask_smoothing, device=device_hint,
-                               dump_mask_frames=getattr(args, "dump_mask_frames", ()) or ())
+                               # PHẢI là LIST SỐ: truyền chuỗi `"0,6,12"` thì `cau_hinh_yeu_cau` làm
+                               # `list(...)` ⇒ `status.json` khai `['0', ',', '6', ...]` (P3 review 3).
+                               dump_mask_frames=dump_frames)
     _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:

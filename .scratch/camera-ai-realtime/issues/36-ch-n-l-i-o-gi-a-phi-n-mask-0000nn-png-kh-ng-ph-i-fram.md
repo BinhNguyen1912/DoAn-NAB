@@ -71,3 +71,15 @@ dump); `docs/thuoc-do-bam-dung.md` thêm quy tắc "phiên phải bám từ fram
   ⇒ CHẶN; đọc `frames_da_ghi` để bắt mask còn lại từ phiên khác (chỉ xét frame định chấm).
 - **P3**: `--bbox` số nguyên không âm; chặn `bbox.json` hỏng; ghi bbox.json sau validate; `run()` lần
   hai ⇒ `RuntimeError`; doc sửa câu sai "chọn ô qua web/API" + tách comment nuốt cờ.
+
+## Bổ sung sau review vòng 3
+
+- **P2 (chặn oan)**: `frames_da_ghi` chỉ chặn khi **file có thật** trên đĩa (`kiem_khop_manifest` nhận
+  `pred_dir`). Phiên bị cắt trước frame yêu cầu ⇒ "thiếu mask" (exit 1, `so_frame_thieu_mask`), không
+  phải "mask của phiên khác". Diễn tập: `--stop-after-frames 8` + yêu cầu `0,6,12,18` ⇒ nay exit 1,
+  `loi_chan = []`, `so_frame_thieu_mask 22`.
+- **P2 (producer không ghim)**: thêm `test_manifest_ghim_frames_da_ghi`.
+- **P3 đã sửa**: từ chối dump sau khi nguồn **quay vòng** (clip 12 frame + frame 15 ⇒ `mask_000015` là
+  frame 3); `--cho-phep-offset` phân loại bằng nhãn (không hạ cấp "khoá không đọc được"); đọc
+  `frames_da_ghi` dạng chuỗi; `cau_hinh.dump_mask_frames` là list số; doc bảng mã thoát.
+- **Ticket mới**: #37 (`--bbox` cướp `bbox.json` của phiên API đang chờ chọn ô).

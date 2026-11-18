@@ -157,3 +157,51 @@ score_miou score --gt docs/gt/synthetic_tong_hop --pred-dir /tmp/demo_gt2/masks
 `tests/test_mask_dump_frame_idx.py`, `tests/test_live_worker_cli.py`, `tests/test_score_miou.py`,
 `docs/thuoc-do-bam-dung.md`, ticket #36.
 **Trạng thái**: `./run lint` xanh · `./run test` **1377 passed** (5 deselected).
+
+## Bổ sung sau review vòng 3 (2 P2 + P3)
+
+### P2 #1 — CHẶN OAN (lỗi thật của mình) + câu chẩn đoán sai
+
+Cổng `frames_da_ghi` chỉ so **số**, không kiểm file có trên đĩa ⇒ phiên **bị cắt trước frame yêu cầu**
+(`--stop-after-frames` nhỏ, Ctrl+C, `imwrite` fail) cũng bị CHẶN (exit 2) kèm câu sai sự thật "mask còn
+lại trên đĩa là của PHIÊN KHÁC". Trái hợp đồng đã ghi ở `src/live_tracking.py` ("không ghi file ⇒ chấm
+đếm là *thiếu mask*"). Nay `kiem_khop_manifest(index, manifest, pred_dir)` chỉ chặn khi **file đó có
+thật** trên đĩa.
+
+**Diễn tập đúng lệnh reviewer đề nghị** (`--stop-after-frames 8`, yêu cầu frame `0,6,12,18`):
+
+| | trước | sau |
+|---|---|---|
+| exit của `score` | **2** (chặn) + câu "mask của PHIÊN KHÁC" (sai) | **1** |
+| `loi_chan` | 1 mục | `[]` |
+| `so_frame_thieu_mask` | — (không ghi artifact) | **22** |
+| mIoU | không công bố | 0,9392 trên **2** frame (đúng: chỉ 2 frame có mask) |
+| cảnh báo của worker | "dùng --vos-every 1" (vô nghĩa, đã là 1) | "phiên chỉ chạy tới frame 8" |
+
+### P2 #2 — producer `frames_da_ghi` không được ghim
+
+Xoá 1 dòng `"frames_da_ghi": sorted(self._dumped)` thì cổng ở `score_miou` biến mất **vĩnh viễn** mà
+không test nào đỏ. Đã thêm `test_manifest_ghim_frames_da_ghi` (⇒ đỏ khi xoá dòng đó, đã diễn tập).
+
+### P3 đã sửa
+
+- **Quay vòng nguồn** (`loop_files` mặc định BẬT): clip 12 frame + yêu cầu frame 15 ⇒ `mask_000015.png`
+  là frame **3** của clip, tên SAI. Nay `_dump_mask` **từ chối** mọi dump sau lần quay vòng đầu (đếm ở
+  `_rewind`), test: yêu cầu frame 0..19 trên clip 12 frame ⇒ chỉ có `mask_000000..000011`.
+- **`--cho-phep-offset`** trước so **chuỗi con** `"frame_goc_cua_phien"` ⇒ hạ cấp luôn ca "khoá có mà
+  KHÔNG đọc được" (mở khoá đúng lúc không biết offset). Nay nhãn loại `[offset]` vs
+  `[offset-khong-doc]`: cờ chỉ hạ cấp nhóm đầu; test mức `main` với `"abc"` + cờ ⇒ vẫn **exit 2**.
+- **`frames_da_ghi` dạng chuỗi** (`"0,6"`) nay được đọc (trước bỏ qua im lặng = fail-open trên đúng cổng
+  này); thêm test; thêm test nhánh `frames_yeu_cau` dạng chuỗi (trước không có ⇒ xoá nhánh đó sẽ gây
+  CHẶN OAN mà test vẫn xanh).
+- **`status.json.cau_hinh.dump_mask_frames`** từng là danh sách **ký tự** (`['0', ',', '6']`) vì main
+  truyền chuỗi vào `cau_hinh_yeu_cau`; nay main parse TRƯỚC rồi truyền list số (2 test).
+- **Doc**: bảng mã thoát của `score` thêm hai cổng manifest + nhắc `--cho-phep-offset`.
+
+### Ticket tạo mới (không im lặng bỏ)
+
+`.scratch/camera-ai-realtime/issues/37-live-worker-bbox-ghi-de-bbox-json-cua-phien-api.md` — `--bbox`
+của CLI có thể cướp `bbox.json` của phiên API đang chờ chọn ô (P3, cần bàn cách nhận biết phiên sống).
+
+**Trạng thái**: `./run lint` xanh · `./run test` **1384 passed** (5 deselected) · diễn tập ngược 3/3
+đỏ→xanh (quay vòng, `frames_da_ghi` producer, "file không tồn tại thì không chặn").

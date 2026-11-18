@@ -922,13 +922,37 @@ class TestManifestFrameGocChonOGiuaPhien:
         manifest = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0]}
         assert sm.kiem_khop_manifest(self._idx, manifest) == ([], [])
 
-    def test_frames_da_ghi_thieu_frame_cua_gt_thi_CHAN(self):
+    def test_frames_da_ghi_thieu_frame_cua_gt_thi_CHAN(self, tmp_path):
         """Hai lần chạy khác bbox vào CÙNG thư mục dump: `mask_000050.png` còn lại là của phiên A,
-        `frames_yeu_cau` (khoá của phiên B) vẫn khớp GT ⇒ phải đối chiếu `frames_da_ghi`."""
+        `frames_yeu_cau` (khoá của phiên B) vẫn khớp GT ⇒ phải đối chiếu `frames_da_ghi`.
+
+        `mask_000050.png` phải **có thật** — đó mới là "mask của phiên khác".
+        """
+        (tmp_path / "mask_000000.png").write_bytes(b"x")
+        (tmp_path / "mask_000050.png").write_bytes(b"x")
         idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}, {"frame_idx": 50}]}
         man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0, 50], "frames_da_ghi": [0]}
-        chan, _ = sm.kiem_khop_manifest(idx, man)
+        chan, _ = sm.kiem_khop_manifest(idx, man, tmp_path)
         assert any("frames_da_ghi" in c and "50" in c for c in chan), chan
+
+    def test_phien_bi_cat_truoc_frame_yeu_cau_thi_KHONG_chan(self, tmp_path):
+        """P2 vòng review 3: phiên bị cắt (`--stop-after-frames` nhỏ / Ctrl+C / imwrite fail) để lại
+        frame KHÔNG có file ⇒ đó là "thiếu mask" (chấm báo `so_frame_thieu_mask` + coverage, exit 1),
+        KHÔNG phải "mask của phiên khác". Chặn ở đây là chặn oan + câu chẩn đoán sai sự thật.
+        """
+        (tmp_path / "mask_000000.png").write_bytes(b"x")     # frame 50 KHÔNG có file
+        idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}, {"frame_idx": 50}]}
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0, 50], "frames_da_ghi": [0]}
+        chan, _ = sm.kiem_khop_manifest(idx, man, tmp_path)
+        assert chan == [], chan
+
+    def test_frames_da_ghi_dang_chuoi_van_doi_chieu(self, tmp_path):
+        """Manifest viết tay ghi `"0,6"` — bỏ qua im lặng là fail-open trên đúng cổng này."""
+        (tmp_path / "mask_000006.png").write_bytes(b"x")
+        idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}, {"frame_idx": 6}]}
+        man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": "0,6", "frames_da_ghi": "0"}
+        chan, _ = sm.kiem_khop_manifest(idx, man, tmp_path)
+        assert any("6" in c for c in chan), chan
 
     def test_frames_da_ghi_du_thi_khong_chan(self):
         idx = {"clip": "data/binh1.mp4", "frames": [{"frame_idx": 0}]}
@@ -983,6 +1007,20 @@ class TestChanOffsetOMucMain:
 
         assert ma == 2, "mask lệch frame ⇒ CHẶN (exit 2)"
         assert not out.exists(), "đã CHẶN thì KHÔNG được ghi artifact (số sai không được công bố)"
+
+    def test_cho_phep_offset_KHONG_ha_cap_offset_khong_doc_duoc(self, tmp_path, monkeypatch):
+        """P3 vòng review 3: `--cho-phep-offset` chỉ dành cho người ĐÃ biết offset; khoá không đọc
+        được (`"abc"`) vẫn phải CHẶN (bản trước hạ cấp bằng so chuỗi con)."""
+        import scripts.measure_watchdog as mw
+
+        monkeypatch.setattr(mw, "_git_provenance", lambda: ("abc1234", False, False, None))
+        gt, pred, out = self._dung(tmp_path, "abc")
+
+        ma = sm.main(["score", "--gt", str(gt), "--pred-dir", str(pred), "--out", str(out),
+                      "--cho-phep-offset"])
+
+        assert ma == 2, "không biết offset là bao nhiêu ⇒ KHÔNG được hạ cấp"
+        assert not out.exists()
 
     def test_cho_phep_offset_thi_chi_canh_bao(self, tmp_path, monkeypatch):
         import scripts.measure_watchdog as mw

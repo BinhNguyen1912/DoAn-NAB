@@ -579,7 +579,9 @@ class LiveTrackingSession:
         # của clip ⇒ ghép GT theo số frame sẽ SAI (ticket #36). Khai ra để chỗ CHẤM biết.
         self._frame_goc = 0
         self._da_canh_bao_offset = False   # chỉ cảnh báo "TỪ CHỐI dump" một lần/phiên
+        self._da_canh_bao_quay_vong = False
         self._tu_choi_offset: set[int] = set()   # frame bị TỪ CHỐI ghi vì offset ≠ 0
+        self._so_lan_quay_vong = 0               # > 0 ⇒ tên file mask không còn là frame của clip
         self._da_chay = False
         self._source = None
         self._worker = None
@@ -896,6 +898,14 @@ class LiveTrackingSession:
             thieu = [f for f in thieu if f not in self._tu_choi_offset]
             if not thieu:
                 return
+        da_chay = int(getattr(self._stats, "frames", 0) or 0)
+        if self._cfg.vos_every == 1:
+            # `vos_every` đã đúng: khuyên "dùng --vos-every 1" là câu SAI (P3 vòng review 3). Nêu
+            # đúng nguyên nhân còn lại: phiên kết thúc trước frame được yêu cầu.
+            print(f"[canh-bao] không có mask cho frame {thieu} — phiên chỉ chạy tới frame "
+                  f"{da_chay} (nguồn hết/`--stop-after-frames` nhỏ hơn frame cuối). Với vos_every=1 "
+                  "thì frame nào chạy qua cũng có mask", flush=True)
+            return
         print(f"[canh-bao] không có mask cho frame {thieu} — với vos_every="
               f"{self._cfg.vos_every} chỉ frame chia hết cho {self._cfg.vos_every} mới có lần VOS "
               "(dùng --vos-every 1 khi chấm mIoU)", flush=True)
@@ -947,6 +957,17 @@ class LiveTrackingSession:
             # phiên; guard cũ (`... and int(frame_idx) not in self._dumped`) bỏ cảnh báo đúng ca cần
             # canh (P1 review 17-11). Tên file đi theo chỉ số frame VIDEO của phiên ⇒ ghi đè nghĩa là
             # mask của lần chọn trước bị thay, mà GT vẫn ghép theo số frame.
+            if self._so_lan_quay_vong:
+                # Tên file = chỉ số frame của PHIÊN, mà nguồn đã quay vòng ⇒ nó không còn là frame của
+                # clip (clip 12 frame: `mask_000015.png` = frame 3). Cùng cơ chế "từ chối" như offset.
+                self._tu_choi_offset.add(int(frame_idx))
+                if not self._da_canh_bao_quay_vong:
+                    self._da_canh_bao_quay_vong = True
+                    print(f"[canh-bao] TỪ CHỐI dump mask: nguồn đã quay vòng {self._so_lan_quay_vong} "
+                          "lần (loop_files) ⇒ chỉ số frame của phiên không còn là frame của clip, "
+                          "tên `mask_NNNNNN.png` sẽ sai. Dùng `--stop-after-frames` <= độ dài clip "
+                          "(hoặc tắt lặp) — xem ticket #36", flush=True)
+                return False
             if self._frame_goc:
                 # TỪ CHỐI GHI **MỌI** frame (ticket #36; P1 vòng review 2): tên file đi theo chỉ số
                 # frame của PHIÊN, mà phiên đã bỏ `_frame_goc` frame lúc chờ chọn ô. Nguồn
@@ -1446,6 +1467,10 @@ class LiveTrackingSession:
             if source is not None:
                 source.close()
             self._source = open_video_source(self._cfg.source).open()
+            # Đếm lần quay vòng: sau đó `_frame_index` tiếp tục tăng nên tên `mask_NNNNNN.png` KHÔNG
+            # còn là frame NNNNNN của clip (clip 12 frame + quay vòng ⇒ `mask_000015.png` = frame 3).
+            # `_dump_mask` từ chối ghi từ đây (P3 vòng review 3).
+            self._so_lan_quay_vong += 1
             return self._source.read()
         except (OSError, RuntimeError):
             return None
