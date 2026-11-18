@@ -104,3 +104,21 @@ class TestMainMaThoat:
         monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
         assert cap.main(["--thu-muc", str(tmp_path), "--nghiem"]) == 0
         assert cap.quet(tmp_path, cho_phep={})[0]["trang_thai"] == "lech"
+
+    def test_rev_lech_trong_allowlist_duoc_ha_xuong_da_biet(self, tmp_path, monkeypatch):
+        """`lech` CỐ ĐỊNH (rev chỉ tồn tại ở object local vì nhánh rebase trước khi push) phải vào
+        allowlist như `chet`, nếu không dòng "2 lệch" luôn hiện và **che mất `lech` MỚI** — đúng lớp
+        "cảnh báo cố định làm nhiễu cổng kiểm" (AGENTS §6: cổng phải kêu khi có chuyện mới)."""
+        _artifact(tmp_path, "bi_rebase_metrics.json", "2" * 40)
+        monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
+        cho_phep = {("bi_rebase_metrics.json", "2" * 40): "nhánh rebase trước khi push — CẤM dẫn rev"}
+        ra = cap.quet(tmp_path, cho_phep=cho_phep)
+        assert ra[0]["trang_thai"] == "ok-da-biet", ra
+        assert ra[0]["ghi_chu"]
+
+    def test_rev_lech_MOI_van_la_lech(self, tmp_path, monkeypatch):
+        """Allowlist không được nuốt `lech` của artifact KHÁC (khoá gồm cả tên file)."""
+        _artifact(tmp_path, "moi_metrics.json", "3" * 40)
+        monkeypatch.setattr(cap, "phan_loai", lambda _rev: "lech")
+        cho_phep = {("bi_rebase_metrics.json", "2" * 40): "lý do"}
+        assert cap.quet(tmp_path, cho_phep=cho_phep)[0]["trang_thai"] == "lech"
