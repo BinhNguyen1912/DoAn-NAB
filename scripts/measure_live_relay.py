@@ -428,7 +428,10 @@ def main() -> int:
     out = Path(args.out) if args.out else (
         # Có GIỜ: chạy lần hai trong ngày từng ghi đè artifact đang được trích trong báo cáo (P3).
         _REPO_ROOT / "data" / f"live_web_relay_{stamp:%Y-%m-%d_%H%M%S}_metrics.json")
-    frame_dir = Path(args.frame_dir) if args.frame_dir else out.parent / f"live_web_relay_{stamp:%Y-%m-%d}"
+    # Có GIỜ: bản để tên theo NGÀY làm lần đo "sau" ghi đè ảnh của lần "trước" (P3 review 17-11) —
+    # `anh_frame` của hai artifact khi đó trỏ cùng file, và ảnh "trước" biến mất.
+    frame_dir = Path(args.frame_dir) if args.frame_dir else (
+        out.parent / f"live_web_relay_{stamp:%Y-%m-%d_%H%M%S}")
     base = f"http://127.0.0.1:{args.port}"
     Path(args.out_dir).mkdir(parents=True, exist_ok=True)
     # Xoá `status.json` của lần trước: nếu lần này API bận/không vào `running`, đọc lại file cũ sẽ

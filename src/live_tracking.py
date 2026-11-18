@@ -991,7 +991,8 @@ class LiveTrackingSession:
             self._vos_stamps.append(time.perf_counter())
             self._trim(self._vos_stamps)
         # `frame_video`: để `_measure_stability` bỏ mẫu cặp khi worker xử lý LẠI đúng frame `start()`
-        # (ticket #35). `None` (đường đơn luồng khi `dump=False`) ⇒ không so được, vẫn đo bình thường.
+        # (ticket #35). `None` chỉ xảy ra khi `_seq_frame` đã bị prune (worker gộp frame, giữ 90 seq):
+        # khi đó KHÔNG biết frame ⇒ **đo bình thường** (thà thừa một mẫu cặp hơn bỏ mẫu thật).
         self._measure_stability(result, frame_video=frame_video)
         # Trả thời gian ĐÃ THỬ ghi (kể cả khi fail) để `post_ms` không bao gồm công việc dump; người
         # đọc `status.json` chỉ thấy con số khi CÓ file (`da_ghi`). Không dump frame này ⇒ 0,0 (không

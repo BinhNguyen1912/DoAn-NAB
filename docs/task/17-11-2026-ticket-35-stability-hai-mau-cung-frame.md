@@ -32,22 +32,38 @@ mask liên tiếp" ⇒ đẩy thêm một mẫu `mask_iou(mask, mask) ≈ 1,0` �
 
 ## Output / Kết quả
 
-- Test mới **đỏ trên code cũ** (đã kiểm bằng `git stash push src/live_tracking.py` → 2/2 đỏ), **xanh**
-  với bản sửa.
+- Test mới **đỏ trên code cũ** và đỏ với **hai hồi quy tinh vi** (diễn tập ngược đã chạy):
+  (a) bỏ bước so trùng frame ⇒ 2/2 đỏ; (b) `_after_vos` truyền `frame_video=None` cho đường có luồng
+  ⇒ đỏ. Bản đầu của test **không thể đỏ** (cửa sổ `deque(maxlen=10)` cắt `stability_n` ở 10 ⇒ bất đẳng
+  thức `<=` luôn đúng — P1 review 17-11); nay test nới cửa sổ (`deque(maxlen=100)`) và dùng **đẳng
+  thức**, cộng thêm assert `lần đo đầu phải có frame_video=0`.
 - `./run lint` xanh · `./run test` **1355 passed**, 5 deselected (1339 → 1355: +2 test ở ticket này và
   +14 từ các PR khác trong ngày).
-- **Số trên clip thật: KHÔNG phân biệt được** — 2 phiên 20 s trên `data/binh1.mp4` (ô chai
-  `300,275,150,410`, `vos_every 3`, `image_size 192`, 1 lần mỗi bên):
-  | | `git_rev` | `stability` | `stability_n` | `vos_runs` | `empty_window_n` | `empty_runs` |
-  |---|---|---|---|---|---|---|
-  | trước | `04c8bcc` | 0,0 | 10 | 139 | 139 | 43 |
-  | sau | `a3ac49a` | 0,0 | 10 | 142 | 142 | 46 |
-  Artifact: `data/stability_ticket35_truoc_metrics.json`, `data/stability_ticket35_sau_metrics.json`.
-  Lý do không phân biệt được: `empty_runs` 43–46/142 ⇒ mask rỗng phần lớn thời gian nên cửa sổ cặp bị
-  reset liên tục (`stability_n` chỉ 10); và **n = 1 mỗi bên**. Theo AGENTS §6, chênh lệch trong mức này
-  phải ghi là **"không phân biệt được"** — thay đổi được canh bằng **test cơ chế**, không bằng số trên
-  clip này. Cái đo được và đúng: `empty_window_n == vos_runs` ở cả hai bên ⇒ bản sửa **không** làm mất
-  mẫu cửa sổ mất dấu (rủi ro chính của cách làm đầu tiên).
+- **Số trên clip thật: KHÔNG phân biệt được** — 1 phiên 20 s mỗi bên trên `data/binh1.mp4` (ô chai
+  `300,275,150,410`, `vos_every 3`, `image_size 192`), đo **18-11 12:18 (sau) / 12:19 (trước)**.
+  Lấy 3 **mẫu trong phiên** (`mau_cuoi`), **không** lấy `worker_status.stability`:
+
+  | | `git_rev` | 3 mẫu `mau_cuoi` | mean ± std | `stability_n` | `empty_window_n` / `vos_runs` |
+  |---|---|---|---|---|---|
+  | trước | `04c8bcc` | 0,683 · 0,647 · 0,710 | **0,680 ± 0,032** | 10 | 139 / 139 |
+  | sau | `a3ac49a` | 0,701 · 0,657 · 0,724 | **0,694 ± 0,034** | 10 | 142 / 142 |
+
+  ⇒ chênh mean **0,014 < std 0,032** ⇒ theo AGENTS §6 phải ghi **"không phân biệt được"** (và repo
+  **chưa có ngưỡng nhiễu cho `stability`**, nên kể cả n=3 phiên cũng chưa kết luận được A/B).
+
+  **Vì sao `stability_n` = 10 ở cả hai bên và vì sao KHÔNG dùng `worker_status.stability = 0,0`**
+  (đính chính so với bản log đầu — lý do cũ "mask rỗng reset cửa sổ" là **sai cơ chế**):
+  - `_iou_window` là `deque(maxlen=10)`, `stability_n = len(_iou_window)` ⇒ sau 10 cặp là **bão hoà**,
+    mẫu thừa (kể cả mẫu trùng) **không** hiện ra ở `stability_n`. Muốn thấy khác biệt phải ghi mẫu **đầu
+    phiên** (khi `stability_n < 10`) — chưa có cột đó trong `measure_live_relay`.
+  - `worker_status.stability = 0,0` là **"lần VOS cuối trả mask rỗng"** (`stability = 0.0 if _iou_window
+    else None`), `lost_streak` 4–6 — đúng bẫy `0,0 ≠ số đo`; số của phiên nằm ở `mau_cuoi` (bảng trên).
+  - Mask rỗng **không** xoá `_iou_window`; nó chỉ đặt `_prev_raw_mask = None` (**ngắt cặp**), và
+    `empty_runs` 43–46/142 ≈ **30 %** số lần VOS (không phải "phần lớn thời gian").
+
+  Cái đo được và đúng: `empty_window_n == vos_runs` ở cả hai bên ⇒ bản sửa **không** làm mất mẫu cửa sổ
+  mất dấu (rủi ro chính của cách làm đầu tiên). Thay đổi được canh bằng **test cơ chế** (có diễn tập
+  ngược), không bằng số trên clip này.
 
 ## Vấn đề & cách xử lý
 
@@ -57,6 +73,10 @@ mask liên tiếp" ⇒ đẩy thêm một mẫu `mask_iou(mask, mask) ≈ 1,0` �
 - **Còn nợ (chưa sửa, không nằm trong ticket này)**: `_smooth(result)` vẫn chạy **hai lần** cho frame
   `start()` ở đường có luồng (mask bị làm mượt 2 lượt + `stability_shown` thêm 1 cặp ≈ 1,0). Sửa nó
   chạm `mask_holds`/`stability_shown` nên cần ticket riêng + đo trước/sau; ghi ở Next steps.
+- **Còn nợ (mới, từ review)**: chưa có cột "stability ở 10 cặp ĐẦU phiên" trong `measure_live_relay`
+  ⇒ mẫu trùng ở frame `start()` chỉ thấy được bằng test, không thấy được trên số của phiên (cửa sổ
+  bão hoà 10). Và repo **chưa có ngưỡng nhiễu cho `stability`** — mọi A/B `stability` phải ghi "không
+  phân biệt được" cho tới khi có.
 
 ## Next steps
 

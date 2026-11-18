@@ -2016,6 +2016,9 @@ class TestMotKetQuaChiDoMotLan:
         _pre_select(out)
         session = lt.LiveTrackingSession(FakeEngine(), LiveTrackConfig(
             source=textured_video, out_dir=out, display_fps=100, vos_every=3, loop_files=True))
+        # Cửa sổ mặc định chỉ 10 mẫu ⇒ `stability_n` bị CẮT ở 10, nên bất biến "≤ #frame − 1" luôn
+        # đúng dù có mẫu trùng (P1 review 17-11: test không thể đỏ). Nới cửa sổ để thấy đủ mẫu.
+        session._iou_window = deque(maxlen=100)
         session.run(stop_event=_StopAfter(40))
         status = json.loads((out / STATUS_NAME).read_text(encoding="utf-8"))
 
@@ -2024,8 +2027,11 @@ class TestMotKetQuaChiDoMotLan:
         assert status["empty_window_n"] == status["vos_runs"], (
             "bỏ đo ở frame start() KHÔNG được làm mất mẫu cửa sổ mất dấu")
         assert len(goi) >= 4, "phải có mẫu thật để test không xanh rỗng"
-        # Bản lỗi đẩy thêm 1 mẫu cho cặp cùng frame ⇒ `stability_n` vượt số frame khác nhau − 1.
+        # ĐẲNG THỨC (không phải `<=`): bản lỗi đẩy thêm 1 mẫu cho cặp cùng frame ⇒ 14 cặp thay vì 13.
         khac = {fv for fv in goi if fv is not None}
-        assert status["stability_n"] <= len(khac) - 1, (
-            f"stability_n={status['stability_n']} > {len(khac)} frame khác nhau − 1 ⇒ "
-            "cặp của cùng frame (IoU ≈ 1,0) đã bị đẩy vào cửa sổ")
+        assert status["stability_n"] == len(khac) - 1, (
+            f"stability_n={status['stability_n']} nhưng có {len(khac)} frame khác nhau ⇒ cặp của "
+            "cùng frame (IoU ≈ 1,0) đã bị đẩy vào cửa sổ")
+        # Và `_after_vos` của đường có luồng PHẢI truyền frame video thật (không phải `None`) — nếu
+        # không, bước so trùng không chạy và bug quay lại (đây là hồi quy tinh vi nhất của ticket).
+        assert goi[0] == 0, f"lần đo đầu (frame start()) phải có frame_video=0; nhận {goi[0]!r}"
