@@ -1,4 +1,4 @@
-# 34: `test_reap_khong_cho_zombie_5_giay` đo thời gian tường — đổi sang assert `poll()` + ngưỡng theo số CPU
+# 34: `test_reap_khong_cho_zombie_5_giay` đo thời gian tường — đổi sang assert HÀNH VI (không leo thang SIGKILL + trần `TERM_WAIT_S`)
 
 **What to build:** Nợ được nêu trong ticket #22 (đã đóng) nhưng **chưa có ticket follow-up** (review độc lập 17-11 bắt đúng: "nên tạo để không trôi").
 
@@ -14,7 +14,7 @@ Việc:
 
 **Status:** resolved
 
-- [x] `test_reap_khong_cho_zombie_5_giay` bỏ assert `elapsed < 3 s` (đo thời gian tường) → assert `proc.poll() is not None` (đã reap) trong ngưỡng rộng theo số CPU
+- [x] `test_reap_khong_cho_zombie_5_giay` bỏ assert `elapsed < 3 s` → spy `_wait_pid_gone` (lần chờ ĐẦU phải trả `True`, không leo thang SIGKILL) + `elapsed < TERM_WAIT_S`; thêm test `_pid_alive(zombie) is False`
 - [x] Test chạy được trên CI ubuntu (không có nhiều CPU, không có webcam/model) và không flaky khi máy tải: 5 lần liên tiếp xanh
 - [x] Ghi số đo (thời gian reap thật trên máy này) vào log `docs/task/`
 
@@ -27,3 +27,21 @@ mức lỗi cũ (chờ zombie ~5 s). Đo thật: reap **0,22 s** (8 lõi), chạ
 Không dùng `max(5, 2×CPU)` như gợi ý trong ticket: 5 s chính là thời gian lỗi cũ ⇒ mất răng.
 
 Log: `docs/task/17-11-2026-ticket-34-test-reap-assert-poll.md`.
+
+## Bổ sung sau review vòng 1 (P1)
+
+Reviewer bắt đúng: trần `TERM_WAIT_S + KILL_WAIT_S + 1 = 4,0 s` **không phân biệt được** hồi quy "zombie
+tính là sống" — hồi quy đó chỉ tốn 2 + 1 = **3,0 s** nên lọt. Đã đổi sang bám **hành vi**:
+
+- spy `worker_source._wait_pid_gone` (patch trên MODULE, vì `_terminate_process` đọc global): lần chờ
+  **đầu** phải là `TERM_WAIT_S` và phải trả `True` ⇒ `len(goi) == 1` (không leo thang SIGKILL);
+- `elapsed < TERM_WAIT_S` (2,0 s; đo thật 0,22 s ⇒ biên ~9×) thay cho trần 4,0 s;
+- bỏ tripwire `assert tran < 5.0` (tự tham chiếu hằng sản phẩm, không chặn được hướng làm hẹp
+  `KILL_WAIT_S`);
+- đổi lời "đã reap" → "đã bị giết (`poll()` thấy đã thoát)": chính `poll()` **là** thứ reap, nên câu cũ
+  mạnh hơn điều nó chứng minh;
+- test mới `test_pid_alive_tinh_zombie_la_da_chet`: spawn `true`, chờ `/proc/<pid>/stat` thành `Z` (đã
+  thoát, CHƯA reap) ⇒ `_pid_alive(pid) is False`.
+
+**Diễn tập ngược** (đã chạy): tạm cho `_pid_alive` chỉ kiểm `/proc` tồn tại (đúng lỗi cũ) ⇒ **2/2 test
+đỏ**; phục hồi ⇒ **2/2 xanh**.
