@@ -240,4 +240,4 @@ frame" not in out` + `"--stop-after-frames" in out`.
 **Diễn tập ngược 4/4 đỏ→xanh**: dồn set quay vòng về `_tu_choi_offset`; tắt fail-closed của
 `frames_yeu_cau`; `cau_hinh` truyền `dump_frames` thô; (trước đó) xoá producer `frames_da_ghi`.
 
-**Trạng thái**: `./run lint` xanh · `./run test` **1387 passed** (5 deselected).
+**Trạng thái**: `./run lint` xanh · `./run test` **1386 passed** (5 deselected).
