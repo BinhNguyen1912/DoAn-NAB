@@ -1,0 +1,23 @@
+{
+  "do_luc": "2026-11-18T12:18:58+07:00",
+  "git_rev": "a3ac49a0fcb681ce12d4260bd858234d881c859d",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "ghi_chu": "Mỗi dòng = 1 kết quả VOS của luồng worker (frame_idx, seq, vos_ms, empty, drift_iou, bbox); `n_dong == vos_runs - 1` vì engine.start() không có nội suy để so. Ô TRỐNG = chưa đo, KHÔNG phải 0 (AGENTS §6).",
+  "lenh": "python scripts/measure_live_relay.py --source data/binh1.mp4 --bbox 300,275,150,410 --vos-every 3 --image-size 192 --seconds 20 --port 8021 --out-dir /dev/shm/live35_after --out data/stability_ticket35_sau_metrics.json",
+  "nguon": "data/binh1.mp4",
+  "thiet_lap": {
+    "bbox_xywh": [
+      300,
+      275,
+      150,
+      410
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "seconds": 20.0
+  },
+  "device_yeu_cau": "cpu",
+  "device_worker_log": "cpu"
+}
