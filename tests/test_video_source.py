@@ -458,5 +458,10 @@ def test_loi_mo_camera_goi_y_dung_duong_thoat():
     with pytest.raises(RuntimeError) as exc:
         CameraVideoSource(0)._raise_open_error()
     msg = str(exc.value)
-    assert "./run relay" in msg and "data/binh1.mp4" in msg, msg
-    assert "ví dụ 1" not in msg, "không được khuyên 'thử index khác' (đã đo là không cứu được)"
+    # Phần ĐẶC THÙ máy này: relay + URL kiếm được ở đâu (P2-4: đặt trong nháy, `<` trong bash là redirect)
+    assert "./run relay" in msg and "cam_relay.sh snapurl" in msg, msg
+    # Phần TỔNG QUÁT vẫn phải còn (máy khác có 2 camera thì `--source 1` là đúng — P3-3)
+    assert "--source 1" in msg, msg
+    assert "data/binh1.mp4" not in msg, "clip demo không có trong fresh clone (.gitignore `data/*`)"
+    # Không được khẳng định "index khác không cứu" như quy tắc chung
+    assert "ví dụ 1" not in msg, "không được khuyên mù 'thử index khác, ví dụ 1'"

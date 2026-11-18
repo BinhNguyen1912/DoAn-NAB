@@ -189,22 +189,21 @@ def probe_source(source, read_frames, n: int = 8, timeout_s: float = 8.0):
     return frames, err, (time.perf_counter() - began) * 1000
 
 
-def _la_nguon_webcam(source) -> bool:
-    """`0`/`1`/`"0"` = webcam (đúng hợp đồng "0 = webcam" của API/CLI)."""
-    return str(source).strip().isdigit()
-
-
 def check_source_frames(source, frames, err, took_ms, n: int = 8, timeout_s: float = 8.0) -> Check:
     """Đọc được `n` frame trong `timeout_s` (webcam bận/relay chết/đường dẫn sai đều rơi ở đây)."""
+    from src.video_source import is_camera_source
+
     if err:
         chi_tiet = f"{source}: {err}"
-        if _la_nguon_webcam(source):
-            # Gợi ý ĐÚNG đường thoát: trên máy demo này webcam kẹt ở DRIVER (`Device busy (exported)`
-            # của usbipd-win, AGENTS §6) nên "thử index khác" **không** cứu được — đã thử index 1,
-            # reboot, unbind/bind, restart service. Hai đường đã kiểm chạy được là relay HTTP và file.
-            chi_tiet += (" — máy này webcam hay kẹt ở driver: dùng `./run relay` rồi "
-                         "`--source http://<IP-Windows>:8090/snapshot.jpg`, hoặc kiểm nhanh bằng "
-                         "`--source data/binh1.mp4`")
+        # Gợi ý CHỈ khi nguồn là webcam — và dùng **đúng quy tắc của factory**
+        # (`is_camera_source`: file/thư mục THẬT tên `0` là file, `"²"` không phải index, `np.integer`
+        # thì có), không tự viết lại (P2-1 review 18-11: bản trước lệch ba chỗ so với factory).
+        if is_camera_source(source) and "relay" not in chi_tiet:
+            # `CameraVideoSource` đã in gợi ý relay trong thông điệp lỗi của nó ⇒ chỉ thêm khi nguồn
+            # KHÁC in ra (và chỉ thêm phần còn thiếu) để một dòng bảng không thành 380 ký tự lặp lại
+            # hai lần cùng một câu (P2-2).
+            chi_tiet += (" — máy này webcam hay kẹt ở driver `usbipd` (AGENTS §6): dùng `./run relay` "
+                         "(URL: `bash scripts/cam_relay.sh snapurl`) hoặc một clip có sẵn")
         return Check("nguồn video", False, chi_tiet)
     if len(frames) < n:
         return Check("nguồn video", False,
@@ -526,7 +525,10 @@ def _wait_running(base: str, timeout_s: float) -> dict:
 MANUAL_STEPS = """\
 3 bước TAY không tự động hoá được (làm 1 lần trước khi thi):
   1. `./run api 8010` rồi mở http://127.0.0.1:8010/ — kéo chuột chọn vật, bấm Gửi.
-  2. Nguồn `0` (webcam thật qua relay): kéo chuột + bấm Bật phát, nhìn luồng MJPEG chạy.
+  2. Nguồn = URL snapshot của relay (KHÔNG phải `0`): `./run relay` rồi lấy URL bằng
+     `bash scripts/cam_relay.sh snapurl` (dạng http://<IP-Windows>:8090/snapshot.jpg) — dán vào ô
+     nguồn, kéo chuột + bấm Bật phát, nhìn luồng MJPEG chạy. (Nguồn `0` = webcam trong WSL, đường này
+     kẹt driver `usbipd` — xem AGENTS §6.)
   3. Sau khi Dừng: tải CSV và mở `data/live_*/status.json` xem có `vos_ms`, `mask_fps`.
 """
 

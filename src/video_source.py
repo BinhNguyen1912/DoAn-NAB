@@ -161,10 +161,10 @@ class CameraVideoSource(_CaptureSource):
         # (`Device busy (exported)`), đã thử index 1, `wsl --shutdown`, reboot, unbind/bind, restart
         # service — không khỏi (AGENTS §6). Hai đường đã chạy được: relay HTTP và file video.
         raise RuntimeError(
-            f"Không mở được camera index {self._index} "
-            "(bận/không tồn tại — nếu máy kẹt driver usbipd thì index khác cũng không cứu được: "
-            "dùng `./run relay` + nguồn `http://<IP-Windows>:8090/snapshot.jpg`, "
-            "hoặc nguồn file `data/binh1.mp4`)"
+            f"Không mở được camera index {self._index} (bận hoặc không tồn tại — kiểm tra thiết bị, "
+            "máy nhiều camera thì thử `--source 1`). Nếu máy kẹt driver `usbipd` (WSL) thì index khác "
+            "CŨNG không cứu được: dùng relay (`./run relay`, URL lấy từ "
+            "`bash scripts/cam_relay.sh snapurl`) hoặc một clip có sẵn (`--source <clip>.mp4`)"
         )
 
 
@@ -403,6 +403,21 @@ def looks_like_file(source) -> bool:
     return path.suffix.lower() in FILE_SUFFIXES or path.is_file() or path.is_dir()
 
 
+def is_camera_source(source) -> bool:
+    """`source` có được hiểu là **CHỈ SỐ CAMERA** (webcam) không? — MỘT bản duy nhất.
+
+    Vì sao phải là hàm dùng chung: `scripts/demo_preflight.py` cần biết "đây là webcam" để in gợi ý
+    relay/file. Bản đầu của nó tự viết `str(source).strip().isdigit()` và **lệch** với quy tắc thật ở
+    đây ba chỗ: (a) file/thư mục THẬT tên `0` phải là file, không phải webcam (quy ước từ 13-11);
+    (b) `isdigit()` nhận `"²"` trong khi `int("²")` ném; (c) `np.integer` cũng là index camera.
+    """
+    if isinstance(source, (int, np.integer)):
+        return True
+    stripped = str(source).strip()
+    # `isdecimal()`, KHÔNG `isdigit()`: "²".isdigit() là True nhưng `int("²")` ném ValueError
+    return stripped.isdecimal() and not os.path.exists(stripped)
+
+
 def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEOUT_MS) -> VideoSource:
     """Factory duy nhất: int (hoặc chuỗi chỉ gồm chữ số) → webcam; rtsp:// → RTSP;
     http(s):// → nguồn mạng MJPEG (hoặc ảnh JPEG rời nếu URL là snapshot); thư mục → dãy ảnh
@@ -419,10 +434,8 @@ def open_video_source(source, open_timeout_ms=RtspVideoSource.DEFAULT_OPEN_TIMEO
     if isinstance(source, (int, np.integer)):
         return CameraVideoSource(int(source))
     text = str(source)
-    stripped = text.strip()
-    # `isdecimal()`, KHÔNG `isdigit()`: "²".isdigit() là True nhưng `int("²")` ném ValueError
-    if stripped.isdecimal() and not os.path.exists(stripped):
-        return CameraVideoSource(int(stripped))
+    if is_camera_source(source):
+        return CameraVideoSource(int(text.strip()))
     lower = text.lower()
     if lower.startswith(("rtsp://", "rtspt://")):
         return RtspVideoSource(text, open_timeout_ms=open_timeout_ms)
