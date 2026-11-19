@@ -1,0 +1,191 @@
+<!DOCTYPE html>
+<meta charset="utf-8">
+<title>Tô GT phân đoạn — DoAn Camera AI</title>
+<!--
+  Trình tô GT chạy trong trình duyệt, do `scripts/gt_gan_nhanh.py` phục vụ (cùng origin ⇒ không CORS).
+  - trái kéo = vẽ (trắng = vật), phải kéo = tẩy, phím A = nhận gợi ý, C = xoá sạch, S = lưu & tiếp
+  - lưu = POST /luu/gt_NNNNNN.png ⇒ file ghi THẲNG vào docs/gt/<ten>/gt_NNNNNN.png
+-->
+<style>
+  body { margin:0; font:14px/1.4 system-ui, sans-serif; background:#14161a; color:#e8eaed; }
+  header { padding:8px 12px; background:#1d2026; display:flex; gap:14px; align-items:center; flex-wrap:wrap }
+  #ten { font-weight:600 }
+  button { background:#2c313a; color:#e8eaed; border:1px solid #3c424d; border-radius:6px;
+           padding:6px 12px; font-size:14px; cursor:pointer }
+  button:hover { background:#39414d }
+  button.chinh { background:#1a73e8; border-color:#1a73e8 }
+  canvas { display:block; margin:10px auto; background:#000; touch-action:none; cursor:crosshair;
+           max-width:100%; }
+  #tt { color:#9aa0a6; padding:0 12px }
+  input[type=range] { width:120px; vertical-align:middle }
+  .xong { color:#81c995 }
+  .loi { color:#f28b82 }
+</style>
+<header>
+  <span id="ten">…</span>
+  <button id="truoc">◀ Trước</button>
+  <button id="tiep">Sau ▶</button>
+  <button id="nhan" title="phím A">Nhận gợi ý</button>
+  <button id="xoa" title="phím C">Xoá sạch</button>
+  <button id="hien" title="ẩn/hiện lớp gợi ý">Gợi ý: bật</button>
+  <label>cỡ cọ <input id="co" type="range" min="3" max="80" value="18"></label>
+  <button id="luu" class="chinh" title="phím S">Lưu &amp; tiếp</button>
+  <span id="tt"></span>
+</header>
+<canvas id="cv"></canvas>
+
+<script>
+const cv = document.getElementById('cv'), ctx = cv.getContext('2d');
+const tt = document.getElementById('tt');
+let danhSach = [], i = 0, tenFrame = '', mask = null, goiY = null, dangVe = false;
+let hienGoiY = true;
+const co = document.getElementById('co');
+
+function bao(s, lop) { tt.textContent = s || ''; tt.className = lop || ''; }
+
+async function lay(url) {
+  const r = await fetch(url);
+  if (!r.ok) throw new Error(url + ' → ' + r.status);
+  return r;
+}
+function taiAnh(src) {
+  return new Promise((ok, hong) => {
+    const im = new Image();
+    im.onload = () => ok(im);
+    im.onerror = () => hong(new Error('không tải được ' + src));
+    im.src = src;
+  });
+}
+
+async function nap(f) {
+  if (mask) {           // đang tô dở frame khác ⇒ không tự ghi đè
+    if (!confirm('Frame này chưa lưu. Bỏ thay đổi và chuyển?')) return;
+  }
+  i = Math.max(0, Math.min(danhSach.length - 1, f));
+  const so = danhSach[i];
+  tenFrame = 'frame_' + String(so).padStart(6, '0') + '.png';
+  const anh = await taiAnh('/frame/' + tenFrame);
+  cv.width = anh.width; cv.height = anh.height;
+
+  // mask = nền đen; GT đã có thì nạp lại để sửa tiếp
+  mask = document.createElement('canvas');
+  mask.width = anh.width; mask.height = anh.height;
+  const mctx = mask.getContext('2d');
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, mask.width, mask.height);
+
+  goiY = null;
+  try {
+    goiY = await taiAnh('/goiy/goiy_' + String(so).padStart(6, '0') + '.png');
+  } catch (e) { /* không có gợi ý ⇒ tô tay */ }
+
+  const daCo = (window.__daCo || []).includes('gt_' + String(so).padStart(6, '0') + '.png');
+  if (daCo) {
+    // nạp GT cũ: file đã lưu nằm ở /goiy/ là sai thư mục nên đọc qua đường /gt/ (thêm ở server)
+    try {
+      const gt = await taiAnh('/gt/gt_' + String(so).padStart(6, '0') + '.png');
+      const tmp = document.createElement('canvas');
+      tmp.width = gt.width; tmp.height = gt.height;
+      const tctx = tmp.getContext('2d');
+      tctx.drawImage(gt, 0, 0);
+      const d = tctx.getImageData(0, 0, tmp.width, tmp.height);
+      for (let p = 0; p < d.data.length; p += 4) {
+        const v = d.data[p + 1] > 127 ? 255 : 0;          // GT nhị phân: pixel trắng = vật
+        d.data[p] = v; d.data[p + 1] = v; d.data[p + 2] = v; d.data[p + 3] = 255;
+      }
+      tctx.putImageData(d, 0, 0);
+      mctx.drawImage(tmp, 0, 0);
+    } catch (e) { /* chưa có GT */ }
+  }
+  ve(anh, so);
+}
+
+function ve(anh, so) {
+  ctx.drawImage(anh, 0, 0);
+  if (hienGoiY && goiY) {
+    ctx.save(); ctx.globalAlpha = 0.35; ctx.drawImage(goiY, 0, 0); ctx.restore();
+  }
+  ctx.save(); ctx.globalAlpha = 0.45; ctx.drawImage(mask, 0, 0); ctx.restore();
+  const phu = demPhu();
+  bao(`frame ${so} — ${i + 1}/${danhSach.length} — vật ${(phu * 100).toFixed(1)} % diện tích`);
+}
+
+function demPhu() {
+  const d = mask.getContext('2d').getImageData(0, 0, mask.width, mask.height).data;
+  let n = 0;
+  for (let p = 0; p < d.data.length; p += 4) if (d.data[p] > 127) n++;
+  return n / (mask.width * mask.height);
+}
+
+function toaDo(ev) {
+  const r = cv.getBoundingClientRect();
+  return [(ev.clientX - r.left) * cv.width / r.width, (ev.clientY - r.top) * cv.height / r.height];
+}
+
+function to(ev) {
+  const [x, y] = toaDo(ev), mctx = mask.getContext('2d');
+  mctx.fillStyle = ev.buttons === 2 || ev.shiftKey ? '#000' : '#fff';
+  mctx.beginPath(); mctx.arc(x, y, +co.value, 0, 2 * Math.PI); mctx.fill();
+  ve(null, danhSach[i]);
+}
+function veLai() {
+  const so = danhSach[i];
+  taiAnh('/frame/' + tenFrame).then(a => ve(a, so)).catch(() => {});
+}
+
+cv.addEventListener('contextmenu', e => e.preventDefault());
+cv.addEventListener('pointerdown', e => { dangVe = true; cv.setPointerCapture(e.pointerId); to(e); });
+cv.addEventListener('pointermove', e => { if (dangVe) to(e); });
+cv.addEventListener('pointerup', () => { dangVe = false; });
+
+document.getElementById('truoc').onclick = () => nap(i - 1).then(veLai);
+document.getElementById('tiep').onclick = () => nap(i + 1).then(veLai);
+document.getElementById('xoa').onclick = () => {
+  const mctx = mask.getContext('2d');
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, mask.width, mask.height); veLai();
+};
+document.getElementById('nhan').onclick = () => {
+  if (!goiY) return bao('frame này không có gợi ý — phải tô tay', 'loi');
+  const mctx = mask.getContext('2d');
+  mctx.fillStyle = '#000'; mctx.fillRect(0, 0, mask.width, mask.height);
+  mctx.drawImage(goiY, 0, 0);
+  veLai();
+  bao('đã nhận gợi ý — NHỚ SỬA nếu gợi ý sai (báo cáo phải nói GT khởi tạo từ ngưỡng màu)');
+};
+document.getElementById('hien').onclick = (e) => {
+  hienGoiY = !hienGoiY;
+  e.target.textContent = 'Gợi ý: ' + (hienGoiY ? 'bật' : 'tắt');
+  veLai();
+};
+
+async function luu() {
+  const blob = await new Promise(ok => mask.toBlob(ok, 'image/png'));
+  const ten = 'gt_' + String(danhSach[i]).padStart(6, '0') + '.png';
+  const r = await fetch('/luu/' + ten, { method: 'POST', body: blob });
+  const text = await r.text();
+  if (!r.ok) return bao('LỖI lưu ' + ten + ': ' + text, 'loi');
+  window.__daCo = (window.__daCo || []).concat([ten]);
+  bao('đã lưu ' + ten, 'xong');
+  if (i + 1 < danhSach.length) { await nap(i + 1); }
+  return null;
+}
+document.getElementById('luu').onclick = luu;
+
+document.addEventListener('keydown', e => {
+  if (e.target.tagName === 'INPUT') return;
+  if (e.key === 'a' || e.key === 'A') document.getElementById('nhan').click();
+  else if (e.key === 'c' || e.key === 'C') document.getElementById('xoa').click();
+  else if (e.key === 's' || e.key === 'S') luu();
+  else if (e.key === 'ArrowRight') { nap(i + 1); }
+  else if (e.key === 'ArrowLeft') { nap(i - 1); }
+});
+
+(async () => {
+  const r = await lay('/danh-sach.json');
+  const info = await r.json();
+  danhSach = info.frames || [];
+  window.__daCo = info.da_co_gt || [];
+  document.getElementById('ten').textContent = `${danhSach.length} frame · đã có GT: ${window.__daCo.length}`;
+  if (!danhSach.length) return bao('không có frame nào — kiểm --frames', 'loi');
+  await nap(0);
+})().catch(e => bao('LỖI: ' + e.message, 'loi'));
+</script>

@@ -179,3 +179,28 @@ script đó để số vào `docs/so-lieu-bao-cao.md`.
 - `docs/so-lieu-bao-cao.md` — nơi mọi số được trích (kèm cột "CẤM trích thành").
 - `docs/bang-cau-hinh.md` — chọn cấu hình (`image_size` × `vos_every`) có ngưỡng nhiễu.
 - `scripts/measure_live_relay.py` — đo đường ống trên camera thật (KHÔNG đo độ chính xác).
+
+## 2b. Đường NHANH để gán GT (`scripts/gt_gan_nhanh.py`, từ 19-11)
+
+Mục 2 ở trên cần mở phần mềm ảnh và tô từ đầu. Nếu muốn nhanh hơn (≈ 1 phút/frame):
+
+```bash
+python scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten binh1_tay --nguoi-gan "Nguyễn Văn A" \
+    --frames 0,25,50,57,69,90,110,150,190,230,255,280,310
+```
+
+Lệnh này (a) cắt frame, (b) sinh **gợi ý** `goiy_NNNNNN.png` bằng ngưỡng màu HSV + bao lồi, (c) mở
+**trình tô** ở `http://127.0.0.1:8765` — tô bằng chuột (chuột phải = tẩy), phím `A` = nhận gợi ý,
+`S` = lưu & tiếp. File GT được ghi **thẳng** vào `docs/gt/<ten>/gt_NNNNNN.png` (không qua Downloads).
+
+Quy tắc trung thực của đường nhanh:
+
+- `index.json` khai `nguon_gt = "ngưỡng màu HSV (script) + người sửa tay"` và
+  `sai_so_bo_goi_y = "CHƯA ĐO"` ⇒ **không** được trích mIoU này như "GT người vẽ hoàn toàn".
+- `gt_do_model_goi_y = false` (gợi ý từ **màu**, không từ model ⇒ không bị cổng "GT do model gợi ý" chặn).
+- Đo nhanh chất lượng gợi ý trên `binh1` (4 frame 57/69/90/108): IoU(gợi ý, mask model) **0,44–0,63**,
+  diện tích gợi ý 2,7–4,0 % so với mask model ~6 % ⇒ gợi ý là **điểm khởi đầu**, người gán vẫn phải sửa
+  viền/nắp. Bộ gợi ý **không** được dùng làm GT mà không sửa: `score_miou` vẫn nhận, nhưng con số sẽ là
+  của ngưỡng màu.
+- Server **từ chối** (422) mask rỗng (bẫy `IoU(rỗng, rỗng) = 1,0`) và mask khác kích thước frame;
+  từ chối (400) frame không có trong danh sách ⇒ không ghi được file rác/lạc đường dẫn.

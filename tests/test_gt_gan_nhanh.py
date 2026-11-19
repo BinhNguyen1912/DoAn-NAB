@@ -1,0 +1,204 @@
+"""Test công cụ gán GT nhanh (`scripts/gt_gan_nhanh.py` + `gt_painter.html`).
+
+Vì sao test ở mức này: GT là **thước đo duy nhất** của "bám đúng" ⇒ lỗi trong đường gán GT làm mọi con
+số mIoU sai. Ba bẫy đã gặp trong repo, mỗi bẫy một test:
+
+1. `IoU(rỗng, rỗng) = 1,0` ⇒ GT rỗng bị nhận là "bám đúng tuyệt đối" (`_kiem_png` phải TỪ CHỐI);
+2. GT khác kích thước frame ⇒ `score_miou` chỉ so `sum` nên **không** phát hiện (`_kiem_png` phải TỪ CHỐI);
+3. `nguon_gt` khai man ("người tô tay") khi thật ra khởi tạo từ ngưỡng màu ⇒ `index.json` phải khai đúng.
+"""
+
+from __future__ import annotations
+
+import json
+import threading
+import urllib.error
+import urllib.request
+from http.server import ThreadingHTTPServer
+
+import numpy as np
+import pytest
+
+from scripts import gt_gan_nhanh as gt
+
+
+# ── gợi ý màu ────────────────────────────────────────────────────────────────────────────
+
+
+def test_goi_y_rong_khi_anh_khong_co_mau():
+    """Ảnh xám ⇒ KHÔNG gợi ý được (trả mask rỗng), không được ném lỗi cv2 khó hiểu."""
+    xam = np.full((40, 40), 120, np.uint8)
+    assert int((gt.goi_y_hsv(xam) > 127).sum()) == 0
+
+
+def test_goi_y_bat_vat_mau_va_bo_nen_xam():
+    """Nền xám + một khối màu đỏ ⇒ gợi ý phủ khối màu, KHÔNG phủ nền."""
+    import cv2
+
+    img = np.full((120, 160, 3), 200, np.uint8)          # nền sáng, gần như không bão hoà
+    cv2.rectangle(img, (40, 30), (90, 110), (40, 20, 200), -1)   # khối màu (BGR)
+    mask = gt.goi_y_hsv(img)
+    assert mask.shape == (120, 160)
+    assert mask[70, 65] > 127, "phải phủ giữa khối màu"
+    assert mask[5, 5] < 128, "không được phủ nền"
+
+
+def test_goi_y_lap_nhan_trang_ben_trong_bang_bao_loi():
+    """Nhãn trắng giữa vật ⇒ phần giữa vẫn phải nằm trong gợi ý (nhờ bao lồi)."""
+    import cv2
+
+    img = np.full((120, 160, 3), 200, np.uint8)
+    cv2.rectangle(img, (40, 30), (90, 110), (40, 20, 200), -1)
+    cv2.rectangle(img, (55, 60), (75, 80), (250, 250, 250), -1)  # nhãn trắng = bão hoà thấp
+    mask = gt.goi_y_hsv(img)
+    assert mask[70, 65] > 127, "bao lồi phải lấp vùng nhãn trắng ở giữa"
+
+
+def test_goi_y_anh_rong_thi_bao_loi_ro_rang():
+    with pytest.raises(ValueError):
+        gt.goi_y_hsv(np.zeros((0, 0, 3), np.uint8))
+
+
+# ── tên file ─────────────────────────────────────────────────────────────────────────────
+
+
+@pytest.mark.parametrize("ten,mong_doi", [
+    ("frame_000057.png", 57), ("goiy_000057.png", 57), ("gt_000057.png", 57),
+    ("frame_000000.png", 0), ("anh_57.png", None), ("frame_abc.png", None),
+    ("frame_57.jpg", 57), ("../../etc/passwd", None), ("frame_000057.png.bak", None),
+])
+def test_doc_frame_tu_ten(ten, mong_doi):
+    assert gt.doc_frame_tu_ten(ten) == mong_doi
+
+
+# ── index.json ──────────────────────────────────────────────────────────────────────────
+
+
+def test_index_khai_dung_nguon_gt_khi_co_goi_y(tmp_path):
+    """Có gợi ý màu ⇒ `nguon_gt` phải NÓI RA, và sai số bộ gợi ý phải khai là CHƯA ĐO."""
+    path = gt._viet_index(tmp_path, clip="data/binh1.mp4", ten="t1", frames=[5, 1, 5],
+                          nguoi_gan="A", co_goi_y=True)
+    index = json.loads(path.read_text(encoding="utf-8"))
+    assert index["dang_gt"] == "silhouette"
+    assert "ngưỡng màu" in index["nguon_gt"]
+    assert "CHƯA ĐO" in index["sai_so_bo_goi_y"]
+    assert index["gt_do_model_goi_y"] is False          # GT từ ngưỡng màu, KHÔNG phải từ model
+    assert [f["frame_idx"] for f in index["frames"]] == [1, 5]     # sắp xếp + bỏ trùng
+
+
+def test_index_khai_to_tay_khi_khong_goi_y(tmp_path):
+    path = gt._viet_index(tmp_path, clip="c.mp4", ten="t2", frames=[0],
+                          nguoi_gan="A", co_goi_y=False)
+    index = json.loads(path.read_text(encoding="utf-8"))
+    assert index["nguon_gt"] == "người tô tay trên frame gốc"
+    assert index["sai_so_bo_goi_y"] is None
+
+
+# ── kiểm ảnh GT do trình duyệt gửi lên ──────────────────────────────────────────────────
+
+
+def _png(mask: np.ndarray) -> bytes:
+    import cv2
+
+    ok, buf = cv2.imencode(".png", mask.astype(np.uint8))
+    assert ok
+    return buf.tobytes()
+
+
+def test_kiem_png_tu_choi_mask_rong():
+    """Mask rỗng ⇒ `IoU(rỗng, rỗng) = 1,0` ⇒ phải TỪ CHỐI, không lưu."""
+    loi = gt._kiem_png(_png(np.zeros((40, 50), np.uint8)), rong=50, cao=40)
+    assert "rỗng" in loi
+
+
+def test_kiem_png_tu_choi_sai_kich_thuoc():
+    loi = gt._kiem_png(_png(np.full((40, 50), 255, np.uint8)), rong=60, cao=40)
+    assert "kích thước" in loi
+
+
+def test_kiem_png_tu_choi_du_lieu_khong_phai_anh():
+    assert gt._kiem_png(b"khong phai png", rong=10, cao=10) != ""
+
+
+def test_kiem_png_nhan_anh_hop_le():
+    assert gt._kiem_png(_png(np.full((40, 50), 255, np.uint8)), rong=50, cao=40) == ""
+
+
+# ── server: lưu thẳng vào thư mục GT ────────────────────────────────────────────────────
+
+
+@pytest.fixture()
+def may_chu(tmp_path):
+    (tmp_path / "frames").mkdir()
+    (tmp_path / "goiy").mkdir()
+    kich_thuoc = {57: (50, 40)}
+    server = ThreadingHTTPServer(("127.0.0.1", 0), gt._make_handler(tmp_path, kich_thuoc))
+    thread = threading.Thread(target=server.serve_forever, daemon=True)
+    thread.start()
+    try:
+        yield f"http://127.0.0.1:{server.server_address[1]}", tmp_path
+    finally:
+        server.shutdown()
+        server.server_close()
+        thread.join(timeout=5)
+
+
+def _post(url: str, data: bytes):
+    req = urllib.request.Request(url, data=data, method="POST")
+    try:
+        with urllib.request.urlopen(req, timeout=10) as r:
+            return r.status, r.read().decode()
+    except urllib.error.HTTPError as exc:
+        return exc.code, exc.read().decode()
+
+
+def test_server_luu_gt_dung_thu_muc(may_chu):
+    base, tmp_path = may_chu
+    status, text = _post(f"{base}/luu/gt_000057.png", _png(np.full((40, 50), 255, np.uint8)))
+    assert status == 200, text
+    assert (tmp_path / "gt_000057.png").is_file(), "GT phải nằm thẳng trong thư mục GT"
+
+
+def test_server_tu_choi_frame_la_va_duong_dan_lac(may_chu):
+    base, tmp_path = may_chu
+    status, _ = _post(f"{base}/luu/../../etc/passwd", _png(np.full((40, 50), 255, np.uint8)))
+    assert status in (400, 404)
+    status, _ = _post(f"{base}/luu/gt_000058.png", _png(np.full((40, 50), 255, np.uint8)))
+    assert status == 400, "frame không có trong danh sách ⇒ từ chối"
+    assert not list(tmp_path.glob("gt_*.png"))
+
+
+def test_server_tu_choi_mask_rong_va_sai_co(may_chu):
+    base, tmp_path = may_chu
+    # Mask RỖNG nhưng ĐÚNG cỡ: nếu sai cỡ thì cổng "kích thước" chặn trước và test không kiểm được
+    # đúng bẫy `IoU(rỗng, rỗng) = 1,0`.
+    status, text = _post(f"{base}/luu/gt_000057.png", _png(np.zeros((40, 50), np.uint8)))
+    assert status == 422 and "rỗng" in text
+    status, _ = _post(f"{base}/luu/gt_000057.png", _png(np.full((10, 10), 255, np.uint8)))
+    assert status == 422
+    assert not list(tmp_path.glob("gt_*.png"))
+
+
+def test_server_phuc_vu_frame_goi_y_va_gt(may_chu):
+    base, tmp_path = may_chu
+    import cv2
+
+    cv2.imwrite(str(tmp_path / "frames" / "frame_000057.png"), np.zeros((40, 50, 3), np.uint8))
+    for duong in ("/frame/frame_000057.png", "/goiy/goiy_000057.png", "/gt/gt_000057.png"):
+        try:
+            with urllib.request.urlopen(base + duong, timeout=10) as r:
+                assert r.status == 200 or duong.startswith(("/goiy", "/gt"))
+        except urllib.error.HTTPError as exc:
+            assert exc.code == 404, f"{duong} phải 404 (chưa có file) chứ không 500"
+    with urllib.request.urlopen(base + "/danh-sach.json", timeout=10) as r:
+        info = json.loads(r.read())
+    assert info["frames"] == [57]
+
+
+def test_trang_to_co_mat_va_khong_dung_file_ngoai(may_chu):
+    base, _tmp = may_chu
+    with urllib.request.urlopen(base + "/", timeout=10) as r:
+        html = r.read().decode()
+    assert "Lưu" in html and "canvas" in html
+    # Trình tô không được tải tài nguyên ngoài (chạy offline trong phòng demo)
+    assert "http://" not in html.replace("http://127.0.0.1", "") and "https://" not in html
