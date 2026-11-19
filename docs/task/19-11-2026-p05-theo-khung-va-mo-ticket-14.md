@@ -62,17 +62,17 @@ cờ chẩn đoán nói được điều `empty_frac_window` **không** nói. K�
 - **Test cấp lệnh có nguy cơ "cổng danh nghĩa"** (assert chỉ khớp một chuỗi luôn được in). Đã diễn tập
   ngược **2 mutant**: (a) nhãn luôn `"không đạt"`; (b) in `p05=None` — **2/2 test đỏ**, khôi phục rồi
   xanh lại.
-- ⚠ **Chưa chứng minh được ai sai** ở các mẫu `drift_iou = 0` (frame 57/69/75/105/108/171/255): CSV
-  ghi `bbox = result.bbox` = ô của **VOS**, nên số liệu chỉ nói *ô hiển thị (LK) và ô VOS không giao
-  nhau*, **chưa** nói LK sai. Tên cờ "LK nội suy lệch" của plan 09-11 **chưa được dùng** cho tới khi có
-  phiên `--dump-mask-frames` phủ frame 50–110.
+- ⚠ Lúc viết mục "Công việc" thì **chưa** biết ai sai ở các mẫu `drift_iou = 0`. Mục "Bổ sung 19-11
+  (chiều)" ở cuối đã trả lời (đường nội suy LK đóng băng ô cũ; model vẫn bám chai, có rò mask sang cằm).
 
 ## Next steps
 
 - Ticket 14 (đã claim, đã comment số): chốt lại `drift_n ≥ 100` — `n_drift` trong khung chỉ **54–61**/11 s
   ⇒ giữ 100 thì cờ **không bao giờ bật**; đề xuất cờ dùng **cửa sổ trượt 20–50 mẫu, ≥ 30 mẫu đo được**
   (ngưỡng công bố p05 của repo), còn `≥ 100` giữ cho p05 cấp phiên.
-- Chứng minh attribution (LK vs VOS) bằng `--dump-mask-frames` ⇒ rồi mới đặt tên cờ.
+- Còn **thiếu phép đo trực tiếp**: thêm cột `bbox_hien_thi` + `lk_ok` vào `_log_drift_sample`
+  (ticket #14) rồi chạy lại — chỉ khi đó mới được dùng chữ "chứng minh" cho cơ chế đóng băng ô.
+- Tên cờ: `drift_trend` (enum, trung tính) — nhãn nguyên nhân "LK nội suy lệch" để riêng.
 
 ## Tài liệu tham khảo
 
@@ -95,49 +95,72 @@ cờ chẩn đoán nói được điều `empty_frac_window` **không** nói. K�
 Diễn tập ngược sau khi sửa: **4/4 mutant bị bắt** (nhãn luôn "không đạt" · in `p05=None` · bỏ guard đếm
 mẫu `empty` · bỏ vế `empty < MAX_EMPTY`).
 
-## Bổ sung 19-11 (chiều) — **AI SAI** ở các mẫu `drift_iou = 0`: **LK**, không phải model
+## Bổ sung 19-11 (chiều) — đường **nội suy (LK)** sai; model bám chai nhưng mask còn **rò sang cằm**
 
-Đây là câu hỏi treo từ đầu phiên ("chưa chứng minh được ai sai"). Đã chứng minh bằng **hai phép đo độc lập**.
+Câu hỏi treo: các mẫu `drift_iou = 0` là **LK sai** hay **model sai**? Hai phép đo **bổ trợ** dưới đây
+cùng đường code path ⇒ kết luận: **ô hiển thị (đường nội suy) không theo vật**; model vẫn bám chai (có
+một lỗi riêng: mask rò sang cằm ở frame 57). **Chưa** phải phép đo trực tiếp — CSV drift **không** có cột
+`bbox_hien_thi`/`lk_ok` (xem Next steps).
 
-### (1) Mask của model BÁM ĐÚNG chai — kiểm bằng ảnh
+Mọi số dưới đây lấy từ **một** lần chạy: `data/drift_samples_binh1_2026-11-14_141609.csv` · `bbox
+300,275,150,410` · `image_size 192` · `vos_every 3` · `git_rev` theo `.meta.json` của file.
+
+### (1) Mask của model bám chai — mask dump ở `--vos-every 1` (KHÔNG có LK)
+
+`_use_lk = vos_every > 1` (`src/live_tracking.py:624`) và `--dump-mask-frames` bị **chặn** khi
+`vos_every > 1` (`tools/live_worker.py:87-91`) ⇒ mask dump chỉ chạy được trên đường **không có LK**,
+nên mask là **thô của model** (dump trước `_smooth`, `mask_smoothing = 1.0`):
 
 ```bash
 python tools/live_worker.py --source data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 \
-    --vos-every 1 --dump-mask-frames 55,57,60,63,69,72,75,80,90,105,108 \
-    --dump-mask-dir /tmp/attr/masks --out-dir /tmp/attr --stop-after-frames 115
+    --vos-every 1 --dump-mask-frames 55,57,69,90,108 --dump-mask-dir docs/media/drift/masks \
+    --out-dir /mnt/d/DOAN-NAB/.tmp_attr --stop-after-frames 115
 ```
 
-`--vos-every 1` ⇒ **không có LK**, nên mask là 100 % của model. Bbox của mask (`cv2.imread` + `np.nonzero`):
+`docs/media/drift/masks/manifest.json` (đã commit): `nguon = data/binh1.mp4`, `image_size 192`,
+`image_size_hieu_luc 192`, `vos_every 1`, `mask_smoothing 1.0`, `bbox_xywh [300,275,150,410]`,
+`frame_goc_cua_phien 0`, `ghi_chu = "mask THÔ của model (trước bước làm mượt)"`.
 
-| frame | bbox mask (x1,y1,x2,y2) | chai ở đâu trong frame |
-|---|---|---|
-| 55 | `110,17,255,592` | đang **giơ cao**, sát mép trên |
-| 57 | `95,0,235,526` | chạm mép trên (đúng — chai bị giơ quá khung) |
-| 69 | `240,0,376,445` | vẫn trên cao |
-| 90 | `298,342,441,831` | đã **hạ xuống**, mask theo kịp |
-| 108 | `552,279,700,752` | đưa sang **phải**, mask theo kịp |
+Ảnh: `docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg` (4 panel: f57 · f69 · f90 · f108). Chú giải:
+**xanh lá** = ô chọn ban đầu `300,275,150,410` (**cố định**, KHÔNG phải ô hiển thị); **vàng** = ô VOS@48 =
+ô **đang hiển thị** (LK đóng băng, xem (2)); **hồng** = ô VOS của chính frame đó; **cyan** = viền mask.
 
-Ảnh chồng mask + ô chai gốc: `docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg` ⇒ mask **luôn nằm trên
-chai**, kể cả những frame có `drift_iou = 0`. Nghĩa là **model đúng**, không phải "model lệch".
+Đọc ảnh: mask/ô hồng **nằm trên chai** ở cả 4 panel (chai được giơ cao rồi hạ xuống, đưa sang phải) —
+nhưng ở **f57 mask phủ thêm phần cằm** của người (vòng cyan chạy qua cằm) ⇒ **không** được nói "model
+đúng hoàn toàn": đúng vật chính, **rò sang cằm**. Ô vàng (ô hiển thị) nằm trên **bàn tay/áo**, không trên
+chai.
 
-### (2) LK **mất dấu** trước đó — phát lại bằng chính `src/light_tracker.py`
+### (2) Ô "đang hiển thị" = **ô VOS cũ đóng băng**, vì LK trả `not-ok`
 
-Đặt mốc ở ô VOS **thật** của frame 48 (`268,204,392,634`), rồi cho `LkBoxTracker` chạy tiếp từng frame:
+Đường thật (`src/live_tracking.py:847-856`): mỗi frame phát, `_interp.reset(base_gray, base_bbox)` với
+**base = lần VOS gần nhất** rồi **một** `update(gray)`; nếu `not ok` thì phát **`base_result`** (ô của lần
+VOS gần nhất) — tức **không** phải ô LK cuối. Phát lại đúng cơ chế đó trên `141609`:
 
-```
-LK frame 51: box = (185,155,309,585)
-LK MẤT DẤU ở frame 52
-IoU(LK@57, VOS@57) = 0,158  ← so với drift_iou = 0,0000 trong CSV
-```
+| base → frame | `lk_ok` | ô đang hiển thị | ô VOS của frame | `IoU` | `drift_iou` trong CSV |
+|---|---|---|---|---|---|
+| 48 → 51 | **False** | `266,212,392,637` (= VOS@48) | `181,139,315,621` | 0,204 | 0,0486 |
+| 51 → 57 | **False** | `181,139,315,621` (= VOS@51) | `94,0,247,435` | 0,175 | **0,0000** |
+| 48 → 57 | — | `266,212,392,637` (= VOS@48) | `94,0,247,435` | **0,000** | **0,0000** |
+| 66 → 69 | **False** | `128,0,278,514` (= VOS@66) | `239,0,375,439` | 0,143 | **0,0000** |
+| 105 → 108 | **False** | `370,342,504,779` (= VOS@105) | `549,276,701,758` | **0,000** | **0,0000** |
+| 252 → 255 | **False** | `503,330,630,727` (= VOS@252) | `641,344,719,744` | **0,000** | **0,0000** |
 
-⇒ **LK trượt/mất dấu từ frame 52** (chai được giơ lên **rất nhanh**), nên ô hiển thị là ô cũ; VOS ở frame 57
-khoá lại đúng chỗ chai (sát mép trên) ⇒ hai ô **không giao nhau** ⇒ `drift_iou = 0` trong khi `empty = 0`
-(mask vẫn có, và đúng). Không mâu thuẫn với (1): (1) nói *mask model* đúng, (2) nói *ô LK* sai.
+⇒ **`lk_ok = False` liên tục** trong đoạn chai được giơ nhanh (48→51, 51→57, 66→69, 105→108, 252→255):
+ô đang hiển thị **đứng yên ở ô VOS cũ** trong khi chai đã đi xa hàng trăm pixel ⇒ `drift_iou` sụp về 0.
+Hai frame khớp **chính xác** `0,0000` (`IoU(VOS@48, VOS@57) = 0`, `IoU(VOS@105, VOS@108) = 0`).
+
+**Giới hạn của phép phát lại (phải nói)**: ở f57/f69 CSV cho 0,0000 nhưng phát lại từ base 51 cho 0,175 —
+vì ở đường **đa luồng**, `base` tại lúc **phát** frame 57 phụ thuộc việc VOS@51 đã kịp về hay chưa; phát
+lại tuần tự không tái lập được thứ tự đó. Bản phát lại đầu tiên của mình (chain `update()` qua nhiều
+frame) **sai cơ chế** — reviewer bắt đúng — nên đã bỏ; số ở bảng trên là bản đúng cơ chế (`reset(base)` +
+một `update`). Muốn **chứng minh** (không chỉ suy ra) phải thêm cột `bbox_hien_thi` + `lk_ok` vào CSV.
 
 ### Hệ quả cho ticket 14
 
-- Tên cờ **`drift_trend` = "LK nội suy lệch"** của plan 09-11 **đã có bằng chứng** — không còn là suy đoán.
-- Cờ này bắt đúng thứ `empty_frac_window` **không thể** bắt: **mask không rỗng mà ô hiển thị đã trượt** —
-  đúng loại lỗi làm người xem thấy ô bao lệch khỏi vật dù HUD báo "ổn định".
-- Cơ chế là **chuyển động nhanh** (giơ chai lên), **không phải che khuất** — báo cáo phải nói đúng thế,
-  không được gọi đây là "ca che khuất" của ticket #14.
+- `drift_trend` là **tên enum trung tính** ("ô hiển thị và VOS bất nhất") — giữ nguyên như ticket #14.
+  **"LK nội suy lệch" là nhãn NGUYÊN NHÂN**, tách riêng; plan 09-11 đã xếp "bật cờ ngay" vào **phương án
+  bị bác #3**, nay có bằng chứng để **mở lại** — kèm điều kiện: cờ chỉ nói *"ô hiển thị đã trượt"*,
+  **không** nói "model sai" (model còn bám; mask có thể rò).
+- Cờ bắt đúng thứ `empty_frac_window` **không thể** bắt: **mask không rỗng mà ô hiển thị đã trượt**.
+- Cơ chế trên clip này: **vật được giơ nhanh**, có đoạn **chạm/vượt mép trên** (`y1 = 0`, frame 57–75);
+  clip **không có** vật che ⇒ **không** được generalize thành "che khuất không sao".
