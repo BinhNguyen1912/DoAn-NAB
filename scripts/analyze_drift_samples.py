@@ -179,7 +179,8 @@ def main() -> int:
             print(f"\n{Path(item['file']).name} · KHUNG {khung_txt}: "
                   f"trong n={tk['n']} rỗng={tk['empty_frac']} p05={tk['drift_iou_p05']} "
                   f"(n_drift={tk['drift_iou_p05_n']}) drift_tb={tk['drift_iou_mean']} · "
-                  f"ngoài n={nk['n']} rỗng={nk['empty_frac']} p05={nk['drift_iou_p05']}")
+                  f"ngoài n={nk['n']} rỗng={nk['empty_frac']} p05={nk['drift_iou_p05']} "
+                  f"(n_drift={nk['drift_iou_p05_n']})")
             # Điều kiện tiên quyết ticket 14 phải in ở dạng 3 trạng thái: `None` = CHƯA ĐO,
             # không được in thành "không đạt" (bẫy 0/None của AGENTS §6).
             if dk:

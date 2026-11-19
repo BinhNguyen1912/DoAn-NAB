@@ -487,12 +487,12 @@ class TestTachTheoKhung:
     def test_tach_dung_hai_ben(self):
         kq = tach_theo_khung(self._mau(), 0, 20)
         assert kq["khung"] == [[0, 20]]
-        assert kq["trong_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.0,
+        assert kq["trong_khung"] == {"n": 3, "n_empty": 0, "n_empty_do_duoc": 3, "empty_frac": 0.0,
                                      "n_drift": 3, "drift_iou_mean": 0.8,
                                      # 3 mẫu < MIN_SAMPLES ⇒ p05 chưa công bố (None ≠ 0)
                                      "drift_iou_p05": None, "drift_iou_p05_n": 3,
                                      "drift_iou_p05_nguong": MIN_SAMPLES}
-        assert kq["ngoai_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.667,
+        assert kq["ngoai_khung"] == {"n": 3, "n_empty": 2, "n_empty_do_duoc": 3, "empty_frac": 0.667,
                                      "n_drift": 2, "drift_iou_mean": 0.3,
                                      "drift_iou_p05": None, "drift_iou_p05_n": 2,
                                      "drift_iou_p05_nguong": MIN_SAMPLES}
@@ -510,7 +510,7 @@ class TestTachTheoKhung:
     def test_khung_rong_tra_none_khong_phai_0(self):
         """Không có mẫu nào trong khung ⇒ `None` (chưa đo), KHÔNG được là `0,0`/`0 %`."""
         kq = tach_theo_khung(self._mau(), 1000, 2000)
-        assert kq["trong_khung"] == {"n": 0, "n_empty_do_duoc": 0, "empty_frac": None,
+        assert kq["trong_khung"] == {"n": 0, "n_empty": 0, "n_empty_do_duoc": 0, "empty_frac": None,
                                      "n_drift": 0, "drift_iou_mean": None,
                                      "drift_iou_p05": None, "drift_iou_p05_n": 0,
                                      "drift_iou_p05_nguong": MIN_SAMPLES}
@@ -527,7 +527,7 @@ class TestTachTheoKhung:
     def test_empty_none_khong_vao_mau_so(self):
         """Mẫu chưa đo `empty` (None) không được tính là "không rỗng"."""
         assert thong_ke_mau([{"frame_idx": 1, "empty": None, "drift_iou": 0.5}]) == {
-            "n": 1, "n_empty_do_duoc": 0, "empty_frac": None, "n_drift": 1,
+            "n": 1, "n_empty": 0, "n_empty_do_duoc": 0, "empty_frac": None, "n_drift": 1,
             "drift_iou_mean": 0.5, "drift_iou_p05": None, "drift_iou_p05_n": 1,
             "drift_iou_p05_nguong": MIN_SAMPLES}
 
@@ -587,6 +587,37 @@ class TestP05TheoKhung:
         khong_dat = tach_theo_khung(khoe, 0, 39)
         assert khong_dat["trong_khung"]["empty_frac"] == 0.0
         assert khong_dat["dieu_kien_ticket_14"]["trong_khung"]["dat"] is False
+
+    def test_dieu_kien_ticket_14_false_khi_empty_vuot_tran(self):
+        """Nhánh quyết định của 5 lần chạy thật: `empty` 3,0–3,6 % ⇒ `False` (đo rồi, KHÔNG đạt).
+
+        5 file `113932/115215/115231/141626/135451` có `p05 = 0,000` **và** `empty` 3,0–3,6 % —
+        nếu hàm chỉ so p05 thì chúng bị gọi là ĐẠT sai.
+        """
+        # 40 mẫu, 2 rỗng (5 %) ⇒ p05 = 0 nhưng empty vượt trần 3 %
+        mau = [{"frame_idx": i, "empty": False, "drift_iou": 0.0 if i % 8 == 0 else 0.9}
+               for i in range(40)]
+        mau[5]["empty"] = mau[15]["empty"] = True
+        kq = tach_theo_khung(mau, 0, 39)
+        dk = kq["dieu_kien_ticket_14"]["trong_khung"]
+        assert kq["trong_khung"]["drift_iou_p05"] == 0.0
+        assert dk["dat"] is False
+        assert dk["ly_do"]                                  # phải nói VÌ SAO không đạt
+
+    def test_dieu_kien_ticket_14_none_khi_qua_it_mau_khai_empty(self):
+        """1 dòng khai `empty=0` + 59 dòng TRỐNG ⇒ `empty_frac = 0,0` nhưng đó là **chưa đo**.
+
+        Cùng luật với `low_p05_low_empty` (`len(known) >= min_measured`); thiếu guard này thì cờ
+        bật `ĐẠT` trên dữ liệu chưa khai cờ rỗng (review độc lập 19-11, P2).
+        """
+        mau = [{"frame_idx": i, "empty": None, "drift_iou": 0.0 if i % 8 == 0 else 0.9}
+               for i in range(60)]
+        mau[0]["empty"] = False                              # chỉ 1 mẫu khai
+        kq = tach_theo_khung(mau, 0, 59)
+        assert kq["trong_khung"]["empty_frac"] == 0.0        # số vẫn là 0,0 …
+        dk = kq["dieu_kien_ticket_14"]["trong_khung"]
+        assert dk["dat"] is None                              # … nhưng phán quyết là CHƯA ĐO
+        assert "mẫu khai" in dk["ly_do"]
 
     def test_dieu_kien_ticket_14_none_khi_chua_do(self):
         """Không mẫu nào trong khung ⇒ `dat` là None (CHƯA ĐO), KHÔNG phải False."""
