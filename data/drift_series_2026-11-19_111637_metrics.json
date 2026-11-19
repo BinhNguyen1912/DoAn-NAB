@@ -1,0 +1,245 @@
+{
+  "do_luc": "2026-11-19T11:16:37+07:00",
+  "git_rev": "01b0555003832c6494fe85840f0c198db38941b5",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
+  "lenh": "python scripts/analyze_drift_samples.py --frame-window 0:110 --frame-window 165:262 data/drift_samples_binh1_2026-11-14_141609.csv data/drift_samples_binh1_2026-11-14_115642.csv",
+  "cua_so": 200,
+  "cua_so_quet": [],
+  "dinh_nghia": {
+    "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
+    "drift_iou_p05": "p05 trên TOÀN DÃY mẫu của lần đo — KHÁC p05 của 200 mẫu CUỐI trong status.json (cùng định nghĩa phân vị, khác tập mẫu). Chỉ công bố khi `n_mau_drift >= drift_iou_p05_nguong` (30, ticket #23); `null` = CHƯA CÔNG BỐ (không phải p05 = 0)",
+    "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",
+    "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
+    "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",
+    "empty_frac": "tỉ lệ lần VOS trả mask RỖNG (mất dấu) trong các dòng có cột `empty`",
+    "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14, đếm trên TRỤC DÒNG (mỗi dòng = 1 lần VOS): cửa sổ p05 < 0,30 MÀ mask rỗng < 3 %. `n_cua_so_du_mau` chỉ đếm cửa sổ có ≥ nửa số mẫu đo được (nên nhỏ hơn `n_cua_so` của `bao_dong_030`); `co_dieu_kien_ticket_14 = null` = chưa đo được"
+  },
+  "canh_bao": "`drift_iou` là độ tự nhất quán của ô bao đang hiển thị, KHÔNG phải độ chính xác bám (AGENTS §6). Muốn nói chất lượng phân đoạn phải dùng mIoU vs GT.",
+  "file": [
+    {
+      "n_dong": 103,
+      "n_mau_drift": 61,
+      "empty_frac": 0.359,
+      "drift_iou_mean": 0.4866,
+      "drift_iou_p05": 0.0,
+      "drift_iou_p05_nguong": 30,
+      "drift_iou_p05_n": 61,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 0,
+        "n_bao": 0,
+        "ti_le_bao": null
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 0,
+        "n_bao": 0,
+        "ti_le_bao": null
+      },
+      "phat_hien": {
+        "mau_xau_dau": 5,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 0,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": null
+      },
+      "file": "data/drift_samples_binh1_2026-11-14_141609.csv",
+      "git_rev": "ab18c8b523ea4a7a63fa4a91e00cb9bceba914a5",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          300,
+          275,
+          150,
+          410
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 11.0
+      },
+      "co_meta": true,
+      "theo_khung": {
+        "khung": [
+          [
+            0,
+            110
+          ],
+          [
+            165,
+            262
+          ]
+        ],
+        "trong_khung": {
+          "n": 63,
+          "n_empty_do_duoc": 63,
+          "empty_frac": 0.016,
+          "n_drift": 60,
+          "drift_iou_mean": 0.4929,
+          "drift_iou_p05": 0.0,
+          "drift_iou_p05_n": 60,
+          "drift_iou_p05_nguong": 30
+        },
+        "ngoai_khung": {
+          "n": 40,
+          "n_empty_do_duoc": 40,
+          "empty_frac": 0.9,
+          "n_drift": 1,
+          "drift_iou_mean": 0.1104,
+          "drift_iou_p05": null,
+          "drift_iou_p05_n": 1,
+          "drift_iou_p05_nguong": 30
+        },
+        "khong_ro_khung": {
+          "n": 0,
+          "n_empty_do_duoc": 0,
+          "empty_frac": null,
+          "n_drift": 0,
+          "drift_iou_mean": null,
+          "drift_iou_p05": null,
+          "drift_iou_p05_n": 0,
+          "drift_iou_p05_nguong": 30
+        },
+        "dieu_kien_ticket_14": {
+          "trong_khung": {
+            "dat": true,
+            "p05": 0.0,
+            "empty_frac": 0.016,
+            "ly_do": ""
+          },
+          "ngoai_khung": {
+            "dat": null,
+            "ly_do": "chưa đủ 30 mẫu drift để công bố p05 (n = 1)"
+          },
+          "ghi_chu": "Điều kiện tiên quyết của ticket 14 (`p05 < 0,30` VÀ `empty_frac < 3 %`) — chỉ có nghĩa khi tính TRONG khung vật còn trong khung: cả phiên `binh1` có p05 0,663–0,720 vì ngoài khung vật đã rời khung ⇒ `empty` cao."
+        },
+        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. `so_vong` (khi đọc được độ dài clip) cho biết đã lặp bao nhiêu lần."
+      }
+    },
+    {
+      "n_dong": 470,
+      "n_mau_drift": 453,
+      "empty_frac": 0.0,
+      "drift_iou_mean": 0.8844,
+      "drift_iou_p05": 0.6574,
+      "drift_iou_p05_nguong": 30,
+      "drift_iou_p05_n": 453,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 254,
+        "n_bao": 254,
+        "ti_le_bao": 1.0
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 254,
+        "n_bao": 0,
+        "ti_le_bao": 0.0
+      },
+      "phat_hien": {
+        "mau_xau_dau": 97,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 271,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": false
+      },
+      "file": "data/drift_samples_binh1_2026-11-14_115642.csv",
+      "git_rev": "34b512bc7bc24125777debc4753619319b45e762",
+      "git_dirty_code": false,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          104,
+          308,
+          209,
+          287
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 55.0
+      },
+      "co_meta": true,
+      "theo_khung": {
+        "khung": [
+          [
+            0,
+            110
+          ],
+          [
+            165,
+            262
+          ]
+        ],
+        "trong_khung": {
+          "n": 63,
+          "n_empty_do_duoc": 63,
+          "empty_frac": 0.0,
+          "n_drift": 60,
+          "drift_iou_mean": 0.8974,
+          "drift_iou_p05": 0.7296,
+          "drift_iou_p05_n": 60,
+          "drift_iou_p05_nguong": 30
+        },
+        "ngoai_khung": {
+          "n": 407,
+          "n_empty_do_duoc": 407,
+          "empty_frac": 0.0,
+          "n_drift": 393,
+          "drift_iou_mean": 0.8824,
+          "drift_iou_p05": 0.6527,
+          "drift_iou_p05_n": 393,
+          "drift_iou_p05_nguong": 30
+        },
+        "khong_ro_khung": {
+          "n": 0,
+          "n_empty_do_duoc": 0,
+          "empty_frac": null,
+          "n_drift": 0,
+          "drift_iou_mean": null,
+          "drift_iou_p05": null,
+          "drift_iou_p05_n": 0,
+          "drift_iou_p05_nguong": 30
+        },
+        "dieu_kien_ticket_14": {
+          "trong_khung": {
+            "dat": false,
+            "p05": 0.7296,
+            "empty_frac": 0.0,
+            "ly_do": "p05 0.7296 / empty 0.0 — cần p05 < 0.3 và empty < 0,03"
+          },
+          "ngoai_khung": {
+            "dat": false,
+            "p05": 0.6527,
+            "empty_frac": 0.0,
+            "ly_do": "p05 0.6527 / empty 0.0 — cần p05 < 0.3 và empty < 0,03"
+          },
+          "ghi_chu": "Điều kiện tiên quyết của ticket 14 (`p05 < 0,30` VÀ `empty_frac < 3 %`) — chỉ có nghĩa khi tính TRONG khung vật còn trong khung: cả phiên `binh1` có p05 0,663–0,720 vì ngoài khung vật đã rời khung ⇒ `empty` cao."
+        },
+        "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. `so_vong` (khi đọc được độ dài clip) cho biết đã lặp bao nhiêu lần."
+      }
+    }
+  ]
+}

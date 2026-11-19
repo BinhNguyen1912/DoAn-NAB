@@ -287,6 +287,35 @@ class TestPhanTichFile:
         assert theo["10"]["phat_hien"]["phat_hien_sau_mau"] == 1
         assert theo["5"]["bao_dong_030"]["ti_le_bao"] <= theo["10"]["bao_dong_030"]["ti_le_bao"]
 
+    def test_in_dieu_kien_ticket_14_theo_khung_ba_trang_thai(self, tmp_path, monkeypatch, capsys):
+        """Lệnh phải in được ĐIỀU KIỆN TICKET 14 **theo khung** — cổng "CHƯA ĐO" ≠ "không đạt".
+
+        Số công bố ở phụ lục báo cáo ("p05 trong khung = 0,000, n = 60") trước 19-11 không tái lập
+        được bằng công cụ nào; test này khoá cả con số **và** nhãn 3 trạng thái, vì repo đã 3 lần
+        dính "cổng danh nghĩa" (assert chỉ khớp chữ luôn được in ra).
+        """
+        import scripts.analyze_drift_samples as analyze
+
+        monkeypatch.setattr(analyze, "_REPO_ROOT", tmp_path)
+        # 40 mẫu TRONG khung (0:39): xen kẽ 0,0 và 0,9 ⇒ p05 = 0; 5 mẫu NGOÀI khung đều rỗng.
+        lines = [",".join(CSV_HEADER)]
+        for i in range(40):
+            lines.append(f"{i},{i + 1},120.0,0,{(0.0 if i % 8 == 0 else 0.9):.4f},1,2,30,40")
+        for i in range(5):
+            lines.append(f"{500 + i},{100 + i},120.0,1,,1,2,30,40")
+        csv = tmp_path / "drift_samples_binh1_2026-11-19_0900.csv"
+        csv.write_text("\n".join(lines) + "\n", encoding="utf-8")
+
+        monkeypatch.setattr("sys.argv", ["analyze_drift_samples.py", "--frame-window", "0:39", str(csv)])
+        assert analyze.main() == 0
+        out = capsys.readouterr().out
+
+        assert "trong n=40 rỗng=0.0 p05=0.0 (n_drift=40)" in out
+        assert "điều kiện ticket 14 ở trong_khung: ĐẠT" in out
+        # NGOÀI khung: 5 mẫu rỗng, 0 mẫu drift ⇒ n=0 < 30 ⇒ CHƯA ĐO, KHÔNG được in "không đạt"
+        assert "ở ngoai_khung: CHƯA ĐO" in out
+        assert "ở ngoai_khung: không đạt" not in out
+
     def test_file_canh_tinh_duoc_cham_bang_doi_chung(self, tmp_path, monkeypatch):
         import scripts.analyze_drift_samples as analyze
 
@@ -459,9 +488,14 @@ class TestTachTheoKhung:
         kq = tach_theo_khung(self._mau(), 0, 20)
         assert kq["khung"] == [[0, 20]]
         assert kq["trong_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.0,
-                                     "n_drift": 3, "drift_iou_mean": 0.8}
+                                     "n_drift": 3, "drift_iou_mean": 0.8,
+                                     # 3 mẫu < MIN_SAMPLES ⇒ p05 chưa công bố (None ≠ 0)
+                                     "drift_iou_p05": None, "drift_iou_p05_n": 3,
+                                     "drift_iou_p05_nguong": MIN_SAMPLES}
         assert kq["ngoai_khung"] == {"n": 3, "n_empty_do_duoc": 3, "empty_frac": 0.667,
-                                     "n_drift": 2, "drift_iou_mean": 0.3}
+                                     "n_drift": 2, "drift_iou_mean": 0.3,
+                                     "drift_iou_p05": None, "drift_iou_p05_n": 2,
+                                     "drift_iou_p05_nguong": MIN_SAMPLES}
         assert kq["khong_ro_khung"]["n"] == 0
 
     def test_bien_bao_gom_hai_dau(self):
@@ -477,7 +511,9 @@ class TestTachTheoKhung:
         """Không có mẫu nào trong khung ⇒ `None` (chưa đo), KHÔNG được là `0,0`/`0 %`."""
         kq = tach_theo_khung(self._mau(), 1000, 2000)
         assert kq["trong_khung"] == {"n": 0, "n_empty_do_duoc": 0, "empty_frac": None,
-                                     "n_drift": 0, "drift_iou_mean": None}
+                                     "n_drift": 0, "drift_iou_mean": None,
+                                     "drift_iou_p05": None, "drift_iou_p05_n": 0,
+                                     "drift_iou_p05_nguong": MIN_SAMPLES}
 
     def test_mau_khong_co_frame_idx_vao_khong_ro_khung(self):
         """`frame_idx` None (mẫu chờ bị cắt) không được rơi vào bên nào ⇒ không làm sai mẫu số."""
@@ -492,7 +528,71 @@ class TestTachTheoKhung:
         """Mẫu chưa đo `empty` (None) không được tính là "không rỗng"."""
         assert thong_ke_mau([{"frame_idx": 1, "empty": None, "drift_iou": 0.5}]) == {
             "n": 1, "n_empty_do_duoc": 0, "empty_frac": None, "n_drift": 1,
-            "drift_iou_mean": 0.5}
+            "drift_iou_mean": 0.5, "drift_iou_p05": None, "drift_iou_p05_n": 1,
+            "drift_iou_p05_nguong": MIN_SAMPLES}
+
+
+class TestP05TheoKhung:
+    """`p05` và điều kiện ticket 14 phải tính được **theo khung** (19-11).
+
+    Lý do:
+
+    1. Phụ lục báo cáo (PR #46) công bố "`p05` trong khung của `binh1` = 0,000 với n = 60" —
+       nhưng TRƯỚC bản này **không công cụ nào** tính được: `low_p05_low_empty` chạy trên cả
+       dãy, `thong_ke_mau` chỉ có `mean`. Số công bố mà không tái lập được bằng lệnh là đúng
+       thứ repo này cấm.
+    2. Điều kiện tiên quyết của ticket 14 ("`p05 < 0,30` **và** `empty_frac < 3 %`") chỉ
+       ĐẠT khi lọc theo khung: cả phiên `binh1` có p05 0,663–0,720 (khoẻ) vì ngoài khung
+       vật đã rời khung ⇒ `empty` cao; trong khung thì p05 = 0,000 với `empty` 1,6–1,8 %.
+       Hàm phân biệt hai chuyện đó nên chúng KHÔNG còn là bản sao của nhau.
+    """
+
+    @staticmethod
+    def _mau(n_trong=40, n_rong=0):
+        """`n_trong` mẫu TRONG khung (drift xen kẽ 0,0 và 0,9 ⇒ p05 = 0), `n_rong` mẫu rỗng."""
+        mau = []
+        for i in range(n_trong):
+            mau.append({"frame_idx": i, "empty": False,
+                        "drift_iou": 0.0 if i % 10 == 0 else 0.9})
+        for i in range(n_rong):
+            mau.append({"frame_idx": 500 + i, "empty": True, "drift_iou": None})
+        return mau
+
+    def test_p05_tinh_tren_mau_trong_khung(self):
+        kq = tach_theo_khung(self._mau(), 0, 39)
+        assert kq["trong_khung"]["drift_iou_p05"] == 0.0
+        assert kq["trong_khung"]["drift_iou_p05_n"] == 40
+        # NGOÀI khung toàn mask rỗng ⇒ không có mẫu drift ⇒ p05 là None (CHƯA ĐO), không phải 0
+        assert kq["ngoai_khung"]["drift_iou_p05"] is None
+
+    def test_p05_dang_mau_30_nhu_moi_noi_khac(self):
+        """Ngưỡng công bố p05 phải là MỘT con số (30) ở mọi nơi, kèm `_n` + `_nguong`."""
+        kq = tach_theo_khung(self._mau(n_trong=MIN_SAMPLES - 1), 0, 100)
+        assert kq["trong_khung"]["drift_iou_p05"] is None
+        assert kq["trong_khung"]["drift_iou_p05_n"] == MIN_SAMPLES - 1
+        assert kq["trong_khung"]["drift_iou_p05_nguong"] == MIN_SAMPLES
+        kq2 = tach_theo_khung(self._mau(n_trong=MIN_SAMPLES), 0, 100)
+        assert kq2["trong_khung"]["drift_iou_p05"] is not None
+
+    def test_dieu_kien_ticket_14_theo_khung(self):
+        """Trong khung: p05 = 0 **và** empty 0 % ⇒ cờ nói được điều `empty_frac` KHÔNG nói.
+
+        Ca phản chứng: cùng `empty` 0 % nhưng p05 cao (0,9) ⇒ KHÔNG đạt điều kiện, tức hàm
+        không chỉ là bản sao của `empty_frac`.
+        """
+        dat = tach_theo_khung(self._mau(n_trong=40), 0, 39)
+        assert dat["trong_khung"]["empty_frac"] == 0.0
+        assert dat["dieu_kien_ticket_14"]["trong_khung"]["dat"] is True
+        khoe = [{"frame_idx": i, "empty": False, "drift_iou": 0.9} for i in range(40)]
+        khong_dat = tach_theo_khung(khoe, 0, 39)
+        assert khong_dat["trong_khung"]["empty_frac"] == 0.0
+        assert khong_dat["dieu_kien_ticket_14"]["trong_khung"]["dat"] is False
+
+    def test_dieu_kien_ticket_14_none_khi_chua_do(self):
+        """Không mẫu nào trong khung ⇒ `dat` là None (CHƯA ĐO), KHÔNG phải False."""
+        kq = tach_theo_khung(self._mau(n_trong=5), 900, 999)
+        assert kq["dieu_kien_ticket_14"]["trong_khung"]["dat"] is None
+        assert kq["dieu_kien_ticket_14"]["trong_khung"]["ly_do"] != ""
 
 
 class TestNhieuKhung:

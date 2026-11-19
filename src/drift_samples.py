@@ -180,7 +180,32 @@ def thong_ke_mau(rows) -> dict:
                       if empty_flags else None,
         "n_drift": len(drifts),
         "drift_iou_mean": round(sum(drifts) / len(drifts), 4) if drifts else None,
+        # `p05` của NHÓM này (đi qua `phan_vi` ⇒ `None` khi < `MIN_SAMPLES`): trước 19-11 nhóm chỉ
+        # có `mean`, nên câu "p05 TRONG khung = 0,000" của phụ lục báo cáo không tái lập được bằng
+        # công cụ nào (review độc lập bắt đúng lớp lỗi "công bố số không tái lập").
+        "drift_iou_p05": phan_vi(drifts),
+        "drift_iou_p05_n": len(drifts),
+        "drift_iou_p05_nguong": MIN_SAMPLES,
     }
+
+
+def _dieu_kien_ticket_14(nhom) -> dict:
+    """Điều kiện tiên quyết ticket 14 cho MỘT nhóm mẫu đã thống kê — hàm THUẦN, 3 trạng thái.
+
+    `dat` là **`None`** khi không có mẫu drift nào đủ ngưỡng (CHƯA ĐO — khác `False` = "đã đo và
+    không đạt"): `phan_vi` trả `None` dưới `MIN_SAMPLES` mẫu, và `0` mẫu không phải "0 lần đạt".
+    """
+    p05 = nhom.get("drift_iou_p05")
+    empty = nhom.get("empty_frac")
+    if p05 is None:
+        return {"dat": None, "ly_do": f"chưa đủ {MIN_SAMPLES} mẫu drift để công bố p05 "
+                                      f"(n = {nhom.get('drift_iou_p05_n')})"}
+    if empty is None:
+        return {"dat": None, "ly_do": "nhóm này không có mẫu nào khai cờ `empty` ⇒ không tính được "
+                                      "tỉ lệ rỗng"}
+    dat = bool(p05 < FLAG_P05 and empty < 0.03)
+    return {"dat": dat, "p05": p05, "empty_frac": empty,
+            "ly_do": "" if dat else f"p05 {p05} / empty {empty} — cần p05 < {FLAG_P05} và empty < 0,03"}
 
 
 def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
@@ -220,6 +245,13 @@ def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
         "trong_khung": thong_ke_mau(trong),
         "ngoai_khung": thong_ke_mau(ngoai),
         "khong_ro_khung": thong_ke_mau(khong_ro),
+        "dieu_kien_ticket_14": {
+            "trong_khung": _dieu_kien_ticket_14(thong_ke_mau(trong)),
+            "ngoai_khung": _dieu_kien_ticket_14(thong_ke_mau(ngoai)),
+            "ghi_chu": "Điều kiện tiên quyết của ticket 14 (`p05 < 0,30` VÀ `empty_frac < 3 %`) — "
+                       "chỉ có nghĩa khi tính TRONG khung vật còn trong khung: cả phiên `binh1` có "
+                       "p05 0,663–0,720 vì ngoài khung vật đã rời khung ⇒ `empty` cao.",
+        },
         "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame "
                    "NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file "
                    "bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. "
