@@ -32,26 +32,29 @@ drift của lần đo live (`data/drift_samples_binh1_2026-11-19_123641.csv`, 55
 `base → target` (hai lần VOS liên tiếp), đặt `LkBoxTracker` tại `base` rồi `update()` **một bước** trên
 frame `target`; chấm IoU(ô LK, **ô VOS của target**).
 
-**Trong khung vật còn trong hình** (`0:110 ∪ 165:262`, n = 45 cặp, `data/lk_thu_binh1_2026-11-19_metrics.json`,
-`git_dirty_code=false`; file `/tmp` là lần chạy khung):
+**Trong khung** (`0:110 ∪ 165:262`, n = **44** cặp, `data/lk_thu_binh1_2026-11-19_trongkhung_metrics.json`,
+`git_rev c522230`, `git_dirty_code=false`):
 
-| `max_mad` | LK `ok` | `ok_frac` | IoU trung vị **khi-ok** | nhận-bừa (ok mà IoU < 0,5) |
-|---|---|---|---|---|
-| **1,5 (hiện tại)** | 10/45 | **0,222** | **0,9505** | **0** |
-| 3,0 | 13/45 | 0,289 | 0,9335 | 0 |
-| **6,0** | **25/45** | **0,556** | **0,9198** | **0** |
-| 10,0 | 29/45 | 0,644 | 0,9102 | 0 |
+| `max_mad` | LK `ok` | `ok_frac` | IoU trung vị **khi-ok** | IoU trung vị **mọi mẫu** | nhận-bừa (ok mà IoU < 0,5) |
+|---|---|---|---|---|---|
+| **1,5 (hiện tại)** | 10/44 | **0,227** | **0,9505** | 0,6479 | **0** |
+| 3,0 | 13/44 | 0,295 | 0,9335 | 0,7156 | 0 |
+| **6,0** | **25/44** | **0,568** | **0,9198** | **0,8128** | **0** |
+| 10,0 | 29/44 | 0,659 | 0,9102 | 0,8581 | 0 |
 
-Toàn dãy (n = 48, gồm cả frame vật đã rời khung): 0,25 → 0,312 → 0,562 → 0,646; 2 mẫu "nhận-bừa" duy
-nhất nằm ở frame **324/327** — tức **sau khi chai đã rời clip**, không phải lỗi cửa MAD.
+Toàn dãy (`data/lk_thu_binh1_2026-11-19_metrics.json`, `"khung": null`, n = 48, gồm cả frame vật đã rời
+khung): `ok_frac` 0,25 → 0,312 → 0,562 → 0,646; 2 mẫu "nhận-bừa" duy nhất ở frame **324/327** — tức
+**sau khi chai đã rời clip**, không phải lỗi cửa MAD.
 
 `grid` 8 vs 12: 0,25 vs 0,25 → 0,562 vs 0,583 → 0,646 vs 0,688, IoU khi-ok chênh ≤ 0,002 ⇒ **`grid`
 không phải nút điều khiển**, không cần đổi.
 
 ### Trả lời một phần câu hỏi
 
-- Cửa 1,5 px **quá chặt thật**: nới lên 6,0 làm `ok_frac` trong khung **×2,5** (0,222 → 0,556) mà IoU
-  trung vị khi-ok chỉ giảm **0,031** (0,9505 → 0,9198) và **không** sinh mẫu nhận-bừa nào. Điểm gãy
+- Cửa 1,5 px **quá chặt thật**: nới lên 6,0 làm `ok_frac` trong khung **×2,5** (0,227 → 0,568) mà IoU
+  trung vị khi-ok chỉ giảm **0,031** (0,9505 → 0,9198) và **không** sinh mẫu nhận-bừa nào. Mạnh hơn:
+  IoU trung vị trên **mọi mẫu** 0,6479 → **0,8128** ⇒ kể cả mẫu LK từ chối, ô hiển thị vẫn gần vị trí
+  thật hơn hẳn. Điểm gãy
   là **6,0**: 3 → 6 nhân đôi `ok_frac`; 6 → 10 chỉ thêm 0,088 `ok_frac` mà mất thêm 0,010 IoU.
 - **Chưa đủ để đổi default.** Ba hạn chế phải nêu trước khi sửa production: (a) đo **một bước nhảy
   ~3 frame**, còn pipeline live đi **chuỗi** update 1 frame/bước ⇒ `ok` ngoài đời có thể khác; (b) mốc

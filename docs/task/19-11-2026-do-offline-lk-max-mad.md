@@ -30,25 +30,40 @@ trong phiên này (AGENTS §6: "đo trước, hứa sau").
 
 ## Output / Kết quả
 
-`data/lk_thu_binh1_2026-11-19_metrics.json` (`git_rev 8eb5ffc`, `git_dirty_code false`), **trong khung**
-`0:110 ∪ 165:262`, n = 45 cặp:
+Hai artifact, **cùng** `git_rev c522230`, `git_dirty_code false` — trích số phải đọc đúng file:
 
-| `max_mad` | LK `ok` | `ok_frac` | IoU trung vị khi-ok | nhận-bừa |
-|---|---|---|---|---|
-| **1,5 (hiện tại)** | 10/45 | **0,222** | **0,9505** | 0 |
-| 3,0 | 13/45 | 0,289 | 0,9335 | 0 |
-| **6,0** | **25/45** | **0,556** | 0,9198 | 0 |
-| 10,0 | 29/45 | 0,644 | 0,9102 | 0 |
+**(a) `data/lk_thu_binh1_2026-11-19_trongkhung_metrics.json`** — `"khung": [[0,110],[165,262]]`, n = **44**
+cặp (ghép cặp **trong từng khung**, nên không có cặp nhảy qua khe):
 
-- Nới 1,5 → 6,0: `ok_frac` **×2,5**, IoU khi-ok giảm **0,031**, **0** mẫu nhận-bừa ⇒ cửa 1,5 quá chặt
-  **thật** (không phải "LK hỏng"). Điểm gãy là **6,0**.
-- `grid` 8 vs 12: chênh `ok_frac` ≤ 0,026 ở mọi mức, IoU khi-ok lệch ≤ 0,002 ⇒ **không phải nút điều
-  khiển**, không đổi.
-- Toàn dãy (n = 48, gồm cả lúc chai đã rời clip): 0,25 → 0,312 → 0,562 → 0,646; 2 mẫu "nhận-bừa" duy
-  nhất ở frame **324/327** = **sau khi chai rời clip** ⇒ không phải lỗi cửa MAD.
+| `max_mad` | LK `ok` | `ok_frac` | IoU trung vị **khi-ok** | IoU trung vị **mọi mẫu** | nhận-bừa |
+|---|---|---|---|---|---|
+| **1,5 (hiện tại)** | 10/44 | **0,227** | **0,9505** | 0,6479 | 0 |
+| 3,0 | 13/44 | 0,295 | 0,9335 | 0,7156 | 0 |
+| **6,0** | **25/44** | **0,568** | 0,9198 | **0,8128** | 0 |
+| 10,0 | 29/44 | 0,659 | 0,9102 | 0,8581 | 0 |
+
+**(b) `data/lk_thu_binh1_2026-11-19_metrics.json`** — `"khung": null`, n = **48** (cả lúc chai đã rời
+clip): `ok_frac` 0,25 → 0,312 → 0,562 → 0,646; IoU khi-ok 0,9382/0,9327/0,9102/0,9082; 2 mẫu
+"nhận-bừa" duy nhất nằm ở frame **324/327** = **sau khi chai rời clip** ⇒ không phải lỗi cửa MAD.
+
+- Nới 1,5 → 6,0 (trong khung): `ok_frac` **×2,5** (0,227 → 0,568), IoU khi-ok giảm **0,031**,
+  **0** mẫu nhận-bừa ⇒ cửa 1,5 quá chặt **thật** (không phải "LK hỏng").
+- Đại lượng thứ ba đáng chú ý: **IoU trung vị trên MỌI mẫu** 0,6479 → **0,8128** — nghĩa là kể cả khi
+  LK từ chối (ô đóng băng ở `base`), nới cửa vẫn làm ô người xem thấy **gần vị trí thật hơn hẳn**. Đây
+  là con số ủng hộ "nới ngưỡng" mạnh hơn cả `ok_frac`.
+- `grid` 8 vs 12: `ok_frac` chênh ≤ 0,046 (0,568 vs 0,591), IoU khi-ok lệch 0,010 ⇒ **không phải nút
+  điều khiển**, không đổi.
 
 ## Vấn đề & cách xử lý
 
+- **P1 review độc lập #52 (đúng, đã sửa)**: bản đầu mình commit artifact **toàn dãy** (`"khung": null`)
+  nhưng log lại trích **số trong khung** ra từ nó — số tái lập được nhưng *không có artifact kèm* và câu
+  gán sai sự thật (trái AGENTS §6). Nay có **hai** artifact, mỗi con số trích từ đúng file, `lenh` trong
+  artifact chứa `--frame-window`.
+- **P2 (đã sửa)**: bản đầu lọc khung **trước** khi ghép cặp ⇒ sinh cặp nhảy **60 frame** giữa hai khung
+  vẫn được tính là "một bước VOS" (n 45 → nay **44**). Nay ghép cặp **trong từng khung**.
+- **P2 (đã sửa)**: nhánh `not-ok` từng gán cứng `iou = 0.0` (sàn giả tạo cho `iou_median_tat_ca`); nay
+  chấm IoU(ô **sẽ hiển thị**, ô VOS target) — nhờ đó mới có con số 0,6479 → 0,8128.
 - **Không đổi `DEFAULT_MAX_MAD` trong phiên này.** Ba hạn chế: đo **một bước ~3 frame** trong khi
   pipeline live đi **chuỗi** 1 frame/bước; mốc là **ô VOS** (chứng minh "LK khớp model", **không** phải
   "bám đúng vật"); **một clip** ⇒ chưa có ngưỡng nhiễu `±` để so (AGENTS §6: n < 2 không kết luận).
