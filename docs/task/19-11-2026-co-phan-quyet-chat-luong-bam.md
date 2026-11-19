@@ -41,9 +41,11 @@ comment cuối trong ticket #14.
   `CUA_SO == MIN_SAMPLES`.
 - **6 test vitest mới** (72 tổng) cho `sucKhoeLine`/`sucKhoeIsAlert`, gồm ca âm: worker bản cũ ⇒
   `null` (**không** in "tốt"), raw (`mask_fps = 0`) ⇒ `null`, `ok` ⇒ `null`.
-- **e2e trình duyệt thật**: 2 mục dương (`drift_trend`, `model_lost` hiện đúng câu + `class=hint
+- **3 test HTTP** (`tests/test_api_live.py`): cờ đi hết DTO→route→snapshot; worker bản cũ ⇒ `null`;
+  allowlist khoá status cập nhật.
+- **e2e trình duyệt thật**: 1 mục **API thật** (khoá `suc_khoe` có mặt khi phiên `raw`) + 2 mục dương (`drift_trend`, `model_lost` hiện đúng câu + `class=hint
   hint-warn`) + 1 mục **âm** (`ok` ⇒ **0** dòng). `./run e2e` **PASS**, không lỗi JS.
-- `./run lint` xanh · `./run test` **1502 passed** · `./run webtest` 72 passed · `npm run build` OK.
+- `./run lint` xanh · `./run test` **1507 passed** · `./run webtest` 72 passed · `npm run build` OK.
 
 ## Vấn đề & cách xử lý
 
@@ -58,6 +60,38 @@ comment cuối trong ticket #14.
   ghi rõ trong docstring; `drift_n ≥ 100` chỉ còn là điều kiện cho **p05 cấp phiên** (`status.json`).
 - **Ngưỡng 0,30/0,45 là KHỞI TẠO**: hiệu lực trên các clip đã đo (binh1 báo oan 0 % ở 0,30; ngưỡng 0,70
   cũ báo oan 100 % — ticket #15). Đã ghi trong docstring để không ai trích như ngưỡng chuẩn hoá.
+
+## Review độc lập (PR #54) — 1 P0 + 4 P2, đã sửa hết
+
+**P0 (chặn merge, đúng)**: cờ #14 **không đi hết đường HTTP**. `src/api/domain.py` → `routes.py` →
+`live.py` dựng DTO **từng field**, và mình chỉ nối tới `status.json` ⇒ `/api/live/status` **không bao
+giờ** trả `suc_khoe` ⇒ HUD thật không bao giờ hiện dòng mới. **e2e của mình vẫn "PASS" vì nó MOCK
+`/api/live/status`** — đúng loại cổng danh nghĩa (kiểm component, không kiểm đường thật).
+Đã sửa: thêm `suc_khoe`/`suc_khoe_cau` vào `LiveTelemetry` + `worker_source` (khoá vắng mặt ⇒ `None`,
+**không** bịa `ok`) + `routes.py` + `live.py` + `schemas.py`; **3 test HTTP** (có ca worker bản cũ ⇒
+`null`); **diễn tập ngược**: bỏ field ở `routes.py` ⇒ test **đỏ**. e2e thêm mục hỏi **API thật**
+(`suc_khoe=null` khi chạy `raw` — đúng, vì raw không có mask) ⇒ không còn kiểm bằng mock.
+
+**P2 (đã sửa)**
+1. **Găng tay chỉ giữ `drift_trend`**: đang `model_lost` thì ngưỡng thoát vẫn 0,30 ⇒ nhấp nháy
+   `model_lost ↔ ok`. Nay `dang_bat = truoc in (DRIFT_TREND, MODEL_LOST)` + test.
+2. **Hai `p05` khác cửa sổ dưới tên gần giống** (`drift_iou_p05` 200 mẫu vs cờ 30 mẫu): đã ghi rõ
+   trong docstring của domain/schemas/api.ts và trong `phan_quyet` ("KHÁC `drift_p05`").
+3. **`3 %` = 1/30 mẫu ⇒ một cú nháy mask đủ dán nhãn "model mất vật"**: nay đòi thêm
+   `EMPTY_MIN_MAU = 2` mẫu rỗng + test (1 mẫu ⇒ `drift_trend`, 2 mẫu ⇒ `model_lost`).
+4. **Hai dãy lệch độ dài bị ghép sai pha**: nay `_empty_stats` **từ chối** (trả `None` + số mẫu 0) khi
+   `len(empty) < len(drift)` ⇒ "chưa đo" thay vì lấy mẫu cũ nhất + test.
+
+**P3 (đã sửa)**: `_apply_drift_locked` return sớm khi deque rỗng ⇒ nhánh `not_measured` của
+`vos_every = 1` là dead code trên đường live; nay khai cờ ngay khi `vos_every < 2`.
+
+**Reviewer xác nhận "đã kiểm, không phải lỗi"**: hai deque `_drift_window`/`_drift_empty_window` append
+**luôn cặp, cùng nhánh** ở cả 2 chỗ ghi (cùng `maxlen`) ⇒ không lệch nhịp; không có đường nào trả `ok`
+khi chưa đo; Schmitt đúng chiều; `ok`/`raw` ⇒ UI không render dòng rỗng.
+
+**Lỗi phụ do chính e2e bắt được**: sau khi thêm dòng HUD mới, mục "FPS live đo được > 0" **đỏ** vì
+`innerText` chèn **xuống dòng** (`FPS đo được:\n29.8`) trong khi regex chỉ chấp khoảng trắng thường —
+test cũ mong manh, đã đổi sang `\s`. Nếu không chạy e2e thật thì lỗi này chỉ hiện ở lần chạy CI sau.
 
 ## Next steps
 

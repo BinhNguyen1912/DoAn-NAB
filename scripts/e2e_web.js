@@ -236,7 +236,20 @@ async function waitJobState(page, wanted, timeout = 240000) {
     { timeout: 15000 },
   )
   const liveText = await page.getByTestId('live-status').innerText()
-  check('FPS live đo được > 0', /FPS đo được: [1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
+  // Dùng `\s` chứ không phải khoảng trắng thường: `innerText` chèn xuống dòng khi HUD xuống dòng.
+  check('FPS live đo được > 0', /FPS\s+đo\s+được:\s*[1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
+
+  // 9a-bis. Cờ #14 phải có mặt trên ĐƯỜNG THẬT (không mock): bản đầu chỉ nối tới `status.json`, DTO →
+  // route dựng từng field nên thiếu khoá ⇒ HUD không bao giờ hiện, mà e2e vẫn xanh vì nó MOCK route
+  // (review độc lập PR #54, P0). Ở đây hỏi thẳng API thật khi phiên đang chạy.
+  const thatStatus = await page.evaluate(async (base) => {
+    const r = await fetch(`${base}/api/live/status`)
+    return r.ok ? await r.json() : null
+  }, BASE)
+  check('API THẬT trả khoá suc_khoe (không chỉ status.json)',
+    Boolean(thatStatus) && Object.prototype.hasOwnProperty.call(thatStatus, 'suc_khoe')
+      && Object.prototype.hasOwnProperty.call(thatStatus, 'suc_khoe_cau'),
+    thatStatus ? `suc_khoe=${JSON.stringify(thatStatus.suc_khoe)} · cau=${thatStatus.suc_khoe_cau}` : 'không gọi được /api/live/status')
 
   // 9b. UI chọn đối tượng trên LIVE: đóng băng frame → kéo chuột → gửi mode=track + bbox.
   //      Chặn (route) lời gọi /api/live/start để KHÔNG phải nạp model 20–60 s trong E2E, nhưng

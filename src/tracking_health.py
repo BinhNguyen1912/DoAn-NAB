@@ -32,7 +32,11 @@ NOT_MEASURED = "not_measured"
 
 NGUONG_VAO = 0.30        # p05 ≤ ngưỡng này ⇒ BẬT cờ
 NGUONG_RA = 0.45         # đang bật: chỉ TẮT khi p05 > ngưỡng này (găng tay Schmitt, chống nhấp nháy)
-EMPTY_TRAN = 0.03        # mask rỗng ≥ 3 % cửa sổ ⇒ quy cho "model mất vật", không phải LK trôi
+# Mask rỗng ≥ 3 % cửa sổ ⇒ quy cho "model mất vật", không phải LK trôi. Với cửa sổ 30 mẫu, 3 % =
+# **1/30** ⇒ ĐÒI THÊM `EMPTY_MIN_MAU` mẫu rỗng, nếu không chỉ một cú nháy là đủ dán nhãn "model mất
+# vật" (binh1 khoẻ đo 1,6–1,8 % cả phiên ≈ 0,5 mẫu/30 — review độc lập PR #54, P2).
+EMPTY_TRAN = 0.03
+EMPTY_MIN_MAU = 2        # số mẫu rỗng TỐI THIỂU trong cửa sổ để nói `model_lost`
 CUA_SO = 30              # số mẫu gần nhất để tính p05 (bằng MIN_SAMPLES công bố p05 của repo)
 
 # Lý do ở dạng máy đọc được — UI dịch sang tiếng Việt, log/artifact giữ nguyên chuỗi này.
@@ -44,17 +48,24 @@ LY_DO = {
 }
 
 
-def _empty_frac(empty, window: int):
-    """Tỉ lệ mask rỗng trong `window` mẫu cuối; `None` nếu không có mẫu nào KHAI `empty`.
+def _empty_stats(empty, window: int, n_drift: int) -> tuple[float | None, int]:
+    """`(tỉ lệ mask rỗng, số mẫu rỗng)` trong `window` mẫu cuối; `(None, 0)` nếu chưa đo được.
 
     `None` ≠ 0: worker bản cũ không ghi cột `empty` ⇒ **chưa đo**, không phải "không rỗng lần nào".
+
+    Căn hàng theo ĐUÔI (mẫu mới nhất) và **từ chối** khi hai dãy lệch độ dài: `p05` tính trên 30 mẫu
+    drift mà `empty` chỉ có 1 mẫu thì ghép chúng là ghép sai pha — thà nói "chưa đo".
     """
     if not empty:
-        return None
-    values = [e for e in list(empty)[-window:] if e is not None]
+        return None, 0
+    values = list(empty)[-window:]
+    if len(values) < n_drift:
+        return None, 0
+    values = [e for e in values if e is not None]
     if not values:
-        return None
-    return round(sum(1 for e in values if e) / len(values), 3)
+        return None, 0
+    so_rong = sum(1 for e in values if e)
+    return round(so_rong / len(values), 3), so_rong
 
 
 def phan_quyet(drift, empty=None, *, vos_every: int = 3, truoc: str = OK,
@@ -66,15 +77,18 @@ def phan_quyet(drift, empty=None, *, vos_every: int = 3, truoc: str = OK,
     thoát khi `p05 > nguong_ra`, tránh cờ nhấp nháy qua lại quanh một ngưỡng.
     """
     values = [float(v) for v in (drift or [])][-window:]
-    empties = list(empty)[-window:] if empty else []
-    empty_frac = _empty_frac(empties, window)
+    empty_frac, empty_so_mau = _empty_stats(empty, window, len(values))
     ra = {
         "n": len(values),
         "empty_frac": empty_frac,
+        "empty_so_mau": empty_so_mau,
+        # Tên khoá nói RÕ cửa sổ: `status.json` còn `drift_iou_p05` tính trên **200** mẫu — hai đại
+        # lượng khác tập mẫu, đừng đọc lẫn (AGENTS §6, review độc lập PR #54, P2).
         "p05": None,
         "nguong_vao": nguong_vao,
         "nguong_ra": nguong_ra,
         "empty_tran": empty_tran,
+        "empty_min_mau": EMPTY_MIN_MAU,
         "cua_so": window,
     }
     if int(vos_every) < 2:
@@ -87,11 +101,16 @@ def phan_quyet(drift, empty=None, *, vos_every: int = 3, truoc: str = OK,
         return {**ra, "co": NOT_MEASURED,
                 "ly_do": f"mới {len(values)} mẫu drift (cần {MIN_SAMPLES})"}
 
-    dang_bat = truoc == DRIFT_TREND
+    # "Đang cảnh báo" = đang ở BẤT KỲ trạng thái xấu nào, không riêng `drift_trend`: nếu chỉ giữ
+    # `drift_trend` thì `model_lost` sẽ tắt ngay khi p05 vừa ≤ 0,30 rồi bật lại ⇒ nhấp nháy đúng thứ
+    # găng tay sinh ra để chặn (review độc lập PR #54, P2).
+    dang_bat = truoc in (DRIFT_TREND, MODEL_LOST)
     bat = p05 <= (nguong_ra if dang_bat else nguong_vao)
     if not bat:
         return {**ra, "co": OK, "ly_do": LY_DO[OK]}
-    if empty_frac is not None and empty_frac >= empty_tran:
+    # `model_lost` cần CẢ tỉ lệ vượt trần VÀ đủ số mẫu rỗng: 1/30 = 3,3 % mà đã dán nhãn "model mất
+    # vật" là kết luận quá tay từ một cú nháy mask.
+    if empty_frac is not None and empty_frac >= empty_tran and empty_so_mau >= EMPTY_MIN_MAU:
         return {**ra, "co": MODEL_LOST, "ly_do": LY_DO[MODEL_LOST]}
     ra["ly_do"] = (LY_DO[DRIFT_TREND] if empty_frac is not None
                    else "p05 thấp, nhưng `empty` CHƯA ĐO ⇒ chỉ biết hai ô bất nhất")

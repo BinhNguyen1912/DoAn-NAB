@@ -175,10 +175,14 @@ export interface LiveStatus {
     co: 'ok' | 'model_lost' | 'drift_trend' | 'not_measured'
     ly_do: string
     /** p05 của cửa sổ `cua_so` mẫu gần nhất; `null` = chưa đủ mẫu */
+    /** p05 của `cua_so` mẫu gần nhất — KHÁC `drift_p05` (200 mẫu); `null` = chưa đủ mẫu */
     p05: number | null
     n: number
-    /** tỉ lệ mask rỗng trong CÙNG cửa sổ mẫu với `p05`; `null` = chưa đo */
+    /** tỉ lệ mask rỗng trong CÙNG cửa sổ mẫu với `p05`; `null` = chưa đo (hoặc hai dãy lệch độ dài) */
     empty_frac: number | null
+    /** số mẫu rỗng thật trong cửa sổ (`model_lost` đòi ≥ `empty_min_mau`) */
+    empty_so_mau?: number
+    empty_min_mau?: number
     cua_so: number
     nguong_vao: number
     nguong_ra: number

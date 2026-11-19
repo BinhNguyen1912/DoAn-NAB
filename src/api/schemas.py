@@ -177,6 +177,14 @@ class LiveStatusResponse(BaseModel):
                     "DRIFT gần nhất (mẫu bị bỏ khi hộp VOS suy biến, nên `drift_n` có thể nhỏ hơn "
                     "`vos_runs`) — ĐỘ TỰ NHẤT QUÁN, KHÔNG phải độ chính xác; null khi < 30 mẫu")
     drift_n: int = Field(default=0, ge=0, description="số mẫu drift (0 ⇒ chưa đo, không phải 0,0)")
+    suc_khoe: dict | None = Field(
+        default=None,
+        description="cờ phán quyết chất lượng bám (ticket #14): {co: ok|model_lost|drift_trend|"
+                    "not_measured, ly_do, p05, n, empty_frac, cua_so, nguong_vao, nguong_ra}. "
+                    "`p05` ở đây dùng CỬA SỔ RIÊNG (30 mẫu), KHÁC `drift_p05` (200 mẫu). "
+                    "null = worker bản cũ CHƯA có cờ — không phải 'ok'")
+    suc_khoe_cau: str | None = Field(
+        default=None, description="câu tiếng Việt cho HUD; null khi cờ là `ok` (không chiếm chỗ)")
     message: str
 
 

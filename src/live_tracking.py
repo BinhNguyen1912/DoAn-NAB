@@ -1294,6 +1294,13 @@ class LiveTrackingSession:
     def _apply_drift_locked(self) -> None:
         """Tính lại thống kê drift — gọi khi ĐÃ giữ `_stats_lock` (tên có hậu tố `_locked`)."""
         if not self._drift_window:
+            # Chưa có mẫu nào: vẫn phải khai cờ khi phiên KHÔNG THỂ đo (`vos_every < 2`), nếu không
+            # `status.json` để `null` và người đọc không biết là "không có gì để đo" hay "worker bản
+            # cũ" (review độc lập PR #54, P3).
+            if getattr(self._cfg, "vos_every", 3) < 2:
+                self._stats.suc_khoe = tracking_health.phan_quyet(
+                    [], [], vos_every=self._cfg.vos_every,
+                    truoc=(self._stats.suc_khoe or {}).get("co", tracking_health.OK))
             return
         values = np.fromiter(self._drift_window, dtype=float)
         self._stats.drift_n = len(values)

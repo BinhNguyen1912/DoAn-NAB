@@ -228,6 +228,8 @@ class TestLiveRoutes:
                              # 2 trường cấu hình (15-11): model chạy có đúng cấu hình đã yêu cầu?
                              # `null` = chưa biết (worker bản cũ) — KHÁC `[]` = đã kiểm và khớp.
                              "cau_hinh_lech", "image_size_hieu_luc",
+                             # 2 trường cờ phán quyết chất lượng bám (19-11, ticket #14)
+                             "suc_khoe", "suc_khoe_cau",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -1080,6 +1082,46 @@ class TestMaskAgeQuaApi:
         detail = self._telemetry(tmp_path, state="tracking", vos_fps=8.6,
                                  mask_age_total_ms=0.0, mask_age_p95=0.0, age_n=7)
         assert detail.mask_age_total_ms == 0.0 and detail.age_n == 7
+
+    def test_suc_khoe_di_het_duong_http(self, live_client, monkeypatch):
+        """Cờ #14 phải tới được HTTP — KHÔNG chỉ nằm trong `status.json`.
+
+        Vì sao có test này: bản đầu chỉ nối tới `status.json`, còn DTO → route → snapshot dựng **từng
+        field** nên thiếu khoá ⇒ `/api/live/status` không bao giờ trả cờ ⇒ HUD không bao giờ hiện, và
+        e2e vẫn "xanh" vì nó **mock** route (review độc lập PR #54, P0). Test này khoá đúng chỗ đó.
+        """
+        co = {"co": "drift_trend", "ly_do": "p05 thấp", "p05": 0.0, "n": 40,
+              "empty_frac": 0.0, "cua_so": 30, "nguong_vao": 0.3, "nguong_ra": 0.45}
+
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(mask_fps=8.6, drift_n=40, drift_p05=0.0,
+                                     suc_khoe=co, suc_khoe_cau="Chất lượng bám: ô lệch")
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["suc_khoe"] == co
+        assert body["suc_khoe_cau"] == "Chất lượng bám: ô lệch"
+
+    def test_suc_khoe_worker_ban_cu_la_null_khong_phai_ok(self, live_client, monkeypatch):
+        """status.json KHÔNG có khoá ⇒ HTTP trả `null` (chưa có cờ), KHÔNG bịa `{"co": "ok"}`."""
+        class _Source(_TelemetrySource):
+            def telemetry(self):
+                from src.api.domain import LiveTelemetry
+
+                return LiveTelemetry(mask_fps=8.6)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", lambda *a, **k: _Source())
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        live_client.post("/api/live/stop")
+
+        assert body["suc_khoe"] is None and body["suc_khoe_cau"] is None
 
     def test_dto_http_co_ba_truong_va_null_trung_thuc(self, live_client, monkeypatch):
         class _Source(_TelemetrySource):

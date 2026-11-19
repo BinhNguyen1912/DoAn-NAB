@@ -137,6 +137,11 @@ class LiveStatus:
     # được**, có phần tử = LỆCH thật. Cấm đọc `()` thành "đã kiểm và khớp" (AGENTS §6).
     cau_hinh_lech: tuple[str, ...] | None = None
     image_size_hieu_luc: int | None = None
+    # Cờ phán quyết chất lượng bám (ticket #14): `ok | model_lost | drift_trend | not_measured` +
+    # lý do + `p05` của CỬA SỔ RIÊNG (`cua_so`, mặc định 30 mẫu — KHÁC `drift_p05` ở trên dùng 200
+    # mẫu) + `empty_frac` của cùng cửa sổ đó. `None` = worker bản cũ CHƯA có cờ (KHÔNG đọc là "ok").
+    suc_khoe: dict | None = None
+    suc_khoe_cau: str | None = None
     message: str = ""
 
 
@@ -168,6 +173,9 @@ class LiveTelemetry:
     # kèm để UI nói được "model đang chạy 1024 px".
     cau_hinh_lech: tuple[str, ...] | None = None
     image_size_hieu_luc: int | None = None
+    # Xem `LiveStatus.suc_khoe`. `None` = status.json không có khoá (worker bản cũ) — KHÔNG phải "ok".
+    suc_khoe: dict | None = None
+    suc_khoe_cau: str | None = None
 
 
 @dataclass(frozen=True)

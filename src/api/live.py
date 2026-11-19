@@ -194,7 +194,9 @@ class LiveStreamService:
                             mask_age_total_ms=detail.mask_age_total_ms,
                             mask_age_p95=detail.mask_age_p95, age_n=detail.age_n,
                             cau_hinh_lech=detail.cau_hinh_lech,
-                            image_size_hieu_luc=detail.image_size_hieu_luc)
+                            image_size_hieu_luc=detail.image_size_hieu_luc,
+                            suc_khoe=detail.suc_khoe,
+                            suc_khoe_cau=detail.suc_khoe_cau)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

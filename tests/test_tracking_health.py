@@ -113,3 +113,32 @@ def test_hang_so_cua_so_bang_nguong_cong_bo_p05():
     Hai ngưỡng khác nhau cho cùng đại lượng là đúng thứ ticket #23 đã dọn.
     """
     assert CUA_SO == MIN_SAMPLES
+
+
+def test_mot_mau_rong_khong_du_dan_nhan_model_lost():
+    """1/30 mẫu rỗng = 3,3 % > trần 3 % ⇒ bản đầu dán nhãn `model_lost` từ MỘT cú nháy mask.
+
+    `binh1` khoẻ đo empty 1,6–1,8 % cả phiên (≈0,5 mẫu/30) ⇒ đúng một cú nháy là đủ, tức cờ sẽ nói
+    "model mất vật" trên clip khoẻ (review độc lập PR #54, P2).
+    """
+    # p05 phải THẤP (3 số 0 ⇒ p05 = 0) để cờ bật; nếu p05 = 0,405 thì cờ không bật và phép kiểm
+    # "1 mẫu rỗng" không chứng minh được gì.
+    kq = phan_quyet([0.0] * 3 + [0.9] * 27, [1] + [0] * 29)
+    assert kq["empty_frac"] == pytest.approx(0.033, abs=0.002) and kq["empty_so_mau"] == 1
+    assert kq["co"] == DRIFT_TREND, "1 mẫu rỗng ⇒ chưa đủ để quy cho model"
+    # 2 mẫu rỗng mới đủ (binh2 thật: 11 % ⇒ 3–4 mẫu/30)
+    assert phan_quyet([0.0] * 3 + [0.9] * 27, [1, 1] + [0] * 28)["co"] == MODEL_LOST
+
+
+def test_hai_day_lech_do_dai_thi_empty_la_chua_do():
+    """`p05` tính trên 30 mẫu, `empty` chỉ có 1 mẫu ⇒ KHÔNG được ghép (sai pha) — phải nói chưa đo."""
+    kq = phan_quyet([0.0] * 30, [1])
+    assert kq["empty_frac"] is None and kq["empty_so_mau"] == 0
+    assert kq["co"] == DRIFT_TREND and kq.get("empty_chua_do") is True
+
+
+def test_model_lost_cung_di_qua_gang_tay():
+    """Đang `model_lost` mà p05 vừa ≤ 0,30 thì KHÔNG được tắt về `ok` (nhấp nháy quanh ngưỡng vào)."""
+    giua = [0.0, 0.0] + [0.9] * 28        # p05 = 0,405
+    assert phan_quyet(giua, [0] * 30, truoc=MODEL_LOST)["co"] != OK
+    assert phan_quyet(giua, [0] * 30, truoc=DRIFT_TREND)["co"] == DRIFT_TREND
