@@ -201,3 +201,4 @@ python scripts/replay_lk_frame.py --csv data/drift_samples_binh1_2026-11-14_1416
 | **2** | P2 | Bảng phát lại **không có script/lệnh** ⇒ không tái lập | **Sửa**: `scripts/replay_lk_frame.py` + dán lệnh + output |
 | **2** | P2 | Log thiếu bảng review PR #48 | **đã thêm** (bảng ngay trên) |
 | **2** | P3 | "hai frame khớp" → **ba**; dùng IoU thường thay `_bbox_iou`; f57/f69 gộp 1 số; "ô vàng trên tay/áo" chỉ đúng f57/f108; mask `55` không dùng | **Sửa**: ba cặp; dùng `_bbox_iou`; tách f57/f69; thêm "ở f57/f108"; nói rõ `mask_000055` là dự phòng |
+| **2** | — | Sau khi sửa: **4 test mới** cho `scripts/replay_lk_frame.py` (`TestReplayLkFrame`), diễn tập ngược **2/2 mutant bị bắt** (a) `not-ok` trả ô VOS thay vì ô base; (b) `khop_csv` luôn `True` | `./run lint` xanh · `./run test` **1416 passed** |
