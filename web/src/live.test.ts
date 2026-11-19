@@ -8,6 +8,8 @@ import {
   configMismatchLine,
   maskAgeLine,
   maskRhythmLine,
+  sucKhoeIsAlert,
+  sucKhoeLine,
   shownFps,
   sourceCheckLine,
   stallLine,
@@ -290,5 +292,46 @@ describe('configMismatchLine', () => {
   it('nhiều khoá lệch thì liệt kê hết', () => {
     expect(configMismatchLine({ cau_hinh_lech: ['image_size', 'vos_every'] }))
       .toContain('image_size, vos_every')
+  })
+})
+
+describe('sucKhoeLine — cờ phán quyết chất lượng bám (ticket #14)', () => {
+  const goc = { mask_fps: 8.5 }
+
+  it('worker bản cũ (không có suc_khoe) ⇒ null, KHÔNG in "tốt"', () => {
+    expect(sucKhoeLine({ ...goc } as never)).toBeNull()
+    expect(sucKhoeLine({ ...goc, suc_khoe: null, suc_khoe_cau: null } as never)).toBeNull()
+  })
+
+  it('chế độ raw (mask_fps 0) ⇒ null: không có mask thì không có gì để phán', () => {
+    expect(sucKhoeLine({ mask_fps: 0, suc_khoe: { co: 'drift_trend' }, suc_khoe_cau: 'x' } as never)).toBeNull()
+  })
+
+  it('ok ⇒ null (không chiếm chỗ trên HUD)', () => {
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'ok' }, suc_khoe_cau: null } as never)).toBeNull()
+  })
+
+  it('model_lost / drift_trend / not_measured đều hiện câu của backend', () => {
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'model_lost' }, suc_khoe_cau: 'model MẤT VẬT' } as never))
+      .toBe('model MẤT VẬT')
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'drift_trend' }, suc_khoe_cau: 'ô lệch ô VOS' } as never))
+      .toBe('ô lệch ô VOS')
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'not_measured', n: 5 }, suc_khoe_cau: null } as never))
+      .toContain('5 mẫu')
+  })
+
+  it('thiếu câu chữ (backend cũ) vẫn phân biệt được hai nguyên nhân', () => {
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'model_lost' }, suc_khoe_cau: null } as never))
+      .toContain('MẤT VẬT')
+    expect(sucKhoeLine({ ...goc, suc_khoe: { co: 'drift_trend' }, suc_khoe_cau: null } as never))
+      .toContain('lệch ô VOS')
+  })
+
+  it('chỉ model_lost/drift_trend là CẢNH BÁO — not_measured thì không', () => {
+    expect(sucKhoeIsAlert({ suc_khoe: { co: 'model_lost' } } as never)).toBe(true)
+    expect(sucKhoeIsAlert({ suc_khoe: { co: 'drift_trend' } } as never)).toBe(true)
+    expect(sucKhoeIsAlert({ suc_khoe: { co: 'not_measured' } } as never)).toBe(false)
+    expect(sucKhoeIsAlert({ suc_khoe: { co: 'ok' } } as never)).toBe(false)
+    expect(sucKhoeIsAlert(null)).toBe(false)
   })
 })

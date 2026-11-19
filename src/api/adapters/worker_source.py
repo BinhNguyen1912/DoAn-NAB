@@ -178,6 +178,10 @@ class WorkerFrameSource(FrameSource):
             cau_hinh_lech=_lech_cau_hinh(status),
             image_size_hieu_luc=_so_nguyen_hoac_none(_gia_tri_cau_hinh(status,
                                                                          "image_size_hieu_luc")),
+            # Khoá VẮNG MẶT ⇒ `None` = worker bản cũ CHƯA có cờ (ticket #14) — đổi thành `{"co":"ok"}`
+            # là biến "chưa đo" thành "chất lượng tốt" (bẫy `None` vs `0`, AGENTS §6).
+            suc_khoe=_dict_hoac_none(status.get("suc_khoe")),
+            suc_khoe_cau=_chuoi_hoac_none(status.get("suc_khoe_cau")),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource
@@ -371,6 +375,22 @@ def _so_hoac_none(value) -> float | None:
         return None if value is None else float(value)
     except (TypeError, ValueError):
         return None
+
+
+def _dict_hoac_none(value) -> dict | None:
+    """Dict từ `status.json`; `None` nếu thiếu/không phải dict.
+
+    Dùng cho `suc_khoe`: status.json hỏng kiểu `"suc_khoe": "ok"` phải thành `None` (chưa đọc được),
+    KHÔNG được lọt lên HTTP dưới dạng chuỗi rồi làm `JSON.parse` phía web nhận một hình dạng khác.
+    """
+    return value if isinstance(value, dict) else None
+
+
+def _chuoi_hoac_none(value) -> str | None:
+    """Chuỗi từ `status.json`; `None` nếu thiếu/không phải chuỗi. `""` cũng thành `None` (không có câu)."""
+    if not isinstance(value, str) or not value.strip():
+        return None
+    return value
 
 
 def _gia_tri_cau_hinh(status: dict, khoa: str):

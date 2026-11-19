@@ -236,7 +236,20 @@ async function waitJobState(page, wanted, timeout = 240000) {
     { timeout: 15000 },
   )
   const liveText = await page.getByTestId('live-status').innerText()
-  check('FPS live đo được > 0', /FPS đo được: [1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
+  // Dùng `\s` chứ không phải khoảng trắng thường: `innerText` chèn xuống dòng khi HUD xuống dòng.
+  check('FPS live đo được > 0', /FPS\s+đo\s+được:\s*[1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
+
+  // 9a-bis. Cờ #14 phải có mặt trên ĐƯỜNG THẬT (không mock): bản đầu chỉ nối tới `status.json`, DTO →
+  // route dựng từng field nên thiếu khoá ⇒ HUD không bao giờ hiện, mà e2e vẫn xanh vì nó MOCK route
+  // (review độc lập PR #54, P0). Ở đây hỏi thẳng API thật khi phiên đang chạy.
+  const thatStatus = await page.evaluate(async (base) => {
+    const r = await fetch(`${base}/api/live/status`)
+    return r.ok ? await r.json() : null
+  }, BASE)
+  check('API THẬT trả khoá suc_khoe (không chỉ status.json)',
+    Boolean(thatStatus) && Object.prototype.hasOwnProperty.call(thatStatus, 'suc_khoe')
+      && Object.prototype.hasOwnProperty.call(thatStatus, 'suc_khoe_cau'),
+    thatStatus ? `suc_khoe=${JSON.stringify(thatStatus.suc_khoe)} · cau=${thatStatus.suc_khoe_cau}` : 'không gọi được /api/live/status')
 
   // 9b. UI chọn đối tượng trên LIVE: đóng băng frame → kéo chuột → gửi mode=track + bbox.
   //      Chặn (route) lời gọi /api/live/start để KHÔNG phải nạp model 20–60 s trong E2E, nhưng
@@ -314,6 +327,42 @@ async function waitJobState(page, wanted, timeout = 240000) {
   check('cấu hình KHỚP ([]) thì HUD không hiện dòng cấu hình (không báo oan)',
     await liveCard.getByTestId('config-mismatch').count() === 0,
     `số dòng = ${await liveCard.getByTestId('config-mismatch').count()}`)
+  // Cờ PHÁN QUYẾT chất lượng bám (ticket #14): phải phân biệt được "model mất vật" với "ô hiển thị
+  // lệch ô VOS" — hai nguyên nhân khác hẳn nhau; ghép sai thì báo cáo nói sai thứ đang hỏng.
+  for (const [co, cau, phai] of [
+    ['drift_trend', 'Chất lượng bám: ô hiển thị lệch ô VOS (p05 0.00, mask rỗng thấp)', /lệch ô VOS/],
+    ['model_lost', 'Chất lượng bám: model MẤT VẬT (p05 0.00, mask rỗng 11 % cửa sổ)', /MẤT VẬT/],
+  ]) {
+    await page.unroute('**/api/live/status')
+    await page.route('**/api/live/status', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'stub', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: { co, p05: 0, n: 40, empty_frac: co === 'model_lost' ? 0.11 : 0.0,
+            cua_so: 30, nguong_vao: 0.3, nguong_ra: 0.45 }, suc_khoe_cau: cau }) })
+    })
+    await page.waitForTimeout(1300)
+    const chu = ((await liveCard.getByTestId('suc-khoe-line').textContent().catch(() => '')) || '')
+      .replace(/\s+/g, ' ')
+    check(`HUD hiện cờ chất lượng bám (${co})`, phai.test(chu), chu || '(không thấy dòng nào)')
+    const lop = await liveCard.getByTestId('suc-khoe-line').getAttribute('class').catch(() => '')
+    check(`cờ ${co} là CẢNH BÁO (đổi màu), không phải dòng chẩn đoán thường)`,
+      String(lop).includes('hint-warn'), `class=${lop}`)
+  }
+  // Ca ÂM: `ok` ⇒ KHÔNG hiện dòng nào (worker báo "ổn" thì HUD phải im).
+  await page.unroute('**/api/live/status')
+  await page.route('**/api/live/status', async (route) => {
+    await route.fulfill({ status: 200, contentType: 'application/json',
+      body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+        mask_fps: 8.5, device: 'cpu', message: 'stub', cau_hinh_lech: [], image_size_hieu_luc: 192,
+        suc_khoe: { co: 'ok', p05: 0.82, n: 40, empty_frac: 0, cua_so: 30,
+          nguong_vao: 0.3, nguong_ra: 0.45 }, suc_khoe_cau: null }) })
+  })
+  await page.waitForTimeout(1300)
+  check('cờ chất lượng bám = ok thì HUD KHÔNG hiện dòng nào (không báo oan)',
+    await liveCard.getByTestId('suc-khoe-line').count() === 0,
+    `số dòng = ${await liveCard.getByTestId('suc-khoe-line').count()}`)
+
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 

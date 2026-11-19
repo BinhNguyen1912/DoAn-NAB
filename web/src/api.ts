@@ -169,6 +169,26 @@ export interface LiveStatus {
    *  minh model chạy đúng cấu hình) */
   image_size_hieu_luc: number | null
   message: string
+  /** cờ phán quyết chất lượng bám (ticket #14); `null` = worker bản cũ CHƯA có cờ
+   *  (KHÔNG được đọc thành "ok"). `co`: ok | model_lost | drift_trend | not_measured */
+  suc_khoe: {
+    co: 'ok' | 'model_lost' | 'drift_trend' | 'not_measured'
+    ly_do: string
+    /** p05 của cửa sổ `cua_so` mẫu gần nhất; `null` = chưa đủ mẫu */
+    /** p05 của `cua_so` mẫu gần nhất — KHÁC `drift_p05` (200 mẫu); `null` = chưa đủ mẫu */
+    p05: number | null
+    n: number
+    /** tỉ lệ mask rỗng trong CÙNG cửa sổ mẫu với `p05`; `null` = chưa đo (hoặc hai dãy lệch độ dài) */
+    empty_frac: number | null
+    /** số mẫu rỗng thật trong cửa sổ (`model_lost` đòi ≥ `empty_min_mau`) */
+    empty_so_mau?: number
+    empty_min_mau?: number
+    cua_so: number
+    nguong_vao: number
+    nguong_ra: number
+  } | null
+  /** câu tiếng Việt cho HUD (`null` khi `ok` — không chiếm chỗ) */
+  suc_khoe_cau: string | null
 }
 
 export interface LiveStartOptions {

@@ -37,6 +37,7 @@ import numpy as np
 
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
+from src import tracking_health
 from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
@@ -167,6 +168,11 @@ class LiveTrackStats:
     drift_iou: float | None = None        # IoU(ô bao đã phát, ô bao VOS sửa lại) — độ tự nhất quán
     drift_iou_p05: float | None = None    # phân vị 5 % (đuôi xấu: lúc nội suy lệch nhất)
     drift_n: int = 0                      # số mẫu drift (0 ⇒ CHƯA ĐO, không phải "drift = 0")
+    # Cờ phán quyết chất lượng bám (ticket #14): `ok | model_lost | drift_trend | not_measured`
+    # + lý do + p05 + `n` + `empty_frac` của CÙNG cửa sổ mẫu. Rỗng = worker bản cũ không ghi
+    # (KHÔNG phải "đã kiểm và ổn"). Tính trong `_apply_drift_locked` bằng hàm thuần
+    # `src/tracking_health.py` (không phụ thuộc torch ⇒ test được headless).
+    suc_khoe: dict = field(default_factory=dict)
     mask_age_ms: float | None = None      # tuổi mask đang hiện (từ lúc kết quả model sẵn sàng)
     # `mask_age_cu_ms` = age + vos_ms — ĐỊNH NGHĨA CŨ, chỉ còn để so với số trước 14-11.
     mask_age_cu_ms: float | None = None
@@ -399,6 +405,9 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "lk_ms": stats.lk_ms,
         "drift_iou": stats.drift_iou,
         "drift_iou_p05": stats.drift_iou_p05,
+        # Rỗng ⇒ worker bản cũ (chưa có cờ #14) — KHÔNG đọc thành "ok".
+        "suc_khoe": stats.suc_khoe or None,
+        "suc_khoe_cau": tracking_health.cau_co(stats.suc_khoe),
         "drift_n": stats.drift_n,
         "mask_age_ms": stats.mask_age_ms,
         "mask_age_cu_ms": stats.mask_age_cu_ms,
@@ -583,6 +592,10 @@ class LiveTrackingSession:
         self._vos_stamps: deque = deque()
         self._smoother = MaskSmoother(config.mask_smoothing) if config.mask_smoothing < 1.0 else None
         self._drift_window: deque = deque(maxlen=_STAT_WINDOW)   # đủ mẫu để lấy p05
+        # Cùng cửa sổ, cùng thứ tự với `_drift_window`: cờ #14 cần biết mẫu drift đó có kèm mask
+        # RỖNG hay không (rỗng nhiều ⇒ `model_lost`, rỗng ít ⇒ `drift_trend`). Hai deque phải append
+        # cạnh nhau ở MỌI chỗ, nếu lệch nhịp thì `empty_frac` không còn ứng với `p05` nào.
+        self._drift_empty_window: deque = deque(maxlen=_STAT_WINDOW)
         # Cửa sổ ĐẾM SỰ KIỆN cho mask rỗng. Để RIÊNG khỏi `_iou_window` (10 mẫu, dùng cho độ ổn
         # định): đây là đại lượng đếm, không phải phân vị, nên cửa sổ ngắn vẫn dùng được — tần suất
         # nền của "VOS trả mask rỗng" trên clip khoẻ đo được là 0/798 lần chạy (binh1).
@@ -1235,7 +1248,7 @@ class LiveTrackingSession:
             self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
             return
         value = _bbox_iou(shown, fresh)
-        self._record_drift(value)
+        self._record_drift(value, self._mask_empty(result))
         self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value,
                                hien_thi=shown, lk_ok=lk_ok)
 
@@ -1262,7 +1275,7 @@ class LiveTrackingSession:
             bbox=(getattr(result, "bbox", None) if bbox is None else bbox),
             hien_thi=hien_thi, lk_ok=lk_ok)
 
-    def _record_drift(self, value) -> None:
+    def _record_drift(self, value, empty=None) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
 
         `append` PHẢI trong `_stats_lock`: `_apply_drift_locked()` duyệt deque bằng `np.fromiter`
@@ -1275,17 +1288,32 @@ class LiveTrackingSession:
             return
         with self._stats_lock:
             self._drift_window.append(value)
+            self._drift_empty_window.append(empty)
             self._apply_drift_locked()
 
     def _apply_drift_locked(self) -> None:
         """Tính lại thống kê drift — gọi khi ĐÃ giữ `_stats_lock` (tên có hậu tố `_locked`)."""
         if not self._drift_window:
+            # Chưa có mẫu nào: vẫn phải khai cờ khi phiên KHÔNG THỂ đo (`vos_every < 2`), nếu không
+            # `status.json` để `null` và người đọc không biết là "không có gì để đo" hay "worker bản
+            # cũ" (review độc lập PR #54, P3).
+            if getattr(self._cfg, "vos_every", 3) < 2:
+                self._stats.suc_khoe = tracking_health.phan_quyet(
+                    [], [], vos_every=self._cfg.vos_every,
+                    truoc=(self._stats.suc_khoe or {}).get("co", tracking_health.OK))
             return
         values = np.fromiter(self._drift_window, dtype=float)
         self._stats.drift_n = len(values)
         self._stats.drift_iou = round(float(values.mean()), 3)
         self._stats.drift_iou_p05 = (round(float(np.percentile(values, 5)), 3)
                                      if len(values) >= _STAT_MIN_SAMPLES else None)
+        # Cờ #14 — `truoc` tạo găng tay Schmitt (đang bật thì chỉ tắt khi p05 > ngưỡng ra). Đọc
+        # `self._cfg` ở đây an toàn: chỉ để biết `vos_every`, không đụng trạng thái dùng chung.
+        self._stats.suc_khoe = tracking_health.phan_quyet(
+            list(self._drift_window), list(self._drift_empty_window),
+            vos_every=getattr(self._cfg, "vos_every", 3),
+            truoc=(self._stats.suc_khoe or {}).get("co", tracking_health.OK),
+        )
 
     def _note_mask_age(self, seconds: float, vos_ms: float = 0.0, pre_ms: float = 0.0,
                        queue_ms: float = 0.0, post_ms: float = 0.0) -> None:
@@ -1458,6 +1486,7 @@ class LiveTrackingSession:
                 value = _bbox_iou(shown, pending[1])
                 if value is not None:          # ở đây ĐANG giữ `_stats_lock` ⇒ không gọi _record_drift
                     self._drift_window.append(value)
+                    self._drift_empty_window.append(pending[4])
                     self._apply_drift_locked()
                 csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
                            "vos_ms": pending[3], "empty": pending[4],

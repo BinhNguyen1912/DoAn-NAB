@@ -160,6 +160,8 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             age_n=status.age_n,
             cau_hinh_lech=list(status.cau_hinh_lech) if status.cau_hinh_lech is not None else None,
             image_size_hieu_luc=status.image_size_hieu_luc,
+            suc_khoe=status.suc_khoe,
+            suc_khoe_cau=status.suc_khoe_cau,
             message=status.message,
         )
 
