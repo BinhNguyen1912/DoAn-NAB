@@ -166,6 +166,27 @@ def ket_luan(a: dict, b: dict, *, nguong_drift: float = NGUONG_DRIFT) -> dict:
     }
 
 
+def quyet_dinh_chung(so_sanh_theo_clip: dict) -> dict:
+    """Chốt đổi mặc định hay không — hàm THUẦN, chỉ dựa trên kết quả TỪNG clip.
+
+    Luật: đạt trên **TẤT CẢ** clip (AND), không phải trung bình. Vì sao: 19-11 gộp 2 clip cho ×2,04
+    "đạt" trong khi binh2 chỉ ×1,61 ⇒ nếu chốt bằng số gộp thì artifact nói "đủ điều kiện" còn log nói
+    "chưa đổi" (review độc lập PR #53, P1). Không có clip nào ⇒ `False` (chưa đo, không phải "đạt").
+    """
+    if not so_sanh_theo_clip:
+        return {"du_dieu_kien_doi_mac_dinh": False, "so_clip_dat": 0, "so_clip": 0,
+                "ket_luan": "CHƯA ĐO được clip nào ⇒ không kết luận"}
+    dat = sum(1 for v in so_sanh_theo_clip.values() if v.get("du_dieu_kien_doi_mac_dinh"))
+    tong = len(so_sanh_theo_clip)
+    du = dat == tong
+    return {
+        "du_dieu_kien_doi_mac_dinh": du,
+        "so_clip_dat": dat, "so_clip": tong,
+        "ket_luan": ("ĐỦ điều kiện trên TẤT CẢ clip (vẫn phải kiểm ảnh + mIoU vs GT)" if du
+                     else f"KHÔNG đủ: chỉ {dat}/{tong} clip đạt ⇒ giữ mặc định, hoặc đo thêm"),
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--source", action="append", required=True,
@@ -220,6 +241,10 @@ def main(argv=None) -> int:
                       f"empty {res['csv']['empty_frac']} · hiệu lực {res['max_mad_hieu_luc']}")
 
     tong = {str(m): tong_hop(v) for m, v in theo_cau_hinh.items()}
+    # `tong` (gộp MỌI clip) CHỈ để tham khảo: quyết định đổi mặc định phải đúng trên từng clip, vì gộp
+    # 2 clip có thể cho "đạt" trong khi 1 clip không đạt (19-11: binh1 ×3,7 nhưng binh2 ×1,61 ⇒ gộp
+    # 2,04 "đạt"). Artifact từng ghi `du_dieu_kien_doi_mac_dinh: true` từ số gộp, ngược hẳn kết luận
+    # của log (review độc lập PR #53, P1).
     # Tách theo clip: gộp 2 clip rồi lấy trung bình sẽ CHE mất khác biệt (binh1 ×3,8 còn binh2 ×1,7
     # ⇒ gộp ra 2,1 "vừa đủ ngưỡng" trong khi thực chất hai clip cho hai câu trả lời khác nhau).
     tong_theo_clip = {
@@ -230,10 +255,16 @@ def main(argv=None) -> int:
             if r["max_mad_hieu_luc"] is None
             or abs(float(r["max_mad_hieu_luc"]) - r["max_mad_yeu_cau"]) > 1e-9]
     cau_hinh = sorted(tong)
+    so_sanh_theo_clip = {
+        ten: ket_luan(tt[cau_hinh[0]], tt[cau_hinh[-1]]) for ten, tt in tong_theo_clip.items()
+    } if len(cau_hinh) >= 2 else {}
+    quyet_dinh = quyet_dinh_chung(so_sanh_theo_clip)
     so_sanh = {}
     if len(cau_hinh) >= 2:
         a, b = cau_hinh[0], cau_hinh[-1]
-        so_sanh = {"a": a, "b": b, **ket_luan(tong[a], tong[b])}
+        so_sanh = {"a": a, "b": b, "chi_tham_khao": True, **ket_luan(tong[a], tong[b])}
+        so_sanh.pop("du_dieu_kien_doi_mac_dinh")     # KHÔNG được chốt từ số gộp
+        so_sanh.pop("ket_luan")
 
     from scripts.measure_watchdog import _git_provenance
 
@@ -248,9 +279,8 @@ def main(argv=None) -> int:
         "cau_hinh_hieu_luc_lech": lech,
         "tong_hop": tong,
         "tong_hop_theo_clip": tong_theo_clip,
-        "so_sanh_theo_clip": {
-            ten: ket_luan(tt[cau_hinh[0]], tt[cau_hinh[-1]]) for ten, tt in tong_theo_clip.items()
-        } if len(cau_hinh) >= 2 else {},
+        "so_sanh_theo_clip": so_sanh_theo_clip,
+        "quyet_dinh": quyet_dinh,
         "so_sanh": so_sanh,
         "dinh_nghia": ("`lk_ok_frac` = tỉ lệ mẫu VOS mà LK dám nhận, mẫu số là số dòng CÓ `lk_ok`. "
                        "`drift_iou` ở đây là của đường live (ô hiển thị vs lần VOS kế tiếp), KHÔNG "
@@ -262,6 +292,7 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\n{json.dumps(so_sanh, ensure_ascii=False)}")
+    print(json.dumps(quyet_dinh, ensure_ascii=False))
     print(f"Ghi: {out}")
     if lech:
         print(f"[LOI] {len(lech)} lần chạy có lk_max_mad hiệu lực KHÁC yêu cầu ⇒ số không dùng được",

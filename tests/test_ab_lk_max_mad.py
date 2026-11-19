@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import csv
 
-from scripts.ab_lk_max_mad import doc_csv, ket_luan
+from scripts.ab_lk_max_mad import doc_csv, ket_luan, quyet_dinh_chung
 
 
 def _ghi(path, rows):
@@ -106,3 +106,25 @@ def test_doc_status_lay_dung_khoa_cap_ngoai_cung(tmp_path):
     assert t["measured_fps"]["mean"] == 29.8 and t["measured_fps"]["n"] == 1
     assert t["mask_age_p95"]["mean"] == 273.9
     assert t["vos_ms"]["mean"] == 96.3 and t["lk_ms"]["mean"] == 2.44
+
+
+def test_quyet_dinh_chung_phai_dat_tren_MOI_clip():
+    """Số GỘP 2 clip không được dùng để chốt: 19-11 binh1 ×3,7 nhưng binh2 ×1,61 ⇒ gộp 2,04 "đạt".
+
+    Artifact từng ghi `du_dieu_kien_doi_mac_dinh: true` từ số gộp trong khi log/ticket chốt "CHƯA đổi
+    mặc định" ⇒ người chỉ đọc JSON thấy ngược lại (review độc lập PR #53, P1).
+    """
+    dat = ket_luan(_tong(0.108, 0.480), _tong(0.401, 0.551))
+    khong = ket_luan(_tong(0.422, 0.723), _tong(0.678, 0.724))   # ×1,61 < 2 ⇒ không đạt
+    assert dat["du_dieu_kien_doi_mac_dinh"] is True
+    assert khong["du_dieu_kien_doi_mac_dinh"] is False
+
+    ca_hai_dat = quyet_dinh_chung({"a": dat, "b": dat})
+    assert ca_hai_dat["du_dieu_kien_doi_mac_dinh"] is True and ca_hai_dat["so_clip_dat"] == 2
+
+    mot_khong = quyet_dinh_chung({"binh1": dat, "binh2": khong})     # đúng ca 19-11
+    assert mot_khong["du_dieu_kien_doi_mac_dinh"] is False
+    assert mot_khong["so_clip_dat"] == 1 and mot_khong["so_clip"] == 2
+    assert "1/2" in mot_khong["ket_luan"]
+
+    assert quyet_dinh_chung({})["du_dieu_kien_doi_mac_dinh"] is False, "chưa đo ≠ đạt"
