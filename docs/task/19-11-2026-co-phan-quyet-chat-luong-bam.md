@@ -104,3 +104,18 @@ test cũ mong manh, đã đổi sang `\s`. Nếu không chạy e2e thật thì l
 
 - `src/tracking_health.py`, `tests/test_tracking_health.py`, `web/src/live.ts`, `web/src/live.test.ts`
 - ticket #14, #15, #23; `docs/plan/09-11-2026-chan-doan-chat-luong-bam.md`
+
+## Bổ sung — đóng nốt rủi ro tồn dư của reviewer ("P0 dựa trên grep")
+
+Reviewer PR #54 ghi: *"kết luận P0 dựa trên grep — nếu `routes.py` còn nhánh dump `status.json` thô thì P0 hạ xuống P3; cách kiểm: `curl /api/live/status` khi worker chạy"*. Đã kiểm đúng cách đó, đầu-cuối qua HTTP thật:
+
+```
+./run api 8011  →  POST /api/live/start {"source":"data/binh1.mp4","mode":"track",
+                    "bbox":{...},"image_size":192,"vos_every":3}
+GET /api/live/status  (sau 14 s)
+  HTTP có khoá: True | kiểu: dict
+  co: drift_trend | cau: "Chất lượng bám: ô hiển thị lệch ô VOS (p05 0.00, mask rỗng thấp)"
+  drift_n: 69 | suc_khoe.n: 30 | cua_so: 30
+```
+
+⇒ P0 **đóng thật** (không phải suy từ grep): khoá đi hết DTO → route → snapshot → JSON, đúng kiểu `dict`, và `suc_khoe.n = 30` **khác** `drift_n = 69` đúng như tài liệu đã ghi về hai cửa sổ khác nhau. Ở chế độ `raw` cùng endpoint trả `suc_khoe: null` (e2e kiểm) — tức "chưa có cờ", không phải "ok".
