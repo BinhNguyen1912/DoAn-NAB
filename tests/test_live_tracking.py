@@ -2129,3 +2129,24 @@ class TestCsvDriftGhiOHienThiVaLkOk:
         assert row["hien_thi"] == (None, None, None, None)
         assert row["lk_ok"] is None, "ô trống = CHƯA ĐO, không được thành False"
         assert row["drift_iou"] == 0.0
+
+    def test_tra_lk_ok_theo_dung_frame_khong_lay_bien_instance(self, tmp_path):
+        """`_lk_ok_of(frame)` phải tra **theo frame** — review thay thế PR #50 bắt mutant SỐNG.
+
+        Mutant: `_lk_ok_of` trả thẳng `self._lk_ok_frame` (trạng thái frame đang xử lý) thay vì tra
+        `_lk_by_frame`. Mutant đó **qua cả 3 test đường ống** vì trong phiên tuần tự frame đang xử lý
+        thường trùng frame cần tra ⇒ phải khoá bằng test đơn vị có hai frame KHÁC trạng thái.
+        """
+        from collections import deque
+
+        # Chỉ cần 2 thuộc tính đã khởi tạo: dựng session rồi bỏ phần chạy phiên (hàm này là tra cứu thuần).
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=out / "khong_can_video.mp4", out_dir=out, display_fps=100, vos_every=3))
+
+        session._lk_by_frame = deque([(1, False), (2, True)])
+        session._lk_ok_frame = True                 # trạng thái của frame ĐANG xử lý (2)
+        assert session._lk_ok_of(1) is False, "phải trả trạng thái của frame 1, không phải frame 2"
+        assert session._lk_ok_of(2) is True
+        assert session._lk_ok_of(99) is None, "frame chưa phát ⇒ CHƯA ĐO (None), không phải False"

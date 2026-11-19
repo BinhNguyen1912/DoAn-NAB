@@ -33,8 +33,9 @@ cặp (đường đa luồng: `base` lúc phát phụ thuộc VOS trước đã 
 | đại lượng | số |
 |---|---|
 | `n_drift` trong khung | 44 |
-| `lk_ok_frac` trong khung | **0,093** |
-| `lk_ok_frac` toàn dãy (51 mẫu) | **0,10** |
+| `n_lk_do_duoc` trong khung (mẫu số THẬT của `lk_ok_frac`) | **43** |
+| `lk_ok_frac` trong khung | **0,093** = **4/43** |
+| `lk_ok_frac` toàn dãy (51 mẫu drift, 50 mẫu đo được) | **0,10** = **5/50** |
 | `drift_iou_mean` trong khung | 0,4434 |
 | `empty_frac` trong khung | 0,021 |
 
@@ -42,10 +43,14 @@ Hai kết quả quan trọng:
 
 1. **Cột mới tự nhất quán**: `IoU(hien_thi, bbox)` vs `drift_iou` lệch **tối đa 4e-05** trên cả 25 mẫu
    của một lần chạy (chỉ do làm tròn 4 chữ số) ⇒ từ nay kiểm bằng **công thức**, không cần phát lại.
-2. **LK trả `ok` chỉ ~9–10 % số mẫu** ở cấu hình này ⇒ **~90 % thời gian, ô người xem thấy là ô của lần
+2. **LK trả `ok` chỉ ~9–10 % số mẫu** ở cấu hình này (**4/43** trong khung, **5/50** toàn dãy — mẫu số
+   là số mẫu **đo được**, không phải 44/51) ⇒ **~90 % thời gian, ô người xem thấy là ô của lần
    VOS CŨ (đóng băng)**, không phải nội suy. Đây là số **đo**, thay cho suy luận trước đó; và nó nói
    rằng "HUD 30 FPS" **không** đồng nghĩa "nội suy mượt" — đúng cảnh báo `mask_age`, nhưng ở đây là ô
    bao chứ không chỉ mask.
+   ⚠ **Hệ quả khi trích `drift_iou`**: ~90 % mẫu có `lk_ok = 0` ⇒ `drift_iou 0,4434` trên clip này chủ yếu
+   đo **dịch chuyển VOS→VOS** (ô cũ vs ô mới), **không** phải "LK nội suy lệch". Muốn nói về LK thì phải
+   lọc `lk_ok = 1` (chỉ 4–5 mẫu ⇒ chưa đủ 30, không công bố phân vị).
    **Đã chẩn đoán nguyên nhân** (16 cặp base→frame rải trong `0:110`, ô chai `266,212,392,637`):
 
    | bước nhảy | LK `ok` | điểm theo dõi được (trung vị/64) | MAD trung vị |

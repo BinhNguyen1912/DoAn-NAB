@@ -756,9 +756,10 @@ class LiveTrackingSession:
             pending, self._pending_drift = self._pending_drift, None
         if pending is None:
             return
+        # `lk_ok` để TRỐNG (chưa đo): mẫu này bị flush vì frame chưa từng được phát ⇒ chưa có lần LK nào
+        # cho nó (review thay thế PR #50, P3: `pending[5]` gần như luôn `None`, đừng để đọc thành "LK hỏng").
         self._log_drift_sample(frame_idx=pending[0], seq=pending[2], vos_ms=pending[3],
-                               empty=pending[4], value=None, bbox=pending[1],
-                               lk_ok=pending[5] if len(pending) > 5 else None)
+                               empty=pending[4], value=None, bbox=pending[1], lk_ok=None)
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
