@@ -41,6 +41,22 @@ def test_cap_ke_la_hai_lan_vos_lien_tiep():
     assert cap_ke({4: (0, 0, 9, 9)}) == []
 
 
+def test_cap_ke_khong_nhay_qua_khe_hai_khung():
+    """Ghép cặp TRONG từng khung: `0:5 ∪ 15:20` không được sinh cặp `(5, 15)`.
+
+    Lọc khung trước rồi mới ghép (bản đầu của script) sinh cặp nhảy 10 frame vẫn được tính là "một
+    bước VOS" ⇒ mẫu không hợp lệ lọt vào `n` (review độc lập PR #52, P2).
+    """
+    moc = {0: (0, 0, 9, 9), 3: (0, 0, 9, 9), 5: (0, 0, 9, 9),
+           15: (0, 0, 9, 9), 18: (0, 0, 9, 9), 20: (0, 0, 9, 9)}
+    assert cap_ke(moc, khung=[(0, 5), (15, 20)]) == [(0, 3), (3, 5), (15, 18), (18, 20)]
+
+
+def test_cap_ke_khung_khong_doi_hanh_vi_khi_khong_khai():
+    moc = {0: (0, 0, 9, 9), 3: (0, 0, 9, 9), 40: (0, 0, 9, 9)}
+    assert cap_ke(moc) == [(0, 3), (3, 40)]
+
+
 def _dong(base, target, ok, iou):
     return {"base": base, "target": target, "ok": ok, "box": [0, 0, 1, 1], "iou": iou}
 

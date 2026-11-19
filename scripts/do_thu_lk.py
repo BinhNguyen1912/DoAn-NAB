@@ -65,10 +65,22 @@ def doc_moc(csv_path: Path) -> dict[int, tuple[int, int, int, int]]:
     return moc
 
 
-def cap_ke(moc: dict, *, toi_da: int | None = None) -> list[tuple[int, int]]:
-    """Các cặp `(base, target)` = hai lần VOS LIÊN TIẾP (đúng khoảng mà pipeline phải nội suy)."""
-    frames = sorted(moc)
-    cap = list(zip(frames, frames[1:]))
+def cap_ke(moc: dict, *, toi_da: int | None = None,
+           khung: list[tuple[int, int]] | None = None) -> list[tuple[int, int]]:
+    """Các cặp `(base, target)` = hai lần VOS LIÊN TIẾP (đúng khoảng mà pipeline phải nội suy).
+
+    `khung` (danh sách `(dau, cuoi)`): ghép cặp **trong từng khung** rồi mới gộp. Lọc khung TRƯỚC khi
+    ghép sẽ sinh cặp "nhảy qua khe" giữa hai khung (vd `60` frame) mà vẫn được tính là một bước VOS ⇒
+    một mẫu không hợp lệ lọt vào `n` (review độc lập PR #52, P2).
+    """
+    if khung:
+        cap: list[tuple[int, int]] = []
+        for dau, cuoi in khung:
+            frames = sorted(f for f in moc if dau <= f <= cuoi)
+            cap.extend(zip(frames, frames[1:]))
+    else:
+        frames = sorted(moc)
+        cap = list(zip(frames, frames[1:]))
     return cap[:toi_da] if toi_da else cap
 
 
@@ -85,9 +97,11 @@ def do_mot_cau_hinh(*, cap, moc, gray_of, max_mad: float, grid: int) -> dict:
         moved, ok = tracker.update(gray_target)
         if ok:
             box = (moved[0], moved[1], moved[0] + moved[2], moved[1] + moved[3])
-            iou = _bbox_iou(box, moc[target])
         else:
-            box, iou = moc[base], 0.0        # pipeline phát ô BASE khi not-ok ⇒ so chính ô đó
+            box = moc[base]                 # not-ok ⇒ pipeline PHÁT LẠI ô BASE (đóng băng)
+        # IoU luôn chấm giữa ô SẼ HIỂN THỊ và ô VOS của target — kể cả nhánh not-ok (nếu không thì
+        # `iou_median_tat_ca` chỉ là "trung vị có tính sàn 0,0", không phải một đại lượng đo được).
+        iou = _bbox_iou(box, moc[target])
         ket_qua.append({"base": base, "target": target, "ok": bool(ok),
                         "box": list(box), "iou": None if iou is None else round(float(iou), 4)})
     return tom_tat(ket_qua, max_mad=max_mad, grid=grid)
@@ -166,7 +180,7 @@ def main(argv=None) -> int:
         if not moc:
             raise SystemExit("[LOI] không còn mốc nào trong khung đã khai")
 
-    cap = cap_ke(moc, toi_da=args.toi_da_cap)
+    cap = cap_ke(moc, toi_da=args.toi_da_cap, khung=khung or None)
     gray_of = _gray_reader(args.source)
     ket_qua = []
     try:
