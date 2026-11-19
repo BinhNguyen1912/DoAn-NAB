@@ -75,6 +75,17 @@ def test_ket_luan_a_bang_0_la_truong_hop_manh_nhat_khong_phai_thieu_du_lieu():
     assert kq["du_dieu_kien_doi_mac_dinh"] is True
 
 
+def test_drift_iou_TANG_khong_bi_coi_la_khong_du_dieu_kien():
+    """`drift_iou` tăng = ô hiển thị gần ô VOS kế tiếp hơn = TỐT.
+
+    Bản đầu dùng `abs(chênh) <= ngưỡng` nên cải thiện +0,033 (đo live 19-11) bị loại ⇒ luật
+    ill-posed. Cổng nhiễu chỉ được chặn chiều GIẢM quá ngưỡng.
+    """
+    kq = ket_luan(_tong(0.11, 0.496), _tong(0.41, 0.555))
+    assert kq["drift_iou_chenh"] > kq["nguong_drift"]
+    assert kq["drift_khong_te_di"] is True and kq["du_dieu_kien_doi_mac_dinh"] is True
+
+
 def test_ket_luan_thieu_so_thi_khong_ket_luan():
     kq = ket_luan(_tong(None, None), _tong(0.5, 0.6))
     assert kq["lk_ok_frac_tang_lan"] is None and kq["du_dieu_kien_doi_mac_dinh"] is False

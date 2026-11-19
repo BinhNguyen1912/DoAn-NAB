@@ -144,13 +144,17 @@ def ket_luan(a: dict, b: dict, *, nguong_drift: float = NGUONG_DRIFT) -> dict:
         tang_lk = round(b_lk / a_lk, 2)
     du_lk = tang_lk == "inf" or (isinstance(tang_lk, float) and tang_lk >= NGUONG_TOI_THIEU_LK)
     chenh_dr = None if (a_dr is None or b_dr is None) else round(b_dr - a_dr, 4)
-    du = bool(du_lk and chenh_dr is not None and abs(chenh_dr) <= nguong_drift)
+    # `drift_iou` TĂNG = ô hiển thị gần ô VOS kế tiếp hơn = TỐT. Cổng nhiễu chỉ được chặn chiều
+    # GIẢM: bản đầu mình dùng `abs(chenh) <= nguong` nên coi cả cải thiện là "không đủ điều kiện" —
+    # luật ill-posed, đúng loại lỗi "cổng danh nghĩa" (review nội bộ 19-11).
+    du = bool(du_lk and chenh_dr is not None and chenh_dr >= -nguong_drift)
     return {
         "lk_ok_frac_tang_lan": tang_lk,
         "drift_iou_chenh": chenh_dr,
         "nguong_drift": nguong_drift,
         "nguong_lk_toi_thieu": NGUONG_TOI_THIEU_LK,
         "drift_khong_phan_biet_duoc": None if chenh_dr is None else abs(chenh_dr) <= nguong_drift,
+        "drift_khong_te_di": None if chenh_dr is None else chenh_dr >= -nguong_drift,
         "du_dieu_kien_doi_mac_dinh": du,
         "ket_luan": (
             "ĐỦ điều kiện đổi mặc định (vẫn cần kiểm ảnh ô bao không trôi vào nền)" if du
@@ -212,6 +216,12 @@ def main(argv=None) -> int:
                       f"empty {res['csv']['empty_frac']} · hiệu lực {res['max_mad_hieu_luc']}")
 
     tong = {str(m): tong_hop(v) for m, v in theo_cau_hinh.items()}
+    # Tách theo clip: gộp 2 clip rồi lấy trung bình sẽ CHE mất khác biệt (binh1 ×3,8 còn binh2 ×1,7
+    # ⇒ gộp ra 2,1 "vừa đủ ngưỡng" trong khi thực chất hai clip cho hai câu trả lời khác nhau).
+    tong_theo_clip = {
+        Path(clip).name: {str(m): tong_hop([r for r in v if r["clip"] == clip])
+                          for m, v in theo_cau_hinh.items()}
+        for clip in args.source}
     lech = [r for v in theo_cau_hinh.values() for r in v
             if r["max_mad_hieu_luc"] is None
             or abs(float(r["max_mad_hieu_luc"]) - r["max_mad_yeu_cau"]) > 1e-9]
@@ -233,6 +243,10 @@ def main(argv=None) -> int:
                      "cua_so_frame": [[a, b] for a, b in khung] or None},
         "cau_hinh_hieu_luc_lech": lech,
         "tong_hop": tong,
+        "tong_hop_theo_clip": tong_theo_clip,
+        "so_sanh_theo_clip": {
+            ten: ket_luan(tt[cau_hinh[0]], tt[cau_hinh[-1]]) for ten, tt in tong_theo_clip.items()
+        } if len(cau_hinh) >= 2 else {},
         "so_sanh": so_sanh,
         "dinh_nghia": ("`lk_ok_frac` = tỉ lệ mẫu VOS mà LK dám nhận, mẫu số là số dòng CÓ `lk_ok`. "
                        "`drift_iou` ở đây là của đường live (ô hiển thị vs lần VOS kế tiếp), KHÔNG "
