@@ -177,3 +177,31 @@ class TestDemobase:
         assert r.returncode == 1
         assert "không thấy tag khong-co-tag-nay" in r.stdout, r.stdout
         assert not (base / ".demobase-tag").exists()
+
+
+class TestRunGt:
+    """`./run gt` — lệnh tắt để gán GT thật.
+
+    Vì sao có test: người dùng dán `python scripts/gt_gan_nhanh.py …` vào PowerShell (máy Windows
+    KHÔNG có `python`, chỉ alias Microsoft Store) và nhận "Python was not found" — gặp thật 19-11.
+    Test này khoá 3 thứ: lệnh tồn tại trong help, chuyển tiếp cờ nguyên vẹn, và có mặt trong danh
+    sách lệnh của `run` (nếu ai xoá nhánh xử lý thì đỏ ngay).
+    """
+
+    def test_gt_co_trong_help(self):
+        r = _run("help")
+        assert r.returncode == 0
+        assert "gt " in r.stdout or "gt\n" in r.stdout
+        assert "bình" in r.stdout.lower() or "tô gt" in r.stdout.lower() or "trình tô" in r.stdout.lower()
+
+    def test_gt_chuyen_tiep_co_nguyen_ven(self):
+        """`--clip` đứng trước phải KHÔNG bị ăn làm tham số của `run` (bẫy đã gặp ở `fast`/`view`)."""
+        r = _run("gt", "--help")
+        assert r.returncode == 0, r.stderr
+        assert "unrecognized arguments" not in (r.stdout + r.stderr)
+        assert "--nguoi-gan" in r.stdout and "--frames" in r.stdout
+
+    def test_gt_thieu_tham_so_thi_argparse_bao_loi(self):
+        r = _run("gt")
+        assert r.returncode != 0
+        assert "--clip" in (r.stdout + r.stderr)
