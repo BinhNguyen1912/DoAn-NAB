@@ -10,10 +10,10 @@ Quyết định + số đo: `docs/plan/09-11-2026-chan-doan-chat-luong-bam.md`.
 
 **Status:** claimed
 
-- [ ] Có ≥ 1 clip (che khuất đi ngang / LK trôi thật) cho `drift_iou_p05 < 0,30` với `empty_frac_window < 3 %`
-- [ ] Hàm thuần `src/tracking_health.py` (không import torch) + test: binh1 ⇒ `ok`, simloss/binh2 ⇒ `model_lost`, `vos_every=1` ⇒ `not_measured`
+- [x] Có ≥ 1 clip (che khuất đi ngang / LK trôi thật) cho `drift_iou_p05 < 0,30` với `empty_frac_window < 3 %`
+- [x] Hàm thuần `src/tracking_health.py` (không import torch) + test: binh1 ⇒ `ok`, simloss/binh2 ⇒ `model_lost`, `vos_every=1` ⇒ `not_measured`
 - [ ] `drift_n < 100` ⇒ luôn `not_measured` (không bật cờ từ mẫu ít)
-- [ ] Ghi rõ ngưỡng 0,30/0,45 là KHỞI TẠO, chưa hiệu lực ngoài các clip đã đo
+- [x] Ghi rõ ngưỡng 0,30/0,45 là KHỞI TẠO, chưa hiệu lực ngoài các clip đã đo
 
 ## Comments
 
@@ -60,3 +60,23 @@ Ba điều phải nhớ khi làm cờ:
 3. **`n_drift` trong khung chỉ 21–61** ⇒ `drift_n ≥ 100` (tiêu chí 3) **không thể đạt** với phiên 11 s. Cần quyết: hạ xuống ≥ 30 (ngưỡng công bố p05 của repo) cho **cờ**, giữ ≥ 100 cho **p05 cấp phiên** — hoặc đo phiên dài hơn (55 s cho `n_drift` ~250 nhưng phần lớn ngoài khung).
 
 Chưa chứng minh được **ai sai** ở các mẫu `drift = 0` (frame 57/69/75/105/108/171/255, ô chạm `y1 = 0`): CSV ghi `bbox = result.bbox` = ô **VOS**, nên số liệu chỉ nói *ô hiển thị (LK) và ô VOS không giao nhau*. Attribution cần `--dump-mask-frames` phủ frame 50–110 — bước tiếp theo trước khi đặt tên cờ "LK nội suy lệch".
+
+19-11: **cờ đã ship** — PR #54 merged (`main` = `cbf3b92`). `src/tracking_health.py` (hàm thuần) → `LiveTrackStats.suc_khoe` → `status.json` → DTO/HTTP → HUD (`data-testid="suc-khoe-line"`, `class="hint hint-warn"`).
+
+**Tiêu chí 3 (`drift_n < 100 ⇒ not_measured`) KHÔNG tick — đã cố ý thay bằng ngưỡng KHÁC, ghi lại để không ai tưởng là đã đạt:** cờ dùng **cửa sổ 30 mẫu** (`CUA_SO = drift_samples.MIN_SAMPLES`), tức đúng ngưỡng công bố p05 của repo (ticket #23). Lý do: `n_drift` **trong khung** của phiên 11 s chỉ 21–61 ⇒ giữ 100 thì cờ **không bao giờ bật** trên dữ liệu đã có (đúng cảnh báo trong comment trên). `drift_n ≥ 100` chỉ còn là điều kiện cho **p05 cấp phiên** (`drift_iou_p05`, cửa sổ 200) — hai đại lượng KHÁC tập mẫu, đã ghi rõ trong `LiveStatus`/`LiveTelemetry`/schema/api.ts và trong docstring `tracking_health`.
+
+Ngưỡng vào/ra 0,30/0,45 là **KHỞI TẠO** (tiêu chí 4): hiệu lực trên các clip đã đo (0,30 báo oan 0 % cửa sổ trên `binh1`; ngưỡng 0,70 cũ báo oan 100 % ở W ≥ 100 — ticket #15). Chưa hiệu chuẩn ngoài `binh1`/`binh2`.
+
+**Review độc lập PR #54: 1 P0 + 4 P2, đã sửa hết.** P0 đáng nhớ: bản đầu chỉ nối tới `status.json`, còn DTO → route dựng **từng field** ⇒ `/api/live/status` **không** trả `suc_khoe` ⇒ HUD thật không bao giờ hiện, mà e2e vẫn "PASS" vì nó **mock** route. Nay có 3 test HTTP (1 ca worker bản cũ ⇒ `null`, không phải `ok`) + e2e hỏi **API thật**; diễn tập ngược: bỏ field ở `routes.py` ⇒ test đỏ.
+
+Còn mở: **attribution** ở các mẫu `drift = 0` (frame 57/69/75/105/108/171/255, ô VOS chạm `y1 = 0`) — cần `--dump-mask-frames` phủ 50–110 để biết LK sai hay VOS sai; tới lúc đó tên `drift_trend` ("ô hiển thị và VOS bất nhất") là mức khẳng định đúng với đại lượng đo được. Cũng còn: hiệu chuẩn lại `EMPTY_TRAN`/`EMPTY_MIN_MAU` khi có mIoU vs GT.
+
+19-11 (bổ sung): **mục "attribution" ở comment trên ĐÃ XONG** — làm ở PR #48, không cần chạy lại.
+
+Kết luận: ở các mẫu `drift_iou = 0` của `binh1`, **LK sai, model đúng**. Hai phép đo độc lập:
+1. Chạy phiên `vos_every=1` (KHÔNG có LK ⇒ mask là 100 % model) + `--dump-mask-frames`: bbox mask in ra f55 `110,17,255,592`, f57 `95,0,235,526`, f69 `240,0,376,445`, f90 `298,342,441,831`, f108 `552,279,700,752`; ảnh `docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg` (mask đỏ chồng frame + ô chai xanh) cho thấy mask **luôn trên chai**.
+2. Phát lại chính `src/light_tracker.py::LkBoxTracker` từ ô VOS thật của frame 48 (`268,204,392,634`): LK@51 = `185,155,309,585`, **mất dấu từ frame 52**, `IoU(LK@57, VOS@57) = 0,158` — CSV ghi `drift_iou = 0,0000` (khớp: hai ô không giao nhau).
+
+⇒ vì thế tên `drift_trend` vẫn giữ trong CODE (đại lượng đo được chỉ nói "ô hiển thị và ô VOS bất nhất"), nhưng khi viết báo cáo cho `binh1` **được phép** nói nguyên nhân là LK trượt, kèm 2 bằng chứng trên. Đừng suy rộng ra clip khác khi chưa có phép kiểm tương tự.
+
+Còn lại của ticket: hiệu chuẩn `EMPTY_TRAN`/`EMPTY_MIN_MAU` và (nếu muốn) đổi nhãn HUD thành "LK trượt" khi có mIoU vs GT xác nhận.
