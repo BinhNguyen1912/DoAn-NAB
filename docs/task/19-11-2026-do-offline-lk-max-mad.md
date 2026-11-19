@@ -24,7 +24,7 @@ trong phiên này (AGENTS §6: "đo trước, hứa sau").
    14-11: tỉ lệ "mất dấu" tính cả lúc vật đã rời khung là số vô nghĩa.
 4. Artifact ghi `git_rev`/`git_dirty_code` qua `measure_watchdog._git_provenance`; thiếu provenance ⇒
    **thoát 1** (không ghi artifact "trông hợp lệ").
-5. 5 test cho hàm thuần (`tests/test_do_thu_lk.py`): bỏ dòng bbox rỗng/ô diện tích 0 khi lập mốc, cặp
+5. 7 test cho hàm thuần (`tests/test_do_thu_lk.py`): bỏ dòng bbox rỗng/ô diện tích 0 khi lập mốc, cặp
    phải là hai lần VOS liên tiếp, tách `ok` khỏi `iou_median_khi_ok`, `None` ≠ 0 khi rỗng, bỏ IoU
    `None` khỏi trung vị.
 
@@ -38,9 +38,9 @@ cặp (ghép cặp **trong từng khung**, nên không có cặp nhảy qua khe)
 | `max_mad` | LK `ok` | `ok_frac` | IoU trung vị **khi-ok** | IoU trung vị **mọi mẫu** | nhận-bừa |
 |---|---|---|---|---|---|
 | **1,5 (hiện tại)** | 10/44 | **0,227** | **0,9505** | 0,6479 | 0 |
-| 3,0 | 13/44 | 0,295 | 0,9335 | 0,7156 | 0 |
+| 3,0 | 13/44 | 0,295 | 0,9335 | 0,6479 | 0 |
 | **6,0** | **25/44** | **0,568** | 0,9198 | **0,8128** | 0 |
-| 10,0 | 29/44 | 0,659 | 0,9102 | 0,8581 | 0 |
+| 10,0 | 29/44 | 0,659 | 0,9102 | 0,8833 | 0 |
 
 **(b) `data/lk_thu_binh1_2026-11-19_metrics.json`** — `"khung": null`, n = **48** (cả lúc chai đã rời
 clip): `ok_frac` 0,25 → 0,312 → 0,562 → 0,646; IoU khi-ok 0,9382/0,9327/0,9102/0,9082; 2 mẫu
@@ -64,6 +64,10 @@ clip): `ok_frac` 0,25 → 0,312 → 0,562 → 0,646; IoU khi-ok 0,9382/0,9327/0,
   vẫn được tính là "một bước VOS" (n 45 → nay **44**). Nay ghép cặp **trong từng khung**.
 - **P2 (đã sửa)**: nhánh `not-ok` từng gán cứng `iou = 0.0` (sàn giả tạo cho `iou_median_tat_ca`); nay
   chấm IoU(ô **sẽ hiển thị**, ô VOS target) — nhờ đó mới có con số 0,6479 → 0,8128.
+- **P1 review vòng 2 (đúng, đã sửa)**: mình chép tay 2 ô của cột "IoU trung vị **mọi mẫu**" sai
+  (3,0 → ghi 0,7156 trong khi artifact 0,6479; 10,0 → 0,8581 trong khi 0,8833). Đã thay bằng số đọc
+  **trực tiếp** từ artifact (có script đối chiếu: mọi số trong bảng phải xuất hiện trong JSON) — bài học:
+  chép tay số từ bảng stdout dễ sai, phải lấy từ file.
 - **Không đổi `DEFAULT_MAX_MAD` trong phiên này.** Ba hạn chế: đo **một bước ~3 frame** trong khi
   pipeline live đi **chuỗi** 1 frame/bước; mốc là **ô VOS** (chứng minh "LK khớp model", **không** phải
   "bám đúng vật"); **một clip** ⇒ chưa có ngưỡng nhiễu `±` để so (AGENTS §6: n < 2 không kết luận).
