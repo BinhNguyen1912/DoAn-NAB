@@ -745,3 +745,27 @@ class TestReplayLkFrame:
         for bad in ("48", "48:", "a:57", "57:48", "48:48"):
             with pytest.raises(SystemExit):
                 replay.parse_pairs([bad])
+
+
+class TestTiLeLkOk:
+    """`lk_ok_frac` = tỉ lệ mẫu mà ô hiển thị đến từ LK ok (19-11).
+
+    Vì sao cần con số này: đo trên `binh1` @192/every3 cho **0,077** — nghĩa là ~92 % số mẫu ô đang
+    hiển thị là **ô base đóng băng**, không phải nội suy. Nếu không công bố tỉ lệ này thì "HUD 30 FPS"
+    bị đọc thành "nội suy mượt", trong khi thực chất là "ô cũ + mask cũ".
+    """
+
+    def test_tinh_ti_le_va_bo_qua_mau_chua_do(self):
+        rows = [{"empty": False, "drift_iou": 0.5, "lk_ok": True},
+                {"empty": False, "drift_iou": 0.5, "lk_ok": False},
+                {"empty": False, "drift_iou": 0.5, "lk_ok": False},
+                {"empty": False, "drift_iou": 0.5, "lk_ok": None}]  # chưa đo ⇒ không vào mẫu số
+        kq = summarize(rows, window=2)
+        assert kq["n_lk_do_duoc"] == 3
+        assert kq["lk_ok_frac"] == round(1 / 3, 3)
+
+    def test_khong_co_cot_lk_ok_thi_none(self):
+        """CSV sinh trước 19-11 ⇒ `None` (CHƯA ĐO), không phải 0,0 ("LK hỏng hết")."""
+        kq = summarize([{"empty": False, "drift_iou": 0.9}], window=2)
+        assert kq["n_lk_do_duoc"] == 0
+        assert kq["lk_ok_frac"] is None

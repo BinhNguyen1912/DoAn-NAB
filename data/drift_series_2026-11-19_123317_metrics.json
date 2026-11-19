@@ -1,0 +1,79 @@
+{
+  "do_luc": "2026-11-19T12:33:17+07:00",
+  "git_rev": "7ed769fa534a64e7b700bade71ae7167841f29ca",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "ghi_chu_git_rev": "Tái lập được ⇔ `git_dirty_code == false`. `git_loi` khác null ⇒ KHÔNG có provenance, đừng trích file này.",
+  "lenh": "python scripts/analyze_drift_samples.py data/drift_samples_binh1_2026-11-19_123249.csv",
+  "cua_so": 200,
+  "cua_so_quet": [],
+  "dinh_nghia": {
+    "n_mau_drift": "số dòng có `drift_iou` (mẫu ô bao suy biến bị BỎ ĐO, không phải 0)",
+    "drift_iou_p05": "p05 trên TOÀN DÃY mẫu của lần đo — KHÁC p05 của 200 mẫu CUỐI trong status.json (cùng định nghĩa phân vị, khác tập mẫu). Chỉ công bố khi `n_mau_drift >= drift_iou_p05_nguong` (30, ticket #23); `null` = CHƯA CÔNG BỐ (không phải p05 = 0)",
+    "bao_dong_070": "tỉ lệ cửa sổ có p05 < 0,70 — trên clip KHOẺ đây chính là tỉ lệ BÁO OAN",
+    "bao_dong_030": "tỉ lệ cửa sổ có p05 < 0,30 (ngưỡng cờ chẩn đoán đề xuất trong plan 09-11)",
+    "phat_hien": "số mẫu từ mẫu xấu đầu tiên (< 0,5) tới cửa sổ đầu tiên có p05 < 0,30",
+    "empty_frac": "tỉ lệ lần VOS trả mask RỖNG (mất dấu) trong các dòng có cột `empty`",
+    "p05_thap_va_empty": "điều kiện tiên quyết của ticket 14, đếm trên TRỤC DÒNG (mỗi dòng = 1 lần VOS): cửa sổ p05 < 0,30 MÀ mask rỗng < 3 %. `n_cua_so_du_mau` chỉ đếm cửa sổ có ≥ nửa số mẫu đo được (nên nhỏ hơn `n_cua_so` của `bao_dong_030`); `co_dieu_kien_ticket_14 = null` = chưa đo được"
+  },
+  "canh_bao": "`drift_iou` là độ tự nhất quán của ô bao đang hiển thị, KHÔNG phải độ chính xác bám (AGENTS §6). Muốn nói chất lượng phân đoạn phải dùng mIoU vs GT.",
+  "file": [
+    {
+      "n_dong": 85,
+      "n_mau_drift": 53,
+      "empty_frac": 0.329,
+      "drift_iou_mean": 0.4408,
+      "drift_iou_p05": 0.0,
+      "drift_iou_p05_nguong": 30,
+      "drift_iou_p05_n": 53,
+      "n_lk_do_duoc": 52,
+      "lk_ok_frac": 0.077,
+      "bao_dong_070": {
+        "nguong_p05": 0.7,
+        "cua_so": 200,
+        "n_cua_so": 0,
+        "n_bao": 0,
+        "ti_le_bao": null
+      },
+      "bao_dong_030": {
+        "nguong_p05": 0.3,
+        "cua_so": 200,
+        "n_cua_so": 0,
+        "n_bao": 0,
+        "ti_le_bao": null
+      },
+      "phat_hien": {
+        "mau_xau_dau": 3,
+        "phat_hien_sau_mau": null,
+        "p05_luc_phat_hien": null
+      },
+      "p05_thap_va_empty": {
+        "cua_so": 200,
+        "min_mau_do_duoc": 100,
+        "nguong_p05": 0.3,
+        "nguong_empty": 0.03,
+        "n_cua_so_du_mau": 0,
+        "n_p05_thap": 0,
+        "n_p05_thap_va_empty_thap": 0,
+        "co_dieu_kien_ticket_14": null
+      },
+      "file": "data/drift_samples_binh1_2026-11-19_123249.csv",
+      "git_rev": "7ed769fa534a64e7b700bade71ae7167841f29ca",
+      "git_dirty_code": true,
+      "device_worker_log": "cpu",
+      "thiet_lap": {
+        "bbox_xywh": [
+          300,
+          275,
+          150,
+          410
+        ],
+        "image_size": 192,
+        "vos_every": 3,
+        "seconds": 12.0
+      },
+      "co_meta": true
+    }
+  ]
+}

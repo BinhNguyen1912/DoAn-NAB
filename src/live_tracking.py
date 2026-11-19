@@ -577,6 +577,12 @@ class LiveTrackingSession:
         # Ô bao ĐÃ PHÁT theo từng frame: nhờ vậy đo drift đúng frame mà VOS đã thấy, không lệch
         # một khoảng bằng độ trễ suy luận (review 08-11 chỉ ra phép so cũ lệch ~3 frame).
         self._shown_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
+        # `(frame_idx, lk_ok)` song song `_shown_by_frame`: `lk_ok = None` khi không có LK
+        # (`vos_every=1`), `False` khi `update()` trả `not-ok` (pipeline phát ô BASE), `True` khi LK ok.
+        # Ghi vào CSV drift (ticket 14): thiếu nó thì `drift_iou = 0` không phân biệt được "LK trượt"
+        # với "ô VOS nhảy" — 19-11 phải dựng cả script phát lại để suy ra, và chỉ khớp 3/6 cặp.
+        self._lk_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
+        self._lk_ok_frame = None
         self._seq_frame: dict = {}       # seq → chỉ số frame đã phát lúc gửi cho VOS
         self._dumped: set = set()        # các frame VIDEO đã ghi mask (để báo frame yêu cầu mà thiếu)
         # Số file mask bị GHI ĐÈ vì tên file trùng (chọn lại ô giữa phiên / out_dir của phiên
@@ -751,7 +757,8 @@ class LiveTrackingSession:
         if pending is None:
             return
         self._log_drift_sample(frame_idx=pending[0], seq=pending[2], vos_ms=pending[3],
-                               empty=pending[4], value=None, bbox=pending[1])
+                               empty=pending[4], value=None, bbox=pending[1],
+                               lk_ok=pending[5] if len(pending) > 5 else None)
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
@@ -848,6 +855,7 @@ class LiveTrackingSession:
         self._interp.reset(base_gray, base_bbox)      # mốc LUÔN là frame VOS → sai số không tích luỹ
         began = time.perf_counter()
         bbox, ok = self._interp.update(gray)
+        self._lk_ok_frame = bool(ok)
         lk_ms = round((time.perf_counter() - began) * 1000.0, 2)
         with self._stats_lock:            # `_stats` chỉ được ghi dưới lock (xem `__init__`)
             self._stats.lk_ms = lk_ms
@@ -869,6 +877,7 @@ class LiveTrackingSession:
 
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
+        self._lk_ok_frame = None          # không có nội suy ⇒ cột `lk_ok` để trống (chưa đo)
         self._frame_index += 1
         result = self._engine.process(frame)
         self._after_vos(frame, result)
@@ -1145,6 +1154,13 @@ class LiveTrackingSession:
                 return True, bbox
         return False, None
 
+    def _lk_ok_of(self, frame_idx):
+        """Trạng thái LK của frame đã phát `frame_idx` (`None` = chưa đo/không có LK)."""
+        for idx, ok in reversed(self._lk_by_frame):
+            if idx == frame_idx:
+                return ok
+        return None
+
     def _measure_drift(self, frame_idx, result, seq=None) -> None:
         """Nội suy LK **sai bao nhiêu** ở đúng frame mà VOS vừa trả kết quả.
 
@@ -1183,11 +1199,13 @@ class LiveTrackingSession:
                 cu, da_hen = self._pending_drift, True
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
-                                       self._mask_empty(result))
+                                       self._mask_empty(result),
+                                       self._lk_ok_of(frame_idx))
         if da_hen:
             if cu is not None:
                 self._log_drift_sample(frame_idx=cu[0], seq=cu[2], vos_ms=cu[3],
-                                       empty=cu[4], value=None, bbox=cu[1])
+                                       empty=cu[4], value=None, bbox=cu[1],
+                                       lk_ok=cu[5] if len(cu) > 5 else None)
             return
         if shown is None:
             # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
@@ -1195,7 +1213,8 @@ class LiveTrackingSession:
             return
         value = _bbox_iou(shown, fresh)
         self._record_drift(value)
-        self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value)
+        self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value,
+                               hien_thi=shown, lk_ok=self._lk_ok_of(frame_idx))
 
     @staticmethod
     def _mask_empty(result):
@@ -1206,7 +1225,7 @@ class LiveTrackingSession:
         return not bool(mask.any())
 
     def _log_drift_sample(self, *, frame_idx, seq, value, result=None, vos_ms=None,
-                          empty=None, bbox=None) -> None:
+                          empty=None, bbox=None, hien_thi=None, lk_ok=None) -> None:
         """Ghi MỘT dòng CSV cho mẫu drift (ticket 15). PHẢI gọi khi KHÔNG giữ `_stats_lock`.
 
         `result` là kết quả VOS (có `elapsed_ms`/`mask`/`bbox`); nhánh `_pending_drift` tới hạn thì
@@ -1217,7 +1236,8 @@ class LiveTrackingSession:
             vos_ms=(float(getattr(result, "elapsed_ms", 0.0)) if vos_ms is None else vos_ms),
             empty=(self._mask_empty(result) if empty is None else empty),
             drift_iou=value,
-            bbox=(getattr(result, "bbox", None) if bbox is None else bbox))
+            bbox=(getattr(result, "bbox", None) if bbox is None else bbox),
+            hien_thi=hien_thi, lk_ok=lk_ok)
 
     def _record_drift(self, value) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
@@ -1406,6 +1426,7 @@ class LiveTrackingSession:
         # ánh xạ seq→bộ đếm này lúc submit, nên hai bên phải cùng một hệ.
         shown = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
         self._shown_by_frame.append((self._frame_index, shown))
+        self._lk_by_frame.append((self._frame_index, self._lk_ok_frame))
         pending = self._pending_drift
         csv_row = None
         if pending is not None:
@@ -1417,7 +1438,8 @@ class LiveTrackingSession:
                     self._apply_drift_locked()
                 csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
                            "vos_ms": pending[3], "empty": pending[4],
-                           "value": value, "bbox": pending[1]}
+                           "value": value, "bbox": pending[1],
+                           "hien_thi": shown, "lk_ok": self._lk_ok_of(self._frame_index)}
             else:
                 # Frame đã phát mà KHÔNG có ô bao hiển thị (hoặc frame đó không bao giờ tới lượt
                 # phát): KHÔNG chấm drift nhưng VẪN ghi dòng — bỏ im lặng là mất mẫu, và đúng
