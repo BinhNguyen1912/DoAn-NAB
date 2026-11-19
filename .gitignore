@@ -66,3 +66,7 @@ data/e2e_*
 
 # Bản cũ chạy bằng `./run demobase` (git worktree tại .baseline/) — sinh tự động, không commit
 /.baseline/
+
+# Bộ GT giả do `./run gte2e` sinh ra — không bao giờ commit
+docs/gt/_e2e_*/
+data/gte2e_server.log

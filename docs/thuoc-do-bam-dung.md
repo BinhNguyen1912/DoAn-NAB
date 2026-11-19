@@ -179,3 +179,38 @@ script đó để số vào `docs/so-lieu-bao-cao.md`.
 - `docs/so-lieu-bao-cao.md` — nơi mọi số được trích (kèm cột "CẤM trích thành").
 - `docs/bang-cau-hinh.md` — chọn cấu hình (`image_size` × `vos_every`) có ngưỡng nhiễu.
 - `scripts/measure_live_relay.py` — đo đường ống trên camera thật (KHÔNG đo độ chính xác).
+
+## 2b. Đường NHANH để gán GT (`scripts/gt_gan_nhanh.py`, từ 19-11)
+
+Mục 2 ở trên cần mở phần mềm ảnh và tô từ đầu. Nếu muốn nhanh hơn (≈ 1 phút/frame):
+
+```bash
+# ⚠ `binh1` (333 frame) chỉ có chai trong `0:110` và `165:262` (docs/demo-clip-va-o-chon.md) ⇒ frame
+# 150/280/310 KHÔNG có vật. Với frame đó bấm "Không có vật" (khai rỗng, `score_miou` sẽ không chấm),
+# đừng tô một vật không tồn tại.
+python scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten binh1_tay2 --nguoi-gan "Nguyễn Văn A" \
+    --frames 0,25,50,57,69,90,105,171,190,230,245,258
+```
+
+Tên bộ GT mới (`binh1_tay2`): `docs/gt/binh1_tay` đã tồn tại nhưng bị **vô hiệu hoá**
+(`dung_duoc: false` trong `index.json`). Chạy lại trên cùng tên sẽ **hợp** danh sách frame và **giữ**
+các khoá cũ (không xoá cờ vô hiệu hoá), nhưng đừng trộn hai phương pháp gán trong một bộ.
+
+Lệnh này (a) cắt frame, (b) sinh **gợi ý** `goiy_NNNNNN.png` bằng ngưỡng màu HSV + bao lồi, (c) mở
+**trình tô** ở `http://127.0.0.1:8765` — tô bằng chuột (chuột phải = tẩy), phím `A` = nhận gợi ý,
+`S` = lưu & tiếp. File GT được ghi **thẳng** vào `docs/gt/<ten>/gt_NNNNNN.png` (không qua Downloads).
+
+Quy tắc trung thực của đường nhanh:
+
+- `index.json` khai `nguon_gt = "ngưỡng màu HSV (script) + người sửa tay"` và
+  `sai_so_bo_goi_y = "CHƯA ĐO"` ⇒ **không** được trích mIoU này như "GT người vẽ hoàn toàn".
+- `gt_do_model_goi_y = false` (gợi ý từ **màu**, không từ model ⇒ không bị cổng "GT do model gợi ý" chặn).
+- Đo nhanh chất lượng gợi ý trên `binh1` (4 frame 57/69/90/108): IoU(gợi ý, mask model) **0,44–0,63**,
+  diện tích gợi ý 2,7–4,0 % so với mask model ~6 % ⇒ gợi ý là **điểm khởi đầu**, người gán vẫn phải sửa
+  viền/nắp. Bộ gợi ý **không** được dùng làm GT mà không sửa: `score_miou` vẫn nhận, nhưng con số sẽ là
+  của ngưỡng màu.
+- Server **từ chối** (422) mask rỗng — **trừ** khi bấm nút **"Không có vật"** (POST `?rong=1`, khai vào
+  `index.gt_rong`). Lưu ý: `score_miou` **tự** nhận GT toàn đen là "không có vật" và **không chấm**
+  (`so_frame_gt_rong`), nên `gt_rong` chỉ là **lời khai để đọc lại**, không phải cổng chấm điểm.
+  Server cũng từ chối mask khác kích thước frame;
+  từ chối (400) frame không có trong danh sách ⇒ không ghi được file rác/lạc đường dẫn.

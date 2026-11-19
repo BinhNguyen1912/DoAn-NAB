@@ -171,6 +171,8 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     webtest        Test frontend bằng vitest (toán học canvas, hàm thuần)
     democheck      Soi 9 thứ có thể làm hỏng buổi demo (≤ 120 s, KHÔNG nạp model);
                    thêm --full --bbox x,y,w,h để diễn tập thật (có nạp model)
+    gte2e          E2E TRÌNH DUYỆT THẬT cho TRÌNH TÔ GT (scripts/gt_painter.html) — 12 mục,
+                   dựng bộ GT giả rồi tự xoá; BẮT BUỘC khi sửa file HTML đó
     e2e            E2E TRÌNH DUYỆT THẬT: Chrome/Edge lái giao diện, kéo chuột chọn vật,
                    chờ job xong, kiểm video + bảng số liệu + tải CSV (cần Windows + playwright)
 
@@ -433,6 +435,32 @@ EOF
     for _ in $(seq 1 25); do curl -sf "localhost:$port/health" >/dev/null && break; sleep 1; done
     win_root="$(wslpath -w "$ROOT")"
     cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& node scripts\\e2e_web.js"
+    ;;
+  gte2e)
+    # E2E TRÌNH DUYỆT THẬT cho trình tô GT (`scripts/gt_painter.html`). Vì sao riêng một target: PR #49
+    # từng có 2 P0 trong JS mà 24 unit test Python không bắt được (người tô "vẽ mù"), đúng bài học
+    # "UI phải test headless được" (CODING_STANDARDS) + AGENTS §5.4.
+    activate_env
+    if ! command -v cmd.exe >/dev/null 2>&1; then
+      echo "[gte2e] cần WSL (script dùng cmd.exe + Chrome/Edge trên Windows)"
+      exit 1
+    fi
+    if [ ! -d "$ROOT/web/node_modules/playwright" ]; then
+      echo "[gte2e] thiếu playwright → chạy:  cd web && npm i -D playwright"
+      exit 1
+    fi
+    ten="${GTE2E_TEN:-_e2e_gt}"
+    port="${GTE2E_PORT:-8766}"
+    rm -rf "$ROOT/docs/gt/$ten"
+    "$PYTHON" scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten "$ten" --nguoi-gan "e2e" \
+      --frames 57,90 --chi-sinh || exit 1
+    "$PYTHON" scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten "$ten" --nguoi-gan "e2e" \
+      --frames 57,90 --host 0.0.0.0 --cong "$port" > "$ROOT/data/gte2e_server.log" 2>&1 &
+    srv=$!
+    trap 'kill $srv 2>/dev/null; rm -rf "$ROOT/docs/gt/$ten"' EXIT
+    for _ in $(seq 1 25); do curl -sf "localhost:$port/danh-sach.json" >/dev/null && break; sleep 1; done
+    win_root="$(wslpath -w "$ROOT")"
+    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& set TEN=$ten& node scripts\\e2e_gt_painter.js"
     ;;
   provcheck)
     # Mọi `git_rev` trong `data/*_metrics.json` phải là tổ tiên của HEAD (hoặc nằm trong allowlist có
