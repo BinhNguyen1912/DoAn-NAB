@@ -1,0 +1,30 @@
+{
+  "nguon": "data/binh1.mp4",
+  "image_size": 192,
+  "image_size_hieu_luc": 192,
+  "vos_every": 1,
+  "mask_smoothing": 1.0,
+  "bbox_xywh": [
+    300,
+    275,
+    150,
+    410
+  ],
+  "frames_yeu_cau": [
+    55,
+    57,
+    69,
+    90,
+    108
+  ],
+  "frame_goc_cua_phien": 0,
+  "frames_da_ghi": [
+    55,
+    57,
+    69,
+    90,
+    108
+  ],
+  "so_file_ghi_de": 0,
+  "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO"
+}

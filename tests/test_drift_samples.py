@@ -677,3 +677,71 @@ def test_khong_khai_khung_nao_la_loi_lap_trinh():
     """Danh sách khung RỖNG ⇒ `ValueError`, không được lặng lẽ coi "mọi mẫu là ngoài khung"."""
     with pytest.raises(ValueError):
         tach_theo_cac_khung([{"frame_idx": 1, "empty": False, "drift_iou": 0.5}], [])
+
+
+class TestReplayLkFrame:
+    """`scripts/replay_lk_frame.py` — phát lại cơ chế `reset(base)` + MỘT `update` (review PR #48).
+
+    Vì sao có test: bảng "ô đang hiển thị ở frame X" trong log 19-11 từng được tính bằng đoạn code dán
+    tay **sai cơ chế** (chain `update()` nhiều frame) và **không tái lập được**. Test khoá 3 điều:
+    (a) LK fail ⇒ phát ô **base** (không bịa vị trí); (b) IoU dùng `_bbox_iou` (+1) nên khớp CSV;
+    (c) cặp không khớp CSV phải bị đánh dấu `khop_csv = False` — không được im lặng nhận.
+    """
+
+    @staticmethod
+    def _rows():
+        return {
+            48: {"frame_idx": "48", "bbox_x1": "266", "bbox_y1": "212", "bbox_x2": "392",
+                 "bbox_y2": "637", "drift_iou": "0.4126"},
+            # xa hẳn ô base ⇒ LK không thể trượt tới đây trong 1 bước, chắc chắn `not ok`
+            57: {"frame_idx": "57", "bbox_x1": "94", "bbox_y1": "0", "bbox_x2": "247",
+                 "bbox_y2": "435", "drift_iou": "0.0000"},
+            58: {"frame_idx": "58", "bbox_x1": "0", "bbox_y1": "0", "bbox_x2": "0",
+                 "bbox_y2": "0", "drift_iou": ""},
+        }
+
+    def test_lk_fail_thi_phat_o_base_va_khop_csv(self, tmp_path):
+        import numpy as np
+
+        import scripts.replay_lk_frame as replay
+
+        # Hai ảnh xám GIỐNG NHAU ⇒ LK không tìm được chuyển động; ô VOS@57 lệch hẳn ô base
+        gray = np.zeros((720, 1280), dtype=np.uint8)
+        r = replay.replay_pair(lambda _f: gray.copy(), self._rows(), 48, 57)
+
+        assert r["lk_ok"] is False, "ảnh không đổi ⇒ LK phải trả not-ok"
+        assert r["bbox_hien_thi"] == (266, 212, 392, 637), "not-ok phải phát ô BASE, không bịa ô mới"
+        assert r["iou"] == 0.0
+        assert r["khop_csv"] is True           # CSV ghi 0.0000 ⇒ cặp này là bằng chứng dùng được
+
+    def test_cap_khong_khop_csv_bi_danh_dau(self):
+        """Giả lập cặp lệch: IoU ≠ drift_iou ⇒ `khop_csv` phải `False` (đừng trích cặp đó)."""
+        import numpy as np
+
+        import scripts.replay_lk_frame as replay
+
+        gray = np.zeros((720, 1280), dtype=np.uint8)
+        rows = self._rows()
+        rows[57]["drift_iou"] = "0.5000"        # CSV nói 0,5 trong khi IoU thật = 0
+        r = replay.replay_pair(lambda _f: gray.copy(), rows, 48, 57)
+        assert r["khop_csv"] is False
+
+    def test_drift_iou_trong_thi_khong_ket_luan_khop(self):
+        """Dòng không có `drift_iou` (ô trống = chưa đo) ⇒ `csv_drift`/`khop_csv` là None/False."""
+        import numpy as np
+
+        import scripts.replay_lk_frame as replay
+
+        gray = np.zeros((720, 1280), dtype=np.uint8)
+        r = replay.replay_pair(lambda _f: gray.copy(), self._rows(), 57, 58)
+        assert r["csv_drift"] is None
+        assert r["khop_csv"] is False
+
+    def test_cap_sai_dinh_dang_bi_tu_choi(self):
+        import pytest
+
+        import scripts.replay_lk_frame as replay
+
+        for bad in ("48", "48:", "a:57", "57:48", "48:48"):
+            with pytest.raises(SystemExit):
+                replay.parse_pairs([bad])
