@@ -30,27 +30,32 @@ và chỉ đổi mặc định nếu số + ảnh cùng đạt.
 
 ## Output / Kết quả
 
-`data/ab_lk_max_mad_2026-11-19_metrics.json` (`git_rev f853868`, `git_dirty_code false`, 3 lần/cấu hình,
-`cau_hinh_hieu_luc_lech []`):
+`data/ab_lk_max_mad_2026-11-19_metrics.json` (`git_rev b5dea7a`, `git_dirty_code false`, 3 lần/cấu hình,
+`cau_hinh_hieu_luc_lech []`). **Artifact là lần chạy thứ hai** (lần đầu `git_rev f853868`, cùng lệnh,
+cùng kết luận: binh1 ×3,73 / binh2 ×1,61, drift binh1 +0,071) — trích số phải lấy từ **artifact này**.
 
 | clip | `max_mad` | `lk_ok_frac` (±) | `drift_iou` | `measured_fps` | `vos_ms` | `mask_age_p95` |
 |---|---|---|---|---|---|---|
-| binh1 | **1,5** | **0,108 ± 0,015** | 0,480 | 29,9 | 92,5 | 301,4 |
-| binh1 | 3,0 | 0,230 ± 0,047 | 0,509 | 29,9 | 99,5 | 301,4 |
-| binh1 | **6,0** | **0,401 ± 0,023** | **0,551** | 29,9 | 94,7 | 301,6 |
-| binh2 | **1,5** | **0,422 ± 0,006** | 0,723 | 29,8 | 101,8 | 301,4 |
-| binh2 | 3,0 | 0,543 ± 0,022 | 0,720 | 29,9 | 102,1 | 301,4 |
-| binh2 | **6,0** | **0,678 ± 0,022** | 0,724 | 29,8 | 112,5 | 301,6 |
+| binh1 | **1,5** | **0,119 ± 0,014** | 0,495 | 29,90 | 93,8 | 293,2 |
+| binh1 | 3,0 | 0,232 ± 0,004 | 0,513 | 29,83 | 91,4 | 301,6 |
+| binh1 | **6,0** | **0,402 ± 0,060** | **0,561** | 29,73 | 102,7 | 303,2 |
+| binh2 | **1,5** | **0,405 ± 0,005** | 0,710 | 29,87 | 107,3 | 303,1 |
+| binh2 | 3,0 | 0,611 ± 0,054 | 0,726 | 29,87 | 98,7 | 301,9 |
+| binh2 | **6,0** | **0,636 ± 0,010** | 0,717 | 29,87 | 101,9 | 301,9 |
 
-- **LK nhận nhiều hơn thật, đơn điệu theo `max_mad`, trên CẢ HAI clip**: binh1 **×3,7** (0,108 → 0,401),
-  binh2 **×1,61** (0,422 → 0,678). Gộp 2 clip: **×2,04**.
-- **`drift_iou` KHÔNG giảm ở đâu**: binh1 **+0,071** (0,480 → 0,551, ngoài ngưỡng nhiễu ⇒ cải thiện
-  thật), binh2 +0,001 (trong ngưỡng ⇒ **không phân biệt được**).
-- Không có giá nào về tốc độ: `measured_fps` 29,8–29,9, `mask_age_p95` y hệt. `vos_ms` binh2 @6,0 =
-  112,5 so với 101,8 (+10 %) **nằm trong dao động giữa các lần chạy** ⇒ chưa kết luận được (n = 3,
-  không có `±` riêng cho `vos_ms` ở đây).
+- **LK nhận nhiều hơn thật, đơn điệu theo `max_mad`, trên CẢ HAI clip**: binh1 **×3,37** (0,119 → 0,402),
+  binh2 **×1,57** (0,405 → 0,636). Gộp 2 clip ×1,98 — **chỉ để tham khảo**, không dùng để chốt.
+- **`drift_iou` KHÔNG giảm ở đâu**: binh1 **+0,067** (0,495 → 0,561; std 0,009–0,030 ⇒ ngoài ngưỡng
+  nhiễu, cải thiện thật), binh2 +0,007 (trong ngưỡng ±0,010 ⇒ **không phân biệt được**).
+- **Quyết định trong artifact**: `quyet_dinh.du_dieu_kien_doi_mac_dinh = false`, `so_clip_dat 1/2` —
+  đúng bằng kết luận của log, vì luật là **AND trên mọi clip**, không phải trung bình.
+- Không có giá nào về tốc độ: `measured_fps` 29,73–29,90; `mask_age_p95` 293–303 ms (chênh ≤ 10 ms,
+  dưới ngưỡng ±32 ms của phiên ngắn); `vos_ms` 91,4–107,3 **không theo thứ tự cấu hình** (binh2 @1,5 =
+  107,3 còn @6,0 = 101,9) ⇒ đó là dao động giữa các lần chạy, không phải giá của `max_mad`.
 - Kiểm **ảnh** (`docs/media/lk/so_sanh_max_mad_binh1.jpg`, frame 60 và 95, trái 1,5 / phải 6,0): ô đỏ
-  vẫn **nằm trên chai** ở cả hai mức, không nhảy sang nền; `LK` 5,2 ms (1,5) vs 3,1 ms (6,0).
+  vẫn **nằm trên chai** ở cả hai mức, không nhảy sang nền. HUD của **phiên kiểm ảnh riêng** đó ghi `LK`
+  5,2 ms (1,5) / 3,1 ms (6,0) — phiên này **không có artifact**; `lk_ms` trong artifact (3 lần/cấu hình)
+  là 2,37 / 3,51 ms cho binh1 ⇒ đừng trộn hai nguồn.
 
 ## Vấn đề & cách xử lý
 
@@ -60,7 +65,7 @@ và chỉ đổi mặc định nếu số + ảnh cùng đạt.
 - **`status.json` ghi stats ở cấp NGOÀI CÙNG**, không lồng trong `stats`; bản đầu đọc `status["stats"]`
   ⇒ `fps`/`mask_age_p95` ra `None` **im lặng**, tức câu "không làm chậm phiên" không có bằng chứng
   (bẫy "0/None ≠ đã đo"). Đã sửa + test khoá đúng khoá.
-- **Ngưỡng 2× KHÔNG đạt trên binh2** (1,61×). Ghi nhận trung thực thay vì gộp 2 clip cho ra 2,04× rồi
+- **Ngưỡng 2× KHÔNG đạt trên binh2** (1,57×). Ghi nhận trung thực thay vì gộp 2 clip cho ra 2,04× rồi
   tuyên bố "đạt": binh2 vốn đã 42 % ở 1,5 (vật to, ít bị tay che) nên dư địa ít hơn hẳn binh1 (11 %).
 - **Kiểm ảnh mới là 2 frame × 1 clip** — đủ để nói "không thấy hiện tượng trôi vào nền", **KHÔNG** đủ để
   nói "đã kiểm hết".
