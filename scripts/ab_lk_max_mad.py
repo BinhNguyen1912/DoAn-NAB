@@ -118,9 +118,13 @@ def tong_hop(lan: list[dict]) -> dict:
         "lk_ok_frac": _stats([x["csv"]["lk_ok_frac"] for x in lan]),
         "drift_iou": _stats([x["csv"]["drift_iou"] for x in lan]),
         "empty_frac": _stats([x["csv"]["empty_frac"] for x in lan]),
-        "measured_fps": _stats([(x["status"].get("stats") or {}).get("measured_fps") for x in lan]),
-        "vos_fps": _stats([(x["status"].get("stats") or {}).get("vos_fps") for x in lan]),
-        "mask_age_p95": _stats([(x["status"].get("stats") or {}).get("mask_age_p95") for x in lan]),
+        # `status.json` ghi stats ở cấp NGOÀI CÙNG (không lồng trong `stats`) — đọc sai khoá thì
+        # `None` im lặng và "chưa đo" bị đọc thành "không đổi" (bẫy 0/None, AGENTS §6).
+        "measured_fps": _stats([x["status"].get("measured_fps") for x in lan]),
+        "vos_fps": _stats([x["status"].get("vos_fps") for x in lan]),
+        "vos_ms": _stats([x["status"].get("vos_ms") for x in lan]),
+        "lk_ms": _stats([x["status"].get("lk_ms") for x in lan]),
+        "mask_age_p95": _stats([x["status"].get("mask_age_p95") for x in lan]),
     }
 
 

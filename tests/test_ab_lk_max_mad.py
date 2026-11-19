@@ -89,3 +89,20 @@ def test_drift_iou_TANG_khong_bi_coi_la_khong_du_dieu_kien():
 def test_ket_luan_thieu_so_thi_khong_ket_luan():
     kq = ket_luan(_tong(None, None), _tong(0.5, 0.6))
     assert kq["lk_ok_frac_tang_lan"] is None and kq["du_dieu_kien_doi_mac_dinh"] is False
+
+
+def test_doc_status_lay_dung_khoa_cap_ngoai_cung(tmp_path):
+    """`status.json` của worker ghi `measured_fps`/`mask_age_p95` ở cấp NGOÀI CÙNG.
+
+    Đọc `status["stats"][...]` (bản đầu) trả `None` im lặng ⇒ artifact khai "chưa đo" trong khi phiên
+    CÓ số, và câu "cấu hình không làm chậm phiên" không có bằng chứng.
+    """
+    from scripts.ab_lk_max_mad import tong_hop
+
+    lan = [{"status": {"measured_fps": 29.8, "vos_fps": 8.8, "mask_age_p95": 273.9,
+                       "vos_ms": 96.3, "lk_ms": 2.44},
+            "csv": {"lk_ok_frac": 0.4, "drift_iou": 0.55, "empty_frac": 0.01}}]
+    t = tong_hop(lan)
+    assert t["measured_fps"]["mean"] == 29.8 and t["measured_fps"]["n"] == 1
+    assert t["mask_age_p95"]["mean"] == 273.9
+    assert t["vos_ms"]["mean"] == 96.3 and t["lk_ms"]["mean"] == 2.44
