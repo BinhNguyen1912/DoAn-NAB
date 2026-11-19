@@ -154,8 +154,15 @@ async function demPixelMask(page) {
     const index = JSON.parse(fs.readFileSync(path.join(GT_DIR, 'index.json'), 'utf8'))
     kiem(Array.isArray(index.gt_rong) && index.gt_rong.includes(90),
       'index.json ghi gt_rong (score_miou sẽ KHÔNG chấm frame này)', JSON.stringify(index.gt_rong))
-    kiem(Array.isArray(index.frame_hw) && index.frame_hw.length === 2,
-      'index.json có frame_hw (cổng kích thước GT mới chạy được)', JSON.stringify(index.frame_hw))
+    // File GT "có vật" phải KHÁC file all-black: nếu mask bị xoá trắng mà không khai rỗng thì mIoU bị
+    // thổi phồng/mất dấu, và trước đây e2e vẫn PASS (chỉ kiểm file tồn tại).
+    const byteCoVat = fs.readFileSync(fileTruoc)
+    const byteRong = fs.readFileSync(fileRong)
+    kiem(!byteCoVat.equals(byteRong), 'GT "có vật" KHÁC GT all-black (không lưu mask trắng)',
+      `${byteCoVat.length} vs ${byteRong.length} byte`)
+    kiem(JSON.stringify(index.frame_hw) === '[1280,720]',
+      'index.json có frame_hw = [1280,720] (cổng kích thước GT mới chạy được)',
+      JSON.stringify(index.frame_hw))
 
     kiem(loiJs.length === 0, 'không có lỗi JS trên trang', loiJs.slice(0, 3).join(' | '))
 

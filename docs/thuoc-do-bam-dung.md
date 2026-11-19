@@ -209,5 +209,8 @@ Quy tắc trung thực của đường nhanh:
   diện tích gợi ý 2,7–4,0 % so với mask model ~6 % ⇒ gợi ý là **điểm khởi đầu**, người gán vẫn phải sửa
   viền/nắp. Bộ gợi ý **không** được dùng làm GT mà không sửa: `score_miou` vẫn nhận, nhưng con số sẽ là
   của ngưỡng màu.
-- Server **từ chối** (422) mask rỗng (bẫy `IoU(rỗng, rỗng) = 1,0`) và mask khác kích thước frame;
+- Server **từ chối** (422) mask rỗng — **trừ** khi bấm nút **"Không có vật"** (POST `?rong=1`, khai vào
+  `index.gt_rong`). Lưu ý: `score_miou` **tự** nhận GT toàn đen là "không có vật" và **không chấm**
+  (`so_frame_gt_rong`), nên `gt_rong` chỉ là **lời khai để đọc lại**, không phải cổng chấm điểm.
+  Server cũng từ chối mask khác kích thước frame;
   từ chối (400) frame không có trong danh sách ⇒ không ghi được file rác/lạc đường dẫn.

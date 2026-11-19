@@ -344,3 +344,64 @@ class TestTenBoGtHopLe:
     ])
     def test_ten_bo_gt(self, ten, hop_le):
         assert bool(gt.TEN_HOP_LE.match(ten)) is hop_le
+
+
+class TestKhongTronPhuongPhapGan:
+    """Bộ GT dạng `hop_bao` KHÔNG được bị công cụ silhouette ghi vào (review PR #49 vòng 2, P1).
+
+    `docs/gt/binh1_hopbao/index.json` khai `dang_gt: hop_bao` + `hop_bao_xywh` từng frame. Nếu ghi đè:
+    cổng `hop_bao_xywh`↔mask của `score_miou.kiem_index` **tắt im lặng**, artifact đổi `gt_dang` ⇒ con số
+    `mIoU 0,6464` bị in thành "IoU với GT silhouette" (dán nhãn sai một số đã công bố).
+    """
+
+    def test_tu_choi_khi_bo_gt_cu_la_hop_bao(self, tmp_path):
+        cu = {"dang_gt": "hop_bao", "frames": [
+            {"frame_idx": 3, "hop_bao_xywh": [10, 10, 20, 30]}]}
+        (tmp_path / "index.json").write_text(json.dumps(cu), encoding="utf-8")
+        with pytest.raises(SystemExit) as loi:
+            gt._viet_index(tmp_path, clip="c.mp4", ten="hopbao", frames=[99],
+                           nguoi_gan="A", co_goi_y=True, frame_hw=[40, 50])
+        assert "hop_bao" in str(loi.value)
+        # index cũ phải NGUYÊN VẸN
+        assert json.loads((tmp_path / "index.json").read_text(encoding="utf-8")) == cu
+
+    def test_giu_hop_bao_xywh_tung_frame_khi_silhouette(self, tmp_path):
+        """Cùng dạng silhouette nhưng frame cũ có khoá riêng (`hop_bao_xywh`, `ghi_chu`) ⇒ phải giữ."""
+        cu = {"dang_gt": "silhouette", "frames": [
+            {"frame_idx": 3, "hop_bao_xywh": [10, 10, 20, 30], "ghi_chu": "vật bị che 50 %"}]}
+        (tmp_path / "index.json").write_text(json.dumps(cu), encoding="utf-8")
+        path = gt._viet_index(tmp_path, clip="c.mp4", ten="t", frames=[3, 9],
+                              nguoi_gan="B", co_goi_y=True, frame_hw=[40, 50])
+        moi = json.loads(path.read_text(encoding="utf-8"))
+        f3 = [f for f in moi["frames"] if f["frame_idx"] == 3][0]
+        assert f3["hop_bao_xywh"] == [10, 10, 20, 30], "mất hộp bao của frame cũ"
+        assert f3["ghi_chu"] == "vật bị che 50 %"
+        assert [f["frame_idx"] for f in moi["frames"]] == [3, 9]
+
+    def test_khong_viet_lai_nguon_gt_cua_frame_da_gan(self, tmp_path):
+        """Lần đầu tô tay, lần sau có gợi ý ⇒ KHÔNG được đổi `nguon_gt` (hai phương pháp trong một bộ)."""
+        cu = {"dang_gt": "silhouette", "nguon_gt": "người tô tay trên frame gốc",
+              "phuong_phap_gt": "tô tay từ frame trống", "frames": [{"frame_idx": 1}]}
+        (tmp_path / "index.json").write_text(json.dumps(cu), encoding="utf-8")
+        path = gt._viet_index(tmp_path, clip="c.mp4", ten="t", frames=[2], nguoi_gan="A",
+                              co_goi_y=True, frame_hw=[40, 50])
+        moi = json.loads(path.read_text(encoding="utf-8"))
+        assert moi["nguon_gt"] == "người tô tay trên frame gốc"
+        assert moi["phuong_phap_gt"] == "tô tay từ frame trống"
+
+    def test_frames_null_khong_lam_chet(self, tmp_path):
+        (tmp_path / "index.json").write_text(json.dumps({"dang_gt": "silhouette",
+                                                        "frames": None}), encoding="utf-8")
+        path = gt._viet_index(tmp_path, clip="c.mp4", ten="t", frames=[7], nguoi_gan="A",
+                              co_goi_y=False, frame_hw=[40, 50])
+        assert [f["frame_idx"] for f in
+                json.loads(path.read_text(encoding="utf-8"))["frames"]] == [7]
+
+
+class TestGoKhoiGtRong:
+    def test_luu_thuong_go_frame_khoi_gt_rong(self, tmp_path):
+        """Tô lại một frame từng khai "không có vật" ⇒ index phải GỠ khỏi `gt_rong`."""
+        (tmp_path / "index.json").write_text(json.dumps({"gt_rong": [90, 120]}), encoding="utf-8")
+        gt._ghi_gt_rong(tmp_path, 90, rong=False)
+        index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
+        assert index["gt_rong"] == [120]

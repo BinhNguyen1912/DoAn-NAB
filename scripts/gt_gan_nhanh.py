@@ -129,13 +129,23 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
             cu = {}
         if not isinstance(cu, dict):
             cu = {}
-    frames_cu = [int(f["frame_idx"]) for f in cu.get("frames", []) if isinstance(f, dict)
-                 and str(f.get("frame_idx", "")).lstrip("-").isdigit()]
+    dang_cu = cu.get("dang_gt")
+    if dang_cu and dang_cu != "silhouette":
+        # Bộ GT cũ KHÔNG phải silhouette (vd `hop_bao` có `hop_bao_xywh` từng frame): công cụ này chỉ
+        # vẽ silhouette ⇒ ghi vào đó là **dán nhãn sai** cả bộ (cổng `hop_bao_xywh`↔mask tắt im lặng,
+        # artifact đổi `gt_dang` ⇒ con số cũ bị in thành "IoU với GT silhouette").
+        raise SystemExit(
+            f"[LOI] `{ten}` đang là bộ GT dạng `{dang_cu}` — không trộn phương pháp. Dùng --ten khác.")
+    cu_items = [f for f in (cu.get("frames") if isinstance(cu.get("frames"), list) else []) if isinstance(f, dict)
+                and str(f.get("frame_idx", "")).lstrip("-").isdigit()]
+    frames_cu = [int(f["frame_idx"]) for f in cu_items]
+    # Hợp theo TỪNG FRAME (giữ `hop_bao_xywh`/ghi chú của frame cũ), không dựng lại `{"frame_idx": f}`.
+    theo_frame = {int(f["frame_idx"]): dict(f) for f in cu_items}
     moi = sorted(set(int(v) for v in frames) | set(frames_cu))
     index = {
         "clip": clip,
         "ten": ten,
-        "frames": [{"frame_idx": f} for f in moi],
+        "frames": [theo_frame.get(f, {"frame_idx": f}) for f in moi],
         "frame_hw": list(frame_hw) if frame_hw else cu.get("frame_hw"),
         "gt_rong": sorted(set(int(v) for v in gt_rong) | set(cu.get("gt_rong") or [])),
         "nguoi_gan": nguoi_gan or cu.get("nguoi_gan") or "",
@@ -157,6 +167,11 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
         "huong_dan": ("Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được "
                       "ghi thẳng vào thư mục này."),
     }
+    # Khoá ngữ nghĩa do NGƯỜI VIẾT ĐẦU quyết định: chạy lại không được viết lại nguồn/phương pháp của
+    # những frame đã gán (vd lần đầu tô tay, lần sau dùng gợi ý màu ⇒ hai phương pháp trong một bộ).
+    for khoa in ("dang_gt", "nguon_gt", "phuong_phap_gt", "sai_so_bo_goi_y", "nguoi_gan"):
+        if cu.get(khoa) is not None:
+            index[khoa] = cu[khoa]
     for khoa, gia in cu.items():                     # giữ khoá lạ (dung_duoc/ly_do_khong_dung/canh_bao…)
         index.setdefault(khoa, gia)
     gt_dir.mkdir(parents=True, exist_ok=True)
@@ -251,14 +266,13 @@ def _make_handler(gt_dir: Path, kich_thuoc: dict[int, tuple[int, int]]):
             if loi:
                 return self._send(422, loi.encode(), "text/plain")
             (gt_dir / ten_gt(frame)).write_bytes(data)
-            if khai_rong:
-                _ghi_gt_rong(gt_dir, frame)
+            _ghi_gt_rong(gt_dir, frame, rong=khai_rong)
             return self._send(200, f"da luu {ten_gt(frame)}".encode(), "text/plain")
 
     return Handler
 
 
-def _ghi_gt_rong(gt_dir: Path, frame: int) -> None:
+def _ghi_gt_rong(gt_dir: Path, frame: int, *, rong: bool = True) -> None:
     """Khai frame này là "KHÔNG có vật" vào `index.json` (`gt_rong`) — `score_miou` sẽ không chấm nó.
 
     Cần đường này vì `binh1` có frame chai đã rời khung: ép người gán tô một vật không tồn tại là tạo
@@ -271,8 +285,11 @@ def _ghi_gt_rong(gt_dir: Path, frame: int) -> None:
         return
     if not isinstance(index, dict):
         return
-    rong = sorted(set(int(v) for v in index.get("gt_rong") or []) | {int(frame)})
-    index["gt_rong"] = rong
+    cu = set(int(v) for v in index.get("gt_rong") or [])
+    # Lưu thường trên frame TỪNG khai rỗng ⇒ phải GỠ khỏi `gt_rong`, nếu không index nói "không có vật"
+    # trong khi GT có vật.
+    moi = (cu | {int(frame)}) if rong else (cu - {int(frame)})
+    index["gt_rong"] = sorted(moi)
     path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
 

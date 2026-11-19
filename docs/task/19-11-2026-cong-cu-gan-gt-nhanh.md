@@ -23,8 +23,9 @@ tô tay từ đầu 20–30 frame ⇒ ~2–3 giờ. Mục tiêu: hạ xuống **
      **thẳng** vào `docs/gt/<ten>/`; `_kiem_png()` từ chối PNG hỏng / sai kích thước / **mask rỗng**.
 2. `scripts/gt_painter.html`: trình tô 1 file, không phụ thuộc mạng ngoài (kiểm bằng test): cọ/tẩy,
    nhận gợi ý (`A`), xoá (`C`), lưu & tiếp (`S`), hiện % diện tích vật.
-3. `tests/test_gt_gan_nhanh.py`: **24 test**, gồm server thật trên cổng 0 (lưu đúng thư mục, từ chối
-   `../` lạc đường dẫn, từ chối mask rỗng/sai cỡ, từ chối frame lạ).
+3. `tests/test_gt_gan_nhanh.py`: **26 hàm / 46 case** (parametrize), gồm server thật trên cổng 0 (lưu
+   đúng thư mục, từ chối `../` lạc đường dẫn, từ chối mask rỗng/sai cỡ, từ chối frame lạ, chặn
+   `Sec-Fetch-Site` khác origin, `Content-Length` hỏng ⇒ 400).
 
 ## Output / Kết quả
 
@@ -108,3 +109,20 @@ tô tay từ đầu 20–30 frame ⇒ ~2–3 giờ. Mục tiêu: hạ xuống **
 lưu ⇒ file nằm thẳng `docs/gt/<ten>/` + **không** khai rỗng oan · tự sang frame kế · **không** hộp thoại
 sai · "Không có vật" ⇒ `gt_rong [90]` · `frame_hw [1280,720]` · **0 lỗi JS**. Bài học: 24 unit test
 Python **không** bắt được 2 P0 JS — UI phải có e2e (AGENTS §5.4).
+
+### Review vòng 2 PR #49 — 1 P1 + 4 P2 + 4 P3, đã sửa hết
+
+| Mức | Nội dung | Xử lý |
+|---|---|---|
+| **P1** | "Hợp index" vẫn dựng lại frame thành `{"frame_idx": f}` (**mất `hop_bao_xywh`** của từng frame) và **ghi đè** `dang_gt`/`nguon_gt`/`phuong_phap_gt` ⇒ chạy lại trên `binh1_hopbao` sẽ làm cổng `hop_bao_xywh`↔mask **tắt im lặng** và con số `mIoU 0,6464` bị in thành "GT silhouette" | **Hợp theo từng frame** (`{**cu_item, "frame_idx": idx}`); **từ chối** khi `dang_gt` cũ khác `silhouette`; không viết lại khoá ngữ nghĩa của frame đã gán. 4 test mới (dùng đúng shape của `binh1_hopbao`) |
+| P2 | `Z` (Hoàn tác) **không hoàn tác được nét cọ** (chỉ undo "Xoá sạch"/"Nhận gợi ý") ⇒ tô sai, bấm Z thấy không đổi, rồi Lưu ⇒ GT sai | `nhoLichSu()` trong `pointerdown` ⇒ undo **từng nét** |
+| P2 | e2e PASS được với **GT toàn trắng** nếu mask bị xoá mà không khai rỗng | Thêm assert **byte**: GT "có vật" phải khác GT all-black (24 931 vs 23 076 byte) |
+| P2 | `./run gte2e` để lại `docs/gt/_e2e_gt/` untracked (commit nhầm GT giả) | `trap … rm -rf` + `.gitignore` `docs/gt/_e2e_*/`; kiểm: sau khi chạy, `docs/gt/` **không** còn `_e2e_gt` |
+| P2 | `gte2e` không có trong `./run help` / checklist ⇒ lớp bảo vệ 2 P0 chỉ tồn tại nếu ai đó nhớ | Thêm vào `usage()` (kèm câu "BẮT BUỘC khi sửa file HTML đó") |
+| P3 | assert `frame_hw` hình thức (`length === 2`, `[1,1]` cũng PASS) | So **đúng** `'[1280,720]'` |
+| P3 | `gt_rong` là metadata không có răng; tô lại frame từng khai rỗng vẫn để `gt_rong` | Lưu thường **gỡ** frame khỏi `gt_rong` (+ test). Ghi rõ trong tài liệu: `score_miou` **tự** nhận GT rỗng, khoá này chỉ là lời khai |
+| P3 | `"frames": null` ⇒ `TypeError` | Bọc `isinstance(list)` |
+| P3 | Log ghi "24 test" (thực 26 hàm/46 case); §2b nói server từ chối rỗng mà không nêu ngoại lệ | Đã sửa cả hai |
+
+**Diễn tập ngược e2e — 3/3 mutant ĐỎ**: (1) `drawImage(null)` ⇒ timeout (trang không lên được) · (2)
+`d.data[p]` ⇒ timeout · (3) `onclick = luu` ⇒ đỏ **2** assert (khai rỗng oan + byte GT trùng all-black).

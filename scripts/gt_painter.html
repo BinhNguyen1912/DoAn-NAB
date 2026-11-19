@@ -151,7 +151,10 @@ function hoanTac() {
 }
 
 cv.addEventListener('contextmenu', e => e.preventDefault());
-cv.addEventListener('pointerdown', e => { dangVe = true; cv.setPointerCapture(e.pointerId); to(e); });
+cv.addEventListener('pointerdown', e => {
+  nhoLichSu();                                   // snapshot TRƯỚC nét ⇒ Z hoàn tác được từng nét
+  dangVe = true; cv.setPointerCapture(e.pointerId); to(e);
+});
 cv.addEventListener('pointermove', e => { if (dangVe && e.buttons) to(e); });
 cv.addEventListener('pointerup', () => { dangVe = false; });
 cv.addEventListener('pointercancel', () => { dangVe = false; });   // alt-tab khi đang kéo
