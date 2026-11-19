@@ -1394,10 +1394,11 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        # Tuple hẹn nay mang cả dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq,
-        # vos_ms, empty, lk_ok). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`);
-        # `lk_ok=None` vì frame 0 chưa được phát ⇒ chưa biết LK trả gì (KHÔNG phải False).
-        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None, None)
+        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq, vos_ms, empty).
+        # KHÔNG có `lk_ok`: frame chưa phát nên chưa biết LK, và giá trị đó được TRA LẠI trong lock lúc
+        # drain (nhồi `None` vào tuple từng làm mất mẫu khỏi mẫu số — P2 review #51). `seq=None` vì test
+        # gọi thẳng `_measure_drift` (không qua `_store_vos`).
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
 
 
 class TestStabilityCoEncodingChuaDo:

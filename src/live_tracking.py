@@ -1203,9 +1203,12 @@ class LiveTrackingSession:
                 # (sau khi nhả lock) thay vì ghi đè ⇒ không mất mẫu khi VOS nhanh hơn nhịp phát
                 # (review độc lập vòng 2, P3).
                 cu, da_hen = self._pending_drift, True
+                # 5 phần tử: (frame, bbox VOS, seq, vos_ms, empty). `lk_ok` KHÔNG nằm trong tuple —
+                # frame này chưa được phát nên chưa biết LK, và phải TRA LẠI trong lock lúc drain
+                # (nhồi `None` vào tuple từng làm mẫu bị mất khỏi mẫu số của `lk_ok_frac` — P2 review #51).
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
-                                       self._mask_empty(result), None)
+                                       self._mask_empty(result))
         if da_hen:
             if cu is not None:
                 with self._stats_lock:
