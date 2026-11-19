@@ -171,6 +171,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
     webtest        Test frontend bằng vitest (toán học canvas, hàm thuần)
     democheck      Soi 9 thứ có thể làm hỏng buổi demo (≤ 120 s, KHÔNG nạp model);
                    thêm --full --bbox x,y,w,h để diễn tập thật (có nạp model)
+    gt             Mở TRÌNH TÔ GT trên trình duyệt để gán mask vs GT thật (cần --clip/--ten/
+                   --nguoi-gan/--frames). Vd: ./run gt --clip data/binh1.mp4 --ten binh1_tay2 \
+                     --nguoi-gan Binh --frames 0,25,50  (rồi mở http://127.0.0.1:8765)
     gte2e          E2E TRÌNH DUYỆT THẬT cho TRÌNH TÔ GT (scripts/gt_painter.html) — 12 mục,
                    dựng bộ GT giả rồi tự xoá; BẮT BUỘC khi sửa file HTML đó
     e2e            E2E TRÌNH DUYỆT THẬT: Chrome/Edge lái giao diện, kéo chuột chọn vật,
@@ -435,6 +438,13 @@ EOF
     for _ in $(seq 1 25); do curl -sf "localhost:$port/health" >/dev/null && break; sleep 1; done
     win_root="$(wslpath -w "$ROOT")"
     cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& node scripts\\e2e_web.js"
+    ;;
+  gt)
+    # Lệnh TẮT để gán GT thật: máy Windows KHÔNG có `python` (chỉ alias Microsoft Store) nên người
+    # dùng hay dán `python scripts/gt_gan_nhanh.py …` vào PowerShell và nhận "Python was not found"
+    # (gặp thật 19-11). Ở đây `activate_env` chọn đúng python của conda trong WSL.
+    activate_env
+    exec "$PYTHON" scripts/gt_gan_nhanh.py "$@"
     ;;
   gte2e)
     # E2E TRÌNH DUYỆT THẬT cho trình tô GT (`scripts/gt_painter.html`). Vì sao riêng một target: PR #49
