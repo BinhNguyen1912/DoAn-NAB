@@ -202,3 +202,145 @@ def test_trang_to_co_mat_va_khong_dung_file_ngoai(may_chu):
     assert "Lưu" in html and "canvas" in html
     # Trình tô không được tải tài nguyên ngoài (chạy offline trong phòng demo)
     assert "http://" not in html.replace("http://127.0.0.1", "") and "https://" not in html
+
+
+class TestIndexKhongXoaDuLieuCu:
+    """Gọi lại trên thư mục ĐÃ có `index.json` không được xoá dấu vết (review PR #49, P1).
+
+    Ghi đè trắng làm frame đã gán rơi khỏi index ⇒ `n_cham` nhỏ đi nhưng `coverage` vẫn 1,0 (số liệu
+    nhỏ dần một cách im lặng), và xoá cả `dung_duoc: false` — tức bộ GT đã bị vô hiệu hoá lại thành
+    "dùng được".
+    """
+
+    def test_giu_frame_cu_va_khoa_la(self, tmp_path):
+        cu = {"frames": [{"frame_idx": 10}, {"frame_idx": 20}], "dung_duoc": False,
+              "ly_do_khong_dung": "GT vẽ bằng hộp, không phải silhouette", "frame_hw": [720, 1280]}
+        (tmp_path / "index.json").write_text(json.dumps(cu), encoding="utf-8")
+        path = gt._viet_index(tmp_path, clip="c.mp4", ten="t", frames=[30],
+                              nguoi_gan="A", co_goi_y=True, frame_hw=[720, 1280])
+        moi = json.loads(path.read_text(encoding="utf-8"))
+        assert [f["frame_idx"] for f in moi["frames"]] == [10, 20, 30], "frame cũ không được rơi"
+        assert moi["dung_duoc"] is False, "không được xoá cờ vô hiệu hoá của bộ GT cũ"
+        assert "hộp" in moi["ly_do_khong_dung"]
+
+    def test_index_hong_thi_van_ghi_duoc(self, tmp_path):
+        (tmp_path / "index.json").write_text("{khong phai json", encoding="utf-8")
+        path = gt._viet_index(tmp_path, clip="c.mp4", ten="t", frames=[5], nguoi_gan="A",
+                              co_goi_y=False, frame_hw=[40, 50])
+        moi = json.loads(path.read_text(encoding="utf-8"))
+        assert [f["frame_idx"] for f in moi["frames"]] == [5]
+        assert moi["frame_hw"] == [40, 50]      # cổng kích thước GT chỉ chạy khi CÓ khoá này
+
+
+class TestKhaiFrameKhongCoVat:
+    """Frame không có vật phải khai được (`?rong=1`), nhưng rỗng KHÔNG được nhận vô điều kiện.
+
+    `binh1` có frame chai đã rời khung: ép tô một vật không tồn tại là tạo GT sai, còn bắt dừng giữa
+    buổi thì không ra được con số nào (review PR #49, P1).
+    """
+
+    def test_kiem_png_rong_bi_tu_choi_khi_khong_khai(self):
+        loi = gt._kiem_png(_png(np.zeros((40, 50), np.uint8)), rong=50, cao=40)
+        assert "rỗng" in loi and "Không có vật" in loi
+
+    def test_kiem_png_rong_duoc_nhan_khi_da_khai(self):
+        assert gt._kiem_png(_png(np.zeros((40, 50), np.uint8)), rong=50, cao=40,
+                            cho_rong=True) == ""
+
+    def test_ghi_gt_rong_vao_index(self, tmp_path):
+        (tmp_path / "index.json").write_text(json.dumps({"frames": [{"frame_idx": 90}]}),
+                                             encoding="utf-8")
+        gt._ghi_gt_rong(tmp_path, 90)
+        gt._ghi_gt_rong(tmp_path, 90)          # gọi 2 lần không được nhân đôi
+        index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
+        assert index["gt_rong"] == [90]
+        assert index["frames"] == [{"frame_idx": 90}], "không được ghi đè các khoá khác"
+
+    def test_ghi_gt_rong_khong_no_khi_index_hong(self, tmp_path):
+        (tmp_path / "index.json").write_text("hỏng", encoding="utf-8")
+        gt._ghi_gt_rong(tmp_path, 5)           # không được ném lỗi
+        assert (tmp_path / "index.json").read_text(encoding="utf-8") == "hỏng"
+
+
+class TestServerKhaiRongVaChanOrigin:
+    def test_post_rong_1_duoc_nhan_va_ghi_gt_rong(self, tmp_path):
+        import threading
+
+        from http.server import ThreadingHTTPServer
+
+        (tmp_path / "frames").mkdir()
+        (tmp_path / "index.json").write_text(json.dumps({"frames": [{"frame_idx": 57}]}),
+                                             encoding="utf-8")
+        server = ThreadingHTTPServer(("127.0.0.1", 0), gt._make_handler(tmp_path, {57: (50, 40)}))
+        th = threading.Thread(target=server.serve_forever, daemon=True)
+        th.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/luu/gt_000057.png"
+            status, text = _post(url + "?rong=1", _png(np.zeros((40, 50), np.uint8)))
+            assert status == 200, text
+            index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
+            assert index["gt_rong"] == [57]
+            # cùng payload nhưng KHÔNG khai ⇒ 422 (không được nhận rỗng vô điều kiện)
+            status, _ = _post(url, _png(np.zeros((40, 50), np.uint8)))
+            assert status == 422
+        finally:
+            server.shutdown()
+            server.server_close()
+            th.join(timeout=5)
+
+    def test_post_tu_origin_khac_bi_chan(self, tmp_path):
+        import threading
+
+        from http.server import ThreadingHTTPServer
+
+        (tmp_path / "frames").mkdir()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), gt._make_handler(tmp_path, {57: (50, 40)}))
+        th = threading.Thread(target=server.serve_forever, daemon=True)
+        th.start()
+        try:
+            url = f"http://127.0.0.1:{server.server_address[1]}/luu/gt_000057.png"
+            req = urllib.request.Request(url, data=_png(np.full((40, 50), 255, np.uint8)),
+                                         method="POST",
+                                         headers={"Sec-Fetch-Site": "cross-site"})
+            try:
+                with urllib.request.urlopen(req, timeout=10) as r:
+                    kq = r.status
+            except urllib.error.HTTPError as exc:
+                kq = exc.code
+            assert kq == 403
+            assert not list(tmp_path.glob("gt_*.png"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            th.join(timeout=5)
+
+    def test_content_length_hong_tra_400_khong_chet_handler(self, tmp_path):
+        import socket
+        import threading
+
+        from http.server import ThreadingHTTPServer
+
+        (tmp_path / "frames").mkdir()
+        server = ThreadingHTTPServer(("127.0.0.1", 0), gt._make_handler(tmp_path, {57: (50, 40)}))
+        th = threading.Thread(target=server.serve_forever, daemon=True)
+        th.start()
+        try:
+            with socket.create_connection(("127.0.0.1", server.server_address[1]), timeout=10) as s:
+                s.sendall(b"POST /luu/gt_000057.png HTTP/1.1\r\nHost: x\r\n"
+                          b"Content-Length: abc\r\n\r\n")
+                tra_loi = s.recv(200).decode("latin-1")
+            assert "400" in tra_loi.splitlines()[0]
+            assert not list(tmp_path.glob("gt_*.png"))
+        finally:
+            server.shutdown()
+            server.server_close()
+            th.join(timeout=5)
+
+
+class TestTenBoGtHopLe:
+    @pytest.mark.parametrize("ten,hop_le", [
+        ("binh1_tay", True), ("a", True), ("a.b-c", True),
+        ("../docs", False), ("..", False), ("/etc", False), (".an", False), ("a/b", False),
+    ])
+    def test_ten_bo_gt(self, ten, hop_le):
+        assert bool(gt.TEN_HOP_LE.match(ten)) is hop_le

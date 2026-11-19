@@ -185,9 +185,16 @@ script đó để số vào `docs/so-lieu-bao-cao.md`.
 Mục 2 ở trên cần mở phần mềm ảnh và tô từ đầu. Nếu muốn nhanh hơn (≈ 1 phút/frame):
 
 ```bash
-python scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten binh1_tay --nguoi-gan "Nguyễn Văn A" \
-    --frames 0,25,50,57,69,90,110,150,190,230,255,280,310
+# ⚠ `binh1` (333 frame) chỉ có chai trong `0:110` và `165:262` (docs/demo-clip-va-o-chon.md) ⇒ frame
+# 150/280/310 KHÔNG có vật. Với frame đó bấm "Không có vật" (khai rỗng, `score_miou` sẽ không chấm),
+# đừng tô một vật không tồn tại.
+python scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten binh1_tay2 --nguoi-gan "Nguyễn Văn A" \
+    --frames 0,25,50,57,69,90,105,171,190,230,245,258
 ```
+
+Tên bộ GT mới (`binh1_tay2`): `docs/gt/binh1_tay` đã tồn tại nhưng bị **vô hiệu hoá**
+(`dung_duoc: false` trong `index.json`). Chạy lại trên cùng tên sẽ **hợp** danh sách frame và **giữ**
+các khoá cũ (không xoá cờ vô hiệu hoá), nhưng đừng trộn hai phương pháp gán trong một bộ.
 
 Lệnh này (a) cắt frame, (b) sinh **gợi ý** `goiy_NNNNNN.png` bằng ngưỡng màu HSV + bao lồi, (c) mở
 **trình tô** ở `http://127.0.0.1:8765` — tô bằng chuột (chuột phải = tẩy), phím `A` = nhận gợi ý,

@@ -45,6 +45,8 @@ PAINTER = Path(__file__).with_name("gt_painter.html")
 
 # Ngưỡng HSV mặc định cho vật MÀU (chai tím/đỏ) trên nền xám — chỉ là điểm khởi đầu để người sửa.
 H_MIN, S_MIN, V_MIN = 40, 70, 30
+# Tên bộ GT chỉ chữ/số/_/./- và không bắt đầu bằng '.' — chặn `--ten ../../docs` ghi ra ngoài `docs/gt/`
+TEN_HOP_LE = __import__("re").compile(r"^[A-Za-z0-9_][A-Za-z0-9_.-]*$")
 
 
 def goi_y_hsv(img, *, s_min: int = S_MIN, v_min: int = V_MIN, h_min: int = H_MIN):
@@ -107,13 +109,36 @@ def doc_frame_tu_ten(ten: str):
 
 
 def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
-                co_goi_y: bool) -> Path:
-    """`index.json` khai ĐÚNG nguồn GT — thiếu/sai khoá này thì `score_miou` cảnh báo hoặc từ chối."""
+                co_goi_y: bool, frame_hw=None, gt_rong=()) -> Path:
+    """`index.json` khai ĐÚNG nguồn GT — thiếu/sai khoá này thì `score_miou` cảnh báo hoặc từ chối.
+
+    `frame_hw` **bắt buộc phải có**: `score_miou.kiem_index` và `gt_check_silhouette` đều **bỏ qua im
+    lặng** khi khoá này thiếu ⇒ GT sai cỡ (file chép tay, `gt_*.png` cũ trong cùng thư mục) vẫn được in
+    "hợp lệ, exit 0". Repo đã trả giá đúng lỗi này (`docs/task/15-11-2026-gt-hop-bao-va-mask-ngoai-gt.md`).
+
+    Gọi lại trên thư mục ĐÃ có `index.json` ⇒ **hợp** `frames` (giữ frame đã gán trước đó) và giữ các
+    khoá lạ (`dung_duoc`, `ly_do_khong_dung`, …). Ghi đè trắng sẽ làm `n_cham` nhỏ đi trong khi
+    `coverage` vẫn 1,0 — số liệu nhỏ dần một cách im lặng.
+    """
+    path = gt_dir / "index.json"
+    cu = {}
+    if path.is_file():
+        try:
+            cu = json.loads(path.read_text(encoding="utf-8"))
+        except (OSError, ValueError):
+            cu = {}
+        if not isinstance(cu, dict):
+            cu = {}
+    frames_cu = [int(f["frame_idx"]) for f in cu.get("frames", []) if isinstance(f, dict)
+                 and str(f.get("frame_idx", "")).lstrip("-").isdigit()]
+    moi = sorted(set(int(v) for v in frames) | set(frames_cu))
     index = {
         "clip": clip,
         "ten": ten,
-        "frames": [{"frame_idx": f} for f in sorted(set(int(v) for v in frames))],
-        "nguoi_gan": nguoi_gan,
+        "frames": [{"frame_idx": f} for f in moi],
+        "frame_hw": list(frame_hw) if frame_hw else cu.get("frame_hw"),
+        "gt_rong": sorted(set(int(v) for v in gt_rong) | set(cu.get("gt_rong") or [])),
+        "nguoi_gan": nguoi_gan or cu.get("nguoi_gan") or "",
         "gt_do_model_goi_y": False,
         "dang_gt": "silhouette",
         "nguon_gt": ("ngưỡng màu HSV (script `gt_gan_nhanh.py`) + người sửa tay"
@@ -122,18 +147,24 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
                            if co_goi_y else "người tô tay từ frame trống"),
         "sai_so_bo_goi_y": ("CHƯA ĐO — mIoU này là của mask SAU khi người sửa, không phải của gợi ý"
                             if co_goi_y else None),
+        # Caveat phải nằm trong `phuong_phap_gt` vì `score_miou` chỉ copy `nguon_gt`/`phuong_phap_gt`
+        # vào `meta` của artifact — khoá `sai_so_bo_goi_y` KHÔNG đi theo con số ra file công bố.
+        **({"phuong_phap_gt": ("GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; "
+                               "sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ "
+                               "hoàn toàn")} if co_goi_y else {}),
         "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
         "tao_luc": datetime.now().isoformat(timespec="seconds"),
         "huong_dan": ("Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được "
                       "ghi thẳng vào thư mục này."),
     }
+    for khoa, gia in cu.items():                     # giữ khoá lạ (dung_duoc/ly_do_khong_dung/canh_bao…)
+        index.setdefault(khoa, gia)
     gt_dir.mkdir(parents=True, exist_ok=True)
-    path = gt_dir / "index.json"
     path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
     return path
 
 
-def _kiem_png(data: bytes, *, rong: int, cao: int) -> str:
+def _kiem_png(data: bytes, *, rong: int, cao: int, cho_rong: bool = False) -> str:
     """Kiểm ảnh GT do trình duyệt gửi lên; trả thông báo lỗi (''= hợp lệ).
 
     Ba kiểm bắt buộc: PNG thật, **cùng kích thước frame** (khác cỡ ⇒ GT lệch frame mà `score_miou`
@@ -148,8 +179,11 @@ def _kiem_png(data: bytes, *, rong: int, cao: int) -> str:
         return "dữ liệu không phải ảnh đọc được"
     if arr.shape[:2] != (cao, rong):
         return f"kích thước {arr.shape[1]}×{arr.shape[0]} khác frame {rong}×{cao}"
-    if not np.any(arr > 127):
-        return "mask rỗng — GT không có pixel vật nào"
+    if not np.any(arr > 127) and not cho_rong:
+        # Rỗng chỉ hợp lệ khi người gán KHAI "frame này không có vật" (`?rong=1`): `score_miou` không
+        # chấm frame GT rỗng, nên khai đúng thì không thổi phồng mIoU; nhận rỗng vô điều kiện thì
+        # `IoU(rỗng, rỗng) = 1,0` sẽ được ghi thành điểm.
+        return "mask rỗng — nếu frame này KHÔNG có vật thì bấm 'Không có vật' (khai rỗng)"
     return ""
 
 
@@ -168,6 +202,10 @@ def _make_handler(gt_dir: Path, kich_thuoc: dict[int, tuple[int, int]]):
             self.wfile.write(body)
 
         def do_GET(self):                                # noqa: N802 (API của http.server)
+            if self.path == "/favicon.ico":
+                # Trình duyệt LUÔN hỏi favicon; trả 204 để console không có lỗi 404 (e2e coi đó là lỗi
+                # thật thì sẽ che mất lỗi JS thật).
+                return self._send(204, b"", "image/x-icon")
             if self.path in ("/", "/index.html"):
                 return self._send(200, PAINTER.read_bytes(), "text/html; charset=utf-8")
             if self.path == "/danh-sach.json":
@@ -188,23 +226,54 @@ def _make_handler(gt_dir: Path, kich_thuoc: dict[int, tuple[int, int]]):
             return self._send(404, b"khong co", "text/plain")
 
         def do_POST(self):                               # noqa: N802
+            # Localhost vẫn bị trang web bất kỳ POST tới (simple request) ⇒ chặn theo
+            # `Sec-Fetch-Site`. Trình tô của mình là same-origin nên qua bình thường.
+            site = self.headers.get("Sec-Fetch-Site")
+            if site not in (None, "same-origin", "none"):
+                return self._send(403, b"khac origin", "text/plain")
             if not self.path.startswith("/luu/"):
                 return self._send(404, b"khong co", "text/plain")
             frame = doc_frame_tu_ten(self.path.rsplit("/", 1)[-1])
             if frame is None or frame not in kich_thuoc:
                 return self._send(400, b"frame la", "text/plain")
-            dai = int(self.headers.get("Content-Length") or 0)
+            try:
+                dai = int(self.headers.get("Content-Length") or 0)
+            except (TypeError, ValueError):
+                # `Content-Length: abc` từng làm handler ném ValueError ⇒ client không nhận gì
+                self.close_connection = True
+                return self._send(400, b"Content-Length khong phai so", "text/plain")
             if dai <= 0 or dai > 8 * 1024 * 1024:
                 return self._send(400, b"kich thuoc body sai", "text/plain")
             data = self.rfile.read(dai)
             rong, cao = kich_thuoc[frame]
-            loi = _kiem_png(data, rong=rong, cao=cao)
+            khai_rong = "rong=1" in self.path
+            loi = _kiem_png(data, rong=rong, cao=cao, cho_rong=khai_rong)
             if loi:
                 return self._send(422, loi.encode(), "text/plain")
             (gt_dir / ten_gt(frame)).write_bytes(data)
+            if khai_rong:
+                _ghi_gt_rong(gt_dir, frame)
             return self._send(200, f"da luu {ten_gt(frame)}".encode(), "text/plain")
 
     return Handler
+
+
+def _ghi_gt_rong(gt_dir: Path, frame: int) -> None:
+    """Khai frame này là "KHÔNG có vật" vào `index.json` (`gt_rong`) — `score_miou` sẽ không chấm nó.
+
+    Cần đường này vì `binh1` có frame chai đã rời khung: ép người gán tô một vật không tồn tại là tạo
+    GT sai, còn bắt họ dừng giữa buổi thì không ra được con số nào (review độc lập PR #49, P1).
+    """
+    path = gt_dir / "index.json"
+    try:
+        index = json.loads(path.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return
+    if not isinstance(index, dict):
+        return
+    rong = sorted(set(int(v) for v in index.get("gt_rong") or []) | {int(frame)})
+    index["gt_rong"] = rong
+    path.write_text(json.dumps(index, ensure_ascii=False, indent=2), encoding="utf-8")
 
 
 def _kich_thuoc_frames(gt_dir: Path, frames) -> dict[int, tuple[int, int]]:
@@ -235,12 +304,17 @@ def main(argv=None) -> int:
     parser.add_argument("--s-min", type=int, default=S_MIN, help="ngưỡng bão hoà màu của gợi ý (0–255)")
     parser.add_argument("--v-min", type=int, default=V_MIN, help="ngưỡng sáng tối thiểu của gợi ý")
     parser.add_argument("--cong", type=int, default=8765, help="cổng HTTP của trình tô (0 = tự chọn)")
+    parser.add_argument("--host", default="127.0.0.1",
+                        help="địa chỉ bind (127.0.0.1 = chỉ máy này; 0.0.0.0 chỉ dùng cho e2e WSL→Windows)")
     parser.add_argument("--chi-sinh", action="store_true", help="chỉ cắt frame + sinh gợi ý, không mở server")
     args = parser.parse_args(argv)
 
     frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
     if not frames:
         raise SystemExit("--frames rỗng")
+    if not TEN_HOP_LE.match(args.ten):
+        raise SystemExit(f"--ten {args.ten!r} không hợp lệ: chỉ chữ/số/_/./- và không bắt đầu bằng '.' "
+                         f"(thư mục GT là nơi ghi provenance, không được trỏ ra ngoài)")
     gt_dir = GT_DIR / args.ten
     from scripts.score_miou import cat_frames
 
@@ -259,18 +333,24 @@ def main(argv=None) -> int:
             print(f"  gợi ý f{f}: {ti_le:.1f} % diện tích"
                   + ("  (RỖNG — không đạt ngưỡng màu, phải tô tay)" if ti_le == 0 else ""))
 
-    index = _viet_index(gt_dir, clip=args.clip, ten=args.ten, frames=frames,
-                        nguoi_gan=args.nguoi_gan, co_goi_y=not args.khong_goi_y)
-    print(f"index.json → {index}")
-
     kich_thuoc = _kich_thuoc_frames(gt_dir, frames)
     if not kich_thuoc:
         raise SystemExit("[LOI] không có frame nào để gán")
+    hw = sorted({v for v in kich_thuoc.values()})
+    if len(hw) != 1:
+        raise SystemExit(f"[LOI] frame không cùng kích thước {hw} — một bộ GT phải cùng cỡ")
+    cao, rong = hw[0][1], hw[0][0]
+    # Index ghi danh sách frame THẬT SỰ cắt được (không phải danh sách yêu cầu): frame không cắt được
+    # mà vẫn nằm trong index ⇒ `score` báo "thiếu file GT" khó hiểu về sau.
+    index = _viet_index(gt_dir, clip=args.clip, ten=args.ten, frames=sorted(kich_thuoc),
+                        nguoi_gan=args.nguoi_gan, co_goi_y=not args.khong_goi_y,
+                        frame_hw=[cao, rong])
+    print(f"index.json → {index}  (frame_hw = {cao}×{rong})")
     if args.chi_sinh:
         print("Chỉ sinh file. Mở trình tô bằng cách bỏ --chi-sinh.")
         return 0
 
-    server = ThreadingHTTPServer(("127.0.0.1", args.cong), _make_handler(gt_dir, kich_thuoc))
+    server = ThreadingHTTPServer((args.host, args.cong), _make_handler(gt_dir, kich_thuoc))
     cong = server.server_address[1]
     print(f"\nMỞ TRÌNH DUYỆT: http://127.0.0.1:{cong}")
     print("Tô bằng chuột (chuột phải = tẩy), bấm 'Lưu & tiếp'. Ctrl+C để dừng.")
