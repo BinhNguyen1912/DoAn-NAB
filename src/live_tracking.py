@@ -37,7 +37,7 @@ import numpy as np
 
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
-from src.light_tracker import LkBoxTracker, shift_mask
+from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
 from src.video_source import looks_like_file, open_video_source
@@ -102,6 +102,11 @@ class LiveTrackConfig:
     # phải việc âm thầm ghi hàng trăm MB mask mỗi phiên).
     dump_mask_frames: tuple = ()
     dump_mask_dir: str = ""
+    # Cửa chống-trôi của LK (px, độ tản trung vị vector dịch). Mặc định = `light_tracker.DEFAULT_MAX_MAD`
+    # (1,5). Có mặt ở đây **chỉ để ĐO** (ticket #38): đo offline 19-11 cho thấy 1,5 px chặn LK quá mức
+    # (ok_frac trong khung 0,227; nới 6,0 ⇒ 0,568 mà IoU khi-ok chỉ giảm 0,031). Đổi GIÁ TRỊ MẶC ĐỊNH
+    # phải chờ A/B live 2 clip + kiểm ảnh ô bao không bị kéo vào nền — xem ticket #38.
+    lk_max_mad: float = DEFAULT_MAX_MAD
 
     def __post_init__(self) -> None:
         """Kiểm tra tham số ở MỘT chỗ — trước đây schema API cho 0.0 còn worker clamp 0.05,
@@ -118,6 +123,8 @@ class LiveTrackConfig:
             raise ValueError(f"vos_every phải >= 1; nhận {self.vos_every!r}")
         if float(self.display_fps) <= 0:
             raise ValueError(f"display_fps phải > 0; nhận {self.display_fps!r}")
+        if not float(self.lk_max_mad) > 0:
+            raise ValueError(f"lk_max_mad phải > 0; nhận {self.lk_max_mad!r}")
 
 
 @dataclass
@@ -298,7 +305,8 @@ def phien_live_dang_giu(out_dir) -> int | None:
 
 
 def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,
-                     mask_smoothing=1.0, device="", dump_mask_frames=()) -> dict:
+                     mask_smoothing=1.0, device="", dump_mask_frames=(),
+                     lk_max_mad=DEFAULT_MAX_MAD) -> dict:
     """Cấu hình **được yêu cầu** (từ CLI/API) ở dạng ghi được vào `status.json`.
 
     Tách khỏi `LiveTrackStats` để giai đoạn `loading` (chưa có engine, 20–240 s) cũng ghi được cấu
@@ -326,6 +334,10 @@ def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.
         # phải tự khai — không có khoá này thì không ai biết số của phiên có bị dump làm bẩn không
         # (ticket #26, P3 review 17-11).
         "dump_mask_frames": list(dump_mask_frames or ()),
+        # Cửa chống-trôi của LK: `LiveTrackConfig` thi hành trực tiếp (không có bản "hiệu lực" riêng)
+        # nên không thể lệch âm thầm — nhưng PHẢI echo, nếu không thì không ai biết artifact được đo ở
+        # 1,5 hay 6,0 (đúng lý do `cau_hinh` tồn tại, review 15-11).
+        "lk_max_mad": float(lk_max_mad),
         "mask_age_dinh_nghia": DINH_NGHIA_TUOI_MASK,
     }
 
@@ -545,13 +557,15 @@ class LiveTrackingSession:
     def __init__(self, engine, config: LiveTrackConfig, *, lk_tracker=None) -> None:
         self._engine = engine
         self._cfg = config
-        self._lk = lk_tracker or LkBoxTracker()
-        self._interp = LkBoxTracker()      # nội suy từ frame VOS gần nhất → frame hiện tại
+        # Cả hai tracker dùng CÙNG cửa MAD của phiên: `_lk` (bám từ frame trước) và `_interp` (nội suy
+        # từ frame VOS gần nhất) cùng sinh ra ô hiển thị, lệch ngưỡng thì số đo không nói được gì.
+        self._lk = lk_tracker or LkBoxTracker(max_mad=config.lk_max_mad)
+        self._interp = LkBoxTracker(max_mad=config.lk_max_mad)
         self._stats = LiveTrackStats(device=config.device)
         # Echo cấu hình NGAY khi dựng phiên (engine đã nạp ⇒ `image_size` hiệu lực đã biết): từ đây
         # `status.json` trả lời được "phiên này chạy cấu hình nào" mà không cần đọc `worker.log`.
         self._stats.cau_hinh = cau_hinh_hieu_luc(
-            cau_hinh_yeu_cau(source=config.source,
+            cau_hinh_yeu_cau(source=config.source, lk_max_mad=config.lk_max_mad,
                              image_size=getattr(engine, "image_size", None),
                              vos_every=config.vos_every, display_fps=config.display_fps,
                              mask_smoothing=config.mask_smoothing, device=config.device,

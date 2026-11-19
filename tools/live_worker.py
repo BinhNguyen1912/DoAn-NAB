@@ -22,6 +22,7 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 if str(_REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(_REPO_ROOT))
 
+from src.light_tracker import DEFAULT_MAX_MAD  # noqa: E402
 from src.live_tracking import (  # noqa: E402
     STATE_ERROR,
     STATE_LOADING,
@@ -121,6 +122,12 @@ def main() -> int:
                         help="trọng số mask MỚI khi trộn theo thời gian (0-1]; 1.0 = tắt (mặc định, "
                              "đo 08-11: bật không cải thiện độ êm mà thêm trễ — data/live_2026-11-08_vos3_smoothing05_metrics.json")
     parser.add_argument("--trajectory-len", type=int, default=100)
+    # Cửa chống-trôi của LK. Mặc định = `light_tracker.DEFAULT_MAX_MAD`; cờ này tồn tại để ĐO A/B
+    # (ticket #38: đo offline cho thấy 1,5 px chặn LK quá mức). Không đổi mặc định khi chưa có A/B
+    # live 2 clip + kiểm ảnh ô bao không trôi vào nền.
+    parser.add_argument("--lk-max-mad", type=float, default=DEFAULT_MAX_MAD,
+                        help=f"độ tản (px) tối đa của vector dịch LK, lớn hơn ⇒ coi là mất dấu "
+                             f"(mặc định {DEFAULT_MAX_MAD}; tăng để đo — ticket #38)")
     # KHÔNG dùng `choices`: `validate_device` chuẩn hoá hoa/thường + khoảng trắng và cho CÙNG một
     # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 10-11).
     parser.add_argument("--device", default=None,
@@ -233,7 +240,8 @@ def main() -> int:
                                # `sorted(set(...))`: `status.json` lúc `loading` phải khai ĐÚNG tập sẽ
                                # thi hành (config của session cũng `sorted(set(...))`); để `6,0,6` thì
                                # hai giai đoạn của CÙNG phiên khai hai giá trị khác nhau (P3 review 4).
-                               dump_mask_frames=sorted(set(dump_frames)))
+                               dump_mask_frames=sorted(set(dump_frames)),
+                               lk_max_mad=args.lk_max_mad)
     _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:
@@ -277,6 +285,7 @@ def main() -> int:
         stop_after_frames=args.stop_after_frames,
         dump_mask_frames=args.dump_mask_frames,
         dump_mask_dir=args.dump_mask_dir,
+        lk_max_mad=args.lk_max_mad,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
     print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "

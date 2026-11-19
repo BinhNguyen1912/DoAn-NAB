@@ -71,3 +71,44 @@ không phải nút điều khiển**, không cần đổi.
 
 Chỉ khi (2) và (3) cùng đạt mới đổi `DEFAULT_MAX_MAD`; nếu không ⇒ kết luận trung thực là **ẩn ô cũ**
 giữa hai lần VOS.
+
+---
+
+## A/B LIVE 19-11 (bước 2) — `scripts/ab_lk_max_mad.py`, 2 clip, 3 lần/cấu hình, chèn kẽ
+
+`data/ab_lk_max_mad_2026-11-19_metrics.json` (`git_rev b5dea7a`, `git_dirty_code false`,
+`cau_hinh_hieu_luc_lech []`), `image_size 192`, `vos_every 3`, 262 frame, cửa sổ `0:110,165:262`:
+
+| clip | `max_mad` | `lk_ok_frac` (±) | `drift_iou` | `measured_fps` | `vos_ms` | `mask_age_p95` |
+|---|---|---|---|---|---|---|
+| binh1 | **1,5** | **0,119 ± 0,014** | 0,495 | 29,90 | 93,8 | 293,2 |
+| binh1 | 3,0 | 0,232 ± 0,004 | 0,513 | 29,83 | 91,4 | 301,6 |
+| binh1 | **6,0** | **0,402 ± 0,060** | **0,561** | 29,73 | 102,7 | 303,2 |
+| binh2 | **1,5** | **0,405 ± 0,005** | 0,710 | 29,87 | 107,3 | 303,1 |
+| binh2 | 3,0 | 0,611 ± 0,054 | 0,726 | 29,87 | 98,7 | 301,9 |
+| binh2 | **6,0** | **0,636 ± 0,010** | 0,717 | 29,87 | 101,9 | 301,9 |
+
+- Tăng **đơn điệu** trên cả 2 clip; `drift_iou` **không giảm ở đâu** (binh1 +0,067 = cải thiện thật;
+  binh2 +0,007 = trong ngưỡng nhiễu). Không mất tốc độ (`fps` 29,7–29,9).
+- **Ngưỡng đăng ký trước "≥ 2×" chỉ đạt trên binh1 (×3,37)**; binh2 ×1,57 (vốn đã 40 % ở 1,5 vì vật to,
+  ít bị tay che). Gộp 2 clip ×1,98 — **không** dùng con số gộp để tuyên bố "đạt":
+  `quyet_dinh.du_dieu_kien_doi_mac_dinh = false`, `so_clip_dat 1/2` (luật AND trên mọi clip).
+- Kiểm ảnh (`docs/media/lk/so_sanh_max_mad_binh1.jpg`, frame 60/95): ô đỏ vẫn trên chai ở cả 2 mức,
+  không trôi vào nền. **Chỉ 2 frame × 1 clip** ⇒ chưa phải "đã kiểm hết".
+
+### SỬA TIÊU CHÍ ĐĂNG KÝ TRƯỚC (ghi đè mục "Nghiệm thu" ở trên)
+
+Câu cũ `|Δdrift_iou| < ±0,010` là **ill-posed**: nó loại cả trường hợp `drift_iou` **TĂNG** (tốt). Luật
+đúng từ 19-11: `Δdrift_iou >= -0,010` (chỉ chặn chiều **giảm** quá ngưỡng nhiễu) **VÀ**
+`lk_ok_frac >= 2×` **trên TỪNG clip** (AND trên mọi clip, không lấy trung bình). Lý do sửa: bản đầu chạy
+2 clip rồi gộp cho ra ×2,04 "đạt" trong khi binh2 chỉ ×1,61 ⇒ artifact nói "đủ điều kiện" ngược với
+quyết định (review độc lập PR #53, P1).
+
+### Quyết định: **CHƯA đổi `DEFAULT_MAX_MAD`**
+
+Điều kiện chốt còn lại là **mIoU vs GT người gán** ở 1,5 vs 6,0 trên cùng các frame GT của `binh1`
+(`./run miou`): 6,0 không thấp hơn 1,5 ⇒ đổi mặc định sang 6,0. `drift_iou` là độ tự nhất quán với ô
+VOS, **không** phải độ chính xác bám vật — nên nó chỉ đủ để loại phương án, không đủ để chốt.
+
+Cờ `--lk-max-mad` đã phơi (worker + `LiveTrackConfig` + echo `cau_hinh`), nên demo **có thể** chạy 6,0
+ngay, nhưng báo cáo phải ghi đó là cấu hình đo, không phải mặc định.

@@ -1,0 +1,1745 @@
+{
+  "git_rev": "b5dea7a3effb1f0adb0d9e8112ab74b2582e5a42",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "do_luc": "2026-11-19T15:31:23",
+  "lenh": "python scripts/ab_lk_max_mad.py --source data/binh1.mp4 --bbox 300,275,150,410 --source data/binh2.mp4 --bbox 330,330,150,360 --frames 262 --lan 3 --max-mad 1.5 3.0 6.0 --frame-window 0:110,165:262 --out data/ab_lk_max_mad_2026-11-19_metrics.json",
+  "nguon_so": {
+    "clips": [
+      "data/binh1.mp4",
+      "data/binh2.mp4"
+    ],
+    "bbox": [
+      "300,275,150,410",
+      "330,330,150,360"
+    ],
+    "image_size": 192,
+    "vos_every": 3,
+    "frames": 262,
+    "lan": 3,
+    "cua_so_frame": [
+      [
+        0,
+        110
+      ],
+      [
+        165,
+        262
+      ]
+    ]
+  },
+  "cau_hinh_hieu_luc_lech": [],
+  "tong_hop": {
+    "1.5": {
+      "lk_ok_frac": {
+        "mean": 0.2623,
+        "std": 0.1569,
+        "n": 6
+      },
+      "drift_iou": {
+        "mean": 0.6021,
+        "std": 0.118,
+        "n": 6
+      },
+      "empty_frac": {
+        "mean": 0.0743,
+        "std": 0.0648,
+        "n": 6
+      },
+      "measured_fps": {
+        "mean": 29.8833,
+        "std": 0.0408,
+        "n": 6
+      },
+      "vos_fps": {
+        "mean": 8.2667,
+        "std": 0.2422,
+        "n": 6
+      },
+      "vos_ms": {
+        "mean": 100.5333,
+        "std": 13.6289,
+        "n": 6
+      },
+      "lk_ms": {
+        "mean": 3.08,
+        "std": 0.9991,
+        "n": 6
+      },
+      "mask_age_p95": {
+        "mean": 298.1667,
+        "std": 10.878,
+        "n": 6
+      }
+    },
+    "3.0": {
+      "lk_ok_frac": {
+        "mean": 0.4217,
+        "std": 0.2105,
+        "n": 6
+      },
+      "drift_iou": {
+        "mean": 0.6194,
+        "std": 0.1177,
+        "n": 6
+      },
+      "empty_frac": {
+        "mean": 0.0703,
+        "std": 0.0672,
+        "n": 6
+      },
+      "measured_fps": {
+        "mean": 29.85,
+        "std": 0.0548,
+        "n": 6
+      },
+      "vos_fps": {
+        "mean": 8.2333,
+        "std": 0.2733,
+        "n": 6
+      },
+      "vos_ms": {
+        "mean": 95.0333,
+        "std": 9.3652,
+        "n": 6
+      },
+      "lk_ms": {
+        "mean": 3.6283,
+        "std": 0.895,
+        "n": 6
+      },
+      "mask_age_p95": {
+        "mean": 301.7333,
+        "std": 0.3011,
+        "n": 6
+      }
+    },
+    "6.0": {
+      "lk_ok_frac": {
+        "mean": 0.5188,
+        "std": 0.1336,
+        "n": 6
+      },
+      "drift_iou": {
+        "mean": 0.6388,
+        "std": 0.0872,
+        "n": 6
+      },
+      "empty_frac": {
+        "mean": 0.0822,
+        "std": 0.0783,
+        "n": 6
+      },
+      "measured_fps": {
+        "mean": 29.8,
+        "std": 0.1549,
+        "n": 6
+      },
+      "vos_fps": {
+        "mean": 8.1833,
+        "std": 0.3371,
+        "n": 6
+      },
+      "vos_ms": {
+        "mean": 102.3167,
+        "std": 8.8721,
+        "n": 6
+      },
+      "lk_ms": {
+        "mean": 2.9917,
+        "std": 1.3301,
+        "n": 6
+      },
+      "mask_age_p95": {
+        "mean": 302.5333,
+        "std": 2.1295,
+        "n": 6
+      }
+    }
+  },
+  "tong_hop_theo_clip": {
+    "binh1.mp4": {
+      "1.5": {
+        "lk_ok_frac": {
+          "mean": 0.1193,
+          "std": 0.0144,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.4945,
+          "std": 0.0094,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.0167,
+          "std": 0.0006,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.9,
+          "std": 0.0,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.3667,
+          "std": 0.3055,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 93.8,
+          "std": 6.4506,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 2.3733,
+          "std": 0.6819,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 293.2333,
+          "std": 14.6661,
+          "n": 3
+        }
+      },
+      "3.0": {
+        "lk_ok_frac": {
+          "mean": 0.232,
+          "std": 0.004,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.5127,
+          "std": 0.0202,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.011,
+          "std": 0.0095,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.8333,
+          "std": 0.0577,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.1667,
+          "std": 0.4163,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 91.3667,
+          "std": 7.9072,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 4.02,
+          "std": 1.1776,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 301.5667,
+          "std": 0.3786,
+          "n": 3
+        }
+      },
+      "6.0": {
+        "lk_ok_frac": {
+          "mean": 0.402,
+          "std": 0.0598,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.561,
+          "std": 0.0296,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.0117,
+          "std": 0.0101,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.7333,
+          "std": 0.2082,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.1667,
+          "std": 0.5033,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 102.7,
+          "std": 13.8683,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 3.5133,
+          "std": 1.8632,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 303.1667,
+          "std": 3.1501,
+          "n": 3
+        }
+      }
+    },
+    "binh2.mp4": {
+      "1.5": {
+        "lk_ok_frac": {
+          "mean": 0.4053,
+          "std": 0.0046,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.7097,
+          "std": 0.006,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.132,
+          "std": 0.0225,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.8667,
+          "std": 0.0577,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.1667,
+          "std": 0.1528,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 107.2667,
+          "std": 16.9335,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 3.7867,
+          "std": 0.7295,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 303.1,
+          "std": 2.7785,
+          "n": 3
+        }
+      },
+      "3.0": {
+        "lk_ok_frac": {
+          "mean": 0.6113,
+          "std": 0.0535,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.726,
+          "std": 0.0111,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.1297,
+          "std": 0.0252,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.8667,
+          "std": 0.0577,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.3,
+          "std": 0.0,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 98.7,
+          "std": 10.7893,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 3.2367,
+          "std": 0.3943,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 301.9,
+          "std": 0.0,
+          "n": 3
+        }
+      },
+      "6.0": {
+        "lk_ok_frac": {
+          "mean": 0.6357,
+          "std": 0.0097,
+          "n": 3
+        },
+        "drift_iou": {
+          "mean": 0.7165,
+          "std": 0.0061,
+          "n": 3
+        },
+        "empty_frac": {
+          "mean": 0.1527,
+          "std": 0.0181,
+          "n": 3
+        },
+        "measured_fps": {
+          "mean": 29.8667,
+          "std": 0.0577,
+          "n": 3
+        },
+        "vos_fps": {
+          "mean": 8.2,
+          "std": 0.1732,
+          "n": 3
+        },
+        "vos_ms": {
+          "mean": 101.9333,
+          "std": 2.0033,
+          "n": 3
+        },
+        "lk_ms": {
+          "mean": 2.47,
+          "std": 0.3672,
+          "n": 3
+        },
+        "mask_age_p95": {
+          "mean": 301.9,
+          "std": 0.4583,
+          "n": 3
+        }
+      }
+    }
+  },
+  "so_sanh_theo_clip": {
+    "binh1.mp4": {
+      "lk_ok_frac_tang_lan": 3.37,
+      "drift_iou_chenh": 0.0665,
+      "nguong_drift": 0.01,
+      "nguong_lk_toi_thieu": 2.0,
+      "drift_khong_phan_biet_duoc": false,
+      "drift_khong_te_di": true,
+      "du_dieu_kien_doi_mac_dinh": true,
+      "ket_luan": "ĐỦ điều kiện đổi mặc định (vẫn cần kiểm ảnh ô bao không trôi vào nền)"
+    },
+    "binh2.mp4": {
+      "lk_ok_frac_tang_lan": 1.57,
+      "drift_iou_chenh": 0.0068,
+      "nguong_drift": 0.01,
+      "nguong_lk_toi_thieu": 2.0,
+      "drift_khong_phan_biet_duoc": true,
+      "drift_khong_te_di": true,
+      "du_dieu_kien_doi_mac_dinh": false,
+      "ket_luan": "KHÔNG đủ điều kiện đổi mặc định ⇒ hoặc ẩn ô cũ giữa hai lần VOS, hoặc đo lại"
+    }
+  },
+  "quyet_dinh": {
+    "du_dieu_kien_doi_mac_dinh": false,
+    "so_clip_dat": 1,
+    "so_clip": 2,
+    "ket_luan": "KHÔNG đủ: chỉ 1/2 clip đạt ⇒ giữ mặc định, hoặc đo thêm"
+  },
+  "so_sanh": {
+    "a": "1.5",
+    "b": "6.0",
+    "chi_tham_khao": true,
+    "lk_ok_frac_tang_lan": 1.98,
+    "drift_iou_chenh": 0.0367,
+    "nguong_drift": 0.01,
+    "nguong_lk_toi_thieu": 2.0,
+    "drift_khong_phan_biet_duoc": false,
+    "drift_khong_te_di": true
+  },
+  "dinh_nghia": "`lk_ok_frac` = tỉ lệ mẫu VOS mà LK dám nhận, mẫu số là số dòng CÓ `lk_ok`. `drift_iou` ở đây là của đường live (ô hiển thị vs lần VOS kế tiếp), KHÔNG phải độ chính xác bám vật — muốn thế phải có mIoU vs GT.",
+  "lan_chay": {
+    "1.5": [
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 82,
+          "measured_fps": 29.9,
+          "vos_fps": 8.7,
+          "vos_ms": 87.4,
+          "pre_ms": 14.9,
+          "queue_ms": 60.57,
+          "post_ms": 0.16,
+          "dump_ms": null,
+          "cycle_ms": 110.23,
+          "idle_ms": 0.01,
+          "lk_ms": 2.52,
+          "drift_iou": 0.502,
+          "drift_iou_p05": 0.0,
+          "drift_n": 60,
+          "mask_age_ms": 40.3,
+          "mask_age_cu_ms": 137.6,
+          "mask_age_total_ms": 201.4,
+          "mask_age_p95": 276.3,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 19,
+          "empty_frac_window": 0.232,
+          "empty_window_n": 82,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            641,
+            344,
+            719,
+            744
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 63,
+          "n_lk_do_duoc": 59,
+          "lk_ok_n": 8,
+          "lk_ok_frac": 0.136,
+          "n_empty_do_duoc": 63,
+          "empty_frac": 0.016,
+          "drift_n": 60,
+          "drift_iou": 0.502
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_1.5_20zl_eee --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 76,
+          "measured_fps": 29.9,
+          "vos_fps": 8.3,
+          "vos_ms": 93.7,
+          "pre_ms": 13.66,
+          "queue_ms": 45.89,
+          "post_ms": 0.16,
+          "dump_ms": null,
+          "cycle_ms": 123.67,
+          "idle_ms": 0.02,
+          "lk_ms": 1.63,
+          "drift_iou": 0.498,
+          "drift_iou_p05": 0.0,
+          "drift_n": 55,
+          "mask_age_ms": 54.4,
+          "mask_age_cu_ms": 161.7,
+          "mask_age_total_ms": 200.1,
+          "mask_age_p95": 301.5,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 18,
+          "empty_frac_window": 0.237,
+          "empty_window_n": 76,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            634,
+            343,
+            719,
+            741
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 58,
+          "n_lk_do_duoc": 54,
+          "lk_ok_n": 6,
+          "lk_ok_frac": 0.111,
+          "n_empty_do_duoc": 58,
+          "empty_frac": 0.017,
+          "drift_n": 55,
+          "drift_iou": 0.4976
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_1.5_tafnfney --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 77,
+          "measured_fps": 29.9,
+          "vos_fps": 8.1,
+          "vos_ms": 100.3,
+          "pre_ms": 13.29,
+          "queue_ms": 47.82,
+          "post_ms": 0.22,
+          "dump_ms": null,
+          "cycle_ms": 114.29,
+          "idle_ms": 0.02,
+          "lk_ms": 2.97,
+          "drift_iou": 0.484,
+          "drift_iou_p05": 0.0,
+          "drift_n": 55,
+          "mask_age_ms": 50.0,
+          "mask_age_cu_ms": 148.9,
+          "mask_age_total_ms": 200.7,
+          "mask_age_p95": 301.9,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 19,
+          "empty_frac_window": 0.247,
+          "empty_window_n": 77,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            642,
+            344,
+            719,
+            753
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 58,
+          "n_lk_do_duoc": 54,
+          "lk_ok_n": 6,
+          "lk_ok_frac": 0.111,
+          "n_empty_do_duoc": 58,
+          "empty_frac": 0.017,
+          "drift_n": 55,
+          "drift_iou": 0.484
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_1.5_6qopt7ke --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 75,
+          "measured_fps": 29.8,
+          "vos_fps": 8.2,
+          "vos_ms": 126.5,
+          "pre_ms": 14.11,
+          "queue_ms": 13.43,
+          "post_ms": 0.76,
+          "dump_ms": null,
+          "cycle_ms": 120.34,
+          "idle_ms": 0.02,
+          "lk_ms": 2.95,
+          "drift_iou": 0.671,
+          "drift_iou_p05": 0.0,
+          "drift_n": 65,
+          "mask_age_ms": 92.8,
+          "mask_age_cu_ms": 193.9,
+          "mask_age_total_ms": 306.6,
+          "mask_age_p95": 301.7,
+          "age_n": 200,
+          "stability": 0.619,
+          "stability_n": 10,
+          "stability_shown": 0.619,
+          "stability_shown_n": 10,
+          "empty_runs": 7,
+          "empty_frac_window": 0.093,
+          "empty_window_n": 75,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            406,
+            281,
+            559,
+            740
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 49,
+          "lk_ok_n": 20,
+          "lk_ok_frac": 0.408,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.119,
+          "drift_n": 50,
+          "drift_iou": 0.7142
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_1.5_zsi9kdnp --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 75,
+          "measured_fps": 29.9,
+          "vos_fps": 8.3,
+          "vos_ms": 94.6,
+          "pre_ms": 14.66,
+          "queue_ms": 40.15,
+          "post_ms": 0.94,
+          "dump_ms": null,
+          "cycle_ms": 120.81,
+          "idle_ms": 0.02,
+          "lk_ms": 4.12,
+          "drift_iou": 0.672,
+          "drift_iou_p05": 0.0,
+          "drift_n": 65,
+          "mask_age_ms": 60.0,
+          "mask_age_cu_ms": 165.9,
+          "mask_age_total_ms": 200.6,
+          "mask_age_p95": 301.3,
+          "age_n": 200,
+          "stability": 0.619,
+          "stability_n": 10,
+          "stability_shown": 0.619,
+          "stability_shown_n": 10,
+          "empty_runs": 7,
+          "empty_frac_window": 0.093,
+          "empty_window_n": 75,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            430,
+            247,
+            582,
+            702
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 49,
+          "lk_ok_n": 20,
+          "lk_ok_frac": 0.408,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.119,
+          "drift_n": 50,
+          "drift_iou": 0.712
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_1.5_mtmvljwm --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 1.5,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 73,
+          "measured_fps": 29.9,
+          "vos_fps": 8.0,
+          "vos_ms": 100.7,
+          "pre_ms": 14.0,
+          "queue_ms": 12.1,
+          "post_ms": 1.0,
+          "dump_ms": null,
+          "cycle_ms": 123.24,
+          "idle_ms": 0.01,
+          "lk_ms": 4.29,
+          "drift_iou": 0.663,
+          "drift_iou_p05": 0.0,
+          "drift_n": 61,
+          "mask_age_ms": 88.6,
+          "mask_age_cu_ms": 194.6,
+          "mask_age_total_ms": 301.3,
+          "mask_age_p95": 306.3,
+          "age_n": 200,
+          "stability": 0.609,
+          "stability_n": 10,
+          "stability_shown": 0.609,
+          "stability_shown_n": 10,
+          "empty_runs": 9,
+          "empty_frac_window": 0.123,
+          "empty_window_n": 73,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            406,
+            279,
+            558,
+            740
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 57,
+          "n_lk_do_duoc": 45,
+          "lk_ok_n": 18,
+          "lk_ok_frac": 0.4,
+          "n_empty_do_duoc": 57,
+          "empty_frac": 0.158,
+          "drift_n": 46,
+          "drift_iou": 0.7028
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_1.5_o1dls_x1 --vos-every 3 --stop-after-frames 262 --lk-max-mad 1.5 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5
+      }
+    ],
+    "3.0": [
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 78,
+          "measured_fps": 29.9,
+          "vos_fps": 7.7,
+          "vos_ms": 88.0,
+          "pre_ms": 14.16,
+          "queue_ms": 3.31,
+          "post_ms": 0.21,
+          "dump_ms": null,
+          "cycle_ms": 109.57,
+          "idle_ms": 0.01,
+          "lk_ms": 3.55,
+          "drift_iou": 0.493,
+          "drift_iou_p05": 0.0,
+          "drift_n": 58,
+          "mask_age_ms": 106.3,
+          "mask_age_cu_ms": 206.0,
+          "mask_age_total_ms": 301.9,
+          "mask_age_p95": 302.0,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 17,
+          "empty_frac_window": 0.218,
+          "empty_window_n": 78,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            503,
+            330,
+            630,
+            728
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 61,
+          "n_lk_do_duoc": 57,
+          "lk_ok_n": 13,
+          "lk_ok_frac": 0.228,
+          "n_empty_do_duoc": 61,
+          "empty_frac": 0.016,
+          "drift_n": 58,
+          "drift_iou": 0.4927
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_3.0_nyvyzwft --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 77,
+          "measured_fps": 29.8,
+          "vos_fps": 8.5,
+          "vos_ms": 100.4,
+          "pre_ms": 12.13,
+          "queue_ms": 13.8,
+          "post_ms": 0.87,
+          "dump_ms": null,
+          "cycle_ms": 114.27,
+          "idle_ms": 0.01,
+          "lk_ms": 5.36,
+          "drift_iou": 0.512,
+          "drift_iou_p05": 0.0,
+          "drift_n": 57,
+          "mask_age_ms": 87.1,
+          "mask_age_cu_ms": 186.8,
+          "mask_age_total_ms": 301.5,
+          "mask_age_p95": 301.3,
+          "age_n": 200,
+          "stability": 0.679,
+          "stability_n": 10,
+          "stability_shown": 0.679,
+          "stability_shown_n": 10,
+          "empty_runs": 17,
+          "empty_frac_window": 0.221,
+          "empty_window_n": 77,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            503,
+            330,
+            630,
+            728
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 56,
+          "lk_ok_n": 13,
+          "lk_ok_frac": 0.232,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.0,
+          "drift_n": 57,
+          "drift_iou": 0.5124
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_3.0_r6e569l8 --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 78,
+          "measured_fps": 29.8,
+          "vos_fps": 8.3,
+          "vos_ms": 85.7,
+          "pre_ms": 16.2,
+          "queue_ms": 96.78,
+          "post_ms": 0.16,
+          "dump_ms": null,
+          "cycle_ms": 114.16,
+          "idle_ms": 0.01,
+          "lk_ms": 3.15,
+          "drift_iou": 0.533,
+          "drift_iou_p05": 0.0,
+          "drift_n": 56,
+          "mask_age_ms": 5.5,
+          "mask_age_cu_ms": 106.3,
+          "mask_age_total_ms": 202.5,
+          "mask_age_p95": 301.4,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 19,
+          "empty_frac_window": 0.244,
+          "empty_window_n": 78,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            641,
+            342,
+            719,
+            745
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 55,
+          "lk_ok_n": 13,
+          "lk_ok_frac": 0.236,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.017,
+          "drift_n": 56,
+          "drift_iou": 0.5331
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_3.0_544eksri --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 76,
+          "measured_fps": 29.8,
+          "vos_fps": 8.3,
+          "vos_ms": 89.8,
+          "pre_ms": 13.99,
+          "queue_ms": 2.68,
+          "post_ms": 0.78,
+          "dump_ms": null,
+          "cycle_ms": 118.42,
+          "idle_ms": 0.02,
+          "lk_ms": 3.66,
+          "drift_iou": 0.67,
+          "drift_iou_p05": 0.0,
+          "drift_n": 65,
+          "mask_age_ms": 115.8,
+          "mask_age_cu_ms": 223.1,
+          "mask_age_total_ms": 300.4,
+          "mask_age_p95": 301.9,
+          "age_n": 200,
+          "stability": 0.547,
+          "stability_n": 10,
+          "stability_shown": 0.547,
+          "stability_shown_n": 10,
+          "empty_runs": 8,
+          "empty_frac_window": 0.105,
+          "empty_window_n": 76,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            428,
+            242,
+            581,
+            705
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 60,
+          "n_lk_do_duoc": 49,
+          "lk_ok_n": 27,
+          "lk_ok_frac": 0.551,
+          "n_empty_do_duoc": 60,
+          "empty_frac": 0.133,
+          "drift_n": 50,
+          "drift_iou": 0.7135
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_3.0_pa158biq --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 74,
+          "measured_fps": 29.9,
+          "vos_fps": 8.3,
+          "vos_ms": 110.7,
+          "pre_ms": 15.39,
+          "queue_ms": 94.06,
+          "post_ms": 1.0,
+          "dump_ms": null,
+          "cycle_ms": 118.05,
+          "idle_ms": 0.01,
+          "lk_ms": 2.88,
+          "drift_iou": 0.688,
+          "drift_iou_p05": 0.0,
+          "drift_n": 65,
+          "mask_age_ms": 107.3,
+          "mask_age_cu_ms": 210.2,
+          "mask_age_total_ms": 302.2,
+          "mask_age_p95": 301.9,
+          "age_n": 200,
+          "stability": 0.543,
+          "stability_n": 10,
+          "stability_shown": 0.543,
+          "stability_shown_n": 10,
+          "empty_runs": 6,
+          "empty_frac_window": 0.081,
+          "empty_window_n": 74,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            427,
+            244,
+            581,
+            703
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 58,
+          "n_lk_do_duoc": 49,
+          "lk_ok_n": 32,
+          "lk_ok_frac": 0.653,
+          "n_empty_do_duoc": 58,
+          "empty_frac": 0.103,
+          "drift_n": 50,
+          "drift_iou": 0.7296
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_3.0_9jp0150l --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 3.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 75,
+          "measured_fps": 29.9,
+          "vos_fps": 8.3,
+          "vos_ms": 95.6,
+          "pre_ms": 15.89,
+          "queue_ms": 55.24,
+          "post_ms": 0.83,
+          "dump_ms": null,
+          "cycle_ms": 113.04,
+          "idle_ms": 0.01,
+          "lk_ms": 3.17,
+          "drift_iou": 0.693,
+          "drift_iou_p05": 0.037,
+          "drift_n": 62,
+          "mask_age_ms": 46.0,
+          "mask_age_cu_ms": 143.9,
+          "mask_age_total_ms": 201.2,
+          "mask_age_p95": 301.9,
+          "age_n": 200,
+          "stability": 0.63,
+          "stability_n": 10,
+          "stability_shown": 0.63,
+          "stability_shown_n": 10,
+          "empty_runs": 9,
+          "empty_frac_window": 0.12,
+          "empty_window_n": 75,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            430,
+            246,
+            582,
+            701
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 46,
+          "lk_ok_n": 29,
+          "lk_ok_frac": 0.63,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.153,
+          "drift_n": 47,
+          "drift_iou": 0.7349
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_3.0_wipyxfqr --vos-every 3 --stop-after-frames 262 --lk-max-mad 3.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 3.0,
+        "max_mad_hieu_luc": 3.0
+      }
+    ],
+    "6.0": [
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 78,
+          "measured_fps": 29.9,
+          "vos_fps": 8.7,
+          "vos_ms": 109.0,
+          "pre_ms": 15.25,
+          "queue_ms": 15.96,
+          "post_ms": 0.92,
+          "dump_ms": null,
+          "cycle_ms": 131.88,
+          "idle_ms": 0.02,
+          "lk_ms": 3.64,
+          "drift_iou": 0.586,
+          "drift_iou_p05": 0.0,
+          "drift_n": 58,
+          "mask_age_ms": 84.1,
+          "mask_age_cu_ms": 201.8,
+          "mask_age_total_ms": 301.1,
+          "mask_age_p95": 301.2,
+          "age_n": 200,
+          "stability": 0.679,
+          "stability_n": 10,
+          "stability_shown": 0.679,
+          "stability_shown_n": 10,
+          "empty_runs": 17,
+          "empty_frac_window": 0.218,
+          "empty_window_n": 78,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            503,
+            330,
+            630,
+            727
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 60,
+          "n_lk_do_duoc": 57,
+          "lk_ok_n": 25,
+          "lk_ok_frac": 0.439,
+          "n_empty_do_duoc": 60,
+          "empty_frac": 0.0,
+          "drift_n": 58,
+          "drift_iou": 0.5855
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_6.0_vqxjr0bw --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 74,
+          "measured_fps": 29.5,
+          "vos_fps": 7.7,
+          "vos_ms": 112.3,
+          "pre_ms": 14.21,
+          "queue_ms": 45.61,
+          "post_ms": 0.21,
+          "dump_ms": null,
+          "cycle_ms": 143.22,
+          "idle_ms": 0.02,
+          "lk_ms": 1.59,
+          "drift_iou": 0.569,
+          "drift_iou_p05": 0.0,
+          "drift_n": 54,
+          "mask_age_ms": 54.2,
+          "mask_age_cu_ms": 180.2,
+          "mask_age_total_ms": 201.0,
+          "mask_age_p95": 306.8,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 17,
+          "empty_frac_window": 0.23,
+          "empty_window_n": 74,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            634,
+            342,
+            719,
+            742
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 57,
+          "n_lk_do_duoc": 53,
+          "lk_ok_n": 23,
+          "lk_ok_frac": 0.434,
+          "n_empty_do_duoc": 57,
+          "empty_frac": 0.018,
+          "drift_n": 54,
+          "drift_iou": 0.5694
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_6.0_q91qai23 --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh1.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 76,
+          "measured_fps": 29.8,
+          "vos_fps": 8.1,
+          "vos_ms": 86.8,
+          "pre_ms": 15.12,
+          "queue_ms": 7.82,
+          "post_ms": 0.16,
+          "dump_ms": null,
+          "cycle_ms": 119.74,
+          "idle_ms": 0.01,
+          "lk_ms": 5.31,
+          "drift_iou": 0.528,
+          "drift_iou_p05": 0.0,
+          "drift_n": 55,
+          "mask_age_ms": 112.0,
+          "mask_age_cu_ms": 225.0,
+          "mask_age_total_ms": 301.1,
+          "mask_age_p95": 301.5,
+          "age_n": 200,
+          "stability": 0.0,
+          "stability_n": 10,
+          "stability_shown": 0.0,
+          "stability_shown_n": 10,
+          "empty_runs": 18,
+          "empty_frac_window": 0.237,
+          "empty_window_n": 76,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            503,
+            330,
+            630,
+            729
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 58,
+          "n_lk_do_duoc": 54,
+          "lk_ok_n": 18,
+          "lk_ok_frac": 0.333,
+          "n_empty_do_duoc": 58,
+          "empty_frac": 0.017,
+          "drift_n": 55,
+          "drift_iou": 0.5282
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /dev/shm/ab_lk_6.0_nnvdu7fz --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 300,275,150,410 --image-size 192",
+        "clip": "data/binh1.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 75,
+          "measured_fps": 29.8,
+          "vos_fps": 8.3,
+          "vos_ms": 100.0,
+          "pre_ms": 13.55,
+          "queue_ms": 14.08,
+          "post_ms": 0.94,
+          "dump_ms": null,
+          "cycle_ms": 134.8,
+          "idle_ms": 0.01,
+          "lk_ms": 2.89,
+          "drift_iou": 0.677,
+          "drift_iou_p05": 0.0,
+          "drift_n": 64,
+          "mask_age_ms": 86.4,
+          "mask_age_cu_ms": 206.1,
+          "mask_age_total_ms": 300.7,
+          "mask_age_p95": 301.4,
+          "age_n": 200,
+          "stability": 0.546,
+          "stability_n": 10,
+          "stability_shown": 0.546,
+          "stability_shown_n": 10,
+          "empty_runs": 8,
+          "empty_frac_window": 0.107,
+          "empty_window_n": 75,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            428,
+            242,
+            581,
+            705
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 59,
+          "n_lk_do_duoc": 48,
+          "lk_ok_n": 30,
+          "lk_ok_frac": 0.625,
+          "n_empty_do_duoc": 59,
+          "empty_frac": 0.136,
+          "drift_n": 49,
+          "drift_iou": 0.71
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_6.0_qtw95zb3 --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 76,
+          "measured_fps": 29.9,
+          "vos_fps": 8.3,
+          "vos_ms": 104.0,
+          "pre_ms": 19.3,
+          "queue_ms": 18.0,
+          "post_ms": 0.79,
+          "dump_ms": null,
+          "cycle_ms": 116.03,
+          "idle_ms": 0.01,
+          "lk_ms": 2.21,
+          "drift_iou": 0.692,
+          "drift_iou_p05": 0.003,
+          "drift_n": 63,
+          "mask_age_ms": 82.3,
+          "mask_age_cu_ms": 184.3,
+          "mask_age_total_ms": 204.2,
+          "mask_age_p95": 302.0,
+          "age_n": 200,
+          "stability": 0.62,
+          "stability_n": 10,
+          "stability_shown": 0.62,
+          "stability_shown_n": 10,
+          "empty_runs": 9,
+          "empty_frac_window": 0.118,
+          "empty_window_n": 76,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            430,
+            246,
+            583,
+            706
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 60,
+          "n_lk_do_duoc": 47,
+          "lk_ok_n": 30,
+          "lk_ok_frac": 0.638,
+          "n_empty_do_duoc": 60,
+          "empty_frac": 0.15,
+          "drift_n": 48,
+          "drift_iou": 0.7172
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_6.0_z_gjfmhw --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      },
+      {
+        "status": {
+          "state": "stopped",
+          "device": "cpu",
+          "cau_hinh": {
+            "source": "data/binh2.mp4",
+            "image_size_yeu_cau": 192,
+            "image_size_hieu_luc": 192,
+            "image_size_kiem_duoc": true,
+            "vos_every": 3,
+            "display_fps": 30.0,
+            "mask_smoothing": 1.0,
+            "device": "cpu",
+            "dump_mask_frames": [],
+            "lk_max_mad": 6.0,
+            "mask_age_dinh_nghia": "mask_age_total_ms = queue + pre + vos + post + age (tuổi dữ liệu thật, từ 14-11); mask_age_cu_ms = age + vos (định nghĩa CŨ, chỉ để so với số trước 14-11). Mỗi frame PHÁT ghi ĐÚNG MỘT mẫu (kể cả frame đầu của engine.start()); vos_every=1 (đơn luồng) ⇒ age = 0 và total = pre + vos + post, vì frame vừa được VOS xử lý chính là frame đang phát. Pha chưa đo được tính 0; riêng vos_every=1 KHÔNG có drift_iou (không nội suy LK)"
+          },
+          "cau_hinh_lech": [],
+          "frames": 262,
+          "vos_runs": 74,
+          "measured_fps": 29.9,
+          "vos_fps": 8.0,
+          "vos_ms": 101.8,
+          "pre_ms": 15.71,
+          "queue_ms": 95.65,
+          "post_ms": 0.86,
+          "dump_ms": null,
+          "cycle_ms": 118.76,
+          "idle_ms": 0.02,
+          "lk_ms": 2.31,
+          "drift_iou": 0.686,
+          "drift_iou_p05": 0.0,
+          "drift_n": 61,
+          "mask_age_ms": 105.2,
+          "mask_age_cu_ms": 209.7,
+          "mask_age_total_ms": 301.3,
+          "mask_age_p95": 302.3,
+          "age_n": 200,
+          "stability": 0.644,
+          "stability_n": 10,
+          "stability_shown": 0.644,
+          "stability_shown_n": 10,
+          "empty_runs": 10,
+          "empty_frac_window": 0.135,
+          "empty_window_n": 74,
+          "mask_holds": 0,
+          "mask_drops": 0,
+          "lost_streak": 0,
+          "bbox": [
+            428,
+            242,
+            580,
+            703
+          ],
+          "message": ""
+        },
+        "csv": {
+          "n_dong": 58,
+          "n_lk_do_duoc": 45,
+          "lk_ok_n": 29,
+          "lk_ok_frac": 0.644,
+          "n_empty_do_duoc": 58,
+          "empty_frac": 0.172,
+          "drift_n": 46,
+          "drift_iou": 0.7222
+        },
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh2.mp4 --out-dir /dev/shm/ab_lk_6.0_nf6_26_j --vos-every 3 --stop-after-frames 262 --lk-max-mad 6.0 --bbox 330,330,150,360 --image-size 192",
+        "clip": "data/binh2.mp4",
+        "max_mad_yeu_cau": 6.0,
+        "max_mad_hieu_luc": 6.0
+      }
+    ]
+  }
+}
