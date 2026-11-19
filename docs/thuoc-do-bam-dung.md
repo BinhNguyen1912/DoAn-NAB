@@ -180,6 +180,21 @@ script đó để số vào `docs/so-lieu-bao-cao.md`.
 - `docs/bang-cau-hinh.md` — chọn cấu hình (`image_size` × `vos_every`) có ngưỡng nhiễu.
 - `scripts/measure_live_relay.py` — đo đường ống trên camera thật (KHÔNG đo độ chính xác).
 
+## 2a. Cột `hien_thi_*` + `lk_ok` trong CSV drift (từ 19-11)
+
+`drift_iou` = IoU(ô **đang hiển thị**, ô VOS) nhưng trước 19-11 CSV **chỉ** ghi ô VOS ⇒ không biết ai
+sai. Nay mỗi dòng còn có:
+
+| cột | nghĩa |
+|---|---|
+| `hien_thi_x1..y2` | ô bao mà người xem **đã thấy** ở đúng frame đó (LK nội suy, hoặc ô base khi LK fail) |
+| `lk_ok` | `1` = LK trả ok · `0` = LK `not-ok` ⇒ pipeline phát **ô base** · ô trống = chưa đo |
+
+⇒ `drift_iou == IoU(hien_thi, bbox)` kiểm được **bằng công thức** (đo: lệch ≤ 4e-05 do làm tròn).
+Đo trên `binh1` @192/`vos_every 3`: `lk_ok_frac` = **0,093** — tức ~90 % số mẫu ô hiển thị là **ô cũ
+đóng băng**, không phải nội suy (`data/lk_ok_binh1_2026-11-19_metrics.json`). Đừng đọc "HUD 30 FPS" là
+"ô bao mượt".
+
 ## 2b. Đường NHANH để gán GT (`scripts/gt_gan_nhanh.py`, từ 19-11)
 
 Mục 2 ở trên cần mở phần mềm ảnh và tô từ đầu. Nếu muốn nhanh hơn (≈ 1 phút/frame):
