@@ -162,12 +162,12 @@ def main() -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
 
-    print("| file | n mẫu | mean | p05 | mask rỗng | báo 0,70 | báo 0,30 | phát hiện sau |")
-    print("|---|---|---|---|---|---|---|---|")
+    print("| file | n mẫu | mean | p05 | mask rỗng | lk_ok | báo 0,70 | báo 0,30 | phát hiện sau |")
+    print("|---|---|---|---|---|---|---|---|---|")
     for item in ket_qua:
         phat_hien = item["phat_hien"]["phat_hien_sau_mau"]
         print(f"| {Path(item['file']).name} | {item['n_mau_drift']} | {item['drift_iou_mean']} | "
-              f"{item['drift_iou_p05']} | {item['empty_frac']} | "
+              f"{item['drift_iou_p05']} | {item['empty_frac']} | {item['lk_ok_frac']} | "
               f"{item['bao_dong_070']['ti_le_bao']} | {item['bao_dong_030']['ti_le_bao']} | "
               f"{'null' if phat_hien is None else phat_hien} |")
     for item in ket_qua:

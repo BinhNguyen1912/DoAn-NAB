@@ -25,9 +25,15 @@ from pathlib import Path
 import numpy as np
 
 DRIFT_CSV_NAME = "drift_samples.csv"
+# `bbox_*` = ô bao **VOS** trả về (ô dùng để so). `hien_thi_*` + `lk_ok` = ô **người xem đã thấy** ở
+# đúng frame đó và ô đó có đến từ LK `ok` hay không. Vì sao phải ghi: `drift_iou` một mình KHÔNG nói
+# được ai sai (ô VOS hay ô đang hiển thị) — 19-11 cả một buổi phải dựng script phát lại
+# (`scripts/replay_lk_frame.py`) chỉ để suy ra, và kết quả chỉ khớp CSV ở 3/6 cặp. Có 2 cột này thì
+# `drift_iou == IoU(hien_thi, bbox)` kiểm trực tiếp được, không cần suy luận.
 CSV_HEADER = [
     "frame_idx", "seq", "vos_ms", "empty", "drift_iou",
     "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2",
+    "hien_thi_x1", "hien_thi_y1", "hien_thi_x2", "hien_thi_y2", "lk_ok",
 ]
 
 # Cửa sổ phân vị: khớp `_STAT_WINDOW` của `src/live_tracking.py` ⇒ p05 tính từ CSV tái lập đúng
@@ -83,7 +89,8 @@ class DriftSampleLog:
     def path(self) -> Path:
         return self._path
 
-    def write(self, *, frame_idx, seq, vos_ms, empty, drift_iou, bbox) -> None:
+    def write(self, *, frame_idx, seq, vos_ms, empty, drift_iou, bbox,
+              hien_thi=None, lk_ok=None) -> None:
         """Ghi MỘT mẫu. Trường nào là `None` ⇒ ô trống (chưa đo), không ghi 0."""
         row = [
             "" if frame_idx is None else int(frame_idx),
@@ -96,6 +103,13 @@ class DriftSampleLog:
             row.extend(["", "", "", ""])
         else:
             row.extend([int(v) for v in bbox])
+        if hien_thi is None:
+            row.extend(["", "", "", ""])
+        else:
+            row.extend([int(v) for v in hien_thi])
+        # `lk_ok` 3 trạng thái: `1` ô hiển thị do LK tính `ok`, `0` LK trả `not-ok` (phát ô base),
+        # ô trống = chưa đo (đường tắt LK `vos_every=1`, hoặc frame chưa được phát).
+        row.append("" if lk_ok is None else (1 if lk_ok else 0))
         line = ",".join(str(v) for v in row) + "\n"
         with self._lock:
             if self._closed:
@@ -159,6 +173,10 @@ def read_samples(path) -> list:
                 "empty": _opt_bool(raw.get("empty")),
                 "drift_iou": _opt_float(raw.get("drift_iou")),
                 "bbox": tuple(_opt_int(raw.get(f"bbox_{k}")) for k in ("x1", "y1", "x2", "y2")),
+                # CSV sinh TRƯỚC 19-11 không có 2 cột này ⇒ `None` (chưa đo), không phải 0.
+                "hien_thi": tuple(_opt_int(raw.get(f"hien_thi_{k}"))
+                                  for k in ("x1", "y1", "x2", "y2")),
+                "lk_ok": _opt_bool(raw.get("lk_ok")),
             })
     return rows
 
@@ -177,6 +195,9 @@ def thong_ke_mau(rows) -> dict:
     empty_flags = [row["empty"] for row in rows if row.get("empty") is not None]
     drifts = drift_values(rows)
     n_empty = sum(1 for v in empty_flags if v)
+    # Tỉ lệ mẫu mà ô đang hiển thị đến từ LK `ok` (không phải ô base đóng băng). `None` = CSV không có
+    # cột `lk_ok` (sinh trước 19-11) ⇒ CHƯA ĐO, không phải 0 %.
+    lk = [row["lk_ok"] for row in rows if row.get("lk_ok") is not None]
     return {
         "n": len(rows),
         "n_empty": n_empty,
@@ -192,6 +213,8 @@ def thong_ke_mau(rows) -> dict:
         "drift_iou_p05": phan_vi(drifts),
         "drift_iou_p05_n": len(drifts),
         "drift_iou_p05_nguong": MIN_SAMPLES,
+        "n_lk_do_duoc": len(lk),
+        "lk_ok_frac": round(sum(1 for v in lk if v) / len(lk), 3) if lk else None,
     }
 
 
@@ -463,6 +486,7 @@ def summarize(rows, *, window: int = WINDOW) -> dict:
     values = drift_values(rows)
     n = len(values)
     empties = [row["empty"] for row in rows if row.get("empty") is not None]
+    lk = [row["lk_ok"] for row in rows if row.get("lk_ok") is not None]
     return {
         "n_dong": len(rows),
         "n_mau_drift": n,
@@ -471,6 +495,9 @@ def summarize(rows, *, window: int = WINDOW) -> dict:
         "drift_iou_p05": phan_vi(values),
         "drift_iou_p05_nguong": MIN_SAMPLES,
         "drift_iou_p05_n": n,
+        # Tỉ lệ ô đang hiển thị đến từ LK `ok`; `None` = CSV không có cột `lk_ok` (trước 19-11).
+        "n_lk_do_duoc": len(lk),
+        "lk_ok_frac": round(sum(1 for v in lk if v) / len(lk), 3) if lk else None,
         "bao_dong_070": flag_rate(values, threshold=HEALTHY_P05, window=window),
         "bao_dong_030": flag_rate(values, threshold=FLAG_P05, window=window),
         "phat_hien": detect_latency(rows, window=window),

@@ -1395,8 +1395,9 @@ class TestShownByFrameDocTrongLock:
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
         # Tuple hẹn nay mang cả dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq,
-        # vos_ms, empty). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`).
-        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
+        # vos_ms, empty, lk_ok). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`);
+        # `lk_ok=None` vì frame 0 chưa được phát ⇒ chưa biết LK trả gì (KHÔNG phải False).
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -2063,3 +2064,89 @@ class TestMotKetQuaChiDoMotLan:
         # Và `_after_vos` của đường có luồng PHẢI truyền frame video thật (không phải `None`) — nếu
         # không, bước so trùng không chạy và bug quay lại (đây là hồi quy tinh vi nhất của ticket).
         assert goi[0] == 0, f"lần đo đầu (frame start()) phải có frame_video=0; nhận {goi[0]!r}"
+
+
+class TestCsvDriftGhiOHienThiVaLkOk:
+    """CSV drift phải ghi ô **đang hiển thị** + trạng thái LK (19-11, mở đường cho ticket 14).
+
+    Vì sao: `drift_iou` một mình **không** nói được ai sai — 19-11 cả buổi phải dựng
+    `scripts/replay_lk_frame.py` để suy ra, và bản phát lại chỉ khớp CSV ở 3/6 cặp (đường đa luồng:
+    `base` lúc phát phụ thuộc VOS trước đã về chưa). Có `hien_thi_*` + `lk_ok` thì kiểm **trực tiếp**:
+    `drift_iou == IoU(hien_thi, bbox VOS)` cho MỌI dòng, không cần phát lại.
+    """
+
+    def test_moi_dong_khop_dung_cong_thuc_iou(self, textured_video, tmp_path):
+        from src.drift_samples import read_samples
+        from src.live_tracking import _bbox_iou
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True)).run(stop_event=_StopAfter(40))
+
+        rows = read_samples(out / "drift_samples.csv")
+        co_so = [r for r in rows if r["drift_iou"] is not None]
+        assert co_so, "phiên có LK phải đo được mẫu drift"
+        # Dòng của frame `engine.start()` KHÔNG có `lk_ok` (chưa có lần phát nào ⇒ chưa biết LK trả gì)
+        # — đó là "chưa đo", đúng hợp đồng; mọi dòng còn lại phải có.
+        dau = min(r["frame_idx"] for r in co_so)
+        for row in co_so:
+            assert row["hien_thi"] != (None, None, None, None), "thiếu ô hiển thị ⇒ không kiểm được"
+            if row["frame_idx"] != dau:
+                assert row["lk_ok"] is not None, "thiếu `lk_ok` ⇒ lại phải suy luận"
+            # Cho phép lệch do làm tròn 4 chữ số khi ghi CSV
+            assert row["drift_iou"] == pytest.approx(
+                _bbox_iou(row["hien_thi"], row["bbox"]) or 0.0, abs=5e-5)
+
+    def test_lk_ok_phai_la_0_khi_o_hien_thi_bang_o_cu(self, textured_video, tmp_path):
+        """Khi LK `not-ok`, pipeline phát ô **base** ⇒ ô hiển thị trùng ô VOS của lần trước."""
+        from src.drift_samples import read_samples
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=3,
+            loop_files=True)).run(stop_event=_StopAfter(40))
+
+        rows = [r for r in read_samples(out / "drift_samples.csv") if r["lk_ok"] is not None]
+        assert any(r["lk_ok"] is True for r in rows), "phải có ít nhất 1 mẫu LK ok"
+        # Không khẳng định "có mẫu False" (FakeEngine có thể bám rất êm) — chỉ khẳng định hệ quả:
+        # mẫu `lk_ok = False` thì ô hiển thị phải là ô VOS của một lần TRƯỚC, không phải ô hiện tại.
+        for truoc, sau in zip(rows, rows[1:]):
+            if sau["lk_ok"] is False and truoc["bbox"] != (None, None, None, None):
+                assert sau["hien_thi"] == truoc["bbox"], (
+                    "LK not-ok ⇒ phải phát ô base (ô VOS lần trước), không phát ô mới")
+
+    def test_csv_cu_khong_co_cot_moi_van_doc_duoc(self, tmp_path):
+        """CSV sinh TRƯỚC 19-11 (không có `hien_thi_*`/`lk_ok`) phải đọc ra `None`, không phải 0."""
+        from src.drift_samples import read_samples
+
+        cu = tmp_path / "drift_samples_cu.csv"
+        cu.write_text("frame_idx,seq,vos_ms,empty,drift_iou,bbox_x1,bbox_y1,bbox_x2,bbox_y2\n"
+                      "57,20,120.0,0,0.0000,94,0,247,435\n", encoding="utf-8")
+        row = read_samples(cu)[0]
+        assert row["hien_thi"] == (None, None, None, None)
+        assert row["lk_ok"] is None, "ô trống = CHƯA ĐO, không được thành False"
+        assert row["drift_iou"] == 0.0
+
+    def test_tra_lk_ok_theo_dung_frame_khong_lay_bien_instance(self, tmp_path):
+        """`_lk_ok_of(frame)` phải tra **theo frame** — review thay thế PR #50 bắt mutant SỐNG.
+
+        Mutant: `_lk_ok_of` trả thẳng `self._lk_ok_frame` (trạng thái frame đang xử lý) thay vì tra
+        `_lk_by_frame`. Mutant đó **qua cả 3 test đường ống** vì trong phiên tuần tự frame đang xử lý
+        thường trùng frame cần tra ⇒ phải khoá bằng test đơn vị có hai frame KHÁC trạng thái.
+        """
+        from collections import deque
+
+        # Chỉ cần 2 thuộc tính đã khởi tạo: dựng session rồi bỏ phần chạy phiên (hàm này là tra cứu thuần).
+        out = tmp_path / "live"
+        _pre_select(out)
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=out / "khong_can_video.mp4", out_dir=out, display_fps=100, vos_every=3))
+
+        session._lk_by_frame = deque([(1, False), (2, True)])
+        session._lk_ok_frame = True                 # trạng thái của frame ĐANG xử lý (2)
+        assert session._lk_ok_of(1) is False, "phải trả trạng thái của frame 1, không phải frame 2"
+        assert session._lk_ok_of(2) is True
+        assert session._lk_ok_of(99) is None, "frame chưa phát ⇒ CHƯA ĐO (None), không phải False"
