@@ -1394,10 +1394,11 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        # Tuple hẹn nay mang cả dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq,
-        # vos_ms, empty, lk_ok). `seq=None` vì test gọi thẳng `_measure_drift` (không qua `_store_vos`);
-        # `lk_ok=None` vì frame 0 chưa được phát ⇒ chưa biết LK trả gì (KHÔNG phải False).
-        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None, None)
+        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq, vos_ms, empty).
+        # KHÔNG có `lk_ok`: frame chưa phát nên chưa biết LK, và giá trị đó được TRA LẠI trong lock lúc
+        # drain (nhồi `None` vào tuple từng làm mất mẫu khỏi mẫu số — P2 review #51). `seq=None` vì test
+        # gọi thẳng `_measure_drift` (không qua `_store_vos`).
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -2150,3 +2151,59 @@ class TestCsvDriftGhiOHienThiVaLkOk:
         assert session._lk_ok_of(1) is False, "phải trả trạng thái của frame 1, không phải frame 2"
         assert session._lk_ok_of(2) is True
         assert session._lk_ok_of(99) is None, "frame chưa phát ⇒ CHƯA ĐO (None), không phải False"
+
+
+class TestLkByFrameDuyetTrongLock:
+    """`_lk_ok_of` phải duyệt `_lk_by_frame` TRONG `_stats_lock` (P1 review độc lập, sau khi merge #50).
+
+    Vì sao: luồng PHÁT append `_lk_by_frame` dưới `_stats_lock` (`_update_stats_locked`), còn
+    `_measure_drift` chạy ở **luồng VOS**. Bản đầu của PR #50 gọi `_lk_ok_of` ngoài lock ⇒ CPython có
+    thể ném `RuntimeError: deque mutated during iteration` ⇒ `_VosWorker` bắt `Exception` ⇒ **cả phiên
+    live thành `state=error`** (không phải chỉ mất một mẫu số liệu).
+    """
+
+    def test_do_lk_ok_duoi_lock(self, video_source, tmp_path):
+        from collections import deque
+
+        da_giu_lock = []
+
+        class _DequeTheoDoi(deque):
+            def __reversed__(self):
+                # `lock.locked()` = "MỘT thread đang giữ" — đủ để bắt lần duyệt ngoài lock.
+                da_giu_lock.append(lock.locked())
+                return super().__reversed__()
+
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+        lock = session._stats_lock
+        session._lk_by_frame = _DequeTheoDoi([(7, True)], maxlen=session._lk_by_frame.maxlen)
+        # Frame 7 ĐÃ được phát (có ô hiển thị) ⇒ `_measure_drift` đi nhánh đo drift NGAY và phải tra
+        # `lk_ok` của frame 7. (Nếu frame chưa phát thì code cố ý KHÔNG tra — giá trị sẽ được tính lại
+        # lúc drain, xem test kế tiếp.)
+        session._shown_by_frame = type(session._shown_by_frame)(
+            [(7, (1, 1, 10, 10))], maxlen=session._shown_by_frame.maxlen)
+        session._measure_drift(7, _Result(7, (4, 4, 12, 12), None))
+        assert da_giu_lock, "phải tra `_lk_by_frame` (nếu không, test không kiểm gì)"
+        assert all(da_giu_lock), "duyệt `_lk_by_frame` NGOÀI `_stats_lock` ⇒ nguy cơ RuntimeError"
+
+    def test_pending_bi_day_ra_van_tinh_lai_lk_ok(self, video_source, tmp_path):
+        """Mẫu pending bị kết quả VOS mới đẩy ra phải tra lại `lk_ok`, không dùng `None` chụp lúc chưa phát.
+
+        Mất mẫu khỏi mẫu số của `lk_ok_frac` một cách **không ngẫu nhiên** (chỉ các frame "VOS về trước
+        khi phát") ⇒ `lk_ok_frac` là tỉ lệ trên một tập bị lọc lệch.
+        """
+        from collections import deque
+
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+        # Frame 3 đã được phát với LK ok ⇒ `_lk_by_frame` có entry; pending cũ (frame 3) chụp lúc chưa phát.
+        session._lk_by_frame = deque([(3, True)], maxlen=session._lk_by_frame.maxlen)
+        session._pending_drift = (3, (5, 5, 15, 15), None, 12.5, None, None)
+        session._measure_drift(8, _Result(8, (6, 6, 16, 16), None))   # VOS mới ⇒ đẩy pending cũ ra
+
+        from src.drift_samples import read_samples
+
+        rows = read_samples(session._drift_log.path) if session._drift_log.path.exists() else []
+        dong3 = [r for r in rows if r["frame_idx"] == 3]
+        assert dong3, "pending cũ phải được ghi thành một dòng (không mất mẫu)"
+        assert dong3[0]["lk_ok"] is True, "phải TRA LẠI `lk_ok` của frame 3, không dùng `None` cũ"
