@@ -33,6 +33,8 @@ import {
   configMismatchLine,
   maskAgeLine,
   maskRhythmLine,
+  sucKhoeIsAlert,
+  sucKhoeLine,
   shownFps,
   sourceCheckLine,
   stallLine,
@@ -200,6 +202,8 @@ export function LivePanel(): JSX.Element {
   const cauHinhLech = configMismatchIsAlert(status)
   const ageCu = maskAgeIsStale(status)
   const driftText = driftLine(status)
+  const sucKhoeText = sucKhoeLine(status)
+  const sucKhoeCanhBao = sucKhoeIsAlert(status)
   const deviceText = deviceLine(status)
   const displayFps = shownFps(status)
   const usable = sources?.candidates.filter((c) => c.available) ?? []
@@ -404,6 +408,15 @@ export function LivePanel(): JSX.Element {
         // dụng cụ đo; "chưa đo được" không bao giờ được hiện thành "tốt".
         <p className="hint" data-testid="drift-line">
           {driftText}
+        </p>
+      )}
+
+      {sucKhoeText && (
+        // Cờ PHÁN QUYẾT (ticket #14): tách "model mất vật" khỏi "ô hiển thị lệch ô VOS" — hai nguyên
+        // nhân khác hẳn nhau, ghép sai thì báo cáo nói sai thứ đang hỏng. `model_lost`/`drift_trend`
+        // là cảnh báo (đổi màu); `not_measured` chỉ là thông tin.
+        <p className={sucKhoeCanhBao ? 'hint hint-warn' : 'hint'} data-testid="suc-khoe-line">
+          {sucKhoeText}
         </p>
       )}
 

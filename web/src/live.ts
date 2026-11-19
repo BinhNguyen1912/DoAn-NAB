@@ -140,6 +140,35 @@ export function driftLine(status: Drift | null | undefined): string | null {
     'không phải độ chính xác'
 }
 
+type SucKhoe = Pick<LiveStatus, 'suc_khoe' | 'suc_khoe_cau' | 'mask_fps'>
+
+/** Câu "chất lượng bám" cho HUD — `null` khi ổn, khi chế độ raw, hoặc khi worker bản cũ.
+ *
+ * Vì sao cần một câu thay vì bắt người xem tự ghép hai con số: `drift_p05` thấp có HAI nguyên nhân
+ * khác hẳn nhau — model mất vật (mask rỗng nhiều) hay ô hiển thị lệch ô VOS (mask vẫn có). Ghép sai
+ * thì báo cáo nói sai thứ đang hỏng (ticket #14; trước 19-11 chưa tách được vì p05 tính cả phiên).
+ *
+ * `suc_khoe == null` ⇒ worker bản cũ: trả `null` chứ KHÔNG in "chất lượng tốt".
+ */
+export function sucKhoeLine(status: SucKhoe | null | undefined): string | null {
+  if (!status || !(status.mask_fps > 0)) return null
+  const sk = status.suc_khoe
+  if (!sk) return null
+  if (sk.co === 'ok') return null
+  const cau = status.suc_khoe_cau
+  if (cau) return cau
+  // Dự phòng khi backend bản cũ có `suc_khoe` mà thiếu câu chữ.
+  if (sk.co === 'model_lost') return 'Chất lượng bám: model MẤT VẬT (mask rỗng nhiều)'
+  if (sk.co === 'drift_trend') return 'Chất lượng bám: ô hiển thị lệch ô VOS (mask không rỗng)'
+  return `Chất lượng bám: chưa đo được (${sk.n} mẫu)`
+}
+
+/** Cờ này có phải CẢNH BÁO (đổi màu) hay chỉ là thông tin (`not_measured`). */
+export function sucKhoeIsAlert(status: SucKhoe | null | undefined): boolean {
+  const co = status?.suc_khoe?.co
+  return co === 'model_lost' || co === 'drift_trend'
+}
+
 /** FPS phát để hiển thị: ưu tiên số do CHÍNH worker đo (nguồn của mọi số trong báo cáo). */
 export function shownFps(status: Pick<LiveStatus, 'measured_fps' | 'display_fps'> | null | undefined): number {
   if (!status) return 0
