@@ -95,21 +95,21 @@ cờ chẩn đoán nói được điều `empty_frac_window` **không** nói. K�
 Diễn tập ngược sau khi sửa: **4/4 mutant bị bắt** (nhãn luôn "không đạt" · in `p05=None` · bỏ guard đếm
 mẫu `empty` · bỏ vế `empty < MAX_EMPTY`).
 
-## Bổ sung 19-11 (chiều) — đường **nội suy (LK)** sai; model bám chai nhưng mask còn **rò sang cằm**
+## Bổ sung 19-11 (chiều) — GIẢ THUYẾT về cơ chế `drift_iou = 0` (bằng chứng **bổ trợ**, chưa đo trực tiếp)
 
-Câu hỏi treo: các mẫu `drift_iou = 0` là **LK sai** hay **model sai**? Hai phép đo **bổ trợ** dưới đây
-cùng đường code path ⇒ kết luận: **ô hiển thị (đường nội suy) không theo vật**; model vẫn bám chai (có
-một lỗi riêng: mask rò sang cằm ở frame 57). **Chưa** phải phép đo trực tiếp — CSV drift **không** có cột
-`bbox_hien_thi`/`lk_ok` (xem Next steps).
+Câu hỏi treo: `drift_iou = 0` là **đường nội suy (LK) sai** hay **model sai**? Kết luận dưới đây là
+**giả thuyết có bằng chứng bổ trợ**, KHÔNG phải phép đo trực tiếp: CSV drift **không** ghi lại ô đang
+hiển thị (`bbox_hien_thi`) hay trạng thái LK (`lk_ok`) — chỉ có ô **VOS** của từng lần chạy.
 
-Mọi số dưới đây lấy từ **một** lần chạy: `data/drift_samples_binh1_2026-11-14_141609.csv` · `bbox
-300,275,150,410` · `image_size 192` · `vos_every 3` · `git_rev` theo `.meta.json` của file.
+Mọi số về `drift_iou` lấy từ **một** lần chạy: `data/drift_samples_binh1_2026-11-14_141609.csv`
+(`bbox 300,275,150,410`, `image_size 192`, `vos_every 3`, `.meta.json`: `git_rev ab18c8b`,
+`git_dirty_code false`).
 
-### (1) Mask của model bám chai — mask dump ở `--vos-every 1` (KHÔNG có LK)
+### (1) Mask của model bám chai — mask dump ở phiên KHÁC (`--vos-every 1`)
 
 `_use_lk = vos_every > 1` (`src/live_tracking.py:624`) và `--dump-mask-frames` bị **chặn** khi
 `vos_every > 1` (`tools/live_worker.py:87-91`) ⇒ mask dump chỉ chạy được trên đường **không có LK**,
-nên mask là **thô của model** (dump trước `_smooth`, `mask_smoothing = 1.0`):
+mask là **thô của model** (dump trước `_smooth`, `mask_smoothing = 1.0`):
 
 ```bash
 python tools/live_worker.py --source data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 \
@@ -117,50 +117,87 @@ python tools/live_worker.py --source data/binh1.mp4 --bbox 300,275,150,410 --ima
     --out-dir /mnt/d/DOAN-NAB/.tmp_attr --stop-after-frames 115
 ```
 
-`docs/media/drift/masks/manifest.json` (đã commit): `nguon = data/binh1.mp4`, `image_size 192`,
-`image_size_hieu_luc 192`, `vos_every 1`, `mask_smoothing 1.0`, `bbox_xywh [300,275,150,410]`,
-`frame_goc_cua_phien 0`, `ghi_chu = "mask THÔ của model (trước bước làm mượt)"`.
+⚠ **Hai giới hạn phải nói**: mask này ở phiên `vos_every=1`, **không phải** phiên sinh ra `drift_iou`
+(`vos_every=3`), và SAM 2 **không tất định** (AGENTS §6) ⇒ mask **không** chứng minh được model bám
+đúng *trong chính phiên kia*; đây là **corroboration** (cùng clip, cùng ô chọn), không phải mIoU vs GT.
+`manifest.json` (đã commit) có `nguon`, `image_size 192`, `image_size_hieu_luc 192`, `vos_every 1`,
+`mask_smoothing 1.0`, `bbox_xywh [300,275,150,410]`, `frame_goc_cua_phien 0` — nhưng **không** có
+`git_rev` (writer `_write_mask_manifest` không phát khoá đó): dump này chạy trên cây `d2cd01a`+docs.
 
-Ảnh: `docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg` (4 panel: f57 · f69 · f90 · f108). Chú giải:
-**xanh lá** = ô chọn ban đầu `300,275,150,410` (**cố định**, KHÔNG phải ô hiển thị); **vàng** = ô VOS@48 =
-ô **đang hiển thị** (LK đóng băng, xem (2)); **hồng** = ô VOS của chính frame đó; **cyan** = viền mask.
+Ảnh (`python scripts/ve_anh_drift_binh1.py ...` — script đã commit, chạy lại ra đúng file đó):
+`docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg`, **4 panel** f57 · f69 · f90 · f108. Chú giải:
 
-Đọc ảnh: mask/ô hồng **nằm trên chai** ở cả 4 panel (chai được giơ cao rồi hạ xuống, đưa sang phải) —
-nhưng ở **f57 mask phủ thêm phần cằm** của người (vòng cyan chạy qua cằm) ⇒ **không** được nói "model
-đúng hoàn toàn": đúng vật chính, **rò sang cằm**. Ô vàng (ô hiển thị) nằm trên **bàn tay/áo**, không trên
-chai.
+| màu | là gì |
+|---|---|
+| xanh lá | ô chọn ban đầu `300,275,150,410` — **cố định**, KHÔNG phải ô hiển thị |
+| vàng | ô VOS của **base 48** — **mốc so sánh cố định** (chỉ trùng ô đang hiển thị ở f57/f108, xem (2)) |
+| hồng | ô VOS của **chính frame đó** (từ CSV, phiên `vos_every=3`) |
+| cyan | viền mask của model (từ PNG, phiên `vos_every=1`) |
 
-### (2) Ô "đang hiển thị" = **ô VOS cũ đóng băng**, vì LK trả `not-ok`
+Đọc ảnh: ô hồng + mask **nằm trên chai** ở cả 4 panel, **trừ** một lỗi thật: ở **f57 mask phủ thêm
+phần cằm** (vòng cyan chạy qua cằm; blob xuống ~y≈510 trong khi hộp CSV `y2 = 435`) ⇒ **không** được nói
+"model đúng" trần trụi — đúng vật chính, **rò sang cằm**. Ô vàng nằm trên **bàn tay/áo** ở f57/f108;
+ở f69/f90 chai **chồng** ô vàng (109 px / 93 px) nên trông "gần đúng" — đừng đọc ảnh thành "LK bám tốt".
 
-Đường thật (`src/live_tracking.py:847-856`): mỗi frame phát, `_interp.reset(base_gray, base_bbox)` với
-**base = lần VOS gần nhất** rồi **một** `update(gray)`; nếu `not ok` thì phát **`base_result`** (ô của lần
-VOS gần nhất) — tức **không** phải ô LK cuối. Phát lại đúng cơ chế đó trên `141609`:
+### (2) Bản phát lại theo đúng cơ chế pipeline — **chỉ 3 cặp khớp CSV**
 
-| base → frame | `lk_ok` | ô đang hiển thị | ô VOS của frame | `IoU` | `drift_iou` trong CSV |
-|---|---|---|---|---|---|
-| 48 → 51 | **False** | `266,212,392,637` (= VOS@48) | `181,139,315,621` | 0,204 | 0,0486 |
-| 51 → 57 | **False** | `181,139,315,621` (= VOS@51) | `94,0,247,435` | 0,175 | **0,0000** |
-| 48 → 57 | — | `266,212,392,637` (= VOS@48) | `94,0,247,435` | **0,000** | **0,0000** |
-| 66 → 69 | **False** | `128,0,278,514` (= VOS@66) | `239,0,375,439` | 0,143 | **0,0000** |
-| 105 → 108 | **False** | `370,342,504,779` (= VOS@105) | `549,276,701,758` | **0,000** | **0,0000** |
-| 252 → 255 | **False** | `503,330,630,727` (= VOS@252) | `641,344,719,744` | **0,000** | **0,0000** |
+Script (đã commit): `scripts/replay_lk_frame.py` — `reset(base_gray, base_bbox)` + **một** `update`,
+`not ok ⇒` phát **ô base** (`src/live_tracking.py:847-856`), IoU tính bằng `_bbox_iou` (**toạ độ bao gồm
++1**, cùng công thức sinh ra cột `drift_iou`):
 
-⇒ **`lk_ok = False` liên tục** trong đoạn chai được giơ nhanh (48→51, 51→57, 66→69, 105→108, 252→255):
-ô đang hiển thị **đứng yên ở ô VOS cũ** trong khi chai đã đi xa hàng trăm pixel ⇒ `drift_iou` sụp về 0.
-Hai frame khớp **chính xác** `0,0000` (`IoU(VOS@48, VOS@57) = 0`, `IoU(VOS@105, VOS@108) = 0`).
+```bash
+python scripts/replay_lk_frame.py --csv data/drift_samples_binh1_2026-11-14_141609.csv \
+    --source data/binh1.mp4 --cap 48:51 51:57 66:69 105:108 252:255 48:57
+```
 
-**Giới hạn của phép phát lại (phải nói)**: ở f57/f69 CSV cho 0,0000 nhưng phát lại từ base 51 cho 0,175 —
-vì ở đường **đa luồng**, `base` tại lúc **phát** frame 57 phụ thuộc việc VOS@51 đã kịp về hay chưa; phát
-lại tuần tự không tái lập được thứ tự đó. Bản phát lại đầu tiên của mình (chain `update()` qua nhiều
-frame) **sai cơ chế** — reviewer bắt đúng — nên đã bỏ; số ở bảng trên là bản đúng cơ chế (`reset(base)` +
-một `update`). Muốn **chứng minh** (không chỉ suy ra) phải thêm cột `bbox_hien_thi` + `lk_ok` vào CSV.
+```
+ base→frame  lk_ok          bbox_hien_thi            VOS@frame    IoU     CSV khớp
+ 48→51     False        266,212,392,637        181,139,315,621 0.2075  0.0486 KHÔNG
+ 51→57     False        181,139,315,621           94,0,247,435  0.177     0.0 KHÔNG
+ 66→69     False          128,0,278,514          239,0,375,439 0.1461     0.0 KHÔNG
+105→108    False        370,342,504,779        549,276,701,758    0.0     0.0 CÓ
+252→255    False        503,330,630,727        641,344,719,744    0.0     0.0 CÓ
+ 48→57     False        266,212,392,637           94,0,247,435    0.0     0.0 CÓ
+```
+
+**Đọc đúng bảng này** (đây là chỗ bản trước của mình sai, review vòng 2 bắt):
+
+- `lk_ok` là trạng thái **của bản phát lại**, không phải số đo của phiên ⇒ chỉ được dùng khi cặp đó
+  **khớp CSV**. **3 cặp khớp** (48→57, 105→108, 252→255): `IoU(ô base, ô VOS) = 0` ⇒ `drift_iou = 0`.
+  Đây là bằng chứng *"ô đang hiển thị = ô của một lần VOS CŨ, không theo vật"*.
+- **3 cặp KHÔNG khớp** (48→51, 51→57, 66→69) ⇒ bản phát lại **không tái lập** được phiên đó. Không phải
+  lỗi số học mà do **đường đa luồng**: `base` tại lúc *phát* một frame phụ thuộc kết quả VOS trước đã về
+  chưa (CSV còn **thiếu dòng** `seq 19`/frame 54 và `seq 87`/frame 258 — ủng hộ "VOS@51 về muộn").
+- Vì vậy **không** được nói "`lk_ok = False` liên tục". Ở frame 51 `drift_iou = 0,0486` **không khớp**
+  với ô base nào (VOS@48 → 0,2075; VOS@45 → 0,0455; VOS@42 → 0,0187) ⇒ nhiều khả năng LK trả `ok = True`
+  với ô **đã trượt**, tức **hai cơ chế**: (a) LK "ok" nhưng trượt (f51); (b) LK `not-ok` ⇒ phát ô base
+  (f57/f108/f255, khớp 0,0000).
 
 ### Hệ quả cho ticket 14
 
-- `drift_trend` là **tên enum trung tính** ("ô hiển thị và VOS bất nhất") — giữ nguyên như ticket #14.
-  **"LK nội suy lệch" là nhãn NGUYÊN NHÂN**, tách riêng; plan 09-11 đã xếp "bật cờ ngay" vào **phương án
-  bị bác #3**, nay có bằng chứng để **mở lại** — kèm điều kiện: cờ chỉ nói *"ô hiển thị đã trượt"*,
-  **không** nói "model sai" (model còn bám; mask có thể rò).
+- `drift_trend` là **tên enum trung tính** ("ô hiển thị và VOS bất nhất") — giữ như ticket #14.
+  **"LK nội suy lệch" là nhãn NGUYÊN NHÂN**, tách riêng; plan 09-11 xếp "bật cờ ngay" vào **phương án bị
+  bác #3**, nay có bằng chứng **bổ trợ** để **mở lại**, kèm điều kiện: cờ chỉ nói *"ô hiển thị đã trượt"*,
+  **không** nói "model sai".
 - Cờ bắt đúng thứ `empty_frac_window` **không thể** bắt: **mask không rỗng mà ô hiển thị đã trượt**.
-- Cơ chế trên clip này: **vật được giơ nhanh**, có đoạn **chạm/vượt mép trên** (`y1 = 0`, frame 57–75);
-  clip **không có** vật che ⇒ **không** được generalize thành "che khuất không sao".
+- Trên clip này: **vật giơ nhanh**, có đoạn **chạm/vượt mép trên** (`y1 = 0` ở f57–75, f78 `y1 = 35`);
+  clip **không có** vật che ⇒ **không** generalize thành "che khuất không sao".
+- **Muốn nói "chứng minh"** thì phải thêm cột `bbox_hien_thi` + `lk_ok` vào `_log_drift_sample` (ticket
+  #14) rồi chạy lại — hiện chưa có.
+
+## Review độc lập PR #48 — 2 vòng
+
+| Vòng | Mức | Nội dung | Xử lý |
+|---|---|---|---|
+| 1 | **P1** | Bản phát lại **chain** `LkBoxTracker.update()` qua nhiều frame ⇒ sai cơ chế (pipeline `reset(base)` mỗi frame, `not ok` ⇒ ô base); số `IoU = 0,158` so hai đại lượng khác nhau | **Sửa**: bỏ số đó, viết `scripts/replay_lk_frame.py` đúng cơ chế, `_bbox_iou` +1 |
+| 1 | **P1** | Trộn **3 cấu hình** (ô start `120551`/256/every3, mask `192/every1`, drift `192/every3`) + danh sách frame là hợp của 2 file | **Sửa**: chỉ dùng `141609` (192/every3) cho số drift; mask tách riêng, nêu lý do bị chặn ở `every>1` |
+| 1 | P2 | Ảnh: mô tả 6 panel (thật 5), ô xanh **cố định** bị đọc thành ô hiển thị | **Sửa**: caption nêu rõ từng màu; vẽ lại có ô base |
+| 1 | P2 | Bỏ chữ "model đúng" trần trụi (chỉ là kết luận bằng mắt, không phải mIoU) | **Sửa**: "đúng vật chính, **rò sang cằm** ở f57" |
+| 1 | P2 | Lẫn `drift_trend` (enum) với "LK nội suy lệch" (nhãn nguyên nhân) | **Sửa**: tách hai thứ, dẫn plan "phương án bị bác #3" |
+| 1 | P2 | "chỉ chuyển động nhanh" bỏ mất điều kiện vật chạm/vượt mép khung | **Sửa**: nêu `y1 = 0` ở f57–75 |
+| 1 | P3 | "chứng minh bằng 2 phép đo độc lập" quá mức; Next steps lỗi thời; mask PNG ở `/tmp` (WSL dọn) | **Sửa**: "bổ trợ"; PNG + manifest **commit** vào `docs/media/drift/masks/` |
+| **2** | **P1** | Nhãn `lk_ok` trình bày như **số đo**; dòng 48→51 khai `False` ⇒ ô hiển thị = base ⇒ IoU phải 0,2075, nhưng CSV ghi 0,0486 ⇒ tại f51 LK **ok mà trượt**. Chú giải ảnh khẳng định vàng = ô hiển thị cho cả 4 panel, mâu thuẫn với bảng (f108 ô hiển thị là VOS@105) | **Sửa**: ghi `lk_ok` là "của bản phát lại"; bảng có cột **khớp CSV** (3 CÓ / 3 KHÔNG); nêu **2 cơ chế**; vàng = "mốc so sánh cố định", chỉ trùng ô hiển thị ở f57/f108 |
+| **2** | P2 | Nhãn f69 `0.289` sai (đúng 0,281 — chép tay); ảnh **không có script** sinh ⇒ không tái lập | **Sửa**: commit `scripts/ve_anh_drift_binh1.py`, nhãn tính từ chính ô đã vẽ (0,281) |
+| **2** | P2 | Bảng phát lại **không có script/lệnh** ⇒ không tái lập | **Sửa**: `scripts/replay_lk_frame.py` + dán lệnh + output |
+| **2** | P2 | Log thiếu bảng review PR #48 | **đã thêm** (bảng ngay trên) |
+| **2** | P3 | "hai frame khớp" → **ba**; dùng IoU thường thay `_bbox_iou`; f57/f69 gộp 1 số; "ô vàng trên tay/áo" chỉ đúng f57/f108; mask `55` không dùng | **Sửa**: ba cặp; dùng `_bbox_iou`; tách f57/f69; thêm "ở f57/f108"; nói rõ `mask_000055` là dự phòng |
