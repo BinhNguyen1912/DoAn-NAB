@@ -1190,6 +1190,11 @@ class LiveTrackingSession:
         cu = None
         with self._stats_lock:
             found, shown = self._shown_state_locked(frame_idx)
+            # `_lk_ok_of` lặp `_lk_by_frame`, mà luồng phát APPEND deque đó dưới `_stats_lock` ⇒ phải
+            # gọi TRONG lock này. Gọi ngoài lock từng là đường mới của PR #50 và có thể ném
+            # `RuntimeError: deque mutated during iteration` ⇒ `_VosWorker` bắt `Exception` ⇒ **cả
+            # phiên live thành `error`** (review độc lập bắt P1 ngay sau khi merge).
+            lk_ok = self._lk_ok_of(frame_idx) if found else None
             if not found:
                 # Kết quả về TRƯỚC khi frame đó được phát (engine rất nhanh) ⇒ hẹn so lúc phát
                 # frame; nếu frame đó đã trôi qua thật thì `_update_stats_locked`/`_flush_pending`
@@ -1200,13 +1205,13 @@ class LiveTrackingSession:
                 cu, da_hen = self._pending_drift, True
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
-                                       self._mask_empty(result),
-                                       self._lk_ok_of(frame_idx))
+                                       self._mask_empty(result), None)
         if da_hen:
             if cu is not None:
+                with self._stats_lock:
+                    lk_ok_cu = self._lk_ok_of(cu[0])
                 self._log_drift_sample(frame_idx=cu[0], seq=cu[2], vos_ms=cu[3],
-                                       empty=cu[4], value=None, bbox=cu[1],
-                                       lk_ok=cu[5] if len(cu) > 5 else None)
+                                       empty=cu[4], value=None, bbox=cu[1], lk_ok=lk_ok_cu)
             return
         if shown is None:
             # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
@@ -1215,7 +1220,7 @@ class LiveTrackingSession:
         value = _bbox_iou(shown, fresh)
         self._record_drift(value)
         self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value,
-                               hien_thi=shown, lk_ok=self._lk_ok_of(frame_idx))
+                               hien_thi=shown, lk_ok=lk_ok)
 
     @staticmethod
     def _mask_empty(result):
