@@ -491,11 +491,13 @@ class TestTachTheoKhung:
                                      "n_drift": 3, "drift_iou_mean": 0.8,
                                      # 3 mẫu < MIN_SAMPLES ⇒ p05 chưa công bố (None ≠ 0)
                                      "drift_iou_p05": None, "drift_iou_p05_n": 3,
-                                     "drift_iou_p05_nguong": MIN_SAMPLES}
+                                     "drift_iou_p05_nguong": MIN_SAMPLES,
+                                     "n_lk_do_duoc": 0, "lk_ok_frac": None}
         assert kq["ngoai_khung"] == {"n": 3, "n_empty": 2, "n_empty_do_duoc": 3, "empty_frac": 0.667,
                                      "n_drift": 2, "drift_iou_mean": 0.3,
                                      "drift_iou_p05": None, "drift_iou_p05_n": 2,
-                                     "drift_iou_p05_nguong": MIN_SAMPLES}
+                                     "drift_iou_p05_nguong": MIN_SAMPLES,
+                                     "n_lk_do_duoc": 0, "lk_ok_frac": None}
         assert kq["khong_ro_khung"]["n"] == 0
 
     def test_bien_bao_gom_hai_dau(self):
@@ -513,7 +515,8 @@ class TestTachTheoKhung:
         assert kq["trong_khung"] == {"n": 0, "n_empty": 0, "n_empty_do_duoc": 0, "empty_frac": None,
                                      "n_drift": 0, "drift_iou_mean": None,
                                      "drift_iou_p05": None, "drift_iou_p05_n": 0,
-                                     "drift_iou_p05_nguong": MIN_SAMPLES}
+                                     "drift_iou_p05_nguong": MIN_SAMPLES,
+                                     "n_lk_do_duoc": 0, "lk_ok_frac": None}
 
     def test_mau_khong_co_frame_idx_vao_khong_ro_khung(self):
         """`frame_idx` None (mẫu chờ bị cắt) không được rơi vào bên nào ⇒ không làm sai mẫu số."""
@@ -529,7 +532,7 @@ class TestTachTheoKhung:
         assert thong_ke_mau([{"frame_idx": 1, "empty": None, "drift_iou": 0.5}]) == {
             "n": 1, "n_empty": 0, "n_empty_do_duoc": 0, "empty_frac": None, "n_drift": 1,
             "drift_iou_mean": 0.5, "drift_iou_p05": None, "drift_iou_p05_n": 1,
-            "drift_iou_p05_nguong": MIN_SAMPLES}
+            "drift_iou_p05_nguong": MIN_SAMPLES, "n_lk_do_duoc": 0, "lk_ok_frac": None}
 
 
 class TestP05TheoKhung:
