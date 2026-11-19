@@ -2207,3 +2207,44 @@ class TestLkByFrameDuyetTrongLock:
         dong3 = [r for r in rows if r["frame_idx"] == 3]
         assert dong3, "pending cũ phải được ghi thành một dòng (không mất mẫu)"
         assert dong3[0]["lk_ok"] is True, "phải TRA LẠI `lk_ok` của frame 3, không dùng `None` cũ"
+
+
+class TestCuaMadCuaLk:
+    """`lk_max_mad` (ticket #38) phải **không** đổi hành vi mặc định, và phải tới được CẢ HAI tracker.
+
+    Không có test này thì một lần sửa nhầm mặc định (vd đặt `6.0`) sẽ đi qua toàn bộ suite mà không ai
+    biết — trong khi mọi số trong báo cáo (`lk_ok_frac`, `drift_iou`) gắn với 1,5.
+    """
+
+    def test_mac_dinh_van_la_1_5(self, video_source, tmp_path):
+        from src.light_tracker import DEFAULT_MAX_MAD
+
+        assert DEFAULT_MAX_MAD == 1.5, "đổi hằng số gốc phải kèm A/B live + mIoU (ticket #38)"
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+        assert session._cfg.lk_max_mad == DEFAULT_MAX_MAD
+        assert session._lk._max_mad == DEFAULT_MAX_MAD
+        assert session._interp._max_mad == DEFAULT_MAX_MAD, \
+            "`_interp` quyết định ô hiển thị giữa hai lần VOS ⇒ phải cùng cửa với `_lk`"
+
+    def test_dat_cua_mad_thi_ca_hai_tracker_cung_doi(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_max_mad=6.0))
+        assert session._lk._max_mad == 6.0 and session._interp._max_mad == 6.0
+
+    def test_cau_hinh_echo_cua_mad(self, video_source, tmp_path):
+        """`status.json` phải tự khai cửa MAD: không có nó thì không ai biết artifact đo ở 1,5 hay 6,0."""
+        from src.live_tracking import cau_hinh_yeu_cau
+
+        assert cau_hinh_yeu_cau()["lk_max_mad"] == 1.5
+        assert cau_hinh_yeu_cau(lk_max_mad=6)["lk_max_mad"] == 6.0
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_max_mad=3.0))
+        assert session._stats.cau_hinh["lk_max_mad"] == 3.0
+
+    def test_cua_mad_khong_hop_le_thi_bao_loi(self, video_source, tmp_path):
+        for xau in (0, -1.0):
+            with pytest.raises(ValueError, match="lk_max_mad"):
+                LiveTrackConfig(source=video_source, out_dir=tmp_path / "live", lk_max_mad=xau)
