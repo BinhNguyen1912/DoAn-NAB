@@ -46,9 +46,21 @@ Hai kết quả quan trọng:
    VOS CŨ (đóng băng)**, không phải nội suy. Đây là số **đo**, thay cho suy luận trước đó; và nó nói
    rằng "HUD 30 FPS" **không** đồng nghĩa "nội suy mượt" — đúng cảnh báo `mask_age`, nhưng ở đây là ô
    bao chứ không chỉ mask.
-   ⚠ **Chưa** kết luận được nguyên nhân (LK fail vì chuyển động nhanh? `max_mad`/`grid` quá chặt cho ô
-   chai 150×410? hay vì `vos_every=3` = bước nhảy 3 frame) ⇒ **ticket riêng**, không sửa ngưỡng LK ở PR
-   này.
+   **Đã chẩn đoán nguyên nhân** (16 cặp base→frame rải trong `0:110`, ô chai `266,212,392,637`):
+
+   | bước nhảy | LK `ok` | điểm theo dõi được (trung vị/64) | MAD trung vị |
+   |---|---|---|---|
+   | 1 frame | 9/16 | 50 | 1,4 px |
+   | 2 frame | 4/16 | 50 | 3,0 px |
+   | 3 frame | **1/16** | 49 | **4,8 px** |
+   | 5 frame | 2/16 | 47 | 12,4 px |
+
+   ⇒ LK **không** thiếu điểm theo dõi (≈50/64); nó bị chặn bởi **cửa chống-trôi `DEFAULT_MAX_MAD = 1.5`**
+   (`src/light_tracker.py:23`) vì vật cầm tay **không rigid** (tay che, xoay, biến dạng) ⇒ độ tản vector
+   lớn **dù trung vị dịch đúng**. Chạy thêm `vos_every 2` và `6` (26 và 19 mẫu): `lk_ok_frac` = **0,0**
+   cả hai ⇒ không phải chỉ do bước nhảy dài.
+   **Không** sửa ngưỡng ở PR này ⇒ **ticket #38** (A/B `max_mad` × `grid`, kèm kiểm bằng ảnh rằng ô
+   không bám nền; nếu không cấu hình nào tốt hơn thì kết luận trung thực là **ẩn ô cũ** giữa hai lần VOS).
 
 ## Vấn đề & cách xử lý
 
