@@ -239,7 +239,10 @@ async function waitJobState(page, wanted, timeout = 240000) {
   // Dùng `\s` chứ không phải khoảng trắng thường: `innerText` chèn xuống dòng khi HUD xuống dòng.
   check('FPS live đo được > 0', /FPS\s+đo\s+được:\s*[1-9]/.test(liveText), liveText.replace(/\s+/g, ' '))
 
-  // 9a-bis. Cờ #14 phải có mặt trên ĐƯỜNG THẬT (không mock): bản đầu chỉ nối tới `status.json`, DTO →
+  // 9a-bis. Cờ #14 phải có mặt trên ĐƯỜNG THẬT (không mock).
+  // ⚠ THỨ TỰ LÀ MỘT PHẦN CỦA PHÉP KIỂM: khối này PHẢI nằm TRƯỚC mọi `page.route('**/api/live/status')`
+  // bên dưới. Nếu ai chuyển nó xuống dưới, fetch sẽ đi qua route mock và mục này lại thành "kiểm
+  // component" — đúng lỗi P0 đã xảy ra ở PR #54 (HUD thật không hiện vì DTO thiếu khoá, e2e vẫn xanh).: bản đầu chỉ nối tới `status.json`, DTO →
   // route dựng từng field nên thiếu khoá ⇒ HUD không bao giờ hiện, mà e2e vẫn xanh vì nó MOCK route
   // (review độc lập PR #54, P0). Ở đây hỏi thẳng API thật khi phiên đang chạy.
   const thatStatus = await page.evaluate(async (base) => {
