@@ -174,10 +174,21 @@ def main() -> int:
         if "theo_khung" in item:
             k = item["theo_khung"]
             khung_txt = " ∪ ".join(f"{a}–{b}" for a, b in k["khung"])
+            tk, nk = k["trong_khung"], k["ngoai_khung"]
+            dk = k.get("dieu_kien_ticket_14", {})
             print(f"\n{Path(item['file']).name} · KHUNG {khung_txt}: "
-                  f"trong n={k['trong_khung']['n']} rỗng={k['trong_khung']['empty_frac']} "
-                  f"drift_tb={k['trong_khung']['drift_iou_mean']} · "
-                  f"ngoài n={k['ngoai_khung']['n']} rỗng={k['ngoai_khung']['empty_frac']}")
+                  f"trong n={tk['n']} rỗng={tk['empty_frac']} p05={tk['drift_iou_p05']} "
+                  f"(n_drift={tk['drift_iou_p05_n']}) drift_tb={tk['drift_iou_mean']} · "
+                  f"ngoài n={nk['n']} rỗng={nk['empty_frac']} p05={nk['drift_iou_p05']} "
+                  f"(n_drift={nk['drift_iou_p05_n']})")
+            # Điều kiện tiên quyết ticket 14 phải in ở dạng 3 trạng thái: `None` = CHƯA ĐO,
+            # không được in thành "không đạt" (bẫy 0/None của AGENTS §6).
+            if dk:
+                for ben in ("trong_khung", "ngoai_khung"):
+                    d = dk[ben]
+                    nhan = {True: "ĐẠT", False: "không đạt", None: "CHƯA ĐO"}[d["dat"]]
+                    print(f"  · điều kiện ticket 14 ở {ben}: {nhan}"
+                          f"{'' if d['dat'] else ' — ' + d['ly_do']}")
     for item in ket_qua:
         if "doi_chung_canh_tinh" in item:
             control = item["doi_chung_canh_tinh"]

@@ -58,6 +58,9 @@ MIN_MEASURED_IN_WINDOW = WINDOW // 2
 # Ngưỡng "mẫu xấu" (nội suy LK đã lệch hẳn) và ngưỡng CỜ chẩn đoán đề xuất trong plan 09-11.
 BAD_SAMPLE = 0.5
 FLAG_P05 = 0.30
+# Trần `empty_frac` cho điều kiện tiên quyết ticket 14 — MỘT hằng số dùng chung (trước 19-11 chỉ nằm
+# trong default của `low_p05_low_empty` và bị hard-code lần thứ hai ở `_dieu_kien_ticket_14`).
+MAX_EMPTY = 0.03
 # Ngưỡng đăng ký trước 08-11 cho clip khoẻ (dùng để đếm cửa sổ "báo động" trên clip KHỎE = báo oan).
 HEALTHY_P05 = 0.70
 
@@ -173,14 +176,51 @@ def thong_ke_mau(rows) -> dict:
     """
     empty_flags = [row["empty"] for row in rows if row.get("empty") is not None]
     drifts = drift_values(rows)
+    n_empty = sum(1 for v in empty_flags if v)
     return {
         "n": len(rows),
+        "n_empty": n_empty,
         "n_empty_do_duoc": len(empty_flags),
-        "empty_frac": round(sum(1 for v in empty_flags if v) / len(empty_flags), 3)
-                      if empty_flags else None,
+        # Số làm tròn 3 chữ số để đọc; mọi PHÉP SO phải dùng `n_empty`/`n_empty_do_duoc` (xem
+        # `_dieu_kien_ticket_14`) — 2,99 % làm tròn thành 0,030 rồi bị coi là "vượt trần 3 %".
+        "empty_frac": round(n_empty / len(empty_flags), 3) if empty_flags else None,
         "n_drift": len(drifts),
         "drift_iou_mean": round(sum(drifts) / len(drifts), 4) if drifts else None,
+        # `p05` của NHÓM này (đi qua `phan_vi` ⇒ `None` khi < `MIN_SAMPLES`): trước 19-11 nhóm chỉ
+        # có `mean`, nên câu "p05 TRONG khung = 0,000" của phụ lục báo cáo không tái lập được bằng
+        # công cụ nào (review độc lập bắt đúng lớp lỗi "công bố số không tái lập").
+        "drift_iou_p05": phan_vi(drifts),
+        "drift_iou_p05_n": len(drifts),
+        "drift_iou_p05_nguong": MIN_SAMPLES,
     }
+
+
+def _dieu_kien_ticket_14(nhom) -> dict:
+    """Điều kiện tiên quyết ticket 14 cho MỘT nhóm mẫu đã thống kê — hàm THUẦN, 3 trạng thái.
+
+    `dat` là **`None`** khi không có mẫu drift nào đủ ngưỡng (CHƯA ĐO — khác `False` = "đã đo và
+    không đạt"): `phan_vi` trả `None` dưới `MIN_SAMPLES` mẫu, và `0` mẫu không phải "0 lần đạt".
+    """
+    p05 = nhom.get("drift_iou_p05")
+    empty = nhom.get("empty_frac")
+    n_empty, n_khai = nhom.get("n_empty"), nhom.get("n_empty_do_duoc") or 0
+    if p05 is None:
+        return {"dat": None, "ly_do": f"chưa đủ {MIN_SAMPLES} mẫu drift để công bố p05 "
+                                      f"(n = {nhom.get('drift_iou_p05_n')})"}
+    if empty is None:
+        return {"dat": None, "ly_do": "nhóm này không có mẫu nào khai cờ `empty` ⇒ không tính được "
+                                      "tỉ lệ rỗng"}
+    # Cùng luật với `low_p05_low_empty`: phải có ÍT NHẤT `MIN_SAMPLES` mẫu KHAI `empty` mới được nói
+    # về tỉ lệ rỗng — nếu không thì 1 dòng khai `empty=0` cạnh 59 dòng trống vẫn cho `empty_frac = 0`
+    # và bật cờ `ĐẠT` trên dữ liệu CHƯA ĐO (review độc lập 19-11, P2).
+    if n_empty is None or n_khai < min(MIN_SAMPLES, nhom.get("n") or 0):
+        return {"dat": None, "ly_do": f"chỉ {n_khai} mẫu khai cờ `empty` — cần ≥ "
+                                      f"{min(MIN_SAMPLES, nhom.get('n') or 0)} mới nói được tỉ lệ rỗng"}
+    empty_ty_le = n_empty / n_khai
+    dat = bool(p05 < FLAG_P05 and empty_ty_le < MAX_EMPTY)
+    return {"dat": dat, "p05": p05, "empty_frac": empty,
+            "ly_do": "" if dat else f"p05 {p05} / empty {empty} — cần p05 < {FLAG_P05} và empty < "
+                                    f"{MAX_EMPTY}"}
 
 
 def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
@@ -220,6 +260,16 @@ def tach_theo_cac_khung(rows, danh_sach_khung) -> dict:
         "trong_khung": thong_ke_mau(trong),
         "ngoai_khung": thong_ke_mau(ngoai),
         "khong_ro_khung": thong_ke_mau(khong_ro),
+        "dieu_kien_ticket_14": {
+            "trong_khung": _dieu_kien_ticket_14(thong_ke_mau(trong)),
+            "ngoai_khung": _dieu_kien_ticket_14(thong_ke_mau(ngoai)),
+            "ghi_chu": "Điều kiện tiên quyết của ticket 14 (`p05 < 0,30` VÀ `empty_frac < 3 %`) — "
+                       "chỉ có nghĩa khi tính TRONG khung vật còn trong khung. ĐỪNG gộp với hai số "
+                       "KHÁC tập mẫu: (a) `p05` của phiên 08-11 trong `status.json` là 0,663–0,720 "
+                       "với cửa sổ 200 mẫu và `empty_runs 0/267` — đó không phải 'p05 toàn dãy' của "
+                       "các CSV 14-11 (bằng 0,0); (b) 'cả phiên' của CSV thì `empty` cao vì vật đã "
+                       "rời khung.",
+        },
         "ghi_chu": "`trong_khung`/`ngoai_khung` PHẢI đọc cùng nhau. `ngoai_khung` là các frame "
                    "NGƯỜI ĐO KHAI là ngoài khung — KHÔNG đồng nghĩa 'vật đã rời khung': nguồn file "
                    "bị lặp (55 s trên clip 11 s = 4–5 vòng) nên các vòng sau rơi hết vào đây. "
@@ -307,10 +357,13 @@ def phan_vi(values, *, q: float = 5, min_samples: int = MIN_SAMPLES, digits: int
     chết và con số vô nghĩa đi vào báo cáo (review độc lập 17-11, P3).
     """
     gia_tri = [float(v) for v in values]
-    if len(gia_tri) < int(min_samples):
-        return None
+    # Kiểm HỎNG **trước** cổng đếm mẫu: nếu để sau thì 29 giá trị `nan` trả `None` (bị đọc thành
+    # "chưa đo") còn 30 giá trị `nan` lại ném lỗi — cùng một dữ liệu hỏng, hai kết luận, phụ thuộc n
+    # (review độc lập 19-11, P3).
     if not all(math.isfinite(v) for v in gia_tri):
         raise ValueError("phan_vi: có giá trị nan/inf — số đo HỎNG, không phải phân vị thấp")
+    if len(gia_tri) < int(min_samples):
+        return None
     return round(float(np.percentile(gia_tri, q)), digits)
 
 
@@ -356,7 +409,7 @@ def static_control(rows, *, min_drift: float = 0.99, min_samples: int = 20) -> d
     }
 
 
-def low_p05_low_empty(rows, *, flag: float = FLAG_P05, max_empty: float = 0.03,
+def low_p05_low_empty(rows, *, flag: float = FLAG_P05, max_empty: float = MAX_EMPTY,
                       window: int = WINDOW, min_measured=None) -> dict:
     """Đếm cửa sổ `window` lần VOS có `p05 < flag` **và** tỉ lệ mask rỗng `< max_empty`.
 
