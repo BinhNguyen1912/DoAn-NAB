@@ -94,3 +94,50 @@ cờ chẩn đoán nói được điều `empty_frac_window` **không** nói. K�
 
 Diễn tập ngược sau khi sửa: **4/4 mutant bị bắt** (nhãn luôn "không đạt" · in `p05=None` · bỏ guard đếm
 mẫu `empty` · bỏ vế `empty < MAX_EMPTY`).
+
+## Bổ sung 19-11 (chiều) — **AI SAI** ở các mẫu `drift_iou = 0`: **LK**, không phải model
+
+Đây là câu hỏi treo từ đầu phiên ("chưa chứng minh được ai sai"). Đã chứng minh bằng **hai phép đo độc lập**.
+
+### (1) Mask của model BÁM ĐÚNG chai — kiểm bằng ảnh
+
+```bash
+python tools/live_worker.py --source data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 \
+    --vos-every 1 --dump-mask-frames 55,57,60,63,69,72,75,80,90,105,108 \
+    --dump-mask-dir /tmp/attr/masks --out-dir /tmp/attr --stop-after-frames 115
+```
+
+`--vos-every 1` ⇒ **không có LK**, nên mask là 100 % của model. Bbox của mask (`cv2.imread` + `np.nonzero`):
+
+| frame | bbox mask (x1,y1,x2,y2) | chai ở đâu trong frame |
+|---|---|---|
+| 55 | `110,17,255,592` | đang **giơ cao**, sát mép trên |
+| 57 | `95,0,235,526` | chạm mép trên (đúng — chai bị giơ quá khung) |
+| 69 | `240,0,376,445` | vẫn trên cao |
+| 90 | `298,342,441,831` | đã **hạ xuống**, mask theo kịp |
+| 108 | `552,279,700,752` | đưa sang **phải**, mask theo kịp |
+
+Ảnh chồng mask + ô chai gốc: `docs/media/drift/binh1_f48-108_mask_vos_bam_dung.jpg` ⇒ mask **luôn nằm trên
+chai**, kể cả những frame có `drift_iou = 0`. Nghĩa là **model đúng**, không phải "model lệch".
+
+### (2) LK **mất dấu** trước đó — phát lại bằng chính `src/light_tracker.py`
+
+Đặt mốc ở ô VOS **thật** của frame 48 (`268,204,392,634`), rồi cho `LkBoxTracker` chạy tiếp từng frame:
+
+```
+LK frame 51: box = (185,155,309,585)
+LK MẤT DẤU ở frame 52
+IoU(LK@57, VOS@57) = 0,158  ← so với drift_iou = 0,0000 trong CSV
+```
+
+⇒ **LK trượt/mất dấu từ frame 52** (chai được giơ lên **rất nhanh**), nên ô hiển thị là ô cũ; VOS ở frame 57
+khoá lại đúng chỗ chai (sát mép trên) ⇒ hai ô **không giao nhau** ⇒ `drift_iou = 0` trong khi `empty = 0`
+(mask vẫn có, và đúng). Không mâu thuẫn với (1): (1) nói *mask model* đúng, (2) nói *ô LK* sai.
+
+### Hệ quả cho ticket 14
+
+- Tên cờ **`drift_trend` = "LK nội suy lệch"** của plan 09-11 **đã có bằng chứng** — không còn là suy đoán.
+- Cờ này bắt đúng thứ `empty_frac_window` **không thể** bắt: **mask không rỗng mà ô hiển thị đã trượt** —
+  đúng loại lỗi làm người xem thấy ô bao lệch khỏi vật dù HUD báo "ổn định".
+- Cơ chế là **chuyển động nhanh** (giơ chai lên), **không phải che khuất** — báo cáo phải nói đúng thế,
+  không được gọi đây là "ca che khuất" của ticket #14.

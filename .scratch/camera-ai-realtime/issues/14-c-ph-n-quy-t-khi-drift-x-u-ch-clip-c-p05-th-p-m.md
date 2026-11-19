@@ -42,3 +42,21 @@ Mẫu `drift_iou = 0` **tái lập giữa các lần chạy** (cùng frame, cùn
 ⚠ **Nhưng tên cờ phải theo đại lượng đo được**: `_log_drift_sample` ghi `bbox = result.bbox` = ô của **VOS**, nên `drift_iou = 0` chỉ chứng minh *ô hiển thị (LK) và ô VOS không giao nhau* — ở các mẫu này **ô VOS** mới là cái chạm `y1 = 0`, chưa chứng minh LK sai. Trước khi đặt tên "LK nội suy lệch" (§plan 09-11) phải chứng minh ai sai: chạy 1 phiên `--dump-mask-frames` phủ frame 50–110 rồi so mask vs ô hiển thị. Nếu không, gọi là **`drift_trend`** = "ô hiển thị và VOS bất nhất", đúng như số đo.
 
 Cũng phải chốt lại `drift_n ≥ 100`: `n_drift` **trong khung** của một lần 11 s chỉ 54–61 ⇒ nếu giữ 100 thì cờ **không bao giờ bật** trên dữ liệu này. Đề xuất: cờ chạy trên **cửa sổ trượt 20–50 mẫu** (đúng khuyến nghị 13-11) với ≥ **30** mẫu đo được (ngưỡng công bố p05 của repo), còn `drift_n ≥ 100` giữ cho **p05 cấp phiên** — hai đại lượng khác tập mẫu, phải nói rõ trong tài liệu.
+
+19-11 (đính chính comment trên): bảng "8 lần chạy · empty 1,6–3,6 %" là **trộn 2 tập mẫu** — reviewer PR #47 bắt đúng. Số đúng, nhóm theo **`meta.lenh --bbox`** (không theo bbox dòng đầu CSV — dòng đầu là ô đã trôi), khung `0:110` ∪ `165:262`, tái lập bằng `python scripts/analyze_drift_samples.py --frame-window 0:110 --frame-window 165:262 data/drift_samples_binh1_2026-11-14_*.csv` (PR #47 đã merge, `main` = `0c1bac0`):
+
+| ô chọn | lần chạy | phán quyết | `empty_frac` | `p05` | `n_drift` |
+|---|---|---|---|---|---|
+| `300,275,150,410` (chai) | 15 | **8 ĐẠT** | **1,6–1,8 %** | **0,000** | 54–61 |
+|  |  | 5 không đạt (vượt trần 3 %) | 3,0–3,6 % | 0,000 | 30–56 |
+|  |  | 2 **CHƯA ĐO** (@256/320) | 0,0 · 3,0 % | `None` | 21 · 29 |
+| `104,308,209,287` (mặt) | 4 | 4 không đạt | 0,0 % | 0,725–0,730 | 55–60 |
+
+⇒ tiêu chí 1 của ticket **ĐẠT**: 8 lần chạy cá biệt có `p05 < 0,30` **và** `empty < 3 %` cùng lúc. Lệnh trên in `· điều kiện ticket 14 ở trong_khung: ĐẠT` cho đúng 8 file đó.
+
+Ba điều phải nhớ khi làm cờ:
+1. **`p05 = 0,000` là phân vị thật**, không phải "2 mẫu xui": mỗi lần ĐẠT có **6–9 mẫu `drift_iou` đúng bằng 0** trên `n_drift` 54–61 (cần ≥ 4 mẫu 0 thì p05 mới bằng 0 với n ≈ 60).
+2. **`empty` 3,0–3,6 % ⇒ KHÔNG đạt** — trần 3 % là ràng buộc thật (5/15 lần chạy trượt ở đây). Đừng nới trần để "cho đủ mẫu".
+3. **`n_drift` trong khung chỉ 21–61** ⇒ `drift_n ≥ 100` (tiêu chí 3) **không thể đạt** với phiên 11 s. Cần quyết: hạ xuống ≥ 30 (ngưỡng công bố p05 của repo) cho **cờ**, giữ ≥ 100 cho **p05 cấp phiên** — hoặc đo phiên dài hơn (55 s cho `n_drift` ~250 nhưng phần lớn ngoài khung).
+
+Chưa chứng minh được **ai sai** ở các mẫu `drift = 0` (frame 57/69/75/105/108/171/255, ô chạm `y1 = 0`): CSV ghi `bbox = result.bbox` = ô **VOS**, nên số liệu chỉ nói *ô hiển thị (LK) và ô VOS không giao nhau*. Attribution cần `--dump-mask-frames` phủ frame 50–110 — bước tiếp theo trước khi đặt tên cờ "LK nội suy lệch".
