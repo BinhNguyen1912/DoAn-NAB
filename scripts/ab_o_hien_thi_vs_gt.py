@@ -79,6 +79,7 @@ def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, in
     ra = {}
     if not path.exists():
         return ra
+    trung = []          # frame_idx trùng ⇒ dòng sau ghi đè dòng trước (im lặng) — phải nói ra
     with path.open(encoding="utf-8") as fh:
         for row in csv.DictReader(fh):
             try:
@@ -93,7 +94,12 @@ def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, in
                 box = KHONG_CO_O
             elif box[2] < box[0] or box[3] < box[1] or box[0] < 0 or box[1] < 0:
                 box = O_HONG
+            if frame in ra:
+                trung.append(frame)
             ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1")
+    if trung:
+        print(f"[canh-bao] shown.csv có frame_idx TRÙNG {len(trung)} lần (vd {sorted(set(trung))[:5]}) "
+              "— dòng sau ghi đè dòng trước, số của các frame đó không đáng tin", flush=True)
     return ra
 
 
@@ -168,6 +174,17 @@ def chay_mot_lan(*, clip: str, bbox: str, image_size: int | None, vos_every: int
                               if (out_dir / "shown.csv").exists() else 0)}
 
 
+def so_dong_khop_frame(res: dict) -> bool:
+    """`shown.csv` có đúng **1 dòng mỗi frame đã phát** không — hàm THUẦN.
+
+    `status["frames"]` = số frame ĐÃ PHÁT; CSV phải có đúng ngần ấy dòng dữ liệu (trừ dòng tiêu đề).
+    Lệch nghĩa là có frame không được ghi (mất mẫu) hoặc ghi trùng — cả hai đều làm `IoU` tính trên một
+    tập frame khác tập đã phát, mà không ai thấy.
+    """
+    so_frame_phat = int((res.get("status") or {}).get("frames") or 0)
+    return so_frame_phat > 0 and int(res.get("so_dong_shown") or 0) - 1 == so_frame_phat
+
+
 def lan_chay_hop_le(res: dict) -> bool:
     """Lần chạy có dùng được không — hàm THUẦN (test được).
 
@@ -236,6 +253,9 @@ def so_sanh_theo_cap(lan_a: list[dict], lan_b: list[dict]) -> dict:
     Trả `{so_cap, b_tot_hon, a_tot_hon, bang, chenh_trung_binh, chenh_lon_nhat, frame_b_tot_hon}`.
     Cặp bị bỏ khi một bên `iou` là `None` (không đo được) — không quy thành 0.
     """
+    # Một bên thiếu lần chạy (vd worker chết ở lần 2) ⇒ `zip` lặng lẽ bỏ cặp ⇒ `so_cap` tụt mà không
+    # ai biết. Trả cờ `can_bo_cap` để bên gọi từ chối kết luận thay vì so lệch.
+    can_bo_cap = len(lan_a) != len(lan_b)
     so_cap = b_tot = a_tot = bang = 0
     chenh = []
     frame_b_tot = {}
@@ -257,7 +277,9 @@ def so_sanh_theo_cap(lan_a: list[dict], lan_b: list[dict]) -> dict:
             else:
                 bang += 1
     return {
-        "so_cap": so_cap, "b_tot_hon": b_tot, "a_tot_hon": a_tot, "bang": bang,
+        "so_cap": so_cap, "so_lan_a": len(lan_a), "so_lan_b": len(lan_b),
+        "can_bo_cap": can_bo_cap,
+        "b_tot_hon": b_tot, "a_tot_hon": a_tot, "bang": bang,
         "chenh_trung_binh": round(statistics.fmean(chenh), 4) if chenh else None,
         "chenh_lon_nhat": round(max(chenh), 4) if chenh else None,
         "chenh_nho_nhat": round(min(chenh), 4) if chenh else None,
@@ -301,6 +323,11 @@ def main(argv=None) -> int:
                 res["max_mad_hieu_luc"] = ((res["status"].get("cau_hinh") or {}).get("lk_max_mad"))
                 res["shown"] = str(res["shown"])
                 res["hop_le"] = lan_chay_hop_le(res)
+                res["so_dong_khop_frame"] = so_dong_khop_frame(res)
+                if res["hop_le"] and not res["so_dong_khop_frame"]:
+                    print(f"[canh-bao] max_mad {max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
+                          f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
+                          "ghi hoặc ghi trùng", flush=True)
             theo_cau_hinh[max_mad].append(res)
             c = res["cham"]
             print(f"vòng {vong + 1} · max_mad {max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
