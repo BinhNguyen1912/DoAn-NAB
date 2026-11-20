@@ -137,6 +137,14 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
         theo_frame.append({"frame_idx": frame, "iou": round(float(iou), 4), "lk_ok": lk_ok,
                            "hop": list(box), "hop_gt": list(gt)})
     do_duoc = [r["iou"] for r in theo_frame if r["iou"] is not None]
+    # IoU TÁCH THEO việc LK có nhận frame đó hay không. ĐỌC ĐÚNG Ý NGHĨA (review #65, P1):
+    #   - `iou_khi_lk_ok`   = chất lượng **ô LK** (LK nhận ⇒ ô hiển thị do nội suy);
+    #   - `iou_khi_lk_khong`= chất lượng **ô VOS ĐÓNG BĂNG** ở frame LK từ chối.
+    # Đây là so "ô LK có tốt hơn ô VOS đóng băng không" TRÊN TẬP FRAME LK TỰ CHỌN ⇒ có **hiệu ứng chọn
+    # mẫu**: KHÔNG được đọc thành "cổng chọn đúng frame khó" (muốn nói câu đó phải có phản thực: cùng
+    # frame đó chạy cổng mở rồi so ô LK). Đo 20-11: ô LK 0,80–0,84 vs ô đóng băng 0,49–0,61.
+    iou_ok = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"]]
+    iou_khong = [r["iou"] for r in theo_frame if r["iou"] is not None and not r["lk_ok"]]
     return {
         "n_gt_co_vat": len(hop_gt),
         "n_cham": len(do_duoc),
@@ -149,6 +157,14 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
         "lk_khong_ap_dung": bool(lk_khong_ap_dung),
         "lk_ok_frac": (None if lk_khong_ap_dung or not theo_frame else
                        round(sum(1 for r in theo_frame if r["lk_ok"]) / len(theo_frame), 3)),
+        "iou_khi_lk_ok": round(statistics.fmean(iou_ok), 4) if iou_ok else None,
+        "iou_khi_lk_khong": round(statistics.fmean(iou_khong), 4) if iou_khong else None,
+        "iou_khi_lk_dinh_nghia": ("iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ "
+                                  "chối — CHỈ đúng khi `lk_khong_ap_dung = false` (với `vos_every=1` "
+                                  "không có LK nên cả hai vô nghĩa). Chênh lệch KHÔNG chứng minh cổng "
+                                  "'chọn đúng': có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết)."),
+        "n_lk_ok": len(iou_ok),
+        "n_lk_khong": len(iou_khong),
         "theo_frame": theo_frame,
     }
 
@@ -158,11 +174,12 @@ def _python() -> str:
 
 
 def chay_mot_lan(*, clip: str, bbox: str, image_size: int | None, vos_every: int,
-                 max_mad: float, frames: int, out_dir: Path) -> dict:
+                 max_mad: float, lk_scale: bool = False, frames: int, out_dir: Path) -> dict:
     lenh = [_python(), str(REPO_ROOT / "tools" / "live_worker.py"),
             "--source", clip, "--out-dir", str(out_dir),
             "--vos-every", str(vos_every), "--stop-after-frames", str(frames),
             "--lk-max-mad", str(max_mad), "--bbox", bbox,
+            *(["--lk-scale"] if lk_scale else []),
             "--dump-shown-csv", str(out_dir / "shown.csv")]
     if image_size is not None:
         lenh += ["--image-size", str(image_size)]
@@ -215,13 +232,21 @@ def tong_hop(lan: list[dict]) -> dict:
         "iou_mean": _stats([r["cham"]["iou_mean"] for r in lan]),
         "iou_min": _stats([r["cham"]["iou_min"] for r in lan]),
         "lk_ok_frac": _stats([r["cham"]["lk_ok_frac"] for r in lan]),
+        # Trung bình THEO LẦN CHẠY của IoU tách theo lk_ok (mỗi lần chạy một giá trị ⇒ `std` = dao động
+        # giữa lần chạy, đúng ngữ nghĩa các metric khác của `tong_hop`).
+        "iou_khi_lk_ok": _stats([r["cham"].get("iou_khi_lk_ok") for r in lan]),
+        "iou_khi_lk_khong": _stats([r["cham"].get("iou_khi_lk_khong") for r in lan]),
+        "n_lk_ok": _stats([r["cham"].get("n_lk_ok") for r in lan]),
+        "iou_khi_lk_dinh_nghia": ("iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS đóng băng khi LK từ "
+                                  "chối (chỉ đúng khi lk_khong_ap_dung = false). Chênh lệch KHÔNG "
+                                  "chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu."),
         "n_cham": _stats([r["cham"]["n_cham"] for r in lan]),
         "measured_fps": _stats([r["status"].get("measured_fps") for r in lan]),
     }
 
 
-def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads) -> dict:
-    """Tích ĐỀ CÁC: `{("192/1/1.5"): (192, 1, 1.5), …}` — dựng MỘT chỗ rồi cả vòng chạy lẫn nhãn dùng lại.
+def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads, lk_scales=(False,)) -> dict:
+    """Tích ĐỀ CÁC: `{"192/1/1.5/shift": (192, 1, 1.5, False), …}` — MỘT chỗ rồi cả vòng chạy lẫn nhãn dùng lại.
 
     Vì sao phải là hàm riêng: bản đầu dựng khoá cấu hình ở 2 nơi (vòng chạy và bảng tổng hợp) ⇒ thêm
     trục `vos_every` thì một chỗ quên ⇒ `KeyError: (192, 1.5)` **chỉ lộ khi có > 1 giá trị** (chạy 1 giá
@@ -231,7 +256,9 @@ def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads) -> dict:
     for sz in image_sizes:
         for ve in vos_everys:
             for m in max_mads:
-                ra[f"{sz}/{ve}/{m}"] = (sz, ve, m)
+                for sc in lk_scales:
+                    ten_sc = "scale" if sc else "shift"     # tự khai CHẾ ĐỘ NỘI SUY, không chỉ tham số
+                    ra[f"{sz}/{ve}/{m}/{ten_sc}"] = (sz, ve, m, bool(sc))
     return ra
 
 
@@ -259,11 +286,19 @@ def cau_hinh_lech(lan: list[dict]) -> tuple[list[dict], list[dict]]:
         if mad is None or abs(float(mad) - float(r["max_mad_yeu_cau"])) > 1e-9:
             lech.append(r)
             continue
+        # Mỗi lần chạy vào ĐÚNG MỘT trong ba nhóm của từng trục (`chua` / `lech` / khớp): thiếu
+        # `continue` thì một lần chạy có thể vào cả `chua` và `lech` ⇒ bộ đếm > tổng số lần chạy (P3 #65).
         hieu = r.get("image_size_hieu_luc")
         if hieu is None or r.get("image_size_yeu_cau") is None:
             chua.append(r)
         elif int(hieu) != int(r["image_size_yeu_cau"]):
             lech.append(r)
+        else:
+            che_do = r.get("lk_scale_hieu_luc")
+            if che_do is None:
+                chua.append(r)
+            elif bool(che_do) != bool(r.get("lk_scale_yeu_cau")):
+                lech.append(r)
     return lech, chua
 
 
@@ -370,6 +405,8 @@ def main(argv=None) -> int:
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--lan", type=int, default=3, help="số lần/cấu hình (chèn kẽ; <2 không kết luận)")
     parser.add_argument("--max-mad", type=float, nargs="+", default=[1.5, 6.0])
+    parser.add_argument("--lk-scale", nargs="+", default=["shift"], choices=["shift", "scale"],
+                        help="chế độ nội suy LK: shift (chỉ dịch, hành vi cũ) / scale (thêm tỉ lệ + xoay)")
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)
 
@@ -381,21 +418,25 @@ def main(argv=None) -> int:
 
     # Khoá cấu hình = (image_size, vos_every, max_mad). `vos_every` là trục quan trọng nhất khi hỏi
     # "hybrid 30 FPS mất bao nhiêu độ chính xác so với chạy VOS mọi frame".
-    cau_hinh = danh_sach_cau_hinh(args.image_size, args.vos_every, args.max_mad)
+    cau_hinh = danh_sach_cau_hinh(args.image_size, args.vos_every, args.max_mad,
+                                  [sc == "scale" for sc in args.lk_scale])
     theo_cau_hinh: dict[tuple, list] = {k: [] for k in cau_hinh.values()}
     for vong in range(args.lan):
         for nhan_ch in thu_tu_vong(cau_hinh, vong):
-            sz, ve, max_mad = cau_hinh[nhan_ch]
+            sz, ve, max_mad, lk_scale = cau_hinh[nhan_ch]
             # KHÔNG hard-code /dev/shm: máy dev là Windows (chỉ Linux mới có) ⇒ FileNotFoundError.
             with tempfile.TemporaryDirectory(prefix=f"ab_o_{sz}_{ve}_{max_mad}_") as tmp:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
-                                   vos_every=ve, max_mad=max_mad,
+                                   vos_every=ve, max_mad=max_mad, lk_scale=lk_scale,
                                    frames=args.frames, out_dir=Path(tmp))
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]), lk_khong_ap_dung=(int(ve) == 1))
                 cau = res["status"].get("cau_hinh") or {}
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = cau.get("lk_max_mad")
                 res["image_size_yeu_cau"] = sz
+                res["lk_scale_yeu_cau"] = lk_scale
+                # Ba trạng thái như `image_size`: None = CHƯA KIỂM ĐƯỢC (worker không khai).
+                res["lk_scale_hieu_luc"] = cau.get("lk_scale")
                 # Ba trạng thái KHÔNG lẫn: None = CHƯA KIỂM ĐƯỢC (worker không khai), số = đo được
                 res["image_size_hieu_luc"] = cau.get("image_size_hieu_luc")
                 res["image_size_kiem_duoc"] = res["image_size_hieu_luc"] is not None
@@ -409,9 +450,9 @@ def main(argv=None) -> int:
                     print(f"[LOI] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
                           f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
                           "ghi hoặc ghi trùng ⇒ LOẠI lần chạy này", flush=True)
-            theo_cau_hinh[(sz, ve, max_mad)].append(res)
+            theo_cau_hinh[(sz, ve, max_mad, lk_scale)].append(res)
             c = res["cham"]
-            print(f"vòng {vong + 1} · {sz}/{ve}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
+            print(f"vòng {vong + 1} · {nhan_ch} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
                   f"(tệ nhất {c['iou_min']}) trên {c['n_cham']}/{c['n_gt_co_vat']} frame · "
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực mad {res['max_mad_hieu_luc']} · "
                   f"image_size {res['image_size_hieu_luc']}")
@@ -428,7 +469,8 @@ def main(argv=None) -> int:
     # `lech` và thông điệp đổ lỗi "mad hiệu lực khác yêu cầu" (sai nguyên nhân). Review #64.
     lech, chua_kiem_duoc = cau_hinh_lech(
         [r for v in theo_cau_hinh.values() for r in v if r["hop_le"]])
-    khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
+    # Nhãn = "<size>/<every>/<mad>/<che_do>" ⇒ 3 phần đầu là số, phần cuối là chuỗi.
+    khoa = sorted(tong, key=lambda k: (*[float(x) for x in k.split("/")[:3]], k.split("/")[3]))
     hop_le = {nhan[k]: [r for r in v if r["hop_le"]] for k, v in theo_cau_hinh.items()}
     if len(khoa) > 2:
         # "Đầu↔cuối" chỉ có nghĩa khi có ĐÚNG 2 cấu hình. Với ≥ 3, cặp đó bỏ qua cấu hình giữa và có
@@ -456,19 +498,25 @@ def main(argv=None) -> int:
 
     from scripts.measure_watchdog import _git_provenance
 
-    if chua_kiem_duoc:
-        print(f"[canh-bao] {len(chua_kiem_duoc)}/{sum(len(v) for v in theo_cau_hinh.values())} lần chạy "
-              "CHƯA kiểm được `image_size` hiệu lực (worker không khai) ⇒ `cau_hinh_hieu_luc_lech == []` "
-              "KHÔNG chứng minh cấu hình đã khớp", file=sys.stderr)
+    tong_lan = sum(len(v) for v in theo_cau_hinh.values())
+    for nhan_truc, khoa_truc in (("image_size", "image_size_hieu_luc"),
+                                 ("lk_scale", "lk_scale_hieu_luc")):
+        n = sum(1 for r in chua_kiem_duoc if r.get(khoa_truc) is None)
+        if n:
+            print(f"[canh-bao] {n}/{tong_lan} lần chạy CHƯA kiểm được `{nhan_truc}` hiệu lực (worker "
+                  f"không khai `{khoa_truc}`) ⇒ `cau_hinh_hieu_luc_lech == []` KHÔNG chứng minh trục "
+                  f"`{nhan_truc}` đã khớp", file=sys.stderr)
 
     rev, dirty, dirty_code, loi = _git_provenance()
     artifact = {
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code, "git_loi": loi,
         "do_luc": datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(["python scripts/ab_o_hien_thi_vs_gt.py"] + (argv or sys.argv[1:])),
-        "schema": 2,
+        # 5: `tong_hop` có thêm `iou_khi_lk_dinh_nghia` (thêm khoá mà KHÔNG tăng số hiệu từng làm hai
+        # artifact cùng "schema 4" nhưng khác tập khoá — đúng lỗi P3 đã bị bắt một lần, review #65 v3).
+        "schema": 5,
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
-                     "max_mad": args.max_mad,
+                     "max_mad": args.max_mad, "lk_scale": args.lk_scale,
                      "image_size": args.image_size, "vos_every": args.vos_every,
                      "frames": args.frames, "lan": args.lan,
                      "frame_gt_co_vat": sorted(hop_gt)},
@@ -477,10 +525,16 @@ def main(argv=None) -> int:
                        "phép đo 'ô bám đúng chỗ không' — khác `drift_iou` (khớp ô VOS) và khác mIoU "
                        "(mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK)."),
         "cau_hinh_hieu_luc_lech": lech,
-        "image_size_chua_kiem_duoc": len(chua_kiem_duoc),
+        # Đếm theo ĐÚNG trục: sau khi thêm trục `lk_scale`, `chua` gộp cả hai ⇒ `len(chua)` mang tên
+        # `image_size` mà đếm cả run chỉ lệch `lk_scale` (review #65 vòng 2, P2).
+        "image_size_chua_kiem_duoc": sum(1 for r in chua_kiem_duoc
+                                         if r.get("image_size_hieu_luc") is None),
         # Nếu KHÔNG còn lần chạy hợp lệ nào thì `cau_hinh_hieu_luc_lech == []` và
         # `image_size_chua_kiem_duoc == 0` đều vô nghĩa — đọc thành "đã khớp" là sai (review #64 vòng 2).
         "cau_hinh_kiem_duoc": bool(hop_le and any(hop_le.values())),
+        # Đếm riêng cho trục chế độ nội suy: trước đây `image_size_chua_kiem_duoc` gộp cả hai trục nên
+        # tên khoá nói sai đại lượng (P3 review #65).
+        "lk_scale_chua_kiem_duoc": sum(1 for r in chua_kiem_duoc if r.get("lk_scale_hieu_luc") is None),
         "so_lan_chay_loi": so_lan_loi,
         "tong_hop": tong,
         "so_sanh": ss,

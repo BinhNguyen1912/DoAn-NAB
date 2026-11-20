@@ -128,6 +128,10 @@ def main() -> int:
     parser.add_argument("--lk-max-mad", type=float, default=DEFAULT_MAX_MAD,
                         help=f"độ tản (px) tối đa của vector dịch LK, lớn hơn ⇒ coi là mất dấu "
                              f"(mặc định {DEFAULT_MAX_MAD}; tăng để đo — ticket #38)")
+    # Nội suy cả TỈ LỆ (+ xoay). Mặc định TẮT. Cờ này tồn tại để A/B chèn kẽ trên GT người tô:
+    # tịnh tiến thuần không chữa được lệch kích thước (đo 20-11: ΔW/ΔH tới −132 px).
+    parser.add_argument("--lk-scale", action="store_true",
+                        help="LK nội suy cả tỉ lệ + xoay (mặc định chỉ dịch); dùng để A/B")
     # KHÔNG dùng `choices`: `validate_device` chuẩn hoá hoa/thường + khoảng trắng và cho CÙNG một
     # câu lỗi với API/CLI khác (`--device CUDA` từng bị argparse từ chối bằng usage thô — P3 review 10-11).
     parser.add_argument("--device", default=None,
@@ -245,7 +249,7 @@ def main() -> int:
                                # thi hành (config của session cũng `sorted(set(...))`); để `6,0,6` thì
                                # hai giai đoạn của CÙNG phiên khai hai giá trị khác nhau (P3 review 4).
                                dump_mask_frames=sorted(set(dump_frames)),
-                               lk_max_mad=args.lk_max_mad)
+                               lk_max_mad=args.lk_max_mad, lk_scale=args.lk_scale)
     _write_loading(out_dir, device=device_hint, cau_hinh=cau_hinh)
 
     try:
@@ -290,6 +294,7 @@ def main() -> int:
         dump_mask_frames=args.dump_mask_frames,
         dump_mask_dir=args.dump_mask_dir,
         lk_max_mad=args.lk_max_mad,
+        lk_scale=args.lk_scale,
         dump_shown_csv=args.dump_shown_csv,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
