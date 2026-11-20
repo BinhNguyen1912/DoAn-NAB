@@ -37,6 +37,10 @@ Hai câu hỏi, đo trên **GT người tô** (không phải `drift_iou`):
 
 `data/ab_lk_scale_b1b_2026-11-20_metrics.json` (`git_rev 1572162`, `git_dirty_code=false`, `schema 3`):
 
+> ⚠ Cùng cấu hình `1,5/shift` có **hai số khác nhau** trong log này: §4.1 = 0,6496 (`lk_ok` 0,19), §4.3 =
+> 0,6129 (`lk_ok` 0,05). Đó là **hai phiên khác nhau** (cùng clip + cùng GT) — minh hoạ đúng quy tắc "so
+> hai phiên là vô nghĩa", nên chỉ so **trong từng bảng**.
+
 | cấu hình | IoU | ± | tệ nhất | `lk_ok_frac` |
 |---|---|---|---|---|
 | 1,5 / **shift** (mặc định) | 0,6496 | 0,0291 | 0,3855 | 0,19 |
@@ -48,19 +52,25 @@ Hai câu hỏi, đo trên **GT người tô** (không phải `drift_iou`):
 
 Nhưng theo từng frame, scale **sửa đúng phần nó nhắm tới** — so `1,5/shift` với `6,0/scale`:
 
-| frame | IoU shift | IoU scale | ΔW (px) shift → scale |
-|---|---|---|---|
-| 32 | 0,583 | **0,851** | −22 → **+1** |
-| 92 | 0,382 | **0,821** | 0 → −2 |
-| 182 | 0,826 | 0,869 | −19 → −10 |
-| 242 | 0,867 | 0,900 | −7 → −4 |
-| 2 | 0,579 | 0,554 | −30 → −32 |
-| 212 | 0,660 | **0,504** | −26 → −49 |
+| frame | IoU shift | IoU scale | ΔW (px) shift → scale | LK có chạy ở frame đó? |
+|---|---|---|---|---|
+| 2 | 0,579 | 0,554 | −30 → −32 | không (cả hai cấu hình) |
+| 32 | 0,583 | **0,851** | −22 → **+1** | **có** |
+| 62 | 0,866 | 0,867 | −17 → +8 | **có** |
+| 92 | 0,382 | **0,821** | 0 → −2 | **có** |
+| 182 | 0,826 | 0,869 | −19 → −10 | **có** |
+| 212 | 0,660 | 0,504 | −26 → −49 | **KHÔNG** (12/12 lần chạy) |
+| 242 | 0,867 | 0,900 | −7 → −4 | **có** |
 
-⇒ 4/7 frame tốt hơn rõ, nhưng f212 (cận cảnh, vật to 5,5×) **xấu đi**. Trung bình bị nhiễu giữa lần chạy
-nuốt (`std` 0,062 vì LK chỉ nhận 43–86 % mẫu nên *frame nào được nội suy* thay đổi mỗi lần).
+⇒ Ở các frame **LK thật sự chạy**, scale sửa đúng phần nó nhắm tới (`ΔW` f32: −22 → **+1**).
 
-### 4.2 Phát hiện QUYẾT ĐỊNH: LK từ chối **đúng** các frame ô sai
+**ĐÍNH CHÍNH (review #65, P1)**: bản đầu ghi "f212 xấu đi do scale" — **SAI**. Ở f212 `lk_ok = false` trong
+**cả 12 lần chạy** ⇒ pipeline phát **ô VOS** (`_result_threaded` trả `base_result`), không phép similarity
+nào tham gia. Chênh lệch 0,660 vs 0,504 là **ô VOS khác nhau giữa hai phiên** (`[328,21,617,1114]` vs
+`[367,72,633,1048]`), không quy được cho `lk_scale`. Bảng "theo frame" trộn **ba trạng thái** (ô VOS / ô
+LK-shift / ô LK-scale) ⇒ chỉ so từng frame trên các frame mà **cả hai** cấu hình đều `lk_ok = true`.
+
+### 4.2 Ô LK tốt hơn ô VOS ĐÓNG BĂNG — có hiệu ứng chọn mẫu, KHÔNG phải bằng chứng cổng "đúng"
 
 Tính từ artifact trên (IoU tách theo `lk_ok`, nay là metric chính thức của dụng cụ):
 
@@ -71,8 +81,15 @@ Tính từ artifact trên (IoU tách theo `lk_ok`, nay là metric chính thức 
 | 6,0 / shift | 0,758 | 0,527 | 11 / 10 |
 | 6,0 / scale | 0,797 | 0,490 | 14 / 7 |
 
-⇒ Khi LK nhận, ô đúng hơn **0,20–0,31 IoU**. Cổng `mad` KHÔNG phải "chống trôi vô ích" — nó chọn đúng
-frame khó. **Nhưng** nó từ chối 83 % mẫu ở 1,5, và các mẫu đó sau đó là **ô đóng băng** (0,5–0,6).
+⇒ Khi LK **nhận**, ô đúng hơn ô VOS đóng băng **0,20–0,31 IoU**.
+
+**ĐÍNH CHÍNH (review #65, P1)**: bản đầu viết "LK từ chối **đúng** các frame ô sai" — **vượt bằng chứng**.
+Hai đại lượng là "ô LK" vs "ô VOS ĐÓNG BĂNG" trên **tập frame do chính LK chọn** ⇒ có **hiệu ứng chọn mẫu**;
+muốn nói "cổng chọn đúng" phải có **phản thực** (chạy cùng frame đó với cổng mở rồi so ô LK). Nó còn mâu
+thuẫn với §4.3: **mở** cổng lại tăng IoU.
+
+⇒ Điều nói được: *ô do LK nội suy tốt hơn ô đóng băng của lần VOS trước* (0,78–0,84 vs 0,49–0,61), và *ở
+1,5 LK chỉ nhận 5–14 % mẫu giữa khe*.
 
 ### 4.3 Quét cổng `max_mad` trên `b1b`: đơn điệu, 1,5 là quá chặt
 
@@ -85,7 +102,10 @@ frame khó. **Nhưng** nó từ chối 83 % mẫu ở 1,5, và các mẫu đó s
 | 20 | 0,7448 | 0,0678 | 0,3766 | 0,95 | **+0,132** | 0,068 | **có** |
 | **100** (không từ chối) | **0,7920** | **0,0105** | **0,5649** | 1,00 | **+0,179** | 0,013 | **có** (15/21 cặp) |
 
-### 4.4 Bỏ cổng có bám vào nền khi vật RỜI KHUNG không? — kiểm trên `b1`
+Phiên **lặp lại** (`data/ab_lk_khong_bao_gio_tu_choi_b1b_…`): 1,5 = 0,6541 vs 100 = 0,7550 ⇒ chênh
+**+0,101** > nhiễu 0,064 ⇒ **cùng chiều, cùng kết luận** (hai phiên độc lập).
+
+### 4.4 Bỏ cổng có bám vào nền khi vật RỜI KHUNG không? — **CHƯA ĐO ĐƯỢC**
 
 `data/ab_max_mad_b1_co_frame_trong_2026-11-20_metrics.json`: `b1` có 5 frame GT rỗng (vật đã cất), và
 **3 frame đo được nằm SAU cửa sổ vắng vật** (181, 211, 241).
@@ -95,9 +115,15 @@ frame khó. **Nhưng** nó từ chối 83 % mẫu ở 1,5, và các mẫu đó s
 | 1,5 | 0,5933 | 0,0566 | 0,2541 |
 | 100 | **0,6587** | 0,0318 | 0,1985 |
 
-Theo từng frame ở `max_mad 100`: f181 = **0,810–0,813**, f211 = 0,490–0,723, f241 = 0,817–0,825 ⇒ **sau
-khi vật rời khung rồi quay lại, ô không bị trôi** (không có sụp hàng loạt). Ca `iou = 0,0` duy nhất gặp ở
-**f60** (vật giơ cao, `lk_ok = False`) — không phải ca vật vắng, và ở 1,5 cùng frame cũng chỉ 0,29–0,30.
+Theo từng frame ở `max_mad 100`: f181 = **0,810–0,813**, f211 = 0,490–0,723, f241 = 0,817–0,825. Ca
+`iou = 0,0` duy nhất gặp ở **f60** (vật giơ cao, `lk_ok = False`) — không phải ca vật vắng; ở 1,5 cùng
+frame cũng chỉ 0,29–0,30.
+
+**ĐÍNH CHÍNH (review #65, P2)**: KHÔNG được đọc thành "bỏ cổng không bám vào nền khi vật rời khung".
+`hop_tu_gt()` **bỏ đúng các frame `gt_rong`** — tức đúng các frame vật vắng (`121,151,272,302,332`) ⇒ **chưa
+có** phép đo nào trên cửa sổ vắng vật. 181/211/241 là frame **vật đã có lại**, và "không trôi" ở đó gần
+như được bảo đảm bởi kiến trúc: `_interp.reset(base_gray, base_bbox)` mỗi frame ⇒ sai số không tích luỹ
+quá `vos_every` frame. **Trạng thái: chưa đo.**
 
 ## 5. Vấn đề & cách xử lý
 
@@ -125,3 +151,26 @@ khi vật rời khung rồi quay lại, ô không bị trôi** (không có sụp
 - `docs/task/20-11-2026-cham-o-hien-thi-tren-gt-giua-khe.md` (`max_mad` 1,5 vs 6,0: không phân biệt)
 - `docs/task/20-11-2026-image-size-192-vs-320-theo-gt.md` (320 tệ hơn 0,21)
 - Artifact: `data/ab_lk_scale_b1b_…`, `data/ab_quet_max_mad_b1b_…`, `data/ab_max_mad_b1_co_frame_trong_…`
+
+## 8. ĐÍNH CHÍNH + vá sau review độc lập (PR #65)
+
+Reviewer vòng 1: **P0 = 0, P1 = 2, P2 = 4, P3 = 8**; xác nhận code pipeline **không** có lỗi đúng/sai
+(mặc định TẮT, mask warp cùng phép, không dùng `last_matrix` cũ). Hai P1 đều là **câu kết luận** đang gán
+sai nguyên nhân cho số đo — nguy hiểm vì sẽ được chép nguyên vào báo cáo.
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| **P1** | "f212 xấu đi do scale" — f212 `lk_ok=false` **cả 12 lần** ⇒ ô đó là **ô VOS**, không phải scale | sửa bảng §4.1 + thêm cột "LK có chạy?" + ĐÍNH CHÍNH |
+| **P1** | "LK từ chối đúng các frame ô sai" — `iou_khi_lk_ok` = ô LK, `iou_khi_lk_khong` = ô VOS đóng băng, **hiệu ứng chọn mẫu**; còn mâu thuẫn với §4.3 | sửa tiêu đề §4.2 + ĐÍNH CHÍNH; sửa comment trong `cham()` và thêm khoá `iou_khi_lk_dinh_nghia` vào artifact |
+| P2 | "bỏ cổng không bám vào nền khi vật rời khung" **chưa hề đo** (`hop_tu_gt` bỏ frame `gt_rong`) | hạ thành **CHƯA ĐO ĐƯỢC** + giải thích vì sao 181/211/241 không chứng minh được |
+| P2 | 3 tiêu chí **không có test**: warp mask trong `_result_threaded`, echo `lk_scale`, `cau_hinh_lech` với `lk_scale` | 3 test mới (`test_live_tracking.py::TestLkNoiSuyTiLe`, `test_cau_hinh_lech_bat_duoc_lk_scale…`); test mask khẳng định `result.mask == warp_mask(base.mask, last_matrix)` |
+| P2 | "mặc định không đổi" **không được ghim** (test cũ dung sai ±2 px) | `test_che_do_shift_duoc_GHIM_tuyet_doi_khong_doi_so`: dịch nguyên pixel ⇒ `bbox` **đúng tuyệt đối** `(133,77,60,90)`, `last_matrix` = [[1,0,3],[0,1,2]] |
+| P3 | `last_scale` ghi cả khi similarity bị từ chối | `_khop_similarity` không ghi nữa; chỉ ghi khi bbox được chấp nhận + test |
+| P3 | nhánh `shift_mask(mask, dx, dy)` dưới `lk_scale` là **bẫy** (`dx,dy` mất nghĩa khi ô đổi kích thước) | dưới `lk_scale` chỉ `warp_mask` (hoặc giữ mask nguyên); test khẳng định **không bao giờ** gọi `shift_mask` |
+| P3 | `cau_hinh_lech` thiếu `continue` ⇒ 1 lần chạy vào cả `chua` và `lech`; tên khoá gộp 2 trục | thêm `else:` lồng + `lk_scale_chua_kiem_duoc` riêng + test |
+| P3 | `schema: 3` nhưng tập khoá khác nhau giữa 2 artifact | `schema: 4` |
+| P3 | hai phiên cùng cấu hình cho 2 số khác nhau, không nói; artifact lặp ủng hộ kết luận không được trích | thêm cảnh báo + trích artifact lặp (+0,101) |
+| P3 | 2 test scale **không cô lập** điều chúng tuyên bố | thêm `test_cong_similarity_chap_nhan_dung_nguong_va_tu_choi_khi_qua` (gọi THẲNG `_khop_similarity`); thay ca "nền nhiễu" bằng **nền texture tĩnh** và đo lại: cổng **có** từ chối khi vật biến mất (bản đầu của mình khẳng định ngược lại — tự bắt được) |
+| P3 | `estimateAffinePartial2D(LMEDS)` không seed ⇒ thêm nguồn không tất định | ghi nhận vào mục 5 (dưới) |
+
+**Kiểm sau vá**: `./run lint` xanh · `./run test` **1578 passed** (11 test mới so với lúc mở PR).

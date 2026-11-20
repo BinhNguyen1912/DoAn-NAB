@@ -234,3 +234,99 @@ def test_warp_mask_bien_doi_cung_phep_voi_o_bao():
     # ma trận None / identity ⇒ trả NGUYÊN mask (không tạo bản sao biến dạng)
     assert warp_mask(mask, None) is mask
     assert warp_mask(mask, np.array([[1, 0, 0], [0, 1, 0]], np.float32)) is mask
+
+
+def test_che_do_shift_duoc_GHIM_tuyet_doi_khong_doi_so():
+    """`scale=False` là chế độ đã dùng cho MỌI số công bố ⇒ phải ghim tuyệt đối (không dung sai ±2 px).
+
+    `int(round(...))` + thứ tự `median → mad` là hai thứ dễ bị "sửa cho đẹp" và làm lệch 1 px mọi artifact.
+    """
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    f2 = _khung_vat(patch, dx=3, dy=2)               # dịch NGUYÊN pixel ⇒ kết quả phải chính xác
+    t = LkBoxTracker(scale=False)
+    t.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t.update(f2)
+    assert ok is True
+    assert bbox == (133, 77, 60, 90), f"chế độ mặc định phải giữ nguyên kết quả, nhận {bbox}"
+    assert t.last_matrix is not None
+    # `last_matrix` giữ dx,dy là SỐ THỰC (trung vị), còn bbox mới `int(round(...))` ⇒ ghim bbox tuyệt
+    # đối, còn ma trận ghim theo dung sai 1e-2 (giá trị thực 2,9996/2,0002).
+    assert np.allclose(t.last_matrix, [[1, 0, 3], [0, 1, 2]], atol=1e-2)
+    assert t.last_khop_similarity is False and t.last_scale == 1.0 and t.last_angle_deg == 0.0
+
+
+def test_warp_mask_tinh_tien_TRUNG_KHOP_shift_mask_tung_pixel():
+    """`shift_mask` nay gọi `warp_mask`; hai hàm phải cho cùng kết quả pixel-exact (mask là 0/1)."""
+    import numpy as np
+    from src.light_tracker import shift_mask, warp_mask
+    mask = np.zeros((40, 40), bool)
+    mask[10:20, 10:20] = True
+    for dx, dy in ((0, 0), (3, 2), (-7, 5), (100, 100)):
+        a = shift_mask(mask, dx, dy)
+        b = warp_mask(mask, np.array([[1, 0, dx], [0, 1, dy]], np.float32))
+        assert (a == b).all()
+
+
+def test_cong_similarity_chap_nhan_dung_nguong_va_tu_choi_khi_qua():
+    """Gọi THẲNG `_khop_similarity` để khẳng định cổng (tỉ lệ/góc) hoạt động — test qua `update()` có
+    thể pass nhờ cổng `mad` của nhánh tịnh tiến, tức không chứng minh được gì (review #65)."""
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    rng = np.random.default_rng(0)
+    prev = (rng.random((64, 2)) * 100).astype(np.float32)
+    t = LkBoxTracker(scale=True)
+    # tỉ lệ 1,2 (trong cổng) ⇒ nhận, trả đúng tỉ lệ/góc
+    m = np.array([[1.2, 0, 5], [0, 1.2, 7]], np.float32)
+    ra = t._khop_similarity(prev, prev @ m[:, :2].T + m[:, 2])
+    assert ra is not None and abs(ra[1] - 1.2) < 1e-3 and abs(ra[2]) < 1e-3
+    # tỉ lệ 1,6 (ngoài cổng 1,25) ⇒ None
+    m2 = np.array([[1.6, 0, 0], [0, 1.6, 0]], np.float32)
+    assert t._khop_similarity(prev, prev @ m2[:, :2].T) is None
+    # góc 20° (ngoài cổng 15°) ⇒ None
+    a = np.radians(20.0)
+    m3 = np.array([[np.cos(a), -np.sin(a), 0], [np.sin(a), np.cos(a), 0]], np.float32)
+    assert t._khop_similarity(prev, prev @ m3[:, :2].T) is None
+    # quá ít điểm ⇒ None
+    assert t._khop_similarity(prev[:3], prev[:3]) is None
+
+
+def test_last_scale_CHI_ghi_khi_similarity_that_su_duoc_dung():
+    """Ca "khớp similarity qua cổng nhưng bbox bị từ chối" trước đây để lại `last_scale = 1.2` cho một
+    bước ĐI TỊNH TIẾN ⇒ đọc chẩn đoán bị sai (P3 review #65)."""
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    t = LkBoxTracker(scale=True, max_mad=0.05)     # cổng mad rất chặt ⇒ phần dư bị chặn
+    t.reset(f1, (130, 75, 60, 90))
+    t.update(_khung_vat(patch, ti_le=1.2))
+    assert t.last_khop_similarity is False
+    assert t.last_scale == 1.0 and t.last_angle_deg == 0.0, "không dùng similarity thì không được khai tỉ lệ"
+
+
+def test_vat_bien_mat_tren_nen_CO_TEXTURE_thi_cong_TU_CHOI():
+    """Đo lại cho đúng (bản đầu của test này khẳng định "cổng không phát hiện được" — SAI, đã kiểm):
+
+    Vật dán vào nền có texture rồi biến mất ⇒ LK không khớp được điểm nào trên vật ⇒ điểm theo dõi
+    không đủ / độ tản lớn ⇒ `ok=False` ở **cả hai** chế độ. Nền PHẲNG tuyệt đối là ca không dùng được
+    để kết luận (LK không đủ điểm vì lý do khác), nên test dùng nền texture.
+    """
+    import cv2
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    rng = np.random.default_rng(3)
+    nen = cv2.GaussianBlur((rng.random((240, 320)) * 255).astype(np.uint8), (5, 5), 0)
+    co_vat = nen.copy()
+    co_vat[75:165, 130:190] = _patch_texture(seed=9)
+    for scale in (False, True):
+        t = LkBoxTracker(scale=scale)
+        t.reset(co_vat, (130, 75, 60, 90))
+        bbox, ok = t.update(nen)                   # vật BIẾN MẤT, nền tĩnh lộ ra
+        assert ok is False and bbox is None, (scale, bbox)
+        # và khi vật chỉ dịch 6 px (còn trong khung) thì VẪN phải bám được — cổng không chặn bừa
+        t.reset(co_vat, (130, 75, 60, 90))
+        dich = nen.copy()
+        dich[75:165, 136:196] = _patch_texture(seed=9)
+        assert t.update(dich)[0] == (136, 75, 60, 90), scale

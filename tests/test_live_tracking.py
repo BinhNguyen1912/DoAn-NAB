@@ -2252,3 +2252,95 @@ class TestCuaMadCuaLk:
         for xau in (0, -1.0):
             with pytest.raises(ValueError, match="lk_max_mad"):
                 LiveTrackConfig(source=video_source, out_dir=tmp_path / "live", lk_max_mad=xau)
+
+
+class TestLkNoiSuyTiLe:
+    """`lk_scale=True` (20-11): phải (a) echo trong `status.json`, (b) mask warp CÙNG PHÉP với ô bao,
+    (c) KHÔNG bao giờ rơi vào nhánh `shift_mask(mask, dx, dy)` — `dx,dy` ở chế độ scale không còn là
+    phép biến đổi mask (review #65, P2/P3)."""
+
+    def test_mac_dinh_la_TAT(self, video_source, tmp_path):
+        from src.light_tracker import LkBoxTracker
+
+        assert LiveTrackConfig(source=video_source, out_dir=tmp_path / "l").lk_scale is False
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+        assert session._lk._scale is False and session._interp._scale is False
+        assert LkBoxTracker()._scale is False, "hằng số mặc định phải TẮT: số đã công bố đo ở chế độ này"
+
+    def test_bat_thi_ca_hai_tracker_cung_bat(self, video_source, tmp_path):
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_scale=True))
+        assert session._lk._scale is True and session._interp._scale is True
+
+    def test_cau_hinh_echo_lk_scale(self, video_source, tmp_path):
+        """Không echo thì artifact không biết ô bao được đo ở chế độ nào."""
+        from src.live_tracking import cau_hinh_yeu_cau
+
+        assert cau_hinh_yeu_cau()["lk_scale"] is False
+        assert cau_hinh_yeu_cau(lk_scale=True)["lk_scale"] is True
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_scale=True))
+        assert session._stats.cau_hinh["lk_scale"] is True
+
+    def test_mask_duoc_warp_CUNG_PHEP_voi_o_bao(self, video_source, tmp_path, monkeypatch):
+        """Nơi DUY NHẤT mask và ô bao được ghép với nhau (`_result_threaded`). Nếu mask chỉ dịch
+        trong khi ô co giãn thì trên hình mask và ô lệch nhau — không test nào phủ chỗ này (review #65)."""
+        from src.light_tracker import warp_mask
+
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_scale=True))
+        frame = np.full((48, 64, 3), 90, np.uint8)
+        # Mốc: mask VOS là hình chữ nhật 10×10 tại (5,5)
+        base_mask = np.zeros((48, 64), bool)
+        base_mask[5:15, 5:15] = True
+        base = type("R", (), {"frame_idx": 1, "bbox": (5, 5, 15, 15), "mask": base_mask,
+                              "elapsed_ms": 1.0})()
+        # `_frame_index = 3` ⇒ sau khi tăng thành 4, `4 % 3 != 0` nên KHÔNG gọi `_worker.submit`
+        # (session chưa `run()` ⇒ `_worker` là None).
+        session._frame_index = 3
+        session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
+        # Bước nội suy GIẢ: phóng 1,5× quanh tâm ô ⇒ last_matrix không phải tịnh tiến
+        import numpy as _np
+        matrix = _np.array([[1.5, 0.0, -5.0], [0.0, 1.5, -5.0]], _np.float32)
+        # Vá trên INSTANCE, không vá `property` lên CLASS: bản đầu làm vậy ⇒ rò sang mọi test khác
+        # dùng `LkBoxTracker` (tự bắt được khi chạy cùng file).
+        monkeypatch.setattr(session._interp, "update", lambda _g: ((3, 3, 30, 30), True))
+        monkeypatch.setattr(session._interp, "last_matrix", matrix)
+        out = session._result_threaded(frame)
+        want = warp_mask(base_mask, matrix)
+        assert out.mask is not None and (out.mask == want).all(), "mask phải warp cùng phép"
+        assert out.mask.sum() > base_mask.sum(), "1,5× ⇒ mask to ra"
+
+    def test_khong_bao_gio_dung_shift_mask_khi_bat_scale(self, video_source, tmp_path, monkeypatch):
+        """`dx,dy` ở chế độ scale chỉ là delta góc ô bao ĐÃ đổi kích thước ⇒ dùng `shift_mask` là sai.
+        Chặn bằng test để nhánh đó không quay lại."""
+        from src import live_tracking as lt
+
+        session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3,
+            lk_scale=True))
+        goi = []
+        that = lt.shift_mask
+
+        def theo_doi(mask, dx, dy):
+            goi.append((dx, dy))
+            return that(mask, dx, dy)
+
+        monkeypatch.setattr(lt, "shift_mask", theo_doi)
+        frame = np.full((48, 64, 3), 90, np.uint8)
+        base_mask = np.zeros((48, 64), bool)
+        base_mask[5:15, 5:15] = True
+        base = type("R", (), {"frame_idx": 1, "bbox": (5, 5, 15, 15), "mask": base_mask,
+                              "elapsed_ms": 1.0})()
+        # `_frame_index = 3` ⇒ sau khi tăng thành 4, `4 % 3 != 0` nên KHÔNG gọi `_worker.submit`
+        # (session chưa `run()` ⇒ `_worker` là None).
+        session._frame_index = 3
+        session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
+        session._interp.last_matrix = np.array([[1.0, 0.0, 3.0], [0.0, 1.0, 2.0]], np.float32)
+        monkeypatch.setattr(session._interp, "update", lambda _g: ((8, 7, 18, 17), True))
+        session._result_threaded(frame)
+        assert goi == [], "ở chế độ scale KHÔNG được gọi shift_mask"

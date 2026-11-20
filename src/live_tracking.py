@@ -926,8 +926,11 @@ class LiveTrackingSession:
         matrix = getattr(self._interp, "last_matrix", None)
         if mask is None:
             mask_moi = None
-        elif self._cfg.lk_scale and matrix is not None:
-            mask_moi = warp_mask(mask, matrix)
+        elif self._cfg.lk_scale:
+            # Ở chế độ `scale` TUYỆT ĐỐI không dùng `shift_mask(mask, dx, dy)`: `dx,dy` chỉ là delta
+            # góc trên-trái của ô bao ĐÃ đổi kích thước, không phải phép biến đổi mask ⇒ mask lệch pha.
+            # `last_matrix` luôn có sau một bước `ok=True`; phòng hờ `None` thì giữ mask nguyên.
+            mask_moi = warp_mask(mask, matrix) if matrix is not None else mask
         else:
             mask_moi = shift_mask(mask, dx, dy)
         return _FrameResult(

@@ -110,7 +110,8 @@ class LkBoxTracker:
         # hỏi "mô hình có giải thích được chuyển động không". (Lần chạy thử 20-11: đo thô ⇒ mọi ca
         # phóng to/thu nhỏ/xoay đều `ok=False`.)
         if self._scale:
-            matrix = self._khop_similarity(prev, moved_ok)
+            khop = self._khop_similarity(prev, moved_ok)
+            matrix = khop[0] if khop else None
             if matrix is not None:
                 du = moved_ok - self._ap_dung(matrix, prev)
                 mad_du = max(float(np.median(np.abs(du[:, 0] - np.median(du[:, 0])))),
@@ -119,6 +120,10 @@ class LkBoxTracker:
                     return None, False
                 bbox = self._bbox_tu_matrix(matrix, gray.shape)
                 if bbox is not None:
+                    # Chỉ ghi chẩn đoán khi phép similarity THẬT SỰ được dùng: trước đây gán trong
+                    # `_khop_similarity` nên ca "khớp qua cổng nhưng bbox bị từ chối" để lại
+                    # `last_scale = 1.6` cho một bước ĐI TỊNH TIẾN ⇒ đọc chẩn đoán bị sai (P3 review #65).
+                    self.last_scale, self.last_angle_deg = khop[1], khop[2]
                     self.last_matrix = matrix
                     self.reset(gray, bbox)    # gieo lại điểm → không tích luỹ sai số
                     return bbox, True
@@ -142,7 +147,10 @@ class LkBoxTracker:
         return points @ matrix[:, :2].T + matrix[:, 2]
 
     def _khop_similarity(self, prev, moved):
-        """Khớp similarity (dịch + tỉ lệ + xoay) giữa hai lưới điểm. `None` = cổng chặn.
+        """Khớp similarity (dịch + tỉ lệ + xoay) giữa hai lưới điểm.
+
+        Trả `(matrix, ti_le, goc)` khi dùng được, `None` khi cổng chặn. KHÔNG ghi `last_scale` ở đây:
+        bước chỉ "dùng similarity" nếu bbox suy ra cũng được chấp nhận (xem `update`).
 
         Cổng an toàn (ra ngoài ⇒ `None` ⇒ rơi về tịnh tiến, KHÔNG bịa co giãn):
           - ít hơn `min_points` điểm;
@@ -162,8 +170,7 @@ class LkBoxTracker:
         goc = float(np.degrees(np.arctan2(b, a)))
         if not (self._scale_min <= ti_le <= self._scale_max) or abs(goc) > self._max_angle:
             return None
-        self.last_scale, self.last_angle_deg = ti_le, goc
-        return matrix
+        return matrix, ti_le, goc
 
     def _bbox_tu_matrix(self, matrix, shape):
         """Ô bao bao ngoài 4 góc ĐÃ biến đổi. `None` nếu ra khỏi giới hạn dùng được."""

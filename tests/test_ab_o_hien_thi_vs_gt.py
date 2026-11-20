@@ -380,7 +380,7 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
-    assert d["schema"] == 3
+    assert d["schema"] == 4
 
 
 def test_so_sanh_luon_tra_du_bon_khoa():
@@ -488,3 +488,19 @@ def test_cham_tach_iou_theo_viec_LK_co_nhan_frame_khong():
     # không có mẫu nào ở một nhóm ⇒ None (KHÔNG phải 0 — "chưa đo" khác "đo được 0")
     r2 = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True)})
     assert r2["iou_khi_lk_khong"] is None and r2["n_lk_khong"] == 0
+
+
+def test_cau_hinh_lech_bat_duoc_lk_scale_lech_va_chua_kiem():
+    """Trục `lk_scale` phải có cùng 3 trạng thái như `image_size` — trước đây test chỉ đi nhánh
+    `image_size`, mọi field `lk_scale` bằng nhau nên nhánh mới không được phủ (review #65)."""
+    from scripts.ab_o_hien_thi_vs_gt import cau_hinh_lech
+    goc = {"max_mad_yeu_cau": 1.5, "max_mad_hieu_luc": 1.5,
+           "image_size_yeu_cau": 192, "image_size_hieu_luc": 192}
+    khop = {**goc, "lk_scale_yeu_cau": True, "lk_scale_hieu_luc": True}
+    lech = {**goc, "lk_scale_yeu_cau": True, "lk_scale_hieu_luc": False}   # yêu cầu bật nhưng chạy shift
+    chua = {**goc, "lk_scale_yeu_cau": True, "lk_scale_hieu_luc": None}
+    ra_lech, ra_chua = cau_hinh_lech([khop, lech, chua])
+    assert ra_lech == [lech]
+    assert ra_chua == [chua]
+    # mỗi lần chạy vào ĐÚNG MỘT nhóm (thiếu `continue` từng làm một run vào cả hai ⇒ bộ đếm > tổng)
+    assert len(ra_lech) + len(ra_chua) == 2
