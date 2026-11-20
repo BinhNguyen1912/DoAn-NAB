@@ -41,6 +41,24 @@ Test hồi quy `tests/test_reid.py::TestCongChongNhayKhongTuHuyLanNhanLai`. **Ba
   **không thể** nhảy 73 px ⇒ phải để `_lost_age` vượt `search_grow_frames`.
 Kết quả mutant: **ĐỎ** khi xoá dòng vá, **XANH** khi có.
 
+**A/B trên clip thật (đo lại cuối phiên, cùng clip `binh2`, 300 frame, @192, `--reid --reid-cue object`)** —
+phải đo vì con số "3 lần liên tiếp" ở trên là **trước** khi vá:
+
+| | n_reacq | frame reacquired | frame `lost` | frame `reacquiring` |
+|---|---|---|---|---|
+| TRƯỚC vá (`origin/main:src/reid.py`) | 5 | 172, 176, 180, 241, 245 | **16** | 10 |
+| SAU vá | 4 | 172, 175, 178, 244 | **13** | 8 |
+
+⇒ Vá có tác dụng thật nhưng **nhỏ** trên clip này (−3 frame mất dấu, −1 lần nhận lại). **ĐÍNH CHÍNH:** vẫn còn
+**3 lần "reacquired" liên tiếp** (172/175/178) ⇒ hiện tượng đó **không** chỉ do cổng chống-nhảy; nó là **VOS trả
+mask rỗng ở sát mép khung** (vật ra/vào khung) rồi mất dấu lại sau 3 frame ⇒ **nợ ticket**, không phải đã xong.
+Artifact: `data/reid_ab_p1_2026-11-21_{truoc-va,sau-va}.csv`.
+
+**Cổng NCC 0,35 trên clip này KHÔNG đổi gì** (`data/reid_ab_p1_2026-11-21_ncc0.csv` so với `sau-va`): cùng 4 lần
+nhận lại ở cùng frame, cùng dải `ncc` (−1,0…0,811), 288 frame `tracking` — vì mọi ứng viên được nhận ở clip này đều
+đã có ncc ≥ 0,35. Giá trị của cổng đến từ **hiệu chuẩn có nhãn** (ca sai 0,279), **không** phải từ clip này ⇒ phải
+nói đúng như vậy trong báo cáo, không được trích "bật cổng 0,35 nên bám tốt hơn".
+
 ### 3. P2 — Bật cổng NCC đã hiệu chuẩn trên đường demo
 `run demoip` + `run fast` truyền `--reid-obj-ncc-min 0.35`; `tools/run_live.py` in `ncc_min=` trong dòng `[re-ID]`.
 Vì sao 0,35: `data/reid_2clip_calib.json` — 17 ca **đúng** có ncc **0,415–0,741**, ca **sai** có ncc **0,279**
