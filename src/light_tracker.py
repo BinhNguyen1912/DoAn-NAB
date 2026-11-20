@@ -78,6 +78,9 @@ class LkBoxTracker:
         # Tách khỏi `last_ly_do` vì `last_ly_do` ghi KẾT QUẢ cuối: khi similarity hỏng thì code rơi về
         # tịnh tiến và kết quả là `ok_shift`, làm mất dấu nguyên nhân (review #65 vòng 4).
         self.last_ly_do_khop = None
+        # Số điểm theo dõi được ở bước gần nhất (`None` = LK chưa chạy). Thiếu nó thì không phân biệt
+        # được "cổng MAD chặn vì tản" với "chỉ còn 3 điểm" — hai nguyên nhân cần hai cách sửa khác nhau.
+        self.last_n_diem: int | None = None
 
     # ------------------------------------------------------------------ API
 
@@ -95,10 +98,12 @@ class LkBoxTracker:
         self.last_scale, self.last_angle_deg, self.last_khop_similarity = 1.0, 0.0, False
         self.last_ly_do = "chua_ro"        # mọi đường chưa gán ⇒ "chưa rõ", KHÔNG đọc giá trị bước trước
         self.last_ly_do_khop = None
+        self.last_n_diem = None
         if self._prev_gray is None or self._points is None or self._prev_bbox is None:
             self.last_ly_do = "chua_reset"
             return None, False
         if self._points.size == 0:
+            self.last_n_diem = 0
             self.last_ly_do = "seed_rong"          # ô < 4 px (vd bbox VOS suy biến) ⇒ LK CHƯA chạy
             return None, False
 
@@ -108,10 +113,12 @@ class LkBoxTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03),
         )
         if moved is None or status is None:
+            self.last_n_diem = 0
             self.last_ly_do = "lk_hong"
             return None, False
 
         keep = status.reshape(-1) == 1
+        self.last_n_diem = int(keep.sum())
         if int(keep.sum()) < self._min_points:
             self.last_ly_do = "thieu_diem"
             return None, False

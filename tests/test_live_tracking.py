@@ -148,7 +148,9 @@ class TestLiveTrackingSession:
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
-        cho_phep = bat_buoc | set()          # thêm khoá mới vào đây khi mở rộng status.json
+        # Thêm khoá mới vào đây khi mở rộng status.json:
+        #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
+        cho_phep = bat_buoc | {"chan_doan_lk"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
@@ -2369,3 +2371,49 @@ def test_mask_KHONG_bi_warp_bang_matrix_CU_khi_LK_mat_dau():
     out = session._result_threaded(frame)
     assert out.mask is base_mask, "LK mất dấu ⇒ phải trả mask GỐC của VOS, không warp bằng matrix cũ"
     assert out.bbox == (5, 5, 15, 15)
+
+
+# ------------------------------------------------- ticket #39: chẩn đoán LK ra CSV + status.json
+
+
+def _session_ghi_csv(tmp_path):
+    """Session tối thiểu CHỈ để gọi `_ghi_o_hien_thi` (không nạp model, không mở nguồn)."""
+    import threading
+    from types import SimpleNamespace
+
+    from src.live_tracking import LiveTrackStats, LiveTrackingSession
+
+    s = object.__new__(LiveTrackingSession)
+    s._shown_fh = None
+    s._shown_loi = ""
+    s._cfg = SimpleNamespace(dump_shown_csv=str(tmp_path / "shown.csv"))
+    s._stats = LiveTrackStats()
+    s._stats_lock = threading.Lock()
+    return s
+
+
+def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
+    """CSV phải có 5 cột chẩn đoán ở CUỐI (ticket #39) và ô không đo được phải TRỐNG, không phải `0`."""
+    import csv
+
+    s = _session_ghi_csv(tmp_path)
+    s._ghi_o_hien_thi(7, (10, 20, 30, 40), False,
+                      {"ly_do": "mad_du", "ly_do_khop": None, "scale": 1.0,
+                       "angle_deg": 0.0, "n_diem": 42})
+    s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
+    s._shown_fh.close()
+    rows = list(csv.DictReader((tmp_path / "shown.csv").open(encoding="utf-8")))
+    assert list(rows[0]) == ["frame_idx", "x1", "y1", "x2", "y2", "lk_ok",
+                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem"]
+    assert rows[0]["ly_do"] == "mad_du" and rows[0]["ly_do_khop"] == "" and rows[0]["n_diem"] == "42"
+    assert rows[1]["x1"] == "" and rows[1]["ly_do"] == ""
+    assert not rows[1]["n_diem"]          # ô TRỐNG ("" hoặc None), KHÔNG phải "0 điểm"
+
+
+def test_status_payload_co_chan_doan_lk_va_None_khi_chua_co():
+    """`chan_doan_lk` là chẩn đoán của frame GẦN NHẤT; chưa có bước LK ⇒ `None` (không phải dict rỗng)."""
+    from src.live_tracking import LiveTrackStats, status_payload
+
+    assert status_payload(LiveTrackStats())["chan_doan_lk"] is None
+    st = LiveTrackStats(chan_doan_lk={"frame_idx": 5, "ly_do": "ok_shift", "n_diem": 30})
+    assert status_payload(st)["chan_doan_lk"]["ly_do"] == "ok_shift"

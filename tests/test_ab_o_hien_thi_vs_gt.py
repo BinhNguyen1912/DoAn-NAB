@@ -380,7 +380,7 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
-    assert d["schema"] == 5
+    assert d["schema"] == 6
     # Khoá nghĩa phải CÓ trong `tong_hop`, nếu không thì "schema 5" lại có hai hình dạng (review #64/#65)
     assert "iou_khi_lk_dinh_nghia" in next(iter(d["tong_hop"].values()))
 
@@ -540,7 +540,7 @@ def test_chua_kiem_duoc_dem_theo_DUNG_truc(monkeypatch, tmp_path):
 
 
 def test_cham_TRA_RA_iou_khi_lk_dinh_nghia():
-    """`schema 5` phải đi kèm khoá nghĩa ở **cả** `cham()` — §4.2 đọc nghĩa chính từ đây.
+    """`schema` phải đi kèm khoá nghĩa ở **cả** `cham()` — §4.2 đọc nghĩa chính từ đây.
 
     Bản trước chỉ assert khoá đó trong `tong_hop` (nơi nó là **literal**), nên xoá khoá khỏi `cham()`
     vẫn xanh (review #65 vòng 5).
@@ -549,3 +549,45 @@ def test_cham_TRA_RA_iou_khi_lk_dinh_nghia():
 
     ra = cham({0: (0, 0, 10, 10)}, {0: ((0, 0, 10, 10), True)})
     assert "iou_khi_lk_dinh_nghia" in ra, sorted(ra)
+
+
+# ---------------------------------------------------------------- ticket #39: chẩn đoán LK ra CSV
+
+
+def test_doc_chan_doan_CSV_CU_thieu_cot_thi_tra_None_va_khai_thieu(tmp_path):
+    """CSV sinh TRƯỚC 21-11 (6 cột) ⇒ không được bịa `None` thành giá trị thật, phải khai `csv_thieu_cot`."""
+    from scripts.ab_o_hien_thi_vs_gt import COT_CHAN_DOAN, doc_chan_doan
+
+    cu = tmp_path / "shown.csv"
+    cu.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n0,1,2,3,4,1\n", encoding="utf-8")
+    ra, thieu = doc_chan_doan(cu)
+    assert thieu == list(COT_CHAN_DOAN), thieu          # cả 5 cột đều thiếu
+    assert ra[0]["ly_do"] is None and ra[0]["n_diem"] is None
+
+
+def test_doc_chan_doan_CSV_MOI_doc_dung_gia_tri_va_o_rong_la_None(tmp_path):
+    from scripts.ab_o_hien_thi_vs_gt import doc_chan_doan
+
+    moi = tmp_path / "shown.csv"
+    moi.write_text(
+        "frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+        "5,1,2,3,4,0,mad_du,,1.0000,0.00,42\n"
+        "6,,,,,1,ok_scale,,1.0600,1.50,42\n",
+        encoding="utf-8")
+    ra, thieu = doc_chan_doan(moi)
+    assert thieu == []
+    assert ra[5]["ly_do"] == "mad_du" and ra[5]["ly_do_khop"] is None and ra[5]["n_diem"] == 42
+    assert ra[6]["ly_do"] == "ok_scale" and ra[6]["scale"] == 1.06 and ra[6]["angle_deg"] == 1.5
+
+
+def test_cham_chua_co_chan_doan_thi_dem_la_None_khong_phai_0():
+    """Bẫy '0/None ≠ đã đo': thiếu cột chẩn đoán ⇒ `None`; có mà không mẫu nào ⇒ `{}`."""
+    from scripts.ab_o_hien_thi_vs_gt import cham
+
+    gt = {0: (0, 0, 10, 10)}
+    shown = {0: ((0, 0, 10, 10), False)}
+    assert cham(gt, shown)["ly_do_dem"] is None
+    r = cham(gt, shown, chan_doan={0: {"ly_do": "mad_du", "n_diem": 30}})
+    assert r["ly_do_dem"] == {"mad_du": 1} and r["n_diem_median"] == 30.0
+    # GT rỗng ⇒ không đếm gì nhưng VẪN là "đo được" ⇒ {}
+    assert cham({}, shown, chan_doan={0: {"ly_do": "mad_du"}})["ly_do_dem"] == {}

@@ -102,13 +102,62 @@ def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, in
     return ra
 
 
-def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
+# 5 cột chẩn đoán LK (ticket #39) — CSV sinh TRƯỚC 21-11 không có chúng.
+COT_CHAN_DOAN = ("ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem")
+
+
+def doc_chan_doan(path: Path) -> tuple[dict[int, dict], list[str]]:
+    """`frame → {ly_do, ly_do_khop, scale, angle_deg, n_diem}` + danh sách cột THIẾU.
+
+    Tương thích ngược (ticket #39): CSV cũ (6 cột, trước 21-11) không có 5 cột này ⇒ trả dict rỗng +
+    `thieu` = cả 5 tên, để artifact tự khai `csv_thieu_cot` thay vì im lặng đếm thành 0 (bẫy
+    "0/None ≠ đã đo", AGENTS §6). `""` trong ô = **chưa đo** (không có bước LK ở frame đó) ⇒ `None`.
+    """
+    ra: dict[int, dict] = {}
+    if not path.exists():
+        return ra, list(COT_CHAN_DOAN)
+    with path.open(encoding="utf-8") as fh:
+        reader = csv.DictReader(fh)
+        co = set(reader.fieldnames or ())
+        thieu = [c for c in COT_CHAN_DOAN if c not in co]
+        for row in reader:
+            try:
+                frame = int(row["frame_idx"])
+            except (KeyError, TypeError, ValueError):
+                continue
+            d = {}
+            for c in COT_CHAN_DOAN:
+                v = (row.get(c) or "").strip()
+                if v == "":
+                    d[c] = None
+                elif c in ("ly_do", "ly_do_khop"):
+                    d[c] = v
+                elif c == "n_diem":
+                    try:
+                        d[c] = int(float(v))
+                    except ValueError:
+                        d[c] = None
+                else:
+                    try:
+                        d[c] = float(v)
+                    except ValueError:
+                        d[c] = None
+            ra[frame] = d
+    return ra, thieu
+
+
+def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
+         chan_doan: dict | None = None) -> dict:
     """Chấm `IoU(ô hiển thị, ô GT)`. Hàm THUẦN (test được, không cần video/model).
 
     Ba ca phải tách:
       - GT có vật, **không có ô hiển thị** ⇒ `iou = 0.0` (bám sai thật) — KHÔNG bỏ mẫu;
       - GT có vật, ô HỎNG (đảo/âm) ⇒ `None` + đếm `khong_do_duoc` (không quy thành 0);
       - frame GT có vật **không xuất hiện** trong CSV ⇒ `thieu_frame` (chưa chạy tới frame đó).
+
+    `chan_doan` (ticket #39, tuỳ chọn): `frame → {ly_do, ly_do_khop, n_diem, …}`. Có nó thì kết quả
+    thêm `ly_do_dem`/`ly_do_khop_dem` **chỉ trên các frame GT** — trả lời được "LK từ chối vì cổng MAD
+    hay vì `_seed` rỗng" bằng SỐ. Không có ⇒ hai khoá đó `None` (chưa đo), KHÔNG phải "0 lần".
 
     `lk_khong_ap_dung=True` (cấu hình `vos_every=1`): CSV vẫn ghi `lk_ok = 0` cho mọi frame vì **không có
     LK**, nên `lk_ok_frac = 0,0` ở đó KHÔNG có nghĩa "LK từ chối 100 %" ⇒ trả `None` + cờ.
@@ -165,8 +214,35 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
                                   "'chọn đúng': có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết)."),
         "n_lk_ok": len(iou_ok),
         "n_lk_khong": len(iou_khong),
+        # Phân bố LÝ DO LK từ chối, chỉ trên frame GT (ticket #39). `None` = CSV không có cột chẩn
+        # đoán (CSV cũ) ⇒ CHƯA ĐO, khác `{}` (đo được nhưng không mẫu nào).
+        "ly_do_dem": _dem(chan_doan, hop_gt, "ly_do"),
+        "ly_do_khop_dem": _dem(chan_doan, hop_gt, "ly_do_khop"),
+        "n_diem_median": _median_n_diem(chan_doan, hop_gt),
         "theo_frame": theo_frame,
     }
+
+
+def _dem(chan_doan: dict | None, hop_gt: dict, khoa: str) -> dict | None:
+    """Đếm giá trị của `khoa` trên các frame GT. `None` = chưa đo; `{}` = đo được, không mẫu nào."""
+    if not chan_doan:
+        return None
+    ra: dict = {}
+    for frame in hop_gt:
+        d = chan_doan.get(frame) or {}
+        v = d.get(khoa)
+        if v is None:
+            continue
+        ra[v] = ra.get(v, 0) + 1
+    return ra
+
+
+def _median_n_diem(chan_doan: dict | None, hop_gt: dict) -> float | None:
+    if not chan_doan:
+        return None
+    ns = [(chan_doan.get(f) or {}).get("n_diem") for f in hop_gt]
+    ns = [n for n in ns if isinstance(n, int)]
+    return float(statistics.median(ns)) if ns else None
 
 
 def _python() -> str:
@@ -429,7 +505,11 @@ def main(argv=None) -> int:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
                                    vos_every=ve, max_mad=max_mad, lk_scale=lk_scale,
                                    frames=args.frames, out_dir=Path(tmp))
-                res["cham"] = cham(hop_gt, doc_shown(res["shown"]), lk_khong_ap_dung=(int(ve) == 1))
+                # `res["shown"]` có thể là `str` (test giả lập + đường ghi ở dưới) ⇒ chuẩn hoá Path.
+                chan_doan, thieu_cot = doc_chan_doan(Path(res["shown"]))
+                res["csv_thieu_cot"] = thieu_cot
+                res["cham"] = cham(hop_gt, doc_shown(res["shown"]),
+                                   lk_khong_ap_dung=(int(ve) == 1), chan_doan=chan_doan)
                 cau = res["status"].get("cau_hinh") or {}
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = cau.get("lk_max_mad")
@@ -514,7 +594,8 @@ def main(argv=None) -> int:
         "lenh": " ".join(["python scripts/ab_o_hien_thi_vs_gt.py"] + (argv or sys.argv[1:])),
         # 5: `tong_hop` có thêm `iou_khi_lk_dinh_nghia` (thêm khoá mà KHÔNG tăng số hiệu từng làm hai
         # artifact cùng "schema 4" nhưng khác tập khoá — đúng lỗi P3 đã bị bắt một lần, review #65 v3).
-        "schema": 5,
+        # 6: `cham()` thêm `ly_do_dem`/`ly_do_khop_dem`/`n_diem_median` (ticket #39) + `csv_thieu_cot`.
+        "schema": 6,
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
                      "max_mad": args.max_mad, "lk_scale": args.lk_scale,
                      "image_size": args.image_size, "vos_every": args.vos_every,
