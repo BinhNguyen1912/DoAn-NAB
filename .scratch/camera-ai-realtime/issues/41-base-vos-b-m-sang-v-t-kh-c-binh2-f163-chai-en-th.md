@@ -1,6 +1,6 @@
 # 41: Base VOS bám SANG VẬT KHÁC ở binh2 (f163: chai đen thay vì chai trắng; f228 ô co còn 30×65) — 9/9 lần chạy, mọi max_mad
 
-**Status:** claimed
+**Status:** resolved
 
 **Type:** research
 
@@ -28,3 +28,27 @@ Clip `binh2` có **2 chai** (đen + trắng); người dùng chọn ô chai tr�
 **Nghiệm thu có số:** bảng `frame × (ô VOS, ô LK, ô GT, IoU_vos, IoU_lk)` cho 163/228 (+ vài frame đối chứng tốt); kết luận **VOS sai trước hay LK kéo sai**; tỉ lệ "bám sang vật khác" trên 2 clip; đề xuất (nếu có) tách thành ticket sửa.
 
 **Không** được: "chữa" bằng cách đổi `DEFAULT_MAX_MAD` (đã chốt giữ 1,5 ở #38/#40) hoặc bật `lk_scale` (chưa chứng minh tốt hơn, PR #65); không được loại frame 163/228 khỏi báo cáo mà không nói rõ (đó là **che số liệu**).
+
+## Answer
+
+**Nguyên nhân: BASE VOS, không phải `max_mad`/`lk_scale`** — và thực ra là **3 hiện tượng khác nhau**, chỉ 1 trong 3 là lỗi.
+
+Đo bằng `drift_samples.csv` có **cả hai** ô ở mỗi lần VOS (`bbox_*` = VOS, `hien_thi_*` = đang hiển thị) ⇒ tách "VOS sai" khỏi "LK kéo sai" **bằng số**. Ảnh: `docs/media/gt/binh2_loi_base_vos_f163_f178_f228.jpg`.
+
+| frame | ô VOS | ô hiển thị | GT | kết luận |
+|---|---|---|---|---|
+| **162** (bước VOS ngay trước GT 163) | `412,299,518,557` | `405,260,522,644` | `179,314,304,637` | **ô VOS ĐÃ SAI trước khi LK bước** — nằm trên **chai ĐEN**, GT là chai TRẮNG ⇒ IoU(VOS,GT) = **0,000** |
+| 163 | — | như trên | — | `lk_ok=true`, `n_diem 47/64`, `ly_do=ok_shift` ⇒ **LK làm đúng việc**, chỉ đi theo base sai |
+| 180–216 | `0,0,0,0` | không vẽ ô | — | **ĐÚNG** — vật đã **rời khung** (ảnh f178: hai tay trống, cả hai chai ngoài khung) |
+| 222 | `126,434,157,502` (31×68) | — | — | vật **vào lại** khung, VOS trả ô nhỏ lệch |
+| 228 | — | `129,431,175,498` | `20,240,155,582` | `lk_ok=false`; GT là chai trắng to ở **mép trái** ⇒ mô hình bám vào **mặt người** |
+
+**Tỉ lệ "bám sang vật khác"** (`IoU<0,1` **và** tâm cách > 1 chiều rộng GT): `binh2` **1/8** (max_mad 1,5) và **2/8** (100) — frame 163 (lệch tâm 246–274 px, GT rộng 125) và 228 (160 px); `binh1` **0/7** ở cả hai mức.
+
+**Giả thuyết "ô demo cắt đuôi vật" bị BÁC**: ô `330,330,150,360` chỉ phủ **65 %** chiều cao chai (GT frame 0 = `334,319,492,887`), nhưng chạy lại với ô đúng `334,319,158,568` cho IoU trung bình **0,5483** vs **0,5660** — không cải thiện, f163 vẫn 0,000, f228 vẫn 0,013 ⇒ **không phải nguyên nhân** (vẫn nên sửa ô demo cho đúng vật).
+
+**Ảnh hưởng báo cáo**: mọi trung bình IoU trên `binh2` **phải nêu cửa sổ frame** — 163/228 nằm trong đoạn vật rời/vào khung (`0:160` là cửa sổ demo); và **cấm** nói "hybrid bám được vật ra/vào khung" (đo được là **không**).
+
+**Khoảng trống thật (đề xuất, ngoài scope)**: `src/reid.py` là re-ID **khuôn mặt** và **không** được `src/live_tracking.py` dùng (0 tham chiếu) ⇒ đường live **không có** cơ chế nhận lại vật sau khi rời khung — đúng thứ đề cương mục 2/4 yêu cầu. Cộng thêm: cổng "diện tích mask bất thường" để **ẩn ô rác** (31×68 khi vật thật 135×342) thay vì vẽ.
+
+Chi tiết + bảng đầy đủ: `docs/task/21-11-2026-ticket-41-vi-sao-binh2-bam-sang-vat-khac.md`.
