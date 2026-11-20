@@ -230,3 +230,23 @@ def test_cau_hinh_lech_tach_ba_trang_thai_image_size():
     lech, chua_kiem = cau_hinh_lech([khop, lech_, chua, khong_mad])
     assert lech == [lech_, khong_mad]          # hiệu lực khác yêu cầu, và mad không khai
     assert chua_kiem == [chua]                 # riêng, KHÔNG nằm trong `lech`
+
+
+def test_danh_sach_cau_hinh_la_TICH_DE_cac_truc():
+    """Bản đầu dựng khoá cấu hình ở 2 nơi; thêm trục `vos_every` thì một chỗ quên ⇒ `KeyError` chỉ lộ
+    khi có > 1 giá trị (chạy 1 giá trị vẫn xanh). Test này khoá đúng lỗi đó."""
+    from scripts.ab_o_hien_thi_vs_gt import danh_sach_cau_hinh
+    d = danh_sach_cau_hinh([192, 320], [1, 3], [1.5, 6.0])
+    assert len(d) == 8
+    assert d["192/3/1.5"] == (192, 3, 1.5)
+    assert d["320/1/6.0"] == (320, 1, 6.0)
+    assert set(d) == set(d.values().__iter__().__class__ and d)      # nhãn ↔ khoá 1-1
+    assert sorted(d) == sorted(d)                                    # ổn định thứ tự
+
+
+def test_thu_tu_vong_dao_chieu_vong_le():
+    from scripts.ab_o_hien_thi_vs_gt import danh_sach_cau_hinh, thu_tu_vong
+    d = danh_sach_cau_hinh([192], [1, 3], [1.5])
+    v0, v1 = thu_tu_vong(d, 0), thu_tu_vong(d, 1)
+    assert v0 == list(d) and v1 == v0[::-1]      # "chạy sau" không luôn là cấu hình được ưu ái
+    assert set(v0) == set(v1) == set(d)

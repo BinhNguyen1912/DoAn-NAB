@@ -215,6 +215,30 @@ def tong_hop(lan: list[dict]) -> dict:
     }
 
 
+def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads) -> dict:
+    """Tích ĐỀ CÁC: `{("192/1/1.5"): (192, 1, 1.5), …}` — dựng MỘT chỗ rồi cả vòng chạy lẫn nhãn dùng lại.
+
+    Vì sao phải là hàm riêng: bản đầu dựng khoá cấu hình ở 2 nơi (vòng chạy và bảng tổng hợp) ⇒ thêm
+    trục `vos_every` thì một chỗ quên ⇒ `KeyError: (192, 1.5)` **chỉ lộ khi có > 1 giá trị** (chạy 1 giá
+    trị vẫn xanh). Test `test_danh_sach_cau_hinh_...` khoá đúng chỗ này.
+    """
+    ra = {}
+    for sz in image_sizes:
+        for ve in vos_everys:
+            for m in max_mads:
+                ra[f"{sz}/{ve}/{m}"] = (sz, ve, m)
+    return ra
+
+
+def thu_tu_vong(cau_hinh: dict, vong: int) -> list:
+    """Nhãn cấu hình của vòng `vong` (0-based); vòng LẺ đảo chiều.
+
+    Đảo chiều để "chạy sau" không luôn là cấu hình được ưu ái (thiên lệch do thứ tự chạy).
+    """
+    nhan = list(cau_hinh)
+    return nhan[::-1] if vong % 2 == 1 else nhan
+
+
 def cau_hinh_lech(lan: list[dict]) -> tuple[list[dict], list[dict]]:
     """Lần chạy có cấu hình HIỆU LỰC khác yêu cầu. Hàm THUẦN → `(lech, chua_kiem_duoc)`.
 
@@ -336,13 +360,11 @@ def main(argv=None) -> int:
 
     # Khoá cấu hình = (image_size, vos_every, max_mad). `vos_every` là trục quan trọng nhất khi hỏi
     # "hybrid 30 FPS mất bao nhiêu độ chính xác so với chạy VOS mọi frame".
-    theo_cau_hinh: dict[tuple[int, int, float], list] = {
-        (sz, ve, m): [] for sz in args.image_size for ve in args.vos_every for m in args.max_mad}
+    cau_hinh = danh_sach_cau_hinh(args.image_size, args.vos_every, args.max_mad)
+    theo_cau_hinh: dict[tuple, list] = {k: [] for k in cau_hinh.values()}
     for vong in range(args.lan):
-        thu_tu = list(theo_cau_hinh)           # khoá = (image_size, max_mad)
-        if vong % 2 == 1:                       # đảo chiều vòng lẻ: "chạy sau" không luôn là cấu hình ưu ái
-            thu_tu.reverse()
-        for sz, ve, max_mad in thu_tu:
+        for nhan_ch in thu_tu_vong(cau_hinh, vong):
+            sz, ve, max_mad = cau_hinh[nhan_ch]
             # KHÔNG hard-code /dev/shm: máy dev là Windows (chỉ Linux mới có) ⇒ FileNotFoundError.
             with tempfile.TemporaryDirectory(prefix=f"ab_o_{sz}_{ve}_{max_mad}_") as tmp:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
@@ -364,20 +386,18 @@ def main(argv=None) -> int:
                     print(f"[canh-bao] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
                           f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
                           "ghi hoặc ghi trùng", flush=True)
-            theo_cau_hinh[(sz, max_mad)].append(res)
+            theo_cau_hinh[(sz, ve, max_mad)].append(res)
             c = res["cham"]
             print(f"vòng {vong + 1} · {sz}/{ve}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
                   f"(tệ nhất {c['iou_min']}) trên {c['n_cham']}/{c['n_gt_co_vat']} frame · "
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực mad {res['max_mad_hieu_luc']} · "
                   f"image_size {res['image_size_hieu_luc']}")
 
-    so_lan_loi = {f"{sz}/{ve}/{m}": sum(1 for r in v if not r["hop_le"])
-                  for (sz, ve, m), v in theo_cau_hinh.items()}
-    tong = {f"{sz}/{ve}/{m}": tong_hop([r for r in v if r["hop_le"]])
-            for (sz, ve, m), v in theo_cau_hinh.items()}
+    nhan = {v: k for k, v in cau_hinh.items()}        # khoá thật → nhãn (một nguồn duy nhất)
+    so_lan_loi = {nhan[k]: sum(1 for r in v if not r["hop_le"]) for k, v in theo_cau_hinh.items()}
+    tong = {nhan[k]: tong_hop([r for r in v if r["hop_le"]]) for k, v in theo_cau_hinh.items()}
     lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
     khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
-    nhan = {f"{sz}/{ve}/{m}": (sz, ve, m) for (sz, ve, m) in theo_cau_hinh}   # nhãn → khoá thật
     ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
     ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[nhan[khoa[0]]], theo_cau_hinh[nhan[khoa[-1]]]),
                "a": khoa[0], "b": khoa[-1]} if len(khoa) >= 2 else {})
@@ -403,8 +423,8 @@ def main(argv=None) -> int:
         "tong_hop": tong,
         "so_sanh": ss,
         "so_sanh_theo_cap": ss_cap,
-        "lan_chay": {f"{sz}/{ve}/{m}": [{k: v for k, v in r.items() if k != "status"} for r in rs]
-                     for (sz, ve, m), rs in theo_cau_hinh.items()},
+        "lan_chay": {nhan[k]: [{kk: vv for kk, vv in r.items() if kk != "status"} for r in rs]
+                     for k, rs in theo_cau_hinh.items()},
     }
     out = Path(args.out) if args.out else REPO_ROOT / "data" / (
         f"ab_o_hien_thi_vs_gt_{datetime.now():%Y-%m-%d}_metrics.json")
