@@ -121,7 +121,10 @@ def doc_shown(path: Path) -> dict[int, tuple]:
             # `1` = LK ok, `0` = LK từ chối, ô TRỐNG = chưa đo (vd frame `engine.start()` từ 21-11).
             # Bản trước đọc 2 trạng thái ⇒ frame `start()` bị đếm vào `n_lk_khong` = "LK từ chối"
             # (review vòng 3, P3).
-            lk_raw = str(row.get("lk_ok", "")).strip()
+            # `or ""` chứ không `str(row.get("lk_ok",""))`: dòng THIẾU field (DictReader trả `None`,
+            # ca dòng cuối bị cắt khi `kill -9`) sẽ thành chuỗi `"None"` ⇒ đọc thành "LK từ chối" thay
+            # vì "chưa đo" (review vòng 4, P3).
+            lk_raw = str(row.get("lk_ok") or "").strip()
             lk_ok = None if lk_raw == "" else (lk_raw == "1")
             if co_cot_bam:
                 # `bam` (cột 12, từ 21-11): rỗng ⇒ `None` = CHƯA ĐO, không phải "tracking".
@@ -445,6 +448,10 @@ def tong_hop(lan: list[dict]) -> dict:
                 "std": round(statistics.stdev(v), 4) if len(v) > 1 else None, "n": len(v)}
 
     return {
+        # 3 nhóm `lk_ok` (ô trống = CHƯA ĐO, khác "LK từ chối"): thiếu chúng thì bảng tổng hợp chỉ có
+        # `iou_khi_lk_khong`, người đọc dễ đọc "0 từ chối" thành "0 đo được" (review vòng 4, P2).
+        "n_lk_khong": _stats([r["cham"].get("n_lk_khong") for r in lan]),
+        "n_lk_chua_do": _stats([r["cham"].get("n_lk_chua_do") for r in lan]),
         "iou_mean": _stats([r["cham"]["iou_mean"] for r in lan]),
         "iou_min": _stats([r["cham"]["iou_min"] for r in lan]),
         "lk_ok_frac": _stats([r["cham"]["lk_ok_frac"] for r in lan]),

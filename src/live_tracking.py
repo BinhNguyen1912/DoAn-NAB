@@ -1003,9 +1003,9 @@ class LiveTrackingSession:
 
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
-        # Không có nội suy ⇒ `lk_ok = None`; khi ghi CSV, `_update_stats_locked` bọc `bool(...)` nên cột
-        # ra **`0`** (KHÔNG trống) — đọc đúng bằng `lk_khong_ap_dung` trong artifact; cấm đọc "0" thành
-        # "LK từ chối 100 %" (P3 review PR #66 vòng 2).
+        # Không có nội suy ⇒ `lk_ok = None` ⇒ cột CSV ra **Ô TRỐNG** = "chưa đo" (từ 21-11; TRƯỚC đó
+        # `bool(None)` ghi `0` và artifact đọc thành "LK từ chối"). Đọc bằng `lk_khong_ap_dung` +
+        # `n_lk_chua_do` trong artifact; cấm đọc ô trống thành "LK từ chối 100 %".
         self._lk_ok_frame = None
         self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
         self._frame_index += 1
@@ -1311,7 +1311,12 @@ class LiveTrackingSession:
             return self._bam_of_locked(frame_idx)
 
     def _lk_ok_of(self, frame_idx):
-        """Trạng thái LK của frame đã phát `frame_idx` (`None` = chưa đo/không có LK)."""
+        """Trạng thái LK của frame đã phát `frame_idx` (`None` = chưa đo/không có LK).
+
+        **CHỈ gọi khi ĐÃ giữ `_stats_lock`** (mọi call site hiện tại đều đúng: `_measure_drift`,
+        `_update_stats_locked`). Nó KHÔNG tự lock nên tên không có hậu tố `_locked` — đây đúng cái bẫy
+        đã sinh ra P1 vòng 3 (`_bam_of`); nếu cần gọi ngoài lock thì bọc `with self._stats_lock`.
+        """
         for idx, ok in reversed(self._lk_by_frame):
             if idx == frame_idx:
                 return ok
