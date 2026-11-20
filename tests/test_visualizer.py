@@ -350,3 +350,46 @@ class TestToiUuVeChu:
         Visualizer(font_path=font)._put_text(img, "Độ trễ: 223 ms/frame", (8, 20))
         assert img[20:40, 8:200].max() > 150          # có chữ
         assert np.array_equal(img[200:, :], _frame()[200:, :])   # không lem ra toàn khung
+
+
+class TestKhongVeOChungKhiMatDau:
+    """21-11: banner "MAT DAU" và một ô bao trên ảnh là **hai câu nói ngược nhau**.
+
+    Đường worker (`live_tracking._annotate`) đã ẩn ô khi `bam = no_evidence`; CLI phải giống, nếu không
+    buổi demo trên `./run demoip` lại vẽ ô của SAM 2 khi mask đã rỗng — đúng kiểu "ô ma" mà người xem
+    không phân biệt được với "đang bám".
+    """
+
+    def test_masked_va_o_bao_khong_ve_khi_mat_dau(self):
+        from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
+
+        viz = Visualizer()
+        for _ in range(_BAM_NO_EVIDENCE_FRAMES):     # cùng ngưỡng với worker live (2 frame)
+            viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
+        assert viz.consecutive_lost == _BAM_NO_EVIDENCE_FRAMES
+        frame = _frame()
+        # bbox KHÁC rỗng (SAM 2 vẫn trả bbox khi mask rỗng) → nếu vẽ thì sẽ thấy viền
+        img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220),
+                                       mask_box=None))
+        # Vùng bbox (200..220) phải NGUYÊN NỀN: không viền ô, không mask. HUD nằm ở góc trên trái
+        # (y ≈ 8–60) nên vùng này sạch.
+        assert np.array_equal(img[200:220, 200:220], frame[200:220, 200:220]), \
+            "mất dấu mà vẫn vẽ ô bao ⇒ banner 'MAT DAU' và ảnh nói hai chuyện ngược nhau"
+
+    def test_dung_sai_mot_frame_van_ve_o(self):
+        """Dung sai MỘT frame mất dấu là BẮT BUỘC (cùng lý do `MISS_MIN` của watchdog): ẩn ô ngay frame
+        đầu làm ô nhấp nháy khi model "chớp" mất vật 1 frame."""
+        viz = Visualizer()
+        viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220), mask_box=None))
+        assert not np.array_equal(img[200:220, 200:220], frame[200:220, 200:220])
+
+    def test_ve_lai_khi_co_bang_chung(self):
+        viz = Visualizer()
+        viz.update(_frame(), _result(frame_idx=0, bbox=(200, 200, 220, 220)))   # mask non-rỗng
+        assert viz.consecutive_lost == 0
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220)))
+        assert not np.array_equal(img[200:220, 200:220], frame[200:220, 200:220]), \
+            "có bằng chứng mà không vẽ ô ⇒ test vô nghĩa"

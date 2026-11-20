@@ -156,6 +156,24 @@ class LiveStatusResponse(BaseModel):
         description="`image_size` model THẬT SỰ dùng (đọc từ predictor); `null` = CHƯA kiểm được — "
                     "khi đó `cau_hinh_lech == []` KHÔNG chứng minh model chạy đúng cấu hình",
     )
+    bam: str | None = Field(
+        default=None,
+        description="CÓ BẰNG CHỨNG về vật hay không (KHÁC `state`: `state` chỉ là tiến trình). "
+                    "`tracking` = mask/VOS/LK đang quan sát được vật; `no_evidence` = ô hiển thị "
+                    "là suy diễn ⇒ worker ĐÃ ẨN ô khỏi ảnh; `null` = CHƯA BIẾT (worker bản cũ / "
+                    "frame đầu) — KHÔNG được đọc thành 'đang bám'",
+    )
+    bam_ly_do: str | None = Field(
+        default=None,
+        description="Vì sao mất bằng chứng. Hiện CHỈ có `'mask_rong'` (model không thấy vật; bản nháp "
+                    "từng có `'lk_tu_choi'` nhưng ĐO ĐƯỢC là báo oan 74 % frame nên đã bỏ) — `null` = "
+                    "không áp dụng",
+    )
+    bam_no_evidence_n: int = Field(
+        default=0, ge=0,
+        description="Số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra) — "
+                    "`bam_no_evidence_n == 0` + `bam == 'tracking'` là 'chưa từng mất bằng chứng'",
+    )
     stability: float | None = Field(
         default=None, ge=0, le=1,
         description="IoU trung bình giữa hai mask liên tiếp (1 = không nhấp nháy). `null` = CHƯA ĐO "

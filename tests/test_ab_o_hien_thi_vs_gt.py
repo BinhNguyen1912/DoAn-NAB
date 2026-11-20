@@ -380,7 +380,7 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
-    assert d["schema"] == 6
+    assert d["schema"] == 7
     # Khoá nghĩa phải CÓ trong `tong_hop`, nếu không thì "schema 5" lại có hai hình dạng (review #64/#65)
     assert "iou_khi_lk_dinh_nghia" in next(iter(d["tong_hop"].values()))
 
@@ -671,3 +671,172 @@ def test_main_KHONG_truyen_chan_doan_khi_vos_every_1(monkeypatch, tmp_path):
 
     assert _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 1) == [None, None]
     assert all(c is not None for c in _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 3))
+
+
+class TestTyLeOMa:
+    """`ty_le_o_ma` = đếm frame người tô khai KHÔNG có vật mà hệ thống VẪN vẽ ô (plan 21-11, P3).
+
+    Mọi chỉ số cũ (`iou_mean`, `drift_iou`, `stability`) chỉ chấm trên frame CÓ vật ⇒ hệ "luôn trả lời"
+    không bị phạt. GT đã có sẵn 9 frame `gt_rong` (binh2_tay 4 + b1 5) nên metric này đo được ngay.
+    """
+
+    def test_dem_dung_ba_trang_thai(self):
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, O_HONG, ty_le_o_ma
+        r = ty_le_o_ma([1, 2, 3, 4, 5], {
+            1: ((0, 0, 10, 10), True),      # vẽ ô trên frame rỗng ⇒ OAN
+            2: (KHONG_CO_O, True),          # không vẽ ô ⇒ ngoan
+            3: ((5, 5, 9, 9), False),       # vẽ ô, LK từ chối ⇒ vẫn OAN
+            4: O_HONG,                      # ô hỏng vẫn là "có vẽ"
+            # frame 5 KHÔNG có trong CSV ⇒ chưa chạy tới, không được tính là "không vẽ"
+        })
+        assert r["n_gt_rong"] == 5
+        assert r["n_co_o_tren_rong"] == 2
+        assert r["n_o_hong_tren_rong"] == 1
+        assert r["n_khong_o_tren_rong"] == 1
+        assert r["thieu_frame_rong"] == [5]
+        # 4 = 2 ô hợp lệ + 1 ô HỎNG + 1 không ô (frame 5 thiếu ⇒ không tính). Trước 21-11 con số là 3
+        # vì ô hỏng bị bỏ khỏi cả tử lẫn mẫu số — đó là P1 review bắt.
+        assert r["ty_le_n"] == 4
+        # Ô HỎNG vẫn là "đã vẽ ô" ⇒ nằm trong TỬ SỐ. Bản nháp đầu bỏ nó ra và bị review bắt (P1):
+        # như vậy hệ vẽ ô HỎNG trên frame rỗng lại được điểm tốt hơn hệ vẽ ô bình thường.
+        assert r["ty_le"] is None, "n = 3 < ngưỡng 30 ⇒ KHÔNG công bố tỉ lệ (chỉ báo đếm)"
+        assert r["ty_le_du_mau"] is False
+
+    def test_ty_le_chi_cong_bo_khi_du_mau(self):
+        """`None` khi n < 30 — cùng luật với `mIoU_p05`/`drift_iou_p05` (một ngưỡng duy nhất)."""
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, ty_le_o_ma
+        # 30 frame rỗng, 15 có ô (kể cả 1 ô hỏng) + 15 không ô ⇒ đủ mẫu
+        shown = {}
+        rong = list(range(30))
+        for i in rong[:15]:
+            shown[i] = ((0, 0, 10, 10), True)
+        for i in rong[15:]:
+            shown[i] = (KHONG_CO_O, True)
+        r = ty_le_o_ma(rong, shown)
+        assert r["ty_le_du_mau"] is True and r["ty_le_n"] == 30
+        assert r["ty_le"] == pytest.approx(0.5, abs=1e-4)
+
+    def test_chua_co_frame_nao_thi_ty_le_la_NONE(self):
+        """`None` = CHƯA ĐO, không phải 0,0 — bẫy `0/None ≠ đã đo` (AGENTS §6)."""
+        from scripts.ab_o_hien_thi_vs_gt import ty_le_o_ma
+        r = ty_le_o_ma([7, 8], {})
+        assert r["ty_le"] is None and r["ty_le_n"] == 0
+        assert r["thieu_frame_rong"] == [7, 8]
+        assert r["n_co_o_tren_rong"] == 0
+
+    def test_gt_khong_khai_rong_thi_tra_list_rong(self, tmp_path):
+        """Không có `index.json` ⇒ `[]` (không có gì để chấm), KHÔNG được ném FileNotFoundError:
+        `main()` gọi hàm này trước mọi thứ khác và test khác đã monkeypatch `hop_tu_gt`."""
+        from scripts.ab_o_hien_thi_vs_gt import gt_rong_cua
+        assert gt_rong_cua(tmp_path) == []
+
+    def test_cham_tra_None_khi_khong_truyen_gt_rong(self):
+        """Chỗ gọi cũ không truyền `gt_rong` ⇒ `o_ma = None` (chưa đo), KHÔNG phải dict toàn 0."""
+        from scripts.ab_o_hien_thi_vs_gt import cham
+        r = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True)})
+        assert r["o_ma"] is None
+
+    def test_cham_noi_gt_rong(self):
+        from scripts.ab_o_hien_thi_vs_gt import cham
+        r = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True), 9: ((1, 1, 5, 5), True)},
+                 gt_rong=[9])
+        assert r["o_ma"]["n_gt_rong"] == 1
+        assert r["o_ma"]["n_co_o_tren_rong"] == 1     # vẽ ô trên frame 9 (rỗng) ⇒ bắt được
+        assert r["iou_mean"] == 1.0                   # iou_mean KHÔNG đổi (hồi quy)
+
+
+class TestOKhiKhongBangChung:
+    """Tiêu chí P4 "0 frame có ô khi `bam = no_evidence`" phải KIỂM ĐƯỢC từ artifact (review 21-11, P1).
+
+    Trước đó cột `bam` là **write-only** (không script nào đọc) nên con số chỉ nằm trong commit message.
+    Và trên `binh2`, 3/4 frame `gt_rong` vốn đã không có ô vì mask rỗng ⇒ bbox `(0,0,0,0)` ⇒ con số
+    "0/72" **không phân biệt được** "vá đã ẩn ô" với "ô vốn đã suy biến". Test dưới dùng ca **bbox hợp lệ
+    + bam=no_evidence** — đúng ca phân biệt được.
+    """
+
+    def test_dem_co_o_khi_no_evidence(self):
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, dem_o_khi_khong_bang_chung
+        rows = {
+            1: ((10, 10, 50, 50), True, "no_evidence"),   # CÓ toạ độ mà khai không bằng chứng ⇒ LỖI
+            2: (KHONG_CO_O, True, "no_evidence"),         # ngoan
+            3: ((10, 10, 50, 50), True, "tracking"),      # bình thường, không tính
+            4: ((0, 0, 0, 0), False, "no_evidence"),      # vẫn có toạ độ ⇒ tính
+        }
+        r = dem_o_khi_khong_bang_chung(rows)
+        assert r["n_no_evidence"] == 3
+        assert r["n_co_o_khi_no_evidence"] == 2
+        assert r["frame_co_o_khi_no_evidence"] == [1, 4]
+
+    def test_csv_cu_khong_co_cot_bam_thi_la_CHUA_DO(self):
+        """CSV 11 cột (trước 21-11) ⇒ `bam` vắng ⇒ `n_no_evidence = 0` và `do_duoc is None`."""
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, dem_o_khi_khong_bang_chung
+        r = dem_o_khi_khong_bang_chung({1: ((1, 1, 9, 9), True), 2: (KHONG_CO_O, True)})
+        assert r["n_no_evidence"] == 0 and r["n_co_o_khi_no_evidence"] == 0
+        assert r["do_duoc"] is None, "0 ở đây là CHƯA ĐO, không phải 'sạch'"
+
+    def test_doc_shown_doc_cot_bam(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import doc_shown
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "5,10,10,20,20,1,no_evidence\n"
+                     "6,,, ,,0,tracking\n".replace(", ,,", ",,,") , encoding="utf-8")
+        d = doc_shown(p)
+        assert d[5][2] == "no_evidence" and d[6][2] == "tracking"
+        assert d[6][0] is not None            # KHONG_CO_O sentinel, không phải None
+
+
+class TestCsvCuKhongCoCotBam:
+    """P1 review vòng 2: `doc_shown` từng LUÔN trả 3-tuple nên `do_duoc` luôn `True` ⇒ chấm lại
+    `shown.csv` 11 cột (trước 21-11) in "0 frame có ô khi no_evidence, do_duoc=true" = "đã đo, sạch".
+    Đúng bẫy `0/None ≠ đã đo`. Test cũ truyền dict 2-tuple TRỰC TIẾP nên xanh giả.
+    """
+
+    def test_csv_11_cot_that_thi_do_duoc_la_None(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"          # header 11 cột = CSV sinh TRƯỚC 21-11
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                     "1,10,10,50,50,1,mad_du,,1.0,0.0,42\n", encoding="utf-8")
+        d = doc_shown(p)
+        assert len(d[1]) == 2, "CSV không có cột `bam` ⇒ KHÔNG được trả 3 phần tử"
+        r = dem_o_khi_khong_bang_chung(d)
+        assert r["do_duoc"] is None, "thiếu cột ⇒ CHƯA ĐO, không phải 'đã đo và sạch'"
+
+    def test_csv_12_cot_that_thi_do_duoc_la_true(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem,bam\n"
+                     "1,10,10,50,50,1,mad_du,,1.0,0.0,42,no_evidence\n", encoding="utf-8")
+        d = doc_shown(p)
+        assert len(d[1]) == 3
+        r = dem_o_khi_khong_bang_chung(d)
+        assert r["do_duoc"] is True and r["n_no_evidence"] == 1
+        assert r["n_co_o_khi_no_evidence"] == 1, "có toạ độ + bam=no_evidence ⇒ phải bị đếm"
+
+
+class TestLkOkBaTrangThaiVaDoDuoc:
+    """P3 review vòng 3: đọc `lk_ok` 2 trạng thái trong khi writer ghi 3 ⇒ frame `engine.start()`
+    (ô trống từ 21-11) bị đếm là "LK từ chối"; và `do_duoc` chỉ kiểm "có cột" nên CSV có cột mà mọi ô
+    trống vẫn báo "đã đo, sạch"."""
+
+    def test_lk_ok_trong_la_chua_do(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import cham, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "0,10,10,50,50,,tracking\n", encoding="utf-8")     # frame start: lk_ok TRỐNG
+        d = doc_shown(p)
+        assert d[0][1] is None, "ô trống ⇒ chưa đo, KHÔNG phải False"
+        r = cham({0: (10, 10, 50, 50)}, d)
+        assert r["n_lk_khong"] == 0, "chưa đo không được đếm là 'LK từ chối'"
+        assert r["n_lk_chua_do"] == 1
+
+    def test_co_cot_bam_nhung_moi_o_trong_thi_do_duoc_None(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "1,10,10,50,50,1,\n", encoding="utf-8")   # có CỘT nhưng ô trống
+        r = dem_o_khi_khong_bang_chung(doc_shown(p))
+        assert r["do_duoc"] is None, "'có cột' ≠ 'đã đo'"

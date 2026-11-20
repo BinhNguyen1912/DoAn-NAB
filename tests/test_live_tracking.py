@@ -3,6 +3,7 @@
 Dùng engine GIẢ (FakeEngine duck-type start/process) — không cần torch, không cần checkpoint.
 """
 
+import csv
 import json
 import sys
 import threading
@@ -150,7 +151,9 @@ class TestLiveTrackingSession:
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
         # Thêm khoá mới vào đây khi mở rộng status.json:
         #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
-        cho_phep = bat_buoc | {"chan_doan_lk"}
+        # `bam`/`bam_ly_do`/`bam_no_evidence_n` = "có bằng chứng về vật" (plan 21-11 P4) — thêm vào
+        # allowlist là CỐ Ý: khoá mới phải được khai báo để người đọc status.json biết nó tồn tại.
+        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
@@ -2413,11 +2416,12 @@ def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
     s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
     s._shown_fh.close()
     raw = list(csv.reader((tmp_path / "shown.csv").open(encoding="utf-8")))
-    assert len(raw[0]) == 11, raw[0]
-    assert all(len(r) == 11 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
+    # 12 cột: thêm `bam` (21-11, P4) để đo "0 frame có ô khi bam=no_evidence" trên artifact.
+    assert len(raw[0]) == 12, raw[0]
+    assert all(len(r) == 12 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
     rows = [dict(zip(raw[0], r)) for r in raw[1:]]
     assert list(rows[0]) == ["frame_idx", "x1", "y1", "x2", "y2", "lk_ok",
-                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem"]
+                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem", "bam"]
     assert rows[0]["ly_do"] == "mad_du" and rows[0]["ly_do_khop"] == "" and rows[0]["n_diem"] == "42"
     # dòng 2 = frame 9 (không có ô, CÓ chẩn đoán) — phải đọc ĐÚNG cột, không lệch
     assert rows[1]["frame_idx"] == "9" and rows[1]["x1"] == "" and rows[1]["x2"] == ""
@@ -2479,3 +2483,392 @@ def test_chan_doan_lk_trong_status_la_cua_DUNG_frame_da_ghi(video_source, tmp_pa
     session._update_stats(session._result_threaded(frame))
     cd = session._stats.chan_doan_lk
     assert cd["khop"] is True and cd["scale"] == 1.25, cd
+
+
+class TestBamCoBangChung:
+    """`bam` = **có bằng chứng về vật** (plan 21-11 P4) — khoá riêng, KHÔNG nhồi vào `state`.
+
+    Vì sao phải có: `LiveStatusResponse.state` chỉ có stopped/loading/running/error, nên panel in
+    "running" trong lúc hệ không có bằng chứng nào; và `lost_streak` một mình thì SAI, vì đường hybrid
+    vẫn bám đúng bằng LK khi model mất dấu (ẩn ô theo `lost_streak` = xoá phần đang chạy đúng).
+    """
+
+    @staticmethod
+    def _session():
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    @staticmethod
+    def _mask(rong=False):
+        m = np.zeros((48, 64), bool)
+        if not rong:
+            m[10:30, 10:30] = True
+        return m
+
+    def test_mask_rong_hai_frame_lien_tiep_moi_bao_no_evidence(self):
+        s = self._session()
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(False)                    # frame 1: có mask, LK ok
+        assert s._stats.bam == "tracking"
+        s._cap_nhat_bang_chung(True)                     # frame 2: mask rỗng LẦN ĐẦU
+        assert s._stats.bam == "tracking", "một frame trượt KHÔNG được làm ô nhấp nháy"
+        s._cap_nhat_bang_chung(True)                     # frame 3: rỗng liên tiếp ⇒ thôi vẽ
+        assert s._stats.bam == "no_evidence"
+        assert s._stats.bam_ly_do == "mask_rong"
+        assert s._stats.bam_no_evidence_n == 1
+        s._cap_nhat_bang_chung(False)                    # có mask lại ⇒ về tracking NGAY
+        assert s._stats.bam == "tracking" and s._stats.bam_ly_do == ""
+
+    def test_lk_tu_choi_KHONG_phai_khong_co_bang_chung(self):
+        """ĐÍNH CHÍNH 21-11 (đo thật `binh2` 400 frame): bản nháp đầu coi `lk_ok = False` là
+        "không có bằng chứng" và nó báo oan **296/400 frame (74 %)** — vì khi LK từ chối,
+        `_result_threaded` trả `base_result` = ô VOS THẬT của frame VOS gần nhất, tức vẫn là quan sát
+        (chỉ CŨ). Nếu ẩn ô theo luật đó thì gần cả buổi demo không có ô, trong khi ô đang đúng.
+        Độ cũ đã có số riêng (`mask_age_total_ms`).
+        """
+        s = self._session()
+        s._lk_ok_frame = False
+        for _ in range(3):
+            s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking"
+
+    def test_lost_streak_cao_van_tracking_khi_lk_bam_dung(self):
+        """Đường hybrid: model mất dấu nhưng LK vẫn nội suy đúng ⇒ KHÔNG được ẩn ô."""
+        s = self._session()
+        s._lk_ok_frame = True
+        s._stats.lost_streak = 9
+        for _ in range(3):
+            s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking"
+
+    def test_annotate_khong_ve_o_khi_no_evidence(self):
+        """Ô phải BIẾN MẤT khỏi ảnh (không chỉ panel) — hội đồng nhìn ảnh, không đọc JSON."""
+        from src.live_tracking import _FrameResult
+        from src.live_tracking import _OVERLAY_COLOR_BOX
+
+        s = self._session()
+        frame = np.zeros((48, 64, 3), np.uint8)
+        res = _FrameResult(1, (10, 10, 40, 40), self._mask(), 1.0)
+        s._stats.bam = "tracking"
+        co_o = s._annotate(frame, res)
+        assert (co_o == np.array(_OVERLAY_COLOR_BOX, np.uint8)).all(axis=2).any(), \
+            "có bằng chứng mà không vẽ ô ⇒ test vô nghĩa"
+        s._stats.bam = "no_evidence"
+        s._stats.bam_ly_do = "mask_rong"
+        khong_o = s._annotate(frame, res)
+        assert khong_o.sum() > 0, "phải còn chữ HUD (không phải ảnh đen)"
+        # ảnh có bằng chứng phải NHIỀU pixel vẽ hơn hẳn ảnh no_evidence (ô + mask + quỹ đạo)
+        assert int((khong_o > 0).sum()) < int((co_o > 0).sum()), \
+            "no_evidence vẫn vẽ nhiều hơn ⇒ ô/mask chưa bị ẩn"
+
+    def test_payload_co_ba_khoa_va_None_khong_bi_doc_thanh_dang_bam(self):
+        from src.live_tracking import LiveTrackStats, status_payload
+
+        p = status_payload(LiveTrackStats())
+        assert p["bam"] is None, "chưa chạy frame nào ⇒ 'chưa xác định', KHÔNG phải 'tracking'"
+        assert p["bam_ly_do"] is None and p["bam_no_evidence_n"] == 0
+        assert "state" in p and p["state"] != "no_evidence", "không được nhét giá trị mới vào `state`"
+
+
+class TestBamVoiLamMuotMask:
+    """Bật `--mask-smoothing` thì `lost` (mask ĐÃ LÀM MƯỢT) ≠ `raw_lost` (mask THẬT của model).
+
+    `MaskSmoother` GIỮ mask cũ tới `max_hold = 2` chu kỳ VOS ⇒ model vừa trả mask rỗng mà `lost = False`.
+    Nếu `bam` chỉ nhìn `lost` thì hệ vẫn báo `tracking` và vẫn vẽ mask/ô GIỮ trong ~2 chu kỳ VOS sau khi
+    model đã mất vật (review 21-11, P2).
+    """
+
+    def test_raw_lost_thang_lost_da_lam_muot(self):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        s = LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                         vos_every=2, mask_smoothing=0.5))
+        # model KHÔNG thấy vật (raw_lost=True) nhưng mask hiển thị còn (bộ lọc giữ) ⇒ lost=False
+        s._cap_nhat_bang_chung(False, raw_lost=True)
+        s._cap_nhat_bang_chung(False, raw_lost=True)
+        assert s._stats.bam == "no_evidence"
+        assert s._stats.bam_ly_do == "mask_rong"
+        # model thấy vật lại ⇒ lập tức tracking
+        s._cap_nhat_bang_chung(False, raw_lost=False)
+        assert s._stats.bam == "tracking"
+
+    def test_mac_dinh_KHONG_lam_muot_thi_raw_lost_bang_lost(self):
+        """Đường mặc định: `_smooth` không set `raw_lost` ⇒ `getattr(..., lost)` ⇒ hai giá trị bằng nhau."""
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        s = LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung"))
+        assert s._smoother is None            # mặc định TẮT làm mượt (đo 10-11: không cải thiện)
+        s._cap_nhat_bang_chung(True)
+        s._cap_nhat_bang_chung(True)
+        assert s._stats.bam == "no_evidence"
+
+
+class TestCsvKhopAnhKhiKhongBangChung:
+    """CSV ô-hiển-thị phải nói CÙNG một chuyện với ẢNH, và mẫu drift KHÔNG được biến mất (review 21-11).
+
+    Hai lỗi bị bắt trong một lần:
+      - **P2 off-by-one**: `shown` được tính bằng `bam` của frame TRƯỚC ⇒ đúng frame chuyển trạng thái,
+        CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh không có ô.
+      - **P1 che mẫu**: bản nháp cho `shown = None` rồi dùng luôn cho drift ⇒ các frame mất dấu (đúng
+        loại mẫu xấu nhất) bị loại khỏi `drift_iou` ⇒ chỉ số tự đẹp lên. Nay drift chấm trên ô QUAN SÁT
+        và CSV drift có cột `bam` để LỌC, không che.
+    """
+
+    class _EngineRong:
+        """`start` trả mask thật; `process` trả **mask rỗng nhưng bbox HỢP LỆ** (ca thật: SAM 2 vẫn trả
+        bbox khi mask đã rỗng) — đúng ca phân biệt được "vá đã ẩn ô" với "ô vốn suy biến `(0,0,0,0)`"."""
+
+        def __init__(self, rong_tu=1):
+            self.rong_tu = rong_tu
+            self.n = 0
+
+        def _r(self, mask, bbox, score=1.0):
+            return type("R", (), {"frame_idx": self.n, "mask": mask, "bbox": bbox,
+                                  "score": score, "elapsed_ms": 1.0})()
+
+        def start(self, frame, bbox):
+            m = np.zeros(frame.shape[:2], bool)
+            m[20:60, 20:60] = True
+            return self._r(m, (20, 20, 60, 60))
+
+        def process(self, frame):
+            self.n += 1
+            if self.n >= self.rong_tu:
+                return self._r(np.zeros(frame.shape[:2], bool), (20, 20, 60, 60))
+            m = np.zeros(frame.shape[:2], bool)
+            m[20:60, 20:60] = True
+            return self._r(m, (20, 20, 60, 60))
+
+        def reset(self):
+            self.n = 0
+
+    def test_csv_trong_toa_do_va_bam_no_evidence_cung_dong(self, textured_video, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(self._EngineRong(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            loop_files=True, dump_shown_csv=str(out / "shown.csv"))).run(stop_event=_StopAfter(30))
+
+        rows = list(csv.DictReader((out / "shown.csv").open(encoding="utf-8")))
+        ne = [r for r in rows if r["bam"] == "no_evidence"]
+        assert ne, "phải có frame no_evidence thì test mới có nghĩa"
+        for r in ne:
+            assert r["x1"] == "" and r["x2"] == "", (
+                f"frame {r['frame_idx']}: bam=no_evidence mà CSV vẫn ghi toạ độ ô ⇒ CSV và ảnh lệch nhau")
+        # ... và các frame CÓ bằng chứng vẫn phải có toạ độ (không ẩn bừa)
+        assert any(r["bam"] == "tracking" and r["x1"] != "" for r in rows)
+
+    def test_mau_drift_khong_bi_che_khi_no_evidence(self, textured_video, tmp_path):
+        """Mẫu drift của frame `no_evidence` VẪN phải có mặt (có cột `bam` để lọc ở khâu phân tích)."""
+        from src.drift_samples import read_samples
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        LiveTrackingSession(self._EngineRong(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            loop_files=True)).run(stop_event=_StopAfter(30))
+
+        rows = read_samples(out / "drift_samples.csv")
+        assert any(r["bam"] == "no_evidence" for r in rows), (
+            "ảnh đã ẩn ô ở frame đó nhưng CSV drift phải GIỮ mẫu — nếu không, `drift_iou` tự đẹp lên")
+        # GIÁ TRỊ, không chỉ sự tồn tại (review vòng 2, P2): nhánh pending từng ghi `bam` còn nhánh
+        # THƯỜNG thì không ⇒ "lọc theo bam" trên máy thật trả rỗng. Mẫu `no_evidence` phải có số đo.
+        co_bam_ne = [r for r in rows if r["bam"] == "no_evidence" and r["drift_iou"] is not None]
+        assert co_bam_ne, "mẫu `no_evidence` phải có `drift_iou` (mẫu xấu nhất KHÔNG được bỏ)"
+        for r in co_bam_ne:
+            assert r["hien_thi"] != (None, None, None, None), "và phải có ô quan sát để đối chiếu"
+
+    def test_nhanh_thuong_cung_ghi_bam(self):
+        """Nhánh THƯỜNG (frame đã phát trước khi kết quả VOS về) cũng phải ghi `bam`.
+
+        Đây là nhánh PHỔ BIẾN trên máy thật (VOS ~100 ms > nhịp phát 33 ms) — bản trước chỉ ghi `bam` ở
+        nhánh pending nên "lọc theo bam" gần như luôn rỗng (review vòng 2, P2).
+        """
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                              vos_every=2))
+        # Giả lập: frame 5 ĐÃ phát với `bam = no_evidence`, rồi kết quả VOS của frame 5 mới về.
+        session._shown_by_frame.append((5, (10, 10, 50, 50)))
+        session._lk_by_frame.append((5, True))
+        session._bam_by_frame.append((5, "no_evidence"))
+        session._stats.bam = "no_evidence"
+        assert session._bam_of(5) == "no_evidence"
+        assert session._bam_of(99) is None, "frame chưa phát ⇒ CHƯA BIẾT, không phải 'tracking'"
+
+
+class TestRawLostSongSotQuaFrameResult:
+    """P1 review vòng 2: `_smooth` gắn `raw_lost` lên `base_result`, nhưng nhánh **LK ok** dựng
+    `_FrameResult` MỚI ⇒ cờ bị rơi ⇒ với `--mask-smoothing` (bộ lọc giữ mask cũ 2 chu kỳ) hệ vẫn báo
+    `tracking` và vẫn vẽ ô dù model không thấy vật.
+
+    Test cũ (gọi thẳng `_cap_nhat_bang_chung`) không đi qua `_smooth`/`_result_threaded` nên KHÔNG bắt
+    được — đúng lỗ hổng review chỉ ra. Test này chạy **end-to-end** qua `run()`.
+    """
+
+    class _EngineRongSau:
+        """Mask thật 2 frame đầu, sau đó **mask rỗng** mãi (bbox vẫn hợp lệ như SAM 2 hay trả)."""
+
+        def __init__(self, rong_tu=2):
+            self.rong_tu = rong_tu
+            self.n = 0
+
+        def _r(self, mask, bbox):
+            return type("R", (), {"frame_idx": self.n, "mask": mask, "bbox": bbox,
+                                  "score": 1.0, "elapsed_ms": 1.0})()
+
+        def start(self, frame, bbox):
+            m = np.zeros(frame.shape[:2], bool)
+            m[20:60, 20:60] = True
+            return self._r(m, (20, 20, 60, 60))
+
+        def process(self, frame):
+            self.n += 1
+            m = np.zeros(frame.shape[:2], bool)
+            if self.n < self.rong_tu:
+                m[20:60, 20:60] = True
+            return self._r(m, (20, 20, 60, 60))
+
+        def reset(self):
+            self.n = 0
+
+    def test_bat_lam_muot_van_bao_no_evidence(self, textured_video, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live"
+        _pre_select(out)
+        # `vos_every=2` là BẮT BUỘC: đường `vos_every=1` (`_result_inline`) trả chính object kết quả
+        # của model nên `raw_lost` không bao giờ rơi — lỗi chỉ có ở `_result_threaded` (nhánh LK ok
+        # dựng `_FrameResult` MỚI). Dùng `vos_every=1` thì test xanh cả khi KHÔNG vá (đã bị bắt đúng
+        # một lần bằng mutant).
+        session = LiveTrackingSession(self._EngineRongSau(), LiveTrackConfig(
+            source=textured_video, out_dir=out, display_fps=100, vos_every=2,
+            mask_smoothing=0.5, loop_files=True))
+        session.run(stop_event=_StopAfter(16))
+
+        assert session._stats.mask_holds > 0, "bộ lọc phải THẬT SỰ giữ mask cũ thì test mới có nghĩa"
+        assert session._stats.bam == "no_evidence", (
+            "mask bị GIỮ nên `lost = False`, nhưng model không thấy vật ⇒ vẫn phải là no_evidence")
+        assert session._stats.bam_ly_do == "mask_rong"
+
+
+class TestTruyenRawLostQuaResultThreaded:
+    """Ghim ĐÚNG chỗ rơi cờ: `_result_threaded` nhánh **LK ok** dựng `_FrameResult` MỚI.
+
+    Test end-to-end (`TestRawLostSongSotQuaFrameResult`) không bắt được mutant vì trên clip test LK có
+    thể trả `ok=False` ⇒ nhánh trả `base_result` (còn nguyên cờ). Test này thay `_interp` bằng stub
+    `ok=True` để ĐI ĐÚNG nhánh đó — mutant `raw_lost=None` làm nó ĐỎ (đã kiểm).
+    """
+
+    def test_nhanh_lk_ok_giu_co_raw_lost(self):
+        import time
+
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        class _InterpOk:
+            """Luôn `ok=True`, dịch 0 px ⇒ `_result_threaded` đi nhánh `ok`."""
+
+            last_ly_do = "ok"
+            last_ly_do_khop = None
+            last_scale = 1.0
+            last_angle_deg = 0.0
+            last_n_diem = 12
+            last_khop_similarity = False
+            last_matrix = None
+
+            def reset(self, gray, bbox):
+                self._bbox = tuple(bbox)
+
+            def update(self, gray):
+                return self._bbox, True
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                              vos_every=2))
+        session._interp = _InterpOk()
+        frame = np.zeros((48, 64, 3), np.uint8)
+        mask = np.zeros((48, 64), bool)
+        mask[10:30, 10:30] = True
+        base = type("R", (), {"frame_idx": 1, "mask": mask, "bbox": (10, 10, 30, 30),
+                              "score": 1.0, "elapsed_ms": 40.0,
+                              "raw_lost": True})()
+        session._vos_state = (1, base, session._gray(frame), time.perf_counter(), 40.0, 1.0, 0.0, 0.0)
+        out = session._result_threaded(frame)
+        assert out.mask is not None and out.mask.any(), "mask phải còn (bộ lọc giữ) để test có nghĩa"
+        assert out.raw_lost is True, (
+            "cờ `raw_lost` bị RƠI ở nhánh LK ok ⇒ `--mask-smoothing` giữ mask cũ sẽ làm hệ báo "
+            "`tracking` dù model không thấy vật (P1 review vòng 2)")
+
+
+class TestBamOfDocDequeDuoiLock:
+    """P1 review vòng 3: `_bam_of` duyệt `_bam_by_frame` (append ở luồng chính dưới `_stats_lock`) từ
+    luồng VOS ⇒ `RuntimeError: deque mutated during iteration` ⇒ `_VosWorker` bắt `Exception` ⇒ **cả
+    phiên live thành `error`**. Đúng lớp lỗi P1 đã bị bắt cho `_lk_ok_of`.
+
+    Test ĐO ĐIỀU KIỆN LOCK, không phụ thuộc may rủi (race không tái lập được trong unit test).
+    """
+
+    class _DequeGhi(  # deque ghi lại trạng thái lock tại thời điểm duyệt
+        __import__("collections").deque
+    ):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.locked_khi_duyet = []
+
+        def __reversed__(self):
+            self.locked_khi_duyet.append(self._lock_do.locked())
+            return super().__reversed__()
+
+    def _session(self):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    def test_bam_of_giu_lock_khi_duyet(self):
+        session = self._session()
+        d = self._DequeGhi(maxlen=90)
+        d._lock_do = session._stats_lock
+        session._bam_by_frame = d
+        session._bam_by_frame.append((5, "no_evidence"))
+        assert session._bam_of(5) == "no_evidence"
+        assert d.locked_khi_duyet == [True], (
+            "duyệt deque ngoài `_stats_lock` ⇒ có thể RuntimeError làm chết phiên (P1 vòng 3)")
+
+    def test_bam_of_locked_khong_tu_lock(self):
+        """Biến thể `_locked` dùng ở chỗ ĐANG giữ lock — nếu nó tự lock thì DEADLOCK
+        (`_stats_lock` là `threading.Lock`, không phải RLock)."""
+        session = self._session()
+        session._bam_by_frame.append((7, "tracking"))
+        with session._stats_lock:
+            assert session._bam_of_locked(7) == "tracking"

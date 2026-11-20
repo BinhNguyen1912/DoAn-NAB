@@ -187,8 +187,16 @@ sai. Nay mỗi dòng còn có:
 
 | cột | nghĩa |
 |---|---|
-| `hien_thi_x1..y2` | ô bao mà người xem **đã thấy** ở đúng frame đó (LK nội suy, hoặc ô base khi LK fail) |
-| `lk_ok` | `1` = LK trả ok · `0` = LK `not-ok` ⇒ pipeline phát **ô base** · ô trống = chưa đo |
+| `hien_thi_x1..y2` | ô dùng để **so drift** ở đúng frame đó = ô **QUAN SÁT** (LK nội suy, hoặc ô base khi LK fail) |
+| `lk_ok` | `1` = LK trả ok · `0` = LK `not-ok` ⇒ pipeline phát **ô base** · ô trống = chưa đo (kể cả frame `engine.start()`, từ 21-11) |
+| `bam` | **từ 21-11**: `tracking` · `no_evidence` (model không thấy vật) · ô trống = CSV cũ, **chưa đo** |
+
+> **ĐÍNH CHÍNH 21-11 (đừng đọc `hien_thi` là "ô đã vẽ").** Từ 21-11, khi `bam = no_evidence` hệ **không
+> vẽ** ô/mask nữa, nhưng CSV drift **vẫn ghi** ô quan sát và vẫn chấm `drift_iou` — cố ý: bản nháp đầu
+> bỏ mẫu ở frame mất dấu (đúng loại mẫu xấu nhất) ⇒ `drift_iou`/`drift_iou_p05` **tự đẹp lên** mà không
+> phải bám tốt hơn. Hệ quả: **quần thể mẫu của `drift_iou` KHÔNG đổi so với trước 21-11** (mọi frame có
+> ô quan sát hợp lệ), nên số cũ vẫn so được; muốn số "chỉ frame đã vẽ ô" thì **lọc `bam == "tracking"`**.
+> Ô **thật sự đã vẽ** nằm ở `shown.csv` (cột toạ độ **TRỐNG** ở frame `no_evidence`).
 
 ⇒ `drift_iou == IoU(hien_thi, bbox)` kiểm được **bằng công thức** (đo: lệch ≤ 4e-05 do làm tròn).
 Đo trên `binh1` @192/`vos_every 3`: `lk_ok_frac` = **0,093** — tức ~90 % số mẫu ô hiển thị là **ô cũ

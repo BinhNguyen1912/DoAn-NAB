@@ -749,3 +749,88 @@ class TestVatOMepBienVanHocDuocMau:
         from src.reid import best_match
 
         assert best_match(s._obj_refs, sig) == pytest.approx(1.0), "tự so với chính mẫu phải = 1,0"
+
+
+class TestCongChongNhayKhongTuHuyLanNhanLai:
+    """P0 plan 21-11: `_reacquire` từng KHÔNG cập nhật `_last_bbox` ⇒ tick sau, cổng chống-nhảy so với
+    mốc TRƯỚC KHI MẤT DẤU ⇒ vật vào lại ở chỗ khác bị coi là "nhảy bất thường" ⇒ `_auto_recover()` huỷ
+    ngay lần nhận lại vừa xong (2× `engine.start`, 1 frame không có ô, bỏ qua `verify_frames`).
+
+    Bằng chứng thật: phiên `tools/run_live.py --reid --reid-cue object` trên `binh2` có **3 lần
+    "reacquired" liên tiếp f172/176/180** cho MỘT lần vật vào lại.
+
+    Test này ĐỎ khi xoá dòng `self._last_bbox = tuple(getattr(result, "bbox", bbox))` trong `_reacquire`.
+    """
+
+    SHAPE = (96, 96)
+
+    def _frame(self, boxes=()):
+        """Nền tối + **cùng một mảng texture** dán ở mọi `box` ⇒ đặc trưng ở các vị trí như nhau.
+
+        Nếu dùng nền nhiễu ngẫu nhiên thì `_verify_ok` so mẫu ở A với vùng ở B thấy hai vùng nhiễu
+        khác nhau ⇒ bỏ nhận lại vì lý do KHÁC (không phải cổng chống-nhảy) — test sẽ đo sai thứ.
+        """
+        frame = np.zeros((*self.SHAPE, 3), np.uint8)
+        rng = np.random.default_rng(11)
+        patch = rng.integers(60, 200, (30, 30, 3), dtype=np.uint8)
+        for box in boxes:
+            x1, y1, x2, y2 = box
+            h, w = min(y2 - y1, 30), min(x2 - x1, 30)
+            frame[y1:y1 + h, x1:x1 + w] = patch[:h, :w]
+        return frame
+
+    def _mask(self, box, shape=None):
+        h, w = shape or self.SHAPE
+        m = np.zeros((h, w), bool)
+        m[max(0, box[1]):min(box[3], h), max(0, box[0]):min(box[2], w)] = True
+        return m
+
+    def test_vat_vao_lai_o_cho_KHAC_chi_start_MOT_lan(self):
+        # Chọn khoảng nhảy LỚN HƠN HẲN ngưỡng: cổng là `> 1,5 × chéo` (strict), nên nếu đặt đúng bằng
+        # ngưỡng thì test xanh cả khi KHÔNG vá (mutant sống) — đã bị bắt đúng một lần.
+        box_a = (10, 10, 36, 36)          # 26×26 = 676 px > MIN_AREA 600; chéo 36,8 ⇒ ngưỡng 55,2
+        box_b = (60, 60, 90, 90)          # tâm cách ~73,5 px > 55,2 ⇒ cổng SẼ kích hoạt nếu mốc cũ
+        eng = FakeEngineMasks([None], shape=self.SHAPE, bboxes=[box_a])
+        session = ReIdSession(engine=eng, embedder=None, cue="object",
+                              lost_after_frames=2, reacquire_confirm=1, verify_frames=2,
+                              auto_recover=True, threshold=0.36)
+        # Vật chỉ ở A lúc chọn, rồi CHỈ Ở B lúc vào lại (texture y hệt ⇒ đặc trưng khớp 1,0),
+        # đúng kịch bản "vật rời khung rồi vào lại ở chỗ khác".
+        session.start(self._frame(boxes=(box_a,)), box_a)       # `start` thu mẫu thật ⇒ `_obj_refs` đúng chiều
+        assert session.object_ref_count >= 1, "cần ít nhất 1 mẫu để bài test có nghĩa"
+        n_start = len(eng.start_calls)    # 1 = lần chọn ô ban đầu; mọi lần sau là của re-ID
+
+        # Ép trạng thái TÌM LẠI (đường thật vào đây qua `lost_after_frames`, nhưng dựng trực tiếp cho
+        # bài test chỉ kiểm cổng chống-nhảy).
+        session._state = "lost"
+        session._lost_streak = 2
+        session._last_bbox = box_a
+        session._last_center = ((box_a[0] + box_a[2]) / 2, (box_a[1] + box_a[3]) / 2)
+        session._size_ema = (30.0, 30.0)
+        session._last_obj_size = (30, 30)
+        session._verify_left = 0
+        # Bán kính tìm nở dần (`_filter_by_radius`, 0,75→1,75 lần cạnh vật trong 12 frame đầu) nên
+        # lúc mới mất dấu thì KHÔNG thể nhảy 73 px — phải để `_lost_age` vượt `search_grow_frames`
+        # như một lần vật rời khung thật rồi vào lại.
+        session._lost_age = 30
+        session._recover_cooldown = 0
+        frame = self._frame(boxes=(box_b,))
+        eng._bboxes = [box_b]
+        step = session.step(frame)
+        assert step.reacquired is True, "phải nhận lại được ở bước này"
+        assert len(eng.start_calls) == n_start + 1
+
+        # `_last_center` cũng phải là tâm ô VỪA NHẬN LẠI: nó là mốc của vùng tìm nở dần
+        # (`_filter_by_radius`) ⇒ để nguyên tâm cũ thì lần mất dấu sau sẽ tìm quanh chỗ vật KHÔNG còn
+        # ở đó. Review 21-11 (P3): nửa vá này không test nào phủ (xoá 2 dòng vẫn xanh).
+        # So với ô THẬT SỰ được nhận (ứng viên đã bị lưới prefilter bắt về gần B, không đúng y box_b).
+        assert session._last_bbox != box_a, "mốc vẫn là chỗ cũ ⇒ vá chưa có tác dụng"
+        assert session._last_center == ((session._last_bbox[0] + session._last_bbox[2]) / 2.0,
+                                        (session._last_bbox[1] + session._last_bbox[3]) / 2.0), \
+            "`_last_center` phải là tâm ô VỪA NHẬN LẠI (mốc vùng tìm nở dần), không phải tâm chỗ cũ"
+
+        # Tick kế: cổng chống-nhảy phải SO VỚI Ô VỪA NHẬN LẠI (B), không phải mốc cũ (A)
+        eng._bboxes = [box_b]
+        session.step(frame)
+        assert session.state == "tracking", "cổng chống-nhảy đã tự huỷ lần nhận lại (P0 tái phát)"
+        assert len(eng.start_calls) == n_start + 1, f"thừa lần start: {eng.start_calls}"

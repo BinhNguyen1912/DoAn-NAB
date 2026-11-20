@@ -6,6 +6,7 @@ import {
   maskAgeIsStale,
   configMismatchIsAlert,
   configMismatchLine,
+  bamLine,
   maskAgeLine,
   maskRhythmLine,
   sucKhoeIsAlert,
@@ -333,5 +334,40 @@ describe('sucKhoeLine — cờ phán quyết chất lượng bám (ticket #14)',
     expect(sucKhoeIsAlert({ suc_khoe: { co: 'not_measured' } } as never)).toBe(false)
     expect(sucKhoeIsAlert({ suc_khoe: { co: 'ok' } } as never)).toBe(false)
     expect(sucKhoeIsAlert(null)).toBe(false)
+  })
+})
+
+describe('bamLine — "không có bằng chứng về vật" (plan 21-11 P4)', () => {
+  // Vì sao cần: `state` chỉ là tiến trình (`running`), nên panel từng in "Trạng thái: running"
+  // trong lúc worker đã ẨN ô vì không có bằng chứng nào. Ba trạng thái phải phân biệt được.
+  it('null = chưa xác định ⇒ KHÔNG in gì (cấm nói "đang bám")', () => {
+    expect(bamLine({ bam: null })).toBeNull()
+    expect(bamLine(undefined)).toBeNull()
+  })
+
+  it('tracking ⇒ không chiếm chỗ trên HUD', () => {
+    expect(bamLine({ bam: 'tracking' })).toBeNull()
+  })
+
+  it('no_evidence + mask_rong ⇒ nói rõ model không thấy vật', () => {
+    const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'mask_rong', bam_no_evidence_n: 7 })
+    expect(line).toContain('Không có bằng chứng')
+    expect(line).toContain('model không thấy vật')
+    expect(line).toContain('7 frame')
+  })
+
+  it('lý do lạ ⇒ in "không rõ lý do", KHÔNG bịa lý do', () => {
+    // `lk_tu_choi` từng có trong bản nháp và đã bị BỎ (đo được: báo oan 74 % frame). Test cũ khoá
+    // một trạng thái backend KHÔNG BAO GIỜ phát — review 21-11, P2.
+    const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'lk_tu_choi', bam_no_evidence_n: 2 })
+    expect(line).toContain('không rõ lý do')
+    expect(line).not.toContain('nội suy')
+  })
+
+  it('n = 0 ⇒ KHÔNG in "0 frame mất bằng chứng" (câu vô nghĩa)', () => {
+    const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'mask_rong' })
+    expect(line).not.toContain('0 frame')
+    expect(line).not.toContain('undefined')
+    expect(line).toContain('Không có bằng chứng')
   })
 })

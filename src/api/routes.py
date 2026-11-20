@@ -162,6 +162,9 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             image_size_hieu_luc=status.image_size_hieu_luc,
             suc_khoe=status.suc_khoe,
             suc_khoe_cau=status.suc_khoe_cau,
+            bam=status.bam,
+            bam_ly_do=status.bam_ly_do,
+            bam_no_evidence_n=status.bam_no_evidence_n,
             message=status.message,
         )
 

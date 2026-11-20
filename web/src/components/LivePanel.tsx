@@ -38,6 +38,7 @@ import {
   shownFps,
   sourceCheckLine,
   stallLine,
+  bamLine,
 } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 
@@ -199,6 +200,7 @@ export function LivePanel(): JSX.Element {
   const maskLine = maskRhythmLine(status)
   const ageLine = maskAgeLine(status)
   const cauHinhLine = configMismatchLine(status)
+  const bamLineText = bamLine(status)
   const cauHinhLech = configMismatchIsAlert(status)
   const ageCu = maskAgeIsStale(status)
   const driftText = driftLine(status)
@@ -374,6 +376,14 @@ export function LivePanel(): JSX.Element {
            aria-live="polite" role={status.state === 'error' ? 'alert' : undefined}>
           Trạng thái: <strong>{status.state === 'loading' ? 'đang mở…' : status.state}</strong> ·{' '}
           {status.message} · frame: {status.frames} · FPS đo được: {displayFps}
+        </p>
+      )}
+
+      {bamLineText && (
+        // Ô đã bị ẩn khỏi ẢNH (không chỉ panel) — dòng này là lời giải thích cho người xem vì sao
+        // không còn ô/mask. `role="alert"` vì đây là thông tin trung thực, không phải gợi ý.
+        <p className="error" data-testid="bam-no-evidence" role="alert">
+          {bamLineText}
         </p>
       )}
 

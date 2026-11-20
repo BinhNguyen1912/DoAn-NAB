@@ -27,3 +27,11 @@ Không làm: đổi backbone, thêm model.
 - [x] Ghi `ncc` vào CSV metrics để hiệu chuẩn (thêm cột, không phá cột cũ)
 - [x] Test: vật đen đặc khác hình dạng phải bị loại (cosine hiện tại cho 1,000 nên phải nhờ NCC)
 - [x] `pytest -m "not slow"` + `ruff check .` xanh; ghi số đo vào log
+
+## Comments
+
+**21-11-2026 (nhánh `feat/nhan-lai-vat-live`):** cổng NCC do ticket này xây **chưa từng bật trên đường demo** — `src/config.py:68` và `configs/default.yaml` để `reid_obj_ncc_min = 0.0` (TẮT), và comment biện minh được viết **29-10**, tức **trước** bản hiệu chuẩn 01-11 của chính ticket này. Nay `run demoip`/`run fast` truyền `--reid-obj-ncc-min 0.35` + in `ncc_min=` trong dòng `[re-ID]` (không đổi `configs/default.yaml` để artifact cũ tái lập được).
+
+Đo trên `binh2` 300 frame @192 (`data/reid_ab_p1_2026-11-21_{ncc0,sau-va}.csv`): bật 0,35 **không đổi gì** — cùng 4 lần nhận lại ở cùng frame (172/175/178/244), cùng dải `ncc` (−1,0…0,811), 288 frame `tracking` — vì mọi ứng viên được nhận đều đã ≥ 0,35. ⇒ Trên clip này cổng **không** phải yếu tố quyết định; giá trị của nó vẫn chỉ đến từ hiệu chuẩn có nhãn (ca sai ncc 0,279, **`n_bad = 1`**).
+
+Tiêu chí còn lại của ticket **vẫn mở**: cần **clip THẬT có chai đen** để chốt ngưỡng (agent không tự quay được). Đừng đọc "đã bật 0,35" thành "đã hiệu chuẩn xong".

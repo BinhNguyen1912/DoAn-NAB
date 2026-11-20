@@ -230,6 +230,9 @@ class TestLiveRoutes:
                              "cau_hinh_lech", "image_size_hieu_luc",
                              # 2 trường cờ phán quyết chất lượng bám (19-11, ticket #14)
                              "suc_khoe", "suc_khoe_cau",
+                             # 3 trường "có bằng chứng về vật" (21-11, plan P4) — KHÁC `state`:
+                             # `null` = chưa biết, không được đọc thành "đang bám"
+                             "bam", "bam_ly_do", "bam_no_evidence_n",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -1209,3 +1212,57 @@ class TestMaskAgeQuaApi:
         assert body["mask_age_total_ms"] == pytest.approx(268.7)
         assert body["mask_age_p95"] == pytest.approx(301.2)
         assert body["age_n"] == 190
+
+
+class TestBamXuyenTang:
+    """`bam` phải đi qua ĐỦ ba tầng: status.json → adapter → DTO (review 21-11, P2).
+
+    Trước test này, xoá `bam=status.bam` ở `routes.py` hoặc `bam=_chuoi_hoac_none(...)` ở adapter thì
+    **toàn bộ 1607 test vẫn xanh** — đúng lớp lỗi P0 của ticket #14 ("DTO thiếu field mà e2e vẫn xanh vì
+    mock route"). Ba tầng phải được ghim riêng.
+    """
+
+    def _telemetry(self, tmp_path, data):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps(data), encoding="utf-8")
+        src = WorkerFrameSource.__new__(WorkerFrameSource)
+        src._out = tmp_path
+        return src.telemetry()
+
+    def test_adapter_doc_du_ba_khoa(self, tmp_path):
+        t = self._telemetry(tmp_path, {"bam": "no_evidence", "bam_ly_do": "mask_rong",
+                                      "bam_no_evidence_n": 7})
+        assert (t.bam, t.bam_ly_do, t.bam_no_evidence_n) == ("no_evidence", "mask_rong", 7)
+
+    def test_khoa_vang_mat_thi_None_khong_phai_tracking(self, tmp_path):
+        """Worker bản cũ (status.json 20-11) không có khoá ⇒ `None` = CHƯA BIẾT."""
+        t = self._telemetry(tmp_path, {"frames": 10})
+        assert t.bam is None and t.bam_ly_do is None and t.bam_no_evidence_n == 0
+
+    def test_route_tra_du_ba_khoa(self):
+        """Route phải map TAY từ `LiveStatus` sang DTO — thiếu một dòng là field im lặng về default.
+
+        Dùng `build_router` + một object `live` tối thiểu (route chỉ gọi `.status()`), để test không phụ
+        thuộc `LiveStreamService` thật.
+        """
+        from fastapi import FastAPI
+        from fastapi.testclient import TestClient
+
+        from src.api.domain import LiveState, LiveStatus
+        from src.api.routes import build_router
+
+        class _Live:
+            def status(self):
+                return LiveStatus(state=LiveState.RUNNING, source="giả",
+                                  bam="no_evidence", bam_ly_do="mask_rong",
+                                  bam_no_evidence_n=7)
+
+        app = FastAPI()
+        app.include_router(build_router(service=object(), live=_Live()))
+        body = TestClient(app).get("/api/live/status").json()
+        assert body["bam"] == "no_evidence"
+        assert body["bam_ly_do"] == "mask_rong"
+        assert body["bam_no_evidence_n"] == 7

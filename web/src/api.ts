@@ -189,6 +189,15 @@ export interface LiveStatus {
   } | null
   /** câu tiếng Việt cho HUD (`null` khi `ok` — không chiếm chỗ) */
   suc_khoe_cau: string | null
+  /**
+   * CÓ BẰNG CHỨNG về vật hay không — KHÁC `state` (state chỉ là tiến trình: running/stopped…).
+   * `null` = CHƯA BIẾT (worker bản cũ / frame đầu), KHÔNG được đọc thành `'tracking'`.
+   */
+  bam: 'tracking' | 'no_evidence' | null
+  /** `'mask_rong' | 'lk_tu_choi'` | null */
+  bam_ly_do: string | null
+  /** số frame ĐÃ PHÁT ở trạng thái `no_evidence` */
+  bam_no_evidence_n: number
 }
 
 export interface LiveStartOptions {
