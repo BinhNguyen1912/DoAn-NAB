@@ -375,25 +375,50 @@ def test_ly_do_tu_choi_phan_biet_duoc_cac_nhanh():
     assert t.last_ly_do == "mad_du"
 
 
-def test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI():
-    """Không chỉ gọi helper private: đường công khai phải tới được nhánh "bbox suy ra hỏng" khi phép
-    biến đổi đẩy ô ra mép khung (ô vào bước đó vẫn ≥ 4 px). Cờ `last_khop_similarity` phải ở `False`."""
-    import cv2
-    import numpy as np
+def test_bbox_bi_tu_choi_thi_ROI_VE_tinh_tien_va_bao_dung_ly_do(monkeypatch):
+    """Trước đây test này **không thể đỏ**: cả hai nhánh (`if ok:` / `else:`) đều đúng ở mọi đường từ
+    chối nhờ reset đầu `update()` (review #65 vòng 4). Nay: vá `_bbox_tu_matrix` trả `None` trên ĐƯỜNG
+    CÔNG KHAI `update()` ⇒ phải có `last_ly_do == "bbox_hong"` + không báo "đã dùng similarity".
+
+    Nếu ai chuyển phép ghi `last_khop_similarity`/`last_ly_do` lên trước bước bbox thì test ĐỎ.
+    """
     from src.light_tracker import LkBoxTracker
-    # Ảnh 200×200 có texture; vật dán sát mép phải; ô bao nằm sát mép
-    rng = np.random.default_rng(11)
-    nen = cv2.GaussianBlur((rng.random((200, 200)) * 255).astype(np.uint8), (3, 3), 0)
-    co_vat = nen.copy()
-    co_vat[80:120, 150:190] = _patch_texture(seed=4)[:40, :40]
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
     t = LkBoxTracker(scale=True)
-    t.reset(co_vat, (150, 80, 40, 40))               # ô 40×40 (hợp lệ), sát mép phải
-    # frame sau: vật co lại còn 4 px ở mép ⇒ bao ngoài sau biến đổi vượt khung, kẹp còn < 4 px
-    f2 = nen.copy()
-    f2[98:102, 195:199] = _patch_texture(seed=4)[:4, :4]
-    bbox, ok = t.update(f2)
-    if ok:                                            # nếu vẫn bám được thì không phải ca cần đo
-        assert t.last_khop_similarity in (True, False)
-    else:
-        assert t.last_khop_similarity is False
-        assert t.last_scale == 1.0
+    t.reset(f1, (130, 75, 60, 90))
+    monkeypatch.setattr(t, "_bbox_tu_matrix", lambda *_a, **_k: None)
+    bbox, ok = t.update(_khung_vat(patch, dx=3, dy=2))
+    # Hai field: kết quả CUỐI (`ok_shift` — đã dùng tịnh tiến) và LÝ DO similarity không dùng.
+    assert t.last_ly_do_khop == "bbox_hong", t.last_ly_do_khop
+    assert t.last_ly_do == "ok_shift", t.last_ly_do
+    assert t.last_khop_similarity is False
+    assert t.last_scale == 1.0
+    # và vẫn phải BÁM ĐƯỢC bằng tịnh tiến (không "chết" chỉ vì bbox similarity hỏng)
+    assert ok is True and bbox == (133, 77, 60, 90), bbox
+
+
+def test_mad_du_o_che_do_scale_di_qua_nhanh_PHAN_DU(monkeypatch):
+    """Ca `mad_du` phải chứng minh là nhánh **phần dư của similarity**, không phải nhánh tịnh tiến.
+
+    Bản trước dùng `max_mad=0.01` ⇒ nhánh tịnh tiến cũng từ chối, nên không phân biệt được hai nhánh
+    (review #65 vòng 4). Nay dùng spy trên `_khop_similarity`: phải ĐƯỢC GỌI và trả matrix.
+    """
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    t = LkBoxTracker(scale=True, max_mad=0.01)
+    t.reset(f1, (130, 75, 60, 90))
+    da_goi = []
+    goc = t._khop_similarity
+
+    def spy(prev, moved):
+        ra = goc(prev, moved)
+        da_goi.append(ra)
+        return ra
+
+    monkeypatch.setattr(t, "_khop_similarity", spy)
+    bbox, ok = t.update(_khung_vat(patch, ti_le=1.2))
+    assert da_goi and da_goi[0] is not None, "phải khớp được similarity rồi mới bị cổng phần dư chặn"
+    assert ok is False and bbox is None
+    assert t.last_ly_do == "mad_du"

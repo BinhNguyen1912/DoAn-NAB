@@ -381,6 +381,8 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
     assert d["schema"] == 5
+    # Khoá nghĩa phải CÓ trong `tong_hop`, nếu không thì "schema 5" lại có hai hình dạng (review #64/#65)
+    assert "iou_khi_lk_dinh_nghia" in next(iter(d["tong_hop"].values()))
 
 
 def test_so_sanh_luon_tra_du_bon_khoa():

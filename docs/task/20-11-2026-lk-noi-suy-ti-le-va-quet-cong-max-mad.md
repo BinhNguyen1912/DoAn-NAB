@@ -60,14 +60,19 @@ hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
 ### 4.1b Phép đo "sạch hơn": mở **cổng MAD** cho cả hai (vẫn còn 2 cổng khác)
 
 `data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json` (`git_rev f5c663a`, `git_dirty_code=false`,
-`schema 4`, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
+`schema 4` *(= sinh **trước** khi thêm khoá `iou_khi_lk_dinh_nghia` vào `tong_hop`; code hiện tại ghi
+`schema 5`)*, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
 
 | cấu hình | IoU | ± | tệ nhất | `lk_ok_frac` |
 |---|---|---|---|---|
 | 100 / shift (chỉ dịch) | 0,6765 | 0,0113 | **0,0000** | 0,86 |
-| **100 / scale (dịch + tỉ lệ + xoay)** | **0,8051** | 0,0130 | **0,5542** | **1,00** |
+| 100 / scale (dịch + tỉ lệ + xoay) | 0,8051 | 0,0130 | 0,5542 | 1,00 |
 
 Chênh thô **+0,1286** (quy ước: `scale − shift`) > ngưỡng nhiễu 0,0130; theo cặp **14/21**.
+
+> ⚠ **SỐ NÀY ĐÃ RÚT LẠI** — toàn bộ chênh lệch nằm ở **một frame (f62)** nơi `shift` **không phát ô**.
+> Bỏ f62 khỏi cả hai bên: **+0,0091 < ngưỡng nhiễu** ⇒ **không phân biệt được** (xem §4.1c ngay dưới).
+> Đừng trích dòng trên.
 
 ### 4.1c RÚT LẠI kết luận "+0,1286": toàn bộ chênh lệch nằm ở **một frame**
 
@@ -102,13 +107,20 @@ phép đo "sạch" — §5 đúng, §4.1b bản trước sai). Theo từng frame
 
 | frame | shift | scale | ghi chú |
 |---|---|---|---|
-| 62 | **0,000** | **0,811** | `shift` mất **toàn bộ** điểm theo dõi ở frame này; similarity vẫn khớp |
+| 62 | **0,000** | **0,811** | `shift` **không có ô hiển thị**: base VOS bbox suy biến `(0,0,0,0)` → `xyxy_to_xywh` `(0,0,1,1)` → `_seed` rỗng ⇒ **LK CHƯA CHẠY** (`last_ly_do = "seed_rong"`). Cột `scale` là ô LK — nhưng của **phiên khác** ⇒ dòng này KHÔNG so được hai mô hình |
 | 92 | 0,831 | 0,843 | như nhau |
 | 182 | 0,809 | 0,851 | scale nhích hơn |
 | 242 | 0,869 | 0,900 | scale nhích hơn |
 | 212 | **0,894** | 0,765 | hiệu (shift − scale) 3 lần: +0,129 / +0,135 / **−0,111** ⇒ trung bình **+0,051 ± 0,140** ⇒ **không kết luận được** |
-| 2 | 0,565 | 0,554 | như nhau |
-| 32 | 0,768 | 0,829 | scale hơn |
+| frame | shift | scale | `scale − shift` (mean ± sd, 3 lần) |
+|---|---|---|---|
+| 2 | 0,565 | 0,554 | **−0,011 ± 0,000** |
+| 32 | 0,768 | 0,829 | **+0,052 ± 0,021** |
+| 92 | 0,831 | 0,843 | **−0,020 ± 0,042** ← bản trước ghi "như nhau" là **sai** |
+| 182 | 0,809 | 0,851 | **+0,055 ± 0,012** |
+| 212 | 0,894 | 0,765 | **−0,051 ± 0,140** ⇒ không kết luận |
+| 242 | 0,869 | 0,900 | **+0,029 ± 0,004** |
+| 62 | 0,000 | 0,811 | **loại** — hai bên không cùng trạng thái |
 
 ⇒ Bảng trên là **một** lần chạy; mọi câu "scale hơn/kém ở frame X" với n = 1 đều không dùng được. Con số
 duy nhất đứng vững là **+0,0091 < nhiễu** (mục trên) ⇒ **không phân biệt được**.
@@ -193,6 +205,10 @@ quá `vos_every` frame. **Trạng thái: chưa đo.**
 
 ## 6. Next steps
 
+0. **`last_ly_do` / `last_ly_do_khop` / `n_points` CHƯA được ghi ra `shown.csv` hay `status.json`** ⇒ chẩn
+   đoán mới chỉ sống trong tiến trình, **chưa artifact nào đọc được**. Muốn trích "vì sao LK từ chối ở
+   frame X" như bằng chứng đo thì phải nối ra CSV trước (ticket).
+
 1. **Đo "vật vắng" thành metric**: hiện `cham()` **bỏ** frame `gt_rong` ⇒ không chấm được "ô bao có bịa
    ra vật không khi vật đã đi". Cần: đếm `lk_ok = 1` ở frame GT rỗng và độ dịch chuyển ô trong cửa sổ
    vắng ⇒ mới quyết định được `max_mad` mặc định (ticket mới).
@@ -233,7 +249,7 @@ sai nguyên nhân cho số đo — nguy hiểm vì sẽ được chép nguyên v
 | P3 | test "không gọi `shift_mask`" có thể xanh rỗng nếu `_result_threaded` return sớm | thêm `assert out.mask is not None` |
 | P3 | `last_khop_similarity` không reset ở các `return None, False` sớm | reset cả ba field chẩn đoán ở **đầu** `update()` + test |
 
-**Kiểm sau vá**: `./run lint` xanh · `./run test` **1582 passed** (11 test mới so với lúc mở PR).
+**Kiểm sau vá**: `./run lint` xanh · `./run test` **1583 passed** (11 test mới so với lúc mở PR).
 
 ## 9. Vòng 2 của review #65 — P0 thứ hai (bảng §4.1 sai nhãn) và phép đo bù
 
@@ -285,3 +301,24 @@ xác nhận **reviewer đúng 100%**:
 | P3 | test "bbox bị từ chối" gọi private + gán tay `_prev_bbox`; cờ được ghi trong helper | cờ nay ghi ở `update()`; thêm `test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI` |
 | P3 | không có test "mask không bị warp bằng matrix cũ khi LK mất dấu" | thêm `test_mask_KHONG_bi_warp_bang_matrix_CU_khi_LK_mat_dau` |
 | N | "1578 passed" | 1579 |
+
+## 11. Vòng 4 của review #65 — P0 = 0, còn 1 P1 (một ô bảng) + 1 test "không thể đỏ"
+
+Reviewer vòng 4: **P0 = 0, P1 = 1, P2 = 3, P3 = 6** và **tính lại toàn bộ §4.1c: khớp 100 %**
+(0,78923 / 0,79829 / +0,00906 / sd 0,02367; cặp 11/18; thêm: ngưỡng đúng cho hiệu theo cặp là
+`sd/√3 = 0,0137` và 0,0091 < 0,0137 ⇒ kết luận "không phân biệt được" **đứng** dưới phép kiểm đúng,
+t = 0,66 — không phải chỉ nhờ ngưỡng 0,0130).
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| **P1** | ô f62 trong bảng theo-frame (§4.1c) **vẫn** phát biểu lại câu đã bị bác ("shift mất toàn bộ điểm theo dõi") | sửa ô: base VOS bbox suy biến ⇒ `_seed` rỗng ⇒ **LK chưa chạy**; nói rõ cột `scale` là **phiên khác** nên dòng đó không so được |
+| P2 | §4.1b nêu chênh > nhiễu mà **không** có dấu rút lại tại chỗ (người trích 2 dòng sẽ lấy đúng câu sai) | thêm khối ⚠ ngay dưới + bỏ in đậm 0,8051/1,00 |
+| P2 | `test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI` **không thể đỏ** (cả hai nhánh đều đúng ở mọi đường từ chối) | viết lại: vá `_bbox_tu_matrix` trả `None` trên đường công khai ⇒ khẳng định **rơi về tịnh tiến** + lý do; và thêm mã `bbox_hong`/`cong_similarity` |
+| P2 | comment "phân biệt được ba ca" khai quá (code không có mã cho cổng/bbox) | thêm mã thật (`last_ly_do_khop` = `cong_similarity`/`bbox_hong`), tách khỏi `last_ly_do` (kết quả cuối) vì nhánh tịnh tiến **ghi đè** lý do ⇒ chẩn đoán mất dấu |
+| P3 | ca `mad_du` không phân biệt được với nhánh tịnh tiến (`max_mad=0.01` fragile) | test mới dùng **spy** trên `_khop_similarity`: phải được gọi và trả matrix ⇒ chứng minh đi qua nhánh **phần dư** |
+| P3 | bảng theo-frame 7 dòng n=1, có phán xử sai (f92 "như nhau" trong khi 3 lần là +0,012/−0,068/−0,005) | thay bằng cột **`scale − shift` mean ± sd (3 lần)**, dữ liệu lấy từ artifact |
+| P3 | artifact `schema 4` (thiếu khoá nghĩa trong `tong_hop`) không được ghi chú | thêm "(= sinh trước khi thêm khoá; code hiện tại ghi 5)" |
+| P3 | chỉ test `schema == 5`, không buộc `tong_hop` chứa khoá nghĩa ⇒ lần sau bỏ khoá là "schema 5" lại có 2 hình dạng | thêm assert `"iou_khi_lk_dinh_nghia" in tong_hop[...]` |
+| P3 | `last_ly_do` không reset đầu bước | reset về `chua_ro` cùng 3 field kia |
+| P3 | việc "nối `last_ly_do`/`n_points` ra CSV" bị bỏ im lặng | thêm Next step #0: **chưa artifact nào đọc được**, đừng trích như bằng chứng |
+| P3 | hai mốc test khác nhau trong file | ghi rõ mốc (1579 sau vòng 3, 1582 sau vòng 4) |
