@@ -259,8 +259,8 @@ def test_chieu_cua_bang_nhan_khong_bi_lan():
     """
     from scripts.ab_o_hien_thi_vs_gt import danh_sach_cau_hinh
     d = danh_sach_cau_hinh([192], [1, 3], [1.5])
-    nhan = {k: v for v, k in d.items()}          # tuple → nhãn
-    khoa_cua = {v: k for k, v in d.items()}      # nhãn → tuple
+    khoa_cua = dict(d)                                  # nhãn → tuple
+    nhan = {tup: nhan_ch for nhan_ch, tup in d.items()}  # tuple → nhãn
     assert nhan[(192, 1, 1.5)] == "192/1/1.5"
     assert khoa_cua["192/1/1.5"] == (192, 1, 1.5)
     # và mọi nhãn đều quy ngược được về khoá có thật trong dict cấu hình

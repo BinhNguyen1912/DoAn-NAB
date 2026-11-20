@@ -395,8 +395,10 @@ def main(argv=None) -> int:
 
     # HAI chiều, tên nói rõ chiều: `tong`/`lan_chay` khoá bằng NHÃN, `theo_cau_hinh` khoá bằng TUPLE.
     # Lẫn hai chiều ⇒ `KeyError: '192/1/1.5'` (lộ đúng lúc ghi artifact, sau khi đã chạy xong 9 lần).
-    nhan = {k: v for v, k in cau_hinh.items()}       # tuple → nhãn
-    khoa_cua = {v: k for k, v in cau_hinh.items()}   # nhãn → tuple
+    # `cau_hinh` là {nhãn: (sz, ve, mad)}. Đọc tên là biết chiều, KHÔNG viết comprehension hai lớp
+    # (bản vá đầu viết `{v: k for k, v in …}` cho CẢ HAI ⇒ hai bảng cùng chiều, test bắt được).
+    khoa_cua = dict(cau_hinh)                        # nhãn → tuple
+    nhan = {tup: nhan_ch for nhan_ch, tup in cau_hinh.items()}   # tuple → nhãn
     so_lan_loi = {nhan[k]: sum(1 for r in v if not r["hop_le"]) for k, v in theo_cau_hinh.items()}
     tong = {nhan[k]: tong_hop([r for r in v if r["hop_le"]]) for k, v in theo_cau_hinh.items()}
     lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
