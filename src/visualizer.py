@@ -118,19 +118,26 @@ class Visualizer:
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
+        # 0) KHÔNG vẽ gì của vật khi đang MẤT DẤU (21-11, cùng luật với `bam` của worker live).
+        # Lý do: banner "MAT DAU - TU TIM LAI" ở dưới mâu thuẫn trực tiếp với một ô bao còn trên ảnh —
+        # ô đó là ô VOS ĐÓNG BĂNG (SAM 2 còn trả bbox khi mask đã rỗng), tức "ô ma" mà người xem không
+        # phân biệt được với "đang bám". Đường worker (`_annotate`) đã ẩn; CLI phải giống thì buổi demo
+        # mới không nói hai chuyện.
+        dang_mat_dau = self.consecutive_lost > 0
+
         # 1) tô mask bán trong suốt
-        if result.mask is not None and result.mask.any():
+        if not dang_mat_dau and result.mask is not None and result.mask.any():
             tint = img.copy()
             tint[result.mask] = _COLOR_MASK
             img = cv2.addWeighted(img, 1.0 - _MASK_ALPHA, tint, _MASK_ALPHA, 0)
 
-        # 2) ô bao
+        # 2) ô bao — CHỈ khi còn bằng chứng (xem mục 0)
         x1, y1, x2, y2 = [int(v) for v in result.bbox]
-        if x2 > x1 and y2 > y1:
+        if not dang_mat_dau and x2 > x1 and y2 > y1:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
 
         # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần)
-        if self.show_trajectory and len(self._trajectory) >= 2:
+        if not dang_mat_dau and self.show_trajectory and len(self._trajectory) >= 2:
             pts = np.array(self._trajectory, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(img, [pts], isClosed=False, color=_COLOR_TRAJECTORY,
                           thickness=_LINE_THICKNESS)
