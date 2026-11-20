@@ -324,6 +324,54 @@ def frames_trai_deu(so_frame: int, n: int = 12) -> list[int]:
     return sorted({int(round(i * buoc)) for i in range(n)})
 
 
+def parse_khung(text: str) -> list[tuple[int, int]]:
+    """Đọc `"0:110,165:262"` → `[(0,110),(165,262)]`. Hàm THUẦN, test được.
+
+    Bao gồm cả hai đầu (`a <= f <= b`): người dùng ghi khung theo frame NHÌN THẤY vật, nên chặt bớt
+    một frame ở mép chỉ làm mất mẫu chứ không làm phép đo đúng hơn.
+    """
+    ra = []
+    for phan in str(text).replace(";", ",").split(","):
+        phan = phan.strip()
+        if not phan:
+            continue
+        if ":" not in phan:
+            raise ValueError(f"khung phải có dạng a:b, nhận {phan!r}")
+        a, b = phan.split(":", 1)
+        a, b = int(a), int(b)
+        if a > b:
+            raise ValueError(f"khung ngược {a}:{b}")
+        if a < 0:
+            raise ValueError(f"khung âm {a}:{b}")
+        ra.append((a, b))
+    if not ra:
+        raise ValueError("không có khung nào")
+    return ra
+
+
+def frames_giua_khe(so_frame: int, n: int = 12, vos_every: int = 3, buoc: int = 30) -> list[int]:
+    """`n` frame nằm **giữa khe** VOS — `frame ≡ (vos_every-1) mod vos_every`, cách nhau `buoc`.
+
+    Vì sao đúng chỗ này: pipeline chạy VOS ở các frame chia hết cho `vos_every`; frame ngay TRƯỚC lần VOS
+    kế tiếp là frame xa mốc VOS nhất, nên ô hiển thị ở đó **hoàn toàn** do nội suy LK quyết định. Chấm GT
+    ở các frame sát VOS (như bộ `b1`: ≡ 0/1 mod 3) thì LK chỉ có 1 bước ⇒ gần như không thử được `max_mad`.
+
+    Hàm THUẦN (test được, không cần clip).
+    """
+    if so_frame <= 0 or vos_every < 2 or n < 1:
+        return []
+    moc = vos_every - 1
+    # BƯỚC PHẢI LÀ BỘI CỦA vos_every, nếu không mốc sẽ trôi khỏi dàn "≡ -1 mod ve": với buoc=30 và
+    # vos_every=4 thì frame thứ hai là 33 (33 % 4 = 1) — rơi đúng vào frame CÓ VOS ⇒ phép đo vô nghĩa.
+    # Test tests/test_gt_gan_nhanh.py bắt được lỗi này (19–20-11).
+    buoc = max(vos_every, vos_every * max(1, round(int(buoc) / vos_every)))
+    ra, f = [], moc
+    while f < so_frame and len(ra) < n:
+        ra.append(int(f))
+        f += buoc
+    return ra
+
+
 def so_frame_cua_clip(clip: str) -> int:
     """Số frame của clip; 0 nếu không đọc được (bên gọi tự báo lỗi rõ ràng)."""
     import cv2
@@ -350,6 +398,20 @@ def main(argv=None) -> int:
     # lệnh (gặp thật 2 lần liên tiếp). Lệnh ngắn thì không còn cửa cho lỗi đó.
     parser.add_argument("--frames", default="",
                         help='danh sách frame_idx, vd "0,50,120"; bỏ trống = 12 frame trải đều clip')
+    # Thay cho việc gõ dãy frame dài: chọn thẳng các frame "GIỮA KHE" (sau lần VOS cuối cùng của một
+    # chu kỳ) — chỗ ô hiển thị do HOÀN TOÀN LK quyết định, tức chỗ duy nhất thử được tham số LK.
+    # Vì sao cần cờ này: dãy `--frames 2,32,62,…` dài ~30 ký tự làm terminal (~105 cột) chèn XUỐNG
+    # DÒNG ngay sau `--frames` ⇒ `argument --frames: expected one argument` (gặp thật 3 lần, 19–20-11).
+    parser.add_argument("--giua-khe", nargs="?", type=int, const=12, default=None,
+                        metavar="N",
+                        help="chọn N frame (mặc định 12) nằm GIỮA KHE VOS, cách nhau 30 frame — "
+                             "dùng thay cho --frames khi muốn thử chất lượng nội suy LK")
+    # Lọc theo KHUNG FRAME — bắt buộc khi vật ra khỏi khung giữa clip: GT ở đó là mask RỖNG, chấm
+    # vào chỉ tốn công tô mà không đo được gì (binh1: chai chỉ có trong 0:110 và 165:262).
+    parser.add_argument("--khung", default=None, metavar="a:b[,c:d]",
+                        help="chỉ lấy frame trong các khung này, vd 0:110,165:262")
+    parser.add_argument("--vos-every", type=int, default=3,
+                        help="chu kỳ VOS của phiên sẽ chấm (mặc định 3) — chỉ dùng với --giua-khe")
     parser.add_argument("--khong-goi-y", action="store_true",
                         help="không sinh gợi ý màu (tô tay từ đầu) ⇒ GT 'sạch' hơn")
     parser.add_argument("--s-min", type=int, default=S_MIN, help="ngưỡng bão hoà màu của gợi ý (0–255)")
@@ -361,8 +423,19 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
+    if not frames and args.giua_khe is not None:
+        frames = frames_giua_khe(so_frame_cua_clip(args.clip), n=int(args.giua_khe),
+                                 vos_every=int(args.vos_every))
     if not frames:
         frames = frames_trai_deu(so_frame_cua_clip(args.clip))
+    # Lọc khung SAU khi đã sinh danh sách (trước đây đặt trước ⇒ danh sách còn rỗng ⇒ lọc ra rỗng ⇒
+    # luôn báo lỗi; lần chạy thử 20-11 bắt được). Lọc xong mà rỗng thì báo lỗi chứ không âm thầm
+    # rơi về bộ frame mặc định — rơi ngầm sẽ chấm vào chỗ vật đã rời khung.
+    if args.khung:
+        khung = parse_khung(args.khung)
+        frames = [f for f in frames if any(a <= f <= b for a, b in khung)]
+        if not frames:
+            raise SystemExit(f"[LOI] --khung {args.khung} lọc hết frame — kiểm lại mốc/khoảng")
         if not frames:
             raise SystemExit("--frames rỗng và không đọc được số frame của clip "
                              f"{args.clip!r} ⇒ truyền --frames thủ công")

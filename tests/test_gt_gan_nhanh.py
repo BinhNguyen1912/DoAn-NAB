@@ -435,3 +435,54 @@ class TestFramesTraiDeu:
         from scripts.gt_gan_nhanh import frames_trai_deu
 
         assert frames_trai_deu(0) == [] and frames_trai_deu(-3) == []
+
+
+# --- chọn frame "GIỮA KHE" (thay cho dãy --frames dài, xem lý do trong scripts/gt_gan_nhanh.py) ---
+def test_frames_giua_khe_dung_dong_du_va_cach_deu():
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    ra = frames_giua_khe(333, n=12, vos_every=3)
+    assert ra == [2, 32, 62, 92, 122, 152, 182, 212, 242, 272, 302, 332]
+    # Mọi frame phải ≡ vos_every-1 (mod vos_every): đó là frame XA mốc VOS nhất
+    assert all(f % 3 == 2 for f in ra)
+
+
+def test_frames_giua_khe_khong_bao_gio_dung_vao_frame_co_vos():
+    """Nếu lọt frame chia hết cho vos_every thì ô là của MODEL, không phải LK ⇒ mất ý nghĩa phép đo."""
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    for ve in (2, 3, 4, 5):
+        for f in frames_giua_khe(200, n=8, vos_every=ve):
+            assert f % ve == ve - 1, (ve, f)
+
+
+def test_frames_giua_khe_bien_vo_huong():
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    assert frames_giua_khe(0) == []
+    assert frames_giua_khe(-5) == []
+    assert frames_giua_khe(333, n=0) == []
+    # vos_every < 2 ⇒ không có "khe" nào (mọi frame đều do model) ⇒ trả rỗng, KHÔNG rơi về mặc định
+    assert frames_giua_khe(333, vos_every=1) == []
+    # clip ngắn hơn bước nhảy: vẫn phải ra frame đầu tiên hợp lệ
+    assert frames_giua_khe(3, vos_every=3) == [2]
+    assert frames_giua_khe(2, vos_every=3) == []
+
+
+def test_parse_khung():
+    from scripts.gt_gan_nhanh import parse_khung
+    assert parse_khung("0:110,165:262") == [(0, 110), (165, 262)]
+    assert parse_khung(" 0 : 110 ; 165:262 ") == [(0, 110), (165, 262)]
+    assert parse_khung("5:5") == [(5, 5)]          # khung 1 frame vẫn hợp lệ
+    for xau in ("0-110", "110:0", "-1:5", "", " , "):
+        try:
+            parse_khung(xau)
+        except ValueError:
+            continue
+        raise AssertionError(f"phải báo lỗi với {xau!r}")
+
+
+def test_giua_khe_cong_khung_binh1_ra_dung_7_moc():
+    """Đúng bộ mốc đã dùng cho binh1 — nếu đổi công thức thì test này phải đổi theo."""
+    from scripts.gt_gan_nhanh import frames_giua_khe, parse_khung
+    frames = [f for f in frames_giua_khe(333, n=12, vos_every=3)
+              if any(a <= f <= b for a, b in parse_khung("0:110,165:262"))]
+    assert frames == [2, 32, 62, 92, 182, 212, 242]
+    assert all(f % 3 == 2 for f in frames)      # vẫn giữa khe: ô hoàn toàn do LK
