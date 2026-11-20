@@ -1,0 +1,45 @@
+{
+  "ngay": "2026-11-20T22:41:33",
+  "nguon": "data/demoip_1120-224057_metrics.csv (+ _summary.json, _run_info.json)",
+  "git_rev": "bba279a",
+  "cau_hinh": {
+    "image_size": 320,
+    "reid_cue": "object",
+    "reid_obj_threshold": 0.6,
+    "reid_obj_ncc_min": 0.35,
+    "device": "cpu"
+  },
+  "ca_sai": {
+    "mo_ta": "chon VAT mau da/vang canh mat; vat roi khoi khung (f18-f43 mat dau); re-ID NHAN LAI vao MAT NGUOI",
+    "frame_reacquired": 44,
+    "cosine": 0.973901,
+    "ncc": 0.544853,
+    "frame_mat_dau": [
+      18,
+      43
+    ],
+    "bang_chung_anh": "docs/media/reid/demoip_1120_nhan_lai_vao_mat.jpg"
+  },
+  "y_nghia_hieu_chuan": {
+    "cosine": {
+      "max_bad_moi": 0.973901,
+      "min_good_cu": 0.76957,
+      "ket_luan": "ca sai 0,974 NAM TRONG dai ca dung ⇒ cosine KHONG tach duoc (da biet)"
+    },
+    "ncc": {
+      "max_bad_moi": 0.544853,
+      "min_good_cu": 0.414731,
+      "ket_luan": "0,545 > 0,415 ⇒ NCC CUNG KHONG TACH DUOC nua; nguong 0,35 KHONG chan duoc ca nay"
+    }
+  },
+  "so_lieu_phien": {
+    "frames": 73,
+    "mean_latency_ms": 378.8,
+    "p95_latency_ms": 430.0,
+    "effective_fps": 2.64,
+    "lost": 26,
+    "lost_ratio": 0.356,
+    "reacquiring_frames": 24,
+    "reacquired_count": 1
+  }
+}
