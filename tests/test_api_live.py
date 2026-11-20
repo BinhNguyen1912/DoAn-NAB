@@ -230,6 +230,9 @@ class TestLiveRoutes:
                              "cau_hinh_lech", "image_size_hieu_luc",
                              # 2 trường cờ phán quyết chất lượng bám (19-11, ticket #14)
                              "suc_khoe", "suc_khoe_cau",
+                             # 3 trường "có bằng chứng về vật" (21-11, plan P4) — KHÁC `state`:
+                             # `null` = chưa biết, không được đọc thành "đang bám"
+                             "bam", "bam_ly_do", "bam_no_evidence_n",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)

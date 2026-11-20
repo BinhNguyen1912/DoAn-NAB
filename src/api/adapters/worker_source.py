@@ -182,6 +182,10 @@ class WorkerFrameSource(FrameSource):
             # là biến "chưa đo" thành "chất lượng tốt" (bẫy `None` vs `0`, AGENTS §6).
             suc_khoe=_dict_hoac_none(status.get("suc_khoe")),
             suc_khoe_cau=_chuoi_hoac_none(status.get("suc_khoe_cau")),
+            # Khoá VẮNG MẶT ⇒ `None` (worker bản cũ) — đổi thành "tracking" là khẳng định bừa.
+            bam=_chuoi_hoac_none(status.get("bam")),
+            bam_ly_do=_chuoi_hoac_none(status.get("bam_ly_do")),
+            bam_no_evidence_n=int(status.get("bam_no_evidence_n") or 0),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource

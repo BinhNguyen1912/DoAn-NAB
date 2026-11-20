@@ -142,6 +142,12 @@ class LiveStatus:
     # mẫu) + `empty_frac` của cùng cửa sổ đó. `None` = worker bản cũ CHƯA có cờ (KHÔNG đọc là "ok").
     suc_khoe: dict | None = None
     suc_khoe_cau: str | None = None
+    # "Có bằng chứng về vật" (plan 21-11 P4): `state` chỉ nói tiến trình (running), KHÔNG nói được
+    # hệ đang bám hay đang bịa ô. Ba trạng thái: `"tracking"` | `"no_evidence"` | `None` = CHƯA BIẾT
+    # (worker bản cũ / frame đầu) — cấm đọc `None` thành "đang bám".
+    bam: str | None = None
+    bam_ly_do: str | None = None
+    bam_no_evidence_n: int = 0
     message: str = ""
 
 
@@ -176,6 +182,10 @@ class LiveTelemetry:
     # Xem `LiveStatus.suc_khoe`. `None` = status.json không có khoá (worker bản cũ) — KHÔNG phải "ok".
     suc_khoe: dict | None = None
     suc_khoe_cau: str | None = None
+    # Xem `LiveStatus.bam`. `None` = status.json KHÔNG có khoá (worker bản cũ) — KHÔNG phải "tracking".
+    bam: str | None = None
+    bam_ly_do: str | None = None
+    bam_no_evidence_n: int = 0
 
 
 @dataclass(frozen=True)

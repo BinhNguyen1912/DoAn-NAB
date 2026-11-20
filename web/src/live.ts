@@ -230,3 +230,27 @@ export function sourceCheckLine(
   const ms = candidate.latency_ms ?? 0
   return `dò lúc ${gio || '—'} · ${bangChung} · ${ms} ms`
 }
+
+/**
+ * Câu chữ cho "CÓ BẰNG CHỨNG về vật" (plan 21-11 P4) — `null` khi đang bám bình thường.
+ *
+ * Vì sao phải có: `LiveStatus.state` chỉ là **tiến trình** (`running`), nên panel in "Trạng thái:
+ * running" đúng lúc worker đã ẨN ô vì không có bằng chứng nào. Ba trạng thái phải phân biệt:
+ *  - `bam === null` ⇒ **chưa xác định** (worker bản cũ / frame đầu) — cấm in "đang bám";
+ *  - `bam === 'no_evidence'` ⇒ nói rõ lý do, kèm số frame đã mất bằng chứng (đếm được);
+ *  - `bam === 'tracking'` ⇒ `null` (không chiếm chỗ trên HUD).
+ */
+export function bamLine(status: { bam?: string | null; bam_ly_do?: string | null
+  bam_no_evidence_n?: number } | null | undefined): string | null {
+  if (!status) return null
+  if (status.bam == null) return null
+  if (status.bam === 'tracking') return null
+  const lyDo = status.bam_ly_do === 'lk_tu_choi'
+    ? 'bộ nội suy từ chối frame này'
+    : status.bam_ly_do === 'mask_rong'
+      ? 'model không thấy vật'
+      : 'không rõ lý do'
+  const n = status.bam_no_evidence_n ?? 0
+  return `Không có bằng chứng về vật (${lyDo}) — ô đã được ẩn khỏi ảnh để không vẽ ô suy diễn · `
+    + `${n} frame mất bằng chứng`
+}

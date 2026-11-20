@@ -150,7 +150,9 @@ class TestLiveTrackingSession:
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
         # Thêm khoá mới vào đây khi mở rộng status.json:
         #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
-        cho_phep = bat_buoc | {"chan_doan_lk"}
+        # `bam`/`bam_ly_do`/`bam_no_evidence_n` = "có bằng chứng về vật" (plan 21-11 P4) — thêm vào
+        # allowlist là CỐ Ý: khoá mới phải được khai báo để người đọc status.json biết nó tồn tại.
+        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
@@ -2413,11 +2415,12 @@ def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
     s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
     s._shown_fh.close()
     raw = list(csv.reader((tmp_path / "shown.csv").open(encoding="utf-8")))
-    assert len(raw[0]) == 11, raw[0]
-    assert all(len(r) == 11 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
+    # 12 cột: thêm `bam` (21-11, P4) để đo "0 frame có ô khi bam=no_evidence" trên artifact.
+    assert len(raw[0]) == 12, raw[0]
+    assert all(len(r) == 12 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
     rows = [dict(zip(raw[0], r)) for r in raw[1:]]
     assert list(rows[0]) == ["frame_idx", "x1", "y1", "x2", "y2", "lk_ok",
-                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem"]
+                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem", "bam"]
     assert rows[0]["ly_do"] == "mad_du" and rows[0]["ly_do_khop"] == "" and rows[0]["n_diem"] == "42"
     # dòng 2 = frame 9 (không có ô, CÓ chẩn đoán) — phải đọc ĐÚNG cột, không lệch
     assert rows[1]["frame_idx"] == "9" and rows[1]["x1"] == "" and rows[1]["x2"] == ""
@@ -2479,3 +2482,94 @@ def test_chan_doan_lk_trong_status_la_cua_DUNG_frame_da_ghi(video_source, tmp_pa
     session._update_stats(session._result_threaded(frame))
     cd = session._stats.chan_doan_lk
     assert cd["khop"] is True and cd["scale"] == 1.25, cd
+
+
+class TestBamCoBangChung:
+    """`bam` = **có bằng chứng về vật** (plan 21-11 P4) — khoá riêng, KHÔNG nhồi vào `state`.
+
+    Vì sao phải có: `LiveStatusResponse.state` chỉ có stopped/loading/running/error, nên panel in
+    "running" trong lúc hệ không có bằng chứng nào; và `lost_streak` một mình thì SAI, vì đường hybrid
+    vẫn bám đúng bằng LK khi model mất dấu (ẩn ô theo `lost_streak` = xoá phần đang chạy đúng).
+    """
+
+    @staticmethod
+    def _session():
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    @staticmethod
+    def _mask(rong=False):
+        m = np.zeros((48, 64), bool)
+        if not rong:
+            m[10:30, 10:30] = True
+        return m
+
+    def test_mask_rong_hai_frame_lien_tiep_moi_bao_no_evidence(self):
+        s = self._session()
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(False)                    # frame 1: có mask, LK ok
+        assert s._stats.bam == "tracking"
+        s._cap_nhat_bang_chung(True)                     # frame 2: mask rỗng LẦN ĐẦU
+        assert s._stats.bam == "tracking", "một frame trượt KHÔNG được làm ô nhấp nháy"
+        s._cap_nhat_bang_chung(True)                     # frame 3: rỗng liên tiếp ⇒ thôi vẽ
+        assert s._stats.bam == "no_evidence"
+        assert s._stats.bam_ly_do == "mask_rong"
+        assert s._stats.bam_no_evidence_n == 1
+        s._cap_nhat_bang_chung(False)                    # có mask lại ⇒ về tracking NGAY
+        assert s._stats.bam == "tracking" and s._stats.bam_ly_do == ""
+
+    def test_lk_tu_choi_KHONG_phai_khong_co_bang_chung(self):
+        """ĐÍNH CHÍNH 21-11 (đo thật `binh2` 400 frame): bản nháp đầu coi `lk_ok = False` là
+        "không có bằng chứng" và nó báo oan **296/400 frame (74 %)** — vì khi LK từ chối,
+        `_result_threaded` trả `base_result` = ô VOS THẬT của frame VOS gần nhất, tức vẫn là quan sát
+        (chỉ CŨ). Nếu ẩn ô theo luật đó thì gần cả buổi demo không có ô, trong khi ô đang đúng.
+        Độ cũ đã có số riêng (`mask_age_total_ms`).
+        """
+        s = self._session()
+        s._lk_ok_frame = False
+        for _ in range(3):
+            s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking"
+
+    def test_lost_streak_cao_van_tracking_khi_lk_bam_dung(self):
+        """Đường hybrid: model mất dấu nhưng LK vẫn nội suy đúng ⇒ KHÔNG được ẩn ô."""
+        s = self._session()
+        s._lk_ok_frame = True
+        s._stats.lost_streak = 9
+        for _ in range(3):
+            s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking"
+
+    def test_annotate_khong_ve_o_khi_no_evidence(self):
+        """Ô phải BIẾN MẤT khỏi ảnh (không chỉ panel) — hội đồng nhìn ảnh, không đọc JSON."""
+        from src.live_tracking import _FrameResult
+        from src.live_tracking import _OVERLAY_COLOR_BOX
+
+        s = self._session()
+        frame = np.zeros((48, 64, 3), np.uint8)
+        res = _FrameResult(1, (10, 10, 40, 40), self._mask(), 1.0)
+        s._stats.bam = "tracking"
+        co_o = s._annotate(frame, res)
+        assert (co_o == np.array(_OVERLAY_COLOR_BOX, np.uint8)).all(axis=2).any(), \
+            "có bằng chứng mà không vẽ ô ⇒ test vô nghĩa"
+        s._stats.bam = "no_evidence"
+        s._stats.bam_ly_do = "mask_rong"
+        khong_o = s._annotate(frame, res)
+        assert khong_o.sum() > 0, "phải còn chữ HUD (không phải ảnh đen)"
+        # ảnh có bằng chứng phải NHIỀU pixel vẽ hơn hẳn ảnh no_evidence (ô + mask + quỹ đạo)
+        assert int((khong_o > 0).sum()) < int((co_o > 0).sum()), \
+            "no_evidence vẫn vẽ nhiều hơn ⇒ ô/mask chưa bị ẩn"
+
+    def test_payload_co_ba_khoa_va_None_khong_bi_doc_thanh_dang_bam(self):
+        from src.live_tracking import LiveTrackStats, status_payload
+
+        p = status_payload(LiveTrackStats())
+        assert p["bam"] is None, "chưa chạy frame nào ⇒ 'chưa xác định', KHÔNG phải 'tracking'"
+        assert p["bam_ly_do"] is None and p["bam_no_evidence_n"] == 0
+        assert "state" in p and p["state"] != "no_evidence", "không được nhét giá trị mới vào `state`"
