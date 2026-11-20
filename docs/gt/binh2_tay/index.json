@@ -1,0 +1,64 @@
+{
+  "clip": "data/binh2.mp4",
+  "ten": "binh2_tay",
+  "frames": [
+    {
+      "frame_idx": 0
+    },
+    {
+      "frame_idx": 33
+    },
+    {
+      "frame_idx": 65
+    },
+    {
+      "frame_idx": 98
+    },
+    {
+      "frame_idx": 131
+    },
+    {
+      "frame_idx": 163
+    },
+    {
+      "frame_idx": 196
+    },
+    {
+      "frame_idx": 228
+    },
+    {
+      "frame_idx": 261
+    },
+    {
+      "frame_idx": 294
+    },
+    {
+      "frame_idx": 326
+    },
+    {
+      "frame_idx": 359
+    }
+  ],
+  "frame_hw": [
+    1280,
+    720
+  ],
+  "gt_rong": [
+    196,
+    294,
+    326,
+    359
+  ],
+  "nguoi_gan": "Binh",
+  "gt_do_model_goi_y": false,
+  "dang_gt": "silhouette",
+  "nguon_gt": "ngưỡng màu HSV (script `gt_gan_nhanh.py`) + người sửa tay",
+  "phuong_phap_gt": "GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ hoàn toàn",
+  "sai_so_bo_goi_y": "CHƯA ĐO — mIoU này là của mask SAU khi người sửa, không phải của gợi ý",
+  "chon_frame": {
+    "mac_dinh": "12 frame trải đều clip"
+  },
+  "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
+  "tao_luc": "2026-11-20T18:58:56",
+  "huong_dan": "Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được ghi thẳng vào thư mục này."
+}

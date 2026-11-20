@@ -1,5 +1,7 @@
 # 40: A/B max_mad trên VẬT THỨ 2 (binh2) — cổng 1,5 quá chặt đã đo được +0,1745 trên binh1, cần tái lập
 
+**Status:** claimed
+
 **Type:** grilling
 
 **Blocked by:** None (can start immediately)
