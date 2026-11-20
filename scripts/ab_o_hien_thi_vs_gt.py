@@ -185,6 +185,47 @@ def so_sanh(a: dict, b: dict) -> dict:
     }
 
 
+def so_sanh_theo_cap(lan_a: list[dict], lan_b: list[dict]) -> dict:
+    """So **THEO CẶP** (cùng lần chạy, cùng frame) — khử dao động giữa các lần chạy. Hàm THUẦN.
+
+    Vì sao cần bên cạnh `so_sanh` (so trung bình): trung bình bị phương sai giữa-lần-chạy chi phối
+    (đo 20-11: `std` 0,065 ở 1,5 vs 0,016 ở 6,0 ⇒ chênh 0,027 bị coi là "không phân biệt được"), trong
+    khi so từng frame thì cấu hình nới chưa BAO GIỜ tệ hơn và tốt hơn rõ ở vài frame. Cặp được ghép
+    theo **chỉ số lần chạy** (các lần chạy đã chèn kẽ) và theo **frame**.
+
+    Trả `{so_cap, b_tot_hon, a_tot_hon, bang, chenh_trung_binh, chenh_lon_nhat, frame_b_tot_hon}`.
+    Cặp bị bỏ khi một bên `iou` là `None` (không đo được) — không quy thành 0.
+    """
+    so_cap = b_tot = a_tot = bang = 0
+    chenh = []
+    frame_b_tot = {}
+    for ra, rb in zip(lan_a, lan_b):
+        fa = {r["frame_idx"]: r["iou"] for r in ra["cham"]["theo_frame"]}
+        fb = {r["frame_idx"]: r["iou"] for r in rb["cham"]["theo_frame"]}
+        for frame in sorted(set(fa) & set(fb)):
+            x, y = fa[frame], fb[frame]
+            if x is None or y is None:
+                continue
+            so_cap += 1
+            d = round(y - x, 4)
+            chenh.append(d)
+            if d > 1e-9:
+                b_tot += 1
+                frame_b_tot[frame] = round(frame_b_tot.get(frame, 0.0) + d, 4)
+            elif d < -1e-9:
+                a_tot += 1
+            else:
+                bang += 1
+    return {
+        "so_cap": so_cap, "b_tot_hon": b_tot, "a_tot_hon": a_tot, "bang": bang,
+        "chenh_trung_binh": round(statistics.fmean(chenh), 4) if chenh else None,
+        "chenh_lon_nhat": round(max(chenh), 4) if chenh else None,
+        "chenh_nho_nhat": round(min(chenh), 4) if chenh else None,
+        "frame_b_tot_hon": frame_b_tot,
+        "b_khong_bao_gio_te_hon": a_tot == 0 and so_cap > 0,
+    }
+
+
 def main(argv=None) -> int:
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--gt", required=True, help="thư mục GT (docs/gt/<tên>, có index.json)")
@@ -230,6 +271,8 @@ def main(argv=None) -> int:
             or abs(float(r["max_mad_hieu_luc"]) - float(r["max_mad_yeu_cau"])) > 1e-9]
     khoa = sorted(tong, key=float)
     ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
+    ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[float(khoa[0])], theo_cau_hinh[float(khoa[-1])]),
+               "a": khoa[0], "b": khoa[-1]} if len(khoa) >= 2 else {})
 
     from scripts.measure_watchdog import _git_provenance
 
@@ -249,6 +292,7 @@ def main(argv=None) -> int:
         "cau_hinh_hieu_luc_lech": lech,
         "tong_hop": tong,
         "so_sanh": ss,
+        "so_sanh_theo_cap": ss_cap,
         "lan_chay": {str(m): [{k: v for k, v in r.items() if k != "status"} for r in rs]
                      for m, rs in theo_cau_hinh.items()},
     }
@@ -257,6 +301,8 @@ def main(argv=None) -> int:
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\n{json.dumps(ss, ensure_ascii=False)}")
+    if ss_cap:
+        print(json.dumps({k: v for k, v in ss_cap.items()}, ensure_ascii=False))
     print(f"Ghi: {out}")
     if lech:
         print(f"[LOI] {len(lech)} lần chạy có lk_max_mad hiệu lực KHÁC yêu cầu", file=sys.stderr)

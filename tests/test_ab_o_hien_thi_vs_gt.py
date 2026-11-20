@@ -99,3 +99,38 @@ def test_tong_hop_tinh_trung_binh_va_do_lech_chuan():
     assert t["iou_mean"]["mean"] == pytest.approx(0.55)
     assert t["iou_mean"]["std"] == pytest.approx(0.0707, abs=0.001)
     assert t["lk_ok_frac"]["mean"] == pytest.approx(0.3)
+
+
+def _lan(iou_theo_frame):
+    return {"cham": {"theo_frame": [{"frame_idx": f, "iou": v} for f, v in iou_theo_frame.items()]}}
+
+
+def test_so_sanh_theo_cap_khu_dao_dong_giua_lan_chay():
+    """Cặp (cùng lần chạy, cùng frame) mới là so sánh đúng: 20-11 trung bình nói "không phân biệt được"
+    (std 0,065 ở 1,5 > chênh 0,027) trong khi TỪNG frame thì cấu hình nới không bao giờ tệ hơn.
+    """
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh_theo_cap
+
+    a = [_lan({0: 0.55, 30: 0.51, 60: 0.18}), _lan({0: 0.55, 30: 0.50, 60: 0.18})]
+    b = [_lan({0: 0.55, 30: 0.61, 60: 0.18}), _lan({0: 0.56, 30: 0.60, 60: 0.18})]
+    kq = so_sanh_theo_cap(a, b)
+    assert kq["so_cap"] == 6
+    assert kq["a_tot_hon"] == 0 and kq["b_khong_bao_gio_te_hon"] is True
+    assert kq["b_tot_hon"] == 3 and kq["bang"] == 3
+    assert kq["frame_b_tot_hon"][30] == pytest.approx(0.20, abs=0.01)
+    assert kq["chenh_lon_nhat"] > 0 and kq["chenh_nho_nhat"] == 0.0
+
+
+def test_so_sanh_theo_cap_bo_cap_khi_mot_ben_khong_do_duoc():
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh_theo_cap
+
+    kq = so_sanh_theo_cap([_lan({0: None, 30: 0.5})], [_lan({0: 0.5, 30: 0.5})])
+    assert kq["so_cap"] == 1 and kq["bang"] == 1
+
+
+def test_so_sanh_theo_cap_rong_tra_khong_ket_luan():
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh_theo_cap
+
+    kq = so_sanh_theo_cap([], [])
+    assert kq["so_cap"] == 0 and kq["b_khong_bao_gio_te_hon"] is False
+    assert kq["chenh_trung_binh"] is None
