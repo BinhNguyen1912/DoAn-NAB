@@ -178,6 +178,7 @@ class LiveTrackStats:
     # (KHÔNG phải "đã kiểm và ổn"). Tính trong `_apply_drift_locked` bằng hàm thuần
     # `src/tracking_health.py` (không phụ thuộc torch ⇒ test được headless).
     suc_khoe: dict = field(default_factory=dict)
+    dump_shown_loi: str = ""
     mask_age_ms: float | None = None      # tuổi mask đang hiện (từ lúc kết quả model sẵn sàng)
     # `mask_age_cu_ms` = age + vos_ms — ĐỊNH NGHĨA CŨ, chỉ còn để so với số trước 14-11.
     mask_age_cu_ms: float | None = None
@@ -412,6 +413,9 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         "drift_iou_p05": stats.drift_iou_p05,
         # Rỗng ⇒ worker bản cũ (chưa có cờ #14) — KHÔNG đọc thành "ok".
         "suc_khoe": stats.suc_khoe or None,
+        # Lỗi ghi CSV ô-hiển-thị (`--dump-shown-csv`): `""` = không lỗi. `cau_hinh` vẫn khai ĐÃ YÊU CẦU
+        # ghi, nên cần khoá này để không ai đọc "không có file" thành "không ai yêu cầu ghi".
+        "dump_shown_loi": getattr(stats, "dump_shown_loi", "") or None,
         "suc_khoe_cau": tracking_health.cau_co(stats.suc_khoe),
         "drift_n": stats.drift_n,
         "mask_age_ms": stats.mask_age_ms,
@@ -606,6 +610,7 @@ class LiveTrackingSession:
         # `_update_stats_locked` chỉ để lại `_last_shown`, `_update_stats` mới ghi ra đĩa.
         self._shown_fh = None
         self._last_shown = None
+        self._shown_loi = ""       # lý do GHI HỎNG (khác "không yêu cầu ghi") — vào `status.json`
         # Cửa sổ ĐẾM SỰ KIỆN cho mask rỗng. Để RIÊNG khỏi `_iou_window` (10 mẫu, dùng cho độ ổn
         # định): đây là đại lượng đếm, không phải phân vị, nên cửa sổ ngắn vẫn dùng được — tần suất
         # nền của "VOS trả mask rỗng" trên clip khoẻ đo được là 0/798 lần chạy (binh1).
@@ -1496,8 +1501,13 @@ class LiveTrackingSession:
             self._shown_fh.write(f"{int(frame_idx)},{o},{int(bool(lk_ok))}\n")
         except OSError as exc:                     # không được làm chết phiên vì lỗi ghi file đo
             print(f"[canh-bao] không ghi được CSV ô hiển thị ({exc}) — tắt ghi", flush=True)
-            self._cfg.dump_shown_csv = ""
+            # KHÔNG sửa `_cfg`: `cau_hinh` trong `status.json` phải giữ nguyên "đã YÊU CẦU ghi" (để
+            # đọc được provenance), còn lý do hỏng ghi ở cờ riêng bên dưới.
             self._shown_fh = None
+            self._shown_loi = f"{type(exc).__name__}: {exc}"
+            with self._stats_lock:
+                self._stats.dump_shown_loi = self._shown_loi
+            self._cfg.dump_shown_csv = ""      # thôi thử ghi lại mỗi frame
 
     def _update_stats_locked(self, result):
         """Cập nhật số liệu; TRẢ về dòng CSV cần ghi (mẫu `_pending_drift` tới hạn) hoặc `None`."""

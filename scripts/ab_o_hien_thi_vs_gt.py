@@ -62,10 +62,19 @@ def hop_tu_gt(gt_dir: Path) -> dict[int, tuple[int, int, int, int]]:
     return ra
 
 
-def doc_shown(path: Path) -> dict[int, tuple[tuple[int, int, int, int] | None, bool]]:
-    """`frame → (ô hiển thị | None, lk_ok)` từ `--dump-shown-csv`.
+KHONG_CO_O = "khong_co_o"      # sentinel: frame đó KHÔNG có ô nào hiển thị (khác "ô hỏng")
+O_HONG = "o_hong"              # sentinel: có ghi toạ độ nhưng không dùng được (đảo/âm)
 
-    Ô trống (4 cột rỗng) = frame đó **không có ô nào hiển thị** ⇒ `None` (khác `(0,0,0,0)`).
+
+def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, int, int, int], bool]]:
+    """`frame → (ô | KHONG_CO_O | O_HONG, lk_ok)` từ `--dump-shown-csv`.
+
+    Ba trạng thái phải KHÁC nhau (bẫy "0/None" của AGENTS §6):
+      - 4 cột rỗng ⇒ **không có ô nào hiển thị** (`KHONG_CO_O`) — chấm `0,0` vì GT có vật mà màn hình
+        không có hộp = bám sai thật;
+      - toạ độ đảo/âm ⇒ **ô hỏng** (`O_HONG`) — KHÔNG chấm được, phải là `None` chứ không phải `0,0`
+        (quy thành 0,0 là tự làm điểm mình thấp đi một cách giả tạo);
+      - còn lại ⇒ ô `(x1,y1,x2,y2)`; hộp MỎNG 1 px vẫn hợp lệ (repo coi là vật thật ở xa).
     """
     ra = {}
     if not path.exists():
@@ -80,10 +89,10 @@ def doc_shown(path: Path) -> dict[int, tuple[tuple[int, int, int, int] | None, b
                 box = tuple(int(row[k]) for k in ("x1", "y1", "x2", "y2"))
             except (KeyError, TypeError, ValueError):
                 box = None
-            # Cho phép hộp MỎNG 1 px (`x1 == x2`): repo coi đó là vật thật ở xa (xem
-            # `_bbox_hop_le`); chỉ hộp ĐẢO toạ độ mới là không dùng được.
-            if box is not None and (box[2] < box[0] or box[3] < box[1] or box[0] < 0 or box[1] < 0):
-                box = None
+            if box is None:
+                box = KHONG_CO_O
+            elif box[2] < box[0] or box[3] < box[1] or box[0] < 0 or box[1] < 0:
+                box = O_HONG
             ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1")
     return ra
 
@@ -93,18 +102,24 @@ def cham(hop_gt: dict, shown: dict) -> dict:
 
     Ba ca phải tách:
       - GT có vật, **không có ô hiển thị** ⇒ `iou = 0.0` (bám sai thật) — KHÔNG bỏ mẫu;
-      - GT có vật, có ô nhưng suy biến ⇒ `None` + đếm `khong_do_duoc` (không quy thành 0);
+      - GT có vật, ô HỎNG (đảo/âm) ⇒ `None` + đếm `khong_do_duoc` (không quy thành 0);
       - frame GT có vật **không xuất hiện** trong CSV ⇒ `thieu_frame` (chưa chạy tới frame đó).
     """
     theo_frame, thieu = [], []
+    khong_do = 0
     for frame, gt in sorted(hop_gt.items()):
         if frame not in shown:
             thieu.append(frame)
             continue
         box, lk_ok = shown[frame]
-        if box is None:
+        if box is KHONG_CO_O:
             theo_frame.append({"frame_idx": frame, "iou": 0.0, "lk_ok": lk_ok,
                                "vi_sao": "không có ô hiển thị ⇒ 0,0 (bám sai thật)"})
+            continue
+        if box is O_HONG:
+            khong_do += 1
+            theo_frame.append({"frame_idx": frame, "iou": None, "lk_ok": lk_ok,
+                               "vi_sao": "ô hỏng (đảo/âm toạ độ) ⇒ không đo được"})
             continue
         iou = _bbox_iou(box, gt)
         if iou is None:
@@ -117,6 +132,7 @@ def cham(hop_gt: dict, shown: dict) -> dict:
     return {
         "n_gt_co_vat": len(hop_gt),
         "n_cham": len(do_duoc),
+        "khong_do_duoc": khong_do,
         "thieu_frame": thieu,
         "iou_mean": round(statistics.fmean(do_duoc), 4) if do_duoc else None,
         "iou_min": round(min(do_duoc), 4) if do_duoc else None,
@@ -139,11 +155,29 @@ def chay_mot_lan(*, clip: str, bbox: str, image_size: int | None, vos_every: int
             "--dump-shown-csv", str(out_dir / "shown.csv")]
     if image_size is not None:
         lenh += ["--image-size", str(image_size)]
-    subprocess.run(lenh, cwd=str(REPO_ROOT), check=False,
-                   stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
+    proc = subprocess.run(lenh, cwd=str(REPO_ROOT), check=False,
+                          stdout=subprocess.DEVNULL, stderr=subprocess.DEVNULL)
     status_path = out_dir / "status.json"
     status = json.loads(status_path.read_text(encoding="utf-8")) if status_path.exists() else {}
-    return {"status": status, "shown": out_dir / "shown.csv", "lenh": " ".join(lenh)}
+    # Lần chạy HỎNG (worker chết / nạp model lỗi) không được coi là "bám sai thật": khi đó không có
+    # `shown.csv` ⇒ mọi frame GT sẽ thành 0,0 và cấu hình đó bị chấm oan. Ghi lại mã thoát + state để
+    # `main` LOẠI khỏi trung bình và thoát khác 0 (bẫy "0/None ≠ đã đo", AGENTS §6).
+    return {"status": status, "shown": out_dir / "shown.csv", "lenh": " ".join(lenh),
+            "ma_thoat": proc.returncode, "state": status.get("state", ""),
+            "so_dong_shown": (sum(1 for _ in out_dir.joinpath("shown.csv").open(encoding="utf-8"))
+                              if (out_dir / "shown.csv").exists() else 0)}
+
+
+def lan_chay_hop_le(res: dict) -> bool:
+    """Lần chạy có dùng được không — hàm THUẦN (test được).
+
+    Điều kiện: mã thoát 0, `state` ∈ {`stopped`, `done`}, và CSV ô-hiển-thị có ít nhất 1 dòng dữ liệu.
+    """
+    if int(res.get("ma_thoat") or 0) != 0:
+        return False
+    if str(res.get("state", "")) not in ("stopped", "done"):
+        return False
+    return int(res.get("so_dong_shown") or 0) > 1        # >1 vì có dòng tiêu đề
 
 
 def tong_hop(lan: list[dict]) -> dict:
@@ -173,7 +207,13 @@ def so_sanh(a: dict, b: dict) -> dict:
     if a_mean is None or b_mean is None:
         return {"ket_luan": "KHÔNG kết luận: một bên không chấm được frame nào"}
     chenh = round(b_mean - a_mean, 4)
-    nhieu = max(float(a["iou_mean"]["std"] or 0.0), float(b["iou_mean"]["std"] or 0.0))
+    std_a, std_b = a["iou_mean"].get("std"), b["iou_mean"].get("std")
+    if std_a is None or std_b is None:
+        # `std = None` nghĩa là một bên chỉ có 1 lần chạy ⇒ **không có** ngưỡng nhiễu. Coi nó là 0 sẽ
+        # biến mọi chênh lệch thành "TỐT HƠN/TỆ HƠN" — đúng thứ AGENTS §6 cấm (n < 2 không kết luận).
+        return {"chenh_iou": chenh, "nguong_nhieu": None, "phan_biet_duoc": None,
+                "ket_luan": "KHÔNG kết luận: cần ≥ 2 lần chạy mỗi cấu hình để có ngưỡng nhiễu"}
+    nhieu = max(float(std_a), float(std_b))
     phan_biet = abs(chenh) > nhieu
     return {
         "chenh_iou": chenh,
@@ -251,7 +291,8 @@ def main(argv=None) -> int:
         if vong % 2 == 1:                       # đảo chiều vòng lẻ: "chạy sau" không luôn là cấu hình ưu ái
             thu_tu.reverse()
         for max_mad in thu_tu:
-            with tempfile.TemporaryDirectory(prefix=f"ab_o_{max_mad}_", dir="/dev/shm") as tmp:
+            # KHÔNG hard-code /dev/shm: máy dev là Windows (chỉ Linux mới có) ⇒ FileNotFoundError.
+            with tempfile.TemporaryDirectory(prefix=f"ab_o_{max_mad}_") as tmp:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=args.image_size,
                                    vos_every=args.vos_every, max_mad=max_mad,
                                    frames=args.frames, out_dir=Path(tmp))
@@ -259,13 +300,15 @@ def main(argv=None) -> int:
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = ((res["status"].get("cau_hinh") or {}).get("lk_max_mad"))
                 res["shown"] = str(res["shown"])
+                res["hop_le"] = lan_chay_hop_le(res)
             theo_cau_hinh[max_mad].append(res)
             c = res["cham"]
             print(f"vòng {vong + 1} · max_mad {max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
                   f"(tệ nhất {c['iou_min']}) trên {c['n_cham']}/{c['n_gt_co_vat']} frame · "
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực {res['max_mad_hieu_luc']}")
 
-    tong = {str(m): tong_hop(v) for m, v in theo_cau_hinh.items()}
+    so_lan_loi = {str(m): sum(1 for r in v if not r["hop_le"]) for m, v in theo_cau_hinh.items()}
+    tong = {str(m): tong_hop([r for r in v if r["hop_le"]]) for m, v in theo_cau_hinh.items()}
     lech = [r for v in theo_cau_hinh.values() for r in v
             if r["max_mad_hieu_luc"] is None
             or abs(float(r["max_mad_hieu_luc"]) - float(r["max_mad_yeu_cau"])) > 1e-9]
@@ -290,6 +333,7 @@ def main(argv=None) -> int:
                        "phép đo 'ô bám đúng chỗ không' — khác `drift_iou` (khớp ô VOS) và khác mIoU "
                        "(mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK)."),
         "cau_hinh_hieu_luc_lech": lech,
+        "so_lan_chay_loi": so_lan_loi,
         "tong_hop": tong,
         "so_sanh": ss,
         "so_sanh_theo_cap": ss_cap,
@@ -304,6 +348,12 @@ def main(argv=None) -> int:
     if ss_cap:
         print(json.dumps({k: v for k, v in ss_cap.items()}, ensure_ascii=False))
     print(f"Ghi: {out}")
+    if any(so_lan_loi.values()):
+        print(f"[LOI] có lần chạy HỎNG (đã loại khỏi trung bình): {so_lan_loi}", file=sys.stderr)
+        return 1
+    if len(khoa) >= 2 and len(theo_cau_hinh[float(khoa[0])]) != len(theo_cau_hinh[float(khoa[-1])]):
+        print("[LOI] hai cấu hình có SỐ LẦN CHẠY khác nhau ⇒ so theo cặp không cân", file=sys.stderr)
+        return 1
     if lech:
         print(f"[LOI] {len(lech)} lần chạy có lk_max_mad hiệu lực KHÁC yêu cầu", file=sys.stderr)
         return 1

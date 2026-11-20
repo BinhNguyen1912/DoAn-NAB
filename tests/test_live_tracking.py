@@ -142,7 +142,9 @@ class TestLiveTrackingSession:
             "mask_age_p95", "age_n", "empty_frac_window", "empty_window_n",
             "lost_streak", "bbox", "message", "dump_ms",
             # Cờ phán quyết chất lượng bám (ticket #14): dict máy đọc được + câu cho HUD.
-            "suc_khoe", "suc_khoe_cau"}
+            "suc_khoe", "suc_khoe_cau",
+            # Lý do ghi CSV ô-hiển-thị HỎNG (khác "không yêu cầu ghi") — ticket #38/PR #61.
+            "dump_shown_loi"}
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).

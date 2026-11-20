@@ -46,9 +46,11 @@ def test_mask_rong_ma_khong_khai_gt_rong_thi_bo():
 
 def test_cham_ba_ca_phai_tach_nhau():
     """Ba ca KHÁC nghĩa: không vẽ ô nào (0,0), ô suy biến (None), thiếu frame (chưa chạy tới)."""
+    from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O
+
     hop_gt = {0: (0, 0, 10, 10), 1: (0, 0, 10, 10), 2: (0, 0, 10, 10)}
     shown = {0: ((0, 0, 10, 10), True),      # trùng khít ⇒ IoU 1,0
-             1: (None, False)}               # GT có vật mà KHÔNG có ô hiển thị ⇒ 0,0
+             1: (KHONG_CO_O, False)}          # GT có vật mà KHÔNG có ô hiển thị ⇒ 0,0
     kq = cham(hop_gt, shown)
     assert kq["n_gt_co_vat"] == 3 and kq["n_cham"] == 2
     assert kq["thieu_frame"] == [2], "frame 2 không có trong CSV ⇒ 'chưa chạy tới', không phải 0,0"
@@ -134,3 +136,48 @@ def test_so_sanh_theo_cap_rong_tra_khong_ket_luan():
     kq = so_sanh_theo_cap([], [])
     assert kq["so_cap"] == 0 and kq["b_khong_bao_gio_te_hon"] is False
     assert kq["chenh_trung_binh"] is None
+
+
+def test_doc_shown_phan_biet_khong_co_o_va_o_hong(tmp_path):
+    """P1 review #61: 4 cột rỗng (không có ô) ≠ toạ độ đảo (ô HỎNG) — chấm 0,0 cho ca sau là tự hạ điểm.
+
+    Bản đầu còn test "cham trực tiếp" nên xanh giả: nó không đi qua `doc_shown`, tức không kiểm được
+    đúng chỗ sinh lỗi.
+    """
+    from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, O_HONG, doc_shown
+
+    p = tmp_path / "shown.csv"
+    p.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n"
+                 "0,,,,\n"                     # không có ô hiển thị
+                 "1,9,9,4,4,1\n"              # đảo toạ độ ⇒ ô hỏng
+                 "2,10,20,30,40,0\n", encoding="utf-8")
+    d = doc_shown(p)
+    assert d[0][0] is KHONG_CO_O
+    assert d[1][0] is O_HONG
+    assert d[2][0] == (10, 20, 30, 40) and d[2][1] is False
+
+    kq = cham({0: (0, 0, 50, 50), 1: (0, 0, 50, 50)}, d)
+    theo = {r["frame_idx"]: r for r in kq["theo_frame"]}
+    assert theo[0]["iou"] == 0.0, "không có ô hiển thị ⇒ 0,0 (bám sai thật)"
+    assert theo[1]["iou"] is None and kq["khong_do_duoc"] == 1
+
+
+def test_so_sanh_khong_ket_luan_khi_mot_ben_chi_1_lan_chay():
+    """P1 review #61: `std = None` (n < 2) KHÔNG được coi là nhiễu 0 — sẽ biến mọi chênh thành "tốt hơn"."""
+    a = {"iou_mean": {"mean": 0.50, "std": None, "n": 1}}
+    b = {"iou_mean": {"mean": 0.52, "std": 0.01, "n": 3}}
+    ss = so_sanh(a, b)
+    assert ss["phan_biet_duoc"] is None and ss["nguong_nhieu"] is None
+    assert "KHÔNG kết luận" in ss["ket_luan"]
+
+
+def test_lan_chay_hop_le_chan_worker_chet():
+    """P1 review #61: worker chết / state lạ / CSV rỗng KHÔNG được tính là "bám sai thật"."""
+    from scripts.ab_o_hien_thi_vs_gt import lan_chay_hop_le
+
+    ok = {"ma_thoat": 0, "state": "stopped", "so_dong_shown": 50}
+    assert lan_chay_hop_le(ok) is True
+    assert lan_chay_hop_le({**ok, "ma_thoat": 1}) is False
+    assert lan_chay_hop_le({**ok, "state": "error"}) is False
+    assert lan_chay_hop_le({**ok, "state": "running"}) is False
+    assert lan_chay_hop_le({**ok, "so_dong_shown": 1}) is False, "chỉ có dòng tiêu đề ⇒ chưa ghi gì"
