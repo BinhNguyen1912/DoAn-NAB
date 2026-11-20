@@ -114,7 +114,8 @@ class LiveTrackConfig:
     # Bật/tắt được để A/B được chèn kẽ (không đổi mặc định khi chưa có số chứng minh tốt hơn).
     lk_scale: bool = False
     # DỤNG CỤ ĐO (ticket #38): ghi ô bao ĐANG HIỂN THỊ ở **mọi frame đã phát** ra CSV
-    # (`frame_idx,x1,y1,x2,y2,lk_ok`). Vì sao cần: CSV drift chỉ có dòng ở các lần VOS (mỗi N frame),
+    # (`frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem` — 5 cột cuối từ ticket
+    # #39; `scale`/`angle_deg` TRỐNG khi similarity không được dùng). Vì sao cần: CSV drift chỉ có dòng ở các lần VOS (mỗi N frame),
     # nên không chấm được ô người xem thấy ở các frame GT lẻ (`binh1`: 91/181/211/241 không chia hết
     # cho 3). Chuỗi rỗng = TẮT (mặc định) — không ghi gì thêm.
     dump_shown_csv: str = ""
@@ -184,6 +185,10 @@ class LiveTrackStats:
     # `src/tracking_health.py` (không phụ thuộc torch ⇒ test được headless).
     suc_khoe: dict = field(default_factory=dict)
     dump_shown_loi: str = ""
+    # Chẩn đoán LK của **frame GẦN NHẤT** (ticket #39): `ly_do`/`ly_do_khop`/`scale`/`angle_deg`/
+    # `n_diem` của bước nội suy vừa rồi. Đây là **một frame**, KHÔNG phải trung bình — muốn phân bố thì
+    # đọc cột trong `--dump-shown-csv`. Rỗng = không có LK (vos_every=1) hoặc worker bản cũ.
+    chan_doan_lk: dict = field(default_factory=dict)
     mask_age_ms: float | None = None      # tuổi mask đang hiện (từ lúc kết quả model sẵn sàng)
     # `mask_age_cu_ms` = age + vos_ms — ĐỊNH NGHĨA CŨ, chỉ còn để so với số trước 14-11.
     mask_age_cu_ms: float | None = None
@@ -424,6 +429,8 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         # Lỗi ghi CSV ô-hiển-thị (`--dump-shown-csv`): `""` = không lỗi. `cau_hinh` vẫn khai ĐÃ YÊU CẦU
         # ghi, nên cần khoá này để không ai đọc "không có file" thành "không ai yêu cầu ghi".
         "dump_shown_loi": getattr(stats, "dump_shown_loi", "") or None,
+        # Chẩn đoán LK của frame gần nhất (ticket #39) — `None` = chưa có bước LK nào để đọc.
+        "chan_doan_lk": dict(stats.chan_doan_lk) or None,
         "suc_khoe_cau": tracking_health.cau_co(stats.suc_khoe),
         "drift_n": stats.drift_n,
         "mask_age_ms": stats.mask_age_ms,
@@ -634,6 +641,8 @@ class LiveTrackingSession:
         # với "ô VOS nhảy" — 19-11 phải dựng cả script phát lại để suy ra, và chỉ khớp 3/6 cặp.
         self._lk_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
         self._lk_ok_frame = None
+        # Chẩn đoán của bước LK vừa rồi (ticket #39). `None` = chưa có / không có LK.
+        self._chan_doan_frame = None
         self._seq_frame: dict = {}       # seq → chỉ số frame đã phát lúc gửi cho VOS
         self._dumped: set = set()        # các frame VIDEO đã ghi mask (để báo frame yêu cầu mà thiếu)
         # Số file mask bị GHI ĐÈ vì tên file trùng (chọn lại ô giữa phiên / out_dir của phiên
@@ -898,6 +907,9 @@ class LiveTrackingSession:
         with self._lock:
             state = self._vos_state
         if state is None:
+            # Hiện KHÔNG reachable (review PR #66, Q1), nhưng nếu reachable thì `chan_doan_lk` sẽ mang
+            # chẩn đoán của frame TRƯỚC với `frame_idx` của frame này ⇒ bịt bằng 1 dòng.
+            self._chan_doan_frame = None
             return self._interp_base_result
 
         seq, base_result, base_gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms = state
@@ -911,6 +923,17 @@ class LiveTrackingSession:
         began = time.perf_counter()
         bbox, ok = self._interp.update(gray)
         self._lk_ok_frame = bool(ok)
+        # Snapshot NGAY sau `update()` (ticket #39): đọc lại sau đó sẽ dính giá trị của bước khác.
+        self._chan_doan_frame = {
+            "ly_do": getattr(self._interp, "last_ly_do", None),
+            "ly_do_khop": getattr(self._interp, "last_ly_do_khop", None),
+            "scale": round(float(getattr(self._interp, "last_scale", 1.0)), 4),
+            "angle_deg": round(float(getattr(self._interp, "last_angle_deg", 0.0)), 2),
+            "n_diem": getattr(self._interp, "last_n_diem", None),
+            # Similarity có THẬT SỰ được dùng không — `scale`/`angle_deg` chỉ có nghĩa khi True.
+            "khop": bool(getattr(self._interp, "last_khop_similarity", False)),
+            "lk_ok": bool(ok),
+        }
         lk_ms = round((time.perf_counter() - began) * 1000.0, 2)
         with self._stats_lock:            # `_stats` chỉ được ghi dưới lock (xem `__init__`)
             self._stats.lk_ms = lk_ms
@@ -944,7 +967,11 @@ class LiveTrackingSession:
 
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
-        self._lk_ok_frame = None          # không có nội suy ⇒ cột `lk_ok` để trống (chưa đo)
+        # Không có nội suy ⇒ `lk_ok = None`; khi ghi CSV, `_update_stats_locked` bọc `bool(...)` nên cột
+        # ra **`0`** (KHÔNG trống) — đọc đúng bằng `lk_khong_ap_dung` trong artifact; cấm đọc "0" thành
+        # "LK từ chối 100 %" (P3 review PR #66 vòng 2).
+        self._lk_ok_frame = None
+        self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
         self._frame_index += 1
         result = self._engine.process(frame)
         self._after_vos(frame, result)
@@ -1506,7 +1533,7 @@ class LiveTrackingSession:
         if shown_row is not None:
             self._ghi_o_hien_thi(*shown_row)
 
-    def _ghi_o_hien_thi(self, frame_idx: int, shown, lk_ok: bool) -> None:
+    def _ghi_o_hien_thi(self, frame_idx: int, shown, lk_ok: bool, chan_doan=None) -> None:
         """Ghi một dòng ô-bao-đang-hiển-thị (dụng cụ đo #38). Ô không hợp lệ ⇒ để trống, KHÔNG ghi 0.
 
         Bốn cột toạ độ trống nghĩa là "frame này không có ô nào hiển thị" (chưa có model / mất dấu) —
@@ -1517,9 +1544,27 @@ class LiveTrackingSession:
                 path = Path(self._cfg.dump_shown_csv)
                 path.parent.mkdir(parents=True, exist_ok=True)
                 self._shown_fh = path.open("w", encoding="utf-8", newline="")
-                self._shown_fh.write("frame_idx,x1,y1,x2,y2,lk_ok\n")
-            o = "" if shown is None else f"{int(shown[0])},{int(shown[1])},{int(shown[2])},{int(shown[3])}"
-            self._shown_fh.write(f"{int(frame_idx)},{o},{int(bool(lk_ok))}\n")
+                # 5 cột chẩn đoán ở CUỐI (ticket #39): CSV cũ (6 cột) vẫn đọc được, chỉ thiếu cột ⇒
+                # `doc_shown` của script A/B trả None chứ không bịa 0.
+                self._shown_fh.write(
+                    "frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n")
+            d = chan_doan or {}
+            # Mỗi dòng LUÔN đủ 11 field. Bản trước nội suy `o = ""` khi không có ô ⇒ dòng chỉ còn 8 field
+            # ⇒ `DictReader` đọc `ly_do` thành giá trị của cột `angle_deg`, mất `n_diem` — đúng ca
+            # `seed_rong` (f62: bbox VOS suy biến ⇒ không có ô) mà ticket #39 sinh ra để chẩn đoán
+            # (P1 review PR #66).
+            o = ([""] * 4 if shown is None
+                 else [int(shown[0]), int(shown[1]), int(shown[2]), int(shown[3])])
+            # `scale`/`angle_deg` chỉ có nghĩa khi similarity THẬT SỰ được dùng; chế độ `shift` luôn
+            # reset 1.0/0.0 ⇒ ghi ra sẽ là số CHƯA ĐO (P2 review PR #66) ⇒ để TRỐNG.
+            dung_khop = bool(d.get("khop"))
+            o += ["" if lk_ok is None else int(bool(lk_ok))]
+            o += ["" if d.get("ly_do") is None else str(d["ly_do"]),
+                  "" if d.get("ly_do_khop") is None else str(d["ly_do_khop"]),
+                  "" if not dung_khop or d.get("scale") is None else f"{float(d['scale']):.4f}",
+                  "" if not dung_khop or d.get("angle_deg") is None else f"{float(d['angle_deg']):.2f}",
+                  "" if d.get("n_diem") is None else str(int(d["n_diem"]))]
+            self._shown_fh.write(",".join(str(x) for x in [int(frame_idx), *o]) + "\n")
         except OSError as exc:                     # không được làm chết phiên vì lỗi ghi file đo
             print(f"[canh-bao] không ghi được CSV ô hiển thị ({exc}) — tắt ghi", flush=True)
             # KHÔNG sửa `_cfg`: `cau_hinh` trong `status.json` phải giữ nguyên "đã YÊU CẦU ghi" (để
@@ -1537,6 +1582,10 @@ class LiveTrackingSession:
         self._display_stamps.append(now)
         self._trim(self._display_stamps)
         self._stats.measured_fps = self._rate(self._display_stamps)
+        # Chẩn đoán LK của frame NÀY (ticket #39). Ghi cả `frame_idx` để người đọc biết mẫu nào —
+        # không có nó thì không đối chiếu được với dòng trong `--dump-shown-csv`.
+        if self._chan_doan_frame is not None:
+            self._stats.chan_doan_lk = dict(self._chan_doan_frame, frame_idx=self._frame_index)
         self._stats.vos_fps = self._rate(self._vos_stamps)
 
         mask = getattr(result, "mask", None)
@@ -1546,7 +1595,8 @@ class LiveTrackingSession:
         self._shown_by_frame.append((self._frame_index, shown))
         # Dụng cụ đo (#38): nhớ ô HIỂN THỊ của frame này để ghi ra CSV ngoài lock.
         if self._cfg.dump_shown_csv:
-            self._last_shown = (self._frame_index, shown, bool(self._lk_ok_frame))
+            self._last_shown = (self._frame_index, shown, bool(self._lk_ok_frame),
+                                self._chan_doan_frame)
         self._lk_by_frame.append((self._frame_index, self._lk_ok_frame))
         pending = self._pending_drift
         csv_row = None

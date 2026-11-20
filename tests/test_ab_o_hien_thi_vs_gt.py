@@ -380,7 +380,7 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
-    assert d["schema"] == 5
+    assert d["schema"] == 6
     # Khoá nghĩa phải CÓ trong `tong_hop`, nếu không thì "schema 5" lại có hai hình dạng (review #64/#65)
     assert "iou_khi_lk_dinh_nghia" in next(iter(d["tong_hop"].values()))
 
@@ -540,7 +540,7 @@ def test_chua_kiem_duoc_dem_theo_DUNG_truc(monkeypatch, tmp_path):
 
 
 def test_cham_TRA_RA_iou_khi_lk_dinh_nghia():
-    """`schema 5` phải đi kèm khoá nghĩa ở **cả** `cham()` — §4.2 đọc nghĩa chính từ đây.
+    """`schema` phải đi kèm khoá nghĩa ở **cả** `cham()` — §4.2 đọc nghĩa chính từ đây.
 
     Bản trước chỉ assert khoá đó trong `tong_hop` (nơi nó là **literal**), nên xoá khoá khỏi `cham()`
     vẫn xanh (review #65 vòng 5).
@@ -549,3 +549,125 @@ def test_cham_TRA_RA_iou_khi_lk_dinh_nghia():
 
     ra = cham({0: (0, 0, 10, 10)}, {0: ((0, 0, 10, 10), True)})
     assert "iou_khi_lk_dinh_nghia" in ra, sorted(ra)
+
+
+# ---------------------------------------------------------------- ticket #39: chẩn đoán LK ra CSV
+
+
+def test_doc_chan_doan_CSV_CU_thieu_cot_thi_tra_None_va_khai_thieu(tmp_path):
+    """CSV sinh TRƯỚC 21-11 (6 cột) ⇒ không được bịa `None` thành giá trị thật, phải khai `csv_thieu_cot`."""
+    from scripts.ab_o_hien_thi_vs_gt import COT_CHAN_DOAN, doc_chan_doan
+
+    cu = tmp_path / "shown.csv"
+    cu.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n0,1,2,3,4,1\n", encoding="utf-8")
+    ra, thieu = doc_chan_doan(cu)
+    assert thieu == list(COT_CHAN_DOAN), thieu          # cả 5 cột đều thiếu
+    assert ra[0]["ly_do"] is None and ra[0]["n_diem"] is None
+
+
+def test_doc_chan_doan_CSV_MOI_doc_dung_gia_tri_va_o_rong_la_None(tmp_path):
+    from scripts.ab_o_hien_thi_vs_gt import doc_chan_doan
+
+    moi = tmp_path / "shown.csv"
+    moi.write_text(
+        "frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+        "5,1,2,3,4,0,mad_du,,1.0000,0.00,42\n"
+        "6,,,,,1,ok_scale,,1.0600,1.50,42\n",
+        encoding="utf-8")
+    ra, thieu = doc_chan_doan(moi)
+    assert thieu == []
+    assert ra[5]["ly_do"] == "mad_du" and ra[5]["ly_do_khop"] is None and ra[5]["n_diem"] == 42
+    assert ra[6]["ly_do"] == "ok_scale" and ra[6]["scale"] == 1.06 and ra[6]["angle_deg"] == 1.5
+
+
+def test_cham_chua_co_chan_doan_thi_dem_la_None_khong_phai_0():
+    """Bẫy '0/None ≠ đã đo': thiếu cột chẩn đoán ⇒ `None`; có mà không mẫu nào ⇒ `{}`."""
+    from scripts.ab_o_hien_thi_vs_gt import cham
+
+    gt = {0: (0, 0, 10, 10)}
+    shown = {0: ((0, 0, 10, 10), False)}
+    assert cham(gt, shown)["ly_do_dem"] is None
+    r = cham(gt, shown, chan_doan={0: {"ly_do": "mad_du", "n_diem": 30}})
+    assert r["ly_do_dem"] == {"mad_du": 1} and r["n_diem_median"] == 30.0
+    # GT rỗng ⇒ không đếm gì nhưng VẪN là "đo được" ⇒ {}
+    assert cham({}, shown, chan_doan={0: {"ly_do": "mad_du"}})["ly_do_dem"] == {}
+
+
+def test_CSV_CU_di_qua_duong_THAT_thi_ly_do_dem_la_None_khong_phai_rong(tmp_path):
+    """P1 review PR #66: `doc_chan_doan` trên CSV cũ trả dict toàn `None` (KHÔNG rỗng) ⇒ `cham()` từng
+    trả `{}` = "đo được 0 mẫu". Phải là `None` (chưa đo) — cổng theo CỘT THIẾU, không theo độ rỗng."""
+    from scripts.ab_o_hien_thi_vs_gt import cham, chan_doan_tu_csv, doc_chan_doan, doc_shown
+
+    cu = tmp_path / "shown.csv"
+    cu.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n0,0,0,10,10,1\n", encoding="utf-8")
+    chan_doan, thieu_cot = doc_chan_doan(cu)
+    assert thieu_cot and chan_doan           # dict KHÔNG rỗng nhưng toàn None — đúng cái bẫy
+    # ĐƯỜNG THẬT của `main()` (gọi đúng hàm, không chép lại logic trong test)
+    chan_doan_main, thieu_cot_main = chan_doan_tu_csv(cu)
+    assert thieu_cot_main and chan_doan_main is None
+    r = cham({0: (0, 0, 10, 10)}, doc_shown(cu), chan_doan=chan_doan_main)
+    assert r["ly_do_dem"] is None and r["n_diem_median"] is None
+    # đối chứng: cùng dict đó nếu đưa thẳng vào thì ra {} (nên mới phải cổng)
+    assert cham({0: (0, 0, 10, 10)}, doc_shown(cu), chan_doan=chan_doan)["ly_do_dem"] == {}
+
+
+def test_doc_chan_doan_khong_chet_voi_inf_CSV_sua_tay(tmp_path):
+    from scripts.ab_o_hien_thi_vs_gt import doc_chan_doan
+
+    p = tmp_path / "shown.csv"
+    p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                 "3,1,2,3,4,1,ok_shift,,1.0,0.0,inf\n", encoding="utf-8")
+    ra, thieu = doc_chan_doan(p)
+    assert thieu == [] and ra[3]["n_diem"] is None       # "inf" ⇒ None, không ném OverflowError
+
+
+def test_vos_every_1_khong_bao_gio_dem_chuan_doan_thanh_rong(tmp_path):
+    """P2 review PR #66 vòng 2: `vos_every=1` (không có LK) ⇒ `chan_doan` phải là `None` (CHƯA ĐO),
+    KHÔNG phải `{}` — cùng dict mà `lk_khong_ap_dung = true` thì `{}` là mâu thuẫn."""
+    from scripts.ab_o_hien_thi_vs_gt import cham, chan_doan_tu_csv, doc_shown
+
+    moi = tmp_path / "shown.csv"
+    # CSV mới (đủ 11 cột) nhưng mọi ô chẩn đoán TRỐNG — đúng ca vos_every=1
+    moi.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                   "0,1,2,3,4,0,,,,,\n", encoding="utf-8")
+    chan_doan, thieu_cot = chan_doan_tu_csv(moi)
+    assert thieu_cot == []                       # cột CÓ ⇒ không bị cổng theo cột thiếu
+    assert chan_doan is not None                 # ... nên cổng của `main` cho vos_every=1 là cổng RIÊNG
+    r = cham({0: (1, 2, 3, 4)}, doc_shown(moi), lk_khong_ap_dung=True, chan_doan=None)
+    assert r["ly_do_dem"] is None and r["lk_khong_ap_dung"] is True and r["lk_ok_frac"] is None
+
+
+def _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, vos_every: int):
+    """Chạy `main()` với 1 cấu hình, ghi lại `chan_doan` mà `main` truyền vào `cham`."""
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 1, "n_gt_co_vat": 1,
+           "khong_do_duoc": 0, "thieu_frame": [], "theo_frame": []}
+    da_nhan = []
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, lk_scale=False, frames, out_dir):
+        return {"shown": str(tmp_path / f"s{vos_every}.csv"), "so_dong_shown": 8, "ma_thoat": 0,
+                "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size,
+                                                     "lk_scale": lk_scale}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    # CSV MỚI (đủ cột) — cổng phải theo `vos_every`, không theo cột thiếu
+    monkeypatch.setattr(ab, "chan_doan_tu_csv", lambda _p: ({2: {"ly_do": "mad_du"}}, []))
+    monkeypatch.setattr(ab, "cham",
+                        lambda _g, _s, **kw: (da_nhan.append(kw.get("chan_doan")), ham)[1])
+    out = tmp_path / f"a{vos_every}.json"
+    assert ab.main(["--gt", "g", "--clip", "c", "--bbox", "0,0,10,10", "--image-size", "192",
+                    "--vos-every", str(vos_every), "--max-mad", "1.5", "--lan", "2",
+                    "--out", str(out)]) == 0
+    return da_nhan
+
+
+def test_main_KHONG_truyen_chan_doan_khi_vos_every_1(monkeypatch, tmp_path):
+    """P2 review PR #66 vòng 3: cổng `vos_every=1` nằm ở `main()` và **không test nào chạm** — bản trước
+    test tự truyền `chan_doan=None` nên xoá 2 dòng cổng vẫn xanh. Nay chạy `main()` thật."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+
+    assert _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 1) == [None, None]
+    assert all(c is not None for c in _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 3))

@@ -148,7 +148,9 @@ class TestLiveTrackingSession:
         # SUPERSET + ALLOWLIST: thêm chỉ số mới cho báo cáo không phải sửa test mỗi lần, NHƯNG
         # khoá lạ vẫn phải đỏ (typo `vos_fsp` bên cạnh `vos_fps` sẽ lọt nếu chỉ dùng superset —
         # adapter đọc theo tên nên typo = báo 0 im lặng; review 08-11).
-        cho_phep = bat_buoc | set()          # thêm khoá mới vào đây khi mở rộng status.json
+        # Thêm khoá mới vào đây khi mở rộng status.json:
+        #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
+        cho_phep = bat_buoc | {"chan_doan_lk"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
@@ -2369,3 +2371,111 @@ def test_mask_KHONG_bi_warp_bang_matrix_CU_khi_LK_mat_dau():
     out = session._result_threaded(frame)
     assert out.mask is base_mask, "LK mất dấu ⇒ phải trả mask GỐC của VOS, không warp bằng matrix cũ"
     assert out.bbox == (5, 5, 15, 15)
+
+
+# ------------------------------------------------- ticket #39: chẩn đoán LK ra CSV + status.json
+
+
+def _session_ghi_csv(tmp_path):
+    """Session tối thiểu CHỈ để gọi `_ghi_o_hien_thi` (không nạp model, không mở nguồn)."""
+    import threading
+    from types import SimpleNamespace
+
+    from src.live_tracking import LiveTrackStats, LiveTrackingSession
+
+    s = object.__new__(LiveTrackingSession)
+    s._shown_fh = None
+    s._shown_loi = ""
+    s._cfg = SimpleNamespace(dump_shown_csv=str(tmp_path / "shown.csv"))
+    s._stats = LiveTrackStats()
+    s._stats_lock = threading.Lock()
+    return s
+
+
+def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
+    """CSV phải có 5 cột chẩn đoán ở CUỐI (ticket #39) và ô không đo được phải TRỐNG, không phải `0`."""
+    import csv
+
+    s = _session_ghi_csv(tmp_path)
+    s._ghi_o_hien_thi(7, (10, 20, 30, 40), False,
+                      {"ly_do": "mad_du", "ly_do_khop": None, "scale": 1.0,
+                       "angle_deg": 0.0, "n_diem": 42})
+    # CA f62 của ticket: KHÔNG có ô hiển thị nhưng CÓ chẩn đoán (`seed_rong`, 0 điểm). Bản trước để
+    # `o=""` ⇒ dòng chỉ 8 field ⇒ `ly_do` đọc thành giá trị cột `angle_deg` (P1 review PR #66).
+    s._ghi_o_hien_thi(9, None, False,
+                      {"ly_do": "seed_rong", "ly_do_khop": None, "scale": 1.0,
+                       "angle_deg": 0.0, "n_diem": 0, "khop": False})
+    # ca (a): similarity ĐƯỢC DÙNG ⇒ `scale`/`angle_deg` phải nằm ĐÚNG CỘT (hoán vị hai cột này từng
+    # không bị test nào bắt — P2 review vòng 2)
+    s._ghi_o_hien_thi(10, (11, 21, 31, 41), True,
+                      {"ly_do": "ok_scale", "ly_do_khop": None, "scale": 1.06,
+                       "angle_deg": 1.5, "n_diem": 58, "khop": True})
+    s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
+    s._shown_fh.close()
+    raw = list(csv.reader((tmp_path / "shown.csv").open(encoding="utf-8")))
+    assert len(raw[0]) == 11, raw[0]
+    assert all(len(r) == 11 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
+    rows = [dict(zip(raw[0], r)) for r in raw[1:]]
+    assert list(rows[0]) == ["frame_idx", "x1", "y1", "x2", "y2", "lk_ok",
+                             "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem"]
+    assert rows[0]["ly_do"] == "mad_du" and rows[0]["ly_do_khop"] == "" and rows[0]["n_diem"] == "42"
+    # dòng 2 = frame 9 (không có ô, CÓ chẩn đoán) — phải đọc ĐÚNG cột, không lệch
+    assert rows[1]["frame_idx"] == "9" and rows[1]["x1"] == "" and rows[1]["x2"] == ""
+    assert rows[1]["lk_ok"] == "0" and rows[1]["ly_do"] == "seed_rong"
+    assert rows[1]["n_diem"] == "0"      # ĐO ĐƯỢC 0 điểm (seed rỗng), KHÔNG phải "chưa đo"
+    assert rows[1]["scale"] == ""        # similarity không dùng ⇒ TRỐNG (không ghi 1.0000 giả)
+    # dòng 3 = frame 10 (similarity dùng thật) ⇒ scale/angle ĐÚNG CỘT
+    assert rows[2]["ly_do"] == "ok_scale" and rows[2]["scale"] == "1.0600"
+    assert rows[2]["angle_deg"] == "1.50" and rows[2]["n_diem"] == "58"
+    # dòng 4 = frame 8 (chưa có LK) ⇒ mọi ô chẩn đoán TRỐNG
+    assert rows[3]["ly_do"] == "" and rows[3]["n_diem"] == "" and rows[3]["scale"] == ""
+    # chế độ `shift`: `scale`/`angle_deg` phải TRỐNG dù tracker luôn reset 1.0/0.0 (P2 review #66)
+    assert rows[0]["ly_do"] == "mad_du" and rows[0]["scale"] == "" and rows[0]["angle_deg"] == ""
+
+
+def test_status_payload_co_chan_doan_lk_va_None_khi_chua_co():
+    """`chan_doan_lk` là chẩn đoán của frame GẦN NHẤT; chưa có bước LK ⇒ `None` (không phải dict rỗng)."""
+    from src.live_tracking import LiveTrackStats, status_payload
+
+    assert status_payload(LiveTrackStats())["chan_doan_lk"] is None
+    st = LiveTrackStats(chan_doan_lk={"frame_idx": 5, "ly_do": "ok_shift", "n_diem": 30})
+    assert status_payload(st)["chan_doan_lk"]["ly_do"] == "ok_shift"
+
+
+def test_chan_doan_lk_trong_status_la_cua_DUNG_frame_da_ghi(video_source, tmp_path, monkeypatch):
+    """P2 review PR #66: tiêu chí "status.json có chẩn đoán của frame gần nhất" trước đây **chỉ** được
+    chứng minh bằng lần chạy thật — xoá 2 dòng nối `_chan_doan_frame` → `chan_doan_lk` không test nào đỏ.
+
+    Đi đúng đường thật: `_result_threaded` (snapshot) → `_update_stats` (ghi vào stats).
+    """
+    from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+    session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+        source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+    frame = np.full((48, 64, 3), 90, np.uint8)
+    base_mask = np.zeros((48, 64), bool)
+    base_mask[5:15, 5:15] = True
+    base = type("R", (), {"frame_idx": 1, "bbox": (5, 5, 15, 15), "mask": base_mask,
+                          "elapsed_ms": 1.0})()
+    session._frame_index = 4                        # 5 % 3 != 0 ⇒ không submit
+    session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
+    monkeypatch.setattr(session._interp, "update", lambda _g: (None, False))
+    monkeypatch.setattr(session._interp, "last_ly_do", "mad_du")
+    monkeypatch.setattr(session._interp, "last_ly_do_khop", "mad_du")
+    monkeypatch.setattr(session._interp, "last_n_diem", 7)
+    out = session._result_threaded(frame)
+    session._update_stats(out)
+    cd = session._stats.chan_doan_lk
+    assert cd and cd["ly_do"] == "mad_du" and cd["ly_do_khop"] == "mad_du"
+    assert cd["n_diem"] == 7 and cd["khop"] is False
+    # `frame_idx` phải là frame VỪA GHI, không phải frame trước
+    assert cd["frame_idx"] == session._frame_index
+
+    # `khop` phải LẤY TỪ TRACKER (mutant hằng `False` sẽ làm `scale`/`angle_deg` luôn trống ở chế độ
+    # `lk_scale` — mất đúng thứ ticket này sinh ra để phơi)
+    monkeypatch.setattr(session._interp, "last_khop_similarity", True)
+    monkeypatch.setattr(session._interp, "last_scale", 1.25)
+    session._frame_index = 7          # 8 % 3 != 0 ⇒ không gọi `_worker.submit` (session chưa `run()`)
+    session._update_stats(session._result_threaded(frame))
+    cd = session._stats.chan_doan_lk
+    assert cd["khop"] is True and cd["scale"] == 1.25, cd

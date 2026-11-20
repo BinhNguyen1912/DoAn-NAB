@@ -1,5 +1,7 @@
 # 39: Nối chẩn đoán LK (last_ly_do / last_ly_do_khop / n_points) ra shown.csv + status.json
 
+**Status:** claimed
+
 **Type:** task
 
 **Blocked by:** None (can start immediately)
