@@ -1,0 +1,1461 @@
+{
+  "git_rev": "d893517ebb56c5e3b056467052396dd13e9207af",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "do_luc": "2026-11-20T14:36:42",
+  "lenh": "python scripts/ab_o_hien_thi_vs_gt.py --gt docs/gt/b1b --clip data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 --vos-every 1 2 3 --max-mad 1.5 --lan 3 --frames 300 --out data/ab_vos_every_b1b_2026-11-20_metrics.json",
+  "nguon_so": {
+    "gt": "docs/gt/b1b",
+    "clip": "data/binh1.mp4",
+    "bbox": "300,275,150,410",
+    "image_size": [
+      192
+    ],
+    "vos_every": [
+      1,
+      2,
+      3
+    ],
+    "frames": 300,
+    "lan": 3,
+    "frame_gt_co_vat": [
+      2,
+      32,
+      62,
+      92,
+      182,
+      212,
+      242
+    ]
+  },
+  "dinh_nghia": "IoU(ô bao ĐANG HIỂN THỊ ở frame đó, hộp bao suy từ mask NGƯỜI tô). GT có vật mà không vẽ ô nào ⇒ 0,0 (bám sai thật), KHÔNG phải 'không đo được'. Đây là phép đo 'ô bám đúng chỗ không' — khác `drift_iou` (khớp ô VOS) và khác mIoU (mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK).",
+  "cau_hinh_hieu_luc_lech": [],
+  "image_size_chua_kiem_duoc": 0,
+  "so_lan_chay_loi": {
+    "192/1/1.5": 0,
+    "192/2/1.5": 0,
+    "192/3/1.5": 0
+  },
+  "tong_hop": {
+    "192/1/1.5": {
+      "iou_mean": {
+        "mean": 0.846,
+        "std": 0.0,
+        "n": 3
+      },
+      "iou_min": {
+        "mean": 0.8085,
+        "std": 0.0,
+        "n": 3
+      },
+      "lk_ok_frac": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "n_cham": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "measured_fps": {
+        "mean": 7.3,
+        "std": 0.1,
+        "n": 3
+      }
+    },
+    "192/2/1.5": {
+      "iou_mean": {
+        "mean": 0.6042,
+        "std": 0.0257,
+        "n": 3
+      },
+      "iou_min": {
+        "mean": 0.344,
+        "std": 0.1331,
+        "n": 3
+      },
+      "lk_ok_frac": {
+        "mean": 0.0953,
+        "std": 0.0826,
+        "n": 3
+      },
+      "n_cham": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "measured_fps": {
+        "mean": 30.0,
+        "std": 0.0,
+        "n": 3
+      }
+    },
+    "192/3/1.5": {
+      "iou_mean": {
+        "mean": 0.5815,
+        "std": 0.0903,
+        "n": 3
+      },
+      "iou_min": {
+        "mean": 0.2934,
+        "std": 0.2352,
+        "n": 3
+      },
+      "lk_ok_frac": {
+        "mean": 0.143,
+        "std": 0.0,
+        "n": 3
+      },
+      "n_cham": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "measured_fps": {
+        "mean": 29.9,
+        "std": 0.0,
+        "n": 3
+      }
+    }
+  },
+  "so_sanh": {
+    "chenh_iou": -0.2645,
+    "nguong_nhieu": 0.0903,
+    "phan_biet_duoc": true,
+    "ket_luan": "ô hiển thị TỆ HƠN 0.265 IoU (> ngưỡng nhiễu 0.090)"
+  },
+  "so_sanh_theo_cap": {
+    "so_cap": 21,
+    "so_lan_a": 3,
+    "so_lan_b": 3,
+    "can_bo_cap": false,
+    "b_tot_hon": 4,
+    "a_tot_hon": 17,
+    "bang": 0,
+    "chenh_trung_binh": -0.2645,
+    "chenh_lon_nhat": 0.0089,
+    "chenh_nho_nhat": -0.7357,
+    "frame_b_tot_hon": {
+      "242": 0.0111,
+      "182": 0.011
+    },
+    "b_khong_bao_gio_te_hon": false,
+    "a": "192/1/1.5",
+    "b": "192/3/1.5"
+  },
+  "lan_chay": {
+    "192/1/1.5": [
+      {
+        "shown": "/tmp/ab_o_192_1_1.5_avw75uig/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_1_1.5_avw75uig --vos-every 1 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_1_1.5_avw75uig/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.846,
+          "iou_min": 0.8085,
+          "lk_ok_frac": 0.0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.8674,
+              "lk_ok": false,
+              "hop": [
+                291,
+                295,
+                436,
+                741
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8453,
+              "lk_ok": false,
+              "hop": [
+                316,
+                270,
+                453,
+                676
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8933,
+              "lk_ok": false,
+              "hop": [
+                79,
+                0,
+                228,
+                534
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8155,
+              "lk_ok": false,
+              "hop": [
+                273,
+                330,
+                423,
+                826
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8085,
+              "lk_ok": false,
+              "hop": [
+                327,
+                237,
+                490,
+                763
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8153,
+              "lk_ok": false,
+              "hop": [
+                263,
+                63,
+                540,
+                1049
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8764,
+              "lk_ok": false,
+              "hop": [
+                395,
+                372,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 1,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_1_1.5_w9sjwd70/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_1_1.5_w9sjwd70 --vos-every 1 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_1_1.5_w9sjwd70/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.846,
+          "iou_min": 0.8085,
+          "lk_ok_frac": 0.0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.8674,
+              "lk_ok": false,
+              "hop": [
+                291,
+                295,
+                436,
+                741
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8453,
+              "lk_ok": false,
+              "hop": [
+                316,
+                270,
+                453,
+                676
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8933,
+              "lk_ok": false,
+              "hop": [
+                79,
+                0,
+                228,
+                534
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8155,
+              "lk_ok": false,
+              "hop": [
+                273,
+                330,
+                423,
+                826
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8085,
+              "lk_ok": false,
+              "hop": [
+                327,
+                237,
+                490,
+                763
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8153,
+              "lk_ok": false,
+              "hop": [
+                263,
+                63,
+                540,
+                1049
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8764,
+              "lk_ok": false,
+              "hop": [
+                395,
+                372,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 1,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_1_1.5_mze02y18/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_1_1.5_mze02y18 --vos-every 1 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_1_1.5_mze02y18/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.846,
+          "iou_min": 0.8085,
+          "lk_ok_frac": 0.0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.8674,
+              "lk_ok": false,
+              "hop": [
+                291,
+                295,
+                436,
+                741
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8453,
+              "lk_ok": false,
+              "hop": [
+                316,
+                270,
+                453,
+                676
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8933,
+              "lk_ok": false,
+              "hop": [
+                79,
+                0,
+                228,
+                534
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8155,
+              "lk_ok": false,
+              "hop": [
+                273,
+                330,
+                423,
+                826
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8085,
+              "lk_ok": false,
+              "hop": [
+                327,
+                237,
+                490,
+                763
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8153,
+              "lk_ok": false,
+              "hop": [
+                263,
+                63,
+                540,
+                1049
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8764,
+              "lk_ok": false,
+              "hop": [
+                395,
+                372,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 1,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      }
+    ],
+    "192/2/1.5": [
+      {
+        "shown": "/tmp/ab_o_192_2_1.5_47pgl7l0/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_2_1.5_47pgl7l0 --vos-every 2 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_2_1.5_47pgl7l0/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6237,
+          "iou_min": 0.3939,
+          "lk_ok_frac": 0.143,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.6227,
+              "lk_ok": false,
+              "hop": [
+                301,
+                268,
+                427,
+                670
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.7817,
+              "lk_ok": false,
+              "hop": [
+                104,
+                0,
+                235,
+                481
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.3939,
+              "lk_ok": false,
+              "hop": [
+                320,
+                214,
+                470,
+                713
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.6581,
+              "lk_ok": false,
+              "hop": [
+                302,
+                237,
+                468,
+                775
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.5112,
+              "lk_ok": false,
+              "hop": [
+                366,
+                69,
+                632,
+                1052
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8196,
+              "lk_ok": true,
+              "hop": [
+                395,
+                384,
+                511,
+                759
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 2,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_2_1.5_qufmaa44/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_2_1.5_qufmaa44 --vos-every 2 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_2_1.5_qufmaa44/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.5751,
+          "iou_min": 0.1932,
+          "lk_ok_frac": 0.143,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.6198,
+              "lk_ok": false,
+              "hop": [
+                301,
+                271,
+                427,
+                671
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.5773,
+              "lk_ok": false,
+              "hop": [
+                116,
+                50,
+                250,
+                550
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.1932,
+              "lk_ok": false,
+              "hop": [
+                349,
+                131,
+                484,
+                605
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.6734,
+              "lk_ok": false,
+              "hop": [
+                312,
+                250,
+                469,
+                771
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.5108,
+              "lk_ok": false,
+              "hop": [
+                367,
+                69,
+                631,
+                1054
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8724,
+              "lk_ok": true,
+              "hop": [
+                394,
+                375,
+                514,
+                761
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 2,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_2_1.5_63lklgic/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_2_1.5_63lklgic --vos-every 2 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_2_1.5_63lklgic/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6137,
+          "iou_min": 0.445,
+          "lk_ok_frac": 0.0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.6198,
+              "lk_ok": false,
+              "hop": [
+                301,
+                271,
+                427,
+                671
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.5792,
+              "lk_ok": false,
+              "hop": [
+                116,
+                51,
+                249,
+                550
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.5829,
+              "lk_ok": false,
+              "hop": [
+                312,
+                296,
+                456,
+                779
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.6211,
+              "lk_ok": false,
+              "hop": [
+                305,
+                262,
+                465,
+                771
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.445,
+              "lk_ok": false,
+              "hop": [
+                378,
+                115,
+                611,
+                964
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8691,
+              "lk_ok": false,
+              "hop": [
+                396,
+                368,
+                514,
+                759
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 2,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      }
+    ],
+    "192/3/1.5": [
+      {
+        "shown": "/tmp/ab_o_192_3_1.5_vbg84nee/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_1.5_vbg84nee --vos-every 3 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_1.5_vbg84nee/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.5051,
+          "iou_min": 0.1577,
+          "lk_ok_frac": 0.143,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.3918,
+              "lk_ok": false,
+              "hop": [
+                279,
+                286,
+                398,
+                665
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.1577,
+              "lk_ok": false,
+              "hop": [
+                183,
+                137,
+                310,
+                606
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.3848,
+              "lk_ok": false,
+              "hop": [
+                322,
+                215,
+                471,
+                711
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.6376,
+              "lk_ok": false,
+              "hop": [
+                303,
+                246,
+                465,
+                775
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.506,
+              "lk_ok": false,
+              "hop": [
+                367,
+                72,
+                632,
+                1049
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8786,
+              "lk_ok": true,
+              "hop": [
+                395,
+                371,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_1.5_y908svb1/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_1.5_y908svb1 --vos-every 3 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_1.5_y908svb1/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.5582,
+          "iou_min": 0.1576,
+          "lk_ok_frac": 0.143,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.5816,
+              "lk_ok": false,
+              "hop": [
+                297,
+                266,
+                421,
+                672
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.1576,
+              "lk_ok": false,
+              "hop": [
+                183,
+                137,
+                310,
+                607
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.3869,
+              "lk_ok": false,
+              "hop": [
+                321,
+                215,
+                471,
+                710
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8127,
+              "lk_ok": true,
+              "hop": [
+                332,
+                239,
+                494,
+                771
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.5043,
+              "lk_ok": false,
+              "hop": [
+                367,
+                75,
+                632,
+                1048
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8853,
+              "lk_ok": false,
+              "hop": [
+                394,
+                365,
+                513,
+                760
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_1.5_icaj8get/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_1.5_icaj8get --vos-every 3 --stop-after-frames 300 --lk-max-mad 1.5 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_1.5_icaj8get/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6811,
+          "iou_min": 0.565,
+          "lk_ok_frac": 0.143,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.579,
+              "lk_ok": false,
+              "hop": [
+                298,
+                414,
+                431,
+                734
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.5829,
+              "lk_ok": false,
+              "hop": [
+                297,
+                265,
+                421,
+                672
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.565,
+              "lk_ok": false,
+              "hop": [
+                115,
+                51,
+                253,
+                558
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.6969,
+              "lk_ok": false,
+              "hop": [
+                305,
+                321,
+                447,
+                797
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8153,
+              "lk_ok": true,
+              "hop": [
+                332,
+                234,
+                493,
+                771
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.6596,
+              "lk_ok": false,
+              "hop": [
+                328,
+                21,
+                617,
+                1114
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8691,
+              "lk_ok": false,
+              "hop": [
+                396,
+                368,
+                514,
+                759
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 1.5,
+        "max_mad_hieu_luc": 1.5,
+        "image_size_yeu_cau": 192,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "hop_le": true,
+        "so_dong_khop_frame": true
+      }
+    ]
+  }
+}
