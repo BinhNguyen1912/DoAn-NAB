@@ -346,3 +346,40 @@ khoá `iou_khi_lk_dinh_nghia` trong `cham()` ⇒ test `cham` ĐỎ; khôi phục
 
 ⇒ Reviewer xác nhận code lõi **không đổi hành vi** ở cả 5 vòng; toàn bộ P0/P1 của 5 vòng là **câu chữ/số
 trong log**, không phải bug sản phẩm.
+
+## 13. Vòng 6 (chốt) — **MERGE ĐƯỢC**, P0 = 0, P1 = 0
+
+Reviewer vòng 6 xác nhận **hết** cả hai P1 của vòng 5 và tự tính lại **12 mean + 6 δ + 6 sd** từ
+`data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json`: **khớp toàn bộ** (f92 δ lệch 0,001 do làm
+tròn độc lập — số chính xác −0,0203 nên bảng đúng). Cũng kiểm chéo `ab_quet_max_mad_b1b` (`git_rev
+7aaaa4c`, `git_dirty_code=false`): `100/shift` f62 = 0,8792/0,8294/0,8294 với `lk_ok true` cả 3 ⇒ mệnh đề
+"cùng cấu hình ở **phiên khác** nhận f62 3/3" ở §4.1c là **đúng** (artifact khác thật, rev khác).
+
+Còn **1 P2 + 5 P3**, đã vá hết trong `e2c6b0d`:
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| P2 | log ghi "chênh lớn nhất f182 = ~**1,4×** sd của chính nó" — sai: 0,0554/0,0122 = **4,5×**, và câu sau tự mâu thuẫn ("sd giữa các frame lớn hơn nhiều") | viết lại: **4,5×** sd của chính frame đó, nhưng chỉ **1/6** frame và **3 frame ngược dấu** ⇒ không kết luận (kết luận cuối không đổi: vẫn dựa trên +0,0091 < `sd/√3 = 0,0137`, t = 0,66) |
+| P3 | log khai mutant "xoá reset ⇒ **2** test đỏ" — thật ra **1** (vì `scale=False` không nhánh nào ghi field) | sửa: xoá ⇒ **1** đỏ; đặt reset thành `"chua_ro"` ⇒ **2** đỏ |
+| P3 | vòng lặp `test_che_do_scale_TAT…` không assert `ok` ⇒ xanh cả khi `update()` từ chối | thêm `assert ok is True and t.last_ly_do == "ok_shift"` |
+| P3 | dòng `last_ly_do_khop = "mad_du"` (P3 vòng 5) **không test nào phủ** — xoá vẫn 1585 xanh | thêm `assert t.last_ly_do_khop == "mad_du"` vào `test_mad_du_o_che_do_scale_di_qua_nhanh_PHAN_DU`; **đã kiểm ĐỎ bằng mutant** |
+| P3 | ô f62 ghi "(xem **dưới**)" nhưng giải thích nằm **trên** bảng | sửa "(xem đoạn trên)" |
+| P3 | docstring `None` thiếu ca **LK chưa chạy** ⇒ dễ đọc thành "similarity đã dùng" đúng ở ca f62 | ghi thêm: `None` = đã dùng · `scale=False` · **LK chưa chạy** (khi đó đọc `last_ly_do`) |
+
+**Số test thật là 1585, không phải 1587** — mình từng cộng nhầm (+2 test, không phải +4); đã sửa trong log
+sau khi `./run test` báo `1585 passed`.
+
+⇒ **PR #65 MERGED** vào `main` (`0e445da`), CI xanh 3/3 check (`pytest (fast lane)` · `git_rev của artifact`
+· `ruff`), `mergeable_state = clean`.
+
+### Kết luận cuối cùng của PR này (sau 7 vòng review độc lập)
+
+1. **`LkBoxTracker` có nội suy tỉ lệ + xoay** (tùy chọn `scale=True`, **mặc định TẮT**) + `warp_mask` biến
+   đổi mask **cùng phép** với ô bao. Code đúng: reviewer 7 vòng không tìm được lỗi đúng/sai nào.
+2. **Nội suy tỉ lệ CHƯA chứng minh tốt hơn tịnh tiến**: +0,0091 < nhiễu 0,0130 (t = 0,66); toàn bộ chênh
+   thô ban đầu (+0,1286) là **một frame** nơi base VOS suy biến ⇒ **giữ `scale=False`**.
+3. **Cổng `max_mad = 1,5` quá chặt là phát hiện THẬT** và **không** phụ thuộc frame flâke: nới lên 100 cho
+   +0,1745 (bỏ f62 vẫn +0,1745, sd hiệu 0,0205). Nhưng **chưa** chứng minh bám **đúng vật** hơn ⇒ **không
+   đổi default** (xem ticket #38).
+4. **Chẩn đoán mới `last_ly_do`/`last_ly_do_khop` CHƯA nối ra CSV** ⇒ hiện không trích được như bằng chứng
+   đo; đó là Next step #0.
