@@ -40,12 +40,29 @@ from src.live_tracking import _bbox_iou                        # noqa: E402
 
 
 
+def gt_rong_cua(gt_dir: Path) -> list[int]:
+    """Danh sách frame người tô khai **KHÔNG có vật** (`gt_rong` trong `index.json`).
+
+    Tách khỏi `hop_tu_gt` để metric "vẽ ô khi không có vật" (`ty_le_o_ma`) dùng được mà không phải
+    đổi kiểu trả về của `hop_tu_gt` (mọi chỗ gọi cũ vẫn là `dict`).
+    """
+    path = gt_dir / "index.json"
+    if not path.exists():
+        return []          # không khai `gt_rong` ⇒ KHÔNG có frame rỗng để chấm (khác "0 lần oan")
+    index = json.loads(path.read_text(encoding="utf-8"))
+    return sorted({int(f) for f in (index.get("gt_rong") or [])})
+
+
 def hop_tu_gt(gt_dir: Path) -> dict[int, tuple[int, int, int, int]]:
-    """`frame → hộp bao (x1,y1,x2,y2)` suy từ mask NGƯỜI tô. Bỏ frame `gt_rong` (không có vật)."""
+    """`frame → hộp bao (x1,y1,x2,y2)` suy từ mask NGƯỜI tô. Bỏ frame `gt_rong` (không có vật).
+
+    ĐỌC KÈM `gt_rong_cua()` — bỏ `gt_rong` ở đây là ĐÚNG (không có vật thì không có IoU để chấm),
+    nhưng trước 21-11 không ai dùng tập đó ⇒ hành vi "vẽ ô trên frame KHÔNG có vật" **không bị phạt**.
+    Đó là lý do có `ty_le_o_ma`.
+    """
     import cv2
 
-    index = json.loads((gt_dir / "index.json").read_text(encoding="utf-8"))
-    rong = {int(f) for f in (index.get("gt_rong") or [])}
+    rong = set(gt_rong_cua(gt_dir))
     ra = {}
     for path in sorted(gt_dir.glob("gt_*.png")):
         frame = int(path.stem.split("_")[-1])
@@ -157,8 +174,51 @@ def chan_doan_tu_csv(path: Path) -> tuple[dict | None, list[str]]:
     return (None if thieu_cot else chan_doan), thieu_cot
 
 
+def ty_le_o_ma(gt_rong: list[int], shown: dict) -> dict:
+    """Đếm frame **người tô khai KHÔNG có vật** mà hệ thống vẫn vẽ ô. Hàm THUẦN.
+
+    Vì sao cần metric này: mọi chỉ số còn lại (`iou_mean`, `drift_iou`, `stability`) chỉ chấm trên
+    frame **có vật** ⇒ một hệ "luôn trả lời" (vẽ ô ở đâu đó) không bị phạt. Đo 21-11: binh2 có 4 +
+    b1 có 5 frame `gt_rong` = **9 mẫu** đã tô sẵn, không cần quay mới.
+
+    Quy tắc chấm (cùng tinh thần `docs/thuoc-do-bam-dung.md`):
+      - frame `gt_rong` **không có trong CSV** ⇒ `thieu_frame` (chưa chạy tới), KHÔNG tính là "không vẽ ô";
+      - `KHONG_CO_O` ⇒ ngoan (không vẽ ô);
+      - `O_HONG` / có toạ độ ⇒ **vẽ ô trên frame không có vật** ⇒ cộng vào `n_co_o_tren_rong`.
+    `n` nhỏ (9) ⇒ **báo ĐẾM, không báo %**: `ty_le` chỉ để đọc kèm `n`.
+    """
+    thieu, co_o, khong_o, hong = [], [], [], []
+    for frame in sorted(gt_rong):
+        if frame not in shown:
+            thieu.append(frame)
+            continue
+        box = shown[frame]
+        box = box[0] if isinstance(box, (tuple, list)) else box     # (ô, lk_ok) | ô | sentinel
+        if box is KHONG_CO_O:
+            khong_o.append(frame)
+        elif box is O_HONG:
+            hong.append(frame)
+        else:
+            co_o.append(frame)
+    return {
+        "n_gt_rong": len(gt_rong),
+        "n_co_o_tren_rong": len(co_o),
+        "n_o_hong_tren_rong": len(hong),
+        "n_khong_o_tren_rong": len(khong_o),
+        "thieu_frame_rong": thieu,
+        "frame_co_o_tren_rong": co_o,
+        # CHỈ báo khi có mẫu chấm được; `None` = "chưa đo" (không phải 0,0) — AGENTS §6.
+        "ty_le": (round(len(co_o) / (len(co_o) + len(khong_o)), 4)
+                  if (co_o or khong_o) else None),
+        "ty_le_n": len(co_o) + len(khong_o),
+        "ty_le_nguong": 30,     # < 30 mẫu ⇒ chỉ báo ĐẾM (cùng ngưỡng `drift_samples.MIN_SAMPLES`)
+        "ghi_chu": ("n < 30 ⇒ chỉ đọc `n_co_o_tren_rong` / `n_gt_rong`, KHÔNG trích `ty_le` như tỉ lệ "
+                    "dân số; `None` = chưa có frame nào chấm được"),
+    }
+
+
 def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
-         chan_doan: dict | None = None) -> dict:
+         chan_doan: dict | None = None, gt_rong: list[int] | None = None) -> dict:
     """Chấm `IoU(ô hiển thị, ô GT)`. Hàm THUẦN (test được, không cần video/model).
 
     Ba ca phải tách:
@@ -205,7 +265,7 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
     # frame đó chạy cổng mở rồi so ô LK). Đo 20-11: ô LK 0,80–0,84 vs ô đóng băng 0,49–0,61.
     iou_ok = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"]]
     iou_khong = [r["iou"] for r in theo_frame if r["iou"] is not None and not r["lk_ok"]]
-    return {
+    ra = {
         "n_gt_co_vat": len(hop_gt),
         "n_cham": len(do_duoc),
         "khong_do_duoc": khong_do,
@@ -229,9 +289,13 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
         # đoán (CSV cũ) ⇒ CHƯA ĐO, khác `{}` (đo được nhưng không mẫu nào).
         "ly_do_dem": _dem(chan_doan, hop_gt, "ly_do"),
         "ly_do_khop_dem": _dem(chan_doan, hop_gt, "ly_do_khop"),
+        # "vẽ ô khi KHÔNG có vật" — metric ĐỐI CHỨNG mà mọi chỉ số còn lại bỏ qua (chỉ chấm frame có vật).
+        # `gt_rong=None` (chỗ gọi cũ / GT không khai) ⇒ `None` = CHƯA ĐO, không phải "0 lần oan".
+        "o_ma": ty_le_o_ma(gt_rong, shown) if gt_rong is not None else None,
         "n_diem_median": _median_n_diem(chan_doan, hop_gt),
         "theo_frame": theo_frame,
     }
+    return ra
 
 
 def _dem(chan_doan: dict | None, hop_gt: dict, khoa: str) -> dict | None:
@@ -498,6 +562,10 @@ def main(argv=None) -> int:
     args = parser.parse_args(argv)
 
     hop_gt = hop_tu_gt(Path(args.gt))
+    gt_rong = gt_rong_cua(Path(args.gt))
+    if gt_rong:
+        print(f"[GT] {len(gt_rong)} frame người tô khai KHÔNG có vật ({gt_rong[:8]}"
+              f"{'…' if len(gt_rong) > 8 else ''}) ⇒ chấm thêm `ty_le_o_ma`")
     if not hop_gt:
         raise SystemExit(f"[LOI] {args.gt} không có frame nào có vật (toàn `gt_rong`?)")
     if args.lan < 2:
@@ -525,7 +593,8 @@ def main(argv=None) -> int:
                     chan_doan = None
                 res["csv_thieu_cot"] = thieu_cot
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]),
-                                   lk_khong_ap_dung=(int(ve) == 1), chan_doan=chan_doan)
+                                   lk_khong_ap_dung=(int(ve) == 1), chan_doan=chan_doan,
+                                   gt_rong=gt_rong)
                 cau = res["status"].get("cau_hinh") or {}
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = cau.get("lk_max_mad")
@@ -611,7 +680,7 @@ def main(argv=None) -> int:
         # 5: `tong_hop` có thêm `iou_khi_lk_dinh_nghia` (thêm khoá mà KHÔNG tăng số hiệu từng làm hai
         # artifact cùng "schema 4" nhưng khác tập khoá — đúng lỗi P3 đã bị bắt một lần, review #65 v3).
         # 6: `cham()` thêm `ly_do_dem`/`ly_do_khop_dem`/`n_diem_median` (ticket #39) + `csv_thieu_cot`.
-        "schema": 6,
+        "schema": 7,   # 7 = thêm `cham.o_ma` (ty_le_o_ma trên frame gt_rong)
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
                      "max_mad": args.max_mad, "lk_scale": args.lk_scale,
                      "image_size": args.image_size, "vos_every": args.vos_every,

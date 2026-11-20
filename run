@@ -287,8 +287,15 @@ EOF
       exit 1
     fi
     _stamp="$(date +%m%d-%H%M%S)"
+    # Cổng NCC đã HIỆU CHUẨN (`data/reid_2clip_calib.json`, 01-11): 17 ca nhận lại ĐÚNG có
+    # ncc 0,415–0,741; ca SAI có ncc 0,279 ⇒ ncc_min = 0,35 tách được, còn cosine thì KHÔNG
+    # (ca sai 0,899 > ca đúng thấp nhất 0,770). Đo 21-11: 0,60 còn nhận cả NỀN (cos 0,835).
+    # Truyền Ở ĐÂY (đường demo) chứ không đổi `configs/default.yaml` — để artifact cũ tái lập được;
+    # cờ của người dùng đứng sau nên vẫn đè được.
+    _ncc="0.35"
+    echo "[demoip] re-ID cue=object ncc_min=${_ncc} (hiệu chuẩn 01-11: đúng ≥0,415 > sai ≤0,279)"
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
-      --reid-cue object --image-size 320 \
+      --reid-cue object --reid-obj-ncc-min "$_ncc" --image-size 320 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"
@@ -314,9 +321,11 @@ EOF
     # cờ --reid-cue của người dùng đứng SAU nên vẫn đè được (argparse lấy cái sau).
     _fast_cue="object"
     echo "[fast] ghi: ${_rec}  (+ ${_csv}, ${_json}, data/fast_${_stamp}_run_info.json)"
-    echo "[fast] re-ID cue=${_fast_cue}  (đổi: --reid-cue face|both)"
+    # Cổng NCC 0,35 (hiệu chuẩn `data/reid_2clip_calib.json` 01-11 — xem `run demoip`).
+    _fast_ncc="0.35"
+    echo "[fast] re-ID cue=${_fast_cue} ncc_min=${_fast_ncc}  (đổi: --reid-cue face|both)"
     exec "$PYTHON" tools/run_live.py --source "$src_fast" --display --smooth --reid \
-      --reid-cue "$_fast_cue" \
+      --reid-cue "$_fast_cue" --reid-obj-ncc-min "$_fast_ncc" \
       --image-size 256 --record "$_rec" --metrics-csv "$_csv" --metrics-summary "$_json" "$@"
     ;;
   check)

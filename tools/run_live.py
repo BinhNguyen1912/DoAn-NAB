@@ -159,8 +159,12 @@ def _make_reid_session(engine, args):
             embedder = FaceEmbedder(detector, recognizer,
                                     min_face_px=args.reid_min_face_px,
                                     min_score=args.reid_min_detect_score)
+    # In cả cổng NCC: người dùng phải THẤY ngưỡng nào đang bảo vệ buổi demo (tắt = 0).
+    # Hiệu chuẩn: `data/reid_2clip_calib.json` (01-11) ⇒ ncc_min 0,35 tách được, cosine thì không.
+    _ncc = float(getattr(args, "reid_obj_ncc_min", 0.0) or 0.0)
     print(f"[re-ID] bật cue={cue}: ngưỡng cosine mặt={args.reid_threshold}, "
           f"ngưỡng vật thể={getattr(args, 'reid_obj_threshold', 0.6)}, "
+          f"ncc_min={_ncc:g}{' (TẮT)' if _ncc <= 0.0 else ''}, "
           f"đóng băng sau {args.lost_after_frames} frame mất dấu")
     if cue == "face":
         # Bug thật 01-11: test bằng VẬT với cue=face → 0 mẫu mặt → reid_score = -1 suốt phiên,

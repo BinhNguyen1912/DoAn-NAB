@@ -380,7 +380,7 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5/shift|320/3/1.5/shift"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["nguon_so"]["lk_scale"] == ["shift"]
-    assert d["schema"] == 6
+    assert d["schema"] == 7
     # Khoá nghĩa phải CÓ trong `tong_hop`, nếu không thì "schema 5" lại có hai hình dạng (review #64/#65)
     assert "iou_khi_lk_dinh_nghia" in next(iter(d["tong_hop"].values()))
 
@@ -671,3 +671,56 @@ def test_main_KHONG_truyen_chan_doan_khi_vos_every_1(monkeypatch, tmp_path):
 
     assert _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 1) == [None, None]
     assert all(c is not None for c in _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 3))
+
+
+class TestTyLeOMa:
+    """`ty_le_o_ma` = đếm frame người tô khai KHÔNG có vật mà hệ thống VẪN vẽ ô (plan 21-11, P3).
+
+    Mọi chỉ số cũ (`iou_mean`, `drift_iou`, `stability`) chỉ chấm trên frame CÓ vật ⇒ hệ "luôn trả lời"
+    không bị phạt. GT đã có sẵn 9 frame `gt_rong` (binh2_tay 4 + b1 5) nên metric này đo được ngay.
+    """
+
+    def test_dem_dung_ba_trang_thai(self):
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, O_HONG, ty_le_o_ma
+        r = ty_le_o_ma([1, 2, 3, 4, 5], {
+            1: ((0, 0, 10, 10), True),      # vẽ ô trên frame rỗng ⇒ OAN
+            2: (KHONG_CO_O, True),          # không vẽ ô ⇒ ngoan
+            3: ((5, 5, 9, 9), False),       # vẽ ô, LK từ chối ⇒ vẫn OAN
+            4: O_HONG,                      # ô hỏng vẫn là "có vẽ"
+            # frame 5 KHÔNG có trong CSV ⇒ chưa chạy tới, không được tính là "không vẽ"
+        })
+        assert r["n_gt_rong"] == 5
+        assert r["n_co_o_tren_rong"] == 2
+        assert r["n_o_hong_tren_rong"] == 1
+        assert r["n_khong_o_tren_rong"] == 1
+        assert r["thieu_frame_rong"] == [5]
+        assert r["ty_le_n"] == 3            # chỉ 3 frame chấm được (bỏ frame thiếu)
+        assert r["ty_le"] == pytest.approx(2 / 3, abs=1e-4)
+
+    def test_chua_co_frame_nao_thi_ty_le_la_NONE(self):
+        """`None` = CHƯA ĐO, không phải 0,0 — bẫy `0/None ≠ đã đo` (AGENTS §6)."""
+        from scripts.ab_o_hien_thi_vs_gt import ty_le_o_ma
+        r = ty_le_o_ma([7, 8], {})
+        assert r["ty_le"] is None and r["ty_le_n"] == 0
+        assert r["thieu_frame_rong"] == [7, 8]
+        assert r["n_co_o_tren_rong"] == 0
+
+    def test_gt_khong_khai_rong_thi_tra_list_rong(self, tmp_path):
+        """Không có `index.json` ⇒ `[]` (không có gì để chấm), KHÔNG được ném FileNotFoundError:
+        `main()` gọi hàm này trước mọi thứ khác và test khác đã monkeypatch `hop_tu_gt`."""
+        from scripts.ab_o_hien_thi_vs_gt import gt_rong_cua
+        assert gt_rong_cua(tmp_path) == []
+
+    def test_cham_tra_None_khi_khong_truyen_gt_rong(self):
+        """Chỗ gọi cũ không truyền `gt_rong` ⇒ `o_ma = None` (chưa đo), KHÔNG phải dict toàn 0."""
+        from scripts.ab_o_hien_thi_vs_gt import cham
+        r = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True)})
+        assert r["o_ma"] is None
+
+    def test_cham_noi_gt_rong(self):
+        from scripts.ab_o_hien_thi_vs_gt import cham
+        r = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True), 9: ((1, 1, 5, 5), True)},
+                 gt_rong=[9])
+        assert r["o_ma"]["n_gt_rong"] == 1
+        assert r["o_ma"]["n_co_o_tren_rong"] == 1     # vẽ ô trên frame 9 (rỗng) ⇒ bắt được
+        assert r["iou_mean"] == 1.0                   # iou_mean KHÔNG đổi (hồi quy)

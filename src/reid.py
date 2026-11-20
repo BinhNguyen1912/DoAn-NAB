@@ -524,6 +524,15 @@ class ReIdSession:
         self._confirm_box = None
         self._verify_left = self.verify_frames      # chưa tin ngay: kiểm chứng mấy frame đầu
         self._lost_age = 0
+        # P0 (plan 21-11): cổng chống-nhảy so với `_last_bbox` — mà `_reacquire` KHÔNG cập nhật nó, nên
+        # nó vẫn là mốc của lần thấy TRƯỚC KHI MẤT DẤU. Vật vào lại ở chỗ khác (> 1,5× đường chéo ô)
+        # ⇒ tick sau `_is_suspicious_jump` kích hoạt `_auto_recover()` ⇒ huỷ ngay lần nhận lại vừa xong:
+        # 2× `engine.start` (~210–280 ms) + 1 frame không có ô + bỏ qua `verify_frames`.
+        # Bằng chứng thật: phiên `--reid` trên binh2 có 3 lần "reacquired" liên tiếp f172/176/180 cho
+        # MỘT lần vật vào lại. Mốc phải là ô VỪA NHẬN LẠI.
+        self._last_bbox = tuple(getattr(result, "bbox", bbox))
+        self._last_center = ((self._last_bbox[0] + self._last_bbox[2]) / 2.0,
+                             (self._last_bbox[1] + self._last_bbox[3]) / 2.0)
         if self._verify_left == 0:
             self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         return Step(result=result, state=self._state, reid_score=score, reacquired=True)
