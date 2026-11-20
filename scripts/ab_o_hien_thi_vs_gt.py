@@ -319,7 +319,9 @@ def main(argv=None) -> int:
     parser.add_argument("--image-size", type=int, nargs="+", default=[192],
                         help="một hoặc nhiều giá trị ⇒ A/B CHÈN KẼ giữa các giá trị (đo 20-11: so hai "
                              "PHIÊN khác nhau là vô nghĩa — ngưỡng nhiễu đổi 0,034→0,022 và phán quyết lật)")
-    parser.add_argument("--vos-every", type=int, default=3)
+    parser.add_argument("--vos-every", type=int, nargs="+", default=[3],
+                        help="một hoặc nhiều giá trị ⇒ A/B chèn kẽ (vos_every=1 là chạy VOS MỌI frame, "
+                             "tức không có khe ⇒ trần độ chính xác; dùng làm mốc so)")
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--lan", type=int, default=3, help="số lần/cấu hình (chèn kẽ; <2 không kết luận)")
     parser.add_argument("--max-mad", type=float, nargs="+", default=[1.5, 6.0])
@@ -332,17 +334,19 @@ def main(argv=None) -> int:
     if args.lan < 2:
         print("[CANH BAO] --lan < 2 ⇒ chưa có ngưỡng nhiễu, KHÔNG được kết luận cấu hình nào tốt hơn")
 
-    theo_cau_hinh: dict[tuple[int, float], list] = {
-        (sz, m): [] for sz in args.image_size for m in args.max_mad}
+    # Khoá cấu hình = (image_size, vos_every, max_mad). `vos_every` là trục quan trọng nhất khi hỏi
+    # "hybrid 30 FPS mất bao nhiêu độ chính xác so với chạy VOS mọi frame".
+    theo_cau_hinh: dict[tuple[int, int, float], list] = {
+        (sz, ve, m): [] for sz in args.image_size for ve in args.vos_every for m in args.max_mad}
     for vong in range(args.lan):
         thu_tu = list(theo_cau_hinh)           # khoá = (image_size, max_mad)
         if vong % 2 == 1:                       # đảo chiều vòng lẻ: "chạy sau" không luôn là cấu hình ưu ái
             thu_tu.reverse()
-        for sz, max_mad in thu_tu:
+        for sz, ve, max_mad in thu_tu:
             # KHÔNG hard-code /dev/shm: máy dev là Windows (chỉ Linux mới có) ⇒ FileNotFoundError.
-            with tempfile.TemporaryDirectory(prefix=f"ab_o_{sz}_{max_mad}_") as tmp:
+            with tempfile.TemporaryDirectory(prefix=f"ab_o_{sz}_{ve}_{max_mad}_") as tmp:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
-                                   vos_every=args.vos_every, max_mad=max_mad,
+                                   vos_every=ve, max_mad=max_mad,
                                    frames=args.frames, out_dir=Path(tmp))
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]))
                 cau = res["status"].get("cau_hinh") or {}
@@ -352,26 +356,28 @@ def main(argv=None) -> int:
                 # Ba trạng thái KHÔNG lẫn: None = CHƯA KIỂM ĐƯỢC (worker không khai), số = đo được
                 res["image_size_hieu_luc"] = cau.get("image_size_hieu_luc")
                 res["image_size_kiem_duoc"] = res["image_size_hieu_luc"] is not None
+                res["vos_every_yeu_cau"] = ve
                 res["shown"] = str(res["shown"])
                 res["hop_le"] = lan_chay_hop_le(res)
                 res["so_dong_khop_frame"] = so_dong_khop_frame(res)
                 if res["hop_le"] and not res["so_dong_khop_frame"]:
-                    print(f"[canh-bao] {sz}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
+                    print(f"[canh-bao] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
                           f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
                           "ghi hoặc ghi trùng", flush=True)
             theo_cau_hinh[(sz, max_mad)].append(res)
             c = res["cham"]
-            print(f"vòng {vong + 1} · {sz}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
+            print(f"vòng {vong + 1} · {sz}/{ve}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
                   f"(tệ nhất {c['iou_min']}) trên {c['n_cham']}/{c['n_gt_co_vat']} frame · "
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực mad {res['max_mad_hieu_luc']} · "
                   f"image_size {res['image_size_hieu_luc']}")
 
-    so_lan_loi = {f"{sz}/{m}": sum(1 for r in v if not r["hop_le"]) for (sz, m), v in theo_cau_hinh.items()}
-    tong = {f"{sz}/{m}": tong_hop([r for r in v if r["hop_le"]])
-            for (sz, m), v in theo_cau_hinh.items()}
+    so_lan_loi = {f"{sz}/{ve}/{m}": sum(1 for r in v if not r["hop_le"])
+                  for (sz, ve, m), v in theo_cau_hinh.items()}
+    tong = {f"{sz}/{ve}/{m}": tong_hop([r for r in v if r["hop_le"]])
+            for (sz, ve, m), v in theo_cau_hinh.items()}
     lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
     khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
-    nhan = {f"{sz}/{m}": (sz, m) for (sz, m) in theo_cau_hinh}      # nhãn "192/1.5" → khoá thật
+    nhan = {f"{sz}/{ve}/{m}": (sz, ve, m) for (sz, ve, m) in theo_cau_hinh}   # nhãn → khoá thật
     ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
     ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[nhan[khoa[0]]], theo_cau_hinh[nhan[khoa[-1]]]),
                "a": khoa[0], "b": khoa[-1]} if len(khoa) >= 2 else {})
@@ -397,8 +403,8 @@ def main(argv=None) -> int:
         "tong_hop": tong,
         "so_sanh": ss,
         "so_sanh_theo_cap": ss_cap,
-        "lan_chay": {f"{sz}/{m}": [{k: v for k, v in r.items() if k != "status"} for r in rs]
-                     for (sz, m), rs in theo_cau_hinh.items()},
+        "lan_chay": {f"{sz}/{ve}/{m}": [{k: v for k, v in r.items() if k != "status"} for r in rs]
+                     for (sz, ve, m), rs in theo_cau_hinh.items()},
     }
     out = Path(args.out) if args.out else REPO_ROOT / "data" / (
         f"ab_o_hien_thi_vs_gt_{datetime.now():%Y-%m-%d}_metrics.json")
