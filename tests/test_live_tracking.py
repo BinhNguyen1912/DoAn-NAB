@@ -2432,3 +2432,33 @@ def test_status_payload_co_chan_doan_lk_va_None_khi_chua_co():
     assert status_payload(LiveTrackStats())["chan_doan_lk"] is None
     st = LiveTrackStats(chan_doan_lk={"frame_idx": 5, "ly_do": "ok_shift", "n_diem": 30})
     assert status_payload(st)["chan_doan_lk"]["ly_do"] == "ok_shift"
+
+
+def test_chan_doan_lk_trong_status_la_cua_DUNG_frame_da_ghi(video_source, tmp_path, monkeypatch):
+    """P2 review PR #66: tiêu chí "status.json có chẩn đoán của frame gần nhất" trước đây **chỉ** được
+    chứng minh bằng lần chạy thật — xoá 2 dòng nối `_chan_doan_frame` → `chan_doan_lk` không test nào đỏ.
+
+    Đi đúng đường thật: `_result_threaded` (snapshot) → `_update_stats` (ghi vào stats).
+    """
+    from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+    session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+        source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
+    frame = np.full((48, 64, 3), 90, np.uint8)
+    base_mask = np.zeros((48, 64), bool)
+    base_mask[5:15, 5:15] = True
+    base = type("R", (), {"frame_idx": 1, "bbox": (5, 5, 15, 15), "mask": base_mask,
+                          "elapsed_ms": 1.0})()
+    session._frame_index = 4                        # 5 % 3 != 0 ⇒ không submit
+    session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
+    monkeypatch.setattr(session._interp, "update", lambda _g: (None, False))
+    monkeypatch.setattr(session._interp, "last_ly_do", "mad_du")
+    monkeypatch.setattr(session._interp, "last_ly_do_khop", "mad_du")
+    monkeypatch.setattr(session._interp, "last_n_diem", 7)
+    out = session._result_threaded(frame)
+    session._update_stats(out)
+    cd = session._stats.chan_doan_lk
+    assert cd and cd["ly_do"] == "mad_du" and cd["ly_do_khop"] == "mad_du"
+    assert cd["n_diem"] == 7 and cd["khop"] is False
+    # `frame_idx` phải là frame VỪA GHI, không phải frame trước
+    assert cd["frame_idx"] == session._frame_index
