@@ -119,3 +119,118 @@ def test_chuyen_doi_bbox_giua_hai_quy_uoc(bbox, expected):
 
     assert xywh_to_xyxy(bbox) == expected
     assert xyxy_to_xywh(expected) == bbox
+
+
+# --- chế độ `scale=True`: nội suy cả TỈ LỆ + xoay (20-11) -------------------------------------
+def _khung_vat(patch, *, ti_le=1.0, xoay=0.0, dx=0, dy=0, hinh=(240, 320), tam=(160, 120), seed=1):
+    """Ảnh tổng hợp: nền nhiễu nhẹ CỐ ĐỊNH + một "vật" có texture, phóng to/xoay/dịch theo yêu cầu.
+
+    Texture gắn vào vật (không phải nền ngẫu nhiên) — nếu nền ngẫu nhiên thì LK không khớp được gì và
+    mọi ca đều "mất dấu", đúng cái bẫy đã gặp khi thử lần đầu.
+    """
+    import cv2
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    img = np.full(hinh, 128, np.uint8)
+    img = (img + rng.normal(0, 2, img.shape)).clip(0, 255).astype(np.uint8)
+    p = patch if ti_le == 1.0 else cv2.resize(patch, None, fx=ti_le, fy=ti_le)
+    if xoay:
+        m = cv2.getRotationMatrix2D((p.shape[1] / 2, p.shape[0] / 2), xoay, 1.0)
+        p = cv2.warpAffine(p, m, (p.shape[1], p.shape[0]))
+    ph, pw = p.shape
+    x0, y0 = int(tam[0] - pw / 2 + dx), int(tam[1] - ph / 2 + dy)
+    img[y0:y0 + ph, x0:x0 + pw] = p
+    return img
+
+
+def _patch_texture(seed=1):
+    import cv2
+    import numpy as np
+    rng = np.random.default_rng(seed)
+    return cv2.GaussianBlur((rng.random((90, 60)) * 255).astype(np.uint8), (3, 3), 0)
+
+
+def test_scale_bat_duoc_vat_PHONG_TO_va_THU_NHO():
+    """Tịnh tiến thuần KHÔNG THỂ chữa lệch kích thước (đo trên GT 20-11: ΔW/ΔH tới −132 px).
+
+    Nghiệm thu: vật to 1,2× ⇒ ô bao phải to ~72×108; nhỏ 0,85× ⇒ ~51×77. Chế độ `shift` phải
+    `ok=False` ở cả hai ca (đúng lý do phải thêm chế độ này).
+    """
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    b = (130, 75, 60, 90)
+    for ti_le, rong_mong, cao_mong in ((1.2, 72, 108), (0.85, 51, 77)):
+        f2 = _khung_vat(patch, ti_le=ti_le)
+        t = LkBoxTracker(scale=False)
+        t.reset(f1, b)
+        assert t.update(f2)[0] is None, f"shift phải KHÔNG bám được khi vật co giãn {ti_le}"
+        t = LkBoxTracker(scale=True)
+        t.reset(f1, b)
+        bbox, ok = t.update(f2)
+        assert ok and abs(bbox[2] - rong_mong) <= 3 and abs(bbox[3] - cao_mong) <= 3, (ti_le, bbox)
+        assert abs(t.last_scale - ti_le) < 0.06
+        assert t.last_khop_similarity is True
+
+
+def test_scale_bat_duoc_XOAY_va_van_tinh_dich_chuyen():
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    # xoay 10°: ô bao bao ngoài 60×90 xoay 10° ≈ 74×99
+    t = LkBoxTracker(scale=True)
+    t.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t.update(_khung_vat(patch, xoay=10))
+    assert ok and abs(bbox[2] - 74) <= 4 and abs(bbox[3] - 99) <= 4, bbox
+    assert t.last_angle_deg < 0 and abs(abs(t.last_angle_deg) - 10) < 2      # xoay âm = cùng chiều
+    # dịch thuần: cả hai chế độ phải ra CÙNG kết quả (không thêm sai số khi tỉ lệ = 1)
+    for sc in (False, True):
+        t = LkBoxTracker(scale=sc)
+        t.reset(f1, (130, 75, 60, 90))
+        assert t.update(_khung_vat(patch, dx=5, dy=3))[0] == (135, 78, 60, 90), sc
+
+
+def test_scale_CONG_an_toan_tu_choi_bien_doi_qua_lon():
+    """Vật "phóng" 1,6× trong một bước (> `scale_max` 1,25) là dấu hiệu khớp rác ⇒ KHÔNG được bịa
+    ô bao to gấp rưỡi; phải rơi về tịnh tiến (và ở ca này tịnh tiến cũng mất dấu)."""
+    from src.light_tracker import DEFAULT_SCALE_MAX, LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    t = LkBoxTracker(scale=True)
+    t.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t.update(_khung_vat(patch, ti_le=1.6))
+    assert ok is False and bbox is None
+    assert DEFAULT_SCALE_MAX == 1.25          # nếu ai nới cổng, test các ca "quá lớn" phải xem lại
+    assert t.last_khop_similarity is False
+
+
+def test_scale_mat_dau_khi_vat_bien_mat():
+    """Cổng `mad` phải còn hiệu lực: vật biến mất ⇒ không bám vào nền rồi báo ô bao sai."""
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    rng = np.random.default_rng(7)
+    nen = (rng.random(f1.shape) * 255).astype(np.uint8)      # đổi hẳn nội dung: không còn vật
+    t = LkBoxTracker(scale=True, max_mad=1.5)
+    t.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t.update(nen)
+    assert ok is False and bbox is None
+
+
+def test_warp_mask_bien_doi_cung_phep_voi_o_bao():
+    """Mask phải co giãn CÙNG phép với ô bao, nếu không thì mask và ô lệch nhau trên hình."""
+    import numpy as np
+    from src.light_tracker import warp_mask
+    mask = np.zeros((100, 100), bool)
+    mask[40:60, 40:60] = True                               # khối 20×20 ở giữa
+    # phóng 1,5× quanh tâm (50, 50) ⇒ khối 30×30
+    m = np.array([[1.5, 0, -25.0], [0, 1.5, -25.0]], np.float32)
+    ra = warp_mask(mask, m)
+    assert ra.dtype == bool and ra.shape == mask.shape
+    assert ra.sum() > mask.sum()                            # to ra
+    ys, xs = np.where(ra)
+    assert abs((ys.max() - ys.min() + 1) - 30) <= 2 and abs((xs.max() - xs.min() + 1) - 30) <= 2
+    # ma trận None / identity ⇒ trả NGUYÊN mask (không tạo bản sao biến dạng)
+    assert warp_mask(mask, None) is mask
+    assert warp_mask(mask, np.array([[1, 0, 0], [0, 1, 0]], np.float32)) is mask

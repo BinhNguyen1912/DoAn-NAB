@@ -38,7 +38,7 @@ import numpy as np
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src import tracking_health
-from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask
+from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask, warp_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
 from src.video_source import looks_like_file, open_video_source
@@ -108,6 +108,11 @@ class LiveTrackConfig:
     # (ok_frac trong khung 0,227; nới 6,0 ⇒ 0,568 mà IoU khi-ok chỉ giảm 0,031). Đổi GIÁ TRỊ MẶC ĐỊNH
     # phải chờ A/B live 2 clip + kiểm ảnh ô bao không bị kéo vào nền — xem ticket #38.
     lk_max_mad: float = DEFAULT_MAX_MAD
+    # Nội suy CẢ TỈ LỆ (+ xoay) trong LK, không chỉ dịch (mặc định TẮT: giữ nguyên số đã công bố).
+    # Lý do tồn tại: đo trên GT người tô 20-11, ô hiển thị lệch kích thước tới −132 px và tịnh tiến
+    # KHÔNG THỂ chữa được lệch kích thước (`docs/task/20-11-2026-cai-gia-do-chinh-xac-cua-hybrid.md`).
+    # Bật/tắt được để A/B được chèn kẽ (không đổi mặc định khi chưa có số chứng minh tốt hơn).
+    lk_scale: bool = False
     # DỤNG CỤ ĐO (ticket #38): ghi ô bao ĐANG HIỂN THỊ ở **mọi frame đã phát** ra CSV
     # (`frame_idx,x1,y1,x2,y2,lk_ok`). Vì sao cần: CSV drift chỉ có dòng ở các lần VOS (mỗi N frame),
     # nên không chấm được ô người xem thấy ở các frame GT lẻ (`binh1`: 91/181/211/241 không chia hết
@@ -318,7 +323,7 @@ def phien_live_dang_giu(out_dir) -> int | None:
 
 def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.0,
                      mask_smoothing=1.0, device="", dump_mask_frames=(),
-                     lk_max_mad=DEFAULT_MAX_MAD) -> dict:
+                     lk_max_mad=DEFAULT_MAX_MAD, lk_scale=False) -> dict:
     """Cấu hình **được yêu cầu** (từ CLI/API) ở dạng ghi được vào `status.json`.
 
     Tách khỏi `LiveTrackStats` để giai đoạn `loading` (chưa có engine, 20–240 s) cũng ghi được cấu
@@ -350,6 +355,9 @@ def cau_hinh_yeu_cau(*, source="", image_size=None, vos_every=3, display_fps=30.
         # nên không thể lệch âm thầm — nhưng PHẢI echo, nếu không thì không ai biết artifact được đo ở
         # 1,5 hay 6,0 (đúng lý do `cau_hinh` tồn tại, review 15-11).
         "lk_max_mad": float(lk_max_mad),
+        # Echo cả chế độ nội suy: artifact phải tự khai ô bao được đo ở "chỉ dịch" hay "dịch+tỉ lệ",
+        # nếu không thì hai phiên khác chế độ đọc như cùng cấu hình (đúng lý do `cau_hinh` tồn tại).
+        "lk_scale": bool(lk_scale),
         "mask_age_dinh_nghia": DINH_NGHIA_TUOI_MASK,
     }
 
@@ -577,13 +585,14 @@ class LiveTrackingSession:
         self._cfg = config
         # Cả hai tracker dùng CÙNG cửa MAD của phiên: `_lk` (bám từ frame trước) và `_interp` (nội suy
         # từ frame VOS gần nhất) cùng sinh ra ô hiển thị, lệch ngưỡng thì số đo không nói được gì.
-        self._lk = lk_tracker or LkBoxTracker(max_mad=config.lk_max_mad)
-        self._interp = LkBoxTracker(max_mad=config.lk_max_mad)
+        self._lk = lk_tracker or LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
+        self._interp = LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
         self._stats = LiveTrackStats(device=config.device)
         # Echo cấu hình NGAY khi dựng phiên (engine đã nạp ⇒ `image_size` hiệu lực đã biết): từ đây
         # `status.json` trả lời được "phiên này chạy cấu hình nào" mà không cần đọc `worker.log`.
         self._stats.cau_hinh = cau_hinh_hieu_luc(
             cau_hinh_yeu_cau(source=config.source, lk_max_mad=config.lk_max_mad,
+                             lk_scale=config.lk_scale,
                              image_size=getattr(engine, "image_size", None),
                              vos_every=config.vos_every, display_fps=config.display_fps,
                              mask_smoothing=config.mask_smoothing, device=config.device,
@@ -912,10 +921,19 @@ class LiveTrackingSession:
         dx = bbox[0] - base_bbox[0]
         dy = bbox[1] - base_bbox[1]
         mask = getattr(base_result, "mask", None)
+        # Mask phải biến đổi CÙNG PHÉP với ô bao. Chế độ `lk_scale` dùng ma trận similarity của LK;
+        # chế độ cũ vẫn là dịch thuần (giữ nguyên hành vi và số đo đã công bố).
+        matrix = getattr(self._interp, "last_matrix", None)
+        if mask is None:
+            mask_moi = None
+        elif self._cfg.lk_scale and matrix is not None:
+            mask_moi = warp_mask(mask, matrix)
+        else:
+            mask_moi = shift_mask(mask, dx, dy)
         return _FrameResult(
             frame_idx=self._frame_index,
             bbox=xywh_to_xyxy(bbox),
-            mask=shift_mask(mask, dx, dy) if mask is not None else None,
+            mask=mask_moi,
             elapsed_ms=lk_ms,
         )
 

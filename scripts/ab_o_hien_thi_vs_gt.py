@@ -158,11 +158,12 @@ def _python() -> str:
 
 
 def chay_mot_lan(*, clip: str, bbox: str, image_size: int | None, vos_every: int,
-                 max_mad: float, frames: int, out_dir: Path) -> dict:
+                 max_mad: float, lk_scale: bool = False, frames: int, out_dir: Path) -> dict:
     lenh = [_python(), str(REPO_ROOT / "tools" / "live_worker.py"),
             "--source", clip, "--out-dir", str(out_dir),
             "--vos-every", str(vos_every), "--stop-after-frames", str(frames),
             "--lk-max-mad", str(max_mad), "--bbox", bbox,
+            *(["--lk-scale"] if lk_scale else []),
             "--dump-shown-csv", str(out_dir / "shown.csv")]
     if image_size is not None:
         lenh += ["--image-size", str(image_size)]
@@ -220,8 +221,8 @@ def tong_hop(lan: list[dict]) -> dict:
     }
 
 
-def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads) -> dict:
-    """Tích ĐỀ CÁC: `{("192/1/1.5"): (192, 1, 1.5), …}` — dựng MỘT chỗ rồi cả vòng chạy lẫn nhãn dùng lại.
+def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads, lk_scales=(False,)) -> dict:
+    """Tích ĐỀ CÁC: `{"192/1/1.5/shift": (192, 1, 1.5, False), …}` — MỘT chỗ rồi cả vòng chạy lẫn nhãn dùng lại.
 
     Vì sao phải là hàm riêng: bản đầu dựng khoá cấu hình ở 2 nơi (vòng chạy và bảng tổng hợp) ⇒ thêm
     trục `vos_every` thì một chỗ quên ⇒ `KeyError: (192, 1.5)` **chỉ lộ khi có > 1 giá trị** (chạy 1 giá
@@ -231,7 +232,9 @@ def danh_sach_cau_hinh(image_sizes, vos_everys, max_mads) -> dict:
     for sz in image_sizes:
         for ve in vos_everys:
             for m in max_mads:
-                ra[f"{sz}/{ve}/{m}"] = (sz, ve, m)
+                for sc in lk_scales:
+                    ten_sc = "scale" if sc else "shift"     # tự khai CHẾ ĐỘ NỘI SUY, không chỉ tham số
+                    ra[f"{sz}/{ve}/{m}/{ten_sc}"] = (sz, ve, m, bool(sc))
     return ra
 
 
@@ -263,6 +266,13 @@ def cau_hinh_lech(lan: list[dict]) -> tuple[list[dict], list[dict]]:
         if hieu is None or r.get("image_size_yeu_cau") is None:
             chua.append(r)
         elif int(hieu) != int(r["image_size_yeu_cau"]):
+            lech.append(r)
+            continue
+        # Cùng phép đối chiếu cho chế độ nội suy: `None` = CHƯA KIỂM ĐƯỢC, khác yêu cầu ⇒ LỖI.
+        che_do = r.get("lk_scale_hieu_luc")
+        if che_do is None:
+            chua.append(r)
+        elif bool(che_do) != bool(r.get("lk_scale_yeu_cau")):
             lech.append(r)
     return lech, chua
 
@@ -370,6 +380,8 @@ def main(argv=None) -> int:
     parser.add_argument("--frames", type=int, default=300)
     parser.add_argument("--lan", type=int, default=3, help="số lần/cấu hình (chèn kẽ; <2 không kết luận)")
     parser.add_argument("--max-mad", type=float, nargs="+", default=[1.5, 6.0])
+    parser.add_argument("--lk-scale", nargs="+", default=["shift"], choices=["shift", "scale"],
+                        help="chế độ nội suy LK: shift (chỉ dịch, hành vi cũ) / scale (thêm tỉ lệ + xoay)")
     parser.add_argument("--out", default="")
     args = parser.parse_args(argv)
 
@@ -381,21 +393,25 @@ def main(argv=None) -> int:
 
     # Khoá cấu hình = (image_size, vos_every, max_mad). `vos_every` là trục quan trọng nhất khi hỏi
     # "hybrid 30 FPS mất bao nhiêu độ chính xác so với chạy VOS mọi frame".
-    cau_hinh = danh_sach_cau_hinh(args.image_size, args.vos_every, args.max_mad)
+    cau_hinh = danh_sach_cau_hinh(args.image_size, args.vos_every, args.max_mad,
+                                  [sc == "scale" for sc in args.lk_scale])
     theo_cau_hinh: dict[tuple, list] = {k: [] for k in cau_hinh.values()}
     for vong in range(args.lan):
         for nhan_ch in thu_tu_vong(cau_hinh, vong):
-            sz, ve, max_mad = cau_hinh[nhan_ch]
+            sz, ve, max_mad, lk_scale = cau_hinh[nhan_ch]
             # KHÔNG hard-code /dev/shm: máy dev là Windows (chỉ Linux mới có) ⇒ FileNotFoundError.
             with tempfile.TemporaryDirectory(prefix=f"ab_o_{sz}_{ve}_{max_mad}_") as tmp:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
-                                   vos_every=ve, max_mad=max_mad,
+                                   vos_every=ve, max_mad=max_mad, lk_scale=lk_scale,
                                    frames=args.frames, out_dir=Path(tmp))
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]), lk_khong_ap_dung=(int(ve) == 1))
                 cau = res["status"].get("cau_hinh") or {}
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = cau.get("lk_max_mad")
                 res["image_size_yeu_cau"] = sz
+                res["lk_scale_yeu_cau"] = lk_scale
+                # Ba trạng thái như `image_size`: None = CHƯA KIỂM ĐƯỢC (worker không khai).
+                res["lk_scale_hieu_luc"] = cau.get("lk_scale")
                 # Ba trạng thái KHÔNG lẫn: None = CHƯA KIỂM ĐƯỢC (worker không khai), số = đo được
                 res["image_size_hieu_luc"] = cau.get("image_size_hieu_luc")
                 res["image_size_kiem_duoc"] = res["image_size_hieu_luc"] is not None
@@ -409,9 +425,9 @@ def main(argv=None) -> int:
                     print(f"[LOI] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
                           f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
                           "ghi hoặc ghi trùng ⇒ LOẠI lần chạy này", flush=True)
-            theo_cau_hinh[(sz, ve, max_mad)].append(res)
+            theo_cau_hinh[(sz, ve, max_mad, lk_scale)].append(res)
             c = res["cham"]
-            print(f"vòng {vong + 1} · {sz}/{ve}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
+            print(f"vòng {vong + 1} · {nhan_ch} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
                   f"(tệ nhất {c['iou_min']}) trên {c['n_cham']}/{c['n_gt_co_vat']} frame · "
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực mad {res['max_mad_hieu_luc']} · "
                   f"image_size {res['image_size_hieu_luc']}")
@@ -428,7 +444,8 @@ def main(argv=None) -> int:
     # `lech` và thông điệp đổ lỗi "mad hiệu lực khác yêu cầu" (sai nguyên nhân). Review #64.
     lech, chua_kiem_duoc = cau_hinh_lech(
         [r for v in theo_cau_hinh.values() for r in v if r["hop_le"]])
-    khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
+    # Nhãn = "<size>/<every>/<mad>/<che_do>" ⇒ 3 phần đầu là số, phần cuối là chuỗi.
+    khoa = sorted(tong, key=lambda k: (*[float(x) for x in k.split("/")[:3]], k.split("/")[3]))
     hop_le = {nhan[k]: [r for r in v if r["hop_le"]] for k, v in theo_cau_hinh.items()}
     if len(khoa) > 2:
         # "Đầu↔cuối" chỉ có nghĩa khi có ĐÚNG 2 cấu hình. Với ≥ 3, cặp đó bỏ qua cấu hình giữa và có
@@ -466,9 +483,9 @@ def main(argv=None) -> int:
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code, "git_loi": loi,
         "do_luc": datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(["python scripts/ab_o_hien_thi_vs_gt.py"] + (argv or sys.argv[1:])),
-        "schema": 2,
+        "schema": 3,
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
-                     "max_mad": args.max_mad,
+                     "max_mad": args.max_mad, "lk_scale": args.lk_scale,
                      "image_size": args.image_size, "vos_every": args.vos_every,
                      "frames": args.frames, "lan": args.lan,
                      "frame_gt_co_vat": sorted(hop_gt)},
