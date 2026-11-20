@@ -34,6 +34,21 @@ alive() { curl -s -m 3 "http://${HOST_IP}:${PORT}/info" 2>/dev/null | grep -q '"
 # Đo 05-11-2026: ngay sau khi bật, /info trả {"w": 0, "h": 0, "fps": 0.0, "serving": true}.
 streaming() { curl -s -m 3 "http://${HOST_IP}:${PORT}/info" 2>/dev/null | grep -Eq '"w":[[:space:]]*[1-9]'; }
 
+# Windows có ĐANG THẤY thiết bị camera nào không (`PresentOnly` = đang cắm/đang bật).
+# Vì sao cần (đo 21-11): máy rút webcam / USB rớt sau khi sleep ⇒ server relay vẫn sống, `/info` trả
+# "w": 0, và thông báo cũ đoán bừa "camera đang bị app Windows giữ" ⇒ người dùng đi đóng Zalo/Discord
+# vô ích. Kiểm PnP cho câu trả lời DỨT KHOÁT: có thiết bị hay không.
+# Trả: "yes" (có camera đang cắm) | "no" (không có thiết bị nào) | "unknown" (không gọi được PowerShell).
+cam_present() {
+  local out
+  out="$(_ps "if (Get-PnpDevice -PresentOnly -Class Camera -ErrorAction SilentlyContinue) { 'yes' } else { 'no' }" 2>/dev/null | tr -d '\r')"
+  case "$out" in
+    *yes*) echo yes ;;
+    *no*)  echo no ;;
+    *)     echo unknown ;;
+  esac
+}
+
 case "${1:-url}" in
   url)
     echo "$URL"
@@ -47,7 +62,12 @@ case "${1:-url}" in
       echo "[relay] URL: $URL"
     elif alive; then
       echo "[relay] server sống nhưng CHƯA có khung hình — $(curl -s -m 3 "http://${HOST_IP}:${PORT}/info")"
-      echo "[relay] thường là camera bị app Windows khác giữ (Zalo/Discord/Chrome). Thử:"
+      if [ "$(cam_present)" = no ]; then
+        echo "[relay] NGUYÊN NHÂN: Windows KHÔNG thấy camera nào đang cắm — cắm lại dây / thử cổng USB khác"
+        echo "        (hoặc bật camera trong Device Manager). Đây KHÔNG phải chuyện app khác giữ camera."
+      else
+        echo "[relay] thường là camera bị app Windows khác giữ (Zalo/Discord/Chrome). Thử:"
+      fi
       echo "        ./run relay stop && ./run relay start"
       exit 1
     else
@@ -60,6 +80,11 @@ case "${1:-url}" in
       if streaming; then
         echo "[relay] đã chạy sẵn: $URL"
         exit 0
+      fi
+      if [ "$(cam_present)" = no ]; then
+        echo "[relay] server đã chạy nhưng Windows KHÔNG THẤY CAMERA NÀO ĐANG CẮM ⇒ không có khung hình."
+        echo "        Cắm lại webcam / thử cổng USB khác rồi: ./run relay stop && ./run relay start"
+        exit 1
       fi
       echo "[relay] server đã chạy nhưng CHƯA có khung hình (camera bị app khác giữ?). Bật lại:"
       echo "        ./run relay stop && ./run relay start"
@@ -90,8 +115,15 @@ case "${1:-url}" in
       fi
     done
     if alive; then
-      echo "[LOI] relay sống nhưng KHÔNG có khung hình sau 20s ⇒ camera đang bị app Windows giữ."
-      echo "      Đóng Zalo (ZaloCall/ZaloCap), Discord, Chrome… rồi: ./run relay stop && ./run relay start"
+      if [ "$(cam_present)" = no ]; then
+        echo "[LOI] relay sống nhưng KHÔNG có khung hình sau 20s — và Windows KHÔNG THẤY CAMERA NÀO ĐANG CẮM."
+        echo "      Sửa: cắm lại webcam (thử cổng USB khác) hoặc bật camera trong Device Manager."
+        echo "      Đóng Zalo/Discord/Chrome KHÔNG giúp gì trong ca này (không có thiết bị để mà giữ)."
+        echo "      Không có webcam mà vẫn cần demo: dùng clip — ./run view data/binh2.mp4"
+      else
+        echo "[LOI] relay sống nhưng KHÔNG có khung hình sau 20s ⇒ camera đang bị app Windows giữ."
+        echo "      Đóng Zalo (ZaloCall/ZaloCap), Discord, Chrome… rồi: ./run relay stop && ./run relay start"
+      fi
       exit 1
     fi
     echo "[LOI] relay không lên sau 20s. Xem log: data/_relay.log , data/_relay_err.log"
