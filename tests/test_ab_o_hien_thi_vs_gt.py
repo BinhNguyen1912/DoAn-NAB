@@ -619,3 +619,19 @@ def test_doc_chan_doan_khong_chet_voi_inf_CSV_sua_tay(tmp_path):
                  "3,1,2,3,4,1,ok_shift,,1.0,0.0,inf\n", encoding="utf-8")
     ra, thieu = doc_chan_doan(p)
     assert thieu == [] and ra[3]["n_diem"] is None       # "inf" ⇒ None, không ném OverflowError
+
+
+def test_vos_every_1_khong_bao_gio_dem_chuan_doan_thanh_rong(tmp_path):
+    """P2 review PR #66 vòng 2: `vos_every=1` (không có LK) ⇒ `chan_doan` phải là `None` (CHƯA ĐO),
+    KHÔNG phải `{}` — cùng dict mà `lk_khong_ap_dung = true` thì `{}` là mâu thuẫn."""
+    from scripts.ab_o_hien_thi_vs_gt import cham, chan_doan_tu_csv, doc_shown
+
+    moi = tmp_path / "shown.csv"
+    # CSV mới (đủ 11 cột) nhưng mọi ô chẩn đoán TRỐNG — đúng ca vos_every=1
+    moi.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                   "0,1,2,3,4,0,,,,,\n", encoding="utf-8")
+    chan_doan, thieu_cot = chan_doan_tu_csv(moi)
+    assert thieu_cot == []                       # cột CÓ ⇒ không bị cổng theo cột thiếu
+    assert chan_doan is not None                 # ... nên cổng của `main` cho vos_every=1 là cổng RIÊNG
+    r = cham({0: (1, 2, 3, 4)}, doc_shown(moi), lk_khong_ap_dung=True, chan_doan=None)
+    assert r["ly_do_dem"] is None and r["lk_khong_ap_dung"] is True and r["lk_ok_frac"] is None

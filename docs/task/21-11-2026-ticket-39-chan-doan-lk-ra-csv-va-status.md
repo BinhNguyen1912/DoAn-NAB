@@ -51,7 +51,8 @@ tốt hơn (artifact tự ghi `phan_biet_duoc: null`). Số ở bảng này ch�
 hoạt động**; A/B 3 lần/cấu hình là việc của ticket #40.
 
 ⚠ So với lần chạy **trên cây bẩn** trước đó (`1,5` → IoU 0,6396, `mad_du` 7/7), lần này là 0,5914 và
-`mad_du` 6/7 — **SAM 2 không tất định** (AGENTS §6) ⇒ đừng trộn số hai lần. Lần chạy cây bẩn đã **xoá**;
+`mad_du` 6/7 — **SAM 2 không tất định** (AGENTS §6) ⇒ đừng trộn số hai lần. Lần chạy cây bẩn đã **xoá** (`git rm data/tmp_39_metrics.json` — bản đầu chỉ `rm` trong một chuỗi lệnh
+mà lệnh trước đó lỗi nên `&&` chặn mất, file vẫn được commit; reviewer vòng 2 bắt đúng);
 mọi số trích trong tài liệu phải lấy từ artifact có `git_dirty_code false` ở trên.
 
 **Không chậm thêm**: `measured_fps` 29,8 (có `--dump-shown-csv`) vs 29,8 (không dump), 200 frame, @192,
@@ -59,7 +60,7 @@ mọi số trích trong tài liệu phải lấy từ artifact có `git_dirty_co
 (vd `{"ly_do":"mad_du","ly_do_khop":null,"n_diem":53,"khop":false,"lk_ok":false,"frame_idx":199}`)
 **kể cả khi không bật dump**.
 
-Kiểm máy: `./run lint` xanh · `./run test` **1593 passed** (sau khi vá 2 P1 của review vòng 1).
+Kiểm máy: `./run lint` xanh · `./run test` **1595 passed** (sau khi vá 2 P1 vòng 1 + 1 P1 và 5 mục vòng 2).
 
 ## 5. Vấn đề & cách xử lý
 
@@ -95,7 +96,7 @@ Kiểm máy: `./run lint` xanh · `./run test` **1593 passed** (sau khi vá 2 P1
 | P2 | `scale`/`angle_deg` **luôn** ghi `1.0000,0.00` (giá trị reset) ở chế độ `shift`, dù similarity chưa từng được tính | thêm cờ `khop` vào snapshot; `scale`/`angle_deg` để **TRỐNG** khi `khop=False`; test khoá |
 | P2 | không test nào chạm `last_n_diem` | test 3 trạng thái: chưa chạy `None` · `seed_rong` **0** · `ok_shift` **> 0** |
 | P2 | xoá phần nối `_chan_doan_frame` → `chan_doan_lk` **không test nào đỏ** | thêm test đi đúng đường `_result_threaded` → `_update_stats`, assert `ly_do`/`n_diem`/`frame_idx`; **đã kiểm ĐỎ** bằng mutant `pass` |
-| P2 | artifact nghiệm thu có `git_dirty_code true`, `git_rev` là **commit cha** | **đo lại trên cây sạch** (mục 4) và xoá artifact cũ |
+| P2 | artifact nghiệm thu có `git_dirty_code true`, `git_rev` là **commit cha** | **đo lại trên cây sạch** (mục 4) + `git rm` artifact cũ — *nửa "xoá" ban đầu KHÔNG thành công, reviewer vòng 2 bắt thành P1* |
 | P3 | test CSV không khoá hình dạng (lệch dấu phẩy vẫn xanh) | nay assert `len(fields) == 11` **mọi dòng** + `lk_ok`/`x2` đúng cột |
 | P3 | comment trong `light_tracker.py` + doc `dump_shown_csv` còn nói "chưa nối ra CSV" | sửa: đã nối ra `shown.csv`/`status.json`, CSV **11 cột** |
 | P3 | `int(float(v))` chỉ bắt `ValueError` ⇒ CSV sửa tay `inf` làm script chết | bắt thêm `OverflowError` + test |
@@ -109,3 +110,21 @@ không race/không chậm (dict 6 khoá dựng **ngoài** `_stats_lock`, ~3–6 
 **Sự cố phụ bắt được khi chạy test**: một file rác tên `1` (0 byte, do lệnh shell tai nạn) nằm ở gốc repo
 làm `looks_like_file("1")` trả `True` ⇒ 2 test camera-index đỏ — đúng cảnh báo AGENTS §6 ("tên số được
 hiểu theo CWD... trừ khi có file thật trùng tên"). Đã xoá; không commit.
+
+## 9. Review vòng 2 — P0 = 0, **P1 = 1** (artifact cũ vẫn tracked) + 2 P2 + 3 P3
+
+| Mức | Reviewer bắt | Xử lý |
+|---|---|---|
+| **P1** | `data/tmp_39_metrics.json` (số **cây bẩn**, `git_dirty_code true`) **vẫn còn trong git index** ở `a994147`, trong khi log khai "đã xoá". Nguyên nhân thật: lệnh là `python3 -c ... && rm -f ...` mà phần python **lỗi** (`KeyError`) ⇒ `&&` chặn mất `rm`, rồi `git add -A` commit luôn file | `git rm data/tmp_39_metrics.json` (**đã kiểm**: `ls data/tmp_39*` không còn) + sửa câu trong log |
+| P2 | CSV **mới** + `vos_every=1`: `cham()` trả `{}` ("đo được 0 mẫu") cùng lúc `lk_khong_ap_dung = true` + `lk_ok_frac = None` ⇒ tự mâu thuẫn | `main`: `if int(ve) == 1: chan_doan = None` + test |
+| P2 | không ca nào gọi `_ghi_o_hien_thi` với `khop=True` ⇒ **hoán vị `scale`↔`angle_deg` không test nào đỏ** | thêm dòng frame 10 (`ok_scale`, `1.06/1.5`) và assert đúng cột; **đã kiểm ĐỎ** bằng mutant hoán vị hai cột |
+| P3 | `thieu_diem` đọc `n_diem` = số điểm thật nhưng **không test** ⇒ mutant dời phép gán xuống dưới cổng không đỏ | test `LkBoxTracker(min_points=10_000)` ⇒ `thieu_diem` + `last_n_diem == 64`; **đã kiểm ĐỎ** bằng mutant dời |
+| P3 | comment nói `vos_every=1` để `lk_ok` TRỐNG, thực tế ghi `0` (`bool(None)`) | sửa comment: ghi `0`, đọc bằng `lk_khong_ap_dung` |
+| P3 | xoá dòng reset `last_n_diem` đầu bước không bị giết (test dùng tracker mới) | thêm: sau bước `ok`, đặt `_prev_gray = None` ⇒ bước sau `chua_reset` + `last_n_diem is None` |
+
+Reviewer cũng xác nhận **5/5 ca** hình dạng CSV đều đủ **11 field** (kể cả `lk_ok is None`), `khop` đúng
+chỉ `True` ở `ok_scale`, `khop` **không** bị `_dem` đếm, mutant `last_n_diem = ... or None` là **tương
+đương** (không phải lỗ hổng), và số §4 khớp artifact sạch **chính xác** (0,5914/0,3848 ·
+`{"mad_du":6,"ok_shift":1}` · 54 · 0,7844 · 58).
+
+`./run lint` xanh · `./run test` **1595 passed**.

@@ -472,3 +472,16 @@ def test_last_n_diem_phan_biet_CHUA_CHAY_voi_0_diem_va_so_diem_that():
     t2.reset(f1, (130, 75, 60, 90))
     bbox, ok = t2.update(_khung_vat(patch, dx=3, dy=2))
     assert ok is True and t2.last_n_diem is not None and t2.last_n_diem > 0
+
+    # `thieu_diem`: cổng `min_points` chặn, nhưng SỐ ĐIỂM vẫn phải đọc được (đúng mục đích của field —
+    # phân biệt "cổng chặn vì tản" với "quá ít điểm"). Chuyển phép gán xuống dưới cổng là test ĐỎ.
+    t3 = LkBoxTracker(min_points=10_000)
+    t3.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t3.update(_khung_vat(patch, dx=3, dy=2))
+    assert ok is False and t3.last_ly_do == "thieu_diem"
+    assert t3.last_n_diem == 64, t3.last_n_diem            # lưới 8×8
+
+    # reset đầu bước: mất `_prev_gray` ⇒ bước sau là `chua_reset` và `n_diem` phải về `None`
+    t2._prev_gray = None
+    t2.update(_khung_vat(patch, dx=6, dy=4))
+    assert t2.last_ly_do == "chua_reset" and t2.last_n_diem is None

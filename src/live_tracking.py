@@ -967,7 +967,10 @@ class LiveTrackingSession:
 
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
-        self._lk_ok_frame = None          # không có nội suy ⇒ cột `lk_ok` để trống (chưa đo)
+        # Không có nội suy ⇒ `lk_ok = None`; khi ghi CSV, `_update_stats_locked` bọc `bool(...)` nên cột
+        # ra **`0`** (KHÔNG trống) — đọc đúng bằng `lk_khong_ap_dung` trong artifact; cấm đọc "0" thành
+        # "LK từ chối 100 %" (P3 review PR #66 vòng 2).
+        self._lk_ok_frame = None
         self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
         self._frame_index += 1
         result = self._engine.process(frame)

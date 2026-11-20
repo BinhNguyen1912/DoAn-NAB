@@ -2405,6 +2405,11 @@ def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
     s._ghi_o_hien_thi(9, None, False,
                       {"ly_do": "seed_rong", "ly_do_khop": None, "scale": 1.0,
                        "angle_deg": 0.0, "n_diem": 0, "khop": False})
+    # ca (a): similarity ĐƯỢC DÙNG ⇒ `scale`/`angle_deg` phải nằm ĐÚNG CỘT (hoán vị hai cột này từng
+    # không bị test nào bắt — P2 review vòng 2)
+    s._ghi_o_hien_thi(10, (11, 21, 31, 41), True,
+                      {"ly_do": "ok_scale", "ly_do_khop": None, "scale": 1.06,
+                       "angle_deg": 1.5, "n_diem": 58, "khop": True})
     s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
     s._shown_fh.close()
     raw = list(csv.reader((tmp_path / "shown.csv").open(encoding="utf-8")))
@@ -2419,8 +2424,11 @@ def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
     assert rows[1]["lk_ok"] == "0" and rows[1]["ly_do"] == "seed_rong"
     assert rows[1]["n_diem"] == "0"      # ĐO ĐƯỢC 0 điểm (seed rỗng), KHÔNG phải "chưa đo"
     assert rows[1]["scale"] == ""        # similarity không dùng ⇒ TRỐNG (không ghi 1.0000 giả)
-    # dòng 3 = frame 8 (chưa có LK) ⇒ mọi ô chẩn đoán TRỐNG
-    assert rows[2]["ly_do"] == "" and rows[2]["n_diem"] == "" and rows[2]["scale"] == ""
+    # dòng 3 = frame 10 (similarity dùng thật) ⇒ scale/angle ĐÚNG CỘT
+    assert rows[2]["ly_do"] == "ok_scale" and rows[2]["scale"] == "1.0600"
+    assert rows[2]["angle_deg"] == "1.50" and rows[2]["n_diem"] == "58"
+    # dòng 4 = frame 8 (chưa có LK) ⇒ mọi ô chẩn đoán TRỐNG
+    assert rows[3]["ly_do"] == "" and rows[3]["n_diem"] == "" and rows[3]["scale"] == ""
     # chế độ `shift`: `scale`/`angle_deg` phải TRỐNG dù tracker luôn reset 1.0/0.0 (P2 review #66)
     assert rows[0]["ly_do"] == "mad_du" and rows[0]["scale"] == "" and rows[0]["angle_deg"] == ""
 

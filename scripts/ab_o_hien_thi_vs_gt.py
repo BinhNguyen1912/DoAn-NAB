@@ -518,6 +518,11 @@ def main(argv=None) -> int:
                                    frames=args.frames, out_dir=Path(tmp))
                 # `res["shown"]` có thể là `str` (test giả lập + đường ghi ở dưới) ⇒ chuẩn hoá Path.
                 chan_doan, thieu_cot = chan_doan_tu_csv(Path(res["shown"]))
+                # `vos_every=1` KHÔNG có LK ⇒ cột chẩn đoán toàn trống, và `cham()` đã trả
+                # `lk_khong_ap_dung = true` + `lk_ok_frac = None`. Để `{}` ở đây thì cùng một dict vừa
+                # nói "không áp dụng" vừa nói "đo được 0 mẫu" — mâu thuẫn (P2 review PR #66 vòng 2).
+                if int(ve) == 1:
+                    chan_doan = None
                 res["csv_thieu_cot"] = thieu_cot
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]),
                                    lk_khong_ap_dung=(int(ve) == 1), chan_doan=chan_doan)
