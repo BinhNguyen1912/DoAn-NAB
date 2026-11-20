@@ -783,3 +783,33 @@ class TestOKhiKhongBangChung:
         d = doc_shown(p)
         assert d[5][2] == "no_evidence" and d[6][2] == "tracking"
         assert d[6][0] is not None            # KHONG_CO_O sentinel, không phải None
+
+
+class TestCsvCuKhongCoCotBam:
+    """P1 review vòng 2: `doc_shown` từng LUÔN trả 3-tuple nên `do_duoc` luôn `True` ⇒ chấm lại
+    `shown.csv` 11 cột (trước 21-11) in "0 frame có ô khi no_evidence, do_duoc=true" = "đã đo, sạch".
+    Đúng bẫy `0/None ≠ đã đo`. Test cũ truyền dict 2-tuple TRỰC TIẾP nên xanh giả.
+    """
+
+    def test_csv_11_cot_that_thi_do_duoc_la_None(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"          # header 11 cột = CSV sinh TRƯỚC 21-11
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                     "1,10,10,50,50,1,mad_du,,1.0,0.0,42\n", encoding="utf-8")
+        d = doc_shown(p)
+        assert len(d[1]) == 2, "CSV không có cột `bam` ⇒ KHÔNG được trả 3 phần tử"
+        r = dem_o_khi_khong_bang_chung(d)
+        assert r["do_duoc"] is None, "thiếu cột ⇒ CHƯA ĐO, không phải 'đã đo và sạch'"
+
+    def test_csv_12_cot_that_thi_do_duoc_la_true(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem,bam\n"
+                     "1,10,10,50,50,1,mad_du,,1.0,0.0,42,no_evidence\n", encoding="utf-8")
+        d = doc_shown(p)
+        assert len(d[1]) == 3
+        r = dem_o_khi_khong_bang_chung(d)
+        assert r["do_duoc"] is True and r["n_no_evidence"] == 1
+        assert r["n_co_o_khi_no_evidence"] == 1, "có toạ độ + bam=no_evidence ⇒ phải bị đếm"

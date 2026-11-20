@@ -97,7 +97,12 @@ def doc_shown(path: Path) -> dict[int, tuple]:
         return ra
     trung = []          # frame_idx trùng ⇒ dòng sau ghi đè dòng trước (im lặng) — phải nói ra
     with path.open(encoding="utf-8") as fh:
-        for row in csv.DictReader(fh):
+        reader = csv.DictReader(fh)
+        # Cột `bam` chỉ có từ 21-11. KHÔNG trả 3 phần tử cho CSV cũ: `dem_o_khi_khong_bang_chung`
+        # dùng độ dài tuple để biết "có cột hay không", trả 3 phần tử vô điều kiện ⇒ CSV 11 cột bị
+        # đọc thành "đã đo và sạch" (`do_duoc = True`) — đúng bẫy `0/None ≠ đã đo` (review vòng 2, P1).
+        co_cot_bam = "bam" in (reader.fieldnames or [])
+        for row in reader:
             try:
                 frame = int(row["frame_idx"])
             except (KeyError, TypeError, ValueError):
@@ -112,9 +117,12 @@ def doc_shown(path: Path) -> dict[int, tuple]:
                 box = O_HONG
             if frame in ra:
                 trung.append(frame)
-            # `bam` (cột 12, từ 21-11): `None` khi CSV cũ ⇒ "chưa đo được", KHÔNG phải "tracking".
-            bam = (row.get("bam") or "").strip() or None
-            ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1", bam)
+            if co_cot_bam:
+                # `bam` (cột 12, từ 21-11): rỗng ⇒ `None` = CHƯA ĐO, không phải "tracking".
+                ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1",
+                             (row.get("bam") or "").strip() or None)
+            else:
+                ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1")
     if trung:
         print(f"[canh-bao] shown.csv có frame_idx TRÙNG {len(trung)} lần (vd {sorted(set(trung))[:5]}) "
               "— dòng sau ghi đè dòng trước, số của các frame đó không đáng tin", flush=True)
@@ -206,7 +214,7 @@ def ty_le_o_ma(gt_rong: list[int], shown: dict) -> dict:
     # lẫn mẫu số ⇒ hệ vẽ ô hỏng trên frame rỗng được điểm TỐT HƠN hệ vẽ ô bình thường (P1 review 21-11).
     co_ve = len(co_o) + len(hong)
     n_cham_duoc = co_ve + len(khong_o)
-    nguong = 30     # cùng ngưỡng `drift_samples.MIN_SAMPLES` (ticket #23, "một ngưỡng duy nhất")
+    from src.drift_samples import MIN_SAMPLES as nguong   # ticket #23: MỘT ngưỡng duy nhất cho mọi `*_p05`
     return {
         "n_gt_rong": len(gt_rong),
         "n_co_o_tren_rong": len(co_o),
@@ -255,7 +263,7 @@ def dem_o_khi_khong_bang_chung(rows: dict) -> dict:
         "n_co_o_khi_no_evidence": len(co_o_khi_no_ev),
         "frame_co_o_khi_no_evidence": co_o_khi_no_ev,
         # `None` = CSV KHÔNG có cột `bam` (chưa đo được), khác `0` = đo được và sạch.
-        "do_duoc": None if n_no_ev == 0 and not any(len(r) > 2 for r in rows.values()) else True,
+        "do_duoc": (None if not any(len(r) > 2 for r in rows.values()) else True),
     }
 
 

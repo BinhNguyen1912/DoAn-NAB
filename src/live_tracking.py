@@ -252,6 +252,10 @@ class _FrameResult:
     bbox: tuple
     mask: object
     elapsed_ms: float
+    # Cờ "model THẬT SỰ không thấy vật" phải SỐNG SÓT qua lớp này: `_smooth` gắn nó lên `base_result`,
+    # còn nhánh LK ok dựng một `_FrameResult` MỚI ⇒ không truyền tiếp là mất (review vòng 2, P1).
+    # `None` = không biết (đường không làm mượt) ⇒ bên đọc fallback về `lost`.
+    raw_lost: bool | None = None
 
 
 def write_json_atomic(path: Path, data: dict) -> None:
@@ -663,6 +667,11 @@ class LiveTrackingSession:
         # Ghi vào CSV drift (ticket 14): thiếu nó thì `drift_iou = 0` không phân biệt được "LK trượt"
         # với "ô VOS nhảy" — 19-11 phải dựng cả script phát lại để suy ra, và chỉ khớp 3/6 cặp.
         self._lk_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
+        # `(frame_idx, bam)` song song: nhánh THƯỜNG của `_measure_drift` (kết quả VOS về SAU khi frame
+        # đã phát — trên máy thật VOS ~100 ms > nhịp phát 33 ms nên đây là nhánh phổ biến) chạy TRƯỚC
+        # `_update_stats_locked` của chính frame đó... không, nó chạy SAU; nhưng để tra được mà không
+        # phụ thuộc thứ tự, tra theo `frame_idx` (review vòng 2, P2: cột `bam` chỉ có ở nhánh pending).
+        self._bam_by_frame: deque = deque(maxlen=_SHOWN_HISTORY)
         self._lk_ok_frame = None
         self._bam_khong_bang_chung = 0   # số frame LIÊN TIẾP không có bằng chứng (plan 21-11 P4)
         # Chẩn đoán của bước LK vừa rồi (ticket #39). `None` = chưa có / không có LK.
@@ -846,7 +855,8 @@ class LiveTrackingSession:
         # `lk_ok` để TRỐNG (chưa đo): mẫu này bị flush vì frame chưa từng được phát ⇒ chưa có lần LK nào
         # cho nó (review thay thế PR #50, P3: `pending[5]` gần như luôn `None`, đừng để đọc thành "LK hỏng").
         self._log_drift_sample(frame_idx=pending[0], seq=pending[2], vos_ms=pending[3],
-                               empty=pending[4], value=None, bbox=pending[1], lk_ok=None)
+                               empty=pending[4], value=None, bbox=pending[1], lk_ok=None,
+                               bam=self._bam_of(pending[0]))
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
@@ -985,6 +995,8 @@ class LiveTrackingSession:
             bbox=xywh_to_xyxy(bbox),
             mask=mask_moi,
             elapsed_ms=lk_ms,
+            # Truyền cờ của lần VOS đang dùng (LK chỉ DỊCH mask đó, không "thấy" gì thêm).
+            raw_lost=getattr(base_result, "raw_lost", None),
         )
 
     # ------------------------------------------------------------------ đường đơn luồng
@@ -1259,7 +1271,12 @@ class LiveTrackingSession:
         return bbox if found else None
 
     def _shown_state_locked(self, frame_idx):
-        """`(đã phát frame này chưa?, ô bao lúc phát hoặc None)`.
+        """`(đã phát frame này chưa?, ô QUAN SÁT của frame đó hoặc None)`.
+
+        Từ 21-11 deque này lưu **ô quan sát** (`obs_bbox`), không phải ô đã vẽ: khi `bam = no_evidence`
+        hệ KHÔNG vẽ ô, nhưng drift vẫn phải chấm trên ô quan sát để không che mẫu xấu nhất. Cột
+        `hien_thi_*` của `drift_samples.csv` vì thế nghĩa là "ô dùng để so drift", KHÁC `shown.csv`
+        (ô thật sự đã vẽ). Đừng đổi lại thành ô đã vẽ nếu chưa đọc review 21-11 (P1)..
 
         Phải phân biệt hai ca mà `None` gộp làm một (review độc lập 13-11, P1): (a) frame **chưa**
         được phát — chờ phát rồi mới chấm, và (b) frame **đã** phát nhưng không có ô bao hiển thị
@@ -1271,6 +1288,13 @@ class LiveTrackingSession:
             if idx == frame_idx:
                 return True, bbox
         return False, None
+
+    def _bam_of(self, frame_idx):
+        """`bam` của frame đã phát `frame_idx` (`None` = frame đó chưa phát / chưa biết)."""
+        for idx, bam in reversed(self._bam_by_frame):
+            if idx == frame_idx:
+                return bam
+        return None
 
     def _lk_ok_of(self, frame_idx):
         """Trạng thái LK của frame đã phát `frame_idx` (`None` = chưa đo/không có LK)."""
@@ -1298,7 +1322,8 @@ class LiveTrackingSession:
             # đây chính là bằng chứng "VOS mất dấu", thứ phải TÁCH khỏi "LK trôi". Bỏ dòng này thì
             # cột `empty` luôn 0 và `empty_frac` nói dối (binh2 12-11: 81 lần mask rỗng trong
             # status.json nhưng CSV ghi 0,0 — bắt được khi đo thật).
-            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
+            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result,
+                                   bam=self._bam_of(frame_idx))
             return
         # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
@@ -1331,16 +1356,18 @@ class LiveTrackingSession:
                 with self._stats_lock:
                     lk_ok_cu = self._lk_ok_of(cu[0])
                 self._log_drift_sample(frame_idx=cu[0], seq=cu[2], vos_ms=cu[3],
-                                       empty=cu[4], value=None, bbox=cu[1], lk_ok=lk_ok_cu)
+                                       empty=cu[4], value=None, bbox=cu[1], lk_ok=lk_ok_cu,
+                                       bam=self._bam_of(cu[0]))
             return
         if shown is None:
             # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
-            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result)
+            self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result,
+                                   bam=self._bam_of(frame_idx))
             return
         value = _bbox_iou(shown, fresh)
         self._record_drift(value, self._mask_empty(result))
         self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value,
-                               hien_thi=shown, lk_ok=lk_ok)
+                               hien_thi=shown, lk_ok=lk_ok, bam=self._bam_of(frame_idx))
 
     @staticmethod
     def _mask_empty(result):
@@ -1634,7 +1661,8 @@ class LiveTrackingSession:
         self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
         # `raw_lost`: model có THẬT SỰ thấy vật không — khác `lost` khi bật `--mask-smoothing` (bộ lọc
         # GIỮ mask cũ tới `max_hold = 2` chu kỳ VOS ⇒ `lost = False` dù model vừa trả mask rỗng).
-        raw_lost = bool(getattr(result, "raw_lost", lost))
+        _raw = getattr(result, "raw_lost", None)
+        raw_lost = lost if _raw is None else bool(_raw)
         # TÍNH `bam` TRƯỚC khi suy ra `shown`: bản trước đọc `bam` của frame TRƯỚC (off-by-one) nên
         # đúng frame chuyển trạng thái, CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh trống.
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
@@ -1643,9 +1671,14 @@ class LiveTrackingSession:
         self._shown_by_frame.append((self._frame_index, obs_bbox))
         # Dụng cụ đo (#38): nhớ ô HIỂN THỊ của frame này để ghi ra CSV ngoài lock.
         if self._cfg.dump_shown_csv:
-            self._last_shown = (self._frame_index, shown, bool(self._lk_ok_frame),
+            # `lk_ok` 3 trạng thái: frame `engine.start()` chưa có bước LK nào ⇒ phải để TRỐNG
+            # (`None`), không phải `0`. `bool(None)` từng ghi `0` ⇒ artifact đếm frame 0 vào
+            # `n_lk_khong`/`iou_khi_lk_khong` như thể "LK đã từ chối" (review vòng 2, P3 — có từ #39).
+            lk_ok_cot = None if self._lk_ok_frame is None else bool(self._lk_ok_frame)
+            self._last_shown = (self._frame_index, shown, lk_ok_cot,
                                 self._chan_doan_frame)
         self._lk_by_frame.append((self._frame_index, self._lk_ok_frame))
+        self._bam_by_frame.append((self._frame_index, self._stats.bam))
         pending = self._pending_drift
         csv_row = None
         if pending is not None:

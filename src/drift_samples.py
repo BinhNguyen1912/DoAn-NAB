@@ -33,6 +33,9 @@ DRIFT_CSV_NAME = "drift_samples.csv"
 CSV_HEADER = [
     "frame_idx", "seq", "vos_ms", "empty", "drift_iou",
     "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2",
+    # `hien_thi_*` = ô ĐÃ DÙNG ĐỂ SO DRIFT (ô QUAN SÁT). Từ 21-11, khi `bam = no_evidence` hệ KHÔNG vẽ
+    # ô nhưng cột này vẫn có giá trị (drift phải chấm cả mẫu xấu nhất) ⇒ đọc kèm cột `bam`; muốn biết
+    # "ô thật sự đã vẽ" thì dùng `shown.csv` (cột ở đó TRỐNG ở frame `no_evidence`).
     "hien_thi_x1", "hien_thi_y1", "hien_thi_x2", "hien_thi_y2", "lk_ok",
     # 21-11: "có bằng chứng về vật" của CHÍNH frame này (`tracking` | `no_evidence` | rỗng = chưa đo).
     # Cột ở CUỐI để CSV cũ (14 cột) vẫn đọc được bằng `csv.DictReader` (thiếu khoá ⇒ `None`).
