@@ -265,3 +265,36 @@ def test_chieu_cua_bang_nhan_khong_bi_lan():
     assert khoa_cua["192/1/1.5"] == (192, 1, 1.5)
     # và mọi nhãn đều quy ngược được về khoá có thật trong dict cấu hình
     assert all(khoa_cua[n] in d.values() for n in nhan.values())
+
+
+def test_main_khoa_bang_nhan_va_ghep_cap_dung_chieu(monkeypatch, tmp_path):
+    """Chạy `main()` với pipeline GIẢ (vá `chay_mot_lan`) — khoá cả bảng nhãn lẫn phần ghép cặp.
+
+    Vì sao cần: lỗi "dùng nhãn làm khoá cho `theo_cau_hinh`" chỉ lộ **sau khi chạy xong 9 lần** (gặp
+    2 lần, 20-11) vì nó nằm ở đoạn CUỐI của `main()`. Test này chạy hết `main()` mà không nạp model.
+    """
+    from scripts import ab_o_hien_thi_vs_gt as ab
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 7, "n_gt_co_vat": 7,
+           "khong_do_duoc": 0, "thieu_frame": [], "theo_frame": [
+               {"frame_idx": 2, "iou": 0.5, "lk_ok": False, "hop": [0, 0, 1, 1], "hop_gt": [0, 0, 1, 1]}]}
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, frames, out_dir):
+        return {"shown": str(tmp_path / "s.csv"), "so_dong_shown": 8, "ma_thoat": 0, "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "cham", lambda _g, _s: ham)
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    out = tmp_path / "a.json"
+    rc = ab.main(["--gt", "g", "--clip", "c", "--bbox", "0,0,10,10", "--image-size", "192", "320",
+                  "--vos-every", "1", "3", "--max-mad", "1.5", "--lan", "2",
+                  "--out", str(out)])
+    assert rc == 0, "main() phải chạy hết và ghi artifact"
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert set(d["tong_hop"]) == {"192/1/1.5", "192/3/1.5", "320/1/1.5", "320/3/1.5"}
+    assert set(d["lan_chay"]) == set(d["tong_hop"])
+    assert d["so_sanh_theo_cap"]["a"] in d["tong_hop"]
+    assert d["so_sanh_theo_cap"]["b"] in d["tong_hop"]
+    assert d["so_sanh_theo_cap"]["so_cap"] > 0

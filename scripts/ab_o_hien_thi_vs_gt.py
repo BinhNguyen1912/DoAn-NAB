@@ -404,7 +404,9 @@ def main(argv=None) -> int:
     lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
     khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
     ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
-    ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[nhan[khoa[0]]], theo_cau_hinh[nhan[khoa[-1]]]),
+    # `khoa` là NHÃN ⇒ phải quy về TUPLE bằng `khoa_cua` (dùng `nhan` ở đây là lỗi chiều — đã gặp 2 lần)
+    ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[khoa_cua[khoa[0]]],
+                                  theo_cau_hinh[khoa_cua[khoa[-1]]]),
                "a": khoa[0], "b": khoa[-1]} if len(khoa) >= 2 else {})
 
     from scripts.measure_watchdog import _git_provenance
