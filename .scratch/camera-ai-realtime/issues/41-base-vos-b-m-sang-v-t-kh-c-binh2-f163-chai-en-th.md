@@ -1,5 +1,7 @@
 # 41: Base VOS bám SANG VẬT KHÁC ở binh2 (f163: chai đen thay vì chai trắng; f228 ô co còn 30×65) — 9/9 lần chạy, mọi max_mad
 
+**Status:** claimed
+
 **Type:** research
 
 **Blocked by:** None (can start immediately)
