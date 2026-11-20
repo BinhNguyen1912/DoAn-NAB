@@ -123,7 +123,12 @@ class Visualizer:
         # ô đó là ô VOS ĐÓNG BĂNG (SAM 2 còn trả bbox khi mask đã rỗng), tức "ô ma" mà người xem không
         # phân biệt được với "đang bám". Đường worker (`_annotate`) đã ẩn; CLI phải giống thì buổi demo
         # mới không nói hai chuyện.
-        dang_mat_dau = self.consecutive_lost > 0
+        # Ngưỡng DÙNG CHUNG với worker live (`live_tracking._BAM_NO_EVIDENCE_FRAMES = 2`): trước đó CLI
+        # ẩn ngay frame mất dấu ĐẦU TIÊN còn worker dung sai 2 frame ⇒ hai đường demo hành xử khác nhau
+        # (review 21-11, P3). Import trong hàm để `visualizer` không phụ thuộc nặng vào `live_tracking`.
+        from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
+
+        dang_mat_dau = self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
 
         # 1) tô mask bán trong suốt
         if not dang_mat_dau and result.mask is not None and result.mask.any():

@@ -245,12 +245,12 @@ export function bamLine(status: { bam?: string | null; bam_ly_do?: string | null
   if (!status) return null
   if (status.bam == null) return null
   if (status.bam === 'tracking') return null
-  const lyDo = status.bam_ly_do === 'lk_tu_choi'
-    ? 'bộ nội suy từ chối frame này'
-    : status.bam_ly_do === 'mask_rong'
-      ? 'model không thấy vật'
-      : 'không rõ lý do'
+  // HIỆN CHỈ có `mask_rong`: `lk_tu_choi` từng có trong bản nháp và đã bị bỏ vì ĐO ĐƯỢC nó báo oan
+  // 296/400 frame (LK từ chối ⇒ vẫn hiển thị ô VOS THẬT của lần VOS gần nhất). Đừng thêm lại nhánh đó
+  // nếu backend không phát giá trị ấy (review 21-11, P2).
+  const lyDo = status.bam_ly_do === 'mask_rong' ? 'model không thấy vật' : 'không rõ lý do'
   const n = status.bam_no_evidence_n ?? 0
-  return `Không có bằng chứng về vật (${lyDo}) — ô đã được ẩn khỏi ảnh để không vẽ ô suy diễn · `
-    + `${n} frame mất bằng chứng`
+  const dem = n > 0 ? ` · ${n} frame mất bằng chứng` : ''
+  return `Không có bằng chứng về vật (${lyDo}) — ô đã được ẩn khỏi ảnh để không vẽ ô suy diễn`
+    + dem
 }

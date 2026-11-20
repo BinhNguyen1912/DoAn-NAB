@@ -361,9 +361,12 @@ class TestKhongVeOChungKhiMatDau:
     """
 
     def test_masked_va_o_bao_khong_ve_khi_mat_dau(self):
+        from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
+
         viz = Visualizer()
-        viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
-        assert viz.consecutive_lost == 1
+        for _ in range(_BAM_NO_EVIDENCE_FRAMES):     # cùng ngưỡng với worker live (2 frame)
+            viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
+        assert viz.consecutive_lost == _BAM_NO_EVIDENCE_FRAMES
         frame = _frame()
         # bbox KHÁC rỗng (SAM 2 vẫn trả bbox khi mask rỗng) → nếu vẽ thì sẽ thấy viền
         img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220),
@@ -372,6 +375,15 @@ class TestKhongVeOChungKhiMatDau:
         # (y ≈ 8–60) nên vùng này sạch.
         assert np.array_equal(img[200:220, 200:220], frame[200:220, 200:220]), \
             "mất dấu mà vẫn vẽ ô bao ⇒ banner 'MAT DAU' và ảnh nói hai chuyện ngược nhau"
+
+    def test_dung_sai_mot_frame_van_ve_o(self):
+        """Dung sai MỘT frame mất dấu là BẮT BUỘC (cùng lý do `MISS_MIN` của watchdog): ẩn ô ngay frame
+        đầu làm ô nhấp nháy khi model "chớp" mất vật 1 frame."""
+        viz = Visualizer()
+        viz.update(_frame(), _result(frame_idx=0, bbox=(0, 0, 0, 0), mask_box=None))
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220), mask_box=None))
+        assert not np.array_equal(img[200:220, 200:220], frame[200:220, 200:220])
 
     def test_ve_lai_khi_co_bang_chung(self):
         viz = Visualizer()

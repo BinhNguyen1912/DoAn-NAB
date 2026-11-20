@@ -694,8 +694,27 @@ class TestTyLeOMa:
         assert r["n_o_hong_tren_rong"] == 1
         assert r["n_khong_o_tren_rong"] == 1
         assert r["thieu_frame_rong"] == [5]
-        assert r["ty_le_n"] == 3            # chỉ 3 frame chấm được (bỏ frame thiếu)
-        assert r["ty_le"] == pytest.approx(2 / 3, abs=1e-4)
+        # 4 = 2 ô hợp lệ + 1 ô HỎNG + 1 không ô (frame 5 thiếu ⇒ không tính). Trước 21-11 con số là 3
+        # vì ô hỏng bị bỏ khỏi cả tử lẫn mẫu số — đó là P1 review bắt.
+        assert r["ty_le_n"] == 4
+        # Ô HỎNG vẫn là "đã vẽ ô" ⇒ nằm trong TỬ SỐ. Bản nháp đầu bỏ nó ra và bị review bắt (P1):
+        # như vậy hệ vẽ ô HỎNG trên frame rỗng lại được điểm tốt hơn hệ vẽ ô bình thường.
+        assert r["ty_le"] is None, "n = 3 < ngưỡng 30 ⇒ KHÔNG công bố tỉ lệ (chỉ báo đếm)"
+        assert r["ty_le_du_mau"] is False
+
+    def test_ty_le_chi_cong_bo_khi_du_mau(self):
+        """`None` khi n < 30 — cùng luật với `mIoU_p05`/`drift_iou_p05` (một ngưỡng duy nhất)."""
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, ty_le_o_ma
+        # 30 frame rỗng, 15 có ô (kể cả 1 ô hỏng) + 15 không ô ⇒ đủ mẫu
+        shown = {}
+        rong = list(range(30))
+        for i in rong[:15]:
+            shown[i] = ((0, 0, 10, 10), True)
+        for i in rong[15:]:
+            shown[i] = (KHONG_CO_O, True)
+        r = ty_le_o_ma(rong, shown)
+        assert r["ty_le_du_mau"] is True and r["ty_le_n"] == 30
+        assert r["ty_le"] == pytest.approx(0.5, abs=1e-4)
 
     def test_chua_co_frame_nao_thi_ty_le_la_NONE(self):
         """`None` = CHƯA ĐO, không phải 0,0 — bẫy `0/None ≠ đã đo` (AGENTS §6)."""
@@ -724,3 +743,43 @@ class TestTyLeOMa:
         assert r["o_ma"]["n_gt_rong"] == 1
         assert r["o_ma"]["n_co_o_tren_rong"] == 1     # vẽ ô trên frame 9 (rỗng) ⇒ bắt được
         assert r["iou_mean"] == 1.0                   # iou_mean KHÔNG đổi (hồi quy)
+
+
+class TestOKhiKhongBangChung:
+    """Tiêu chí P4 "0 frame có ô khi `bam = no_evidence`" phải KIỂM ĐƯỢC từ artifact (review 21-11, P1).
+
+    Trước đó cột `bam` là **write-only** (không script nào đọc) nên con số chỉ nằm trong commit message.
+    Và trên `binh2`, 3/4 frame `gt_rong` vốn đã không có ô vì mask rỗng ⇒ bbox `(0,0,0,0)` ⇒ con số
+    "0/72" **không phân biệt được** "vá đã ẩn ô" với "ô vốn đã suy biến". Test dưới dùng ca **bbox hợp lệ
+    + bam=no_evidence** — đúng ca phân biệt được.
+    """
+
+    def test_dem_co_o_khi_no_evidence(self):
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, dem_o_khi_khong_bang_chung
+        rows = {
+            1: ((10, 10, 50, 50), True, "no_evidence"),   # CÓ toạ độ mà khai không bằng chứng ⇒ LỖI
+            2: (KHONG_CO_O, True, "no_evidence"),         # ngoan
+            3: ((10, 10, 50, 50), True, "tracking"),      # bình thường, không tính
+            4: ((0, 0, 0, 0), False, "no_evidence"),      # vẫn có toạ độ ⇒ tính
+        }
+        r = dem_o_khi_khong_bang_chung(rows)
+        assert r["n_no_evidence"] == 3
+        assert r["n_co_o_khi_no_evidence"] == 2
+        assert r["frame_co_o_khi_no_evidence"] == [1, 4]
+
+    def test_csv_cu_khong_co_cot_bam_thi_la_CHUA_DO(self):
+        """CSV 11 cột (trước 21-11) ⇒ `bam` vắng ⇒ `n_no_evidence = 0` và `do_duoc is None`."""
+        from scripts.ab_o_hien_thi_vs_gt import KHONG_CO_O, dem_o_khi_khong_bang_chung
+        r = dem_o_khi_khong_bang_chung({1: ((1, 1, 9, 9), True), 2: (KHONG_CO_O, True)})
+        assert r["n_no_evidence"] == 0 and r["n_co_o_khi_no_evidence"] == 0
+        assert r["do_duoc"] is None, "0 ở đây là CHƯA ĐO, không phải 'sạch'"
+
+    def test_doc_shown_doc_cot_bam(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import doc_shown
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "5,10,10,20,20,1,no_evidence\n"
+                     "6,,, ,,0,tracking\n".replace(", ,,", ",,,") , encoding="utf-8")
+        d = doc_shown(p)
+        assert d[5][2] == "no_evidence" and d[6][2] == "tracking"
+        assert d[6][0] is not None            # KHONG_CO_O sentinel, không phải None

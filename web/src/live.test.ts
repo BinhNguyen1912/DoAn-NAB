@@ -356,15 +356,18 @@ describe('bamLine — "không có bằng chứng về vật" (plan 21-11 P4)', (
     expect(line).toContain('7 frame')
   })
 
-  it('no_evidence + lk_tu_choi ⇒ nói rõ bộ nội suy từ chối (không quy cho model)', () => {
+  it('lý do lạ ⇒ in "không rõ lý do", KHÔNG bịa lý do', () => {
+    // `lk_tu_choi` từng có trong bản nháp và đã bị BỎ (đo được: báo oan 74 % frame). Test cũ khoá
+    // một trạng thái backend KHÔNG BAO GIỜ phát — review 21-11, P2.
     const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'lk_tu_choi', bam_no_evidence_n: 2 })
-    expect(line).toContain('nội suy')
-    expect(line).not.toContain('model không thấy vật')
+    expect(line).toContain('không rõ lý do')
+    expect(line).not.toContain('nội suy')
   })
 
-  it('no_evidence mà thiếu số đếm ⇒ vẫn in được, không ra "undefined frame"', () => {
-    const line = bamLine({ bam: 'no_evidence', bam_ly_do: null })
-    expect(line).toContain('0 frame')
+  it('n = 0 ⇒ KHÔNG in "0 frame mất bằng chứng" (câu vô nghĩa)', () => {
+    const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'mask_rong' })
+    expect(line).not.toContain('0 frame')
     expect(line).not.toContain('undefined')
+    expect(line).toContain('Không có bằng chứng')
   })
 })

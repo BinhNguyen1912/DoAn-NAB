@@ -34,6 +34,9 @@ CSV_HEADER = [
     "frame_idx", "seq", "vos_ms", "empty", "drift_iou",
     "bbox_x1", "bbox_y1", "bbox_x2", "bbox_y2",
     "hien_thi_x1", "hien_thi_y1", "hien_thi_x2", "hien_thi_y2", "lk_ok",
+    # 21-11: "có bằng chứng về vật" của CHÍNH frame này (`tracking` | `no_evidence` | rỗng = chưa đo).
+    # Cột ở CUỐI để CSV cũ (14 cột) vẫn đọc được bằng `csv.DictReader` (thiếu khoá ⇒ `None`).
+    "bam",
 ]
 
 # Cửa sổ phân vị: khớp `_STAT_WINDOW` của `src/live_tracking.py` ⇒ p05 tính từ CSV tái lập đúng
@@ -90,7 +93,7 @@ class DriftSampleLog:
         return self._path
 
     def write(self, *, frame_idx, seq, vos_ms, empty, drift_iou, bbox,
-              hien_thi=None, lk_ok=None) -> None:
+              hien_thi=None, lk_ok=None, bam=None) -> None:
         """Ghi MỘT mẫu. Trường nào là `None` ⇒ ô trống (chưa đo), không ghi 0."""
         row = [
             "" if frame_idx is None else int(frame_idx),
@@ -110,6 +113,10 @@ class DriftSampleLog:
         # `lk_ok` 3 trạng thái: `1` ô hiển thị do LK tính `ok`, `0` LK trả `not-ok` (phát ô base),
         # ô trống = chưa đo (đường tắt LK `vos_every=1`, hoặc frame chưa được phát).
         row.append("" if lk_ok is None else (1 if lk_ok else 0))
+        # `bam` (21-11): "có bằng chứng về vật" của CHÍNH frame này. Mẫu drift ở frame mất bằng chứng
+        # VẪN được ghi (KHÔNG che mẫu xấu) — cột này để người phân tích LỌC được (vd chỉ `tracking`),
+        # thay vì để việc ẩn ô âm thầm làm `drift_iou` đẹp lên (P1 review 21-11).
+        row.append("" if bam is None else str(bam))
         line = ",".join(str(v) for v in row) + "\n"
         with self._lock:
             if self._closed:
@@ -177,6 +184,8 @@ def read_samples(path) -> list:
                 "hien_thi": tuple(_opt_int(raw.get(f"hien_thi_{k}"))
                                   for k in ("x1", "y1", "x2", "y2")),
                 "lk_ok": _opt_bool(raw.get("lk_ok")),
+                # `bam` (21-11): CSV cũ không có cột ⇒ `None` = CHƯA ĐO (không phải "tracking").
+                "bam": (raw.get("bam") or "").strip() or None,
             })
     return rows
 

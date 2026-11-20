@@ -1351,7 +1351,7 @@ class LiveTrackingSession:
         return not bool(mask.any())
 
     def _log_drift_sample(self, *, frame_idx, seq, value, result=None, vos_ms=None,
-                          empty=None, bbox=None, hien_thi=None, lk_ok=None) -> None:
+                          empty=None, bbox=None, hien_thi=None, lk_ok=None, bam=None) -> None:
         """Ghi MỘT dòng CSV cho mẫu drift (ticket 15). PHẢI gọi khi KHÔNG giữ `_stats_lock`.
 
         `result` là kết quả VOS (có `elapsed_ms`/`mask`/`bbox`); nhánh `_pending_drift` tới hạn thì
@@ -1363,7 +1363,7 @@ class LiveTrackingSession:
             empty=(self._mask_empty(result) if empty is None else empty),
             drift_iou=value,
             bbox=(getattr(result, "bbox", None) if bbox is None else bbox),
-            hien_thi=hien_thi, lk_ok=lk_ok)
+            hien_thi=hien_thi, lk_ok=lk_ok, bam=bam)
 
     def _record_drift(self, value, empty=None) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
@@ -1518,6 +1518,9 @@ class LiveTrackingSession:
                 self._prev_vos_bbox = bbox
             shown = smoother.update(raw)
             result.mask = shown
+            # Cờ "model THẬT SỰ không thấy vật" đi kèm kết quả (không ghi vào `self` — `_smooth` chạy
+            # ở luồng VOS, đọc ở luồng chính là race; tuple `_vos_state` đã mang theo object này).
+            result.raw_lost = not raw.any()
             with self._stats_lock:
                 self._stats.mask_holds = smoother.holds
                 self._stats.mask_drops = smoother.drops
@@ -1619,13 +1622,25 @@ class LiveTrackingSession:
         mask = getattr(result, "mask", None)
         # Ghi theo bộ đếm frame CỦA PHIÊN (không phải `result.frame_idx` của engine): `_seq_frame`
         # ánh xạ seq→bộ đếm này lúc submit, nên hai bên phải cùng một hệ.
-        shown = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
-        if self._stats.bam == "no_evidence":
-            # ẢNH không vẽ ô/mask (xem `_annotate`) ⇒ "ô hiển thị" phải là KHÔNG CÓ. Trước khi vá,
-            # CSV vẫn ghi toạ độ trong khi ảnh trống ⇒ hai artifact nói hai chuyện khác nhau, và
-            # tiêu chí "0 frame có ô khi no_evidence" tự vô hiệu.
-            shown = None
-        self._shown_by_frame.append((self._frame_index, shown))
+        #
+        # HAI đại lượng khác nhau, đừng gộp (review độc lập 21-11, P1):
+        #  - `obs_bbox` = ô QUAN SÁT được (model/LK nói vật ở đâu), dùng cho **đo drift** — giữ NGUYÊN
+        #    định nghĩa trước 21-11 để `drift_iou`/`drift_iou_p05`/`suc_khoe` còn so được với số cũ;
+        #  - `shown`   = ô ĐÃ VẼ lên ảnh (None khi `bam = no_evidence`), dùng cho CSV ô-hiển-thị.
+        # Bản nháp đầu cho `shown = None` rồi dùng luôn cho drift ⇒ **loại đúng những mẫu xấu nhất**
+        # (frame mất dấu) khỏi `drift_iou` ⇒ chỉ số TỰ ĐẸP LÊN sau 21-11 mà không phải bám tốt hơn.
+        obs_bbox = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
+        lost = mask is None or not mask.any()
+        self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
+        # `raw_lost`: model có THẬT SỰ thấy vật không — khác `lost` khi bật `--mask-smoothing` (bộ lọc
+        # GIỮ mask cũ tới `max_hold = 2` chu kỳ VOS ⇒ `lost = False` dù model vừa trả mask rỗng).
+        raw_lost = bool(getattr(result, "raw_lost", lost))
+        # TÍNH `bam` TRƯỚC khi suy ra `shown`: bản trước đọc `bam` của frame TRƯỚC (off-by-one) nên
+        # đúng frame chuyển trạng thái, CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh trống.
+        self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
+        shown = None if self._stats.bam == "no_evidence" else obs_bbox
+        # Drift chấm trên ô QUAN SÁT (không phải ô đã vẽ) — xem giải thích ở trên.
+        self._shown_by_frame.append((self._frame_index, obs_bbox))
         # Dụng cụ đo (#38): nhớ ô HIỂN THỊ của frame này để ghi ra CSV ngoài lock.
         if self._cfg.dump_shown_csv:
             self._last_shown = (self._frame_index, shown, bool(self._lk_ok_frame),
@@ -1635,8 +1650,8 @@ class LiveTrackingSession:
         csv_row = None
         if pending is not None:
             self._pending_drift = None
-            if pending[0] == self._frame_index and shown is not None:
-                value = _bbox_iou(shown, pending[1])
+            if pending[0] == self._frame_index and obs_bbox is not None:
+                value = _bbox_iou(obs_bbox, pending[1])
                 if value is not None:          # ở đây ĐANG giữ `_stats_lock` ⇒ không gọi _record_drift
                     self._drift_window.append(value)
                     self._drift_empty_window.append(pending[4])
@@ -1644,7 +1659,10 @@ class LiveTrackingSession:
                 csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
                            "vos_ms": pending[3], "empty": pending[4],
                            "value": value, "bbox": pending[1],
-                           "hien_thi": shown, "lk_ok": self._lk_ok_of(self._frame_index)}
+                           "hien_thi": obs_bbox, "lk_ok": self._lk_ok_of(self._frame_index),
+                           # `bam` của CHÍNH frame này: mẫu VẪN được ghi khi không bằng chứng
+                           # (không che mẫu), và người phân tích LỌC ĐƯỢC theo cột này.
+                           "bam": self._stats.bam or ""}
             else:
                 # Frame đã phát mà KHÔNG có ô bao hiển thị (hoặc frame đó không bao giờ tới lượt
                 # phát): KHÔNG chấm drift nhưng VẪN ghi dòng — bỏ im lặng là mất mẫu, và đúng
@@ -1652,16 +1670,13 @@ class LiveTrackingSession:
                 # (review độc lập 13-11, P1).
                 csv_row = {"frame_idx": pending[0], "seq": pending[2], "vos_ms": pending[3],
                            "empty": pending[4], "value": None, "bbox": pending[1]}
-        lost = mask is None or not mask.any()
-        self._stats.lost_streak = self._stats.lost_streak + 1 if lost else 0
-        self._cap_nhat_bang_chung(lost)
         self._stats.bbox = [int(v) for v in result.bbox]
         if not lost:
             x1, y1, x2, y2 = result.bbox
             self._trail.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
         return csv_row
 
-    def _cap_nhat_bang_chung(self, lost: bool) -> None:
+    def _cap_nhat_bang_chung(self, lost: bool, raw_lost: bool | None = None) -> None:
         """Quyết định `bam` = có bằng chứng về vật hay không (gọi trong `_update_stats_locked`).
 
         Bằng chứng bị mất ⇔ **mask rỗng**: model không thấy vật ở frame VOS gần nhất, và nội suy
@@ -1678,11 +1693,22 @@ class LiveTrackingSession:
         **Cũng KHÔNG dùng `lost_streak` một mình**: đường hybrid vẫn bám bằng LK khi model mất dấu
         (`vos_every ≥ 2`) ⇒ `lost_streak` tăng trong lúc ô hiển thị VẪN đúng.
         """
-        ly_do = "mask_rong" if lost else ""
+        # `raw_lost` = mask THẬT của model rỗng; `lost` = mask ĐÃ LÀM MƯỢT rỗng. Bật
+        # `--mask-smoothing` thì bộ lọc GIỮ mask cũ tới 2 chu kỳ VOS ⇒ `lost = False` trong khi model
+        # không thấy gì. Mặc định làm mượt TẮT nên hai giá trị bằng nhau.
+        ly_do = "mask_rong" if (lost or (raw_lost if raw_lost is not None else False)) else ""
         if not ly_do:
             self._bam_khong_bang_chung = 0
             self._stats.bam = "tracking"
             self._stats.bam_ly_do = ""
+            return
+        if self._stats.bam is None:
+            # FRAME ĐẦU TIÊN đã mất bằng chứng: dung sai 2 frame để chống NHẤP NHÁY giữa phiên, không
+            # phải để im lặng ở frame đầu (ca thật 13-11: bbox trỏ vào NỀN ⇒ frame đầu không có gì).
+            self._stats.bam = "no_evidence"
+            self._stats.bam_ly_do = ly_do
+            self._stats.bam_no_evidence_n += 1
+            self._bam_khong_bang_chung = 1
             return
         self._bam_khong_bang_chung += 1
         if self._bam_khong_bang_chung >= _BAM_NO_EVIDENCE_FRAMES:

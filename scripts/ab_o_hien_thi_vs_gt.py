@@ -82,8 +82,8 @@ KHONG_CO_O = "khong_co_o"      # sentinel: frame đó KHÔNG có ô nào hiển 
 O_HONG = "o_hong"              # sentinel: có ghi toạ độ nhưng không dùng được (đảo/âm)
 
 
-def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, int, int, int], bool]]:
-    """`frame → (ô | KHONG_CO_O | O_HONG, lk_ok)` từ `--dump-shown-csv`.
+def doc_shown(path: Path) -> dict[int, tuple]:
+    """`frame → (ô | KHONG_CO_O | O_HONG, lk_ok, bam)` từ `--dump-shown-csv`.
 
     Ba trạng thái phải KHÁC nhau (bẫy "0/None" của AGENTS §6):
       - 4 cột rỗng ⇒ **không có ô nào hiển thị** (`KHONG_CO_O`) — chấm `0,0` vì GT có vật mà màn hình
@@ -112,7 +112,9 @@ def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, in
                 box = O_HONG
             if frame in ra:
                 trung.append(frame)
-            ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1")
+            # `bam` (cột 12, từ 21-11): `None` khi CSV cũ ⇒ "chưa đo được", KHÔNG phải "tracking".
+            bam = (row.get("bam") or "").strip() or None
+            ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1", bam)
     if trung:
         print(f"[canh-bao] shown.csv có frame_idx TRÙNG {len(trung)} lần (vd {sorted(set(trung))[:5]}) "
               "— dòng sau ghi đè dòng trước, số của các frame đó không đáng tin", flush=True)
@@ -193,13 +195,18 @@ def ty_le_o_ma(gt_rong: list[int], shown: dict) -> dict:
             thieu.append(frame)
             continue
         box = shown[frame]
-        box = box[0] if isinstance(box, (tuple, list)) else box     # (ô, lk_ok) | ô | sentinel
+        box = box[0] if isinstance(box, (tuple, list)) else box     # (ô, lk_ok[, bam]) | ô | sentinel
         if box is KHONG_CO_O:
             khong_o.append(frame)
         elif box is O_HONG:
             hong.append(frame)
         else:
             co_o.append(frame)
+    # Ô HỎNG (đảo/âm toạ độ) vẫn là "có vẽ một ô" ⇒ phải nằm ở TỬ SỐ. Bản nháp đầu bỏ nó khỏi cả tử
+    # lẫn mẫu số ⇒ hệ vẽ ô hỏng trên frame rỗng được điểm TỐT HƠN hệ vẽ ô bình thường (P1 review 21-11).
+    co_ve = len(co_o) + len(hong)
+    n_cham_duoc = co_ve + len(khong_o)
+    nguong = 30     # cùng ngưỡng `drift_samples.MIN_SAMPLES` (ticket #23, "một ngưỡng duy nhất")
     return {
         "n_gt_rong": len(gt_rong),
         "n_co_o_tren_rong": len(co_o),
@@ -207,13 +214,48 @@ def ty_le_o_ma(gt_rong: list[int], shown: dict) -> dict:
         "n_khong_o_tren_rong": len(khong_o),
         "thieu_frame_rong": thieu,
         "frame_co_o_tren_rong": co_o,
-        # CHỈ báo khi có mẫu chấm được; `None` = "chưa đo" (không phải 0,0) — AGENTS §6.
-        "ty_le": (round(len(co_o) / (len(co_o) + len(khong_o)), 4)
-                  if (co_o or khong_o) else None),
-        "ty_le_n": len(co_o) + len(khong_o),
-        "ty_le_nguong": 30,     # < 30 mẫu ⇒ chỉ báo ĐẾM (cùng ngưỡng `drift_samples.MIN_SAMPLES`)
-        "ghi_chu": ("n < 30 ⇒ chỉ đọc `n_co_o_tren_rong` / `n_gt_rong`, KHÔNG trích `ty_le` như tỉ lệ "
-                    "dân số; `None` = chưa có frame nào chấm được"),
+        # `ty_le` = tỉ lệ frame KHÔNG có vật mà hệ vẫn vẽ ô (kể cả ô hỏng). `None` = CHƯA ĐO
+        # (không phải 0,0) — AGENTS §6; và `None` cả khi n < ngưỡng, vì công bố một tỉ lệ từ 4 mẫu
+        # là nói một điều mà mọi `*_p05` khác của repo từ chối nói (P2 review 21-11).
+        "ty_le": (round(co_ve / n_cham_duoc, 4)
+                  if n_cham_duoc and n_cham_duoc >= nguong else None),
+        "ty_le_n": n_cham_duoc,
+        "ty_le_nguong": nguong,
+        "ty_le_du_mau": bool(n_cham_duoc >= nguong),
+        "ghi_chu": ("`ty_le = None` khi chưa có frame nào chấm được HOẶC n < `ty_le_nguong` ⇒ đọc "
+                    "`n_co_o_tren_rong` / `n_o_hong_tren_rong` / `n_gt_rong` (đếm, không phải tỉ lệ). "
+                    "`n_o_hong_tren_rong` nằm TRONG tử số: ô hỏng vẫn là 'đã vẽ ô'"),
+    }
+
+
+def dem_o_khi_khong_bang_chung(rows: dict) -> dict:
+    """Đếm frame **CÓ ô hiển thị** mà worker khai `bam = no_evidence` (plan 21-11 P4). Hàm THUẦN.
+
+    Vì sao cần: trước 21-11 tiêu chí "0 frame có ô khi no_evidence" chỉ nằm trong commit message —
+    không script nào đọc lại được (cột `bam` là write-only) ⇒ **không kiểm chứng được**, và tệ hơn là
+    không phân biệt được "vá đã ẩn ô" với "ô vốn đã suy biến `(0,0,0,0)`" (mask rỗng luôn kéo theo bbox
+    không hợp lệ ⇒ mọi frame mất dấu đều tự động không có toạ độ).
+
+    `rows` = `frame → (ô | KHONG_CO_O | O_HONG, lk_ok, bam)` (3 phần tử) hoặc dạng 2 phần tử cũ
+    (CSV cũ không có cột `bam` ⇒ `bam = None` ⇒ `n_no_evidence = 0` = **chưa đo**, không phải "sạch").
+    """
+    n_no_ev = 0
+    co_o_khi_no_ev = []
+    for frame in sorted(rows):
+        row = rows[frame]
+        bam = row[2] if len(row) > 2 else None
+        if bam != "no_evidence":
+            continue
+        n_no_ev += 1
+        box = row[0]
+        if box is not KHONG_CO_O and (box is O_HONG or box is not None):
+            co_o_khi_no_ev.append(frame)
+    return {
+        "n_no_evidence": n_no_ev,
+        "n_co_o_khi_no_evidence": len(co_o_khi_no_ev),
+        "frame_co_o_khi_no_evidence": co_o_khi_no_ev,
+        # `None` = CSV KHÔNG có cột `bam` (chưa đo được), khác `0` = đo được và sạch.
+        "do_duoc": None if n_no_ev == 0 and not any(len(r) > 2 for r in rows.values()) else True,
     }
 
 
@@ -239,7 +281,8 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
         if frame not in shown:
             thieu.append(frame)
             continue
-        box, lk_ok = shown[frame]
+        row = shown[frame]
+        box, lk_ok = row[0], row[1]          # CSV cũ chỉ có 2 phần tử (không cột `bam`)
         if box is KHONG_CO_O:
             theo_frame.append({"frame_idx": frame, "iou": 0.0, "lk_ok": lk_ok,
                                "vi_sao": "không có ô hiển thị ⇒ 0,0 (bám sai thật)"})
@@ -292,6 +335,9 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
         # "vẽ ô khi KHÔNG có vật" — metric ĐỐI CHỨNG mà mọi chỉ số còn lại bỏ qua (chỉ chấm frame có vật).
         # `gt_rong=None` (chỗ gọi cũ / GT không khai) ⇒ `None` = CHƯA ĐO, không phải "0 lần oan".
         "o_ma": ty_le_o_ma(gt_rong, shown) if gt_rong is not None else None,
+        # "0 frame có ô khi `bam = no_evidence`" — tiêu chí nghiệm thu P4, nay KIỂM ĐƯỢC từ artifact
+        # (trước 21-11 cột `bam` là write-only nên con số chỉ nằm trong commit message).
+        "o_khi_khong_bang_chung": dem_o_khi_khong_bang_chung(shown),
         "n_diem_median": _median_n_diem(chan_doan, hop_gt),
         "theo_frame": theo_frame,
     }

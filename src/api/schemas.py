@@ -156,7 +156,7 @@ class LiveStatusResponse(BaseModel):
         description="`image_size` model THẬT SỰ dùng (đọc từ predictor); `null` = CHƯA kiểm được — "
                     "khi đó `cau_hinh_lech == []` KHÔNG chứng minh model chạy đúng cấu hình",
     )
-    bam: Literal["tracking", "no_evidence"] | None = Field(
+    bam: str | None = Field(
         default=None,
         description="CÓ BẰNG CHỨNG về vật hay không (KHÁC `state`: `state` chỉ là tiến trình). "
                     "`tracking` = mask/VOS/LK đang quan sát được vật; `no_evidence` = ô hiển thị "
@@ -165,7 +165,9 @@ class LiveStatusResponse(BaseModel):
     )
     bam_ly_do: str | None = Field(
         default=None,
-        description="Vì sao mất bằng chứng: 'mask_rong' | 'lk_tu_choi'; `null` = không áp dụng",
+        description="Vì sao mất bằng chứng. Hiện CHỈ có `'mask_rong'` (model không thấy vật; bản nháp "
+                    "từng có `'lk_tu_choi'` nhưng ĐO ĐƯỢC là báo oan 74 % frame nên đã bỏ) — `null` = "
+                    "không áp dụng",
     )
     bam_no_evidence_n: int = Field(
         default=0, ge=0,

@@ -820,6 +820,15 @@ class TestCongChongNhayKhongTuHuyLanNhanLai:
         assert step.reacquired is True, "phải nhận lại được ở bước này"
         assert len(eng.start_calls) == n_start + 1
 
+        # `_last_center` cũng phải là tâm ô VỪA NHẬN LẠI: nó là mốc của vùng tìm nở dần
+        # (`_filter_by_radius`) ⇒ để nguyên tâm cũ thì lần mất dấu sau sẽ tìm quanh chỗ vật KHÔNG còn
+        # ở đó. Review 21-11 (P3): nửa vá này không test nào phủ (xoá 2 dòng vẫn xanh).
+        # So với ô THẬT SỰ được nhận (ứng viên đã bị lưới prefilter bắt về gần B, không đúng y box_b).
+        assert session._last_bbox != box_a, "mốc vẫn là chỗ cũ ⇒ vá chưa có tác dụng"
+        assert session._last_center == ((session._last_bbox[0] + session._last_bbox[2]) / 2.0,
+                                        (session._last_bbox[1] + session._last_bbox[3]) / 2.0), \
+            "`_last_center` phải là tâm ô VỪA NHẬN LẠI (mốc vùng tìm nở dần), không phải tâm chỗ cũ"
+
         # Tick kế: cổng chống-nhảy phải SO VỚI Ô VỪA NHẬN LẠI (B), không phải mốc cũ (A)
         eng._bboxes = [box_b]
         session.step(frame)
