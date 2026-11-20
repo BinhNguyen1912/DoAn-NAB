@@ -64,6 +64,10 @@ class LkBoxTracker:
         # Có mặt để mask cũ được biến đổi CÙNG phép với ô bao — nếu chỉ dịch mask khi ô bao co giãn
         # thì mask và ô bao lệch nhau ngay trên hình người xem.
         self.last_matrix = None
+        # LÝ DO của bước gần nhất — cần cho việc ĐO: không có nó thì "LK từ chối" không phân biệt được
+        # "cổng mad chặn" với "gieo điểm rỗng" / "không đủ điểm" (review #65 vòng 3: một frame không có
+        # ô hiển thị bị hiểu sai thành "LK mất dấu" khi thực ra `_seed` rỗng vì bbox VOS suy biến).
+        self.last_ly_do = "chua_chay"
 
     # ------------------------------------------------------------------ API
 
@@ -80,8 +84,10 @@ class LkBoxTracker:
         # CSV hiểu sai bước vừa rồi đã dùng similarity (P3 review #65 vòng 2).
         self.last_scale, self.last_angle_deg, self.last_khop_similarity = 1.0, 0.0, False
         if self._prev_gray is None or self._points is None or self._prev_bbox is None:
+            self.last_ly_do = "chua_reset"
             return None, False
         if self._points.size == 0:
+            self.last_ly_do = "seed_rong"          # ô < 4 px (vd bbox VOS suy biến) ⇒ LK CHƯA chạy
             return None, False
 
         moved, status, _err = cv2.calcOpticalFlowPyrLK(
@@ -90,10 +96,12 @@ class LkBoxTracker:
             criteria=(cv2.TERM_CRITERIA_EPS | cv2.TERM_CRITERIA_COUNT, 20, 0.03),
         )
         if moved is None or status is None:
+            self.last_ly_do = "lk_hong"
             return None, False
 
         keep = status.reshape(-1) == 1
         if int(keep.sum()) < self._min_points:
+            self.last_ly_do = "thieu_diem"
             return None, False
 
         prev = self._points.reshape(-1, 2)[keep]
@@ -120,6 +128,7 @@ class LkBoxTracker:
                 mad_du = max(float(np.median(np.abs(du[:, 0] - np.median(du[:, 0])))),
                              float(np.median(np.abs(du[:, 1] - np.median(du[:, 1])))))
                 if mad_du > self._max_mad:
+                    self.last_ly_do = "mad_du"
                     return None, False
                 bbox = self._bbox_tu_matrix(matrix, gray.shape)
                 if bbox is not None:
@@ -127,18 +136,23 @@ class LkBoxTracker:
                     # `_khop_similarity` nên ca "khớp qua cổng nhưng bbox bị từ chối" để lại
                     # `last_scale = 1.6` cho một bước ĐI TỊNH TIẾN ⇒ đọc chẩn đoán bị sai (P3 review #65).
                     self.last_scale, self.last_angle_deg = khop[1], khop[2]
+                    self.last_khop_similarity = True
                     self.last_matrix = matrix
+                    self.last_ly_do = "ok_scale"
                     self.reset(gray, bbox)    # gieo lại điểm → không tích luỹ sai số
                     return bbox, True
-            # Không dùng được similarity (cổng chặn / ít điểm) ⇒ rơi về tịnh tiến, vẫn kiểm tản thô.
+            # Không dùng được similarity (cổng tỉ lệ/góc chặn, hoặc bbox suy ra hỏng) ⇒ rơi về tịnh
+            # tiến, vẫn kiểm tản thô. `last_ly_do` phân biệt được ba ca: cổng, bbox, và cổng mad.
         mad_x = float(np.median(np.abs(delta[:, 0] - dx)))
         mad_y = float(np.median(np.abs(delta[:, 1] - dy)))
         if max(mad_x, mad_y) > self._max_mad:
+            self.last_ly_do = "mad_du"
             return None, False
 
         x, y, w, h = self._prev_bbox
         bbox = (int(round(x + dx)), int(round(y + dy)), int(w), int(h))
         self.last_matrix = np.array([[1.0, 0.0, dx], [0.0, 1.0, dy]], np.float32)
+        self.last_ly_do = "ok_shift"
         self.reset(gray, bbox)          # gieo lại điểm trong ô mới → không tích luỹ sai số
         return bbox, True
 
@@ -189,7 +203,6 @@ class LkBoxTracker:
         rong_moi, cao_moi = x2 - x1, y2 - y1
         if rong_moi < 4 or cao_moi < 4:
             return None
-        self.last_khop_similarity = True
         return (int(round(x1)), int(round(y1)), int(round(rong_moi)), int(round(cao_moi)))
 
     def _seed(self, bbox, shape):

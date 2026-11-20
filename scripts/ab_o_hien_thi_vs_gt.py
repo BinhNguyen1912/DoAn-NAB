@@ -512,7 +512,9 @@ def main(argv=None) -> int:
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code, "git_loi": loi,
         "do_luc": datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(["python scripts/ab_o_hien_thi_vs_gt.py"] + (argv or sys.argv[1:])),
-        "schema": 4,   # 4: thêm iou_khi_lk_ok/khi_lk_khong/n_lk_ok + lk_scale_chua_kiem_duoc
+        # 5: `tong_hop` có thêm `iou_khi_lk_dinh_nghia` (thêm khoá mà KHÔNG tăng số hiệu từng làm hai
+        # artifact cùng "schema 4" nhưng khác tập khoá — đúng lỗi P3 đã bị bắt một lần, review #65 v3).
+        "schema": 5,
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
                      "max_mad": args.max_mad, "lk_scale": args.lk_scale,
                      "image_size": args.image_size, "vos_every": args.vos_every,

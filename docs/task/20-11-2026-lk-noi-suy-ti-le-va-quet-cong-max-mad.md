@@ -28,8 +28,9 @@ Hai câu hỏi, đo trên **GT người tô** (không phải `drift_iou`):
    thì mask và ô lệch nhau ngay trên hình người xem).
 4. Nối: `LiveTrackConfig.lk_scale`, `--lk-scale` (worker), echo `lk_scale` vào `status.json`, trục A/B
    `--lk-scale shift|scale` (schema 3), metric mới `iou_khi_lk_ok` / `iou_khi_lk_khong` / `n_lk_ok`.
-5. Quét cổng: `max_mad` 1,5 / 6,0 / 20 / 100 (**100 = không bao giờ từ chối**) trên `b1b`, và 1,5 vs 100
-   trên `b1` (có frame vật rời khung).
+5. Quét cổng: `max_mad` 1,5 / 6,0 / 20 / 100 (**100 = cổng MAD không bao giờ chặn**, nhưng `update()` còn
+   4 nhánh từ chối khác: chưa `reset`, `_seed` rỗng (ô < 4 px), `min_points`, và `moved/status` hỏng) trên
+   `b1b`, và 1,5 vs 100 trên `b1` (có frame vật rời khung).
 
 ## 4. Output / Kết quả
 
@@ -50,14 +51,13 @@ Hai câu hỏi, đo trên **GT người tô** (không phải `drift_iou`):
 
 **Cả 6 cặp đều "KHÔNG phân biệt được"** (chênh lớn nhất +0,048 ≤ nhiễu 0,062).
 
-Nhưng theo từng frame, scale **sửa đúng phần nó nhắm tới** — so `1,5/shift` với `6,0/scale`:
 
 **Bảng theo-frame của bản đầu đã bị XOÁ — nó không đo được điều nó tuyên bố** (review #65, P0):
 ở cấu hình 1,5 thì `shift` nhận **1/7** frame (chỉ f182), còn `scale` nhận 6/7 ⇒ mọi dòng so "ô VOS đóng
 băng" (shift) với "ô LK" (scale), không phải so hai **mô hình chuyển động**. Chỉ **1 frame (f182)** có cả
 hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
 
-### 4.1b Phép đo SẠCH: mở cổng để **cả hai** luôn nhận, rồi mới so mô hình
+### 4.1b Phép đo "sạch hơn": mở **cổng MAD** cho cả hai (vẫn còn 2 cổng khác)
 
 `data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json` (`git_rev f5c663a`, `git_dirty_code=false`,
 `schema 4`, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
@@ -67,7 +67,38 @@ hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
 | 100 / shift (chỉ dịch) | 0,6765 | 0,0113 | **0,0000** | 0,86 |
 | **100 / scale (dịch + tỉ lệ + xoay)** | **0,8051** | 0,0130 | **0,5542** | **1,00** |
 
-⇒ **scale tốt hơn +0,1286** (> ngưỡng nhiễu 0,0130; theo cặp **14/21**). Theo từng frame (lần chạy 1):
+Chênh thô **+0,1286** (quy ước: `scale − shift`) > ngưỡng nhiễu 0,0130; theo cặp **14/21**.
+
+### 4.1c RÚT LẠI kết luận "+0,1286": toàn bộ chênh lệch nằm ở **một frame**
+
+**ĐÍNH CHÍNH (review #65 vòng 3, P0).** Con số +0,1286 **không** phải hiệu ứng của mô hình chuyển động.
+Nó đến từ **đúng f62**, và ở frame đó `shift` **không phát ô nào** (`lk_ok = false`, `vi_sao: "không có ô
+hiển thị"`, không có khoá `hop`) — tức phép so là "không có ô" vs "ô LK", không phải "ô LK vs ô LK".
+
+Bỏ f62 khỏi **CẢ HAI** bên (6 frame còn lại, cả hai đều là ô LK):
+
+| lần chạy | shift (6 frame) | scale (6 frame) | scale − shift |
+|---|---|---|---|
+| 1 | 0,7893 | 0,7902 | +0,0009 |
+| 2 | 0,8023 | 0,7929 | −0,0095 |
+| 3 | 0,7761 | 0,8118 | +0,0357 |
+| **trung bình** | **0,7892** | **0,7983** | **+0,0091** (sd của hiệu 0,024) |
+
+⇒ **+0,0091 < ngưỡng nhiễu 0,0130 ⇒ KHÔNG phân biệt được.** Theo cặp: 14/21 → **11/18** (bỏ 3 cặp f62).
+
+**Và f62 không phải thuộc tính của `shift`**: cùng cấu hình `100/shift` ở **phiên khác**
+(`data/ab_quet_max_mad_b1b_…`, rev `7aaaa4c`) nhận f62 **3/3 lần** với IoU 0,879 / 0,829 / 0,829 và
+`lk_ok_frac = 1,00`. Chênh giữa **hai phiên của CÙNG một cấu hình** là **0,1155** — gấp ~9× ngưỡng nhiễu
+0,0130 đang được trích ⇒ ngưỡng trong-phiên **không dùng được** để kết luận về hiệu ứng 1 frame.
+
+**Vì sao f62 không có ô (không phải "LK mất dấu")**: `ok=false` ⇒ pipeline trả `base_result`; base đó có
+bbox **suy biến** `(0,0,0,0)` → `xyxy_to_xywh` → `(0,0,1,1)` → `_seed` trả rỗng vì < 4 px ⇒ `update()`
+thoát với `last_ly_do = "seed_rong"` ⇒ **LK chưa hề chạy**. Nguyên nhân nằm **trước** LK (VOS trả mask rỗng
+ở lần VOS gần nhất). Nay `LkBoxTracker.last_ly_do` ghi lại đúng nhánh (`seed_rong` / `thieu_diem` /
+`mad_du` / `lk_hong` / `ok_shift` / `ok_scale`) để không phải suy đoán nữa.
+
+⇒ **Kết luận cuối: CHƯA chứng minh được nội suy tỉ lệ tốt hơn tịnh tiến** (giống kết luận trước khi có
+phép đo "sạch" — §5 đúng, §4.1b bản trước sai). Theo từng frame (lần chạy 1, chỉ để tham khảo):
 
 | frame | shift | scale | ghi chú |
 |---|---|---|---|
@@ -75,12 +106,17 @@ hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
 | 92 | 0,831 | 0,843 | như nhau |
 | 182 | 0,809 | 0,851 | scale nhích hơn |
 | 242 | 0,869 | 0,900 | scale nhích hơn |
-| 212 | **0,894** | 0,765 | **scale kém hơn** ở frame vật to 5,5× |
+| 212 | **0,894** | 0,765 | hiệu (shift − scale) 3 lần: +0,129 / +0,135 / **−0,111** ⇒ trung bình **+0,051 ± 0,140** ⇒ **không kết luận được** |
 | 2 | 0,565 | 0,554 | như nhau |
 | 32 | 0,768 | 0,829 | scale hơn |
 
-⇒ Lợi thế của scale chủ yếu là **độ bền** (không sụp về 0 khi LK mất điểm), không phải "luôn chính xác
-hơn": ở f212 nó **kém hơn** 0,13.
+⇒ Bảng trên là **một** lần chạy; mọi câu "scale hơn/kém ở frame X" với n = 1 đều không dùng được. Con số
+duy nhất đứng vững là **+0,0091 < nhiễu** (mục trên) ⇒ **không phân biệt được**.
+
+Câu "scale bền hơn khi LK mất điểm" cũng **không đứng**: ở `max_mad = 100` cả hai chế độ dùng **cùng**
+điều kiện từ chối (`_seed` ô ≥ 4 px và `keep.sum() < min_points`, chạy **trước** nhánh scale); nhánh khác
+nhau duy nhất là cổng MAD — đã vô hiệu ở 100. Vậy `lk_ok` 0,86 vs 1,00 là do **base VOS khác nhau**, không
+do mô hình chuyển động.
 
 **Vì sao ở cổng mặc định (1,5) không thấy lợi ích**: cổng đó chặn 5/7 frame ⇒ cả hai cấu hình chủ yếu phát
 **ô đóng băng**, khác biệt mô hình chuyển động bị che. Muốn thấy tác dụng của `lk_scale` phải nới cổng
@@ -116,7 +152,7 @@ thuẫn với §4.3: **mở** cổng lại tăng IoU.
 | **1,5** (mặc định) | **0,6129** | 0,0126 | 0,3826 | 0,05 | — | — | — |
 | 6,0 | 0,6765 | 0,0313 | 0,4854 | 0,57 | **+0,064** | 0,031 | **có** |
 | 20 | 0,7448 | 0,0678 | 0,3766 | 0,95 | **+0,132** | 0,068 | **có** |
-| **100** (không từ chối) | **0,7920** | **0,0105** | **0,5649** | 1,00 | **+0,179** | 0,013 | **có** (15/21 cặp) |
+| **100** (cổng MAD không bao giờ chặn — **vẫn** có thể bị `_seed`/`min_points` từ chối) | **0,7920** | **0,0105** | **0,5649** | 1,00 | **+0,179** | 0,013 | **có** (15/21 cặp) |
 
 Phiên **lặp lại** (`data/ab_lk_khong_bao_gio_tu_choi_b1b_…`): 1,5 = 0,6541 vs 100 = 0,7550 ⇒ chênh
 **+0,101** > nhiễu 0,064 ⇒ **cùng chiều, cùng kết luận** (hai phiên độc lập).
@@ -197,7 +233,7 @@ sai nguyên nhân cho số đo — nguy hiểm vì sẽ được chép nguyên v
 | P3 | test "không gọi `shift_mask`" có thể xanh rỗng nếu `_result_threaded` return sớm | thêm `assert out.mask is not None` |
 | P3 | `last_khop_similarity` không reset ở các `return None, False` sớm | reset cả ba field chẩn đoán ở **đầu** `update()` + test |
 
-**Kiểm sau vá**: `./run lint` xanh · `./run test` **1578 passed** (11 test mới so với lúc mở PR).
+**Kiểm sau vá**: `./run lint` xanh · `./run test` **1582 passed** (11 test mới so với lúc mở PR).
 
 ## 9. Vòng 2 của review #65 — P0 thứ hai (bảng §4.1 sai nhãn) và phép đo bù
 
@@ -220,3 +256,32 @@ chuyển động (§4.1b). Kết quả **lật lại kết luận cũ của mìn
 | P3 | 4 artifact trích là `schema 3` (chưa có khoá nghĩa) | ghi rõ trong §4.2; artifact mới `ab_mo_cong_…` là `schema 4` |
 | P3 | `estimateAffinePartial2D(LMEDS)` không seed — "ghi nhận vào mục 5" nhưng §5 không có | đã thêm bullet ở §5 |
 | Note | `self._lk` **chưa nối vào đường phát** (chỉ `reset()`, không `update()`) ⇒ "bật thì cả 2 tracker bật" đúng nhưng chỉ `_interp` có tác dụng | giữ nguyên (có từ trước PR); ghi ở đây để không ai tưởng `_lk` đang chạy |
+
+## 10. Vòng 3 của review #65 — P0 lần thứ hai, và lần này mình **rút lại** kết luận
+
+Reviewer vòng 3: **P0 = 2, P1 = 2, P2 = 3, P3 = 4**. Cả hai P0 đều đúng và nặng: mình đã đổi một phép so
+trộn trạng thái (vòng 2) bằng một phép so **vẫn trộn trạng thái ở 1 frame**, rồi công bố **+0,1286** như
+kết luận "sạch" — nghe hợp lý nên dễ được chép vào báo cáo. Đã tự kiểm lại bằng `lan_chay` của artifact và
+xác nhận **reviewer đúng 100%**:
+
+- bỏ f62 (frame `shift` **không có ô**) khỏi **cả hai** bên: **+0,0091 < nhiễu 0,0130** ⇒ **không phân
+  biệt được**;
+- cùng cấu hình `100/shift` ở **phiên khác** nhận f62 **3/3** (0,879/0,829/0,829) ⇒ f62 là **flâke của
+  base VOS**, không phải thuộc tính `shift`; chênh giữa hai phiên của **cùng** cấu hình = **0,1155**;
+- câu "scale bền hơn khi LK mất điểm" cũng sai: ở `max_mad = 100`, hai chế độ dùng **cùng** điều kiện
+  từ chối trước nhánh scale.
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| **P0** | "+0,1286" là hiệu ứng **1 frame**; bỏ f62 ⇒ +0,0091 (<nhiễu) | thêm §4.1c **RÚT LẠI**; kết luận cuối = **chưa chứng minh được**; §5 (viết trước đó) nay là đúng |
+| **P0** | cùng cấu hình `100/shift` ở phiên `7aaaa4c` cho 0,7920 / `lk_ok` 1,00 / f62 = 0,83–0,88 ⇒ flâke | ghi cạnh nhau 2 số + nêu rõ "nhiễu trong-phiên không dùng được cho hiệu ứng 1 frame" |
+| **P1** | "100 = **không bao giờ** từ chối" sai (`lk_ok` 0,86): còn `_seed` (ô ≥ 4 px) và `min_points` | sửa cả 3 chỗ thành "**cổng MAD** không chặn" |
+| **P1** | "shift mất **toàn bộ** điểm theo dõi ở f62" là **phỏng đoán**: thật ra base VOS bbox suy biến ⇒ `_seed` rỗng ⇒ **LK chưa chạy** | sửa nhân quả + **thêm `last_ly_do`** vào `LkBoxTracker` (6 giá trị) + 2 test |
+| P2 | `schema 4` có **hai hình dạng** (thêm khoá `iou_khi_lk_dinh_nghia` vào `tong_hop` mà không tăng số hiệu) | `schema: 5` + comment |
+| P2 | §5 nói "scale **chưa phân biệt được**… không tăng IoU" — **ngược** §4.1b | giữ §5 (nay đúng); §4.1b đã sửa |
+| P2 | f212 chỉ đúng lần chạy 1 (3 lần: +0,129/+0,135/−0,111 ⇒ +0,051 ± 0,140) | nêu ±3 lần, bỏ câu "kém hơn 0,13" |
+| P3 | câu treo "Nhưng theo từng frame…:" (bảng đã xoá) | xoá |
+| P3 | không nêu quy ước dấu (`so_sanh` tính `b − a`, artifact ghi −0,1286, log ghi +) | ghi "chênh = `scale − shift`" |
+| P3 | test "bbox bị từ chối" gọi private + gán tay `_prev_bbox`; cờ được ghi trong helper | cờ nay ghi ở `update()`; thêm `test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI` |
+| P3 | không có test "mask không bị warp bằng matrix cũ khi LK mất dấu" | thêm `test_mask_KHONG_bi_warp_bang_matrix_CU_khi_LK_mat_dau` |
+| N | "1578 passed" | 1579 |

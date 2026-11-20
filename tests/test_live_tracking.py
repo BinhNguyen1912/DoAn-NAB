@@ -2347,3 +2347,25 @@ class TestLkNoiSuyTiLe:
         # `goi == []` đúng một cách vô nghĩa ⇒ test xanh rỗng (review #65 vòng 2).
         assert out.mask is not None
         assert goi == [], "ở chế độ scale KHÔNG được gọi shift_mask"
+
+
+def test_mask_KHONG_bi_warp_bang_matrix_CU_khi_LK_mat_dau():
+    """`last_matrix` KHÔNG được reset khi `ok=False` (đúng thiết kế), nên phải ghim: lúc LK mất dấu,
+    mask KHÔNG được warp bằng matrix của bước trước — pipeline trả `base_result` (mask gốc)."""
+    session = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+        source=str(__file__), out_dir=__import__("pathlib").Path("/tmp") / "live", display_fps=100,
+        vos_every=3, lk_scale=True))
+    frame = np.full((48, 64, 3), 90, np.uint8)
+    base_mask = np.zeros((48, 64), bool)
+    base_mask[5:15, 5:15] = True
+    base = type("R", (), {"frame_idx": 1, "bbox": (5, 5, 15, 15), "mask": base_mask,
+                          "elapsed_ms": 1.0})()
+    session._frame_index = 3
+    session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
+    # Bước trước để lại matrix của một bước scale thành công…
+    session._interp.last_matrix = np.array([[1.5, 0, -5], [0, 1.5, -5]], np.float32)
+    # …rồi bước này LK mất dấu
+    session._interp.update = lambda _g: (None, False)
+    out = session._result_threaded(frame)
+    assert out.mask is base_mask, "LK mất dấu ⇒ phải trả mask GỐC của VOS, không warp bằng matrix cũ"
+    assert out.bbox == (5, 5, 15, 15)

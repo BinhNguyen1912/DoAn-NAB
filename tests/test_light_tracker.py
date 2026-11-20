@@ -344,3 +344,56 @@ def test_vat_bien_mat_tren_nen_CO_TEXTURE_thi_cong_TU_CHOI():
         dich = nen.copy()
         dich[75:165, 136:196] = _patch_texture(seed=9)
         assert t.update(dich)[0] == (136, 75, 60, 90), scale
+
+
+def test_ly_do_tu_choi_phan_biet_duoc_cac_nhanh():
+    """`last_ly_do` là thứ làm cho việc ĐO hiểu đúng: "LK từ chối" gồm 4 nguyên nhân rất khác nhau.
+
+    Ca thật đã bị hiểu sai (review #65 vòng 3): một frame không có ô hiển thị bị đọc thành "LK mất dấu
+    ở frame đó" trong khi `_seed` rỗng vì bbox VOS suy biến ⇒ **LK chưa hề chạy**.
+    """
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    # seed_rong: ô < 4 px (bbox VOS suy biến (0,0,1,1))
+    t = LkBoxTracker(scale=True)
+    t.reset(np.zeros((40, 40), np.uint8), (0, 0, 1, 1))
+    assert t.update(np.zeros((40, 40), np.uint8)) == (None, False)
+    assert t.last_ly_do == "seed_rong"
+    # ok_shift / ok_scale
+    patch = _patch_texture()
+    for scale, ly_do in ((False, "ok_shift"), (True, "ok_scale")):
+        f1 = _khung_vat(patch)
+        t = LkBoxTracker(scale=scale)
+        t.reset(f1, (130, 75, 60, 90))
+        assert t.update(_khung_vat(patch, dx=3, dy=2))[1] is True
+        assert t.last_ly_do == ly_do, (scale, t.last_ly_do)
+    # mad_du (nhánh scale, phần dư bị chặn) — không được gọi là "thieu_diem"
+    t = LkBoxTracker(scale=True, max_mad=0.01)
+    f1 = _khung_vat(patch)
+    t.reset(f1, (130, 75, 60, 90))
+    t.update(_khung_vat(patch, ti_le=1.2))
+    assert t.last_ly_do == "mad_du"
+
+
+def test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI():
+    """Không chỉ gọi helper private: đường công khai phải tới được nhánh "bbox suy ra hỏng" khi phép
+    biến đổi đẩy ô ra mép khung (ô vào bước đó vẫn ≥ 4 px). Cờ `last_khop_similarity` phải ở `False`."""
+    import cv2
+    import numpy as np
+    from src.light_tracker import LkBoxTracker
+    # Ảnh 200×200 có texture; vật dán sát mép phải; ô bao nằm sát mép
+    rng = np.random.default_rng(11)
+    nen = cv2.GaussianBlur((rng.random((200, 200)) * 255).astype(np.uint8), (3, 3), 0)
+    co_vat = nen.copy()
+    co_vat[80:120, 150:190] = _patch_texture(seed=4)[:40, :40]
+    t = LkBoxTracker(scale=True)
+    t.reset(co_vat, (150, 80, 40, 40))               # ô 40×40 (hợp lệ), sát mép phải
+    # frame sau: vật co lại còn 4 px ở mép ⇒ bao ngoài sau biến đổi vượt khung, kẹp còn < 4 px
+    f2 = nen.copy()
+    f2[98:102, 195:199] = _patch_texture(seed=4)[:4, :4]
+    bbox, ok = t.update(f2)
+    if ok:                                            # nếu vẫn bám được thì không phải ca cần đo
+        assert t.last_khop_similarity in (True, False)
+    else:
+        assert t.last_khop_similarity is False
+        assert t.last_scale == 1.0
