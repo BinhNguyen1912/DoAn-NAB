@@ -537,3 +537,15 @@ def test_chua_kiem_duoc_dem_theo_DUNG_truc(monkeypatch, tmp_path):
     d = json.loads(out.read_text(encoding="utf-8"))
     assert d["image_size_chua_kiem_duoc"] == 0, "image_size CÓ số ⇒ không được đếm vào ô 'chưa kiểm'"
     assert d["lk_scale_chua_kiem_duoc"] == 1, "đúng 1 lần chạy thiếu khoá lk_scale"
+
+
+def test_cham_TRA_RA_iou_khi_lk_dinh_nghia():
+    """`schema 5` phải đi kèm khoá nghĩa ở **cả** `cham()` — §4.2 đọc nghĩa chính từ đây.
+
+    Bản trước chỉ assert khoá đó trong `tong_hop` (nơi nó là **literal**), nên xoá khoá khỏi `cham()`
+    vẫn xanh (review #65 vòng 5).
+    """
+    from scripts.ab_o_hien_thi_vs_gt import cham
+
+    ra = cham({0: (0, 0, 10, 10)}, {0: ((0, 0, 10, 10), True)})
+    assert "iou_khi_lk_dinh_nghia" in ra, sorted(ra)

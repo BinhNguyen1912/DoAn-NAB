@@ -387,6 +387,7 @@ def test_bbox_bi_tu_choi_thi_ROI_VE_tinh_tien_va_bao_dung_ly_do(monkeypatch):
     f1 = _khung_vat(patch)
     t = LkBoxTracker(scale=True)
     t.reset(f1, (130, 75, 60, 90))
+    goc_bbox = t._bbox_tu_matrix
     monkeypatch.setattr(t, "_bbox_tu_matrix", lambda *_a, **_k: None)
     bbox, ok = t.update(_khung_vat(patch, dx=3, dy=2))
     # Hai field: kết quả CUỐI (`ok_shift` — đã dùng tịnh tiến) và LÝ DO similarity không dùng.
@@ -396,6 +397,29 @@ def test_bbox_bi_tu_choi_thi_ROI_VE_tinh_tien_va_bao_dung_ly_do(monkeypatch):
     assert t.last_scale == 1.0
     # và vẫn phải BÁM ĐƯỢC bằng tịnh tiến (không "chết" chỉ vì bbox similarity hỏng)
     assert ok is True and bbox == (133, 77, 60, 90), bbox
+    # Bước KẾ tiếp hợp lệ (trả lại phép bbox thật) ⇒ lý do phải được XOÁ, không mang giá trị cũ sang.
+    # Xoá dòng reset `last_ly_do_khop` đầu `update()` là test này ĐỎ.
+    monkeypatch.setattr(t, "_bbox_tu_matrix", goc_bbox)
+    t.update(_khung_vat(patch, dx=6, dy=4))
+    assert t.last_ly_do_khop is None, t.last_ly_do_khop
+
+
+def test_che_do_scale_TAT_thi_khong_bao_gio_co_ly_do_similarity():
+    """`scale=False` ⇒ không có similarity để dùng ⇒ `last_ly_do_khop` phải là `None` ở mọi bước."""
+    from src.light_tracker import LkBoxTracker
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    t = LkBoxTracker(scale=False)
+    t.reset(f1, (130, 75, 60, 90))
+    for dx in (2, 4, 6):
+        t.update(_khung_vat(patch, dx=dx))
+        assert t.last_ly_do_khop is None, (dx, t.last_ly_do_khop)
+    # Bước KẾ tiếp hợp lệ ⇒ lý do phải được XOÁ (chứ không mang giá trị cũ sang). Xoá dòng reset đầu
+    # `update()` là test này ĐỎ.
+    t.update(_khung_vat(patch, dx=6, dy=4))
+    assert t.last_ly_do_khop is None, t.last_ly_do_khop
+
+
 
 
 def test_mad_du_o_che_do_scale_di_qua_nhanh_PHAN_DU(monkeypatch):

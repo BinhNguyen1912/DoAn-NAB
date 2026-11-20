@@ -56,7 +56,8 @@ class LkBoxTracker:
         self._prev_bbox = None
         self._points = None
         # Chẩn đoán cho phép đo: bước gần nhất có dùng similarity không, tỉ lệ/góc nó ước lượng được.
-        # Có mặt để artifact/CSV giải thích được vì sao ô bao đổi kích thước, không phải để điều khiển.
+        # CHẨN ĐOÁN TRONG TIẾN TRÌNH — chưa nối ra `shown.csv`/`status.json` nên hiện **không** artifact
+        # nào đọc được (đừng trích như bằng chứng đo). Không phải để điều khiển.
         self.last_scale: float = 1.0
         self.last_angle_deg: float = 0.0
         self.last_khop_similarity: bool = False
@@ -68,7 +69,11 @@ class LkBoxTracker:
         # "cổng mad chặn" với "gieo điểm rỗng" / "không đủ điểm" (review #65 vòng 3: một frame không có
         # ô hiển thị bị hiểu sai thành "LK mất dấu" khi thực ra `_seed` rỗng vì bbox VOS suy biến).
         self.last_ly_do = "chua_chay"
-        # Vì sao phép SIMILARITY không được dùng ở bước gần nhất (None = có dùng hoặc chế độ tắt).
+        # Vì sao phép SIMILARITY không được dùng ở bước gần nhất:
+        #   None              = đã dùng được, hoặc chế độ `scale=False` (không có similarity để dùng)
+        #   "cong_similarity" = cổng tỉ lệ/góc chặn (không tìm được matrix)
+        #   "bbox_hong"       = có matrix nhưng ô bao suy ra < 4 px / ra ngoài khung
+        #   "mad_du"          = có matrix nhưng phần dư vượt `max_mad`
         # Tách khỏi `last_ly_do` vì `last_ly_do` ghi KẾT QUẢ cuối: khi similarity hỏng thì code rơi về
         # tịnh tiến và kết quả là `ok_shift`, làm mất dấu nguyên nhân (review #65 vòng 4).
         self.last_ly_do_khop = None
@@ -136,6 +141,9 @@ class LkBoxTracker:
                 mad_du = max(float(np.median(np.abs(du[:, 0] - np.median(du[:, 0])))),
                              float(np.median(np.abs(du[:, 1] - np.median(du[:, 1])))))
                 if mad_du > self._max_mad:
+                    # Similarity ĐÃ tính và BỊ cổng phần dư từ chối ⇒ phải khai; nếu không thì `mad_du`
+                    # ở đây không phân biệt được với `mad_du` của nhánh tịnh tiến.
+                    self.last_ly_do_khop = "mad_du"
                     self.last_ly_do = "mad_du"
                     return None, False
                 bbox = self._bbox_tu_matrix(matrix, gray.shape)
@@ -154,9 +162,10 @@ class LkBoxTracker:
                     self.last_ly_do = "ok_scale"
                     self.reset(gray, bbox)    # gieo lại điểm → không tích luỹ sai số
                     return bbox, True
-            # Không dùng được similarity ⇒ rơi về tịnh tiến, vẫn kiểm tản thô. `last_ly_do` phân biệt
-            # được: `cong_similarity` (cổng tỉ lệ/góc) · `bbox_hong` (ô suy ra < 4 px) · `mad_du` (phần
-            # dư lớn) · `ok_shift` (tịnh tiến qua cổng).
+            # Không dùng được similarity ⇒ rơi về tịnh tiến, vẫn kiểm tản thô. Đọc chẩn đoán ở HAI field:
+            # `last_ly_do_khop` nói vì sao similarity bị bỏ (`cong_similarity` cổng tỉ lệ/góc ·
+            # `bbox_hong` ô suy ra < 4 px · `mad_du` phần dư lớn), `last_ly_do` là kết quả cuối
+            # (`mad_du`/`ok_shift`).
         mad_x = float(np.median(np.abs(delta[:, 0] - dx)))
         mad_y = float(np.median(np.abs(delta[:, 1] - dy)))
         if max(mad_x, mad_y) > self._max_mad:

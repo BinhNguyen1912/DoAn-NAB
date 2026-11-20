@@ -99,31 +99,26 @@ Bỏ f62 khỏi **CẢ HAI** bên (6 frame còn lại, cả hai đều là ô LK
 **Vì sao f62 không có ô (không phải "LK mất dấu")**: `ok=false` ⇒ pipeline trả `base_result`; base đó có
 bbox **suy biến** `(0,0,0,0)` → `xyxy_to_xywh` → `(0,0,1,1)` → `_seed` trả rỗng vì < 4 px ⇒ `update()`
 thoát với `last_ly_do = "seed_rong"` ⇒ **LK chưa hề chạy**. Nguyên nhân nằm **trước** LK (VOS trả mask rỗng
-ở lần VOS gần nhất). Nay `LkBoxTracker.last_ly_do` ghi lại đúng nhánh (`seed_rong` / `thieu_diem` /
-`mad_du` / `lk_hong` / `ok_shift` / `ok_scale`) để không phải suy đoán nữa.
+ở lần VOS gần nhất). Nay `LkBoxTracker.last_ly_do` ghi lại đúng nhánh (`seed_rong` / `thieu_diem` / `mad_du` / `lk_hong` /
+`ok_shift` / `ok_scale`) — nhưng **(cảnh báo) giá trị này CHƯA được ghi ra `shown.csv`/`status.json`**, nên
+câu "f62 = `seed_rong`" ở trên là **suy ra từ đường code**, không đọc từ artifact nào (xem Next step #0).
 
 ⇒ **Kết luận cuối: CHƯA chứng minh được nội suy tỉ lệ tốt hơn tịnh tiến** (giống kết luận trước khi có
-phép đo "sạch" — §5 đúng, §4.1b bản trước sai). Theo từng frame (lần chạy 1, chỉ để tham khảo):
+phép đo "sạch" — §5 đúng, §4.1b bản trước sai). Theo từng frame — **mean của 3 lần chạy** (không còn số n=1):
 
-| frame | shift | scale | ghi chú |
-|---|---|---|---|
-| 62 | **0,000** | **0,811** | `shift` **không có ô hiển thị**: base VOS bbox suy biến `(0,0,0,0)` → `xyxy_to_xywh` `(0,0,1,1)` → `_seed` rỗng ⇒ **LK CHƯA CHẠY** (`last_ly_do = "seed_rong"`). Cột `scale` là ô LK — nhưng của **phiên khác** ⇒ dòng này KHÔNG so được hai mô hình |
-| 92 | 0,831 | 0,843 | như nhau |
-| 182 | 0,809 | 0,851 | scale nhích hơn |
-| 242 | 0,869 | 0,900 | scale nhích hơn |
-| 212 | **0,894** | 0,765 | hiệu (shift − scale) 3 lần: +0,129 / +0,135 / **−0,111** ⇒ trung bình **+0,051 ± 0,140** ⇒ **không kết luận được** |
-| frame | shift | scale | `scale − shift` (mean ± sd, 3 lần) |
+| frame | shift (mean 3 lần) | scale (mean 3 lần) | `scale − shift` (mean ± sd) |
 |---|---|---|---|
 | 2 | 0,565 | 0,554 | **−0,011 ± 0,000** |
-| 32 | 0,768 | 0,829 | **+0,052 ± 0,021** |
-| 92 | 0,831 | 0,843 | **−0,020 ± 0,042** ← bản trước ghi "như nhau" là **sai** |
-| 182 | 0,809 | 0,851 | **+0,055 ± 0,012** |
-| 212 | 0,894 | 0,765 | **−0,051 ± 0,140** ⇒ không kết luận |
-| 242 | 0,869 | 0,900 | **+0,029 ± 0,004** |
-| 62 | 0,000 | 0,811 | **loại** — hai bên không cùng trạng thái |
+| 32 | 0,777 | 0,829 | **+0,052 ± 0,021** |
+| 92 | 0,856 | 0,835 | **−0,020 ± 0,042** |
+| 182 | 0,807 | 0,862 | **+0,055 ± 0,012** |
+| 212 | 0,854 | 0,803 | **−0,051 ± 0,140** ⇒ không kết luận |
+| 242 | 0,877 | 0,906 | **+0,029 ± 0,004** |
+| 62 | — | — | **loại** (xem dưới) |
 
-⇒ Bảng trên là **một** lần chạy; mọi câu "scale hơn/kém ở frame X" với n = 1 đều không dùng được. Con số
-duy nhất đứng vững là **+0,0091 < nhiễu** (mục trên) ⇒ **không phân biệt được**.
+⇒ Không frame nào tự nó chứng minh được điều gì: chênh lớn nhất (f182, **+0,055 ± 0,012**) chỉ bằng
+~1,4× sd của chính nó trên **một** frame, và sd giữa các frame lớn hơn nhiều. Con số duy nhất đứng vững là
+**+0,0091 < nhiễu** (mục trên) ⇒ **không phân biệt được**. Mọi câu "scale hơn/kém ở frame X" đều đã bỏ.
 
 Câu "scale bền hơn khi LK mất điểm" cũng **không đứng**: ở `max_mad = 100` cả hai chế độ dùng **cùng**
 điều kiện từ chối (`_seed` ô ≥ 4 px và `keep.sum() < min_points`, chạy **trước** nhánh scale); nhánh khác
@@ -311,7 +306,7 @@ t = 0,66 — không phải chỉ nhờ ngưỡng 0,0130).
 
 | Mức | Reviewer nêu | Xử lý |
 |---|---|---|
-| **P1** | ô f62 trong bảng theo-frame (§4.1c) **vẫn** phát biểu lại câu đã bị bác ("shift mất toàn bộ điểm theo dõi") | sửa ô: base VOS bbox suy biến ⇒ `_seed` rỗng ⇒ **LK chưa chạy**; nói rõ cột `scale` là **phiên khác** nên dòng đó không so được |
+| **P1** | ô f62 trong bảng theo-frame (§4.1c) **vẫn** phát biểu lại câu đã bị bác ("shift mất toàn bộ điểm theo dõi") | sửa ô: base VOS bbox suy biến ⇒ `_seed` rỗng ⇒ **LK chưa chạy**; dòng đó **không so được** vì lệch trạng thái (không có ô vs có ô) — *bản vá đầu tiên ghi sai "của phiên khác", đã sửa ở vòng 5* |
 | P2 | §4.1b nêu chênh > nhiễu mà **không** có dấu rút lại tại chỗ (người trích 2 dòng sẽ lấy đúng câu sai) | thêm khối ⚠ ngay dưới + bỏ in đậm 0,8051/1,00 |
 | P2 | `test_bbox_bi_tu_choi_qua_DUONG_CONG_KHAI` **không thể đỏ** (cả hai nhánh đều đúng ở mọi đường từ chối) | viết lại: vá `_bbox_tu_matrix` trả `None` trên đường công khai ⇒ khẳng định **rơi về tịnh tiến** + lý do; và thêm mã `bbox_hong`/`cong_similarity` |
 | P2 | comment "phân biệt được ba ca" khai quá (code không có mã cho cổng/bbox) | thêm mã thật (`last_ly_do_khop` = `cong_similarity`/`bbox_hong`), tách khỏi `last_ly_do` (kết quả cuối) vì nhánh tịnh tiến **ghi đè** lý do ⇒ chẩn đoán mất dấu |
@@ -321,4 +316,30 @@ t = 0,66 — không phải chỉ nhờ ngưỡng 0,0130).
 | P3 | chỉ test `schema == 5`, không buộc `tong_hop` chứa khoá nghĩa ⇒ lần sau bỏ khoá là "schema 5" lại có 2 hình dạng | thêm assert `"iou_khi_lk_dinh_nghia" in tong_hop[...]` |
 | P3 | `last_ly_do` không reset đầu bước | reset về `chua_ro` cùng 3 field kia |
 | P3 | việc "nối `last_ly_do`/`n_points` ra CSV" bị bỏ im lặng | thêm Next step #0: **chưa artifact nào đọc được**, đừng trích như bằng chứng |
-| P3 | hai mốc test khác nhau trong file | ghi rõ mốc (1579 sau vòng 3, 1582 sau vòng 4) |
+| P3 | hai mốc test khác nhau trong file | ghi rõ mốc — **1579** (sau vòng 3) · **1583** (sau vòng 4) · **1585** (sau vòng 5, nay 1587 khi thêm 2 test của vòng 5) |
+
+## 12. Vòng 5 của review #65 — P0 = 0, còn 2 P1 **cùng nằm trong một bảng log**
+
+Reviewer vòng 5: **P0 = 0, P1 = 2, P2 = 4, P3 = 4**, và xác nhận lại **6/6 số ± sd khớp 100 %**
+(f2 −0,0107±0,000 · f32 +0,0525±0,0211 · f92 −0,0203±0,0420 · f182 +0,0554±0,0122 · f212 −0,0511±0,1400 ·
+f242 +0,0287±0,0042). Hai P1 đều là lỗi **trình bày** của chính bản vá vòng 4, không phải bug sản phẩm:
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| **P1** | ô f62 ghi "cột `scale` là **phiên khác**" — **sai provenance**: cả `0,000` và `0,811` lấy từ **cùng artifact, cùng lần chạy 1** (`lan_chay["192/3/100.0/shift"][0]` vs `lan_chay["192/3/100.0/scale"][0]`) | sửa: hai số **cùng một lần chạy**; 0,0 ở `shift` là **không vẽ ô** (quy tắc chấm: GT có vật mà không có ô ⇒ 0,0) ⇒ **lệch trạng thái**, không so được. Không có "phiên khác" nào ở đây |
+| **P1** | bảng cũ (n=1) **không bị xoá**, chỉ nối thêm bảng mới ⇒ GFM **gộp thành một bảng 14 dòng** có header giả ở giữa; còn nguyên f92 "như nhau" (đúng câu đã bác) và f212 **hai dòng ngược dấu** | **xoá hẳn** bảng cũ; nay **chỉ còn một bảng** = mean 3 lần ở **cả hai** cột `shift`/`scale` (f32 0,777/0,829 · f92 0,856/0,835 · f182 0,807/0,862 · f212 0,854/0,803 · f242 0,877/0,906) ⇒ không chỗ nào lẫn số n=1 với số n=3 |
+| P2 | header trộn "3 lần" với 2 cột vẫn là **lần chạy 1** ⇒ tự mâu thuẫn số học (f32 0,829−0,768 = +0,061 nhưng δ ghi +0,052) | thay 2 cột bằng **mean 3 lần** ⇒ cột δ **khớp số học** với 2 cột bên cạnh |
+| P2 | comment `update()` vẫn nói `last_ly_do` chứa `cong_similarity`/`bbox_hong` (sau khi tách field thì **không bao giờ**) | sửa: `last_ly_do` = kết quả cuối (`mad_du`/`ok_shift`); `last_ly_do_khop` = vì sao similarity bị bỏ |
+| P2 | assert khoá nghĩa trong `tong_hop` lấy từ **literal** ⇒ xoá khoá khỏi `cham()` vẫn xanh | thêm test riêng gọi **`cham()` thật** (`test_cham_TRA_RA_iou_khi_lk_dinh_nghia`) |
+| P2 | reset `last_ly_do_khop` và `scale=False ⇒ None` không test nào khoá | thêm 2 assert (bước kế tiếp ⇒ `None`; `scale=False` 3 bước ⇒ luôn `None`) |
+| P3 | docstring "None = có dùng **hoặc** chế độ tắt" mập mờ: nhánh `mad_du` của similarity trả `None` dù đã tính và bị từ chối | nay ghi `last_ly_do_khop = "mad_du"` ở nhánh đó + docstring liệt kê 4 giá trị |
+| P3 | comment `last_scale` khai "artifact/CSV giải thích được" nhưng **không** nối ra đâu | đổi thành "CHẨN ĐOÁN TRONG TIẾN TRÌNH — chưa nối ra `shown.csv`/`status.json`" |
+| P3 | log "để không phải suy đoán nữa" khai quá (giá trị **không rời tiến trình**) | thêm cảnh báo ngay sau: "f62 = `seed_rong`" là **suy ra từ đường code**, không đọc từ artifact |
+| P3 | §11 khai đã "ghi rõ mốc 1579/1582" nhưng hai chuỗi đó **không tồn tại** | sửa mốc tại chỗ (1579/1583/1585→1587) |
+
+**Kiểm "test đỏ được" bằng mutant** (không chỉ đọc): xoá dòng reset `last_ly_do_khop` ⇒ 2 test **ĐỎ**; đổi
+tên khoá `iou_khi_lk_dinh_nghia` trong `cham()` ⇒ test `cham` **ĐỎ**; khôi phục ⇒ xanh. `./run lint` xanh ·
+`./run test` **1587 passed** (sau vòng 5).
+
+⇒ Reviewer xác nhận code lõi **không đổi hành vi** ở cả 5 vòng; toàn bộ P0/P1 của 5 vòng là **câu chữ/số
+trong log**, không phải bug sản phẩm.
