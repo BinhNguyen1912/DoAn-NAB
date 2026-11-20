@@ -24,7 +24,8 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
 
 ## Output / Kết quả
 
-`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 0e84260`, `git_dirty_code false`,
+`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 0e84260`, `git_dirty_code false`, — **tệp này
+KHÔNG còn trong cây**, xem ĐÍNH CHÍNH ở cuối mục 8
 3 lần/cấu hình, `cau_hinh_hieu_luc_lech []`, 7 frame GT, cùng `binh1` + ô chai `300,275,150,410`, @192,
 `vos_every 3`, 300 frame):
 
@@ -99,3 +100,23 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
 - `scripts/ab_o_hien_thi_vs_gt.py`, `tests/test_ab_o_hien_thi_vs_gt.py` (11 test)
 - `src/live_tracking.py` (`dump_shown_csv`, `_ghi_o_hien_thi`), `tools/live_worker.py` (`--dump-shown-csv`)
 - `docs/task/20-11-2026-miou-dau-tien-tren-video-that.md`, ticket #38
+
+## 8. ĐÍNH CHÍNH sau review độc lập (PR #64) — bằng chứng không còn tái lập được
+
+Reviewer đối chiếu cả cây và phát hiện: **artifact của phiên này không còn tồn tại**.
+`grep` cho `0.6203`, `0.6094`, `0e84260` trong `data/` = **0 kết quả**.
+
+- Nguyên nhân: mọi phiên cùng ngày đều ghi vào **cùng một đường dẫn**
+  `data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`--out` mặc định chỉ có NGÀY). Phiên `max_mad` trên
+  bộ `b1` (`0e84260`) bị phiên trên bộ `b1b` (`891f4f5`) **ghi đè**; tệp cuối cùng đã được đổi tên thành
+  `data/ab_max_mad_b1b_2026-11-20_metrics.json` (nội dung = phiên `891f4f5`, KHÔNG phải phiên ở bảng trên).
+- Hệ quả: bảng số ở mục "Output / Kết quả" **không kiểm lại được từ cây**; tệp cùng tên cũ nay nói
+  **ngược chiều** (`so_sanh = "ô hiển thị TỐT HƠN 0.029 IoU"`, chênh +0,0287 / nhiễu 0,0218) vì đó là
+  **phiên khác** (bộ GT `b1b`, 7 frame giữa khe).
+- Quyết định **giữ `DEFAULT_MAX_MAD = 1,5` KHÔNG đổi**: nó dựa trên **bốn phiên độc lập** có dấu chênh
+  đổi chiều (+0,032 / +0,003 / +0,018 / −0,0109) — và phiên thứ năm cùng ngày (`b1b`: +0,020 ≤ 0,034)
+  cũng nằm trong nhiễu, còn phiên thứ sáu (`b1b` cây sạch: +0,029 > 0,022) nói "tốt hơn". **Sáu phiên
+  không cho một chiều nhất quán ⇒ không chứng minh được**, đúng kết luận cũ.
+- Bài học (đã áp dụng ngay): đặt tên artifact kèm **clip + bộ GT**
+  (`ab_max_mad_b1b_…`, `ab_image_size_b1b_…`, `ab_vos_every_b1b_…`) để phiên sau không ghi đè phiên
+  trước; và khi trích số phải **đọc lại tệp**, không chép từ terminal.

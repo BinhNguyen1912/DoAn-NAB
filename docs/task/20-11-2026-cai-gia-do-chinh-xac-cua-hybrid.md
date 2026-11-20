@@ -35,8 +35,12 @@ Mở rộng A/B sang trục `vos_every` — và trong lúc làm **bắt được
   ("`vos_every` không phải nút điều khiển độ tươi/độ chính xác") — nay có số trên GT thật.
 - `every 1` có `std = 0,0000` (3 lần ra cùng 0,8460) — ở cấu hình này mỗi frame đều có VOS nên kết quả
   **tất định**, không phụ thuộc LK.
-- `lk_ok_frac` 0,00 / 0,10 / 0,14 ⇒ ở frame giữa khe, **85–100 % mẫu là ô ĐÓNG BĂNG** của lần VOS
-  trước (khớp phép đo `max_mad` cùng ngày: 1,5 → 0,048; 6,0 → 0,524).
+- `lk_ok_frac` 0,00 / 0,10 / 0,14 — **đọc đúng từng dòng** (ĐÍNH CHÍNH sau review #64):
+  - `vos_every 1` = **0,00 vì KHÔNG CÓ LK** (ô là ô VOS của chính frame) ⇒ **không** phải "đóng băng";
+  - `vos_every 2` = 0,10 và `3` = 0,14 ⇒ ở frame giữa khe, **86–90 % mẫu là ô ĐÓNG BĂNG** của lần VOS
+    trước (khớp phép đo `max_mad` cùng ngày: 1,5 → 0,048; 6,0 → 0,524).
+  Dụng cụ nay trả `lk_ok_frac = None` + `lk_khong_ap_dung = true` cho ca `vos_every=1` để không ai đọc 0,00
+  thành "LK từ chối 100 %" nữa.
 
 ### Đọc gộp ba phép đo trong ngày (cùng clip, cùng GT, cùng ô)
 
@@ -81,3 +85,21 @@ khớp trước khi ghi (một lần đã trượt vì indent 4 vs 8 dấu cách
 - `docs/task/20-11-2026-cham-o-hien-thi-tren-gt-giua-khe.md` (max_mad), `docs/task/20-11-2026-image-size-192-vs-320-theo-gt.md`
 - `docs/bang-cau-hinh.md` (chọn cấu hình theo `vos_fps`/`mask_age_p95`, không theo `measured_fps`)
 - AGENTS §6: "`vos_every` KHÔNG phải nút điều khiển độ tươi của mask"
+
+## 8. ĐÍNH CHÍNH + vá sau review độc lập (PR #64)
+
+| Reviewer nêu | Xử lý |
+|---|---|
+| **P1**: log `o-hien-thi-vs-gt-chot-max-mad.md` + ticket #38 dẫn số của artifact **không còn trong cây** (bị phiên `b1b` ghi đè cùng đường dẫn) | ghi ĐÍNH CHÍNH ở log đó (§8); đổi tên tệp hiện có thành `data/ab_max_mad_b1b_…`; từ nay tên artifact kèm **clip + bộ GT** |
+| **P1**: log `image-size-192-vs-320` ghi "`iou_min = 0,000` **cả 3 lần**" (thật: 2/3, lần 3 = 0,1147) và bảng §4.2 lấy từ lần chạy **bẩn** | sửa log đó (§4.2 + §8) theo đúng artifact `6969fc4`: `iou_min.mean 0,0382 ± 0,0662`; f92 `339,0→485,502`; f182 **không vẽ ô nào** |
+| P2 `max(0,0) = 0` ⇒ ngưỡng nhiễu 0 biến mọi chênh lệch thành "tốt hơn" | `so_sanh` trả `phan_biet_duoc: None` khi `nhieu == 0` + test |
+| P2 chỉ so **đầu↔cuối** ⇒ bỏ cấu hình giữa, và có thể so **chéo góc** khi nhiều trục cùng biến thiên | thêm `so_sanh_moi_cap` (MỌI cặp, khoá `"A|B"`) + test thứ tự chèn kẽ/đảo vòng |
+| P2 `lk_ok_frac = 0,0` ở `vos_every=1` bị đọc thành "LK từ chối" | `cham(..., lk_khong_ap_dung=True)` ⇒ `lk_ok_frac = None` + cờ + test; sửa câu trong log này |
+| P2 `chua_kiem_duoc` chỉ ghi số, không cảnh báo | in `[canh-bao] N/M lần chạy CHƯA kiểm được image_size hiệu lực ⇒ lech == [] KHÔNG chứng minh đã khớp` |
+| P2 không test "chèn kẽ"; 2 assert **rỗng** trong test cấu hình | 2 test mới (thứ tự A,B,B,A + `len(set(d.values()))==len(d)`) |
+| P3 `SHOWN_HEADER` dead, `nguon_so` thiếu `max_mad`, lệch `shown.csv` không làm lần chạy hỏng | xoá dead code; thêm `schema: 2` + `nguon_so.max_mad`; lệch dòng ⇒ **loại** lần chạy |
+
+Ghi chú phạm vi: `image_size_chua_kiem_duoc = 0` ở **cả 3 artifact** hôm nay, nhưng artifact `891f4f5`
+(`max_mad`) sinh **trước** tính năng đối chiếu `image_size` ⇒ với nó `cau_hinh_hieu_luc_lech == []` chỉ
+chứng minh trục `max_mad` khớp, chưa chứng minh `image_size`. Số của nó vẫn dùng được vì `--image-size`
+không đổi giữa các lần chạy đó (192 toàn bộ).

@@ -38,7 +38,6 @@ if str(REPO_ROOT) not in sys.path:
 
 from src.live_tracking import _bbox_iou                        # noqa: E402
 
-SHOWN_HEADER = ("frame_idx", "x1", "y1", "x2", "y2", "lk_ok")
 
 
 def hop_tu_gt(gt_dir: Path) -> dict[int, tuple[int, int, int, int]]:
@@ -103,13 +102,16 @@ def doc_shown(path: Path) -> dict[int, tuple[object, bool] | tuple[tuple[int, in
     return ra
 
 
-def cham(hop_gt: dict, shown: dict) -> dict:
+def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
     """Chấm `IoU(ô hiển thị, ô GT)`. Hàm THUẦN (test được, không cần video/model).
 
     Ba ca phải tách:
       - GT có vật, **không có ô hiển thị** ⇒ `iou = 0.0` (bám sai thật) — KHÔNG bỏ mẫu;
       - GT có vật, ô HỎNG (đảo/âm) ⇒ `None` + đếm `khong_do_duoc` (không quy thành 0);
       - frame GT có vật **không xuất hiện** trong CSV ⇒ `thieu_frame` (chưa chạy tới frame đó).
+
+    `lk_khong_ap_dung=True` (cấu hình `vos_every=1`): CSV vẫn ghi `lk_ok = 0` cho mọi frame vì **không có
+    LK**, nên `lk_ok_frac = 0,0` ở đó KHÔNG có nghĩa "LK từ chối 100 %" ⇒ trả `None` + cờ.
     """
     theo_frame, thieu = [], []
     khong_do = 0
@@ -142,8 +144,11 @@ def cham(hop_gt: dict, shown: dict) -> dict:
         "thieu_frame": thieu,
         "iou_mean": round(statistics.fmean(do_duoc), 4) if do_duoc else None,
         "iou_min": round(min(do_duoc), 4) if do_duoc else None,
-        "lk_ok_frac": (round(sum(1 for r in theo_frame if r["lk_ok"]) / len(theo_frame), 3)
-                       if theo_frame else None),
+        # `vos_every=1` ⇒ KHÔNG có LK ⇒ `lk_ok` không áp dụng. Ghi 0,0 ở đó làm người đọc hiểu thành
+        # "LK từ chối 100 %" — sai (ô ở cấu hình đó là ô VOS của chính frame). Review #64.
+        "lk_khong_ap_dung": bool(lk_khong_ap_dung),
+        "lk_ok_frac": (None if lk_khong_ap_dung or not theo_frame else
+                       round(sum(1 for r in theo_frame if r["lk_ok"]) / len(theo_frame), 3)),
         "theo_frame": theo_frame,
     }
 
@@ -255,7 +260,7 @@ def cau_hinh_lech(lan: list[dict]) -> tuple[list[dict], list[dict]]:
             lech.append(r)
             continue
         hieu = r.get("image_size_hieu_luc")
-        if hieu is None:
+        if hieu is None or r.get("image_size_yeu_cau") is None:
             chua.append(r)
         elif int(hieu) != int(r["image_size_yeu_cau"]):
             lech.append(r)
@@ -278,6 +283,13 @@ def so_sanh(a: dict, b: dict) -> dict:
         return {"chenh_iou": chenh, "nguong_nhieu": None, "phan_biet_duoc": None,
                 "ket_luan": "KHÔNG kết luận: cần ≥ 2 lần chạy mỗi cấu hình để có ngưỡng nhiễu"}
     nhieu = max(float(std_a), float(std_b))
+    if nhieu == 0.0:
+        # Cả hai bên KHÔNG dao động (3 lần ra y hệt) ⇒ chưa có thước đo nhiễu nào. `max(0,0) = 0` sẽ
+        # biến mọi chênh lệch thành "TỐT HƠN/TỆ HƠN (ngưỡng nhiễu 0.000)" — đúng thứ AGENTS §6 cấm,
+        # cùng lớp lỗi đã vá cho `std = None` (review #61) nhưng bỏ sót `std = 0` (review #64).
+        return {"chenh_iou": chenh, "nguong_nhieu": 0.0, "phan_biet_duoc": None,
+                "ket_luan": "KHÔNG kết luận: cả hai cấu hình không dao động giữa các lần chạy ⇒ "
+                            "ngưỡng nhiễu = 0, mọi chênh lệch đều nằm trong sai số đo"}
     phan_biet = abs(chenh) > nhieu
     return {
         "chenh_iou": chenh,
@@ -370,7 +382,7 @@ def main(argv=None) -> int:
                 res = chay_mot_lan(clip=args.clip, bbox=args.bbox, image_size=sz,
                                    vos_every=ve, max_mad=max_mad,
                                    frames=args.frames, out_dir=Path(tmp))
-                res["cham"] = cham(hop_gt, doc_shown(res["shown"]))
+                res["cham"] = cham(hop_gt, doc_shown(res["shown"]), lk_khong_ap_dung=(int(ve) == 1))
                 cau = res["status"].get("cau_hinh") or {}
                 res["max_mad_yeu_cau"] = max_mad
                 res["max_mad_hieu_luc"] = cau.get("lk_max_mad")
@@ -380,12 +392,14 @@ def main(argv=None) -> int:
                 res["image_size_kiem_duoc"] = res["image_size_hieu_luc"] is not None
                 res["vos_every_yeu_cau"] = ve
                 res["shown"] = str(res["shown"])
-                res["hop_le"] = lan_chay_hop_le(res)
                 res["so_dong_khop_frame"] = so_dong_khop_frame(res)
-                if res["hop_le"] and not res["so_dong_khop_frame"]:
-                    print(f"[canh-bao] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
+                # Lệch số dòng = mất mẫu hoặc ghi trùng ⇒ IoU tính trên tập frame KHÁC tập đã phát.
+                # Trước đây chỉ in cảnh báo và vẫn tính vào trung bình (review #64).
+                res["hop_le"] = lan_chay_hop_le(res) and res["so_dong_khop_frame"]
+                if lan_chay_hop_le(res) and not res["so_dong_khop_frame"]:
+                    print(f"[LOI] {sz}/{ve}/{max_mad}: shown.csv {res['so_dong_shown'] - 1} dòng "
                           f"nhưng phiên phát {res['status'].get('frames')} frame — có frame không được "
-                          "ghi hoặc ghi trùng", flush=True)
+                          "ghi hoặc ghi trùng ⇒ LOẠI lần chạy này", flush=True)
             theo_cau_hinh[(sz, ve, max_mad)].append(res)
             c = res["cham"]
             print(f"vòng {vong + 1} · {sz}/{ve}/{max_mad} → IoU(ô hiển thị, ô GT) {c['iou_mean']} "
@@ -401,9 +415,25 @@ def main(argv=None) -> int:
     nhan = {tup: nhan_ch for nhan_ch, tup in cau_hinh.items()}   # tuple → nhãn
     so_lan_loi = {nhan[k]: sum(1 for r in v if not r["hop_le"]) for k, v in theo_cau_hinh.items()}
     tong = {nhan[k]: tong_hop([r for r in v if r["hop_le"]]) for k, v in theo_cau_hinh.items()}
-    lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
+    # Chỉ xét lần chạy HỢP LỆ: worker chết ⇒ `status` rỗng ⇒ `max_mad_hieu_luc = None` ⇒ bị nhồi vào
+    # `lech` và thông điệp đổ lỗi "mad hiệu lực khác yêu cầu" (sai nguyên nhân). Review #64.
+    lech, chua_kiem_duoc = cau_hinh_lech(
+        [r for v in theo_cau_hinh.values() for r in v if r["hop_le"]])
     khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
     ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
+    # MỌI cặp, không chỉ đầu↔cuối: với > 2 cấu hình, "đầu↔cuối" bỏ qua cấu hình giữa VÀ nếu nhiều trục
+    # cùng biến thiên thì cặp đó là **chéo góc** (vd mặc định `--max-mad [1.5, 6.0]` + `--vos-every 1 3`
+    # ⇒ so `192/1/1.5` với `192/3/6.0` = so hai thứ khác nhau trong cùng một phép). Review #64 bắt.
+    moi_cap = {}
+    for i in range(len(khoa)):
+        for j in range(i + 1, len(khoa)):
+            a_k, b_k = khoa[i], khoa[j]
+            moi_cap[f"{a_k}|{b_k}"] = {
+                **so_sanh(tong[a_k], tong[b_k]),
+                **{f"theo_cap_{kk}": vv for kk, vv in
+                   so_sanh_theo_cap(theo_cau_hinh[khoa_cua[a_k]],
+                                    theo_cau_hinh[khoa_cua[b_k]]).items()},
+            }
     # `khoa` là NHÃN ⇒ phải quy về TUPLE bằng `khoa_cua` (dùng `nhan` ở đây là lỗi chiều — đã gặp 2 lần)
     ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[khoa_cua[khoa[0]]],
                                   theo_cau_hinh[khoa_cua[khoa[-1]]]),
@@ -411,12 +441,19 @@ def main(argv=None) -> int:
 
     from scripts.measure_watchdog import _git_provenance
 
+    if chua_kiem_duoc:
+        print(f"[canh-bao] {len(chua_kiem_duoc)}/{sum(len(v) for v in theo_cau_hinh.values())} lần chạy "
+              "CHƯA kiểm được `image_size` hiệu lực (worker không khai) ⇒ `cau_hinh_hieu_luc_lech == []` "
+              "KHÔNG chứng minh cấu hình đã khớp", file=sys.stderr)
+
     rev, dirty, dirty_code, loi = _git_provenance()
     artifact = {
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code, "git_loi": loi,
         "do_luc": datetime.now().isoformat(timespec="seconds"),
         "lenh": " ".join(["python scripts/ab_o_hien_thi_vs_gt.py"] + (argv or sys.argv[1:])),
+        "schema": 2,
         "nguon_so": {"gt": args.gt, "clip": args.clip, "bbox": args.bbox,
+                     "max_mad": args.max_mad,
                      "image_size": args.image_size, "vos_every": args.vos_every,
                      "frames": args.frames, "lan": args.lan,
                      "frame_gt_co_vat": sorted(hop_gt)},
@@ -429,6 +466,7 @@ def main(argv=None) -> int:
         "so_lan_chay_loi": so_lan_loi,
         "tong_hop": tong,
         "so_sanh": ss,
+        "so_sanh_moi_cap": moi_cap,
         "so_sanh_theo_cap": ss_cap,
         "lan_chay": {nhan[k]: [{kk: vv for kk, vv in r.items() if kk != "status"} for r in rs]
                      for k, rs in theo_cau_hinh.items()},

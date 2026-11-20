@@ -119,7 +119,7 @@ ngay, nhưng báo cáo phải ghi đó là cấu hình đo, không phải mặc 
 
 **Vì sao cần phép đo mới**: chấm mIoU hợp lệ buộc `--vos-every 1` (repo tự từ chối dump mask khi >1), mà cấu hình đó **tắt hẳn LK** ⇒ `max_mad` không tham gia phép đo. `drift_iou` chỉ nói ô hiển thị khớp **ô VOS** (tự nhất quán). Nên thêm: **IoU(ô ĐANG HIỂN THỊ, hộp bao suy từ mask người tô)** — dụng cụ `--dump-shown-csv` + `scripts/ab_o_hien_thi_vs_gt.py`.
 
-**Số** (`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json`, 3 lần/cấu hình chèn kẽ, 7 frame GT của `b1`, @192, `vos_every 3`, `git_dirty_code false`, `so_lan_chay_loi` 0/0):
+**Số** (⚠ artifact của phiên này **đã bị ghi đè** — xem ĐÍNH CHÍNH trong `docs/task/20-11-2026-o-hien-thi-vs-gt-chot-max-mad.md` §8; tệp cùng tên nay là phiên `b1b`; 3 lần/cấu hình chèn kẽ, 7 frame GT của `b1`, @192, `vos_every 3`, `git_dirty_code false`, `so_lan_chay_loi` 0/0):
 
 | `max_mad` | IoU(ô hiển thị, ô GT) | tệ nhất | `lk_ok_frac` ở frame GT |
 |---|---|---|---|

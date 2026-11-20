@@ -42,13 +42,19 @@ Theo cặp (21 cặp): 192 thắng **16/21** frame; 320 chỉ thắng ở f2 (+0
 
 | frame | IoU 320 | ô hiển thị (320) | hộp GT |
 |---|---|---|---|
-| 62 | **0,000** | 317,254 → 446,678 | 76,0 → 234,504 |
-| 92 | 0,117 | 372,0 → 527,523 | 285,337 → 433,850 |
-| 182 | **0,000** | 412,237 → 566,770 | 324,227 → 507,807 |
+| 62 | **0,000** | 317,254 → 445,678 | 76,0 → 234,504 |
+| 92 | 0,117 | 339,0 → 485,502 | 285,337 → 433,850 |
+| 182 | **0,000** | **không vẽ ô nào** | 324,227 → 507,807 |
+
+(Ba dòng này lấy từ `lan_chay["320/1.5"][0]` của artifact `6969fc4`. Ở f182 không có ô nào được vẽ;
+`cham()` chấm **0,0** — "GT có vật mà không có ô" là bám sai thật, không phải "không đo được".)
 
 Ô ở 320 **đứng yên quanh vị trí ban đầu** (`300,275,150,410`) trong khi chai đã đi chỗ khác ⇒ VOS
-**mất dấu** ngay sau f2 (f2 lại là frame 320 tốt nhất: 0,765 vs 0,579). `iou_min = 0,000` ở **cả 3 lần
-chạy** ⇒ không phải ngẫu nhiên. Ở 192 cùng frame: 0,579 / 0,383 / 0,637.
+**mất dấu** ngay sau f2 (f2 lại là frame 320 tốt nhất: 0,7649 vs 0,5790). Ở 192 cùng frame: 0,579 / 0,383 / 0,642.
+
+`iou_min` của 320 = **0,000 ở 2/3 lần chạy** (lần 3 = 0,1147) ⇒ `tong_hop.iou_min = 0,0382 ± 0,0662`.
+ĐÍNH CHÍNH: bản đầu của log ghi "cả 3 lần" — đúng là **2/3**; bảng dưới cũng được dựng lại từ artifact
+`6969fc4` (bản đầu lấy từ lần chạy bẩn chưa commit, toạ độ khác).
 
 ⇒ 320 không chỉ chậm hơn 1,8–2,5× (AGENTS §6) mà còn **làm hỏng việc bám**. Khớp với kết luận cũ
 (`drift_iou` 320 thấp hơn) bằng một thước đo khác — lần này là **độ chính xác**.
@@ -79,3 +85,14 @@ phải dùng `vos_ms` từ `./run ab`, không phải cột FPS của artifact n�
 - `docs/task/14-11-2026-do-lai-bbox-dung-ket-luan-khong-can-train-lai.md` (320 làm `drift_iou` giảm)
 - Artifact: `data/ab_image_size_b1b_2026-11-20_metrics.json` (`git_rev 6969fc4`, `git_dirty_code=false`,
   `image_size_chua_kiem_duoc 0`, `cau_hinh_hieu_luc_lech []`)
+
+## 8. ĐÍNH CHÍNH sau review độc lập (PR #64)
+
+| Reviewer nêu | Thực tế trong artifact `6969fc4` | Đã sửa |
+|---|---|---|
+| "`iou_min = 0,000` ở **cả 3 lần**" | 2/3 lần (lần 3 = 0,1147) ⇒ `iou_min.mean = 0,0382 ± 0,0662` | mục 4.2 |
+| Bảng §4.2 dẫn toạ độ **không có trong artifact** (f92 `372,0→527,523`, f182 `412,237→566,770`) — lấy từ lần chạy BẨN chưa commit | f92 `339,0→485,502`; f182 **không vẽ ô nào** | mục 4.2 |
+| Commit message `ebad7b1` lặp lại câu sai "iou_min=0,000 cả 3 lần" | — | ghi tại đây; kết luận **"320 tệ hơn 0,21 IoU" KHÔNG đổi** |
+
+Bài học: **artifact phải được nêu tên + đọc lại khi viết log**, không chép số từ terminal của lần chạy
+khác (lần bẩn) — cùng lý do đã phải chấm lại trên cây sạch.

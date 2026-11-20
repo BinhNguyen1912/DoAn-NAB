@@ -240,8 +240,10 @@ def test_danh_sach_cau_hinh_la_TICH_DE_cac_truc():
     assert len(d) == 8
     assert d["192/3/1.5"] == (192, 3, 1.5)
     assert d["320/1/6.0"] == (320, 1, 6.0)
-    assert set(d) == set(d.values().__iter__().__class__ and d)      # nhãn ↔ khoá 1-1
-    assert sorted(d) == sorted(d)                                    # ổn định thứ tự
+    # Hai assert CŨ ở đây là RỖNG (`set(d)==set(d)`) — review #64 chỉ đúng. Nay kiểm thật:
+    assert len(set(d.values())) == len(d)          # nhãn ↔ khoá 1-1 (không hai nhãn cùng một tuple)
+    assert len(d) == len({*d})                     # không nhãn trùng
+    assert d["320/1/6.0"] != d["192/1/6.0"]        # đổi trục image_size phải đổi khoá
 
 
 def test_thu_tu_vong_dao_chieu_vong_le():
@@ -284,7 +286,7 @@ def test_main_khoa_bang_nhan_va_ghep_cap_dung_chieu(monkeypatch, tmp_path):
                                                      "image_size_hieu_luc": image_size}}}
 
     monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
-    monkeypatch.setattr(ab, "cham", lambda _g, _s: ham)
+    monkeypatch.setattr(ab, "cham", lambda _g, _s, **_kw: ham)
     monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
     monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
     out = tmp_path / "a.json"
@@ -298,3 +300,71 @@ def test_main_khoa_bang_nhan_va_ghep_cap_dung_chieu(monkeypatch, tmp_path):
     assert d["so_sanh_theo_cap"]["a"] in d["tong_hop"]
     assert d["so_sanh_theo_cap"]["b"] in d["tong_hop"]
     assert d["so_sanh_theo_cap"]["so_cap"] > 0
+
+
+# --- 4 P2 của review #64 ---
+def test_so_sanh_KHONG_ket_luan_khi_ca_hai_std_bang_0():
+    """`max(0, 0) = 0` ⇒ mọi chênh lệch thành "TỐT HƠN (nhiễu 0.000)".
+
+    Cùng lớp lỗi đã vá cho `std = None` (review #61) nhưng bỏ sót `std = 0` (review #64).
+    """
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh
+    a = {"iou_mean": {"mean": 0.8460, "std": 0.0}, "iou_min": {"mean": 0.8, "std": 0.0},
+         "lk_ok_frac": {"mean": 0.0, "std": 0.0}}
+    b = {"iou_mean": {"mean": 0.8461, "std": 0.0}, "iou_min": {"mean": 0.8, "std": 0.0},
+         "lk_ok_frac": {"mean": 0.0, "std": 0.0}}
+    r = so_sanh(a, b)
+    assert r["phan_biet_duoc"] is None and "KHÔNG kết luận" in r["ket_luan"]
+    assert r["nguong_nhieu"] == 0.0
+
+
+def test_cham_KHONG_bao_lk_ok_frac_khi_vos_every_1():
+    """`vos_every=1` ⇒ không có LK. Ghi 0,0 ở đó bị đọc thành "LK từ chối 100 %" (review #64)."""
+    from scripts.ab_o_hien_thi_vs_gt import cham
+    gt = {2: (0, 0, 10, 10)}
+    shown = {2: ((0, 0, 10, 10), False)}
+    r = cham(gt, shown, lk_khong_ap_dung=True)
+    assert r["lk_ok_frac"] is None and r["lk_khong_ap_dung"] is True
+    assert r["iou_mean"] == 1.0                    # IoU vẫn chấm bình thường
+    r2 = cham(gt, shown)                           # cấu hình có khe ⇒ giữ số thật (0,0 = LK từ chối)
+    assert r2["lk_ok_frac"] == 0.0 and r2["lk_khong_ap_dung"] is False
+
+
+def test_so_dong_lech_lam_lan_chay_khong_hop_le():
+    """`shown.csv` thiếu/trùng dòng ⇒ IoU chấm trên tập frame KHÁC tập đã phát ⇒ phải LOẠI."""
+    from scripts.ab_o_hien_thi_vs_gt import lan_chay_hop_le, so_dong_khop_frame
+    ok = {"ma_thoat": 0, "state": "stopped", "so_dong_shown": 8, "status": {"frames": 7}}
+    lech = {"ma_thoat": 0, "state": "stopped", "so_dong_shown": 5, "status": {"frames": 7}}
+    assert so_dong_khop_frame(ok) and so_dong_khop_frame(lech) is False
+    assert lan_chay_hop_le(ok) and lan_chay_hop_le(lech)          # hàm cũ KHÔNG thấy lỗi này
+    # ghép đúng như main(): phải loại
+    assert (lan_chay_hop_le(lech) and so_dong_khop_frame(lech)) is False
+
+
+def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
+    """Hai tiêu chí review #64: (a) thứ tự chèn kẽ A,B,A,B… và vòng lẻ đảo; (b) so MỌI cặp."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 7, "n_gt_co_vat": 7,
+           "khong_do_duoc": 0, "thieu_frame": [], "lk_khong_ap_dung": False,
+           "theo_frame": [{"frame_idx": 2, "iou": 0.5, "lk_ok": False}]}
+    thu_tu = []
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, frames, out_dir):
+        thu_tu.append(f"{image_size}/{vos_every}/{max_mad}")
+        return {"shown": str(tmp_path / "s.csv"), "so_dong_shown": 8, "ma_thoat": 0, "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "cham", lambda _g, _s, **_kw: ham)
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    out = tmp_path / "a.json"
+    assert ab.main(["--gt", "g", "--clip", "c", "--bbox", "0,0,10,10", "--image-size", "192", "320",
+                    "--vos-every", "3", "--max-mad", "1.5", "--lan", "2", "--out", str(out)]) == 0
+    # (a) chèn kẽ: A,B rồi B,A (vòng 1 đảo chiều)
+    assert thu_tu == ["192/3/1.5", "320/3/1.5", "320/3/1.5", "192/3/1.5"]
+    d = json.loads(out.read_text(encoding="utf-8"))
+    # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
+    assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5|320/3/1.5"]
+    assert d["nguon_so"]["max_mad"] == [1.5] and d["schema"] == 2

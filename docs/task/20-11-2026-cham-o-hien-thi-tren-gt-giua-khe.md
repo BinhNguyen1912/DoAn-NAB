@@ -92,4 +92,5 @@ dịch.
 - `docs/task/20-11-2026-gt-chon-frame-giua-khe.md` (sinh bộ GT `b1b`, 2 vòng review)
 - `docs/task/20-11-2026-o-hien-thi-vs-gt-chot-max-mad.md` (4 lần A/B trên bộ `b1` ⇒ giữ `1,5`)
 - `docs/thuoc-do-bam-dung.md`
-- Artifact: `data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 891f4f5`, `git_dirty_code=false`)
+- Artifact: `data/ab_max_mad_b1b_2026-11-20_metrics.json` (đổi tên từ `ab_o_hien_thi_vs_gt_…` — tên cũ
+  bị phiên `b1` cùng ngày dùng chung đường dẫn; `git_rev 891f4f5`, `git_dirty_code=false`)
