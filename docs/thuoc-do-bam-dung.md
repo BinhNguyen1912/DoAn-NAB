@@ -200,12 +200,24 @@ sai. Nay mỗi dòng còn có:
 Mục 2 ở trên cần mở phần mềm ảnh và tô từ đầu. Nếu muốn nhanh hơn (≈ 1 phút/frame):
 
 ```bash
-# ⚠ `binh1` (333 frame) chỉ có chai trong `0:110` và `165:262` (docs/demo-clip-va-o-chon.md) ⇒ frame
-# 150/280/310 KHÔNG có vật. Với frame đó bấm "Không có vật" (khai rỗng, `score_miou` sẽ không chấm),
-# đừng tô một vật không tồn tại.
-python scripts/gt_gan_nhanh.py --clip data/binh1.mp4 --ten binh1_tay2 --nguoi-gan "Nguyễn Văn A" \
-    --frames 0,25,50,57,69,90,105,171,190,230,245,258
+cd /mnt/d/DOAN-NAB
+./run gt --clip data/binh1.mp4 --ten binh1_tay2 --nguoi-gan "Nguyễn Văn A" --giua-khe --khung 0:110,165:262
 ```
+
+**Đừng gõ dãy `--frames 0,25,50,…` dài** như bản tài liệu trước (20-11 đã hỏng 3 lần): dãy ~50 ký tự
+làm terminal chèn xuống dòng ngay sau `--frames` ⇒ `error: argument --frames: expected one argument`, và
+dòng số bị shell chạy như một lệnh riêng. Ba cờ thay thế:
+
+| Cờ | Nghĩa |
+|---|---|
+| `--giua-khe [N]` | N frame (mặc định 12) cách nhau ~30 frame, **luôn** ≡ `vos_every-1` mod `vos_every` ⇒ chắc chắn **không phải frame VOS** (ô do LK nội suy quyết định) |
+| `--vos-every` | chu kỳ VOS của phiên sẽ chấm (mặc định 3). Phải `≥ 2`, nếu không `--giua-khe` báo lỗi chứ không lặng lẽ đổi sang 12 frame trải đều |
+| `--khung a:b[,c:d]` | **BẮT BUỘC với binh1**: chai chỉ có trong `0:110` ∪ `165:262`; ngoài đó GT là mask **rỗng** nên tô chỉ tốn công. Lọc chạy SAU khi sinh danh sách, giao rỗng ⇒ báo lỗi |
+
+⚠ **Các frame `--giua-khe` KHÔNG chấm được bằng `./run miou` (mask)**: `--dump-mask-frames` bị chặn
+khi `vos_every > 1` (`tools/live_worker.py`) vì mask chỉ tồn tại ở frame VOS, còn ở giữa khe pipeline
+không suy ra mask LK. Đường đúng cho bộ GT này là **IoU ô hiển thị vs hộp GT**
+(`scripts/ab_o_hien_thi_vs_gt.py`). Đừng tô xong rồi thắc mắc `so_frame_thieu_mask` = cả bộ.
 
 Tên bộ GT mới (`binh1_tay2`): `docs/gt/binh1_tay` đã tồn tại nhưng bị **vô hiệu hoá**
 (`dung_duoc: false` trong `index.json`). Chạy lại trên cùng tên sẽ **hợp** danh sách frame và **giữ**

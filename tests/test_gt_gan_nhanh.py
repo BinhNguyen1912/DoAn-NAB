@@ -435,3 +435,196 @@ class TestFramesTraiDeu:
         from scripts.gt_gan_nhanh import frames_trai_deu
 
         assert frames_trai_deu(0) == [] and frames_trai_deu(-3) == []
+
+
+# --- chọn frame "GIỮA KHE" (thay cho dãy --frames dài, xem lý do trong scripts/gt_gan_nhanh.py) ---
+def test_frames_giua_khe_dung_dong_du_va_cach_deu():
+    """Golden: dãy mốc của binh1 (333 frame, ve=3). Đổi công thức ⇒ test này đỏ CÓ CHỦ Ý.
+
+    Đây là bản golden DUY NHẤT của dãy mốc; test ghép `--khung` bên dưới suy ra từ đây.
+    """
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    ra = frames_giua_khe(333, n=12, vos_every=3)
+    assert ra == [2, 32, 62, 92, 122, 152, 182, 212, 242, 272, 302, 332]
+    assert all(f % 3 == 2 for f in ra)     # ≡ ve-1 ⇒ CHẮC CHẮN không phải frame VOS
+
+
+def test_frames_giua_khe_khong_bao_gio_dung_vao_frame_co_vos():
+    """Frame ≡ vos_every-1 thì CHẮC CHẮN không phải frame VOS ⇒ ô hiển thị là nội suy từ mốc VOS gần
+    nhất (cách ve-1 frame). Lọt frame chia hết cho vos_every thì KHÔNG chắc như vậy (VOS về muộn, frame
+    đó vẫn đang phát ô của lần VOS trước — nhưng đúng lúc model đang cập nhật) ⇒ mẫu không còn thuần
+    nhất, mất ý nghĩa phép đo.
+
+    `assert ra` là BẮT BUỘC: thiếu nó thì hàm trả [] làm vòng `for` không chạy ⇒ test xanh rỗng
+    (review độc lập 20-11 chỉ đúng). Thêm ve=7/11/12/20 để khoá luôn hành vi làm tròn bước
+    (ve=7 ⇒ 28, ve=11 ⇒ 33, ve=12 ⇒ 24, ve=20 ⇒ 40 — bước phải là bội của ve, không phải luôn 30).
+    """
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    for ve in (2, 3, 4, 5, 7, 11, 12, 20):
+        ra = frames_giua_khe(200, n=8, vos_every=ve)
+        assert ra, f"ve={ve} trả rỗng — test sẽ xanh rỗng"
+        assert all(f % ve == ve - 1 for f in ra), (ve, ra)
+
+
+def test_frames_giua_khe_bien_vo_huong():
+    from scripts.gt_gan_nhanh import frames_giua_khe
+    assert frames_giua_khe(0) == []
+    assert frames_giua_khe(-5) == []
+    assert frames_giua_khe(333, n=0) == []
+    # vos_every < 2 ⇒ không có "khe" nào (mọi frame đều do model) ⇒ trả rỗng, KHÔNG rơi về mặc định
+    assert frames_giua_khe(333, vos_every=1) == []
+    # clip ngắn hơn bước nhảy: vẫn phải ra frame đầu tiên hợp lệ
+    assert frames_giua_khe(3, vos_every=3) == [2]
+    assert frames_giua_khe(2, vos_every=3) == []
+
+
+def test_parse_khung():
+    from scripts.gt_gan_nhanh import parse_khung
+    assert parse_khung("0:110,165:262") == [(0, 110), (165, 262)]
+    assert parse_khung(" 0 : 110 ; 165:262 ") == [(0, 110), (165, 262)]
+    assert parse_khung("5:5") == [(5, 5)]          # khung 1 frame vẫn hợp lệ
+    for xau in ("0-110", "110:0", "-1:5", "", " , "):
+        try:
+            parse_khung(xau)
+        except ValueError:
+            continue
+        raise AssertionError(f"phải báo lỗi với {xau!r}")
+
+
+def test_giua_khe_cong_khung_binh1_ra_dung_7_moc():
+    """Đúng bộ mốc đã dùng cho binh1 — nếu đổi công thức thì test này phải đổi theo."""
+    from scripts.gt_gan_nhanh import frames_giua_khe, parse_khung
+    frames = [f for f in frames_giua_khe(333, n=12, vos_every=3)
+              if any(a <= f <= b for a, b in parse_khung("0:110,165:262"))]
+    assert frames == [2, 32, 62, 92, 182, 212, 242]
+    assert all(f % 3 == 2 for f in frames)      # vẫn giữa khe: ô hoàn toàn do LK
+
+
+# --- `loc_theo_khung`: khoá HỒI QUY lỗi "lọc trước khi sinh danh sách" (20-11) + lỗi ra traceback ---
+def test_loc_theo_khung_loc_sau_khi_sinh_va_giu_hai_dau():
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    # 2, 32, 92 nằm trong 0:110 — KHÔNG được lọc trước khi có danh sách (bản đầu lọc trước ⇒ luôn rỗng)
+    assert loc_theo_khung([2, 32, 92, 182, 242], "0:110,165:262") == [2, 32, 92, 182, 242]
+    assert loc_theo_khung([0, 110], "0:110") == [0, 110]      # gồm CẢ HAI đầu
+    assert loc_theo_khung([7], "7:7") == [7]                  # khung 1 frame
+    assert loc_theo_khung([5, 6], None) == [5, 6]             # không khung ⇒ nguyên vẹn
+    assert loc_theo_khung([], None) == []
+
+
+def test_loc_theo_khung_giao_rong_thi_LOI_chu_khong_roi_ve_mac_dinh():
+    """Rơi về bộ 12-frame-trải-đều là bẫy: người dùng tưởng đang chấm frame giữa khe, thực ra lẫn cả
+    frame CÓ VOS ⇒ phép đo max_mad vô nghĩa mà không ai biết (P1 review độc lập 20-11)."""
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    with pytest.raises(SystemExit):
+        loc_theo_khung([100, 200], "0:50")
+
+
+def test_loc_theo_khung_chuoi_sai_ra_LOI_chu_khong_phai_traceback():
+    """`--khung` là thứ người dùng GÕ TAY; ValueError thô = traceback Python = UX hỏng."""
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    # `pytest.raises(SystemExit)` đã chứng minh không lọt ValueError thô: SystemExit bắt được còn
+    # ValueError thì test sẽ đỏ. (Bản trước gọi thêm lần hai để "kiểm ValueError" — chính lần gọi đó
+    # làm SystemExit bắn ra ngoài và test đỏ.)
+    for xau in ("110:0", "1:2:3", "0:110 165:262", "-1:5"):
+        with pytest.raises(SystemExit):
+            loc_theo_khung([1], xau)
+
+
+# --- P1 review: CLI không được ÂM THẦM rơi về bộ frame mặc định ---
+def test_main_tu_choi_vos_every_1_khi_dung_giua_khe(tmp_path, monkeypatch):
+    """`--vos-every 1` = đúng cấu hình phiên mIoU của repo ⇒ rất dễ gặp. Hàm thuần trả [] nên CLI
+    phải BÁO LỖI, không được lặng lẽ đổi sang 12 frame trải đều (frame đó lẫn frame có VOS)."""
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit) as loi:
+        gt.main(["--clip", "khong_ton_tai.mp4", "--ten", "t1", "--nguoi-gan", "x",
+                 "--giua-khe", "--vos-every", "1"])
+    assert "vos-every" in str(loi.value)
+    assert not (tmp_path / "t1").exists(), "không được tạo thư mục GT khi đã báo lỗi"
+
+
+def test_main_tu_choi_giua_khe_0(tmp_path, monkeypatch):
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        gt.main(["--clip", "khong_ton_tai.mp4", "--ten", "t2", "--nguoi-gan", "x", "--giua-khe", "0"])
+
+
+# --- P1 review vòng 2: `chon_frame` KHÔNG được bị "người viết đầu thắng" ghi đè ---
+def test_chon_frame_lan_chay_sau_thang_khoa_cu(tmp_path):
+    """Chạy lại cùng `--ten` là workflow được tài liệu khuyến khích (danh sách frame được HỢP).
+
+    Nếu `chon_frame` bị giữ giá trị cũ thì index khai "mặc định 12 frame trải đều" trong khi frames
+    thật là 7 mốc giữa khe ⇒ provenance NÓI SAI, đúng thứ khoá này sinh ra để chống (review vòng 2).
+    """
+    from scripts.gt_gan_nhanh import _viet_index
+    d = tmp_path / "gt1"
+    _viet_index(d, clip="c.mp4", ten="gt1", frames=[10, 20], nguoi_gan="x", co_goi_y=False,
+                frame_hw=[8, 8], chon_frame={"mac_dinh": "12 frame trải đều clip"})
+    _viet_index(d, clip="c.mp4", ten="gt1", frames=[2, 32], nguoi_gan="x", co_goi_y=False,
+                frame_hw=[8, 8], chon_frame={"giua_khe": 12, "vos_every": 3})
+    idx = json.loads((d / "index.json").read_text(encoding="utf-8"))
+    assert idx["chon_frame"] == {"giua_khe": 12, "vos_every": 3}
+    assert idx["frames"] and {f["frame_idx"] for f in idx["frames"]} == {2, 10, 20, 32}
+
+
+def test_chon_frame_none_thi_giu_gia_tri_cu(tmp_path):
+    from scripts.gt_gan_nhanh import _viet_index
+    d = tmp_path / "gt2"
+    _viet_index(d, clip="c.mp4", ten="gt2", frames=[10], nguoi_gan="x", co_goi_y=False,
+                frame_hw=[8, 8], chon_frame={"giua_khe": 12, "vos_every": 3})
+    _viet_index(d, clip="c.mp4", ten="gt2", frames=[10], nguoi_gan="x", co_goi_y=False,
+                frame_hw=[8, 8], chon_frame=None)
+    assert json.loads((d / "index.json").read_text(encoding="utf-8"))["chon_frame"]["giua_khe"] == 12
+
+
+# --- main() đi TỚI index.json (cả 2 test cũ chỉ dừng ở validate ⇒ P1 vòng 2 lọt không test) ---
+def _chay_main(monkeypatch, tmp_path, them):
+    from scripts import gt_gan_nhanh as gt
+    from scripts import score_miou
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    monkeypatch.setattr(gt, "so_frame_cua_clip", lambda _c: 333)
+    # `cat_frames` được import BÊN TRONG `main` (`from scripts.score_miou import cat_frames`) ⇒ phải vá
+    # ở module nguồn, không phải ở `gt.cat_frames` (vá sai chỗ ⇒ test lại gọi cv2 mở clip thật).
+    monkeypatch.setattr(score_miou, "cat_frames", lambda _c, frames, _d: len(list(frames)))
+    monkeypatch.setattr(gt, "_kich_thuoc_frames", lambda _d, frames: {int(f): (8, 8) for f in frames})
+    base = ["--clip", "c.mp4", "--ten", "t9", "--nguoi-gan", "x", "--khong-goi-y", "--chi-sinh"]
+    gt.main(base + them)
+    return json.loads((tmp_path / "t9" / "index.json").read_text(encoding="utf-8"))
+
+
+def test_main_ghi_chon_frame_giua_khe_cong_khung(monkeypatch, tmp_path):
+    idx = _chay_main(monkeypatch, tmp_path, ["--giua-khe", "--khung", "0:110,165:262"])
+    assert idx["chon_frame"] == {"giua_khe": 12, "vos_every": 3, "khung": "0:110,165:262"}
+    assert [f["frame_idx"] for f in idx["frames"]] == [2, 32, 62, 92, 182, 212, 242]
+
+
+def test_main_ghi_chon_frame_frames_sau_loc(monkeypatch, tmp_path):
+    """`--frames` + `--khung`: index phải khai danh sách SAU lọc, không phải danh sách yêu cầu."""
+    idx = _chay_main(monkeypatch, tmp_path, ["--frames", "0,32,200", "--khung", "0:110"])
+    assert idx["chon_frame"]["frames"] == [0, 32]
+    assert idx["chon_frame"]["khung"] == "0:110"
+
+
+@pytest.mark.parametrize("n", ["0", "-5"])
+def test_main_tu_choi_giua_khe_am_hoac_0(monkeypatch, tmp_path, n):
+    """`--giua-khe -5` là bẫy argparse (`nargs="?"` + số âm) mà review vòng 1 nêu."""
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        gt.main(["--clip", "c.mp4", "--ten", "t8", "--nguoi-gan", "x", "--giua-khe", n])
+
+
+def test_main_frames_khong_phai_so_ra_LOI_chu_khong_traceback(monkeypatch, tmp_path):
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit) as loi:
+        gt.main(["--clip", "c.mp4", "--ten", "t7", "--nguoi-gan", "x", "--frames", "0,5O,100"])
+    assert "--frames" in str(loi.value)
+
+
+def test_main_frames_cong_giua_khe_khong_hard_error_vi_vos_every(monkeypatch, tmp_path):
+    """`--frames` + `--giua-khe --vos-every 1`: `--vos-every` bị BỎ QUA (có cảnh báo) nên không được
+    hard-error vì nó — trước đây validate đặt trước nhánh `--frames` (review vòng 2, P3)."""
+    idx = _chay_main(monkeypatch, tmp_path, ["--frames", "5,9", "--giua-khe", "--vos-every", "1"])
+    assert idx["chon_frame"]["frames"] == [5, 9]
