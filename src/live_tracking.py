@@ -108,6 +108,11 @@ class LiveTrackConfig:
     # (ok_frac trong khung 0,227; nới 6,0 ⇒ 0,568 mà IoU khi-ok chỉ giảm 0,031). Đổi GIÁ TRỊ MẶC ĐỊNH
     # phải chờ A/B live 2 clip + kiểm ảnh ô bao không bị kéo vào nền — xem ticket #38.
     lk_max_mad: float = DEFAULT_MAX_MAD
+    # DỤNG CỤ ĐO (ticket #38): ghi ô bao ĐANG HIỂN THỊ ở **mọi frame đã phát** ra CSV
+    # (`frame_idx,x1,y1,x2,y2,lk_ok`). Vì sao cần: CSV drift chỉ có dòng ở các lần VOS (mỗi N frame),
+    # nên không chấm được ô người xem thấy ở các frame GT lẻ (`binh1`: 91/181/211/241 không chia hết
+    # cho 3). Chuỗi rỗng = TẮT (mặc định) — không ghi gì thêm.
+    dump_shown_csv: str = ""
 
     def __post_init__(self) -> None:
         """Kiểm tra tham số ở MỘT chỗ — trước đây schema API cho 0.0 còn worker clamp 0.05,
@@ -596,6 +601,11 @@ class LiveTrackingSession:
         # RỖNG hay không (rỗng nhiều ⇒ `model_lost`, rỗng ít ⇒ `drift_trend`). Hai deque phải append
         # cạnh nhau ở MỌI chỗ, nếu lệch nhịp thì `empty_frac` không còn ứng với `p05` nào.
         self._drift_empty_window: deque = deque(maxlen=_STAT_WINDOW)
+        # Ghi ô hiển thị từng frame (dụng cụ đo): file mở LƯỜI ở frame đầu, đóng trong `run()`.
+        # KHÔNG ghi trong `_stats_lock` (I/O dưới lock sẽ chặn luồng VOS — cùng lý do với CSV drift):
+        # `_update_stats_locked` chỉ để lại `_last_shown`, `_update_stats` mới ghi ra đĩa.
+        self._shown_fh = None
+        self._last_shown = None
         # Cửa sổ ĐẾM SỰ KIỆN cho mask rỗng. Để RIÊNG khỏi `_iou_window` (10 mẫu, dùng cho độ ổn
         # định): đây là đại lượng đếm, không phải phân vị, nên cửa sổ ngắn vẫn dùng được — tần suất
         # nền của "VOS trả mask rỗng" trên clip khoẻ đo được là 0/798 lần chạy (binh1).
@@ -748,6 +758,9 @@ class LiveTrackingSession:
             self._canh_bao_mask_thieu()
             self._flush_pending_csv()
             self._drift_log.close()
+            if self._shown_fh is not None:      # dụng cụ đo #38: đóng sau cùng để không mất frame cuối
+                self._shown_fh.close()
+                self._shown_fh = None
             # Ghi lại lần cuối: nếu luồng VOS báo lỗi trong lúc join thì state đã thành `error`.
             self._publish_status(out_dir)
         # Trả BẢN SAO: `join(5 s)` có thể timeout và luồng VOS còn ghi `_stats` sau đó ⇒ trả object
@@ -1459,9 +1472,32 @@ class LiveTrackingSession:
     def _update_stats(self, result) -> None:
         with self._stats_lock:
             row = self._update_stats_locked(result)
+            shown_row = self._last_shown
+            self._last_shown = None
         # Ghi CSV NGOÀI lock: I/O trong `_stats_lock` sẽ chặn luồng VOS (nó cũng cần lock này).
         if row is not None:
             self._log_drift_sample(**row)
+        if shown_row is not None:
+            self._ghi_o_hien_thi(*shown_row)
+
+    def _ghi_o_hien_thi(self, frame_idx: int, shown, lk_ok: bool) -> None:
+        """Ghi một dòng ô-bao-đang-hiển-thị (dụng cụ đo #38). Ô không hợp lệ ⇒ để trống, KHÔNG ghi 0.
+
+        Bốn cột toạ độ trống nghĩa là "frame này không có ô nào hiển thị" (chưa có model / mất dấu) —
+        khác `0,0,0,0` là một ô suy biến, và khác "chưa đo" (không có file).
+        """
+        try:
+            if self._shown_fh is None:
+                path = Path(self._cfg.dump_shown_csv)
+                path.parent.mkdir(parents=True, exist_ok=True)
+                self._shown_fh = path.open("w", encoding="utf-8", newline="")
+                self._shown_fh.write("frame_idx,x1,y1,x2,y2,lk_ok\n")
+            o = "" if shown is None else f"{int(shown[0])},{int(shown[1])},{int(shown[2])},{int(shown[3])}"
+            self._shown_fh.write(f"{int(frame_idx)},{o},{int(bool(lk_ok))}\n")
+        except OSError as exc:                     # không được làm chết phiên vì lỗi ghi file đo
+            print(f"[canh-bao] không ghi được CSV ô hiển thị ({exc}) — tắt ghi", flush=True)
+            self._cfg.dump_shown_csv = ""
+            self._shown_fh = None
 
     def _update_stats_locked(self, result):
         """Cập nhật số liệu; TRẢ về dòng CSV cần ghi (mẫu `_pending_drift` tới hạn) hoặc `None`."""
@@ -1477,6 +1513,9 @@ class LiveTrackingSession:
         # ánh xạ seq→bộ đếm này lúc submit, nên hai bên phải cùng một hệ.
         shown = tuple(result.bbox) if _bbox_hop_le(result.bbox) else None
         self._shown_by_frame.append((self._frame_index, shown))
+        # Dụng cụ đo (#38): nhớ ô HIỂN THỊ của frame này để ghi ra CSV ngoài lock.
+        if self._cfg.dump_shown_csv:
+            self._last_shown = (self._frame_index, shown, bool(self._lk_ok_frame))
         self._lk_by_frame.append((self._frame_index, self._lk_ok_frame))
         pending = self._pending_drift
         csv_row = None

@@ -140,6 +140,10 @@ def main() -> int:
     parser.add_argument("--bbox", default="",
                         help='ô chọn có sẵn "x,y,w,h" (dạng xywh như bbox.json) — ghi bbox.json TRƯỚC '
                              "khi phiên chạy; cần cho `--dump-mask-frames` (xem docs/thuoc-do-bam-dung.md)")
+    # DỤNG CỤ ĐO (ticket #38): ô bao ĐANG HIỂN THỊ ở mọi frame đã phát. Cần cho phép đo
+    # "ô người xem thấy vs GT" — CSV drift chỉ có dòng ở lần VOS nên không chấm được frame GT lẻ.
+    parser.add_argument("--dump-shown-csv", default="",
+                        help="ghi ô bao đang hiển thị mỗi frame ra CSV (đo chất lượng ô vs GT)")
     parser.add_argument("--dump-mask-dir", default="",
                         help="thư mục ghi mask (mặc định <out-dir>/masks)")
     args = parser.parse_args()
@@ -286,6 +290,7 @@ def main() -> int:
         dump_mask_frames=args.dump_mask_frames,
         dump_mask_dir=args.dump_mask_dir,
         lk_max_mad=args.lk_max_mad,
+        dump_shown_csv=args.dump_shown_csv,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
     print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "
