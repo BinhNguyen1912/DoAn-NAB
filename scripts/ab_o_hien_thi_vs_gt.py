@@ -137,6 +137,11 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
         theo_frame.append({"frame_idx": frame, "iou": round(float(iou), 4), "lk_ok": lk_ok,
                            "hop": list(box), "hop_gt": list(gt)})
     do_duoc = [r["iou"] for r in theo_frame if r["iou"] is not None]
+    # IoU TÁCH THEO việc LK có nhận frame đó hay không — câu hỏi NHÂN QUẢ, bền với dao động "LK nhận
+    # frame nào" giữa các lần chạy (chính là nguồn phương sai làm trung bình không phân biệt được).
+    # Đo 20-11: nhận ⇒ 0,80–0,84; từ chối ⇒ 0,49–0,61 ⇒ **LK từ chối đúng các frame ô sai**.
+    iou_ok = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"]]
+    iou_khong = [r["iou"] for r in theo_frame if r["iou"] is not None and not r["lk_ok"]]
     return {
         "n_gt_co_vat": len(hop_gt),
         "n_cham": len(do_duoc),
@@ -149,6 +154,10 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
         "lk_khong_ap_dung": bool(lk_khong_ap_dung),
         "lk_ok_frac": (None if lk_khong_ap_dung or not theo_frame else
                        round(sum(1 for r in theo_frame if r["lk_ok"]) / len(theo_frame), 3)),
+        "iou_khi_lk_ok": round(statistics.fmean(iou_ok), 4) if iou_ok else None,
+        "iou_khi_lk_khong": round(statistics.fmean(iou_khong), 4) if iou_khong else None,
+        "n_lk_ok": len(iou_ok),
+        "n_lk_khong": len(iou_khong),
         "theo_frame": theo_frame,
     }
 
@@ -216,6 +225,11 @@ def tong_hop(lan: list[dict]) -> dict:
         "iou_mean": _stats([r["cham"]["iou_mean"] for r in lan]),
         "iou_min": _stats([r["cham"]["iou_min"] for r in lan]),
         "lk_ok_frac": _stats([r["cham"]["lk_ok_frac"] for r in lan]),
+        # Trung bình THEO LẦN CHẠY của IoU tách theo lk_ok (mỗi lần chạy một giá trị ⇒ `std` = dao động
+        # giữa lần chạy, đúng ngữ nghĩa các metric khác của `tong_hop`).
+        "iou_khi_lk_ok": _stats([r["cham"].get("iou_khi_lk_ok") for r in lan]),
+        "iou_khi_lk_khong": _stats([r["cham"].get("iou_khi_lk_khong") for r in lan]),
+        "n_lk_ok": _stats([r["cham"].get("n_lk_ok") for r in lan]),
         "n_cham": _stats([r["cham"]["n_cham"] for r in lan]),
         "measured_fps": _stats([r["status"].get("measured_fps") for r in lan]),
     }

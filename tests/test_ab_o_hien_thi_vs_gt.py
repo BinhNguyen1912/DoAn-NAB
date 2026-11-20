@@ -465,3 +465,26 @@ def test_danh_sach_cau_hinh_co_truc_lk_scale():
     assert set(d) == {"192/3/1.5/shift", "192/3/1.5/scale"}
     assert d["192/3/1.5/scale"] == (192, 3, 1.5, True)
     assert d["192/3/1.5/shift"] == (192, 3, 1.5, False)
+
+
+def test_cham_tach_iou_theo_viec_LK_co_nhan_frame_khong():
+    """Câu hỏi nhân quả: "khi LK nhận, ô có tốt hơn không?" — bền với dao động acceptance giữa lần chạy.
+
+    Đo 20-11: nhận ⇒ 0,80–0,84; từ chối ⇒ 0,49–0,61 ⇒ LK từ chối ĐÚNG các frame ô sai. Nếu metric này
+    bị gộp (chỉ `iou_mean`) thì mọi so sánh đều chìm trong phương sai của "LK nhận frame nào".
+    """
+    from scripts.ab_o_hien_thi_vs_gt import cham
+    gt = {1: (0, 0, 10, 10), 2: (0, 0, 10, 10), 3: (0, 0, 10, 10)}
+    shown = {1: ((0, 0, 10, 10), True),      # lk nhận, khớp hoàn hảo
+             2: ((0, 0, 5, 10), True),       # lk nhận, khớp nửa
+             3: ((50, 50, 60, 60), False)}   # lk từ chối, sai hẳn
+    r = cham(gt, shown)
+    assert r["n_lk_ok"] == 2 and r["n_lk_khong"] == 1
+    # Không hardcode 0,75: `_bbox_iou` dùng toạ độ bao gồm hai đầu (x2-x1+1) ⇒ lấy từ `theo_frame`.
+    from statistics import fmean
+    thanh = {f["frame_idx"]: f["iou"] for f in r["theo_frame"]}
+    assert r["iou_khi_lk_ok"] == round(fmean([thanh[1], thanh[2]]), 4)
+    assert r["iou_khi_lk_ok"] > r["iou_khi_lk_khong"] == 0.0
+    # không có mẫu nào ở một nhóm ⇒ None (KHÔNG phải 0 — "chưa đo" khác "đo được 0")
+    r2 = cham({1: (0, 0, 10, 10)}, {1: ((0, 0, 10, 10), True)})
+    assert r2["iou_khi_lk_khong"] is None and r2["n_lk_khong"] == 0
