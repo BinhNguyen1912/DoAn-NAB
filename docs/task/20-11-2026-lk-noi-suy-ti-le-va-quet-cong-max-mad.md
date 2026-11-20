@@ -114,10 +114,11 @@ phép đo "sạch" — §5 đúng, §4.1b bản trước sai). Theo từng frame
 | 182 | 0,807 | 0,862 | **+0,055 ± 0,012** |
 | 212 | 0,854 | 0,803 | **−0,051 ± 0,140** ⇒ không kết luận |
 | 242 | 0,877 | 0,906 | **+0,029 ± 0,004** |
-| 62 | — | — | **loại** (xem dưới) |
+| 62 | — | — | **loại** (xem đoạn trên) |
 
-⇒ Không frame nào tự nó chứng minh được điều gì: chênh lớn nhất (f182, **+0,055 ± 0,012**) chỉ bằng
-~1,4× sd của chính nó trên **một** frame, và sd giữa các frame lớn hơn nhiều. Con số duy nhất đứng vững là
+⇒ Không frame nào tự nó chứng minh được điều gì: chênh lớn nhất (f182, **+0,055 ± 0,012**) = **4,5×**
+sd giữa 3 lần chạy của chính frame đó — nhưng đó chỉ là **1/6** frame, và 3 frame khác **ngược dấu**
+(f2 −0,011 · f92 −0,020 · f212 −0,051). Con số duy nhất đứng vững là
 **+0,0091 < nhiễu** (mục trên) ⇒ **không phân biệt được**. Mọi câu "scale hơn/kém ở frame X" đều đã bỏ.
 
 Câu "scale bền hơn khi LK mất điểm" cũng **không đứng**: ở `max_mad = 100` cả hai chế độ dùng **cùng**
@@ -337,9 +338,11 @@ f242 +0,0287±0,0042). Hai P1 đều là lỗi **trình bày** của chính bả
 | P3 | log "để không phải suy đoán nữa" khai quá (giá trị **không rời tiến trình**) | thêm cảnh báo ngay sau: "f62 = `seed_rong`" là **suy ra từ đường code**, không đọc từ artifact |
 | P3 | §11 khai đã "ghi rõ mốc 1579/1582" nhưng hai chuỗi đó **không tồn tại** | sửa mốc tại chỗ (1579/1583/1585→1587) |
 
-**Kiểm "test đỏ được" bằng mutant** (không chỉ đọc): xoá dòng reset `last_ly_do_khop` ⇒ 2 test **ĐỎ**; đổi
-tên khoá `iou_khi_lk_dinh_nghia` trong `cham()` ⇒ test `cham` **ĐỎ**; khôi phục ⇒ xanh. `./run lint` xanh ·
-`./run test` **1587 passed** (sau vòng 5).
+**Kiểm "test đỏ được" bằng mutant** (không chỉ đọc): xoá dòng reset `last_ly_do_khop` ⇒ **1** test ĐỎ
+(`test_bbox_bi_tu_choi…`); đặt dòng reset thành sai (`"chua_ro"` thay vì `None`) ⇒ **2** test ĐỎ; đổi tên
+khoá `iou_khi_lk_dinh_nghia` trong `cham()` ⇒ test `cham` ĐỎ; khôi phục ⇒ xanh. *(Reviewer vòng 6 bắt: bản
+đầu mình khai "xoá ⇒ 2 test đỏ" là SAI — `scale=False` không nhánh nào ghi field nên xoá reset vẫn xanh.)* `./run lint` xanh ·
+`./run test` **1585 passed** (sau vòng 5).
 
 ⇒ Reviewer xác nhận code lõi **không đổi hành vi** ở cả 5 vòng; toàn bộ P0/P1 của 5 vòng là **câu chữ/số
 trong log**, không phải bug sản phẩm.

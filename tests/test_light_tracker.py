@@ -412,7 +412,8 @@ def test_che_do_scale_TAT_thi_khong_bao_gio_co_ly_do_similarity():
     t = LkBoxTracker(scale=False)
     t.reset(f1, (130, 75, 60, 90))
     for dx in (2, 4, 6):
-        t.update(_khung_vat(patch, dx=dx))
+        bbox, ok = t.update(_khung_vat(patch, dx=dx))
+        assert ok is True and t.last_ly_do == "ok_shift", (dx, ok, t.last_ly_do)
         assert t.last_ly_do_khop is None, (dx, t.last_ly_do_khop)
     # Bước KẾ tiếp hợp lệ ⇒ lý do phải được XOÁ (chứ không mang giá trị cũ sang). Xoá dòng reset đầu
     # `update()` là test này ĐỎ.
@@ -446,3 +447,6 @@ def test_mad_du_o_che_do_scale_di_qua_nhanh_PHAN_DU(monkeypatch):
     assert da_goi and da_goi[0] is not None, "phải khớp được similarity rồi mới bị cổng phần dư chặn"
     assert ok is False and bbox is None
     assert t.last_ly_do == "mad_du"
+    # Similarity ĐÃ tính rồi bị cổng phần dư từ chối ⇒ phải khai lý do (nếu không thì `mad_du` này
+    # không phân biệt được với `mad_du` của nhánh tịnh tiến)
+    assert t.last_ly_do_khop == "mad_du"

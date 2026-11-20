@@ -70,7 +70,8 @@ class LkBoxTracker:
         # ô hiển thị bị hiểu sai thành "LK mất dấu" khi thực ra `_seed` rỗng vì bbox VOS suy biến).
         self.last_ly_do = "chua_chay"
         # Vì sao phép SIMILARITY không được dùng ở bước gần nhất:
-        #   None              = đã dùng được, hoặc chế độ `scale=False` (không có similarity để dùng)
+        #   None              = đã dùng được · chế độ `scale=False` · **LK chưa chạy** (khi đó đọc
+        #                       `last_ly_do`: chua_reset/seed_rong/thieu_diem/lk_hong)
         #   "cong_similarity" = cổng tỉ lệ/góc chặn (không tìm được matrix)
         #   "bbox_hong"       = có matrix nhưng ô bao suy ra < 4 px / ra ngoài khung
         #   "mad_du"          = có matrix nhưng phần dư vượt `max_mad`
