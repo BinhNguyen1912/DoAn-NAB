@@ -250,3 +250,18 @@ def test_thu_tu_vong_dao_chieu_vong_le():
     v0, v1 = thu_tu_vong(d, 0), thu_tu_vong(d, 1)
     assert v0 == list(d) and v1 == v0[::-1]      # "chạy sau" không luôn là cấu hình được ưu ái
     assert set(v0) == set(v1) == set(d)
+
+
+def test_chieu_cua_bang_nhan_khong_bi_lan():
+    """`tong`/`lan_chay` khoá bằng NHÃN ("192/1/1.5"), `theo_cau_hinh` khoá bằng TUPLE (192,1,1.5).
+
+    Lẫn hai chiều ⇒ `KeyError` **sau khi đã chạy xong 9 lần** (gặp thật 20-11). Test khoá chiều.
+    """
+    from scripts.ab_o_hien_thi_vs_gt import danh_sach_cau_hinh
+    d = danh_sach_cau_hinh([192], [1, 3], [1.5])
+    nhan = {k: v for v, k in d.items()}          # tuple → nhãn
+    khoa_cua = {v: k for k, v in d.items()}      # nhãn → tuple
+    assert nhan[(192, 1, 1.5)] == "192/1/1.5"
+    assert khoa_cua["192/1/1.5"] == (192, 1, 1.5)
+    # và mọi nhãn đều quy ngược được về khoá có thật trong dict cấu hình
+    assert all(khoa_cua[n] in d.values() for n in nhan.values())

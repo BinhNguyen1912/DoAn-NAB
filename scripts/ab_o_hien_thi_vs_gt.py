@@ -393,7 +393,10 @@ def main(argv=None) -> int:
                   f"lk_ok {c['lk_ok_frac']} · hiệu lực mad {res['max_mad_hieu_luc']} · "
                   f"image_size {res['image_size_hieu_luc']}")
 
-    nhan = {v: k for k, v in cau_hinh.items()}        # khoá thật → nhãn (một nguồn duy nhất)
+    # HAI chiều, tên nói rõ chiều: `tong`/`lan_chay` khoá bằng NHÃN, `theo_cau_hinh` khoá bằng TUPLE.
+    # Lẫn hai chiều ⇒ `KeyError: '192/1/1.5'` (lộ đúng lúc ghi artifact, sau khi đã chạy xong 9 lần).
+    nhan = {k: v for v, k in cau_hinh.items()}       # tuple → nhãn
+    khoa_cua = {v: k for k, v in cau_hinh.items()}   # nhãn → tuple
     so_lan_loi = {nhan[k]: sum(1 for r in v if not r["hop_le"]) for k, v in theo_cau_hinh.items()}
     tong = {nhan[k]: tong_hop([r for r in v if r["hop_le"]]) for k, v in theo_cau_hinh.items()}
     lech, chua_kiem_duoc = cau_hinh_lech([r for v in theo_cau_hinh.values() for r in v])
@@ -437,7 +440,7 @@ def main(argv=None) -> int:
     if any(so_lan_loi.values()):
         print(f"[LOI] có lần chạy HỎNG (đã loại khỏi trung bình): {so_lan_loi}", file=sys.stderr)
         return 1
-    if len(khoa) >= 2 and len(theo_cau_hinh[nhan[khoa[0]]]) != len(theo_cau_hinh[nhan[khoa[-1]]]):
+    if len(khoa) >= 2 and len(theo_cau_hinh[khoa_cua[khoa[0]]]) != len(theo_cau_hinh[khoa_cua[khoa[-1]]]):
         print("[LOI] hai cấu hình có SỐ LẦN CHẠY khác nhau ⇒ so theo cặp không cân", file=sys.stderr)
         return 1
     if lech:
