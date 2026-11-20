@@ -1,5 +1,7 @@
 # 38: LK trả `ok` chỉ ~9 %: cửa chống-trôi MAD 1,5 px quá chặt cho vật cầm tay — cần A/B max_mad
 
+**Status:** resolved
+
 **Type:** grilling
 
 **Blocked by:** None (can start immediately)
@@ -133,3 +135,37 @@ ngay, nhưng báo cáo phải ghi đó là cấu hình đo, không phải mặc 
 **Hệ quả cách viết báo cáo**: nới cửa MAD làm LK **dám nhận nhiều hơn** (0,048 → 0,429) và ô **chuyển động** (không đứng yên ~88 % thời gian), **nhưng chưa chứng minh chính xác hơn** ô đóng băng so với GT người tô. Cấm dùng `drift_iou` để biện minh đổi ngưỡng (nới cửa làm nó **tăng** +0,07 trong khi độ đúng không đổi — đúng bẫy AGENTS §6).
 
 **Còn mở (không chặn ticket này)**: (a) GT ở **giữa khe** VOS (`≡2 mod 3`: 2,32,62,92,182,212,242) mới thử được LK đúng mức — GT hiện tại nằm sát lần VOS nên LK chỉ có 1 bước; (b) muốn hybrid **chính xác hơn** thì `LkBoxTracker` phải nội suy cả **tỉ lệ** (vật ra gần/xa), rồi A/B lại bằng chính script này.
+
+20-11 (tiếp): **đã làm xong mục "còn mở (b)"** — PR #65 merged (`main` = `0e445da`), 7 vòng review độc lập, P0=0/P1=0, `./run test` 1585 passed.
+
+**Nội suy TỈ LỆ + XOAY**: `LkBoxTracker(scale=True)` dựng xong (tùy chọn, **mặc định vẫn TẮT**) + `warp_mask` biến đổi mask cùng phép với ô bao. A/B trên GT người tô `b1b` (3 lần/cấu hình, chèn kẽ, @192, `vos_every 3`, `git_dirty_code false`):
+
+- `max_mad=100` (mở cổng để LK dám nhận): scale 0,8069 vs shift 0,8019 — **chênh thô +0,1286 ban đầu là SAI**, nó đến từ **đúng một frame** (f62) nơi base VOS trả bbox suy biến `(0,0,0,0)` ⇒ `_seed` rỗng ⇒ LK **chưa hề chạy**. Bỏ f62 khỏi cả hai bên: **+0,0091 < nhiễu 0,0130** (t = 0,66) ⇒ **KHÔNG phân biệt được**.
+- ⇒ **giữ `scale=False`**. Code + `warp_mask` vẫn vào `main` vì đúng và để sẵn cho vật ra gần/xa thật.
+- Chẩn đoán mới `last_ly_do` (8 nhánh) + `last_ly_do_khop` (4 giá trị) đã có, **nhưng chưa nối ra `shown.csv`/`status.json`** ⇒ chưa trích được như bằng chứng đo (ticket riêng).
+
+**Phát hiện phụ quan trọng cho ticket này**: cổng `max_mad=1,5` **thật sự quá chặt**, và số đó **không** phụ thuộc frame flâke: nới 1,5 → 100 cho **+0,1745** IoU(ô hiển thị, ô GT) (sd hiệu 0,0205); bỏ f62 vẫn **+0,1745**. Nhưng vẫn là IoU **ô bao vs GT hộp**, chưa phải mIoU mask vs GT mask ⇒ **chưa đủ để đổi default** (đúng luật của ticket).
+
+Còn mở: (a) GT ở **giữa khe VOS** đã có (`b1b`, 7 frame `2,32,62,92,182,212,242`, người tô xong 7/7) và đã dùng cho A/B trên — không còn là mục mở; (b) A/B `max_mad` trên **clip/vật thứ 2** vẫn chưa làm (ticket mới).
+
+## Answer
+
+**Có — cổng `max_mad = 1,5` quá chặt thật, nhưng CHƯA đủ bằng chứng để đổi mặc định ⇒ giữ 1,5.**
+
+Ba phép đo độc lập, cùng kết luận "LK bị cổng chặn chứ không thiếu điểm":
+
+| phép đo | 1,5 | nới | kết luận |
+|---|---|---|---|
+| offline (`do_thu_lk.py`, ô chai, 44 cặp) | `ok_frac` 0,227 | 6,0 → 0,568 | ×2,5, IoU-khi-ok chỉ −0,031, **0** mẫu nhận-bừa |
+| live (`ab_lk_max_mad.py`, 2 clip, 3 lần) | 0,119 / 0,405 | 6,0 → 0,402 / 0,636 | tăng đơn điệu, `drift_iou` không giảm, ngưỡng "≥2× trên MỌI clip" chỉ đạt 1/2 |
+| **GT người tô** (`ab_o_hien_thi_vs_gt.py`, 3 lần, `b1b`) | 0,5490 ± 0,0309 | 6,0 → 0,5670 ± 0,0173 | chênh +0,0180 ≤ nhiễu 0,0309 ⇒ **không phân biệt được** |
+
+Phép đo thứ ba là phép duy nhất chấm **độ đúng bám vật** (IoU ô hiển thị vs hộp bao suy từ mask người tô), và nó **không** chứng minh nới cổng tốt hơn. Duyên cớ "nới làm ô chuyển động thay vì đóng băng ~88 %" là **thật** nhưng **không** phải "chính xác hơn".
+
+**Quyết định:** `DEFAULT_MAX_MAD` **giữ 1,5**. Cờ `--lk-max-mad` đã phơi (worker + `LiveTrackConfig` + echo `cau_hinh`) nên demo **được phép** chạy 6,0 **nếu báo cáo ghi rõ đó là cấu hình đo**, không phải mặc định.
+
+**Đã đóng luôn 2 mục "còn mở" của ticket này:**
+- (a) GT ở **giữa khe VOS** — đã có (`b1b`, frame `2,32,62,92,182,212,242`, người tô 7/7) và đã dùng cho đúng phép đo trên.
+- (b) nội suy **tỉ lệ/xoay** cho `LkBoxTracker` — xong ở PR #65 (tùy chọn `scale=True`, **mặc định TẮT**). Kết luận: **chưa chứng minh tốt hơn** tịnh tiến (+0,0091 < nhiễu 0,0130, t = 0,66); chênh thô +0,1286 ban đầu là **một frame** nơi base VOS suy biến.
+
+**Lợi ích lớn nhất đo được, chuyển sang ticket mới**: PR #65 phát hiện nới cổng 1,5 → 100 cho **+0,1745** IoU(ô hiển thị, ô GT) (sd hiệu 0,0205, tái lập khi bỏ frame flâke) trên `binh1`. Lớn hơn mọi hiệu ứng khác trong chuỗi 5 PR, nhưng **một clip, một vật** ⇒ **#40** (tái lập trên `binh2`, cần GT người tô trước).
