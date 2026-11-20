@@ -813,3 +813,30 @@ class TestCsvCuKhongCoCotBam:
         r = dem_o_khi_khong_bang_chung(d)
         assert r["do_duoc"] is True and r["n_no_evidence"] == 1
         assert r["n_co_o_khi_no_evidence"] == 1, "có toạ độ + bam=no_evidence ⇒ phải bị đếm"
+
+
+class TestLkOkBaTrangThaiVaDoDuoc:
+    """P3 review vòng 3: đọc `lk_ok` 2 trạng thái trong khi writer ghi 3 ⇒ frame `engine.start()`
+    (ô trống từ 21-11) bị đếm là "LK từ chối"; và `do_duoc` chỉ kiểm "có cột" nên CSV có cột mà mọi ô
+    trống vẫn báo "đã đo, sạch"."""
+
+    def test_lk_ok_trong_la_chua_do(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import cham, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "0,10,10,50,50,,tracking\n", encoding="utf-8")     # frame start: lk_ok TRỐNG
+        d = doc_shown(p)
+        assert d[0][1] is None, "ô trống ⇒ chưa đo, KHÔNG phải False"
+        r = cham({0: (10, 10, 50, 50)}, d)
+        assert r["n_lk_khong"] == 0, "chưa đo không được đếm là 'LK từ chối'"
+        assert r["n_lk_chua_do"] == 1
+
+    def test_co_cot_bam_nhung_moi_o_trong_thi_do_duoc_None(self, tmp_path):
+        from scripts.ab_o_hien_thi_vs_gt import dem_o_khi_khong_bang_chung, doc_shown
+
+        p = tmp_path / "shown.csv"
+        p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,bam\n"
+                     "1,10,10,50,50,1,\n", encoding="utf-8")   # có CỘT nhưng ô trống
+        r = dem_o_khi_khong_bang_chung(doc_shown(p))
+        assert r["do_duoc"] is None, "'có cột' ≠ 'đã đo'"

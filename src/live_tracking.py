@@ -1289,12 +1289,26 @@ class LiveTrackingSession:
                 return True, bbox
         return False, None
 
-    def _bam_of(self, frame_idx):
-        """`bam` của frame đã phát `frame_idx` (`None` = frame đó chưa phát / chưa biết)."""
+    def _bam_of_locked(self, frame_idx):
+        """`bam` của frame đã phát `frame_idx` — CHỈ gọi khi ĐÃ giữ `_stats_lock`."""
         for idx, bam in reversed(self._bam_by_frame):
             if idx == frame_idx:
                 return bam
         return None
+
+    def _bam_of(self, frame_idx):
+        """`bam` của frame đã phát `frame_idx` (`None` = frame đó chưa phát / chưa biết).
+
+        **BẮT BUỘC giữ `_stats_lock`**: `_bam_by_frame` được APPEND ở luồng chính dưới lock
+        (`_update_stats_locked`), còn hàm này gọi từ luồng VOS (`_measure_drift`). `deque` ném
+        `RuntimeError: deque mutated during iteration` nếu bị sửa giữa hai `next()`, và `_VosWorker`
+        bắt `Exception` ⇒ **cả phiên live thành `error`**. Đây ĐÚNG lớp lỗi P1 đã bị bắt cho
+        `_lk_ok_of` (xem comment ở `_measure_drift`); bản thêm `bam` lần đầu lặp lại lỗi đó.
+        Cửa sổ KHÔNG hiếm: VOS ~100 ms > nhịp phát 33 ms ⇒ `frame_idx` thường cách frame mới nhất 2–4
+        ⇒ vòng lặp cần 3–4 `next()`. Nếu gọi trong lock thì dùng `_bam_of_locked` (tránh deadlock).
+        """
+        with self._stats_lock:
+            return self._bam_of_locked(frame_idx)
 
     def _lk_ok_of(self, frame_idx):
         """Trạng thái LK của frame đã phát `frame_idx` (`None` = chưa đo/không có LK)."""
@@ -1701,8 +1715,14 @@ class LiveTrackingSession:
                 # phát): KHÔNG chấm drift nhưng VẪN ghi dòng — bỏ im lặng là mất mẫu, và đúng
                 # những mẫu đó là ca "VOS thấy vật / màn hình không có hộp" cần tách khỏi "LK trôi"
                 # (review độc lập 13-11, P1).
+                # Ca `pending[0] == self._frame_index` mà `obs_bbox is None` RƠI vào đây: đó đúng là
+                # frame KHÔNG có bằng chứng, và `_bam_by_frame` đã có entry cho nó (append ở trên,
+                # cùng lock) ⇒ giá trị BIẾT ĐƯỢC, đừng để trống (review vòng 3, P3).
+                khop_frame = pending[0] == self._frame_index
                 csv_row = {"frame_idx": pending[0], "seq": pending[2], "vos_ms": pending[3],
-                           "empty": pending[4], "value": None, "bbox": pending[1]}
+                           "empty": pending[4], "value": None, "bbox": pending[1],
+                           "bam": (self._bam_of_locked(self._frame_index) or "") if khop_frame else "",
+                           "lk_ok": self._lk_ok_of(self._frame_index) if khop_frame else None}
         self._stats.bbox = [int(v) for v in result.bbox]
         if not lost:
             x1, y1, x2, y2 = result.bbox

@@ -117,12 +117,17 @@ def doc_shown(path: Path) -> dict[int, tuple]:
                 box = O_HONG
             if frame in ra:
                 trung.append(frame)
+            # `lk_ok` BA trạng thái (khớp writer + `drift_samples` + `docs/thuoc-do-bam-dung.md`):
+            # `1` = LK ok, `0` = LK từ chối, ô TRỐNG = chưa đo (vd frame `engine.start()` từ 21-11).
+            # Bản trước đọc 2 trạng thái ⇒ frame `start()` bị đếm vào `n_lk_khong` = "LK từ chối"
+            # (review vòng 3, P3).
+            lk_raw = str(row.get("lk_ok", "")).strip()
+            lk_ok = None if lk_raw == "" else (lk_raw == "1")
             if co_cot_bam:
                 # `bam` (cột 12, từ 21-11): rỗng ⇒ `None` = CHƯA ĐO, không phải "tracking".
-                ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1",
-                             (row.get("bam") or "").strip() or None)
+                ra[frame] = (box, lk_ok, (row.get("bam") or "").strip() or None)
             else:
-                ra[frame] = (box, str(row.get("lk_ok", "")).strip() == "1")
+                ra[frame] = (box, lk_ok)
     if trung:
         print(f"[canh-bao] shown.csv có frame_idx TRÙNG {len(trung)} lần (vd {sorted(set(trung))[:5]}) "
               "— dòng sau ghi đè dòng trước, số của các frame đó không đáng tin", flush=True)
@@ -262,8 +267,10 @@ def dem_o_khi_khong_bang_chung(rows: dict) -> dict:
         "n_no_evidence": n_no_ev,
         "n_co_o_khi_no_evidence": len(co_o_khi_no_ev),
         "frame_co_o_khi_no_evidence": co_o_khi_no_ev,
-        # `None` = CSV KHÔNG có cột `bam` (chưa đo được), khác `0` = đo được và sạch.
-        "do_duoc": (None if not any(len(r) > 2 for r in rows.values()) else True),
+        # `None` = CHƯA ĐO: hoặc CSV KHÔNG có cột `bam` (11 cột), hoặc có cột mà **mọi ô đều trống**
+        # (không phải "đã đo và sạch"). Chỉ `True` khi có ít nhất một giá trị thật (review vòng 3, P3:
+        # bản trước chỉ kiểm "có cột" nên lùi lại đúng cái bẫy `0/None ≠ đã đo` vừa vá).
+        "do_duoc": (True if any(len(r) > 2 and r[2] for r in rows.values()) else None),
     }
 
 
@@ -314,8 +321,11 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
     # Đây là so "ô LK có tốt hơn ô VOS đóng băng không" TRÊN TẬP FRAME LK TỰ CHỌN ⇒ có **hiệu ứng chọn
     # mẫu**: KHÔNG được đọc thành "cổng chọn đúng frame khó" (muốn nói câu đó phải có phản thực: cùng
     # frame đó chạy cổng mở rồi so ô LK). Đo 20-11: ô LK 0,80–0,84 vs ô đóng băng 0,49–0,61.
-    iou_ok = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"]]
-    iou_khong = [r["iou"] for r in theo_frame if r["iou"] is not None and not r["lk_ok"]]
+    iou_ok = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"] is True]
+    iou_khong = [r["iou"] for r in theo_frame if r["iou"] is not None and r["lk_ok"] is False]
+    # Ô TRỐNG = CHƯA ĐO (frame `engine.start()` không có bước LK nào) ⇒ phải là nhóm RIÊNG, không được
+    # gộp vào "LK từ chối" (review vòng 3, P3: reader đọc 2 trạng thái trong khi writer ghi 3).
+    n_lk_chua_do = sum(1 for r in theo_frame if r["iou"] is not None and r["lk_ok"] is None)
     ra = {
         "n_gt_co_vat": len(hop_gt),
         "n_cham": len(do_duoc),
@@ -336,6 +346,7 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
                                   "'chọn đúng': có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết)."),
         "n_lk_ok": len(iou_ok),
         "n_lk_khong": len(iou_khong),
+        "n_lk_chua_do": n_lk_chua_do,
         # Phân bố LÝ DO LK từ chối, chỉ trên frame GT (ticket #39). `None` = CSV không có cột chẩn
         # đoán (CSV cũ) ⇒ CHƯA ĐO, khác `{}` (đo được nhưng không mẫu nào).
         "ly_do_dem": _dem(chan_doan, hop_gt, "ly_do"),

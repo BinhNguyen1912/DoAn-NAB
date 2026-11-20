@@ -2824,3 +2824,51 @@ class TestTruyenRawLostQuaResultThreaded:
         assert out.raw_lost is True, (
             "cờ `raw_lost` bị RƠI ở nhánh LK ok ⇒ `--mask-smoothing` giữ mask cũ sẽ làm hệ báo "
             "`tracking` dù model không thấy vật (P1 review vòng 2)")
+
+
+class TestBamOfDocDequeDuoiLock:
+    """P1 review vòng 3: `_bam_of` duyệt `_bam_by_frame` (append ở luồng chính dưới `_stats_lock`) từ
+    luồng VOS ⇒ `RuntimeError: deque mutated during iteration` ⇒ `_VosWorker` bắt `Exception` ⇒ **cả
+    phiên live thành `error`**. Đúng lớp lỗi P1 đã bị bắt cho `_lk_ok_of`.
+
+    Test ĐO ĐIỀU KIỆN LOCK, không phụ thuộc may rủi (race không tái lập được trong unit test).
+    """
+
+    class _DequeGhi(  # deque ghi lại trạng thái lock tại thời điểm duyệt
+        __import__("collections").deque
+    ):
+        def __init__(self, *a, **kw):
+            super().__init__(*a, **kw)
+            self.locked_khi_duyet = []
+
+        def __reversed__(self):
+            self.locked_khi_duyet.append(self._lock_do.locked())
+            return super().__reversed__()
+
+    def _session(self):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    def test_bam_of_giu_lock_khi_duyet(self):
+        session = self._session()
+        d = self._DequeGhi(maxlen=90)
+        d._lock_do = session._stats_lock
+        session._bam_by_frame = d
+        session._bam_by_frame.append((5, "no_evidence"))
+        assert session._bam_of(5) == "no_evidence"
+        assert d.locked_khi_duyet == [True], (
+            "duyệt deque ngoài `_stats_lock` ⇒ có thể RuntimeError làm chết phiên (P1 vòng 3)")
+
+    def test_bam_of_locked_khong_tu_lock(self):
+        """Biến thể `_locked` dùng ở chỗ ĐANG giữ lock — nếu nó tự lock thì DEADLOCK
+        (`_stats_lock` là `threading.Lock`, không phải RLock)."""
+        session = self._session()
+        session._bam_by_frame.append((7, "tracking"))
+        with session._stats_lock:
+            assert session._bam_of_locked(7) == "tracking"
