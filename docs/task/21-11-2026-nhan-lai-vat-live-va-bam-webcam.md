@@ -99,7 +99,7 @@ artifact**; `shown` trong CSV cũng ghi "không có ô" khi đã ẩn. Chuỗi �
 
 ### Kiểm tra tự động
 - `./run lint` = **All checks passed**
-- `./run test` = **1626 passed**, 5 deselected
+- `./run test` = **1630 passed**, 5 deselected
 - `./run webtest` = **77 passed** (test cho `bamLine`, gồm ca `n = 0` và lý do lạ)
 - `./run e2e` = **PASS** (thêm 3 ca `bam`: hiện dòng cảnh báo `role=alert` khi `no_evidence`, im khi `tracking`)
 - `npm run build` = OK (163,94 kB)
@@ -164,6 +164,30 @@ assert cả **giá trị**; tên cột `hien_thi_*` **nói dối** (từ 21-11 n
 Số đo lại sau khi sửa (worker, `binh2` 400 frame, @192/3): `bam_no_evidence_n = **70**`, **0/70** frame có
 toạ độ, `lk_ok` trống đúng **1** dòng (frame `start()`), `lk_ok = 1` 109 dòng. Lint xanh · **1626 pytest** ·
 77 vitest · **e2e PASS**.
+
+## 🔍 Review vòng 3 — **P0 = 0, P1 = 1**, đã sửa
+
+Vòng 3 xác nhận **2 P1 vòng 2 đã đóng đúng** (kiểm từng đường trả kết quả: `_result_inline`,
+`_result_threaded` nhánh `ok`, nhánh `not ok`, `_interp_base_result` — không đường nào đọc `False` khi thực
+ra "không biết"; `DictReader.fieldnames` đọc lười nên lấy header trước vòng lặp là đúng; file rỗng ⇒
+`do_duoc = None`), nhưng bắt **1 P1 mới do chính bản sửa sinh ra**:
+
+| P1 | Vấn đề | Đã sửa |
+|---|---|---|
+| — | **`_bam_of` duyệt `_bam_by_frame` KHÔNG giữ `_stats_lock`** — deque append ở luồng chính, đọc từ luồng VOS ⇒ `RuntimeError: deque mutated during iteration` ⇒ `_VosWorker` bắt `Exception` ⇒ **cả phiên live thành `error`**. Đúng lớp lỗi P1 đã bị bắt cho `_lk_ok_of` | `_bam_of` tự giữ lock + `_bam_of_locked` cho chỗ đang giữ lock (`threading.Lock` **không** phải RLock ⇒ tự lock ở đó là deadlock). Test **đo điều kiện lock** (deque con ghi `locked()` trong `__reversed__`) thay vì trông vào may rủi |
+
+3 P3 kèm theo đã sửa: nhánh `else` của `_pending_drift` ghi thiếu `bam`/`lk_ok` ở đúng ca *frame không có
+bằng chứng mà giá trị đã biết*; `do_duoc` chỉ kiểm "có cột" nên CSV có cột mà mọi ô trống vẫn báo "đã đo,
+sạch"; `doc_shown` đọc `lk_ok` **2** trạng thái trong khi writer ghi **3** ⇒ frame `engine.start()` bị đếm
+là "LK từ chối" (nay có nhóm `n_lk_chua_do`).
+
+Số đo lại (worker, `binh2` 400 frame): `state = stopped` (**không chết** — xác nhận vá lock không phá),
+`bam_no_evidence_n = 76`, **0/76** frame có toạ độ, `lk_ok` trống đúng **1** dòng. Lint xanh · **1630
+pytest** · 77 vitest · **e2e PASS**.
+
+**Bài học lặp lại 2 lần trong cùng một ngày:** mỗi lần thêm một deque mới đọc từ luồng VOS là **lại** phải
+nhớ lock — đúng thứ đã có comment cảnh báo ngay trong `_measure_drift`. Lần sau: thêm deque thì thêm luôn
+cặp `*_locked` + test đo `locked()`.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 1. **Luật "mất bằng chứng" đầu tiên SAI và đo được là sai**: coi `lk_ok = False` là mất bằng chứng ⇒ báo oan
