@@ -64,7 +64,7 @@ khi bật `--dump-shown-csv` và **29,8** khi tắt (ngưỡng nhiễu ±0,3 % =
 (vd `{"ly_do":"mad_du","ly_do_khop":null,"n_diem":53,"khop":false,"lk_ok":false,"frame_idx":199}`)
 **kể cả khi không bật dump**.
 
-Kiểm máy: `./run lint` xanh · `./run test` **1598 passed** (sau 3 vòng review: 2 P1 + 1 P1 + 6 mục).
+Kiểm máy: `./run lint` xanh · `./run test` **1596 passed** (sau 3 vòng review: 2 P1 + 1 P1 + 6 mục).
 
 ## 5. Vấn đề & cách xử lý
 
@@ -151,4 +151,4 @@ Reviewer cũng xác nhận: cổng `ve=1` đặt **trùng khít** điều kiện
 lệch; `{}` còn lại là **đúng nghĩa** (cột có, 0 mẫu — ví dụ `ly_do_khop_dem` ở chế độ `shift`); `git_rev
 9ce467b` của artifact là **đúng** (các commit sau chỉ đổi `scripts/`+tests+comment).
 
-`./run lint` xanh · `./run test` **1598 passed**.
+`./run lint` xanh · `./run test` **1596 passed**.
