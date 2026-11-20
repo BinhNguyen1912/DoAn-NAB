@@ -181,3 +181,36 @@ def test_lan_chay_hop_le_chan_worker_chet():
     assert lan_chay_hop_le({**ok, "state": "error"}) is False
     assert lan_chay_hop_le({**ok, "state": "running"}) is False
     assert lan_chay_hop_le({**ok, "so_dong_shown": 1}) is False, "chỉ có dòng tiêu đề ⇒ chưa ghi gì"
+
+
+def test_doc_shown_canh_bao_frame_trung_thay_vi_ghi_de_im_lang(tmp_path, capsys):
+    """P3 review #61: `frame_idx` trùng từng ghi đè im lặng ⇒ số của frame đó không đáng tin."""
+    from scripts.ab_o_hien_thi_vs_gt import doc_shown
+
+    p = tmp_path / "shown.csv"
+    p.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n"
+                 "5,10,10,20,20,1\n"
+                 "5,30,30,40,40,0\n", encoding="utf-8")
+    d = doc_shown(p)
+    assert d[5][0] == (30, 30, 40, 40), "dòng SAU thắng (hành vi cũ), nhưng phải cảnh báo"
+    assert "TRÙNG" in capsys.readouterr().out
+
+
+def test_so_sanh_theo_cap_co_co_lech_so_lan_chay():
+    """P2 review #61: một bên thiếu lần chạy ⇒ `zip` bỏ cặp lặng lẽ; hàm phải tự khai `can_bo_cap`."""
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh_theo_cap
+
+    kq = so_sanh_theo_cap([_lan({0: 0.5})], [_lan({0: 0.6}), _lan({0: 0.6})])
+    assert kq["so_lan_a"] == 1 and kq["so_lan_b"] == 2 and kq["can_bo_cap"] is True
+    assert kq["so_cap"] == 1
+    assert so_sanh_theo_cap([_lan({0: 0.5})], [_lan({0: 0.6})])["can_bo_cap"] is False
+
+
+def test_so_dong_khop_frame_chan_mat_mau_hoac_ghi_trung():
+    """P3 review #61: `shown.csv` phải đúng 1 dòng/frame đã phát — lệch thì IoU tính trên tập khác."""
+    from scripts.ab_o_hien_thi_vs_gt import so_dong_khop_frame
+
+    assert so_dong_khop_frame({"status": {"frames": 120}, "so_dong_shown": 121}) is True
+    assert so_dong_khop_frame({"status": {"frames": 120}, "so_dong_shown": 100}) is False
+    assert so_dong_khop_frame({"status": {"frames": 120}, "so_dong_shown": 130}) is False
+    assert so_dong_khop_frame({"status": {}, "so_dong_shown": 10}) is False

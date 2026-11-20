@@ -112,3 +112,24 @@ VOS, **không** phải độ chính xác bám vật — nên nó chỉ đủ đ�
 
 Cờ `--lk-max-mad` đã phơi (worker + `LiveTrackConfig` + echo `cau_hinh`), nên demo **có thể** chạy 6,0
 ngay, nhưng báo cáo phải ghi đó là cấu hình đo, không phải mặc định.
+
+## Comments
+
+20-11: **CHỐT — giữ `DEFAULT_MAX_MAD = 1,5`.** PR #61 merged (`main` = `f9b5620`). Có phép đo thứ ba bằng **GT người tô**, sau khi phát hiện `mIoU` không dùng được cho việc này.
+
+**Vì sao cần phép đo mới**: chấm mIoU hợp lệ buộc `--vos-every 1` (repo tự từ chối dump mask khi >1), mà cấu hình đó **tắt hẳn LK** ⇒ `max_mad` không tham gia phép đo. `drift_iou` chỉ nói ô hiển thị khớp **ô VOS** (tự nhất quán). Nên thêm: **IoU(ô ĐANG HIỂN THỊ, hộp bao suy từ mask người tô)** — dụng cụ `--dump-shown-csv` + `scripts/ab_o_hien_thi_vs_gt.py`.
+
+**Số** (`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json`, 3 lần/cấu hình chèn kẽ, 7 frame GT của `b1`, @192, `vos_every 3`, `git_dirty_code false`, `so_lan_chay_loi` 0/0):
+
+| `max_mad` | IoU(ô hiển thị, ô GT) | tệ nhất | `lk_ok_frac` ở frame GT |
+|---|---|---|---|
+| **1,5** | **0,5490 ± 0,0309** | 0,261 | **0,048** |
+| **6,0** | **0,5670 ± 0,0173** | 0,169 | **0,429** |
+
+- Trung bình: chênh **+0,0180** ≤ ngưỡng nhiễu **0,0309** ⇒ **KHÔNG phân biệt được**.
+- Theo cặp (21): 6,0 tốt hơn 8 · 1,5 tốt hơn 6 · bằng 7; tốt nhất +0,41, **tệ nhất −0,41** ⇒ không có chiều thắng nhất quán.
+- **Ba lần A/B độc lập cùng kết luận "không phân biệt được"** (chênh +0,032/nhiễu 0,065 · +0,003/0,051 · +0,018/0,031), dù chi tiết từng lần đổi. Một lần chạy từng cho "6,0 không tệ hơn ở cả 7 frame" — **không tái lập** ⇒ đúng lý do phải ≥2 lần + so theo cặp.
+
+**Hệ quả cách viết báo cáo**: nới cửa MAD làm LK **dám nhận nhiều hơn** (0,048 → 0,429) và ô **chuyển động** (không đứng yên ~88 % thời gian), **nhưng chưa chứng minh chính xác hơn** ô đóng băng so với GT người tô. Cấm dùng `drift_iou` để biện minh đổi ngưỡng (nới cửa làm nó **tăng** +0,07 trong khi độ đúng không đổi — đúng bẫy AGENTS §6).
+
+**Còn mở (không chặn ticket này)**: (a) GT ở **giữa khe** VOS (`≡2 mod 3`: 2,32,62,92,182,212,242) mới thử được LK đúng mức — GT hiện tại nằm sát lần VOS nên LK chỉ có 1 bước; (b) muốn hybrid **chính xác hơn** thì `LkBoxTracker` phải nội suy cả **tỉ lệ** (vật ra gần/xa), rồi A/B lại bằng chính script này.

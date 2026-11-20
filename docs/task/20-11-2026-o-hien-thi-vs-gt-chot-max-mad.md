@@ -24,25 +24,26 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
 
 ## Output / Kết quả
 
-`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 857a0d5`, `git_dirty_code false`,
+`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 0e84260`, `git_dirty_code false`,
 3 lần/cấu hình, `cau_hinh_hieu_luc_lech []`, 7 frame GT, cùng `binh1` + ô chai `300,275,150,410`, @192,
 `vos_every 3`, 300 frame):
 
 | `max_mad` | IoU(ô hiển thị, ô GT) | tệ nhất | `lk_ok_frac` ở các frame GT | FPS |
 |---|---|---|---|---|
-| **1,5** | **0,5490 ± 0,0309** | 0,261 | **0,048** | 29,90 |
-| **6,0** | **0,5670 ± 0,0173** | 0,169 | **0,429** | 29,90 |
+| **1,5** | **0.6203 ± 0.0137** | 0.421 | **0.000** | 30.03 |
+| **6,0** | **0.6094 ± 0.0308** | 0.340 | **0.429** | 29.93 |
 
-- **Theo trung bình**: chênh **+0,0180** ≤ ngưỡng nhiễu **0,0309** ⇒ **KHÔNG phân biệt được**.
-- **Theo cặp** (21 cặp): 6,0 tốt hơn **8**, 1,5 tốt hơn **6**, bằng **7**;
-  chênh trung bình +0,0180, cặp tốt nhất **+0,4122**, cặp tệ nhất
-  **−0,4122** ⇒ **không có chiều thắng nhất quán**.
-- **Ba lần A/B độc lập cho cùng kết luận "không phân biệt được"**: chênh +0,032 (nhiễu 0,065) ·
-  +0,003 (nhiễu 0,051) · **+0,0180 (nhiễu 0,0309)** — dù chi tiết từng lần chạy
-  đổi (có lần "6,0 không tệ hơn ở cả 7 frame", lần khác 1,5 tốt hơn 5 cặp tới 0,59). ⇐ đúng lý do phải
-  chạy ≥ 2 lần và phải so THEO CẶP: kết luận của một lần chạy **không tái lập**.
-- `so_lan_chay_loi` = `{'1.5': 0, '6.0': 0}` ⇒ 6/6 lần chạy hợp lệ (dụng cụ đã loại lần chạy hỏng thay vì
-  tính chúng là "bám sai thật").
+- **Theo trung bình**: chênh **-0.0109** ≤ ngưỡng nhiễu **0.0308** ⇒ **KHÔNG phân biệt được**.
+- **Theo cặp** (21 cặp, `can_bo_cap False`): 6,0 tốt hơn **7**, 1,5 tốt hơn
+  **8**, bằng **6**; chênh trung bình **-0.0109**, cặp tốt nhất
+  **+0.1774**, cặp tệ nhất **-0.4021** ⇒ **không có chiều thắng nhất quán**.
+- **BỐN lần A/B cho cùng kết luận "không phân biệt được"**, và **dấu của chênh lệch đổi chiều**
+  (+0,032/nhiễu 0,065 · +0,003/0,051 · +0,018/0,031 · **-0.0109/0.0308**) ⇒
+  chênh lệch nằm trong nhiễu, không phải hiệu ứng của cấu hình. Chi tiết từng lần chạy cũng đổi (lần thì
+  "6,0 không tệ hơn ở cả 7 frame", lần thì 1,5 tốt hơn 6–8 cặp) ⇐ đúng lý do phải chạy ≥ 2 lần và so
+  **theo cặp**, không tin một lần chạy.
+- `so_lan_chay_loi` = `{'1.5': 0, '6.0': 0}` ⇒ 6/6 lần chạy hợp lệ, và **6/6 lần `so_dong_khop_frame
+  = True`** (CSV ô-hiển-thị có đúng 1 dòng mỗi frame đã phát) ⇒ không mất mẫu, không ghi trùng.
 
 ## Kết luận cho ticket #38
 
@@ -81,6 +82,9 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
    **cùng số lần chạy** trước khi so cặp.
 5. P3: ghi lỗi CSV vào `status.json` (`dump_shown_loi`) thay vì sửa `cau_hinh` (để giữ provenance "đã yêu
    cầu ghi"); sửa chữ "ba phép đo **độc lập**" → **"nhất quán"**.
+6. P3 (vá sau, cùng PR): `doc_shown` **cảnh báo** khi `frame_idx` trùng (trước đó ghi đè im lặng);
+   `so_dong_khop_frame()` đối chiếu số dòng `shown.csv` với `status.frames` (1 dòng/frame đã phát);
+   `so_sanh_theo_cap` tự khai `can_bo_cap` khi hai bên lệch số lần chạy.
 
 ## Next steps
 
