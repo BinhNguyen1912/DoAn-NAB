@@ -189,6 +189,27 @@ pytest** · 77 vitest · **e2e PASS**.
 nhớ lock — đúng thứ đã có comment cảnh báo ngay trong `_measure_drift`. Lần sau: thêm deque thì thêm luôn
 cặp `*_locked` + test đo `locked()`.
 
+## ✅ Review vòng 4 — **P0 = 0, P1 = 0 ⇒ mergeable**
+
+Vòng 4 kiểm 5 điểm (deadlock `_stats_lock`, `_lk_ok_of` trong nhánh `else`, `_measure_drift`, `n_lk_chua_do`,
+`do_duoc`) và **không tìm được đường deadlock nào**: 5/5 chỗ gọi `_bam_of` đều NGOÀI lock, `_bam_of_locked`
+chỉ gọi ở 2 chỗ ĐANG giữ lock, `_lk_ok_of` không tự lock, 24/24 khối `with self._stats_lock` không khối nào
+acquire lại. Kết luận `do_duoc` mới **không** rút lại kết luận P4.
+
+Còn **1 P2** (đã xử lý): artifact cũ đo bằng reader **2 trạng thái** ⇒ `n_lk_khong` của nó gộp cả frame
+`engine.start()` (frame 0, `lk_ok` trống) ⇒ `iou_khi_lk_khong` lệch (~0,379 → ~0,336). Nay:
+- `tong_hop` có **đủ 3 nhóm** `n_lk_khong` / `n_lk_chua_do` (thiếu chúng thì "0 từ chối" dễ bị đọc thành
+  "0 đo được");
+- **đo lại artifact trên cây sạch** ở tip `5bea375`, `git_dirty_code=false`, `schema 7`, 3 lần chạy:
+  `n_lk_ok = 2`, `n_lk_khong = 5`, **`n_lk_chua_do = 1`** (= frame `start()`, tổng đúng 8 frame),
+  `iou_khi_lk_khong` = 0,3851 / 0,3851 / 0,4019; `o_ma`: `co_o = 1/4, 1/4, 0/4` (n = 4 ⇒ chỉ đếm);
+  `o_khi_khong_bang_chung`: `n_no_evidence` = **76 / 86 / 74**, `n_co_o_khi_no_evidence = 0`, `do_duoc = true`.
+
+Ba P3 còn lại cũng đã sửa: comment nói `vos_every=1` ghi `lk_ok = 0` (thực tế ghi **ô trống**) — người đọc
+tin comment đó sẽ "sửa" reader về 2 trạng thái, đúng lỗi vừa vá; `_lk_ok_of` nay có cảnh báo **CHỈ gọi khi
+đã giữ lock** (nó không tự lock, đúng cái bẫy đã sinh P1 vòng 3); `str(row.get("lk_ok") or "")` để dòng
+**thiếu field** (`DictReader` trả `None`) không bị đọc thành "LK từ chối".
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 1. **Luật "mất bằng chứng" đầu tiên SAI và đo được là sai**: coi `lk_ok = False` là mất bằng chứng ⇒ báo oan
    **296/400 frame (74 %)** vì khi LK từ chối, `_result_threaded` trả `base_result` = ô VOS **THẬT** của frame VOS
