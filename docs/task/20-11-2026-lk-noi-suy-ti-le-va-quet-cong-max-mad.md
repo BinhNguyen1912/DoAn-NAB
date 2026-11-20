@@ -60,8 +60,8 @@ hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
 ### 4.1b Phép đo "sạch hơn": mở **cổng MAD** cho cả hai (vẫn còn 2 cổng khác)
 
 `data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json` (`git_rev f5c663a`, `git_dirty_code=false`,
-`schema 4` *(= sinh **trước** khi thêm khoá `iou_khi_lk_dinh_nghia` vào `tong_hop`; code hiện tại ghi
-`schema 5`)*, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
+`schema 4` *(= sinh **trước** khi thêm khoá `iou_khi_lk_dinh_nghia` vào `tong_hop`; từ ticket #39 (21-11)
+code ghi `schema 6` — `5` là bản có khoá nghĩa nhưng thiếu `ly_do_dem`)*, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
 
 | cấu hình | IoU | ± | tệ nhất | `lk_ok_frac` |
 |---|---|---|---|---|

@@ -29,25 +29,37 @@ artifact + thêm `n_diem` (số điểm theo dõi được) để phân biệt "
 `None` cho từng cột + `thieu` = cả 5 tên ⇒ artifact khai `csv_thieu_cot`; `cham()` trả `ly_do_dem = None`
 (CHƯA ĐO), **không** phải `{}` hay `0`.
 
-## 4. Output / kết quả (số đo)
+## 4. Output / kết quả (số đo trên CÂY SẠCH)
 
-Lần chạy nghiệm thu: `--gt docs/gt/b1b --clip data/binh1.mp4 --bbox 300,275,150,410 --max-mad 1.5 100 --lan 1`,
-@192, `vos_every 3`:
+Artifact: `data/ab_chan_doan_lk_2026-11-21_metrics.json` — `git_rev 9ce467b`, **`git_dirty false`,
+`git_dirty_code false`**, `schema 6`, `so_lan_chay_loi 0/0`, `csv_thieu_cot []`.
+
+Lệnh: `python scripts/ab_o_hien_thi_vs_gt.py --gt docs/gt/b1b --clip data/binh1.mp4 --bbox
+300,275,150,410 --max-mad 1.5 100 --lan 1` (@192, `vos_every 3`).
 
 | cấu hình | IoU(ô hiển thị, ô GT) | `ly_do_dem` (7 frame GT) | `ly_do_khop_dem` | `n_diem` median | `csv_thieu_cot` |
 |---|---|---|---|---|---|
-| `1,5/shift` | 0,6396 (tệ nhất 0,3831) | **`mad_du`: 7/7** | `{}` (đo được, 0 mẫu) | **54** | `[]` |
-| `100/shift` | 0,8002 (tệ nhất 0,5649) | `ok_shift`: 7/7 | `{}` | 58 | `[]` |
+| `1,5/shift` | 0,5914 (tệ nhất 0,3848) | **`mad_du`: 6 · `ok_shift`: 1** | `{}` (đo được, 0 mẫu) | **54** | `[]` |
+| `100/shift` | 0,7844 (tệ nhất 0,5649) | `ok_shift`: 7/7 | `{}` | 58 | `[]` |
 
-⇒ **Trả lời được câu hỏi mở của ticket #38 bằng SỐ**: ở `max_mad = 1,5`, LK từ chối cả 7/7 frame GT vì
-**cổng MAD** (`mad_du`) — **không** phải `seed_rong` — và lúc đó vẫn còn **54/64** điểm theo dõi. Tức
+⇒ **Trả lời được câu hỏi mở của ticket #38 bằng SỐ**: ở `max_mad = 1,5`, **6/7** frame GT bị từ chối vì
+**cổng MAD** (`mad_du`), **không** frame nào vì `seed_rong`; lúc từ chối vẫn còn **54/64** điểm theo dõi ⇒
 "cửa quá chặt", không phải "mất dấu".
+
+⚠ **`--lan 1` ⇒ không có ngưỡng nhiễu**: chênh IoU giữa hai mức **không** được dùng để kết luận mức nào
+tốt hơn (artifact tự ghi `phan_biet_duoc: null`). Số ở bảng này chỉ để chứng minh **dụng cụ chẩn đoán
+hoạt động**; A/B 3 lần/cấu hình là việc của ticket #40.
+
+⚠ So với lần chạy **trên cây bẩn** trước đó (`1,5` → IoU 0,6396, `mad_du` 7/7), lần này là 0,5914 và
+`mad_du` 6/7 — **SAM 2 không tất định** (AGENTS §6) ⇒ đừng trộn số hai lần. Lần chạy cây bẩn đã **xoá**;
+mọi số trích trong tài liệu phải lấy từ artifact có `git_dirty_code false` ở trên.
 
 **Không chậm thêm**: `measured_fps` 29,8 (có `--dump-shown-csv`) vs 29,8 (không dump), 200 frame, @192,
 `vos_every 3`, cùng clip/ô — ngưỡng nhiễu ±0,3 % = ±0,09 FPS. `status.json` có `chan_doan_lk`
-(`{"ly_do":"mad_du","n_diem":53,"lk_ok":false,"frame_idx":199,…}`) **kể cả khi không bật dump**.
+(vd `{"ly_do":"mad_du","ly_do_khop":null,"n_diem":53,"khop":false,"lk_ok":false,"frame_idx":199}`)
+**kể cả khi không bật dump**.
 
-Kiểm máy: `./run lint` xanh · `./run test` **1590 passed**.
+Kiểm máy: `./run lint` xanh · `./run test` **1593 passed** (sau khi vá 2 P1 của review vòng 1).
 
 ## 5. Vấn đề & cách xử lý
 
@@ -73,3 +85,27 @@ Kiểm máy: `./run lint` xanh · `./run test` **1590 passed**.
 - `docs/task/20-11-2026-lk-noi-suy-ti-le-va-quet-cong-max-mad.md` (§4.1c — nơi câu "vì sao f62 không có
   ô" từng phải suy từ code).
 - AGENTS §6 (bẫy `0/None ≠ đã đo`, `measured_fps` bão hoà ~29,9).
+
+## 8. Review độc lập PR #66 (vòng 1) — P0 = 0, **P1 = 2** (cả hai là lỗi THẬT, đã vá)
+
+| Mức | Reviewer bắt | Xử lý |
+|---|---|---|
+| **P1** | `_ghi_o_hien_thi` dựng dòng bằng `o = ""` khi không có ô ⇒ dòng chỉ **8 field**; `DictReader` đọc `ly_do` thành giá trị của cột `angle_deg` và **mất `n_diem`** — đúng ca `seed_rong` (f62, bbox VOS suy biến) mà ticket này sinh ra để chẩn đoán | dựng bằng **list đủ 11 field**; test round-trip: `len(raw[i]) == 11` cho mọi dòng, `ly_do == "seed_rong"`, `n_diem == "0"`. **Đã kiểm ĐỎ** bằng mutant `[""]` (1 phần tử) |
+| **P1** | CSV **cũ** (6 cột) ⇒ `doc_chan_doan` trả dict **không rỗng** toàn `None` ⇒ `_dem` trả `{}` = "đo được 0 mẫu" chứ **không** phải `None` | thêm `chan_doan_tu_csv()` **cổng theo CỘT THIẾU** và `main()` dùng hàm đó; test gọi đúng hàm (bản đầu test **chép lại logic** nên mutant không chết — đã sửa). **Đã kiểm ĐỎ** bằng mutant trả thẳng `chan_doan` |
+| P2 | `scale`/`angle_deg` **luôn** ghi `1.0000,0.00` (giá trị reset) ở chế độ `shift`, dù similarity chưa từng được tính | thêm cờ `khop` vào snapshot; `scale`/`angle_deg` để **TRỐNG** khi `khop=False`; test khoá |
+| P2 | không test nào chạm `last_n_diem` | test 3 trạng thái: chưa chạy `None` · `seed_rong` **0** · `ok_shift` **> 0** |
+| P2 | xoá phần nối `_chan_doan_frame` → `chan_doan_lk` **không test nào đỏ** | thêm test đi đúng đường `_result_threaded` → `_update_stats`, assert `ly_do`/`n_diem`/`frame_idx`; **đã kiểm ĐỎ** bằng mutant `pass` |
+| P2 | artifact nghiệm thu có `git_dirty_code true`, `git_rev` là **commit cha** | **đo lại trên cây sạch** (mục 4) và xoá artifact cũ |
+| P3 | test CSV không khoá hình dạng (lệch dấu phẩy vẫn xanh) | nay assert `len(fields) == 11` **mọi dòng** + `lk_ok`/`x2` đúng cột |
+| P3 | comment trong `light_tracker.py` + doc `dump_shown_csv` còn nói "chưa nối ra CSV" | sửa: đã nối ra `shown.csv`/`status.json`, CSV **11 cột** |
+| P3 | `int(float(v))` chỉ bắt `ValueError` ⇒ CSV sửa tay `inf` làm script chết | bắt thêm `OverflowError` + test |
+| P3 | `return self._interp_base_result` (nhánh `state is None`) không reset `_chan_doan_frame` | reset phòng thủ 1 dòng (nhánh hiện **không reachable**, reviewer xác nhận) |
+
+Reviewer cũng xác nhận các mục **không phải lỗi**: chẩn đoán gắn **đúng frame** ở mọi đường chạy được
+(`_result_inline` đặt `None` mỗi frame; `_update_stats_locked` dùng cùng `self._frame_index` cho cả
+`chan_doan_lk` và `_last_shown`); `last_n_diem` đúng ở cả 9 đường `return`; `schema 5 → 6` đúng;
+không race/không chậm (dict 6 khoá dựng **ngoài** `_stats_lock`, ~3–6 µs/frame so với LK 2–3 ms).
+
+**Sự cố phụ bắt được khi chạy test**: một file rác tên `1` (0 byte, do lệnh shell tai nạn) nằm ở gốc repo
+làm `looks_like_file("1")` trả `True` ⇒ 2 test camera-index đỏ — đúng cảnh báo AGENTS §6 ("tên số được
+hiểu theo CWD... trừ khi có file thật trùng tên"). Đã xoá; không commit.
