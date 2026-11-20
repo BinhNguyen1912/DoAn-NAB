@@ -165,6 +165,12 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
         # CÁCH CHỌN FRAME phải nằm trong index: `score_miou` chỉ copy `nguon_gt`/`phuong_phap_gt`
         # vào artifact, nên khoá riêng KHÔNG đi theo con số. Không có nó thì không chứng minh được
         # "7 frame này là GIỮA KHE" khi soi lại artifact (AGENTS §6: artifact tự khai điều kiện đo).
+        #
+        # KHÔNG nằm trong nhóm "người viết đầu thắng" (xem vòng ghi đè bên dưới): `frames` được HỢP
+        # giữa các lần chạy, nên nếu `chon_frame` bị giữ giá trị cũ thì index sẽ khai "mặc định 12 frame
+        # trải đều" trong khi danh sách frame thật là 7 mốc giữa khe — provenance NÓI SAI, đúng thứ khoá
+        # này sinh ra để chống (review độc lập vòng 2 bắt được). Chỉ `chon_frame=None` mới rơi về giá
+        # trị cũ (caller khác không quan tâm).
         "chon_frame": chon_frame or cu.get("chon_frame"),
         "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
         "tao_luc": datetime.now().isoformat(timespec="seconds"),
@@ -173,8 +179,7 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
     }
     # Khoá ngữ nghĩa do NGƯỜI VIẾT ĐẦU quyết định: chạy lại không được viết lại nguồn/phương pháp của
     # những frame đã gán (vd lần đầu tô tay, lần sau dùng gợi ý màu ⇒ hai phương pháp trong một bộ).
-    for khoa in ("dang_gt", "nguon_gt", "phuong_phap_gt", "sai_so_bo_goi_y", "nguoi_gan",
-                 "chon_frame"):
+    for khoa in ("dang_gt", "nguon_gt", "phuong_phap_gt", "sai_so_bo_goi_y", "nguoi_gan"):
         if cu.get(khoa) is not None:
             index[khoa] = cu[khoa]
     for khoa, gia in cu.items():                     # giữ khoá lạ (dung_duoc/ly_do_khong_dung/canh_bao…)
@@ -369,20 +374,27 @@ def loc_theo_khung(frames, text, *, ten_clip: str = "") -> list[int]:
     except ValueError as exc:      # người dùng gõ tay: phải ra "[LOI]", không phải traceback Python
         raise SystemExit(f"[LOI] --khung {text!r}: {exc}") from None
     ra = [f for f in frames if any(a <= f <= b for a, b in khung)]
-    bo = [f for f in frames if f not in set(ra)]
+    tap_ra = set(ra)
+    bo = [f for f in frames if f not in tap_ra]
     if bo:
         print(f"[khung] bỏ {len(bo)} frame ngoài {text}: {bo}")
     if not ra:
-        raise SystemExit(f"[LOI] --khung {text} lọc hết frame — kiểm lại mốc/khoảng")
+        noi = f" (clip {ten_clip!r})" if ten_clip else ""
+        raise SystemExit(f"[LOI] --khung {text} lọc hết frame{noi} — kiểm lại mốc/khoảng")
     return ra
 
 
 def frames_giua_khe(so_frame: int, n: int = 12, vos_every: int = 3, buoc: int = 30) -> list[int]:
     """`n` frame nằm **giữa khe** VOS — `frame ≡ (vos_every-1) mod vos_every`, cách nhau `buoc`.
 
-    Vì sao đúng chỗ này: pipeline chạy VOS ở các frame chia hết cho `vos_every`; frame ngay TRƯỚC lần VOS
-    kế tiếp là frame xa mốc VOS nhất, nên ô hiển thị ở đó **hoàn toàn** do nội suy LK quyết định. Chấm GT
-    ở các frame sát VOS (như bộ `b1`: ≡ 0/1 mod 3) thì LK chỉ có 1 bước ⇒ gần như không thử được `max_mad`.
+    Vì sao đúng chỗ này: pipeline chạy VOS ở các frame chia hết cho `vos_every`
+    (`live_tracking.py`: `_frame_index % every == 0`) ⇒ frame `≡ vos_every-1` **CHẮC CHẮN không phải
+    frame VOS**, ô hiển thị ở đó là nội suy từ mốc VOS gần nhất, cách nó `vos_every-1` frame.
+
+    ĐỪNG viết "frame xa mốc VOS nhất" hay "LK 2 bước": LK được gọi đúng **một lần mỗi frame** và reset
+    mốc về frame VOS (`src/light_tracker.py`) ⇒ đại lượng thử được là **khoảng cách frame**, không phải
+    "số bước"; và frame `≡ 0` **cũng** đang phát ô nội suy (từ lần VOS TRƯỚC, cách `ve` frame) vì VOS về
+    muộn hơn nhịp phát — nên đây là "chắc chắn không phải frame VOS", không phải định lý xa mốc nhất.
 
     Hàm THUẦN (test được, không cần clip).
     """
@@ -456,33 +468,42 @@ def main(argv=None) -> int:
     parser.add_argument("--chi-sinh", action="store_true", help="chỉ cắt frame + sinh gợi ý, không mở server")
     args = parser.parse_args(argv)
 
-    # Validate sớm: `--vos-every 1` (đúng cấu hình phiên mIoU của repo) làm `frames_giua_khe` trả []
-    # ⇒ nếu không chặn, code rơi xuống `frames_trai_deu` **im lặng** và người dùng tô GT ở frame lẫn cả
-    # frame CÓ VOS ⇒ bộ mẫu vô nghĩa cho phép đo max_mad mà không ai biết (review độc lập 20-11, P1).
-    if args.giua_khe is not None and int(args.giua_khe) < 1:
-        raise SystemExit(f"[LOI] --giua-khe {args.giua_khe}: N phải ≥ 1")
-    if args.giua_khe is not None and int(args.vos_every) < 2:
-        raise SystemExit(f"[LOI] --vos-every {args.vos_every}: cần ≥ 2 mới có 'khe' (mọi frame đều do "
-                         "model ⇒ dùng --frames thay vì --giua-khe)")
-
-    frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
+    # Validate `--giua-khe`/`--vos-every` CHỈ khi THẬT SỰ dùng `--giua-khe`: trước đây đặt trước cả
+    # nhánh `--frames` ⇒ `--frames 0,5 --giua-khe --vos-every 1` hard-error trong khi `--vos-every` bị
+    # bỏ qua kèm cảnh báo — tự mâu thuẫn với cách xử lý "cảnh báo rồi bỏ qua" bên dưới (review vòng 2).
+    #
+    # Việc validate là BẮT BUỘC: `--vos-every 1` (đúng cấu hình phiên mIoU của repo) làm
+    # `frames_giua_khe` trả [] ⇒ không chặn thì code rơi xuống `frames_trai_deu` **im lặng**, người dùng
+    # tô GT ở frame lẫn cả frame CÓ VOS ⇒ bộ mẫu vô nghĩa cho `max_mad` mà không ai biết (P1 vòng 1).
+    try:
+        frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
+    except ValueError:                      # `--frames 0,5O,100` (chữ O) — cờ người dùng gõ tay nhiều nhất
+        raise SystemExit(f"[LOI] --frames {args.frames!r}: phải là danh sách số, vd 0,50,120") from None
     chon_frame = {"frames": list(frames)} if frames else None
     if frames and args.giua_khe is not None:
         print("[canh-bao] bỏ qua --giua-khe/--vos-every vì đã có --frames")
     if not frames and args.giua_khe is not None:
-        frames = frames_giua_khe(so_frame_cua_clip(args.clip), n=int(args.giua_khe),
-                                 vos_every=int(args.vos_every))
+        if int(args.giua_khe) < 1:
+            raise SystemExit(f"[LOI] --giua-khe {args.giua_khe}: N phải ≥ 1")
+        if int(args.vos_every) < 2:
+            raise SystemExit(f"[LOI] --vos-every {args.vos_every}: cần ≥ 2 mới có 'khe' (mọi frame "
+                             "đều do model ⇒ dùng --frames thay vì --giua-khe)")
+        so_clip = so_frame_cua_clip(args.clip)
+        frames = frames_giua_khe(so_clip, n=int(args.giua_khe), vos_every=int(args.vos_every))
         chon_frame = {"giua_khe": int(args.giua_khe), "vos_every": int(args.vos_every)}
         if not frames:
             raise SystemExit(f"[LOI] --giua-khe {args.giua_khe} với --vos-every {args.vos_every} sinh "
-                             f"0 frame (clip có dài hơn {int(args.vos_every) - 1} frame không?)")
+                             f"0 frame (clip {args.clip!r} đọc được {so_clip} frame — kiểm đường dẫn "
+                             "và độ dài clip)")
     if not frames:
         frames = frames_trai_deu(so_frame_cua_clip(args.clip))
-        chon_frame = {"mac_dinh": "12 frame trải đều clip"}
+        chon_frame = {"mac_dinh": f"{len(frames)} frame trải đều clip"}
     # Lọc khung SAU khi đã sinh danh sách (xem `loc_theo_khung`); giao rỗng ⇒ SystemExit.
     frames = loc_theo_khung(frames, args.khung, ten_clip=args.clip)
     if args.khung:
         chon_frame = {**(chon_frame or {}), "khung": args.khung}
+        if "frames" in chon_frame:          # phải ghi danh sách SAU lọc, không phải danh sách yêu cầu
+            chon_frame["frames"] = list(frames)
     if not TEN_HOP_LE.match(args.ten):
         raise SystemExit(f"--ten {args.ten!r} không hợp lệ: chỉ chữ/số/_/./- và không bắt đầu bằng '.' "
                          f"(thư mục GT là nơi ghi provenance, không được trỏ ra ngoài)")

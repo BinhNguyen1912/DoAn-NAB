@@ -2,8 +2,8 @@
 
 ## 1. Mục tiêu
 
-Sinh được bộ GT người tô **ở giữa khe VOS** (frame xa mốc VOS nhất ⇒ ô hiển thị do **hoàn toàn** LK
-nội suy quyết định) — đây là phép đo duy nhất trả lời được `max_mad` của `LkBoxTracker` — mà **không**
+Sinh được bộ GT người tô **ở giữa khe VOS** (`frame ≡ vos_every-1` ⇒ **chắc chắn không phải frame VOS**,
+ô hiển thị là nội suy từ mốc VOS gần nhất cách nó `ve-1` frame — KHÔNG phải định lý "xa mốc nhất") — đây là phép đo duy nhất trả lời được `max_mad` của `LkBoxTracker` — mà **không**
 phải gõ dãy frame dài trên terminal.
 
 ## 2. Input
@@ -124,4 +124,34 @@ rơi vào chỗ chai đã cất ⇒ bộ GT `b1b` dùng được. Ảnh kiểm �
 
 ### Sau khi vá
 
-`./run lint` xanh · `./run test` **1540 passed** (thêm 5 test) · 6 test cũ của bộ GT vẫn xanh.
+`./run lint` xanh · `./run test` **1548 passed** (mục 8 đo sau vá vòng 1: 1540; sau vá vòng 2: 1548) · 6 test cũ của bộ GT vẫn xanh.
+
+## 9. Review độc lập vòng 2 (sau khi vá) — reviewer, 20-11
+
+**P0 = 0 · P1 = 1 · P2 = 3 · P3 = 8.** Reviewer xác nhận P1 vòng 1 **đã bịt kín** (liệt kê 8 đường vào
+`frames_trai_deu`, không đường nào còn âm thầm đổi bộ frame), thứ tự `--khung` đúng (một call site, sau
+cả 3 nguồn), `chon_frame` không lọt `None`, khoá mới không làm `score_miou.kiem_index` /
+`gt_check_silhouette` / `e2e_gt_painter.js` từ chối.
+
+**P1 mới — do chính phép vá vòng 1 sinh ra:** `chon_frame` nằm trong tuple "khoá người-viết-đầu-thắng"
+⇒ chạy lần 2 cùng `--ten` (workflow tài liệu khuyến khích: danh sách frame được **hợp**) thì index giữ
+`{"mac_dinh": "12 frame trải đều"}` trong khi frames thật là 7 mốc giữa khe ⇒ **provenance nói sai**,
+đúng thứ khoá này sinh ra để chống. Vá: bỏ `chon_frame` khỏi tuple ghi đè (chỉ `None` mới rơi về cũ) +
+2 test.
+
+| Mức | Nội dung | Vá |
+|---|---|---|
+| **P1** | trên | bỏ khỏi tuple + 2 test (`chon_frame` mới thắng / `None` giữ cũ) |
+| P2 | `--frames` + `--khung`: index khai danh sách **trước** lọc | ghi lại sau lọc + test |
+| P2 | docstring `frames_giua_khe` + docstring test vẫn nói "xa mốc VOS nhất"/"ô là của MODEL" (ngược comment mới) | viết lại cả 2 |
+| P2 | `--frames 0,5O,100` (chữ O) ⇒ **ValueError thô + traceback** — đúng lớp lỗi vừa vá cho `--khung`, và đây là cờ gõ tay nhiều nhất | `[LOI] --frames …` + test |
+| P3 | `ten_clip` là **tham số chết** | dùng trong `[LOI] --khung … (clip …)` |
+| P3 | `mac_dinh` ghi cứng "12 frame" cả khi clip ngắn hơn 12 | `f"{len(frames)} frame trải đều clip"` |
+| P3 | validate `--vos-every` chạy cả khi `--frames` đã có ⇒ hard-error trong khi cờ đó bị bỏ qua | chuyển vào nhánh `--giua-khe` + test |
+| P3 | thông điệp "clip có dài hơn N frame không?" đổ lỗi sai khi clip **không mở được** | nêu clip + số frame đọc được |
+| P3 | `set(ra)` dựng mỗi vòng (O(n²)) | tính một lần |
+| P3 | không test nào đi qua `main()` tới `_viet_index`; không test `--giua-khe -5` | 3 test mới (`_chay_main` monkeypatch `score_miou.cat_frames` — vá ở module NGUỒN vì `main` import bên trong) + parametrize `0/-5` |
+
+Ghi chú phương pháp: reviewer vòng này **không có shell** (chỉ tool đọc) nên không chạy lại được
+`git show`/`pytest`; ranh giới diff được kiểm bằng đọc mã + `.git/logs`. Vì thế sau khi vá phải tự chạy
+`./run lint` + `./run test` (đã chạy: xem mục 4).
