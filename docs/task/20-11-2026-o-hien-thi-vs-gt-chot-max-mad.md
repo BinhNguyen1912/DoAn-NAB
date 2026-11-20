@@ -24,21 +24,25 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
 
 ## Output / Kết quả
 
-`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 44967fa`, `git_dirty_code false`,
+`data/ab_o_hien_thi_vs_gt_2026-11-20_metrics.json` (`git_rev 857a0d5`, `git_dirty_code false`,
 3 lần/cấu hình, `cau_hinh_hieu_luc_lech []`, 7 frame GT, cùng `binh1` + ô chai `300,275,150,410`, @192,
 `vos_every 3`, 300 frame):
 
 | `max_mad` | IoU(ô hiển thị, ô GT) | tệ nhất | `lk_ok_frac` ở các frame GT | FPS |
 |---|---|---|---|---|
-| **1,5** | **0,5295 ± 0,0514** | 0,256 | **0,095** | 29,93 |
-| **6,0** | **0,5327 ± 0,0236** | 0,120 | **0,429** | 29,93 |
+| **1,5** | **0,5490 ± 0,0309** | 0,261 | **0,048** | 29,90 |
+| **6,0** | **0,5670 ± 0,0173** | 0,169 | **0,429** | 29,90 |
 
-- **Theo trung bình**: chênh **+0,0032** ≤ ngưỡng nhiễu **0,0514** ⇒ **KHÔNG phân biệt được**.
-- **Theo cặp** (21 cặp): 6,0 tốt hơn **11**, 1,5 tốt hơn **5**, bằng **5**; chênh trung bình +0,0032,
-  cặp tốt nhất **+0,257**, cặp tệ nhất **−0,592** ⇒ **không có chiều thắng nhất quán**.
-- Ở lần chạy đầu, 6,0 **không tệ hơn ở cả 7 frame**; lần chạy lại thì có 5 cặp 1,5 tốt hơn (tới 0,59).
-  ⇐ **Đây chính là lý do phải chạy ≥ 2 lần**: kết luận "không bao giờ tệ hơn" của một lần chạy **không
-  tái lập**.
+- **Theo trung bình**: chênh **+0,0180** ≤ ngưỡng nhiễu **0,0309** ⇒ **KHÔNG phân biệt được**.
+- **Theo cặp** (21 cặp): 6,0 tốt hơn **8**, 1,5 tốt hơn **6**, bằng **7**;
+  chênh trung bình +0,0180, cặp tốt nhất **+0,4122**, cặp tệ nhất
+  **−0,4122** ⇒ **không có chiều thắng nhất quán**.
+- **Ba lần A/B độc lập cho cùng kết luận "không phân biệt được"**: chênh +0,032 (nhiễu 0,065) ·
+  +0,003 (nhiễu 0,051) · **+0,0180 (nhiễu 0,0309)** — dù chi tiết từng lần chạy
+  đổi (có lần "6,0 không tệ hơn ở cả 7 frame", lần khác 1,5 tốt hơn 5 cặp tới 0,59). ⇐ đúng lý do phải
+  chạy ≥ 2 lần và phải so THEO CẶP: kết luận của một lần chạy **không tái lập**.
+- `so_lan_chay_loi` = `{'1.5': 0, '6.0': 0}` ⇒ 6/6 lần chạy hợp lệ (dụng cụ đã loại lần chạy hỏng thay vì
+  tính chúng là "bám sai thật").
 
 ## Kết luận cho ticket #38
 
@@ -58,8 +62,25 @@ tô)** — "ô bám có đúng chỗ không", đúng thứ người xem quan tâ
 - **Frame GT đều nằm sát lần VOS** (`0,30,60` ≡ 0 mod 3; `91,181,211,241` ≡ 1 mod 3) ⇒ LK chỉ có **1
   bước** để chứng minh mình ở đó. Muốn cửa MAD được thử đúng mức phải có GT ở **giữa khe** (≡ 2 mod 3).
   Đây là hạn chế của phép đo, đã ghi vào ticket.
-- `lk_ok_frac` ở đây (0,095 / 0,429) khớp độc lập với số trên CSV drift (0,12 / 0,44) ⇒ hai đường đo
-  nhất quán, không phải lỗi dụng cụ.
+- `lk_ok_frac` ở đây (0.048 / 0.429) khớp với số trên CSV drift
+  (0,12 / 0,44) ⇒ hai đường đo **nhất quán** với nhau (cùng một luồng worker, nên đây là kiểm chéo chứ
+  không phải hai phép đo độc lập).
+
+## Review độc lập PR #61 — 3 P1 (đều trong dụng cụ đo), đã sửa
+
+1. **"Không có ô" và "ô HỎNG" bị gộp**: `doc_shown` đổi hộp đảo toạ độ thành `None`, rồi `cham` chấm
+   `0,0` cho `None` ⇒ hộp hỏng bị tính là "bám sai thật" (docstring hứa `khong_do_duoc` nhưng dict không
+   có khoá đó). Test cũ gọi `cham` **trực tiếp** nên **xanh giả** (không đi qua `doc_shown`). Nay có hai
+   sentinel `KHONG_CO_O`/`O_HONG`, khoá `khong_do_duoc`, và test đi qua `doc_shown`.
+2. **`std = None` (n < 2) bị coi là ngưỡng nhiễu 0** ⇒ mọi chênh lệch thành "TỐT HƠN/TỆ HƠN". Nay trả
+   `phan_biet_duoc: None` + "KHÔNG kết luận: cần ≥ 2 lần chạy".
+3. **Lần chạy HỎNG bị tính là "bám sai thật"**: worker chết ⇒ không có CSV ⇒ mọi frame GT thành `0,0`.
+   Nay `lan_chay_hop_le()` (mã thoát 0, `state ∈ {stopped, done}`, CSV có dữ liệu), loại khỏi trung bình,
+   ghi `so_lan_chay_loi`, thoát mã 1.
+4. P2: bỏ `dir="/dev/shm"` (máy dev Windows không có) → `tempfile.gettempdir()`; kiểm hai cấu hình có
+   **cùng số lần chạy** trước khi so cặp.
+5. P3: ghi lỗi CSV vào `status.json` (`dump_shown_loi`) thay vì sửa `cau_hinh` (để giữ provenance "đã yêu
+   cầu ghi"); sửa chữ "ba phép đo **độc lập**" → **"nhất quán"**.
 
 ## Next steps
 
