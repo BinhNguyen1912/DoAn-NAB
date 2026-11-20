@@ -2342,5 +2342,8 @@ class TestLkNoiSuyTiLe:
         session._vos_state = (1, base, frame, 0.0, 1.0, 0.0, 0.0, 0.0)
         session._interp.last_matrix = np.array([[1.0, 0.0, 3.0], [0.0, 1.0, 2.0]], np.float32)
         monkeypatch.setattr(session._interp, "update", lambda _g: ((8, 7, 18, 17), True))
-        session._result_threaded(frame)
+        out = session._result_threaded(frame)
+        # `assert out.mask is not None` là BẮT BUỘC: nếu `_result_threaded` return sớm (mask None) thì
+        # `goi == []` đúng một cách vô nghĩa ⇒ test xanh rỗng (review #65 vòng 2).
+        assert out.mask is not None
         assert goi == [], "ở chế độ scale KHÔNG được gọi shift_mask"

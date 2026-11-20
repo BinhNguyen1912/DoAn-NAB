@@ -294,16 +294,30 @@ def test_cong_similarity_chap_nhan_dung_nguong_va_tu_choi_khi_qua():
 
 
 def test_last_scale_CHI_ghi_khi_similarity_that_su_duoc_dung():
-    """Ca "khớp similarity qua cổng nhưng bbox bị từ chối" trước đây để lại `last_scale = 1.2` cho một
-    bước ĐI TỊNH TIẾN ⇒ đọc chẩn đoán bị sai (P3 review #65)."""
+    """Chẩn đoán chỉ được ghi khi similarity THẬT SỰ được dùng (P3 review #65).
+
+    Hai ca chặn khác nhau, phải phủ CẢ HAI (bản đầu chỉ phủ ca `mad` mà docstring lại khai ca `bbox`):
+      - bị chặn ở cổng **mad phần dư** (`max_mad` rất chặt);
+      - bị chặn ở bước **bbox** (ô quá nhỏ ⇒ `_bbox_tu_matrix` trả None) — tỉ lệ vẫn qua cổng.
+    """
     from src.light_tracker import LkBoxTracker
     patch = _patch_texture()
     f1 = _khung_vat(patch)
-    t = LkBoxTracker(scale=True, max_mad=0.05)     # cổng mad rất chặt ⇒ phần dư bị chặn
+    t = LkBoxTracker(scale=True, max_mad=0.05)     # ca 1: cổng mad rất chặt ⇒ phần dư bị chặn
     t.reset(f1, (130, 75, 60, 90))
     t.update(_khung_vat(patch, ti_le=1.2))
     assert t.last_khop_similarity is False
     assert t.last_scale == 1.0 and t.last_angle_deg == 0.0, "không dùng similarity thì không được khai tỉ lệ"
+    # ca 2: bbox suy ra bị TỪ CHỐI (`_bbox_tu_matrix` trả None). Gọi thẳng hàm: qua `update()` không
+    # tới được nhánh này vì `_seed` đã đòi ô ≥ 4 px mỗi chiều (đường `reset` chặn trước). Ô chủ yếu nằm
+    # NGOÀI khung ⇒ sau khi kẹp còn 3 px < 4 ⇒ None.
+    import numpy as np
+    t2 = LkBoxTracker(scale=True)
+    t2.reset(f1, (130, 75, 60, 90))
+    t2._prev_bbox = (316, 236, 60, 40)                      # phần lớn ra ngoài khung 320×240
+    assert t2._bbox_tu_matrix(np.eye(2, 3, dtype=np.float32), f1.shape) is None
+    assert t2.last_khop_similarity is False, "bbox bị từ chối thì không được báo 'đã dùng similarity'"
+    assert t2.last_scale == 1.0
 
 
 def test_vat_bien_mat_tren_nen_CO_TEXTURE_thi_cong_TU_CHOI():

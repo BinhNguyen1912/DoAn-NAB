@@ -52,23 +52,39 @@ Hai câu hỏi, đo trên **GT người tô** (không phải `drift_iou`):
 
 Nhưng theo từng frame, scale **sửa đúng phần nó nhắm tới** — so `1,5/shift` với `6,0/scale`:
 
-| frame | IoU shift | IoU scale | ΔW (px) shift → scale | LK có chạy ở frame đó? |
+**Bảng theo-frame của bản đầu đã bị XOÁ — nó không đo được điều nó tuyên bố** (review #65, P0):
+ở cấu hình 1,5 thì `shift` nhận **1/7** frame (chỉ f182), còn `scale` nhận 6/7 ⇒ mọi dòng so "ô VOS đóng
+băng" (shift) với "ô LK" (scale), không phải so hai **mô hình chuyển động**. Chỉ **1 frame (f182)** có cả
+hai `lk_ok = true` ⇒ `n = 1`, không kết luận được.
+
+### 4.1b Phép đo SẠCH: mở cổng để **cả hai** luôn nhận, rồi mới so mô hình
+
+`data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json` (`git_rev f5c663a`, `git_dirty_code=false`,
+`schema 4`, `max_mad = 100` cho **cả hai** ⇒ `scale` nhận **7/7**, `shift` nhận 6/7):
+
+| cấu hình | IoU | ± | tệ nhất | `lk_ok_frac` |
 |---|---|---|---|---|
-| 2 | 0,579 | 0,554 | −30 → −32 | không (cả hai cấu hình) |
-| 32 | 0,583 | **0,851** | −22 → **+1** | **có** |
-| 62 | 0,866 | 0,867 | −17 → +8 | **có** |
-| 92 | 0,382 | **0,821** | 0 → −2 | **có** |
-| 182 | 0,826 | 0,869 | −19 → −10 | **có** |
-| 212 | 0,660 | 0,504 | −26 → −49 | **KHÔNG** (12/12 lần chạy) |
-| 242 | 0,867 | 0,900 | −7 → −4 | **có** |
+| 100 / shift (chỉ dịch) | 0,6765 | 0,0113 | **0,0000** | 0,86 |
+| **100 / scale (dịch + tỉ lệ + xoay)** | **0,8051** | 0,0130 | **0,5542** | **1,00** |
 
-⇒ Ở các frame **LK thật sự chạy**, scale sửa đúng phần nó nhắm tới (`ΔW` f32: −22 → **+1**).
+⇒ **scale tốt hơn +0,1286** (> ngưỡng nhiễu 0,0130; theo cặp **14/21**). Theo từng frame (lần chạy 1):
 
-**ĐÍNH CHÍNH (review #65, P1)**: bản đầu ghi "f212 xấu đi do scale" — **SAI**. Ở f212 `lk_ok = false` trong
-**cả 12 lần chạy** ⇒ pipeline phát **ô VOS** (`_result_threaded` trả `base_result`), không phép similarity
-nào tham gia. Chênh lệch 0,660 vs 0,504 là **ô VOS khác nhau giữa hai phiên** (`[328,21,617,1114]` vs
-`[367,72,633,1048]`), không quy được cho `lk_scale`. Bảng "theo frame" trộn **ba trạng thái** (ô VOS / ô
-LK-shift / ô LK-scale) ⇒ chỉ so từng frame trên các frame mà **cả hai** cấu hình đều `lk_ok = true`.
+| frame | shift | scale | ghi chú |
+|---|---|---|---|
+| 62 | **0,000** | **0,811** | `shift` mất **toàn bộ** điểm theo dõi ở frame này; similarity vẫn khớp |
+| 92 | 0,831 | 0,843 | như nhau |
+| 182 | 0,809 | 0,851 | scale nhích hơn |
+| 242 | 0,869 | 0,900 | scale nhích hơn |
+| 212 | **0,894** | 0,765 | **scale kém hơn** ở frame vật to 5,5× |
+| 2 | 0,565 | 0,554 | như nhau |
+| 32 | 0,768 | 0,829 | scale hơn |
+
+⇒ Lợi thế của scale chủ yếu là **độ bền** (không sụp về 0 khi LK mất điểm), không phải "luôn chính xác
+hơn": ở f212 nó **kém hơn** 0,13.
+
+**Vì sao ở cổng mặc định (1,5) không thấy lợi ích**: cổng đó chặn 5/7 frame ⇒ cả hai cấu hình chủ yếu phát
+**ô đóng băng**, khác biệt mô hình chuyển động bị che. Muốn thấy tác dụng của `lk_scale` phải nới cổng
+(hoặc dùng cả hai cùng lúc).
 
 ### 4.2 Ô LK tốt hơn ô VOS ĐÓNG BĂNG — có hiệu ứng chọn mẫu, KHÔNG phải bằng chứng cổng "đúng"
 
@@ -133,6 +149,9 @@ quá `vos_every` frame. **Trạng thái: chưa đo.**
   phân biệt được; (b) nới `max_mad` mới đo trên **một clip, một loại vật** (chai cầm tay) — AGENTS §6
   đòi A/B ≥ 2 clip trước khi đổi mặc định; (c) `scale` làm LK nhận nhiều hơn mà **không** tăng IoU ⇒
   chưa có lý do bật.
+- **`estimateAffinePartial2D(LMEDS)` không seed** ⇒ bật `scale=True` thêm một nguồn **không tất định**
+  (ngoài SAM 2). Chấp nhận được vì mặc định TẮT, nhưng mọi số của chế độ `scale` phải đọc kèm cảnh báo
+  "hai phiên không so được với nhau".
 - **Số 1,5 là quá chặt thì phải ghi ra**: nếu demo cần ô đúng hơn, chạy `--lk-max-mad 20` (hoặc 100)
   — nay có số để nói, không phải đoán.
 
@@ -171,6 +190,33 @@ sai nguyên nhân cho số đo — nguy hiểm vì sẽ được chép nguyên v
 | P3 | `schema: 3` nhưng tập khoá khác nhau giữa 2 artifact | `schema: 4` |
 | P3 | hai phiên cùng cấu hình cho 2 số khác nhau, không nói; artifact lặp ủng hộ kết luận không được trích | thêm cảnh báo + trích artifact lặp (+0,101) |
 | P3 | 2 test scale **không cô lập** điều chúng tuyên bố | thêm `test_cong_similarity_chap_nhan_dung_nguong_va_tu_choi_khi_qua` (gọi THẲNG `_khop_similarity`); thay ca "nền nhiễu" bằng **nền texture tĩnh** và đo lại: cổng **có** từ chối khi vật biến mất (bản đầu của mình khẳng định ngược lại — tự bắt được) |
-| P3 | `estimateAffinePartial2D(LMEDS)` không seed ⇒ thêm nguồn không tất định | ghi nhận vào mục 5 (dưới) |
+| P3 | `estimateAffinePartial2D(LMEDS)` không seed ⇒ thêm nguồn không tất định | thêm bullet ở §5 (mục "Vấn đề") |
+| P3 | 4 artifact được trích là `schema 3`, **không** có `iou_khi_lk_dinh_nghia` ⇒ tiêu chí "artifact tự khai nghĩa" chỉ đúng cho artifact sinh **sau** `f5c663a` | §4.2 ghi rõ: số lấy từ artifact `schema 3`, nghĩa lấy từ `cham()`; artifact mới (`ab_mo_cong_…`) đã `schema 4` |
+| P3 | `iou_khi_lk_dinh_nghia` viết "khi LK từ chối ⇒ ô VOS đóng băng" — sai với `vos_every=1`; và không có trong `tong_hop` | thêm "(chỉ đúng khi `lk_khong_ap_dung = false`)" + chép khoá nghĩa vào `tong_hop` |
+| P3 | log §8 bảng thiếu 2 mục so với review vòng 1 (4 P2 + 8 P3) | bổ sung ở vòng 2 (bảng dưới) |
+| P3 | test "không gọi `shift_mask`" có thể xanh rỗng nếu `_result_threaded` return sớm | thêm `assert out.mask is not None` |
+| P3 | `last_khop_similarity` không reset ở các `return None, False` sớm | reset cả ba field chẩn đoán ở **đầu** `update()` + test |
 
 **Kiểm sau vá**: `./run lint` xanh · `./run test` **1578 passed** (11 test mới so với lúc mở PR).
+
+## 9. Vòng 2 của review #65 — P0 thứ hai (bảng §4.1 sai nhãn) và phép đo bù
+
+Reviewer vòng 2: **P0 = 1, P2 = 1, P3 = 6**. P0 là **đúng loại lỗi của vòng 1 lặp lại**: cột "LK có chạy ở
+frame đó?" mình điền theo **một** cấu hình (`6,0/scale`) rồi áp cho cả cặp ⇒ 6/7 dòng sai nhãn; và câu
+"scale sửa đúng phần nó nhắm tới (ΔW f32 −22 → +1)" so **ô VOS** với **ô LK** — chính là lỗi f212 lặp lại.
+
+**Cách xử lý: không sửa nhãn cho đúng, mà thay bằng phép đo không còn trộn trạng thái** — mở cổng
+(`max_mad 100`) để **cả hai** luôn nhận, khi đó mọi frame đều là "ô LK" ở cả hai bên ⇒ so được mô hình
+chuyển động (§4.1b). Kết quả **lật lại kết luận cũ của mình**: scale **tốt hơn +0,1286** (nhiễu 0,0130).
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| **P0** | bảng §4.1 sai nhãn 6/7 dòng + câu kết luận so ô VOS với ô LK | **xoá bảng**; thêm §4.1b (đo sạch, `max_mad 100`) ⇒ kết luận mới: scale +0,1286 |
+| P2 | `image_size_chua_kiem_duoc = len(chua)` sau khi `chua` gộp 2 trục ⇒ đếm cả run chỉ lệch `lk_scale` | đếm theo đúng trục + 2 cảnh báo riêng + test (`image_size` có số ⇒ 0, `lk_scale` thiếu ⇒ 1) |
+| P3 | `iou_khi_lk_dinh_nghia` sai với `vos_every=1`, không có trong `tong_hop` | thêm điều kiện + chép vào `tong_hop` |
+| P3 | docstring test khai ca "bbox bị từ chối" nhưng test thoát ở cổng mad | phủ **cả hai** ca; ca bbox gọi thẳng `_bbox_tu_matrix` (qua `update()` không tới được vì `_seed` đòi ≥ 4 px) |
+| P3 | `last_khop_similarity` giữ giá trị cũ khi `return None, False` sớm | reset cả 3 field ở đầu `update()` |
+| P3 | test "không gọi `shift_mask`" có thể xanh rỗng | thêm `assert out.mask is not None` |
+| P3 | 4 artifact trích là `schema 3` (chưa có khoá nghĩa) | ghi rõ trong §4.2; artifact mới `ab_mo_cong_…` là `schema 4` |
+| P3 | `estimateAffinePartial2D(LMEDS)` không seed — "ghi nhận vào mục 5" nhưng §5 không có | đã thêm bullet ở §5 |
+| Note | `self._lk` **chưa nối vào đường phát** (chỉ `reset()`, không `update()`) ⇒ "bật thì cả 2 tracker bật" đúng nhưng chỉ `_interp` có tác dụng | giữ nguyên (có từ trước PR); ghi ở đây để không ai tưởng `_lk` đang chạy |

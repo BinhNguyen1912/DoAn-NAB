@@ -1,0 +1,1074 @@
+{
+  "git_rev": "f5c663a62e77ac9a16bd4c9465bd4ce9ee3126ff",
+  "git_dirty": false,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "do_luc": "2026-11-20T15:43:27",
+  "lenh": "python scripts/ab_o_hien_thi_vs_gt.py --gt docs/gt/b1b --clip data/binh1.mp4 --bbox 300,275,150,410 --image-size 192 --vos-every 3 --max-mad 100 --lk-scale shift scale --lan 3 --frames 300 --out data/ab_mo_cong_shift_vs_scale_b1b_2026-11-20_metrics.json",
+  "schema": 4,
+  "nguon_so": {
+    "gt": "docs/gt/b1b",
+    "clip": "data/binh1.mp4",
+    "bbox": "300,275,150,410",
+    "max_mad": [
+      100.0
+    ],
+    "lk_scale": [
+      "shift",
+      "scale"
+    ],
+    "image_size": [
+      192
+    ],
+    "vos_every": [
+      3
+    ],
+    "frames": 300,
+    "lan": 3,
+    "frame_gt_co_vat": [
+      2,
+      32,
+      62,
+      92,
+      182,
+      212,
+      242
+    ]
+  },
+  "dinh_nghia": "IoU(ô bao ĐANG HIỂN THỊ ở frame đó, hộp bao suy từ mask NGƯỜI tô). GT có vật mà không vẽ ô nào ⇒ 0,0 (bám sai thật), KHÔNG phải 'không đo được'. Đây là phép đo 'ô bám đúng chỗ không' — khác `drift_iou` (khớp ô VOS) và khác mIoU (mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK).",
+  "cau_hinh_hieu_luc_lech": [],
+  "image_size_chua_kiem_duoc": 0,
+  "cau_hinh_kiem_duoc": true,
+  "lk_scale_chua_kiem_duoc": 0,
+  "so_lan_chay_loi": {
+    "192/3/100.0/shift": 0,
+    "192/3/100.0/scale": 0
+  },
+  "tong_hop": {
+    "192/3/100.0/shift": {
+      "iou_mean": {
+        "mean": 0.6765,
+        "std": 0.0113,
+        "n": 3
+      },
+      "iou_min": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "lk_ok_frac": {
+        "mean": 0.857,
+        "std": 0.0,
+        "n": 3
+      },
+      "iou_khi_lk_ok": {
+        "mean": 0.7892,
+        "std": 0.0131,
+        "n": 3
+      },
+      "iou_khi_lk_khong": {
+        "mean": 0.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "n_lk_ok": {
+        "mean": 6.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "n_cham": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "measured_fps": {
+        "mean": 29.9,
+        "std": 0.0,
+        "n": 3
+      }
+    },
+    "192/3/100.0/scale": {
+      "iou_mean": {
+        "mean": 0.8051,
+        "std": 0.013,
+        "n": 3
+      },
+      "iou_min": {
+        "mean": 0.5542,
+        "std": 0.0,
+        "n": 3
+      },
+      "lk_ok_frac": {
+        "mean": 1.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "iou_khi_lk_ok": {
+        "mean": 0.8051,
+        "std": 0.013,
+        "n": 3
+      },
+      "iou_khi_lk_khong": {
+        "mean": null,
+        "std": null,
+        "n": 0
+      },
+      "n_lk_ok": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "n_cham": {
+        "mean": 7.0,
+        "std": 0.0,
+        "n": 3
+      },
+      "measured_fps": {
+        "mean": 29.9667,
+        "std": 0.1155,
+        "n": 3
+      }
+    }
+  },
+  "so_sanh": {
+    "chenh_iou": -0.1286,
+    "nguong_nhieu": 0.013,
+    "phan_biet_duoc": true,
+    "ket_luan": "ô hiển thị TỆ HƠN 0.129 IoU (> ngưỡng nhiễu 0.013)"
+  },
+  "so_sanh_moi_cap": {
+    "192/3/100.0/scale|192/3/100.0/shift": {
+      "chenh_iou": -0.1286,
+      "nguong_nhieu": 0.013,
+      "phan_biet_duoc": true,
+      "ket_luan": "ô hiển thị TỆ HƠN 0.129 IoU (> ngưỡng nhiễu 0.013)",
+      "theo_cap_so_cap": 21,
+      "theo_cap_so_lan_a": 3,
+      "theo_cap_so_lan_b": 3,
+      "theo_cap_can_bo_cap": false,
+      "theo_cap_b_tot_hon": 7,
+      "theo_cap_a_tot_hon": 14,
+      "theo_cap_bang": 0,
+      "theo_cap_chenh_trung_binh": -0.1286,
+      "theo_cap_chenh_lon_nhat": 0.1347,
+      "theo_cap_chenh_nho_nhat": -0.8649,
+      "theo_cap_frame_b_tot_hon": {
+        "2": 0.0321,
+        "212": 0.264,
+        "92": 0.0728
+      },
+      "theo_cap_b_khong_bao_gio_te_hon": false
+    }
+  },
+  "so_sanh_theo_cap": {
+    "so_cap": 21,
+    "so_lan_a": 3,
+    "so_lan_b": 3,
+    "can_bo_cap": false,
+    "b_tot_hon": 7,
+    "a_tot_hon": 14,
+    "bang": 0,
+    "chenh_trung_binh": -0.1286,
+    "chenh_lon_nhat": 0.1347,
+    "chenh_nho_nhat": -0.8649,
+    "frame_b_tot_hon": {
+      "2": 0.0321,
+      "212": 0.264,
+      "92": 0.0728
+    },
+    "b_khong_bao_gio_te_hon": false,
+    "a": "192/3/100.0/scale",
+    "b": "192/3/100.0/shift"
+  },
+  "lan_chay": {
+    "192/3/100.0/shift": [
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_z44vjybx/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_z44vjybx --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_100.0_z44vjybx/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6765,
+          "iou_min": 0.0,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 0.857,
+          "iou_khi_lk_ok": 0.7893,
+          "iou_khi_lk_khong": 0.0,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 6,
+          "n_lk_khong": 1,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5649,
+              "lk_ok": true,
+              "hop": [
+                305,
+                423,
+                438,
+                743
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.7676,
+              "lk_ok": true,
+              "hop": [
+                328,
+                262,
+                452,
+                669
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.0,
+              "lk_ok": false,
+              "vi_sao": "không có ô hiển thị ⇒ 0,0 (bám sai thật)"
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8312,
+              "lk_ok": true,
+              "hop": [
+                278,
+                345,
+                423,
+                822
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8092,
+              "lk_ok": true,
+              "hop": [
+                335,
+                237,
+                496,
+                770
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8938,
+              "lk_ok": true,
+              "hop": [
+                256,
+                14,
+                545,
+                1107
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8691,
+              "lk_ok": true,
+              "hop": [
+                395,
+                372,
+                513,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": false,
+        "lk_scale_hieu_luc": false,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_vo5xdk7b/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_vo5xdk7b --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_100.0_vo5xdk7b/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6877,
+          "iou_min": 0.0,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 0.857,
+          "iou_khi_lk_ok": 0.8023,
+          "iou_khi_lk_khong": 0.0,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 6,
+          "n_lk_khong": 1,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5649,
+              "lk_ok": true,
+              "hop": [
+                305,
+                423,
+                438,
+                743
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.7826,
+              "lk_ok": true,
+              "hop": [
+                323,
+                269,
+                452,
+                668
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.0,
+              "lk_ok": false,
+              "vi_sao": "không có ô hiển thị ⇒ 0,0 (bám sai thật)"
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8842,
+              "lk_ok": true,
+              "hop": [
+                278,
+                338,
+                427,
+                832
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8077,
+              "lk_ok": true,
+              "hop": [
+                335,
+                238,
+                496,
+                770
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8938,
+              "lk_ok": true,
+              "hop": [
+                256,
+                14,
+                545,
+                1107
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8808,
+              "lk_ok": true,
+              "hop": [
+                395,
+                370,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": false,
+        "lk_scale_hieu_luc": false,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_v5t8cw3q/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_v5t8cw3q --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --dump-shown-csv /tmp/ab_o_192_3_100.0_v5t8cw3q/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.6652,
+          "iou_min": 0.0,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 0.857,
+          "iou_khi_lk_ok": 0.7761,
+          "iou_khi_lk_khong": 0.0,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 6,
+          "n_lk_khong": 1,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5649,
+              "lk_ok": true,
+              "hop": [
+                305,
+                423,
+                438,
+                743
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.7807,
+              "lk_ok": true,
+              "hop": [
+                322,
+                269,
+                451,
+                667
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.0,
+              "lk_ok": false,
+              "vi_sao": "không có ô hiển thị ⇒ 0,0 (bám sai thật)"
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8516,
+              "lk_ok": true,
+              "hop": [
+                282,
+                343,
+                423,
+                820
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8032,
+              "lk_ok": true,
+              "hop": [
+                335,
+                240,
+                496,
+                769
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.7751,
+              "lk_ok": true,
+              "hop": [
+                267,
+                68,
+                533,
+                1044
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.8808,
+              "lk_ok": true,
+              "hop": [
+                395,
+                370,
+                514,
+                763
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": false,
+        "lk_scale_hieu_luc": false,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      }
+    ],
+    "192/3/100.0/scale": [
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_p4qblmn7/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_p4qblmn7 --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --lk-scale --dump-shown-csv /tmp/ab_o_192_3_100.0_p4qblmn7/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.7931,
+          "iou_min": 0.5542,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 1.0,
+          "iou_khi_lk_ok": 0.7931,
+          "iou_khi_lk_khong": null,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 7,
+          "n_lk_khong": 0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5542,
+              "lk_ok": true,
+              "hop": [
+                306,
+                426,
+                437,
+                740
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8286,
+              "lk_ok": true,
+              "hop": [
+                321,
+                265,
+                463,
+                654
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8105,
+              "lk_ok": true,
+              "hop": [
+                69,
+                17,
+                249,
+                530
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8431,
+              "lk_ok": true,
+              "hop": [
+                269,
+                341,
+                429,
+                831
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8508,
+              "lk_ok": true,
+              "hop": [
+                327,
+                238,
+                496,
+                772
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.7645,
+              "lk_ok": true,
+              "hop": [
+                266,
+                75,
+                533,
+                1034
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.9001,
+              "lk_ok": true,
+              "hop": [
+                394,
+                370,
+                515,
+                765
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": true,
+        "lk_scale_hieu_luc": true,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_cajqb0bv/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_cajqb0bv --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --lk-scale --dump-shown-csv /tmp/ab_o_192_3_100.0_cajqb0bv/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.8032,
+          "iou_min": 0.5542,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 1.0,
+          "iou_khi_lk_ok": 0.8032,
+          "iou_khi_lk_khong": null,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 7,
+          "n_lk_khong": 0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5542,
+              "lk_ok": true,
+              "hop": [
+                306,
+                426,
+                437,
+                740
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8506,
+              "lk_ok": true,
+              "hop": [
+                312,
+                268,
+                459,
+                669
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8649,
+              "lk_ok": true,
+              "hop": [
+                67,
+                0,
+                223,
+                514
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8164,
+              "lk_ok": true,
+              "hop": [
+                277,
+                348,
+                423,
+                819
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8724,
+              "lk_ok": true,
+              "hop": [
+                327,
+                236,
+                500,
+                771
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.7591,
+              "lk_ok": true,
+              "hop": [
+                268,
+                73,
+                532,
+                1036
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.9046,
+              "lk_ok": true,
+              "hop": [
+                394,
+                368,
+                515,
+                765
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": true,
+        "lk_scale_hieu_luc": true,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      },
+      {
+        "shown": "/tmp/ab_o_192_3_100.0_dmdy3wav/shown.csv",
+        "lenh": "/home/msi/miniconda3/envs/samurai/bin/python /mnt/d/DOAN-NAB/tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/ab_o_192_3_100.0_dmdy3wav --vos-every 3 --stop-after-frames 300 --lk-max-mad 100.0 --bbox 300,275,150,410 --lk-scale --dump-shown-csv /tmp/ab_o_192_3_100.0_dmdy3wav/shown.csv --image-size 192",
+        "ma_thoat": 0,
+        "state": "stopped",
+        "so_dong_shown": 301,
+        "cham": {
+          "n_gt_co_vat": 7,
+          "n_cham": 7,
+          "khong_do_duoc": 0,
+          "thieu_frame": [],
+          "iou_mean": 0.8189,
+          "iou_min": 0.5542,
+          "lk_khong_ap_dung": false,
+          "lk_ok_frac": 1.0,
+          "iou_khi_lk_ok": 0.8189,
+          "iou_khi_lk_khong": null,
+          "iou_khi_lk_dinh_nghia": "iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết).",
+          "n_lk_ok": 7,
+          "n_lk_khong": 0,
+          "theo_frame": [
+            {
+              "frame_idx": 2,
+              "iou": 0.5542,
+              "lk_ok": true,
+              "hop": [
+                306,
+                426,
+                437,
+                740
+              ],
+              "hop_gt": [
+                283,
+                286,
+                446,
+                738
+              ]
+            },
+            {
+              "frame_idx": 32,
+              "iou": 0.8091,
+              "lk_ok": true,
+              "hop": [
+                321,
+                270,
+                460,
+                653
+              ],
+              "hop_gt": [
+                316,
+                242,
+                462,
+                693
+              ]
+            },
+            {
+              "frame_idx": 62,
+              "iou": 0.8615,
+              "lk_ok": true,
+              "hop": [
+                65,
+                0,
+                222,
+                506
+              ],
+              "hop_gt": [
+                76,
+                0,
+                234,
+                504
+              ]
+            },
+            {
+              "frame_idx": 92,
+              "iou": 0.8466,
+              "lk_ok": true,
+              "hop": [
+                264,
+                336,
+                432,
+                835
+              ],
+              "hop_gt": [
+                285,
+                337,
+                433,
+                850
+              ]
+            },
+            {
+              "frame_idx": 182,
+              "iou": 0.8631,
+              "lk_ok": true,
+              "hop": [
+                323,
+                237,
+                496,
+                772
+              ],
+              "hop_gt": [
+                324,
+                227,
+                507,
+                807
+              ]
+            },
+            {
+              "frame_idx": 212,
+              "iou": 0.8857,
+              "lk_ok": true,
+              "hop": [
+                258,
+                24,
+                548,
+                1085
+              ],
+              "hop_gt": [
+                256,
+                44,
+                571,
+                1108
+              ]
+            },
+            {
+              "frame_idx": 242,
+              "iou": 0.912,
+              "lk_ok": true,
+              "hop": [
+                393,
+                369,
+                515,
+                766
+              ],
+              "hop_gt": [
+                391,
+                361,
+                516,
+                786
+              ]
+            }
+          ]
+        },
+        "max_mad_yeu_cau": 100.0,
+        "max_mad_hieu_luc": 100.0,
+        "image_size_yeu_cau": 192,
+        "lk_scale_yeu_cau": true,
+        "lk_scale_hieu_luc": true,
+        "image_size_hieu_luc": 192,
+        "image_size_kiem_duoc": true,
+        "vos_every_yeu_cau": 3,
+        "so_dong_khop_frame": true,
+        "hop_le": true
+      }
+    ]
+  }
+}

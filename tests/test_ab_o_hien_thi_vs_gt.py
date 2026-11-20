@@ -504,3 +504,34 @@ def test_cau_hinh_lech_bat_duoc_lk_scale_lech_va_chua_kiem():
     assert ra_chua == [chua]
     # mỗi lần chạy vào ĐÚNG MỘT nhóm (thiếu `continue` từng làm một run vào cả hai ⇒ bộ đếm > tổng)
     assert len(ra_lech) + len(ra_chua) == 2
+
+
+def test_chua_kiem_duoc_dem_theo_DUNG_truc(monkeypatch, tmp_path):
+    """`image_size_chua_kiem_duoc` từng = `len(chua)` ⇒ đếm cả run chỉ lệch trục `lk_scale` trong khi
+    `image_size_hieu_luc` CÓ số (review #65 vòng 2, P2)."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 7, "n_gt_co_vat": 7,
+           "khong_do_duoc": 0, "thieu_frame": [], "lk_khong_ap_dung": False,
+           "theo_frame": [{"frame_idx": 2, "iou": 0.5, "lk_ok": False}]}
+    dem = {"n": 0}
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, lk_scale=False, frames, out_dir):
+        dem["n"] += 1
+        cau = {"lk_max_mad": max_mad, "image_size_hieu_luc": image_size}
+        if dem["n"] == 1:
+            pass                                   # lần 1: worker KHÔNG khai `lk_scale`
+        else:
+            cau["lk_scale"] = lk_scale
+        return {"shown": str(tmp_path / "s.csv"), "so_dong_shown": 8, "ma_thoat": 0, "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": cau}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "cham", lambda _g, _s, **_kw: ham)
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    out = tmp_path / "a.json"
+    assert ab.main(["--gt", "g", "--clip", "c.mp4", "--bbox", "0,0,10,10", "--image-size", "192",
+                    "--vos-every", "3", "--max-mad", "1.5", "--lan", "2", "--out", str(out)]) == 0
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert d["image_size_chua_kiem_duoc"] == 0, "image_size CÓ số ⇒ không được đếm vào ô 'chưa kiểm'"
+    assert d["lk_scale_chua_kiem_duoc"] == 1, "đúng 1 lần chạy thiếu khoá lk_scale"

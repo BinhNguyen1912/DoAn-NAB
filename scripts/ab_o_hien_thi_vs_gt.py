@@ -160,8 +160,9 @@ def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False) -> dict:
         "iou_khi_lk_ok": round(statistics.fmean(iou_ok), 4) if iou_ok else None,
         "iou_khi_lk_khong": round(statistics.fmean(iou_khong), 4) if iou_khong else None,
         "iou_khi_lk_dinh_nghia": ("iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS ĐÓNG BĂNG khi LK từ "
-                                  "chối. Chênh lệch KHÔNG chứng minh cổng 'chọn đúng' — có hiệu ứng "
-                                  "chọn mẫu (tập frame LK nhận do LK tự quyết)."),
+                                  "chối — CHỈ đúng khi `lk_khong_ap_dung = false` (với `vos_every=1` "
+                                  "không có LK nên cả hai vô nghĩa). Chênh lệch KHÔNG chứng minh cổng "
+                                  "'chọn đúng': có hiệu ứng chọn mẫu (tập frame LK nhận do LK tự quyết)."),
         "n_lk_ok": len(iou_ok),
         "n_lk_khong": len(iou_khong),
         "theo_frame": theo_frame,
@@ -236,6 +237,9 @@ def tong_hop(lan: list[dict]) -> dict:
         "iou_khi_lk_ok": _stats([r["cham"].get("iou_khi_lk_ok") for r in lan]),
         "iou_khi_lk_khong": _stats([r["cham"].get("iou_khi_lk_khong") for r in lan]),
         "n_lk_ok": _stats([r["cham"].get("n_lk_ok") for r in lan]),
+        "iou_khi_lk_dinh_nghia": ("iou_khi_lk_ok = ô LK; iou_khi_lk_khong = ô VOS đóng băng khi LK từ "
+                                  "chối (chỉ đúng khi lk_khong_ap_dung = false). Chênh lệch KHÔNG "
+                                  "chứng minh cổng 'chọn đúng' — có hiệu ứng chọn mẫu."),
         "n_cham": _stats([r["cham"]["n_cham"] for r in lan]),
         "measured_fps": _stats([r["status"].get("measured_fps") for r in lan]),
     }
@@ -494,10 +498,14 @@ def main(argv=None) -> int:
 
     from scripts.measure_watchdog import _git_provenance
 
-    if chua_kiem_duoc:
-        print(f"[canh-bao] {len(chua_kiem_duoc)}/{sum(len(v) for v in theo_cau_hinh.values())} lần chạy "
-              "CHƯA kiểm được `image_size` hiệu lực (worker không khai) ⇒ `cau_hinh_hieu_luc_lech == []` "
-              "KHÔNG chứng minh cấu hình đã khớp", file=sys.stderr)
+    tong_lan = sum(len(v) for v in theo_cau_hinh.values())
+    for nhan_truc, khoa_truc in (("image_size", "image_size_hieu_luc"),
+                                 ("lk_scale", "lk_scale_hieu_luc")):
+        n = sum(1 for r in chua_kiem_duoc if r.get(khoa_truc) is None)
+        if n:
+            print(f"[canh-bao] {n}/{tong_lan} lần chạy CHƯA kiểm được `{nhan_truc}` hiệu lực (worker "
+                  f"không khai `{khoa_truc}`) ⇒ `cau_hinh_hieu_luc_lech == []` KHÔNG chứng minh trục "
+                  f"`{nhan_truc}` đã khớp", file=sys.stderr)
 
     rev, dirty, dirty_code, loi = _git_provenance()
     artifact = {
@@ -515,7 +523,10 @@ def main(argv=None) -> int:
                        "phép đo 'ô bám đúng chỗ không' — khác `drift_iou` (khớp ô VOS) và khác mIoU "
                        "(mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK)."),
         "cau_hinh_hieu_luc_lech": lech,
-        "image_size_chua_kiem_duoc": len(chua_kiem_duoc),
+        # Đếm theo ĐÚNG trục: sau khi thêm trục `lk_scale`, `chua` gộp cả hai ⇒ `len(chua)` mang tên
+        # `image_size` mà đếm cả run chỉ lệch `lk_scale` (review #65 vòng 2, P2).
+        "image_size_chua_kiem_duoc": sum(1 for r in chua_kiem_duoc
+                                         if r.get("image_size_hieu_luc") is None),
         # Nếu KHÔNG còn lần chạy hợp lệ nào thì `cau_hinh_hieu_luc_lech == []` và
         # `image_size_chua_kiem_duoc == 0` đều vô nghĩa — đọc thành "đã khớp" là sai (review #64 vòng 2).
         "cau_hinh_kiem_duoc": bool(hop_le and any(hop_le.values())),

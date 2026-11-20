@@ -75,6 +75,10 @@ class LkBoxTracker:
 
     def update(self, gray):
         """Ước lượng ô bao mới. Trả (bbox, True) hoặc (None, False) khi mất dấu."""
+        # Chẩn đoán phải reset ở ĐẦU mỗi bước: trước đây chỉ reset sau khi đã có ≥ `min_points`, nên các
+        # `return None, False` sớm (mất dấu) để lại `last_khop_similarity = True` của bước TRƯỚC ⇒ đọc
+        # CSV hiểu sai bước vừa rồi đã dùng similarity (P3 review #65 vòng 2).
+        self.last_scale, self.last_angle_deg, self.last_khop_similarity = 1.0, 0.0, False
         if self._prev_gray is None or self._points is None or self._prev_bbox is None:
             return None, False
         if self._points.size == 0:
@@ -98,7 +102,6 @@ class LkBoxTracker:
         # TRUNG VỊ chứ không trung bình: vài điểm trôi theo nền không được kéo cả ô bao đi
         dx = float(np.median(delta[:, 0]))
         dy = float(np.median(delta[:, 1]))
-        self.last_scale, self.last_angle_deg, self.last_khop_similarity = 1.0, 0.0, False
 
         # Kiểm tra ĐỘ TẢN: LK luôn trả về một vector cho mỗi điểm, kể cả khi vật đã biến mất
         # (nó khớp với nhiễu). Vector dịch thật thì rất đồng nhất; khớp nhiễu thì tản mát.
