@@ -214,3 +214,19 @@ def test_so_dong_khop_frame_chan_mat_mau_hoac_ghi_trung():
     assert so_dong_khop_frame({"status": {"frames": 120}, "so_dong_shown": 100}) is False
     assert so_dong_khop_frame({"status": {"frames": 120}, "so_dong_shown": 130}) is False
     assert so_dong_khop_frame({"status": {}, "so_dong_shown": 10}) is False
+
+
+def test_cau_hinh_lech_tach_ba_trang_thai_image_size():
+    """`None` = CHƯA KIỂM ĐƯỢC, không phải "đã khớp" — `lech == []` từng bị đọc sai như vậy."""
+    from scripts.ab_o_hien_thi_vs_gt import cau_hinh_lech
+    khop = {"max_mad_yeu_cau": 1.5, "max_mad_hieu_luc": 1.5,
+            "image_size_yeu_cau": 192, "image_size_hieu_luc": 192}
+    lech_ = {"max_mad_yeu_cau": 1.5, "max_mad_hieu_luc": 1.5,
+             "image_size_yeu_cau": 192, "image_size_hieu_luc": 320}
+    chua = {"max_mad_yeu_cau": 1.5, "max_mad_hieu_luc": 1.5,
+            "image_size_yeu_cau": 192, "image_size_hieu_luc": None}
+    khong_mad = {"max_mad_yeu_cau": 1.5, "max_mad_hieu_luc": None,
+                 "image_size_yeu_cau": 192, "image_size_hieu_luc": 192}
+    lech, chua_kiem = cau_hinh_lech([khop, lech_, chua, khong_mad])
+    assert lech == [lech_, khong_mad]          # hiệu lực khác yêu cầu, và mad không khai
+    assert chua_kiem == [chua]                 # riêng, KHÔNG nằm trong `lech`
