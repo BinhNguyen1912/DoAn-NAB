@@ -405,3 +405,33 @@ class TestGoKhoiGtRong:
         gt._ghi_gt_rong(tmp_path, 90, rong=False)
         index = json.loads((tmp_path / "index.json").read_text(encoding="utf-8"))
         assert index["gt_rong"] == [120]
+
+
+class TestFramesTraiDeu:
+    """Mặc định 12 frame trải đều — để lệnh gán GT KHÔNG còn phải dán dãy số dài.
+
+    Vì sao khoá: 19-11 người dùng dán lệnh có `--frames 0,25,50,57,69,90,105,171,190,230,245,258`
+    (dài ~50 ký tự) và terminal chèn **xuống dòng** ngay sau `--frames` ⇒ `bash: argument --frames:
+    expected one argument` + `0,25,...: command not found`. Lần 2 liền. Lệnh ngắn là cách chống.
+    """
+
+    def test_12_moc_gom_dau_va_cuoi_khong_trung(self):
+        from scripts.gt_gan_nhanh import frames_trai_deu
+
+        moc = frames_trai_deu(333)
+        assert len(moc) == 12
+        assert moc[0] == 0 and moc[-1] == 332
+        assert len(set(moc)) == 12 and moc == sorted(moc)
+
+    def test_clip_ngan_hon_so_moc_thi_lay_het_khong_trung(self):
+        from scripts.gt_gan_nhanh import frames_trai_deu
+
+        assert frames_trai_deu(5) == [0, 1, 2, 3, 4]
+        moc = frames_trai_deu(13)          # `set` chống trùng khi 13 frame mà 12 mốc
+        assert len(set(moc)) == len(moc) and moc[0] == 0 and moc[-1] == 12
+
+    def test_clip_khong_doc_duoc_thi_tra_rong(self):
+        """0 = không đọc được ⇒ bên gọi phải báo lỗi rõ, KHÔNG được im lặng tạo GT rỗng."""
+        from scripts.gt_gan_nhanh import frames_trai_deu
+
+        assert frames_trai_deu(0) == [] and frames_trai_deu(-3) == []

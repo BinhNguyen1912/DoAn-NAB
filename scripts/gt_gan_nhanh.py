@@ -308,6 +308,35 @@ def _kich_thuoc_frames(gt_dir: Path, frames) -> dict[int, tuple[int, int]]:
     return ra
 
 
+def frames_trai_deu(so_frame: int, n: int = 12) -> list[int]:
+    """`n` frame trải đều `[0, so_frame-1]`, luôn gồm frame đầu và frame cuối, KHÔNG trùng.
+
+    Hàm THUẦN (test được, không cần clip). Vì sao cần mặc định này: danh sách 12 frame viết tay dài
+    ~50 ký tự, đủ để terminal xuống dòng khi dán và làm hỏng cả lệnh (19-11, 2 lần liền).
+    """
+    if so_frame <= 0:
+        return []
+    if so_frame <= n:
+        return list(range(int(so_frame)))
+    # `round` chứ không `//`: bước `so_frame/(n-1)` chia đều cả hai đầu; `set` để chống trùng khi
+    # clip ngắn (vd 13 frame, 12 mốc) — trùng frame sẽ làm GT có 2 ảnh cùng tên.
+    buoc = (so_frame - 1) / (n - 1)
+    return sorted({int(round(i * buoc)) for i in range(n)})
+
+
+def so_frame_cua_clip(clip: str) -> int:
+    """Số frame của clip; 0 nếu không đọc được (bên gọi tự báo lỗi rõ ràng)."""
+    import cv2
+
+    cap = cv2.VideoCapture(str(clip))
+    try:
+        if not cap.isOpened():
+            return 0
+        return int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    finally:
+        cap.release()
+
+
 def main(argv=None) -> int:
     import cv2
 
@@ -315,7 +344,12 @@ def main(argv=None) -> int:
     parser.add_argument("--clip", required=True)
     parser.add_argument("--ten", required=True, help="tên bộ GT (thư mục con của docs/gt)")
     parser.add_argument("--nguoi-gan", required=True, help="ai chịu trách nhiệm gán (vào index.json)")
-    parser.add_argument("--frames", required=True, help='danh sách frame_idx, vd "0,50,120"')
+    # KHÔNG bắt buộc: bỏ trống = 12 frame trải đều toàn clip. Vì sao đổi (19-11): danh sách 12 frame
+    # dài ~50 ký tự làm lệnh vượt bề rộng terminal; khi dán, terminal chèn XUỐNG DÒNG ngay sau
+    # `--frames` ⇒ bash báo `argument --frames: expected one argument` rồi cố chạy dãy số như một
+    # lệnh (gặp thật 2 lần liên tiếp). Lệnh ngắn thì không còn cửa cho lỗi đó.
+    parser.add_argument("--frames", default="",
+                        help='danh sách frame_idx, vd "0,50,120"; bỏ trống = 12 frame trải đều clip')
     parser.add_argument("--khong-goi-y", action="store_true",
                         help="không sinh gợi ý màu (tô tay từ đầu) ⇒ GT 'sạch' hơn")
     parser.add_argument("--s-min", type=int, default=S_MIN, help="ngưỡng bão hoà màu của gợi ý (0–255)")
@@ -328,7 +362,10 @@ def main(argv=None) -> int:
 
     frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
     if not frames:
-        raise SystemExit("--frames rỗng")
+        frames = frames_trai_deu(so_frame_cua_clip(args.clip))
+        if not frames:
+            raise SystemExit("--frames rỗng và không đọc được số frame của clip "
+                             f"{args.clip!r} ⇒ truyền --frames thủ công")
     if not TEN_HOP_LE.match(args.ten):
         raise SystemExit(f"--ten {args.ten!r} không hợp lệ: chỉ chữ/số/_/./- và không bắt đầu bằng '.' "
                          f"(thư mục GT là nơi ghi provenance, không được trỏ ra ngoài)")
