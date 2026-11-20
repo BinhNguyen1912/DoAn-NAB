@@ -591,3 +591,31 @@ def test_cham_chua_co_chan_doan_thi_dem_la_None_khong_phai_0():
     assert r["ly_do_dem"] == {"mad_du": 1} and r["n_diem_median"] == 30.0
     # GT rỗng ⇒ không đếm gì nhưng VẪN là "đo được" ⇒ {}
     assert cham({}, shown, chan_doan={0: {"ly_do": "mad_du"}})["ly_do_dem"] == {}
+
+
+def test_CSV_CU_di_qua_duong_THAT_thi_ly_do_dem_la_None_khong_phai_rong(tmp_path):
+    """P1 review PR #66: `doc_chan_doan` trên CSV cũ trả dict toàn `None` (KHÔNG rỗng) ⇒ `cham()` từng
+    trả `{}` = "đo được 0 mẫu". Phải là `None` (chưa đo) — cổng theo CỘT THIẾU, không theo độ rỗng."""
+    from scripts.ab_o_hien_thi_vs_gt import cham, chan_doan_tu_csv, doc_chan_doan, doc_shown
+
+    cu = tmp_path / "shown.csv"
+    cu.write_text("frame_idx,x1,y1,x2,y2,lk_ok\n0,0,0,10,10,1\n", encoding="utf-8")
+    chan_doan, thieu_cot = doc_chan_doan(cu)
+    assert thieu_cot and chan_doan           # dict KHÔNG rỗng nhưng toàn None — đúng cái bẫy
+    # ĐƯỜNG THẬT của `main()` (gọi đúng hàm, không chép lại logic trong test)
+    chan_doan_main, thieu_cot_main = chan_doan_tu_csv(cu)
+    assert thieu_cot_main and chan_doan_main is None
+    r = cham({0: (0, 0, 10, 10)}, doc_shown(cu), chan_doan=chan_doan_main)
+    assert r["ly_do_dem"] is None and r["n_diem_median"] is None
+    # đối chứng: cùng dict đó nếu đưa thẳng vào thì ra {} (nên mới phải cổng)
+    assert cham({0: (0, 0, 10, 10)}, doc_shown(cu), chan_doan=chan_doan)["ly_do_dem"] == {}
+
+
+def test_doc_chan_doan_khong_chet_voi_inf_CSV_sua_tay(tmp_path):
+    from scripts.ab_o_hien_thi_vs_gt import doc_chan_doan
+
+    p = tmp_path / "shown.csv"
+    p.write_text("frame_idx,x1,y1,x2,y2,lk_ok,ly_do,ly_do_khop,scale,angle_deg,n_diem\n"
+                 "3,1,2,3,4,1,ok_shift,,1.0,0.0,inf\n", encoding="utf-8")
+    ra, thieu = doc_chan_doan(p)
+    assert thieu == [] and ra[3]["n_diem"] is None       # "inf" ⇒ None, không ném OverflowError

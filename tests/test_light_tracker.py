@@ -450,3 +450,25 @@ def test_mad_du_o_che_do_scale_di_qua_nhanh_PHAN_DU(monkeypatch):
     # Similarity ĐÃ tính rồi bị cổng phần dư từ chối ⇒ phải khai lý do (nếu không thì `mad_du` này
     # không phân biệt được với `mad_du` của nhánh tịnh tiến)
     assert t.last_ly_do_khop == "mad_du"
+
+
+def test_last_n_diem_phan_biet_CHUA_CHAY_voi_0_diem_va_so_diem_that():
+    """`n_diem` phải phân biệt 3 trạng thái: chưa chạy LK (None) · 0 điểm (`seed_rong`/`lk_hong`) ·
+    số điểm thật. Không có test nào chạm field này là mời mutant `if n:` lọt (review PR #66)."""
+    import numpy as np
+
+    from src.light_tracker import LkBoxTracker
+
+    t = LkBoxTracker()
+    assert t.last_n_diem is None                     # chưa reset
+    gray = np.zeros((60, 90), np.uint8)
+    t.reset(gray, (0, 0, 1, 1))                      # ô < 4 px ⇒ `_seed` rỗng
+    bbox, ok = t.update(gray)
+    assert ok is False and t.last_ly_do == "seed_rong" and t.last_n_diem == 0
+
+    patch = _patch_texture()
+    f1 = _khung_vat(patch)
+    t2 = LkBoxTracker()
+    t2.reset(f1, (130, 75, 60, 90))
+    bbox, ok = t2.update(_khung_vat(patch, dx=3, dy=2))
+    assert ok is True and t2.last_n_diem is not None and t2.last_n_diem > 0

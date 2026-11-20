@@ -135,7 +135,7 @@ def doc_chan_doan(path: Path) -> tuple[dict[int, dict], list[str]]:
                 elif c == "n_diem":
                     try:
                         d[c] = int(float(v))
-                    except ValueError:
+                    except (ValueError, OverflowError):    # "inf" ⇒ OverflowError (CSV sửa tay)
                         d[c] = None
                 else:
                     try:
@@ -144,6 +144,17 @@ def doc_chan_doan(path: Path) -> tuple[dict[int, dict], list[str]]:
                         d[c] = None
             ra[frame] = d
     return ra, thieu
+
+
+def chan_doan_tu_csv(path: Path) -> tuple[dict | None, list[str]]:
+    """Đọc chẩn đoán LK từ `shown.csv` và **CỔNG theo CỘT THIẾU**.
+
+    CSV sinh trước ticket #39 (6 cột) không có cột chẩn đoán ⇒ `doc_chan_doan` trả dict **không rỗng**
+    nhưng toàn `None` cho mỗi frame. Đưa thẳng vào `cham()` thì `_dem` thấy "có dữ liệu" và trả `{}` =
+    "đo được 0 mẫu" — SAI: phải là `None` = CHƯA ĐO (bẫy `0/None ≠ đã đo`, AGENTS §6; P1 review PR #66).
+    """
+    chan_doan, thieu_cot = doc_chan_doan(path)
+    return (None if thieu_cot else chan_doan), thieu_cot
 
 
 def cham(hop_gt: dict, shown: dict, *, lk_khong_ap_dung: bool = False,
@@ -506,7 +517,7 @@ def main(argv=None) -> int:
                                    vos_every=ve, max_mad=max_mad, lk_scale=lk_scale,
                                    frames=args.frames, out_dir=Path(tmp))
                 # `res["shown"]` có thể là `str` (test giả lập + đường ghi ở dưới) ⇒ chuẩn hoá Path.
-                chan_doan, thieu_cot = doc_chan_doan(Path(res["shown"]))
+                chan_doan, thieu_cot = chan_doan_tu_csv(Path(res["shown"]))
                 res["csv_thieu_cot"] = thieu_cot
                 res["cham"] = cham(hop_gt, doc_shown(res["shown"]),
                                    lk_khong_ap_dung=(int(ve) == 1), chan_doan=chan_doan)

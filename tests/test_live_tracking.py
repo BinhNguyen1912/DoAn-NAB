@@ -2400,14 +2400,29 @@ def test_ghi_o_hien_thi_co_du_cot_chan_doan_va_o_trong_la_chuoi_rong(tmp_path):
     s._ghi_o_hien_thi(7, (10, 20, 30, 40), False,
                       {"ly_do": "mad_du", "ly_do_khop": None, "scale": 1.0,
                        "angle_deg": 0.0, "n_diem": 42})
+    # CA f62 của ticket: KHÔNG có ô hiển thị nhưng CÓ chẩn đoán (`seed_rong`, 0 điểm). Bản trước để
+    # `o=""` ⇒ dòng chỉ 8 field ⇒ `ly_do` đọc thành giá trị cột `angle_deg` (P1 review PR #66).
+    s._ghi_o_hien_thi(9, None, False,
+                      {"ly_do": "seed_rong", "ly_do_khop": None, "scale": 1.0,
+                       "angle_deg": 0.0, "n_diem": 0, "khop": False})
     s._ghi_o_hien_thi(8, None, None, None)          # không có LK (vos_every=1) ⇒ mọi ô chẩn đoán TRỐNG
     s._shown_fh.close()
-    rows = list(csv.DictReader((tmp_path / "shown.csv").open(encoding="utf-8")))
+    raw = list(csv.reader((tmp_path / "shown.csv").open(encoding="utf-8")))
+    assert len(raw[0]) == 11, raw[0]
+    assert all(len(r) == 11 for r in raw), [(i, len(r)) for i, r in enumerate(raw)]
+    rows = [dict(zip(raw[0], r)) for r in raw[1:]]
     assert list(rows[0]) == ["frame_idx", "x1", "y1", "x2", "y2", "lk_ok",
                              "ly_do", "ly_do_khop", "scale", "angle_deg", "n_diem"]
     assert rows[0]["ly_do"] == "mad_du" and rows[0]["ly_do_khop"] == "" and rows[0]["n_diem"] == "42"
-    assert rows[1]["x1"] == "" and rows[1]["ly_do"] == ""
-    assert not rows[1]["n_diem"]          # ô TRỐNG ("" hoặc None), KHÔNG phải "0 điểm"
+    # dòng 2 = frame 9 (không có ô, CÓ chẩn đoán) — phải đọc ĐÚNG cột, không lệch
+    assert rows[1]["frame_idx"] == "9" and rows[1]["x1"] == "" and rows[1]["x2"] == ""
+    assert rows[1]["lk_ok"] == "0" and rows[1]["ly_do"] == "seed_rong"
+    assert rows[1]["n_diem"] == "0"      # ĐO ĐƯỢC 0 điểm (seed rỗng), KHÔNG phải "chưa đo"
+    assert rows[1]["scale"] == ""        # similarity không dùng ⇒ TRỐNG (không ghi 1.0000 giả)
+    # dòng 3 = frame 8 (chưa có LK) ⇒ mọi ô chẩn đoán TRỐNG
+    assert rows[2]["ly_do"] == "" and rows[2]["n_diem"] == "" and rows[2]["scale"] == ""
+    # chế độ `shift`: `scale`/`angle_deg` phải TRỐNG dù tracker luôn reset 1.0/0.0 (P2 review #66)
+    assert rows[0]["ly_do"] == "mad_du" and rows[0]["scale"] == "" and rows[0]["angle_deg"] == ""
 
 
 def test_status_payload_co_chan_doan_lk_va_None_khi_chua_co():

@@ -56,8 +56,9 @@ class LkBoxTracker:
         self._prev_bbox = None
         self._points = None
         # Chẩn đoán cho phép đo: bước gần nhất có dùng similarity không, tỉ lệ/góc nó ước lượng được.
-        # CHẨN ĐOÁN TRONG TIẾN TRÌNH — chưa nối ra `shown.csv`/`status.json` nên hiện **không** artifact
-        # nào đọc được (đừng trích như bằng chứng đo). Không phải để điều khiển.
+        # Đã nối ra artifact (ticket #39, 21-11): `shown.csv` (cột `scale`/`angle_deg` — TRỐNG khi
+        # similarity không được dùng) và `status.json` (`chan_doan_lk`) ⇒ trích được như bằng chứng đo.
+        # Không phải để điều khiển.
         self.last_scale: float = 1.0
         self.last_angle_deg: float = 0.0
         self.last_khop_similarity: bool = False
