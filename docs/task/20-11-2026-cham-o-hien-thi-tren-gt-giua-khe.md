@@ -28,9 +28,13 @@ không trả lời được câu này.
 
 ### 4.1 Hai lần A/B cho HAI phán quyết ngược nhau (đây là kết quả quan trọng nhất)
 
+> **Dòng 1 KHÔNG tái lập được**: đó là phiên trên cây **bẩn**, artifact của nó đã bị phiên 2 ghi đè
+> cùng đường dẫn (xem §8). Số của dòng 1 KHÔNG tồn tại trong tệp nào của cây — chỉ dùng làm đối chứng
+> "hai phiên lật phán quyết", không trích như số đo tái lập được.
+
 | Lần | Cây | 1.5 (`iou_mean`) | 6.0 | chênh | ngưỡng nhiễu | phán quyết |
 |---|---|---|---|---|---|---|
-| 1 | bẩn (`git_dirty_code=true`) | 0,6232 ± 0,0342 | 0,6431 ± 0,0332 | **+0,020** | 0,0342 | KHÔNG phân biệt được |
+| 1 | bẩn (`git_dirty_code=true`), **artifact đã mất** | 0,6232 ± 0,0342 | 0,6431 ± 0,0332 | **+0,020** | 0,0342 | KHÔNG phân biệt được |
 | 2 | **sạch** (`891f4f5`, `git_dirty_code=false`) | 0,6015 ± 0,0045 | 0,6302 ± 0,0218 | **+0,029** | 0,0218 | "6.0 tốt hơn 0,029" |
 
 ⇒ **Cấm kết luận theo một lần**: cùng clip, cùng GT, cùng 3 lần/cấu hình mà ngưỡng nhiễu đổi 0,0342 →

@@ -36,7 +36,9 @@ Khác với ca `max_mad` (dấu nhất quán nhưng độ lớn nằm trong nhi�
 ngưỡng nhiễu** và tái lập được ⇒ kết luận bền vững: **không dùng `image_size 320` để bám chính xác
 hơn trên clip này**.
 
-Theo cặp (21 cặp): 192 thắng **16/21** frame; 320 chỉ thắng ở f2 (+0,186), f182 (+0,064), f242 (+0,031).
+Theo cặp (**21 cặp = 3 lần chạy × 7 frame**, KHÔNG phải 21 frame): 192 thắng **16/21 cặp**; 320 chỉ
+thắng ở 3 frame — f2 (**`chenh_lon_nhat` +0,186**), f182, f242 (**`frame_b_tot_hon` +0,064 / +0,031**,
+đây là **tổng chênh theo frame**, khác thang đo với `chenh_lon_nhat`).
 
 ### 4.2 Vì sao 320 tệ — mất dấu, không phải "ô hơi lệch"
 
@@ -46,7 +48,8 @@ Theo cặp (21 cặp): 192 thắng **16/21** frame; 320 chỉ thắng ở f2 (+0
 | 92 | 0,117 | 339,0 → 485,502 | 285,337 → 433,850 |
 | 182 | **0,000** | **không vẽ ô nào** | 324,227 → 507,807 |
 
-(Ba dòng này lấy từ `lan_chay["320/1.5"][0]` của artifact `6969fc4`. Ở f182 không có ô nào được vẽ;
+(Ba dòng lấy từ artifact `6969fc4`: f62/f92 ở `lan_chay["320/1.5"][0]`; riêng `hop_gt` của f182 lấy từ
+lần chạy 2 vì entry f182 của lần 1 **không lưu** `hop_gt` (ca "không có ô hiển thị"). Ở f182 không có ô nào được vẽ;
 `cham()` chấm **0,0** — "GT có vật mà không có ô" là bám sai thật, không phải "không đo được".)
 
 Ô ở 320 **đứng yên quanh vị trí ban đầu** (`300,275,150,410`) trong khi chai đã đi chỗ khác ⇒ VOS

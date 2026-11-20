@@ -267,6 +267,9 @@ def cau_hinh_lech(lan: list[dict]) -> tuple[list[dict], list[dict]]:
     return lech, chua
 
 
+SAN_NHIEU = 1e-3      # sàn ngưỡng nhiễu (IoU): dưới mức này không có ý nghĩa đo
+
+
 def so_sanh(a: dict, b: dict) -> dict:
     """So hai cấu hình bằng SỐ, dùng ngưỡng nhiễu = độ lệch chuẩn lớn hơn của hai bên.
 
@@ -274,7 +277,9 @@ def so_sanh(a: dict, b: dict) -> dict:
     """
     a_mean, b_mean = a["iou_mean"]["mean"], b["iou_mean"]["mean"]
     if a_mean is None or b_mean is None:
-        return {"ket_luan": "KHÔNG kết luận: một bên không chấm được frame nào"}
+        return {"chenh_iou": None, "nguong_nhieu": None, "phan_biet_duoc": None,
+                "ket_luan": "KHÔNG kết luận: một bên không có lần chạy HỢP LỆ nào (hoặc không chấm "
+                            "được frame nào)"}
     chenh = round(b_mean - a_mean, 4)
     std_a, std_b = a["iou_mean"].get("std"), b["iou_mean"].get("std")
     if std_a is None or std_b is None:
@@ -283,6 +288,10 @@ def so_sanh(a: dict, b: dict) -> dict:
         return {"chenh_iou": chenh, "nguong_nhieu": None, "phan_biet_duoc": None,
                 "ket_luan": "KHÔNG kết luận: cần ≥ 2 lần chạy mỗi cấu hình để có ngưỡng nhiễu"}
     nhieu = max(float(std_a), float(std_b))
+    # SÀN TUYỆT ĐỐI: `std` đã làm tròn 4 chữ số nên ngưỡng khác 0 nhỏ nhất là 1e-4 ⇒ câu kết luận sẽ
+    # in "(> ngưỡng nhiễu 0.000)". Hai cấu hình TẤT ĐỊNH (std = 0) vẫn phải so được khi chênh lớn
+    # (vd 0,85 vs 0,58) ⇒ dùng sàn thay vì từ chối kết luận (review #64 vòng 2).
+    nhieu = max(nhieu, SAN_NHIEU)
     if nhieu == 0.0:
         # Cả hai bên KHÔNG dao động (3 lần ra y hệt) ⇒ chưa có thước đo nhiễu nào. `max(0,0) = 0` sẽ
         # biến mọi chênh lệch thành "TỐT HƠN/TỆ HƠN (ngưỡng nhiễu 0.000)" — đúng thứ AGENTS §6 cấm,
@@ -420,7 +429,15 @@ def main(argv=None) -> int:
     lech, chua_kiem_duoc = cau_hinh_lech(
         [r for v in theo_cau_hinh.values() for r in v if r["hop_le"]])
     khoa = sorted(tong, key=lambda k: tuple(float(x) for x in k.split("/")))
-    ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) >= 2 else {}
+    hop_le = {nhan[k]: [r for r in v if r["hop_le"]] for k, v in theo_cau_hinh.items()}
+    if len(khoa) > 2:
+        # "Đầu↔cuối" chỉ có nghĩa khi có ĐÚNG 2 cấu hình. Với ≥ 3, cặp đó bỏ qua cấu hình giữa và có
+        # thể là cặp CHÉO GÓC (nhiều trục cùng biến thiên) ⇒ không phát `so_sanh`, dùng `so_sanh_moi_cap`.
+        print(f"[canh-bao] có {len(khoa)} cấu hình ⇒ KHÔNG phát `so_sanh` (đầu↔cuối) vì dễ là cặp "
+              "chéo góc; đọc `so_sanh_moi_cap`.", file=sys.stderr)
+        ss = {}
+    else:
+        ss = so_sanh(tong[khoa[0]], tong[khoa[-1]]) if len(khoa) == 2 else {}
     # MỌI cặp, không chỉ đầu↔cuối: với > 2 cấu hình, "đầu↔cuối" bỏ qua cấu hình giữa VÀ nếu nhiều trục
     # cùng biến thiên thì cặp đó là **chéo góc** (vd mặc định `--max-mad [1.5, 6.0]` + `--vos-every 1 3`
     # ⇒ so `192/1/1.5` với `192/3/6.0` = so hai thứ khác nhau trong cùng một phép). Review #64 bắt.
@@ -431,12 +448,10 @@ def main(argv=None) -> int:
             moi_cap[f"{a_k}|{b_k}"] = {
                 **so_sanh(tong[a_k], tong[b_k]),
                 **{f"theo_cap_{kk}": vv for kk, vv in
-                   so_sanh_theo_cap(theo_cau_hinh[khoa_cua[a_k]],
-                                    theo_cau_hinh[khoa_cua[b_k]]).items()},
+                   so_sanh_theo_cap(hop_le[a_k], hop_le[b_k]).items()},
             }
     # `khoa` là NHÃN ⇒ phải quy về TUPLE bằng `khoa_cua` (dùng `nhan` ở đây là lỗi chiều — đã gặp 2 lần)
-    ss_cap = ({**so_sanh_theo_cap(theo_cau_hinh[khoa_cua[khoa[0]]],
-                                  theo_cau_hinh[khoa_cua[khoa[-1]]]),
+    ss_cap = ({**so_sanh_theo_cap(hop_le[khoa[0]], hop_le[khoa[-1]]),
                "a": khoa[0], "b": khoa[-1]} if len(khoa) >= 2 else {})
 
     from scripts.measure_watchdog import _git_provenance
@@ -463,6 +478,9 @@ def main(argv=None) -> int:
                        "(mask vs GT, chỉ chạy được với vos_every=1 nên không thấy LK)."),
         "cau_hinh_hieu_luc_lech": lech,
         "image_size_chua_kiem_duoc": len(chua_kiem_duoc),
+        # Nếu KHÔNG còn lần chạy hợp lệ nào thì `cau_hinh_hieu_luc_lech == []` và
+        # `image_size_chua_kiem_duoc == 0` đều vô nghĩa — đọc thành "đã khớp" là sai (review #64 vòng 2).
+        "cau_hinh_kiem_duoc": bool(hop_le and any(hop_le.values())),
         "so_lan_chay_loi": so_lan_loi,
         "tong_hop": tong,
         "so_sanh": ss,
@@ -471,8 +489,10 @@ def main(argv=None) -> int:
         "lan_chay": {nhan[k]: [{kk: vv for kk, vv in r.items() if kk != "status"} for r in rs]
                      for k, rs in theo_cau_hinh.items()},
     }
+    # Tên mặc định PHẢI kèm clip + bộ GT: bản đầu chỉ có NGÀY ⇒ mọi phiên cùng ngày ghi đè nhau và
+    # artifact của một phiên đã MẤT (P1 review #64 vòng 1). Không ghi đè tệp đã có.
     out = Path(args.out) if args.out else REPO_ROOT / "data" / (
-        f"ab_o_hien_thi_vs_gt_{datetime.now():%Y-%m-%d}_metrics.json")
+        f"ab_{Path(args.clip).stem}_{Path(args.gt).name}_{datetime.now():%Y-%m-%d}_metrics.json")
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps(artifact, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\n{json.dumps(ss, ensure_ascii=False)}")

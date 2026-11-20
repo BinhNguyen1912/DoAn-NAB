@@ -97,7 +97,18 @@ khớp trước khi ghi (một lần đã trượt vì indent 4 vs 8 dấu cách
 | P2 `lk_ok_frac = 0,0` ở `vos_every=1` bị đọc thành "LK từ chối" | `cham(..., lk_khong_ap_dung=True)` ⇒ `lk_ok_frac = None` + cờ + test; sửa câu trong log này |
 | P2 `chua_kiem_duoc` chỉ ghi số, không cảnh báo | in `[canh-bao] N/M lần chạy CHƯA kiểm được image_size hiệu lực ⇒ lech == [] KHÔNG chứng minh đã khớp` |
 | P2 không test "chèn kẽ"; 2 assert **rỗng** trong test cấu hình | 2 test mới (thứ tự A,B,B,A + `len(set(d.values()))==len(d)`) |
-| P3 `SHOWN_HEADER` dead, `nguon_so` thiếu `max_mad`, lệch `shown.csv` không làm lần chạy hỏng | xoá dead code; thêm `schema: 2` + `nguon_so.max_mad`; lệch dòng ⇒ **loại** lần chạy |
+| P3 `SHOWN_HEADER` dead, `nguon_so` thiếu `max_mad`, lệch `shown.csv` không làm lần chạy hỏng | xoá dead code; thêm `schema: 2` + `nguon_so.max_mad`; lệch dòng ⇒ **loại** khỏi trung bình, **vào `so_lan_chay_loi`** và **`main` exit 1** |
+
+### Vòng 2 của review #64
+
+| Reviewer nêu | Xử lý |
+|---|---|
+| **P1**: dòng 1 bảng §4.1 của log `cham-o-hien-thi…` trích số **không có trong cây**, không nói rõ | cảnh báo ngay trên bảng ("KHÔNG tái lập được"); sửa cả câu ở `chot-max-mad` §8 |
+| P2 `so_sanh_theo_cap` nhận list **chưa lọc** ⇒ lần chạy vừa bị loại vẫn vào `theo_cap_*` (mâu thuẫn chính bản vá) | truyền `hop_le[...]`; test mới **đỏ đúng** khi hoàn lại lỗi cũ |
+| P2 ngưỡng nhiễu `1e-4` vẫn in "(> ngưỡng nhiễu 0.000)" | thêm `SAN_NHIEU = 1e-3`; hai cấu hình **tất định** mà chênh lớn **vẫn so được** |
+| P2 `so_sanh` vẫn là đầu↔cuối ⇒ ≥3 cấu hình dễ là cặp chéo góc | chỉ phát khi đúng 2 cấu hình; ≥3 ⇒ cảnh báo + dùng `so_sanh_moi_cap` |
+| P2 tên tệp mặc định vẫn `ab_o_hien_thi_vs_gt_<NGÀY>` (đúng cơ chế đã làm mất artifact) | tên mặc định nay kèm **clip + bộ GT** |
+| P3 test "so mọi cặp" chỉ có 2 cấu hình; `so_sanh` thiếu khoá ở nhánh "không chấm được"; mọi lần chạy hỏng vẫn `lech == []` | test 3 cấu hình (3 cặp) + test có lần chạy hỏng; `so_sanh` luôn đủ 4 khoá; thêm `cau_hinh_kiem_duoc` |
 
 Ghi chú phạm vi: `image_size_chua_kiem_duoc = 0` ở **cả 3 artifact** hôm nay, nhưng artifact `891f4f5`
 (`max_mad`) sinh **trước** tính năng đối chiếu `image_size` ⇒ với nó `cau_hinh_hieu_luc_lech == []` chỉ

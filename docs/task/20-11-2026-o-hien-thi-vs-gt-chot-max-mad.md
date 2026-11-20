@@ -38,6 +38,9 @@ KHÔNG còn trong cây**, xem ĐÍNH CHÍNH ở cuối mục 8
 - **Theo cặp** (21 cặp, `can_bo_cap False`): 6,0 tốt hơn **7**, 1,5 tốt hơn
   **8**, bằng **6**; chênh trung bình **-0.0109**, cặp tốt nhất
   **+0.1774**, cặp tệ nhất **-0.4021** ⇒ **không có chiều thắng nhất quán**.
+> ⚠ Bảng + `git_rev 0e84260` ở trên **không kiểm lại được từ cây** (artifact bị phiên `b1b` ghi đè
+> cùng đường dẫn — xem §8). Quyết định giữ 1,5 dựa trên **sáu phiên có dấu đổi chiều**, không dựa riêng bảng này.
+
 - **BỐN lần A/B cho cùng kết luận "không phân biệt được"**, và **dấu của chênh lệch đổi chiều**
   (+0,032/nhiễu 0,065 · +0,003/0,051 · +0,018/0,031 · **-0.0109/0.0308**) ⇒
   chênh lệch nằm trong nhiễu, không phải hiệu ứng của cấu hình. Chi tiết từng lần chạy cũng đổi (lần thì
@@ -114,7 +117,8 @@ Reviewer đối chiếu cả cây và phát hiện: **artifact của phiên này
   **ngược chiều** (`so_sanh = "ô hiển thị TỐT HƠN 0.029 IoU"`, chênh +0,0287 / nhiễu 0,0218) vì đó là
   **phiên khác** (bộ GT `b1b`, 7 frame giữa khe).
 - Quyết định **giữ `DEFAULT_MAX_MAD = 1,5` KHÔNG đổi**: nó dựa trên **bốn phiên độc lập** có dấu chênh
-  đổi chiều (+0,032 / +0,003 / +0,018 / −0,0109) — và phiên thứ năm cùng ngày (`b1b`: +0,020 ≤ 0,034)
+  đổi chiều (+0,032 / +0,003 / +0,018 / −0,0109) — và phiên thứ năm cùng ngày (`b1b`: +0,020 ≤ 0,034,
+  chạy trên cây BẨN và artifact của nó **cũng đã bị ghi đè**; chỉ là đối chứng, không trích như số đo tái lập được)
   cũng nằm trong nhiễu, còn phiên thứ sáu (`b1b` cây sạch: +0,029 > 0,022) nói "tốt hơn". **Sáu phiên
   không cho một chiều nhất quán ⇒ không chứng minh được**, đúng kết luận cũ.
 - Bài học (đã áp dụng ngay): đặt tên artifact kèm **clip + bộ GT**

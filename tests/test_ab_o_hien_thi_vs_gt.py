@@ -314,8 +314,14 @@ def test_so_sanh_KHONG_ket_luan_khi_ca_hai_std_bang_0():
     b = {"iou_mean": {"mean": 0.8461, "std": 0.0}, "iou_min": {"mean": 0.8, "std": 0.0},
          "lk_ok_frac": {"mean": 0.0, "std": 0.0}}
     r = so_sanh(a, b)
-    assert r["phan_biet_duoc"] is None and "KHÔNG kết luận" in r["ket_luan"]
-    assert r["nguong_nhieu"] == 0.0
+    # Chênh 0,0001 < sàn 1e-3 ⇒ không phân biệt được, và KHÔNG được in "(> ngưỡng nhiễu 0.000)"
+    assert r["phan_biet_duoc"] is False and r["nguong_nhieu"] > 0
+    assert "0.000)" not in r["ket_luan"]
+    # Nhưng hai cấu hình TẤT ĐỊNH mà chênh LỚN (0,846 vs 0,58) thì vẫn phải kết luận được
+    c = {"iou_mean": {"mean": 0.58, "std": 0.0}, "iou_min": {"mean": 0.3, "std": 0.0},
+         "lk_ok_frac": {"mean": 0.1, "std": 0.0}}
+    r2 = so_sanh(a, c)
+    assert r2["phan_biet_duoc"] is True
 
 
 def test_cham_KHONG_bao_lk_ok_frac_khi_vos_every_1():
@@ -368,3 +374,75 @@ def test_chay_ken_vong_le_dao_chieu_va_moi_cap_duoc_so(monkeypatch, tmp_path):
     # (b) 2 cấu hình ⇒ 1 cặp, và cặp đó đúng là cặp không chéo góc
     assert list(d["so_sanh_moi_cap"]) == ["192/3/1.5|320/3/1.5"]
     assert d["nguon_so"]["max_mad"] == [1.5] and d["schema"] == 2
+
+
+def test_so_sanh_luon_tra_du_bon_khoa():
+    """Consumer đọc `chenh_iou`/`nguong_nhieu`/`phan_biet_duoc` — nhánh "không chấm được" từng trả
+    dict THIẾU khoá (KeyError cho bên đọc). Review #64 vòng 2."""
+    from scripts.ab_o_hien_thi_vs_gt import so_sanh
+    r = so_sanh({"iou_mean": {"mean": None, "std": None}}, {"iou_mean": {"mean": 0.5, "std": 0.1}})
+    assert set(r) >= {"chenh_iou", "nguong_nhieu", "phan_biet_duoc", "ket_luan"}
+    assert r["phan_biet_duoc"] is None and "HỢP LỆ" in r["ket_luan"]
+
+
+def test_so_sanh_moi_cap_khi_ba_cau_hinh_va_khong_cap_cheo_goc(monkeypatch, tmp_path, capsys):
+    """3 cấu hình ⇒ 3 cặp (không phải 1) và `so_sanh` đầu↔cuối KHÔNG được phát (dễ chéo góc)."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 7, "n_gt_co_vat": 7,
+           "khong_do_duoc": 0, "thieu_frame": [], "lk_khong_ap_dung": False,
+           "theo_frame": [{"frame_idx": 2, "iou": 0.5, "lk_ok": False}]}
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, frames, out_dir):
+        return {"shown": str(tmp_path / "s.csv"), "so_dong_shown": 8, "ma_thoat": 0, "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "cham", lambda _g, _s, **_kw: ham)
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    out = tmp_path / "a.json"
+    assert ab.main(["--gt", "g", "--clip", "c.mp4", "--bbox", "0,0,10,10", "--image-size", "192",
+                    "--vos-every", "1", "2", "3", "--max-mad", "1.5", "--lan", "2",
+                    "--out", str(out)]) == 0
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert len(d["so_sanh_moi_cap"]) == 3, d["so_sanh_moi_cap"].keys()
+    assert "192/1/1.5|192/3/1.5" in d["so_sanh_moi_cap"]
+    assert d["so_sanh"] == {}                       # không phát cặp đầu↔cuối khi > 2 cấu hình
+    assert "chéo góc" in capsys.readouterr().err
+    assert d["cau_hinh_kiem_duoc"] is True
+
+
+def test_so_sanh_theo_cap_chi_ghep_lan_chay_HOP_LE(monkeypatch, tmp_path):
+    """Lần chạy bị loại KHÔNG được vào cặp: nếu lọt, `can_bo_cap` báo sai là cân (3 vs 3) trong khi
+    thực tế 3 vs 2 — đúng bản vá `hop_le` bị chính phần ghép cặp phá (review #64 vòng 2)."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 7, "n_gt_co_vat": 7,
+           "khong_do_duoc": 0, "thieu_frame": [], "lk_khong_ap_dung": False,
+           "theo_frame": [{"frame_idx": 2, "iou": 0.5, "lk_ok": False}]}
+    dem = {"n": 0}
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, frames, out_dir):
+        dem["n"] += 1
+        hong = dem["n"] == 4                     # lần thứ 4 (vòng 2, cấu hình đầu) hỏng
+        return {"shown": str(tmp_path / "s.csv"),
+                "so_dong_shown": 8 if not hong else 0,
+                "ma_thoat": 0 if not hong else 1, "state": "stopped" if not hong else "error",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "cham", lambda _g, _s, **_kw: ham)
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    out = tmp_path / "a.json"
+    rc = ab.main(["--gt", "g", "--clip", "c.mp4", "--bbox", "0,0,10,10", "--image-size", "192", "320",
+                  "--vos-every", "3", "--max-mad", "1.5", "--lan", "2", "--out", str(out)])
+    assert rc == 1, "có lần chạy hỏng ⇒ exit 1"
+    d = json.loads(out.read_text(encoding="utf-8"))
+    cap = d["so_sanh_moi_cap"]["192/3/1.5|320/3/1.5"]
+    # 192 có 1/2 lần hỏng, 320 đủ 2 ⇒ cặp phải khai KHÔNG CÂN. Nếu lần hỏng lọt vào cặp thì sẽ là 2 vs 2
+    # và `can_bo_cap = False` (im lặng) — đúng lỗi review #64 vòng 2 bắt.
+    assert cap["theo_cap_so_lan_a"] == 1 and cap["theo_cap_so_lan_b"] == 2
+    assert cap["theo_cap_can_bo_cap"] is True
+    assert d["so_lan_chay_loi"] == {"192/3/1.5": 1, "320/3/1.5": 0}
