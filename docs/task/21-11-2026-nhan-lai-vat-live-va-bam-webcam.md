@@ -86,10 +86,12 @@ artifact**; `shown` trong CSV cũng ghi "không có ô" khi đã ẩn. Chuỗi �
 ### Số đo (máy này, CPU; artifact trong commit message + `data/o_ma_binh2_2026-11-21_metrics.json`)
 | Đo | Số | Ghi chú |
 |---|---|---|
-| `bam_no_evidence_n` (`binh2`, 400 frame, @192, `vos_every 3`) | **72** frame | dải **175–340**, đúng đoạn vật ra khỏi khung |
-| Frame **có ô** trong 72 frame `no_evidence` | **0** | tiêu chí nghiệm thu P4 ✓ |
+| `bam_no_evidence_n` (`binh2`, 400 frame, @192, `vos_every 3`, **mã đã sửa sau review**) | **67** frame | 333 frame `tracking`; `vos_runs = 112`, display 29,7 FPS |
+| Frame **có toạ độ ô** trong 67 frame `no_evidence` | **0** | đo bằng cột 12 `bam` + `dem_o_khi_khong_bang_chung()` |
+| `n_no_evidence` / `n_co_o_khi_no_evidence` (artifact `data/o_ma_binh2_2026-11-21_metrics.json`, **3 lần**, `git_dirty_code=false`, `git_rev c0f1d89`) | **86 / 75 / 80** và **0 / 0 / 0** | nay kiểm lại được từ artifact, không chỉ nằm trong commit message |
+| Frame `gt_rong` sau khi sửa (lần đo 400 frame) | 196, 294, 326 **không còn ô**; **359 vẫn có ô** | nợ ticket #42 |
 | Frame có ô (toàn phiên) | 320/400 | `empty_runs = 25`, `vos_runs = 107` |
-| `ty_le_o_ma` (4 frame `gt_rong`) | `n_gt_rong = 4`, `n_co_o_tren_rong = **1**` (lần đo trước khi có `bam`) | `ty_le_n = 4 < 30` ⇒ **chỉ báo ĐẾM** |
+| `ty_le_o_ma` (4 frame `gt_rong`, 3 lần chạy trên cây sạch) | `n_gt_rong = 4`, `n_co_o_tren_rong = 1`, `n_o_hong = 0`, `n_khong_o = 3` | `ty_le = **None**` vì `ty_le_n = 4 < 30` ⇒ **chỉ báo ĐẾM** (đã sửa: trước trả 0,25) |
 | Sau khi có `bam`: frame `gt_rong` 294, 326 | **không còn ô** ✓ | 196 và **359 vẫn có ô** ⇒ `ty_le_o_ma` **không** về 0 |
 | `run demoip` dòng khởi động | `ncc_min=0.35` | đúng như thiết kế mong đợi |
 | `binh2`, 30 frame @192 có `--reid-obj-ncc-min 0.35` | mean **118 ms**, p95 **147 ms** | khớp trần CPU đã biết |
@@ -97,8 +99,9 @@ artifact**; `shown` trong CSV cũng ghi "không có ô" khi đã ẩn. Chuỗi �
 
 ### Kiểm tra tự động
 - `./run lint` = **All checks passed**
-- `./run test` = **1607 passed**, 5 deselected
-- `./run webtest` = **77 passed** (5 test mới cho `bamLine`)
+- `./run test` = **1621 passed**, 5 deselected
+- `./run webtest` = **77 passed** (test cho `bamLine`, gồm ca `n = 0` và lý do lạ)
+- `./run e2e` = **PASS** (thêm 3 ca `bam`: hiện dòng cảnh báo `role=alert` khi `no_evidence`, im khi `tracking`)
 - `npm run build` = OK (163,94 kB)
 
 ### File thay đổi
@@ -107,10 +110,39 @@ artifact**; `shown` trong CSV cũng ghi "không có ô" khi đã ẩn. Chuỗi �
 - `run` — `demoip`/`fast` bật `--reid-obj-ncc-min 0.35`
 - `tools/run_live.py` — in `ncc_min` trong dòng `[re-ID]`
 - `src/live_tracking.py` — `bam` + `_cap_nhat_bang_chung` + ẩn ô/mask/quỹ đạo + HUD + cột 12 CSV + 3 khoá status
+  + tách `obs_bbox`/`shown`, `raw_lost`, thứ tự `bam` trước `shown`
+- `src/visualizer.py` + `tests/test_visualizer.py` — CLI **cũng** không vẽ ô/mask/quỹ đạo khi mất dấu (dùng chung
+  `_BAM_NO_EVIDENCE_FRAMES`); trước đó banner "MAT DAU" vẫn đi kèm một ô bao = hai câu nói ngược nhau
+- `src/drift_samples.py` — cột 15 `bam` (CSV cũ 14 cột vẫn đọc được), `read_samples` trả `bam`
 - `src/api/{domain,adapters/worker_source,schemas,routes}.py` — `bam`/`bam_ly_do`/`bam_no_evidence_n`
 - `web/src/{api.ts,live.ts,components/LivePanel.tsx}` — `bamLine()` + dòng cảnh báo `role="alert"`
 - `scripts/ab_o_hien_thi_vs_gt.py` — `gt_rong_cua`, `ty_le_o_ma`, `schema` 7
 - `tests/{test_reid,test_live_tracking,test_api_live,test_ab_o_hien_thi_vs_gt}.py`, `web/src/live.test.ts`
+
+## 🔍 Review độc lập (AGENTS §9.1) — 4 P1 + 6 P2, đã sửa hết
+
+Agent `reviewer` độc lập đọc `git diff` + code, kết luận **"CHƯA merge được: 4 P1"** — và **đúng cả 4**:
+
+| P1 | Vấn đề | Đã sửa |
+|---|---|---|
+| 1 | **Ẩn ô làm MẤT MẪU drift ở đúng frame xấu nhất** (`shown = None` được dùng luôn cho drift) ⇒ `drift_iou`/`p05`/`suc_khoe` **tự đẹp lên** sau 21-11, mọi so sánh với số cũ là so hai quần thể khác nhau | Tách `obs_bbox` (ô QUAN SÁT — drift chấm trên nó, định nghĩa **giữ nguyên như trước 21-11**) khỏi `shown` (ô ĐÃ VẼ); CSV drift thêm cột `bam` để **lọc**, không che. Test: engine trả mask rỗng + bbox hợp lệ ⇒ dòng drift của frame `no_evidence` **vẫn có** |
+| 2 | `ty_le` bỏ `n_o_hong` khỏi **cả tử lẫn mẫu số** ⇒ hệ vẽ ô **hỏng** trên frame rỗng được điểm tốt hơn hệ vẽ ô bình thường | `ty_le = (co_o + hong) / (co_o + hong + khong_o)`; test cũ khoá hành vi sai đã sửa (`ty_le_n` 3 → 4) |
+| 3 | Tiêu chí "0 frame có ô khi no_evidence" **không kiểm lại được** (cột `bam` write-only) và trên `binh2` còn **tautology** (mask rỗng ⇒ bbox `(0,0,0,0)` ⇒ tự động không toạ độ) | `doc_shown` đọc cột 12; `dem_o_khi_khong_bang_chung()` → `cham.o_khi_khong_bang_chung`; CSV cũ ⇒ `do_duoc = None` (chưa đo). Bằng chứng **phân biệt được** là test dùng **bbox hợp lệ + mask rỗng** |
+| 4 | Artifact có **`git_dirty_code = true`** và `git_rev` = `origin/main` ⇒ số của mã **khác** mã đang review | Đo lại trên cây sạch ở tip nhánh: `git_dirty_code = false`, `git_rev = c0f1d89`, `schema 7`, 3 lần chạy |
+
+Sáu P2 đã sửa: **off-by-one** (`shown` tính bằng `bam` của frame TRƯỚC ⇒ CSV và ảnh lệch nhau đúng frame chuyển
+trạng thái); **`mask_smoothing`** (`lost` đo trên mask đã làm mượt ⇒ `MaskSmoother` giữ mask cũ 2 chu kỳ, nay có
+`raw_lost` gắn lên chính object kết quả — **không** ghi vào `self` vì `_smooth` chạy ở luồng VOS); **thiếu test DTO**
+(xoá `bam=status.bam` trước đây vẫn xanh 1607 test ⇒ thêm 3 test adapter + route); **`lk_tu_choi` không tồn tại**
+(backend không bao giờ phát, test cũ khoá trạng thái ma); **`ty_le` trả số khi n < 30** (nay `None` +
+`ty_le_du_mau`); **`./run e2e` chưa chạy** (nay chạy + thêm ca `data-testid="bam-no-evidence"`).
+
+P3 đã sửa: frame **đầu tiên** mất bằng chứng không còn báo `tracking`; web không in "0 frame mất bằng chứng";
+CLI dùng **chung** `_BAM_NO_EVIDENCE_FRAMES` (trước: CLI ẩn ngay frame đầu, worker dung sai 2 ⇒ hai đường demo
+khác nhau); `bam: str | None` ở DTO (giá trị lạ trong `status.json` không làm 500); test ghim `_last_center`
+(nửa vá trước đây **không** test nào phủ — xoá vẫn xanh, nay mutant bị bắt).
+P3 **chưa** sửa (ghi nợ): `refs_n`, `reacq_score`, "0 `drift_trend` trong 3 s sau cụm `reacquired`" — 3 vế nghiệm
+thu của P4 trong plan phụ thuộc việc **port re-ID** (P5) nên chưa có trong `status_payload`.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 1. **Luật "mất bằng chứng" đầu tiên SAI và đo được là sai**: coi `lk_ok = False` là mất bằng chứng ⇒ báo oan

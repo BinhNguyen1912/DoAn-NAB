@@ -366,6 +366,38 @@ async function waitJobState(page, wanted, timeout = 240000) {
     await liveCard.getByTestId('suc-khoe-line').count() === 0,
     `số dòng = ${await liveCard.getByTestId('suc-khoe-line').count()}`)
 
+  // "Có bằng chứng về vật" (21-11, plan P4): `state` = running KHÔNG có nghĩa là đang bám. Ba trạng
+  // thái phải phân biệt được trên trình duyệt thật — mock route chỉ chứng minh được phần HIỂN THỊ,
+  // phần DTO đã có test Python riêng (`TestBamXuyenTang`) vì e2e mock `**/api/live/status`.
+  for (const [bam, lyDo, phaiHien, phaiCo] of [
+    ['no_evidence', 'mask_rong', true, /Không có bằng chứng/],
+    ['tracking', null, false, null],
+  ]) {
+    await page.unroute('**/api/live/status')
+    await page.route('**/api/live/status', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'stub', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: { co: 'ok', p05: 0.82, n: 40, empty_frac: 0,
+            cua_so: 30, nguong_vao: 0.3, nguong_ra: 0.45 }, suc_khoe_cau: null,
+          bam, bam_ly_do: lyDo, bam_no_evidence_n: bam === 'no_evidence' ? 67 : 0 }) })
+    })
+    await page.waitForTimeout(1300)
+    const so = await liveCard.getByTestId('bam-no-evidence').count()
+    if (phaiHien) {
+      const chu = ((await liveCard.getByTestId('bam-no-evidence').textContent().catch(() => '')) || '')
+        .replace(/\s+/g, ' ')
+      check('HUD báo "không có bằng chứng về vật" khi bam=no_evidence', so === 1 && phaiCo.test(chu),
+        chu || '(không thấy dòng nào)')
+      const lop = await liveCard.getByTestId('bam-no-evidence').getAttribute('class').catch(() => '')
+      check('dòng "không có bằng chứng" là CẢNH BÁO (role=alert), không phải gợi ý',
+        String(lop).includes('error'), `class=${lop}`)
+    } else {
+      check('bam=tracking ⇒ KHÔNG hiện dòng "không có bằng chứng" (không báo oan)', so === 0,
+        `số dòng = ${so}`)
+    }
+  }
+
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 
