@@ -439,19 +439,28 @@ class TestFramesTraiDeu:
 
 # --- chọn frame "GIỮA KHE" (thay cho dãy --frames dài, xem lý do trong scripts/gt_gan_nhanh.py) ---
 def test_frames_giua_khe_dung_dong_du_va_cach_deu():
+    """Golden: dãy mốc của binh1 (333 frame, ve=3). Đổi công thức ⇒ test này đỏ CÓ CHỦ Ý.
+
+    Đây là bản golden DUY NHẤT của dãy mốc; test ghép `--khung` bên dưới suy ra từ đây.
+    """
     from scripts.gt_gan_nhanh import frames_giua_khe
     ra = frames_giua_khe(333, n=12, vos_every=3)
     assert ra == [2, 32, 62, 92, 122, 152, 182, 212, 242, 272, 302, 332]
-    # Mọi frame phải ≡ vos_every-1 (mod vos_every): đó là frame XA mốc VOS nhất
-    assert all(f % 3 == 2 for f in ra)
+    assert all(f % 3 == 2 for f in ra)     # ≡ ve-1 ⇒ CHẮC CHẮN không phải frame VOS
 
 
 def test_frames_giua_khe_khong_bao_gio_dung_vao_frame_co_vos():
-    """Nếu lọt frame chia hết cho vos_every thì ô là của MODEL, không phải LK ⇒ mất ý nghĩa phép đo."""
+    """Nếu lọt frame chia hết cho vos_every thì ô là của MODEL, không phải LK ⇒ mất ý nghĩa phép đo.
+
+    `assert ra` là BẮT BUỘC: thiếu nó thì hàm trả [] làm vòng `for` không chạy ⇒ test xanh rỗng
+    (review độc lập 20-11 chỉ đúng). Thêm ve=7/11/12/20 để khoá luôn hành vi làm tròn bước
+    (ve=7 ⇒ 28, ve=11 ⇒ 33, ve=12 ⇒ 24, ve=20 ⇒ 40 — bước phải là bội của ve, không phải luôn 30).
+    """
     from scripts.gt_gan_nhanh import frames_giua_khe
-    for ve in (2, 3, 4, 5):
-        for f in frames_giua_khe(200, n=8, vos_every=ve):
-            assert f % ve == ve - 1, (ve, f)
+    for ve in (2, 3, 4, 5, 7, 11, 12, 20):
+        ra = frames_giua_khe(200, n=8, vos_every=ve)
+        assert ra, f"ve={ve} trả rỗng — test sẽ xanh rỗng"
+        assert all(f % ve == ve - 1 for f in ra), (ve, ra)
 
 
 def test_frames_giua_khe_bien_vo_huong():
@@ -486,3 +495,53 @@ def test_giua_khe_cong_khung_binh1_ra_dung_7_moc():
               if any(a <= f <= b for a, b in parse_khung("0:110,165:262"))]
     assert frames == [2, 32, 62, 92, 182, 212, 242]
     assert all(f % 3 == 2 for f in frames)      # vẫn giữa khe: ô hoàn toàn do LK
+
+
+# --- `loc_theo_khung`: khoá HỒI QUY lỗi "lọc trước khi sinh danh sách" (20-11) + lỗi ra traceback ---
+def test_loc_theo_khung_loc_sau_khi_sinh_va_giu_hai_dau():
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    # 2, 32, 92 nằm trong 0:110 — KHÔNG được lọc trước khi có danh sách (bản đầu lọc trước ⇒ luôn rỗng)
+    assert loc_theo_khung([2, 32, 92, 182, 242], "0:110,165:262") == [2, 32, 92, 182, 242]
+    assert loc_theo_khung([0, 110], "0:110") == [0, 110]      # gồm CẢ HAI đầu
+    assert loc_theo_khung([7], "7:7") == [7]                  # khung 1 frame
+    assert loc_theo_khung([5, 6], None) == [5, 6]             # không khung ⇒ nguyên vẹn
+    assert loc_theo_khung([], None) == []
+
+
+def test_loc_theo_khung_giao_rong_thi_LOI_chu_khong_roi_ve_mac_dinh():
+    """Rơi về bộ 12-frame-trải-đều là bẫy: người dùng tưởng đang chấm frame giữa khe, thực ra lẫn cả
+    frame CÓ VOS ⇒ phép đo max_mad vô nghĩa mà không ai biết (P1 review độc lập 20-11)."""
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    with pytest.raises(SystemExit):
+        loc_theo_khung([100, 200], "0:50")
+
+
+def test_loc_theo_khung_chuoi_sai_ra_LOI_chu_khong_phai_traceback():
+    """`--khung` là thứ người dùng GÕ TAY; ValueError thô = traceback Python = UX hỏng."""
+    from scripts.gt_gan_nhanh import loc_theo_khung
+    # `pytest.raises(SystemExit)` đã chứng minh không lọt ValueError thô: SystemExit bắt được còn
+    # ValueError thì test sẽ đỏ. (Bản trước gọi thêm lần hai để "kiểm ValueError" — chính lần gọi đó
+    # làm SystemExit bắn ra ngoài và test đỏ.)
+    for xau in ("110:0", "1:2:3", "0:110 165:262", "-1:5"):
+        with pytest.raises(SystemExit):
+            loc_theo_khung([1], xau)
+
+
+# --- P1 review: CLI không được ÂM THẦM rơi về bộ frame mặc định ---
+def test_main_tu_choi_vos_every_1_khi_dung_giua_khe(tmp_path, monkeypatch):
+    """`--vos-every 1` = đúng cấu hình phiên mIoU của repo ⇒ rất dễ gặp. Hàm thuần trả [] nên CLI
+    phải BÁO LỖI, không được lặng lẽ đổi sang 12 frame trải đều (frame đó lẫn frame có VOS)."""
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit) as loi:
+        gt.main(["--clip", "khong_ton_tai.mp4", "--ten", "t1", "--nguoi-gan", "x",
+                 "--giua-khe", "--vos-every", "1"])
+    assert "vos-every" in str(loi.value)
+    assert not (tmp_path / "t1").exists(), "không được tạo thư mục GT khi đã báo lỗi"
+
+
+def test_main_tu_choi_giua_khe_0(tmp_path, monkeypatch):
+    from scripts import gt_gan_nhanh as gt
+    monkeypatch.setattr(gt, "GT_DIR", tmp_path)
+    with pytest.raises(SystemExit):
+        gt.main(["--clip", "khong_ton_tai.mp4", "--ten", "t2", "--nguoi-gan", "x", "--giua-khe", "0"])

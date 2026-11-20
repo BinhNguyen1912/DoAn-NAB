@@ -109,7 +109,7 @@ def doc_frame_tu_ten(ten: str):
 
 
 def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
-                co_goi_y: bool, frame_hw=None, gt_rong=()) -> Path:
+                co_goi_y: bool, frame_hw=None, gt_rong=(), chon_frame=None) -> Path:
     """`index.json` khai ĐÚNG nguồn GT — thiếu/sai khoá này thì `score_miou` cảnh báo hoặc từ chối.
 
     `frame_hw` **bắt buộc phải có**: `score_miou.kiem_index` và `gt_check_silhouette` đều **bỏ qua im
@@ -162,6 +162,10 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
         **({"phuong_phap_gt": ("GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; "
                                "sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ "
                                "hoàn toàn")} if co_goi_y else {}),
+        # CÁCH CHỌN FRAME phải nằm trong index: `score_miou` chỉ copy `nguon_gt`/`phuong_phap_gt`
+        # vào artifact, nên khoá riêng KHÔNG đi theo con số. Không có nó thì không chứng minh được
+        # "7 frame này là GIỮA KHE" khi soi lại artifact (AGENTS §6: artifact tự khai điều kiện đo).
+        "chon_frame": chon_frame or cu.get("chon_frame"),
         "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
         "tao_luc": datetime.now().isoformat(timespec="seconds"),
         "huong_dan": ("Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được "
@@ -169,7 +173,8 @@ def _viet_index(gt_dir: Path, *, clip: str, ten: str, frames, nguoi_gan: str,
     }
     # Khoá ngữ nghĩa do NGƯỜI VIẾT ĐẦU quyết định: chạy lại không được viết lại nguồn/phương pháp của
     # những frame đã gán (vd lần đầu tô tay, lần sau dùng gợi ý màu ⇒ hai phương pháp trong một bộ).
-    for khoa in ("dang_gt", "nguon_gt", "phuong_phap_gt", "sai_so_bo_goi_y", "nguoi_gan"):
+    for khoa in ("dang_gt", "nguon_gt", "phuong_phap_gt", "sai_so_bo_goi_y", "nguoi_gan",
+                 "chon_frame"):
         if cu.get(khoa) is not None:
             index[khoa] = cu[khoa]
     for khoa, gia in cu.items():                     # giữ khoá lạ (dung_duoc/ly_do_khong_dung/canh_bao…)
@@ -349,6 +354,29 @@ def parse_khung(text: str) -> list[tuple[int, int]]:
     return ra
 
 
+def loc_theo_khung(frames, text, *, ten_clip: str = "") -> list[int]:
+    """Sinh xong → lọc theo khung; giao RỖNG thì **báo lỗi**, không rơi về bộ mặc định.
+
+    Vì sao phải là hàm riêng: bản đầu đặt phép lọc **trước** khi sinh danh sách ⇒ danh sách còn rỗng
+    ⇒ `--khung` luôn báo "lọc hết frame" (lần chạy thử 20-11 bắt được). Tách ra để test khoá đúng thứ
+    tự đó mà không cần dựng clip.
+    """
+    frames = [int(f) for f in frames]
+    if not text:
+        return frames
+    try:
+        khung = parse_khung(text)
+    except ValueError as exc:      # người dùng gõ tay: phải ra "[LOI]", không phải traceback Python
+        raise SystemExit(f"[LOI] --khung {text!r}: {exc}") from None
+    ra = [f for f in frames if any(a <= f <= b for a, b in khung)]
+    bo = [f for f in frames if f not in set(ra)]
+    if bo:
+        print(f"[khung] bỏ {len(bo)} frame ngoài {text}: {bo}")
+    if not ra:
+        raise SystemExit(f"[LOI] --khung {text} lọc hết frame — kiểm lại mốc/khoảng")
+    return ra
+
+
 def frames_giua_khe(so_frame: int, n: int = 12, vos_every: int = 3, buoc: int = 30) -> list[int]:
     """`n` frame nằm **giữa khe** VOS — `frame ≡ (vos_every-1) mod vos_every`, cách nhau `buoc`.
 
@@ -398,14 +426,20 @@ def main(argv=None) -> int:
     # lệnh (gặp thật 2 lần liên tiếp). Lệnh ngắn thì không còn cửa cho lỗi đó.
     parser.add_argument("--frames", default="",
                         help='danh sách frame_idx, vd "0,50,120"; bỏ trống = 12 frame trải đều clip')
-    # Thay cho việc gõ dãy frame dài: chọn thẳng các frame "GIỮA KHE" (sau lần VOS cuối cùng của một
-    # chu kỳ) — chỗ ô hiển thị do HOÀN TOÀN LK quyết định, tức chỗ duy nhất thử được tham số LK.
+    # Thay cho việc gõ dãy frame dài (~30 ký tự số làm terminal wrap ngay sau `--frames`).
+    #
+    # Chọn frame ≡ (vos_every-1) mod vos_every vì pipeline chạy VOS ở frame chia hết cho `vos_every`
+    # (`live_tracking.py`: `_frame_index % every == 0`) ⇒ frame này CHẮC CHẮN không phải frame VOS, ô
+    # hiển thị là nội suy từ mốc VOS gần nhất **cách nó vos_every-1 frame**. Lưu ý: frame ≡ 0 cũng đang
+    # phát ô nội suy (từ lần VOS TRƯỚC, cách vos_every frame, vì VOS về muộn hơn nhịp phát) ⇒ đây là
+    # "chắc chắn không phải frame VOS", KHÔNG phải định lý "xa mốc nhất". LK luôn được gọi đúng MỘT
+    # lần/frame và reset mốc về frame VOS ⇒ đại lượng thử được là KHOẢNG CÁCH, không phải "số bước".
     # Vì sao cần cờ này: dãy `--frames 2,32,62,…` dài ~30 ký tự làm terminal (~105 cột) chèn XUỐNG
     # DÒNG ngay sau `--frames` ⇒ `argument --frames: expected one argument` (gặp thật 3 lần, 19–20-11).
     parser.add_argument("--giua-khe", nargs="?", type=int, const=12, default=None,
                         metavar="N",
-                        help="chọn N frame (mặc định 12) nằm GIỮA KHE VOS, cách nhau 30 frame — "
-                             "dùng thay cho --frames khi muốn thử chất lượng nội suy LK")
+                        help="chọn N frame (mặc định 12) nằm GIỮA KHE VOS (≡ vos_every-1 mod vos_every), "
+                             "cách nhau ~30 frame nhưng LUÔN là bội của vos_every (ve=4 ⇒ 32, ve=7 ⇒ 28)")
     # Lọc theo KHUNG FRAME — bắt buộc khi vật ra khỏi khung giữa clip: GT ở đó là mask RỖNG, chấm
     # vào chỉ tốn công tô mà không đo được gì (binh1: chai chỉ có trong 0:110 và 165:262).
     parser.add_argument("--khung", default=None, metavar="a:b[,c:d]",
@@ -422,23 +456,33 @@ def main(argv=None) -> int:
     parser.add_argument("--chi-sinh", action="store_true", help="chỉ cắt frame + sinh gợi ý, không mở server")
     args = parser.parse_args(argv)
 
+    # Validate sớm: `--vos-every 1` (đúng cấu hình phiên mIoU của repo) làm `frames_giua_khe` trả []
+    # ⇒ nếu không chặn, code rơi xuống `frames_trai_deu` **im lặng** và người dùng tô GT ở frame lẫn cả
+    # frame CÓ VOS ⇒ bộ mẫu vô nghĩa cho phép đo max_mad mà không ai biết (review độc lập 20-11, P1).
+    if args.giua_khe is not None and int(args.giua_khe) < 1:
+        raise SystemExit(f"[LOI] --giua-khe {args.giua_khe}: N phải ≥ 1")
+    if args.giua_khe is not None and int(args.vos_every) < 2:
+        raise SystemExit(f"[LOI] --vos-every {args.vos_every}: cần ≥ 2 mới có 'khe' (mọi frame đều do "
+                         "model ⇒ dùng --frames thay vì --giua-khe)")
+
     frames = [int(v) for v in str(args.frames).replace(";", ",").split(",") if v.strip()]
+    chon_frame = {"frames": list(frames)} if frames else None
+    if frames and args.giua_khe is not None:
+        print("[canh-bao] bỏ qua --giua-khe/--vos-every vì đã có --frames")
     if not frames and args.giua_khe is not None:
         frames = frames_giua_khe(so_frame_cua_clip(args.clip), n=int(args.giua_khe),
                                  vos_every=int(args.vos_every))
+        chon_frame = {"giua_khe": int(args.giua_khe), "vos_every": int(args.vos_every)}
+        if not frames:
+            raise SystemExit(f"[LOI] --giua-khe {args.giua_khe} với --vos-every {args.vos_every} sinh "
+                             f"0 frame (clip có dài hơn {int(args.vos_every) - 1} frame không?)")
     if not frames:
         frames = frames_trai_deu(so_frame_cua_clip(args.clip))
-    # Lọc khung SAU khi đã sinh danh sách (trước đây đặt trước ⇒ danh sách còn rỗng ⇒ lọc ra rỗng ⇒
-    # luôn báo lỗi; lần chạy thử 20-11 bắt được). Lọc xong mà rỗng thì báo lỗi chứ không âm thầm
-    # rơi về bộ frame mặc định — rơi ngầm sẽ chấm vào chỗ vật đã rời khung.
+        chon_frame = {"mac_dinh": "12 frame trải đều clip"}
+    # Lọc khung SAU khi đã sinh danh sách (xem `loc_theo_khung`); giao rỗng ⇒ SystemExit.
+    frames = loc_theo_khung(frames, args.khung, ten_clip=args.clip)
     if args.khung:
-        khung = parse_khung(args.khung)
-        frames = [f for f in frames if any(a <= f <= b for a, b in khung)]
-        if not frames:
-            raise SystemExit(f"[LOI] --khung {args.khung} lọc hết frame — kiểm lại mốc/khoảng")
-        if not frames:
-            raise SystemExit("--frames rỗng và không đọc được số frame của clip "
-                             f"{args.clip!r} ⇒ truyền --frames thủ công")
+        chon_frame = {**(chon_frame or {}), "khung": args.khung}
     if not TEN_HOP_LE.match(args.ten):
         raise SystemExit(f"--ten {args.ten!r} không hợp lệ: chỉ chữ/số/_/./- và không bắt đầu bằng '.' "
                          f"(thư mục GT là nơi ghi provenance, không được trỏ ra ngoài)")
@@ -471,7 +515,7 @@ def main(argv=None) -> int:
     # mà vẫn nằm trong index ⇒ `score` báo "thiếu file GT" khó hiểu về sau.
     index = _viet_index(gt_dir, clip=args.clip, ten=args.ten, frames=sorted(kich_thuoc),
                         nguoi_gan=args.nguoi_gan, co_goi_y=not args.khong_goi_y,
-                        frame_hw=[cao, rong])
+                        frame_hw=[cao, rong], chon_frame=chon_frame)
     print(f"index.json → {index}  (frame_hw = {cao}×{rong})")
     if args.chi_sinh:
         print("Chỉ sinh file. Mở trình tô bằng cách bỏ --chi-sinh.")

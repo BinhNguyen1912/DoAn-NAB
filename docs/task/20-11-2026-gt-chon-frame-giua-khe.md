@@ -72,7 +72,11 @@ index.json → docs/gt/_tmp2/index.json  (frame_hw = 1280×720)
 
 1. Người dùng tô 7 frame → `data/gt/b1b` (bộ **giữa khe**).
 2. Chấm ô hiển thị vs GT bằng `scripts/ab_o_hien_thi_vs_gt.py` với bộ `b1b` ⇒ lần đầu tiên `max_mad`
-   được thử ở đúng chỗ nó có tác dụng (khe 2 bước LK thay vì 1).
+   được thử ở đúng chỗ ô hiển thị **chắc chắn không phải ô của frame VOS**. (ĐÍNH CHÍNH sau review:
+   đừng viết "khe 2 bước LK thay vì 1" — LK chỉ được gọi **một lần/frame** và reset mốc về frame VOS
+   (`src/light_tracker.py`), đại lượng thay đổi là **khoảng cách frame** tới mốc. Và frame `≡ 0 mod ve`
+   **cũng** đang phát ô nội suy, nhưng từ lần VOS **trước** — cách `ve` frame — vì VOS về muộn hơn nhịp
+   phát ⇒ câu đúng là "≡ ve-1 **chắc chắn** không phải frame VOS", không phải "xa mốc nhất".)
 3. Nếu vẫn "không phân biệt được": làm `LkBoxTracker` nội suy cả **tỉ lệ** (vật ra gần/xa) rồi A/B lại.
 
 ## 7. Tài liệu tham khảo
@@ -80,3 +84,44 @@ index.json → docs/gt/_tmp2/index.json  (frame_hw = 1280×720)
 - `docs/task/19-11-2026-cong-cu-gan-gt-nhanh.md` (công cụ GT), `docs/task/19-11-2026-ab-live-lk-max-mad.md`
 - `docs/task/20-11-2026-o-hien-thi-vs-gt-chot-max-mad.md` (4 lần A/B ⇒ giữ `DEFAULT_MAX_MAD 1,5`)
 - AGENTS.md §6: "Mất dấu phải tách khỏi vật đã rời khung — ô chọn và khung frame phải kiểm bằng ẢNH"
+
+## 8. Review độc lập (AGENTS §9.1) — reviewer, 20-11
+
+**Kết quả: P0 = 0 · P1 = 1 · P2 = 6 · P3 = 5.** Lõi thuật toán (`frames_giua_khe`, `parse_khung`) đúng
+— reviewer tự tính tay ve = 2,3,4,5,7,11 và xác nhận bước luôn là bội của `vos_every` ⇒ không còn ca
+lệch dàn. Mốc VOS thật đã đối chiếu: `live_tracking.py` VOS ở `_frame_index % every == 0` ⇒ công thức
+chọn đúng phía (không bị ngược).
+
+### Đã sửa trong nhánh (hết P1 + 6 P2)
+
+| Mức | Nội dung | Vá |
+|---|---|---|
+| **P1** | Vẫn còn cửa **âm thầm rơi về 12 frame trải đều**: `--vos-every 1` (đúng cấu hình phiên mIoU của repo), `--giua-khe 0/-5`, clip ngắn ⇒ `frames_giua_khe` trả `[]` ⇒ code lặng lẽ dùng bộ mặc định, **lẫn cả frame có VOS** ⇒ bộ mẫu vô nghĩa cho `max_mad` mà không ai biết | `SystemExit` với thông điệp nêu nguyên nhân (validate `--vos-every ≥ 2`, `--giua-khe ≥ 1`, sinh 0 frame). 2 test gọi thẳng `main()` |
+| P2 | Test bất biến có thể **xanh rỗng** (hàm trả `[]` ⇒ `for` không chạy) | thêm `assert ra`, mở rộng ve = 7/11/12/20 (khoá luôn hành vi làm tròn 28/33/24/40) |
+| P2 | Không test `main()` ⇒ lỗi "lọc trước khi sinh danh sách" không có test chống tái phát | tách hàm thuần `loc_theo_khung()` + 3 test (gồm ca giao rỗng **và** ca chuỗi gõ sai) |
+| P2 | **Dead code**: `if not frames` thứ hai nằm sau `raise SystemExit` cùng điều kiện ⇒ câu "--frames rỗng…" **không bao giờ in** | xoá; `loc_theo_khung` lo |
+| P2 | `parse_khung` ném `ValueError` thô ⇒ người gõ sai nhận **traceback Python** | bắt trong `loc_theo_khung` → `[LOI] --khung '…': …` + test 4 chuỗi sai |
+| P2 | Diễn giải cơ chế LK **sai** trong docstring + log ("LK chỉ 1 bước") | viết lại (xem mục Next steps ở trên); sửa cả log |
+| P2 | `index.json` thiếu provenance **cách chọn frame** ⇒ artifact không tự chứng minh được "7 frame là giữa khe" | thêm khoá `chon_frame` (`{"giua_khe":N,"vos_every":ve,"khung":…}` / `{"frames":[…]}` / `{"mac_dinh":…}`) |
+| P2 | `docs/thuoc-do-bam-dung.md` vẫn dạy **đúng lệnh đã hỏng** | thay bằng `--giua-khe --khung`, thêm bảng 3 cờ + cảnh báo `--dump-mask-frames` bị chặn khi `vos_every > 1` |
+| P3 | help "cách nhau 30 frame" sai khi 30 không là bội của ve | ghi rõ "~30 nhưng luôn là bội của vos_every (ve=4 ⇒ 32)" |
+| P3 | `--frames` + `--giua-khe` im lặng | in `[canh-bao] bỏ qua --giua-khe/--vos-every vì đã có --frames` |
+| P3 | `--khung` bỏ frame im lặng | in `[khung] bỏ N frame ngoài …: [...]` |
+| P3 | cùng dãy mốc cứng ở 2 test | giữ **một** golden test, test kia suy ra từ nó |
+
+### Kiểm bằng ẢNH (reviewer nêu là residual risk — đã làm)
+
+Sinh gợi ý cho đúng 7 mốc rồi xem sheet ảnh: chai **có mặt ở cả 7** frame
+(`goiy` 3,17 / 3,23 / 4,51 / 3,83 / 5,17 / 14,53 / 2,93 % diện tích; f212 là cận cảnh). Không mốc nào
+rơi vào chỗ chai đã cất ⇒ bộ GT `b1b` dùng được. Ảnh kiểm đã xoá cùng thư mục tạm, không commit.
+
+### Còn nợ (không chặn)
+
+- Reviewer lưu ý "≡ ve-1 = xa mốc nhất" **không phải định lý**: nếu `vos_ms` < 1 khoảng frame thì mốc
+  có thể là chính frame VOS ⇒ không làm phép đo vô nghĩa nhưng đừng viết như định lý. Đã sửa câu chữ.
+- `--giua-khe` ở clip vật ra/vào khung **bắt buộc** đi kèm `--khung`; chưa có gì tự phát hiện (phải
+  biết khoảng frame từ `docs/demo-clip-va-o-chon.md`).
+
+### Sau khi vá
+
+`./run lint` xanh · `./run test` **1540 passed** (thêm 5 test) · 6 test cũ của bộ GT vẫn xanh.
