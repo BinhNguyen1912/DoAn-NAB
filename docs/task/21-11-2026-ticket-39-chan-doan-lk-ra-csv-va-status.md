@@ -52,15 +52,19 @@ hoạt động**; A/B 3 lần/cấu hình là việc của ticket #40.
 
 ⚠ So với lần chạy **trên cây bẩn** trước đó (`1,5` → IoU 0,6396, `mad_du` 7/7), lần này là 0,5914 và
 `mad_du` 6/7 — **SAM 2 không tất định** (AGENTS §6) ⇒ đừng trộn số hai lần. Lần chạy cây bẩn đã **xoá** (`git rm data/tmp_39_metrics.json` — bản đầu chỉ `rm` trong một chuỗi lệnh
-mà lệnh trước đó lỗi nên `&&` chặn mất, file vẫn được commit; reviewer vòng 2 bắt đúng);
+mà lệnh trước đó lỗi nên `&&` chặn mất, file vẫn được commit; reviewer vòng 2 bắt đúng). **File vẫn lấy
+được từ lịch sử git** tại `a994147` (`git show a994147:data/tmp_39_metrics.json`) — nếu thấy nó ở đó thì
+đó là số **cây bẩn**, **KHÔNG** trích; nay `data/tmp_*` đã vào `.gitignore`;
 mọi số trích trong tài liệu phải lấy từ artifact có `git_dirty_code false` ở trên.
 
-**Không chậm thêm**: `measured_fps` 29,8 (có `--dump-shown-csv`) vs 29,8 (không dump), 200 frame, @192,
-`vos_every 3`, cùng clip/ô — ngưỡng nhiễu ±0,3 % = ±0,09 FPS. `status.json` có `chan_doan_lk`
+**Không chậm thêm**: đo riêng hai lần 200 frame (@192, `vos_every 3`, cùng clip/ô): `measured_fps` **29,8**
+khi bật `--dump-shown-csv` và **29,8** khi tắt (ngưỡng nhiễu ±0,3 % = ±0,09 FPS). Hai lần chạy này **không**
+để lại artifact (chỉ đọc `status.json`) ⇒ là số của log, không phải số trích từ artifact; artifact
+`ab_chan_doan_lk_…` ghi `measured_fps 30,0` cho **300** frame — khác số frame nên đừng trộn. `status.json` có `chan_doan_lk`
 (vd `{"ly_do":"mad_du","ly_do_khop":null,"n_diem":53,"khop":false,"lk_ok":false,"frame_idx":199}`)
 **kể cả khi không bật dump**.
 
-Kiểm máy: `./run lint` xanh · `./run test` **1595 passed** (sau khi vá 2 P1 vòng 1 + 1 P1 và 5 mục vòng 2).
+Kiểm máy: `./run lint` xanh · `./run test` **1598 passed** (sau 3 vòng review: 2 P1 + 1 P1 + 6 mục).
 
 ## 5. Vấn đề & cách xử lý
 
@@ -128,3 +132,23 @@ chỉ `True` ở `ok_scale`, `khop` **không** bị `_dem` đếm, mutant `last_
 `{"mad_du":6,"ok_shift":1}` · 54 · 0,7844 · 58).
 
 `./run lint` xanh · `./run test` **1595 passed**.
+
+## 10. Vòng 3 (chốt) — **MERGE ĐƯỢC: P0 = 0, P1 = 0**
+
+Reviewer xác nhận P1 vòng 2 **đã hết** (kiểm 3 cách: đĩa, git index — có đối chứng grep `AGENTS.md` để
+chứng minh tool đọc thật —, và reflog), và 5/5 ca CSV đều đủ **11 field**. Còn 1 P2 + 4 P3 + 2 Note, đã vá:
+
+| Mức | Reviewer nêu | Xử lý |
+|---|---|---|
+| P2 | test "cổng `vos_every=1`" **không gọi `main()`** (tự truyền `chan_doan=None`) ⇒ xoá 2 dòng cổng vẫn xanh | thêm `test_main_KHONG_truyen_chan_doan_khi_vos_every_1` chạy `main()` thật cho cả `ve=1` và `ve=3`; **đã kiểm ĐỎ** bằng mutant bỏ cổng |
+| P3 | `assert last_n_diem == 64` bám hằng số ⇒ đổi `grid` hợp lệ thì đỏ oan | `== DEFAULT_GRID ** 2` |
+| P3 | snapshot `"khop"` không test nào chứng minh lấy **từ tracker** (mutant hằng `False` xanh hết) | thêm assert `khop is True` + `scale == 1.25`; **đã kiểm ĐỎ** bằng mutant `"khop": False` |
+| P3 | `.gitignore` dòng `!data/*_metrics.json` **chính là cơ chế** làm artifact cây bẩn lọt (P1 vòng 2) | thêm `data/tmp_*` + `data/_tmp_*` |
+| P3 | câu FPS "29,8 vs 29,8, 200 frame" không có artifact; artifact ghi 30,0 @300 frame | ghi rõ: hai lần 200 frame chỉ đọc `status.json`, **không** để lại artifact; artifact là 300 frame ⇒ đừng trộn |
+| P3 | cảnh báo "đã xoá" không nói file **vẫn lấy được từ lịch sử git** | thêm: `git show a994147:data/tmp_39_metrics.json` = số **cây bẩn**, **KHÔNG** trích |
+
+Reviewer cũng xác nhận: cổng `ve=1` đặt **trùng khít** điều kiện `lk_khong_ap_dung` nên hai chỗ không thể
+lệch; `{}` còn lại là **đúng nghĩa** (cột có, 0 mẫu — ví dụ `ly_do_khop_dem` ở chế độ `shift`); `git_rev
+9ce467b` của artifact là **đúng** (các commit sau chỉ đổi `scripts/`+tests+comment).
+
+`./run lint` xanh · `./run test` **1598 passed**.

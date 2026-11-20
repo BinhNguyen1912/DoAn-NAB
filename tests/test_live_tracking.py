@@ -2470,3 +2470,12 @@ def test_chan_doan_lk_trong_status_la_cua_DUNG_frame_da_ghi(video_source, tmp_pa
     assert cd["n_diem"] == 7 and cd["khop"] is False
     # `frame_idx` phải là frame VỪA GHI, không phải frame trước
     assert cd["frame_idx"] == session._frame_index
+
+    # `khop` phải LẤY TỪ TRACKER (mutant hằng `False` sẽ làm `scale`/`angle_deg` luôn trống ở chế độ
+    # `lk_scale` — mất đúng thứ ticket này sinh ra để phơi)
+    monkeypatch.setattr(session._interp, "last_khop_similarity", True)
+    monkeypatch.setattr(session._interp, "last_scale", 1.25)
+    session._frame_index = 7          # 8 % 3 != 0 ⇒ không gọi `_worker.submit` (session chưa `run()`)
+    session._update_stats(session._result_threaded(frame))
+    cd = session._stats.chan_doan_lk
+    assert cd["khop"] is True and cd["scale"] == 1.25, cd

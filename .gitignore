@@ -24,6 +24,10 @@ data/*
 !data/*_metrics.json
 !data/*_run_info.json
 !data/*_calib.json
+# File tạm/ thử nghiệm KHÔNG thuộc số liệu công bố — ngoại lệ `*_metrics.json` ở trên từng làm một
+# artifact số CÂY BẨN lọt vào commit (P1 review PR #66). Muốn công bố thì đặt tên thật (không `tmp_`).
+data/tmp_*
+data/_tmp_*
 
 # Mask model xuất ra để chấm mIoU (mask dump, ~100 KB/bộ): GT gán tay chỉ kiểm chứng được khi
 # mask đi kèm (artifact ghi `manifest` + `cau_hinh` để biết mask sinh ở cấu hình nào).

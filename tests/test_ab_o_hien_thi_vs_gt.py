@@ -635,3 +635,39 @@ def test_vos_every_1_khong_bao_gio_dem_chuan_doan_thanh_rong(tmp_path):
     assert chan_doan is not None                 # ... nên cổng của `main` cho vos_every=1 là cổng RIÊNG
     r = cham({0: (1, 2, 3, 4)}, doc_shown(moi), lk_khong_ap_dung=True, chan_doan=None)
     assert r["ly_do_dem"] is None and r["lk_khong_ap_dung"] is True and r["lk_ok_frac"] is None
+
+
+def _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, vos_every: int):
+    """Chạy `main()` với 1 cấu hình, ghi lại `chan_doan` mà `main` truyền vào `cham`."""
+    ham = {"iou_mean": 0.5, "iou_min": 0.3, "lk_ok_frac": 0.0, "n_cham": 1, "n_gt_co_vat": 1,
+           "khong_do_duoc": 0, "thieu_frame": [], "theo_frame": []}
+    da_nhan = []
+
+    def fake_chay(*, clip, bbox, image_size, vos_every, max_mad, lk_scale=False, frames, out_dir):
+        return {"shown": str(tmp_path / f"s{vos_every}.csv"), "so_dong_shown": 8, "ma_thoat": 0,
+                "state": "stopped",
+                "status": {"frames": 7, "cau_hinh": {"lk_max_mad": max_mad,
+                                                     "image_size_hieu_luc": image_size,
+                                                     "lk_scale": lk_scale}}}
+
+    monkeypatch.setattr(ab, "hop_tu_gt", lambda _d: {2: (0, 0, 10, 10)})
+    monkeypatch.setattr(ab, "doc_shown", lambda _p: {})
+    monkeypatch.setattr(ab, "chay_mot_lan", fake_chay)
+    # CSV MỚI (đủ cột) — cổng phải theo `vos_every`, không theo cột thiếu
+    monkeypatch.setattr(ab, "chan_doan_tu_csv", lambda _p: ({2: {"ly_do": "mad_du"}}, []))
+    monkeypatch.setattr(ab, "cham",
+                        lambda _g, _s, **kw: (da_nhan.append(kw.get("chan_doan")), ham)[1])
+    out = tmp_path / f"a{vos_every}.json"
+    assert ab.main(["--gt", "g", "--clip", "c", "--bbox", "0,0,10,10", "--image-size", "192",
+                    "--vos-every", str(vos_every), "--max-mad", "1.5", "--lan", "2",
+                    "--out", str(out)]) == 0
+    return da_nhan
+
+
+def test_main_KHONG_truyen_chan_doan_khi_vos_every_1(monkeypatch, tmp_path):
+    """P2 review PR #66 vòng 3: cổng `vos_every=1` nằm ở `main()` và **không test nào chạm** — bản trước
+    test tự truyền `chan_doan=None` nên xoá 2 dòng cổng vẫn xanh. Nay chạy `main()` thật."""
+    from scripts import ab_o_hien_thi_vs_gt as ab
+
+    assert _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 1) == [None, None]
+    assert all(c is not None for c in _chay_main_mot_cau_hinh(ab, monkeypatch, tmp_path, 3))

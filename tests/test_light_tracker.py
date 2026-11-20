@@ -479,7 +479,8 @@ def test_last_n_diem_phan_biet_CHUA_CHAY_voi_0_diem_va_so_diem_that():
     t3.reset(f1, (130, 75, 60, 90))
     bbox, ok = t3.update(_khung_vat(patch, dx=3, dy=2))
     assert ok is False and t3.last_ly_do == "thieu_diem"
-    assert t3.last_n_diem == 64, t3.last_n_diem            # lưới 8×8
+    from src.light_tracker import DEFAULT_GRID
+    assert t3.last_n_diem == DEFAULT_GRID ** 2, t3.last_n_diem   # lưới GRID×GRID (không bám số cứng)
 
     # reset đầu bước: mất `_prev_gray` ⇒ bước sau là `chua_reset` và `n_diem` phải về `None`
     t2._prev_gray = None
