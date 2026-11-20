@@ -99,7 +99,7 @@ artifact**; `shown` trong CSV cũng ghi "không có ô" khi đã ẩn. Chuỗi �
 
 ### Kiểm tra tự động
 - `./run lint` = **All checks passed**
-- `./run test` = **1621 passed**, 5 deselected
+- `./run test` = **1626 passed**, 5 deselected
 - `./run webtest` = **77 passed** (test cho `bamLine`, gồm ca `n = 0` và lý do lạ)
 - `./run e2e` = **PASS** (thêm 3 ca `bam`: hiện dòng cảnh báo `role=alert` khi `no_evidence`, im khi `tracking`)
 - `npm run build` = OK (163,94 kB)
@@ -143,6 +143,27 @@ khác nhau); `bam: str | None` ở DTO (giá trị lạ trong `status.json` khô
 (nửa vá trước đây **không** test nào phủ — xoá vẫn xanh, nay mutant bị bắt).
 P3 **chưa** sửa (ghi nợ): `refs_n`, `reacq_score`, "0 `drift_trend` trong 3 s sau cụm `reacquired`" — 3 vế nghiệm
 thu của P4 trong plan phụ thuộc việc **port re-ID** (P5) nên chưa có trong `status_payload`.
+
+## 🔍 Review vòng 2 — **P0 = 0, P1 = 2** (lỗi biên *của chính bản sửa*), đã sửa hết
+
+Vòng 2 xác nhận 4 P1 vòng 1 **đã đóng ở phần chính** (`obs_bbox`/`shown` tách đúng, `ty_le` tính cả ô hỏng,
+`o_khi_khong_bang_chung` đọc được từ artifact, provenance `git_dirty_code=false`), nhưng bắt được 2 lỗi mới:
+
+| P1 | Vấn đề | Đã sửa |
+|---|---|---|
+| A | **`raw_lost` bị RƠI ở nhánh LK ok**: `_smooth` gắn cờ lên `base_result`, nhưng `_result_threaded` dựng `_FrameResult` MỚI ⇒ mất cờ ⇒ với `--mask-smoothing` hệ vẫn báo `tracking` + **vẫn vẽ ô** dù model không thấy vật | `_FrameResult.raw_lost` + truyền tiếp; đọc `lost if _raw is None else bool(_raw)`. Test đi **đúng nhánh** bằng `_interp` stub `ok=True`; mutant làm test **ĐỎ**. (Test end-to-end đầu tiên dùng `vos_every=1` nên **mutant sống** — đã phát hiện và sửa) |
+| B | **`doc_shown` luôn trả 3-tuple** ⇒ `do_duoc = True` cho MỌI CSV không rỗng ⇒ chấm lại `shown.csv` 11 cột (trước 21-11) in "0 frame có ô, `do_duoc=true`" = "đã đo, sạch" | Chỉ trả 3 phần tử khi header **có** cột `bam`; 2 test mới dùng **CSV thật** 11 cột / 12 cột |
+
+Ba P2 cũng đã sửa: cột `bam` của drift CSV chỉ có ở **nhánh pending** (nhánh phổ biến trên máy thật —
+VOS ~100 ms > nhịp phát 33 ms — không ghi) ⇒ nay có `_bam_by_frame` + `_bam_of()` cho **mọi** nhánh, test
+assert cả **giá trị**; tên cột `hien_thi_*` **nói dối** (từ 21-11 nó là ô QUAN SÁT) ⇒ sửa docstring +
+`docs/thuoc-do-bam-dung.md` §2a; test drift cũ không bắt được hồi quy `_shown_by_frame` ⇒ nay assert
+`drift_iou is not None` trên mẫu `no_evidence`. P3: frame `engine.start()` không còn ghi `lk_ok = 0`
+(artifact từng đếm frame 0 vào `n_lk_khong`); `ty_le_nguong` lấy từ `drift_samples.MIN_SAMPLES`.
+
+Số đo lại sau khi sửa (worker, `binh2` 400 frame, @192/3): `bam_no_evidence_n = **70**`, **0/70** frame có
+toạ độ, `lk_ok` trống đúng **1** dòng (frame `start()`), `lk_ok = 1` 109 dòng. Lint xanh · **1626 pytest** ·
+77 vitest · **e2e PASS**.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 1. **Luật "mất bằng chứng" đầu tiên SAI và đo được là sai**: coi `lk_ok = False` là mất bằng chứng ⇒ báo oan
