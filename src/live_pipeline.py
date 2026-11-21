@@ -118,9 +118,11 @@ def _switch_warning(prev_bbox, result, frame_shape):
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
-                 vetoed=None) -> FrameRecord:
+                 vetoed=None, track_cos=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
+    mask = getattr(result, "mask", None)
+    mask_area = int(mask.sum()) if mask is not None and getattr(mask, "size", 0) else 0
     center = ((x1 + x2) // 2, (y1 + y2) // 2) if (x2 > x1 and y2 > y1) else None
     return FrameRecord(
         frame_idx=result.frame_idx,
@@ -133,6 +135,10 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
         reacquired=reacquired,
         ncc=ncc,
         vetoed=vetoed,
+        bbox_w=max(0, x2 - x1),
+        bbox_h=max(0, y2 - y1),
+        mask_area=mask_area,
+        track_cos=track_cos,
     )
 
 
@@ -198,6 +204,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 result, state = step.result, step.state
                 reid_score, reacquired = step.reid_score, step.reacquired
                 reid_vetoed = bool(getattr(step, "vetoed", False))
+                track_cos = getattr(step, "track_cos", None)
                 reid_ncc = step.ncc
             else:
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
@@ -206,11 +213,12 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 state = reid_score = reacquired = None
                 reid_ncc = None
                 reid_vetoed = False
+                track_cos = None
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
                 metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc,
-                                         vetoed=reid_vetoed))
+                                         vetoed=reid_vetoed, track_cos=track_cos))
             img = _annotate(frame, result, visualizer, state, reid_score, reid_vetoed)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
@@ -286,6 +294,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         switch = False  # cảnh báo đổi đối tượng: tính lại mỗi frame track, mặc định tắt ở frame đầu
         state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
         reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
+        track_cos = None                    # cos với neo danh tính (plan 21-11, log-only)
 
         while max_frames is None or summary.processed < max_frames or mode == "select":
             if mode == "select":
@@ -343,12 +352,14 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # P1 review vòng 2: nhánh này từng KHÔNG gán ⇒ HUD không bao giờ nói lý do veto
                     # và (vì reid_score = -1 khi mọi ứng viên bị bỏ) còn in "chua co ung vien…".
                     reid_vetoed = bool(getattr(step, "vetoed", False))
+                    track_cos = getattr(step, "track_cos", None)
                 else:
                     reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                                  summary.processed, reanchor_every)
                     last_result = reanchored if reanchored is not None else engine.process(frame)
                     state = reid_score = reacquired = None
                     reid_vetoed = False
+                    track_cos = None
                 switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                 if last_result.mask.any():
                     last_bbox = last_result.bbox
@@ -357,7 +368,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     on_result(last_result)
                 if metrics is not None:
                     metrics.log(_record_from(last_result, state, reid_score, reacquired,
-                                             vetoed=reid_vetoed))
+                                             vetoed=reid_vetoed, track_cos=track_cos))
     finally:
         src.close()
     return summary

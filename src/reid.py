@@ -26,6 +26,7 @@ import time
 
 import numpy as np
 
+from src.track_identity import NeoDanhTinh, cos_voi_neo
 from src.appearance import (candidate_boxes, clip_mask_border, mask_to_bbox, object_signature,
                             prefilter_candidates, signature_quality_ok)
 
@@ -155,6 +156,9 @@ class Step:
     reacquired: bool = False     # True ở đúng frame vừa nhận lại đối tượng
     ncc: float = -1.0            # điểm NCC của ô được chọn (-1 = không dùng NCC / chưa có)
     vetoed: bool = False         # frame này ứng viên bị BỎ vì trùng khuôn mặt/đầu (HUD phải nói rõ)
+    # `cos` giữa MASK đang bám và NEO danh tính (`src/track_identity.py`); `None` = chưa đo được
+    # (chưa đủ neo / mask rỗng) — KHÔNG phải 0. Plan 21-11-2026: chỉ GHI, chưa hành động.
+    track_cos: Optional[float] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -336,6 +340,9 @@ class ReIdSession:
         self.veto_mat_n = 0            # số ứng viên bị bỏ vì trùng mặt (để đếm/hiệu chuẩn)
         self.frames_vetoed_since_print = 0   # chống spam HINT_VETO_MAT (in mỗi 20 frame bị veto)
         self._faces_frame = None       # cache khuôn mặt của frame gần nhất (tránh detect 2 lần)
+        # NEO danh tính (plan 21-11-2026, `src/track_identity.py`): 3–5 mẫu ĐẦU của vật. Khác
+        # `_obj_refs` (rolling, bị thay sạch sau 8 frame TRACKING ⇒ "ký ức" thành vật khác).
+        self.neo = NeoDanhTinh()
         self._hint_veto_da_in = False  # đã in HINT_VETO_MAT chưa (reset ở `reset()` — P3 vòng 3)
         self._faces = ()
         self._recover_cooldown = 0
@@ -418,6 +425,7 @@ class ReIdSession:
         self.frames_vetoed_since_print = 0
         self._hint_veto_da_in = False
         self._faces_frame = None
+        self.neo.xoa()                  # chọn lại đối tượng ⇒ neo cũ vô nghĩa
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -476,7 +484,13 @@ class ReIdSession:
                         return self._abandon_reacquire()
                 if self.enabled and self._verify_left == 0:
                     self._collect_reference(frame, result.bbox, getattr(result, "mask", None))
-            return Step(result=result, state=self._state)
+            track_cos = None
+            if self.enabled:
+                mask = getattr(result, "mask", None)
+                # Nạp neo ở các frame ĐẦU (tự dừng khi đủ MAX_ANCHORS, tự lọc qua chất lượng mẫu).
+                self.neo.thu(frame, mask, getattr(result, "bbox", None))
+                track_cos = cos_voi_neo(self.neo, frame, mask)
+            return Step(result=result, state=self._state, track_cos=track_cos)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
         self._recover_cooldown = max(0, self._recover_cooldown - 1)

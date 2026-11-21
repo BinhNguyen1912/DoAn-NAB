@@ -29,7 +29,11 @@ import numpy as np
 LOST_SCORE_THRESHOLD = 0.0
 
 CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost",
-              "state", "reid_score", "reacquired", "ncc", "vetoed"]
+              "state", "reid_score", "reacquired", "ncc", "vetoed",
+              # Plan 21-11-2026 (log-only): cỡ ô + diện tích mask + cos với NEO danh tính.
+              # Thiếu chúng thì KHÔNG chứng minh được bằng artifact câu "ô chọn quá rộng / mask ăn nền"
+              # (phiên `demoip_1121-103854` chỉ có center_x/center_y ⇒ phải miêu tả bằng lời).
+              "bbox_w", "bbox_h", "mask_area", "track_cos"]
 
 
 @dataclass
@@ -50,6 +54,13 @@ class FrameRecord:
     # thì `state` = "reacquiring" cho MỌI frame tìm lại ⇒ không đọc được bằng artifact cái gì đã
     # xảy ra (và `reid_score` một mình không nói được vì ứng viên bị bỏ cũng có điểm).
     vetoed: Optional[bool] = None
+    # Cỡ ô + diện tích mask: chứng minh "ô chọn quá rộng/ mask ăn nền" bằng SỐ, không bằng lời.
+    bbox_w: Optional[int] = None
+    bbox_h: Optional[int] = None
+    mask_area: Optional[int] = None
+    # `cos` giữa mask đang bám và 3–5 NEO danh tính (`src/track_identity.py`). `None` = CHƯA ĐO
+    # (không bật / chưa đủ neo) — không được ghi thành 0.
+    track_cos: Optional[float] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -166,6 +177,10 @@ class MetricsLogger:
                     (1 if r.reacquired else 0) if r.reacquired is not None else "",
                     f"{float(r.ncc):.6g}" if r.ncc is not None else "",
                     (1 if r.vetoed else 0) if r.vetoed is not None else "",
+                    r.bbox_w if r.bbox_w is not None else "",
+                    r.bbox_h if r.bbox_h is not None else "",
+                    r.mask_area if r.mask_area is not None else "",
+                    f"{float(r.track_cos):.6g}" if r.track_cos is not None else "",
                 ])
         return str(path)
 

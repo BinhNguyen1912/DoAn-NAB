@@ -38,6 +38,7 @@ import numpy as np
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src import tracking_health
+from src.track_identity import NeoDanhTinh, cos_voi_neo
 from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask, warp_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
@@ -238,6 +239,15 @@ class LiveTrackStats:
     # Trễ `_BAM_NO_EVIDENCE_FRAMES` frame trước khi tuyên bố `no_evidence`: một frame LK trượt không
     # được làm ô nhấp nháy (cùng lý do `MISS_MIN` của watchdog).
     bam: str | None = None
+    # Plan 21-11-2026 (log-only): cỡ ô + diện tích mask + `cos` với NEO danh tính. Đường WEB không
+    # có re-ID, nên đây là tín hiệu DUY NHẤT phát hiện được kiểu sai "mask có nhưng bám sang vùng
+    # nền cùng màu" (phiên `demoip_1121-103854`: ô trượt sang máy lạnh 9 s, `score` còn TĂNG).
+    # `None` = CHƯA ĐO (không phải 0).
+    bbox_w: int | None = None
+    bbox_h: int | None = None
+    mask_area: int | None = None
+    track_cos: float | None = None
+    track_cos_n: int = 0          # số mẫu đã chấm (0 ⇒ `track_cos = None` KHÔNG phải "đo được 0")
     bam_ly_do: str = ""
     bam_no_evidence_n: int = 0     # số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra)
     bbox: list = field(default_factory=list)
@@ -472,6 +482,12 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         # "Có bằng chứng về vật" (plan 21-11 P4): `state` KHÔNG trả lời được câu này, và UI cũ in
         # "running" trong lúc hệ không có bằng chứng nào. `None` = chưa đủ dữ liệu ⇒ UI phải in
         # "chưa xác định", KHÔNG được in "đang bám".
+        # Cỡ ô/diện tích mask/cos-với-neo (plan 21-11-2026, LOG-ONLY): `None` = chưa đo.
+        "bbox_w": stats.bbox_w,
+        "bbox_h": stats.bbox_h,
+        "mask_area": stats.mask_area,
+        "track_cos": stats.track_cos,
+        "track_cos_n": stats.track_cos_n,
         "bam": stats.bam,
         "bam_ly_do": stats.bam_ly_do or None,
         "bam_no_evidence_n": stats.bam_no_evidence_n,
@@ -703,6 +719,9 @@ class LiveTrackingSession:
         self._vos_state = None
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
+        # Neo danh tính của vùng được chọn (plan 21-11-2026, LOG-ONLY). Tạo ở đây để mọi đường
+        # (đơn luồng / có luồng VOS) dùng chung một đối tượng.
+        self._neo = NeoDanhTinh()
         self._seq = 0
         self._frame_index = 0
         # Số frame đã ĐỌC từ nguồn trước khi bắt đầu bám (chọn ô GIỮA phiên ⇒ > 0). Tên file mask đi
@@ -1038,9 +1057,28 @@ class LiveTrackingSession:
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
         pre = getattr(result, "pre_ms", None)      # engine không có `pre_ms` ⇒ None (CHƯA ĐO), không 0
+        # --- NEO danh tính + cos (plan 21-11-2026, LOG-ONLY, không hành động) ---
+        # Đặt ở đây vì `_after_vos` là nhịp VOS duy nhất có mask THẬT của model; rẻ: `object_signature`
+        # đã chạy sẵn ở đường re-ID, còn đường web thì đây là lần đầu (~1,5 ms/frame VOS, không phải
+        # mỗi frame hiển thị). Fail-open: lỗi đo không được giết phiên.
+        try:
+            mask_vos = getattr(result, "mask", None)
+            self._neo.thu(frame, mask_vos, getattr(result, "bbox", None))
+            cos = cos_voi_neo(self._neo, frame, mask_vos)
+        except Exception:                       # noqa: BLE001 — đo đạc không giết phiên
+            cos = None
         with self._stats_lock:
             self._stats.post_ms = post_ms
             self._stats.dump_ms = dump_ms if da_ghi else None
+            bbox_vos = getattr(result, "bbox", None)
+            if bbox_vos is not None:
+                self._stats.bbox_w = max(0, int(bbox_vos[2]) - int(bbox_vos[0]))
+                self._stats.bbox_h = max(0, int(bbox_vos[3]) - int(bbox_vos[1]))
+            mask_vos2 = getattr(result, "mask", None)
+            self._stats.mask_area = int(mask_vos2.sum()) if mask_vos2 is not None else 0
+            self._stats.track_cos = cos
+            if cos is not None:
+                self._stats.track_cos_n = int(self._stats.track_cos_n or 0) + 1
             # Ghi `pre_ms` cả ở đường đơn luồng: thiếu nó thì `mask_age_total_ms` (đã gồm pre) không
             # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
             # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).

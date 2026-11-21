@@ -111,6 +111,7 @@ class InferenceWorker:
         self._reid_score = None
         self._reid_ncc = None
         self._reid_vetoed = False
+        self._track_cos = None
         self._reacquired = False
 
     def start(self):
@@ -155,6 +156,11 @@ class InferenceWorker:
         with self._lock:
             return self._reid_state, self._reid_score, self._reacquired, self._reid_ncc
 
+    def track_cos(self):
+        """`cos` với NEO danh tính của lần suy luận gần nhất (`None` = chưa đo)."""
+        with self._lock:
+            return self._track_cos
+
     def reid_vetoed(self) -> bool:
         """Frame gần nhất có ứng viên bị BỎ vì trùng khuôn mặt/đầu (HUD phải nói rõ lý do)."""
         with self._lock:
@@ -195,6 +201,7 @@ class InferenceWorker:
                             self._reid_state = self._reid.state
                             self._reid_score, self._reacquired = None, False
                             self._reid_vetoed = False
+                            self._track_cos = None
                     else:
                         result = self._engine.start(frame, bbox)
                     warn_if_bad_selection(result)
@@ -209,6 +216,7 @@ class InferenceWorker:
                         self._reid_vetoed = bool(getattr(step, "vetoed", False))
                         self._reacquired = step.reacquired
                         self._reid_ncc = step.ncc
+                        self._track_cos = getattr(step, "track_cos", None)
                 else:
                     result = self._engine.process(frame)
             except Exception as exc:
@@ -292,7 +300,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,
-                                             vetoed=worker.reid_vetoed()))
+                                             vetoed=worker.reid_vetoed(),
+                                             track_cos=worker.track_cos()))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:

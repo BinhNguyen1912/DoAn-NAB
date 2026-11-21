@@ -153,7 +153,11 @@ class TestLiveTrackingSession:
         #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
         # `bam`/`bam_ly_do`/`bam_no_evidence_n` = "có bằng chứng về vật" (plan 21-11 P4) — thêm vào
         # allowlist là CỐ Ý: khoá mới phải được khai báo để người đọc status.json biết nó tồn tại.
-        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
+        # Plan 21-11-2026 (`src/track_identity.py`, LOG-ONLY): `bbox_w/bbox_h/mask_area` + `cos` với
+        # neo danh tính. Đường WEB không có re-ID nên đây là tín hiệu DUY NHẤT bắt được kiểu sai
+        # "mask có nhưng bám sang nền cùng màu" (phiên `demoip_1121-103854`: bám máy lạnh 9 s).
+        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n",
+                               "bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
