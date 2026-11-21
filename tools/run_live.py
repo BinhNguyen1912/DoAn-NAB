@@ -190,7 +190,14 @@ def _make_reid_session(engine, args):
                           verify_frames=getattr(args, "reid_verify", 2),
                           face_veto=face_veto)
     if face_veto is not None:
-        print("[re-ID] veto: KHÔNG nhận lại ứng viên trùm khuôn mặt/đầu (khi ô chọn ban đầu không phải mặt)")
+        # P3 review 21-11: `BoDoMat` là LƯỜI — thiếu `.onnx` thì `detect()` im lặng trả `[]`.
+        # In "đã bật" lúc đó là hứa suông (clone mới không có model vì `models/` bị gitignore).
+        _co_model = os.path.isfile(os.path.join(getattr(face_veto, "_model", "") or ""))
+        if _co_model:
+            print("[re-ID] veto: KHÔNG nhận lại ứng viên trùm khuôn mặt/đầu (khi ô chọn ban đầu không phải mặt)")
+        else:
+            print("[re-ID] veto mặt/đầu TẮT THẬT (thiếu models/face/face_detection_yunet_2023mar.onnx) "
+                  "— xem docs/adr/0003 để tải model")
     return session
 
 
@@ -310,13 +317,17 @@ def _finish_recording(viz, args):
         _export_web_record(args)
 
 
-def _finish_outputs(viz, metrics, args):
+def _finish_outputs(viz, metrics, args, reid_session=None):
     """Chốt số liệu TRƯỚC, xuất video SAU — nhưng video PHẢI luôn được đóng/xuất.
 
     `try/finally` là bắt buộc (review vòng 2, P2): `_finish_metrics` có thể ném (đĩa đầy, git không
     chạy được, Ctrl+C lần hai). Nếu không có `finally` thì recorder không được đóng TƯỜNG MINH và
     `demo_web.mp4` (bản duy nhất Chrome phát được) không bao giờ được tạo — đúng thứ PR này muốn có.
     """
+    # P2 review 21-11: số ứng viên bị veto phải tới được artifact — nếu không thì "veto không chặn
+    # oan" là câu không kiểm được. Gắn vào `args` (đã có sẵn ở mọi nhánh finally).
+    if reid_session is not None:
+        args._reid_veto_n = int(getattr(reid_session, "veto_mat_n", 0) or 0)
     try:
         if metrics is not None:
             _finish_metrics(metrics, args)
@@ -359,6 +370,10 @@ def _finish_metrics(metrics, args):
     s = metrics.summary()
     mean_txt = ("chưa đo" if not s.get("mean_latency_ms_n")
                 else f"{s['mean_latency_ms']:.0f} ms (n={s['mean_latency_ms_n']})")
+    _veto_n = getattr(args, "_reid_veto_n", None)
+    if _veto_n:
+        print(f"[re-ID] bỏ {_veto_n} ứng viên vì TRÙNG KHUÔN MẶT/ĐẦU (veto) — "
+              f"xem cột `state` trong CSV để biết các frame đó")
     print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
@@ -400,6 +415,10 @@ def _write_run_info(args):
         # Che `user:pass@` (ticket 29): file `data/*_run_info.json` ĐƯỢC COMMIT
         # (`.gitignore` có `!data/*_run_info.json`).
         source=an_userinfo(str(getattr(args, "source", ""))),
+        # P2 review 21-11: thêm/sửa một cổng re-ID mà artifact trước/sau TRÔNG Y HỆT NHAU thì
+        # không tái lập được ("không chặn oan" nói trên wiki nhưng không có file nào chứng minh).
+        reid_face_veto=getattr(args, "reid_face_veto", None),
+        reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
@@ -521,7 +540,7 @@ def _run_display(engine, args):
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (demo hay dừng kiểu này).
         # Thứ tự: SỐ LIỆU trước, chuyển mã video sau (ffmpeg im lặng — người dùng hay bấm Ctrl+C
         # lần hai; số liệu không được phụ thuộc vào bước phụ này).
-        _finish_outputs(viz, metrics, args)
+        _finish_outputs(viz, metrics, args, reid_session)
         cv2.destroyAllWindows()
 
     if interrupted:
@@ -576,7 +595,7 @@ def _run_headless(engine, args):
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (số liệu trước, chuyển mã sau)
-        _finish_outputs(viz, metrics, args)
+        _finish_outputs(viz, metrics, args, reid_session)
         # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
         frames_done = summary.total_frames if summary is not None else 0
         _write_progress(args.progress_json, frames_done, progress_total)

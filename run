@@ -297,7 +297,10 @@ EOF
     # cờ của người dùng đứng sau nên vẫn đè được.
     _ncc="0.40"
     _objth="0.75"
-    echo "[demoip] re-ID cue=object ncc_min=${_ncc} cosine_min=${_objth}: chặn vào mặt 0,545 · trán 0,423 · đầu 0,356"
+    # ĐÍNH CHÍNH (review 21-11, P3): ca vào MẶT (ncc 0,545 / cosine 0,974) **KHÔNG** bị ngưỡng nào
+    # chặn — nó nằm giữa dải ca đúng (ncc 0,415–0,741). Ca đó CHỈ bị veto mặt/đầu chặn.
+    echo "[demoip] re-ID cue=object ncc_min=${_ncc} cosine_min=${_objth}: chặn trán 0,423 · đầu 0,356; ca MẶT chỉ bị VETO chặn"
+    echo "[demoip] veto: không nhận lại ứng viên trùm khuôn mặt/đầu (tắt: --no-reid-face-veto)"
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
       --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
       --record "data/demoip_${_stamp}.mp4" \

@@ -867,6 +867,9 @@ class TestVetoNhanLaiVaoMat:
     def _f(self):
         return _obj_frame(shape=(120, 260))
 
+    def _f_at(self, box):
+        return _obj_frame(box=box, shape=(120, 260))
+
     def _f_trong(self):
         """Frame KHÔNG có vật (nền trơn) ⇒ engine giả trả mask rỗng ⇒ mất dấu."""
         return np.full((120, 260, 3), (35, 37, 32), np.uint8)
@@ -931,5 +934,95 @@ class TestVetoNhanLaiVaoMat:
         s = self._session(fm)
         s.start(self._f(), self.VAT)
         fm.calls = 0
-        assert s._trung_mat(self._f(), self.O_MAT) is True
+        # Ô KHÔNG phủ mặt: bản 2-detect (564dcb0) sẽ gọi 2 lần (điều kiện tâm chạy detect riêng).
+        assert s._trung_mat(self._f(), self.VAT) is False
         assert fm.calls == 1
+
+    def test_ung_vien_KHONG_trung_mat_van_duoc_nhan(self):
+        """CHIỀU ÂM — thiếu test này thì mutant "cứ `_ref_phu_mat=False` là veto hết" vẫn xanh.
+
+        Ứng viên nằm ngoài mọi khuôn mặt ⇒ phải nhận bình thường, `veto_mat_n` phải bằng 0.
+        """
+        fm = FakeMat([self.MAT])
+        s = self._session(fm)
+        s.start(self._f(), self.VAT)
+        s._match_object = lambda frame: (0.9, self.VAT, 0.9)   # stub: ứng viên = đúng ô vật
+        fm.calls = 0
+        step = s.step(self._f())                  # mất dấu
+        step = s.step(self._f())                  # tìm lại → phải NHẬN
+        assert step.reacquired is True
+        assert step.vetoed is False
+        assert s.veto_mat_n == 0
+
+    def test_veto_loc_UNG_VIEN_chu_khong_bo_ca_frame(self, monkeypatch):
+        """P1 review 21-11: mặt xếp hạng trên vật ⇒ phải xét tiếp ứng viên KẾ TIẾP, không bỏ frame.
+
+        Bản đầu veto ô tốt nhất rồi `bbox=None` ⇒ vật (dù nằm trong top-K) không bao giờ được xét
+        ⇒ phiên kẹt `reacquiring` vô hạn dù vật đang trong khung. Ca thật: mặt cosine 0,9739 > ca
+        đúng thấp nhất 0,770.
+        """
+        s = self._session(FakeMat([self.MAT]))
+        s.start(self._f_at(self.VAT), self.VAT)
+        assert s._obj_templates                      # có template ⇒ nhánh prefilter chạy
+        # 2 ứng viên: TRONG MẶT đứng trước (ncc cao hơn), vật thật đứng sau
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda frame, tpl, **kw: [(self.O_MAT, 1.0), (self.VAT, 0.9)])
+        # bán kính tìm không liên quan câu hỏi này (và nó phụ thuộc số frame đã mất dấu)
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+
+        frame = self._f_at(self.VAT)
+        fx, fy, fw, fh = self.MAT
+        frame[fy:fy + fh, fx:fx + fw] = self._f_at(self.O_MAT)[fy:fy + fh, fx:fx + fw]
+
+        score, bbox, ncc = s._match_object(frame)
+        assert s.veto_mat_n == 1                     # ứng viên trong mặt bị bỏ
+        assert bbox == self.VAT                      # NHẬN ứng viên kế tiếp, không bỏ cả frame
+        assert score >= 0.0 and ncc == 0.9
+
+
+class TestNoiDayVeto:
+    """P2 review 21-11: cờ `--no-reid-face-veto` phải thực sự điều khiển việc nối `BoDoMat`.
+
+    Rủi ro đã kiểm bằng đọc code: `merge_cli_overrides` (`src/config.py`) KHÔNG có key
+    `reid_face_veto` và `main()` không gán lại ⇒ không bị config đè; `run demoip "$@"` đứng sau
+    nên cờ người dùng tới được argparse. Test này khoá lại để lần sau không ai làm hỏng.
+    """
+
+    def _args(self, **kw):
+        import argparse
+        a = argparse.Namespace(reid_threshold=0.75, lost_after_frames=5, reid_ref_max=8,
+                               reid_min_face_px=40, reid_min_detect_score=0.6,
+                               reid_obj_threshold=0.75, reid_obj_ncc_min=0.40,
+                               lost_score_threshold=0.0, reid_confirm=2, reid_verify=2,
+                               reid_face_veto=True, reid_cue="object", reid=True,
+                               reid_detector_model="models/face/det.onnx",
+                               reid_recognizer_model="models/face/rec.onnx")
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def _session(self, monkeypatch, args):
+        from tools.run_live import _make_reid_session
+        monkeypatch.setattr("src.face_guard.BoDoMat",
+                            lambda *a, **k: type("F", (), {"detect": lambda self, f: []})())
+        return _make_reid_session(engine=object(), args=args)
+
+    def test_bat_thi_gan_face_veto(self, monkeypatch):
+        s = self._session(monkeypatch, self._args(reid_face_veto=True))
+        assert s.face_veto is not None
+
+    def test_co_no_reid_face_veto_thi_tat(self, monkeypatch):
+        s = self._session(monkeypatch, self._args(reid_face_veto=False))
+        assert s.face_veto is None
+
+    def test_cue_face_khong_noi_veto(self, monkeypatch):
+        """Bám MẶT mà lại veto mặt là tự chặn mình ⇒ khi cue=face phải KHÔNG nối veto.
+
+        Dùng `BoDoMat` giả + bỏ qua kiểm tra tồn tại file model của embedder mặt (test này chỉ
+        hỏi nhánh nối veto, không hỏi model thật).
+        """
+        import tools.run_live as rl
+        monkeypatch.setattr(rl.os.path, "isfile", lambda p: True)
+        monkeypatch.setattr("src.reid.FaceEmbedder", lambda *a, **k: object())
+        s = self._session(monkeypatch, self._args(reid_cue="face", reid_face_veto=True))
+        assert s.face_veto is None

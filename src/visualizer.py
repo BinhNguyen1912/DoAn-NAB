@@ -87,7 +87,8 @@ class Visualizer:
 
     # ---------- API công khai ----------
 
-    def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None):
+    def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None,
+               reid_vetoed=False):
         """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
 
         Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
@@ -95,7 +96,8 @@ class Visualizer:
         """
         self.consume(result)
         return self.render(frame, result, switch_warning=switch_warning,
-                           reid_state=reid_state, reid_score=reid_score)
+                           reid_state=reid_state, reid_score=reid_score,
+                           reid_vetoed=reid_vetoed)
 
     def consume(self, result):
         """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
@@ -142,7 +144,7 @@ class Visualizer:
             self._put_text(img, chu, (max(6, x), max(20, y - 12 + i * 24)))
 
     def render(self, frame, result, overlay_age_ms=None, display_fps=None,
-               switch_warning=False, reid_state=None, reid_score=None):
+               switch_warning=False, reid_state=None, reid_score=None, reid_vetoed=False):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
@@ -190,7 +192,12 @@ class Visualizer:
             # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.
             thr = getattr(self, "reid_threshold", None)
-            if reid_score is None or reid_score < 0:
+            if reid_vetoed:
+                # P1 review 21-11: ứng viên VƯỢT ngưỡng nhưng bị BỎ vì trùng khuôn mặt/đầu.
+                # Không nói rõ thì HUD in "khop 0.90 / can 0.75" ⇒ người xem hiểu NGƯỢC
+                # ("đủ điểm mà không nhận" = hệ hỏng), trong khi lý do thật là veto.
+                detail = " (BO: ung vien trung KHUON MAT)"
+            elif reid_score is None or reid_score < 0:
                 # "không có ứng viên" thường vì CHƯA CÓ MẪU ĐẶC TRƯNG (ô chọn chạm mép khung —
                 # xem src/reid.py HINT_CHAM_MEP); nói thẳng để người xem/demo không đoán mò.
                 detail = " (chua co ung vien — kiem tra vat chon co cham mep khung)"

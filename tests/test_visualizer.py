@@ -431,3 +431,36 @@ class TestCanhBaoOChonPhuMat:
         viz.canh_bao_o_chon_phu_mat(None)
         img = viz.render(_frame(), _result(frame_idx=0, bbox=(200, 200, 220, 220)))
         assert img is not None
+
+
+class TestHudNoiDungKhiVeto:
+    """P1 review 21-11: khi ứng viên bị BỎ vì trùng khuôn mặt, HUD phải nói ĐÚNG lý do.
+
+    Trước đó HUD in "DANG TIM LAI... (khop 0.90 / can 0.75)" ⇒ người xem (và hội đồng) hiểu
+    NGƯỢC là "hệ đủ điểm mà không nhận = hệ hỏng", trong khi lý do thật là veto.
+    """
+
+    def _render(self, monkeypatch, **kw):
+        viz = Visualizer()
+        texts = []
+        monkeypatch.setattr(viz, "_put_text", lambda img, text, org: texts.append(str(text)))
+        viz.render(_frame(), _result(), **kw)
+        return texts
+
+    def test_bi_veto_thi_hien_ly_do_trung_khuon_mat(self, monkeypatch):
+        texts = self._render(monkeypatch, reid_state="reacquiring",
+                             reid_score=0.90, reid_vetoed=True)
+        hud = " | ".join(texts)
+        assert "KHUON MAT" in hud            # nói rõ lý do
+        assert "can 0.7" not in hud          # KHÔNG hiện "khớp X / cần Y" (gây hiểu ngược)
+
+    def test_khong_veto_thi_van_hien_khop_va_nguong(self, monkeypatch):
+        viz = Visualizer()
+        viz.reid_threshold = 0.75
+        texts = []
+        monkeypatch.setattr(viz, "_put_text", lambda img, text, org: texts.append(str(text)))
+        viz.render(_frame(), _result(), reid_state="reacquiring",
+                   reid_score=0.62, reid_vetoed=False)
+        hud = " | ".join(texts)
+        assert "khop 0.62" in hud and "can 0.75" in hud
+        assert "KHUON MAT" not in hud

@@ -134,10 +134,11 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None)
     )
 
 
-def _annotate(frame, result, visualizer, reid_state=None, reid_score=None):
+def _annotate(frame, result, visualizer, reid_state=None, reid_score=None, reid_vetoed=False):
     """Frame + result → HUD: Visualizer đầy đủ nếu có, không thì overlay tối thiểu."""
     if visualizer is not None:
-        return visualizer.update(frame, result, reid_state=reid_state, reid_score=reid_score)
+        return visualizer.update(frame, result, reid_state=reid_state, reid_score=reid_score,
+                                 reid_vetoed=reid_vetoed)
     return draw_overlay_minimal(frame, result)
 
 
@@ -194,6 +195,7 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 step = reid_session.step(frame)
                 result, state = step.result, step.state
                 reid_score, reacquired = step.reid_score, step.reacquired
+                reid_vetoed = bool(getattr(step, "vetoed", False))
                 reid_ncc = step.ncc
             else:
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
@@ -201,11 +203,12 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 result = reanchored if reanchored is not None else engine.process(frame)
                 state = reid_score = reacquired = None
                 reid_ncc = None
+                reid_vetoed = False
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
                 metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc))
-            img = _annotate(frame, result, visualizer, state, reid_score)
+            img = _annotate(frame, result, visualizer, state, reid_score, reid_vetoed)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
             if on_frame is not None and on_frame(img, result) is False:
@@ -279,6 +282,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         last_result = None
         switch = False  # cảnh báo đổi đối tượng: tính lại mỗi frame track, mặc định tắt ở frame đầu
         state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
+        reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
 
         while max_frames is None or summary.processed < max_frames or mode == "select":
             if mode == "select":
@@ -306,7 +310,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             else:  # track
                 if visualizer is not None:
                     img = visualizer.update(frame, last_result, switch_warning=switch,
-                                            reid_state=state, reid_score=reid_score)
+                                            reid_state=state, reid_score=reid_score,
+                                            reid_vetoed=reid_vetoed)
                 else:
                     img = draw_overlay_minimal(frame, last_result)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
