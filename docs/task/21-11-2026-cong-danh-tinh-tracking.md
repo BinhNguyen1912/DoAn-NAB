@@ -70,6 +70,10 @@
 
 ## 📤 Output / Kết quả
 
+> Provenance: 7 lần chạy (6 CLI + 1 LIVE) đều ghi `git_rev = 9e00d9d`, `git_dirty_code = false`. Commit
+> sau đó (`05dedbc`) chỉ sửa nhánh `mask_smoothing ≠ 1.0` (mặc định 1.0 = TẮT) ⇒ số đo vẫn đúng với code
+> đã chạy; không đo lại để tránh "số mới trên code mới" mà không có gì thay đổi.
+
 ### Số đo (artifact `data/track_cos_2026-11-21_metrics.json`, `git_dirty_code = false`)
 | Đường | clip / cửa sổ | n | median | p05 | **min** | < 0,75 |
 |---|---|---|---|---|---|---|
