@@ -132,7 +132,14 @@ Reviewer (agent `reviewer`, chỉ đọc) bắt **3 P1** đều đúng, đã s�
 - Số trong log khớp artifact: `reid_2clip_calib.json` 18 ca (17 good + 1 bad), `min_good` cosine 0,76957 / ncc 0,414731; CSV `demoip_1121-080547` f207–f215 khớp từng giá trị.
 
 ### Nợ còn lại (reviewer nêu đúng, xử lý ở phiên sau)
-- **Chưa có phiên `./run demoip` nào chạy cấu hình mới** trên máy có camera ⇒ "không chặn oan trên webcam thật" vẫn là **chưa đo** (chỉ có test tổng hợp + tập nhãn 18 ca). Cần 1 phiên ~60 s với `run_info` có `reid_face_veto=true`.
+- **Chạy thật đầu tiên với cấu hình mới** (21-11, `git_rev 6b2faff`) — **trên CLIP `data/binh1.mp4`,
+  KHÔNG phải webcam**: `data/veto_demo_21-11_{metrics.csv,summary.json,run_info.json}`, 120 frame,
+  `image_size 192`, `--reid-obj-ncc-min 0.40 --reid-obj-threshold 0.75 --bbox 300,275,150,410`:
+  mean **104 ms** (n=116) / p95 125 ms · mất dấu **5/120 (4 %)** · `reid_face_veto: true`,
+  `reid_veto_mat_n: **0**` (clip này không có mặt trong vùng tìm ⇒ veto không kích hoạt, đúng như mong đợi
+  — **không** phải bằng chứng "không chặn oan trên webcam"). Frame tìm lại nay có latency **thật**
+  (97,1 · 62,5 · 46,8 · 147,0 ms) thay vì 0,0. ⇒ **Vẫn còn nợ**: 1 phiên webcam thật ~60 s có
+  `reid_veto_mat_n > 0` mới chứng minh được veto hoạt động và không chặn oan.
 - ~~`latency_ms` của frame `lost`/`reacquiring` ghi **0.0**~~ → **đã sửa cùng phiên**: nhánh LOST đo
   `time.perf_counter()` và gán `lost.elapsed_ms` ⇒ CSV/summary nay có chi phí **tìm lại** (cascade NCC
   ~28 ms + YuNet ~29 ms khi veto) — tách khỏi `vos_ms` của model; test `test_frame_tim_lai_co_elapsed_ms_that`.
