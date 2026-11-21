@@ -146,7 +146,11 @@ def _git_dirty() -> tuple:
     try:
         out = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
                              text=True, check=True, timeout=10).stdout
-    except (OSError, subprocess.SubprocessError):
+    # BUG THẬT 21-11 (phiên `demoip_1121-103854`): hàm này chạy trong `finally` sau Ctrl+C ⇒
+    # `subprocess.run` ném **KeyboardInterrupt** ⇒ mất `run_info` VÀ bản H.264 hỏng (moov atom
+    # not found). Cleanup KHÔNG được ném: bắt cả KeyboardInterrupt ở đây (Ctrl+C lần hai vẫn thoát
+    # ở chỗ khác), đúng tinh thần "Ctrl+C không được làm mất số liệu" của `_finish_outputs`.
+    except (OSError, subprocess.SubprocessError, KeyboardInterrupt):
         return None, None
     lines = [ln for ln in out.splitlines() if ln.strip()]
     code = [ln for ln in lines if not ln[3:].strip().startswith("data/")]
@@ -387,7 +391,10 @@ def _finish_metrics(metrics, args):
     metrics.write_csv(args.metrics_csv)
     if args.metrics_summary:
         metrics.write_summary_json(args.metrics_summary)
-    _write_run_info(args)
+    try:
+        _write_run_info(args)
+    except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
+        print(f"[canh bao] không ghi được run_info: {type(exc).__name__}: {exc}")
     s = metrics.summary()
     mean_txt = ("chưa đo" if not s.get("mean_latency_ms_n")
                 else f"{s['mean_latency_ms']:.0f} ms (n={s['mean_latency_ms_n']})")

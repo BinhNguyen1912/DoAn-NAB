@@ -730,3 +730,45 @@ class TestGitDirtyCode:
             raise OSError("no git")
         monkeypatch.setattr(sp, "run", boom)
         assert run_live._git_dirty() == (None, None)
+
+
+class TestProvenanceKhongDuocGietPhien:
+    """BUG THẬT 21-11 (`demoip_1121-103854`): `_git_dirty()` chạy trong `finally` sau Ctrl+C ⇒
+
+    `subprocess.run` ném **KeyboardInterrupt** ⇒ **mất `run_info.json`** và bản H.264 hỏng
+    (`moov atom not found`). Cleanup không bao giờ được ném.
+    """
+
+    def test_git_dirty_khong_nem_khi_bi_ctrl_c(self, monkeypatch):
+        import subprocess as sp
+        def boom(*a, **k):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(sp, "run", boom)
+        assert run_live._git_dirty() == (None, None)
+
+    def test_finish_metrics_van_in_so_lieu_khi_run_info_loi(self, tmp_path, monkeypatch, capsys):
+        class FakeMetrics:
+            records = [1]
+
+            def write_csv(self, path):
+                return str(path)
+
+            def write_summary_json(self, path):
+                return str(path)
+
+            def summary(self):
+                return {"total_frames": 1, "mean_latency_ms": 100.0, "mean_latency_ms_n": 1,
+                        "p95_latency_ms": 110.0, "p95_latency_ms_n": 1, "lost_count": 0,
+                        "lost_ratio": 0.0, "mean_score": 1.0, "resources": {}}
+
+        import argparse
+        args = argparse.Namespace(metrics_csv=str(tmp_path / "m.csv"),
+                                  metrics_summary=None, source="x", device="cpu",
+                                  image_size=192, reid=False)
+
+        def boom(_args):
+            raise OSError("đĩa hỏng")
+        monkeypatch.setattr(run_live, "_write_run_info", boom)
+        run_live._finish_metrics(FakeMetrics(), args)      # KHÔNG được ném
+        out = capsys.readouterr().out
+        assert "run_info" in out and "[metrics]" in out     # vẫn in số liệu cho người dùng
