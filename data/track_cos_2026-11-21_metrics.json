@@ -1,79 +1,138 @@
 {
-  "do_luc": "2026-11-21T11:16:59",
-  "git_rev": "9e2acfa",
-  "lenh": "tools/run_live.py --reid --reid-cue object --reid-obj-ncc-min 0.40 --reid-obj-threshold 0.75 --image-size 192 --bbox 300,275,150,410 --max-frames 110",
-  "y_nghia": "Phan bo track_cos (cos giua MASK dang bam va 3-5 NEO danh tinh) tren frame TRACKING DUNG — de biet nguong theta nao khong chan oan. PR-1 log-only, CHUA co cong.",
-  "clips": {
+  "do_luc": "2026-11-21T11:37:16",
+  "git_rev": "9e00d9d",
+  "git_dirty_code": false,
+  "vi_sao_sinh_lai": "P1 review 21-11: artifact cũ ghi git_dirty_code=true ở 6/6 run_info (đo trên cây BẨN) và p05 dùng quy ước phân vị thứ 4; nay đo lại trên cây SẠCH + p05 qua src.drift_samples.phan_vi",
+  "dinh_nghia": {
+    "track_cos": "cos(mask đang bám, MAX trên 3-5 NEO từ mask 3 frame ĐẦU); None = CHƯA ĐO (chưa đủ 3 neo / mask rỗng)",
+    "p05": "src.drift_samples.phan_vi(q=5, min_samples=30) — một cửa duy nhất (ticket #23)",
+    "n": "số mẫu cos của MỘT lần chạy (1 mẫu/frame VOS). 3 lần chạy BIT-IDENTICAL về track_cos ⇒ KHÔNG cộng dồn 3 lần để 'tăng n'"
+  },
+  "da_sua_tu_ban_truoc": [
+    "chấm cos TRƯỚC khi nạp neo ⇒ hết mẫu 1,0 cấu trúc (bản trước: 4/108 mẫu/lần chạy)",
+    "MIN_ANCHORS 2 → 3 (cos lấy MAX ⇒ 2 neo, 1 hỏng = pass-giả)",
+    "neo lọc dải mép khung như ReIdSession._collect_reference (mask rác sát mép không được làm NEO)",
+    "frame start() không còn bị chấm 2 lần (neo #1 ≡ #2 ⇒ 'đủ neo' sau 1 frame)"
+  ],
+  "duong_CLI": {
     "binh1": {
-      "cac_lan": [
-        {
-          "n": 108,
-          "median": 0.9615,
-          "p05": 0.9111,
-          "min": 0.8996,
-          "file": "data/neo_binh1_lan1_metrics.csv"
-        },
-        {
-          "n": 108,
-          "median": 0.9615,
-          "p05": 0.9111,
-          "min": 0.8996,
-          "file": "data/neo_binh1_lan2_metrics.csv"
-        },
-        {
-          "n": 108,
-          "median": 0.9615,
-          "p05": 0.9111,
-          "min": 0.8996,
-          "file": "data/neo_binh1_lan3_metrics.csv"
-        }
-      ],
-      "gop": {
-        "n": 324,
-        "median": 0.9615,
-        "p05": 0.9173,
-        "min": 0.8996,
-        "duoi_0_75": 0
-      }
+      "bbox": "300,275,150,410",
+      "n": 106,
+      "median": 0.9604,
+      "min": 0.85882,
+      "p05": 0.9126,
+      "duoi_075": 0,
+      "giong_nhau_3_lan": true
     },
     "binh2": {
-      "cac_lan": [
-        {
-          "n": 108,
-          "median": 0.9227,
-          "p05": 0.8148,
-          "min": 0.7836,
-          "file": "data/neo_binh2_lan1_metrics.csv"
-        },
-        {
-          "n": 108,
-          "median": 0.9227,
-          "p05": 0.8148,
-          "min": 0.7836,
-          "file": "data/neo_binh2_lan2_metrics.csv"
-        },
-        {
-          "n": 108,
-          "median": 0.9227,
-          "p05": 0.8148,
-          "min": 0.7836,
-          "file": "data/neo_binh2_lan3_metrics.csv"
-        }
-      ],
-      "gop": {
-        "n": 324,
-        "median": 0.9227,
-        "p05": 0.8156,
-        "min": 0.7836,
-        "duoi_0_75": 0
-      }
+      "bbox": "330,330,150,360",
+      "n": 106,
+      "median": 0.9267,
+      "min": 0.808027,
+      "p05": 0.8141,
+      "duoi_075": 0,
+      "giong_nhau_3_lan": true
     }
   },
+  "duong_LIVE": {
+    "file_csv": "data/drift_samples_binh1_2026-11-21_113612.csv",
+    "artifact": "data/live_danhtinh_sach_2026-11-21_metrics.json",
+    "dong_csv": 364,
+    "dong_co_cos": 222,
+    "ti_le_frame_mask_khong_rong_CO_cos": 98.2,
+    "trong_khung_0_110": {
+      "n": 26,
+      "median": 0.9531,
+      "min": 0.890147,
+      "p05": null,
+      "duoi_075": 0
+    },
+    "sau_khi_vat_ra_khung": {
+      "n": 196,
+      "median": 0.9591,
+      "min": 0.463728,
+      "duoi_075": 13,
+      "ghi_chu": "toàn bộ mẫu <0,75 ở đây có mask_area RẤT NHỎ (22-3767 px) = mask sụp khi vật rời khung, KHÔNG phải 'bám sang vật khác'"
+    },
+    "git_dirty_code": false
+  },
+  "lan_chay": [
+    {
+      "clip": "binh1",
+      "lan": 1,
+      "file": "data/sach_binh1_lan1_metrics.csv",
+      "n": 106,
+      "median": 0.9604,
+      "min": 0.85882,
+      "p05": 0.9126,
+      "duoi_075": 0,
+      "mean_latency_ms": 87.6,
+      "git_dirty_code": false
+    },
+    {
+      "clip": "binh1",
+      "lan": 2,
+      "file": "data/sach_binh1_lan2_metrics.csv",
+      "n": 106,
+      "median": 0.9604,
+      "min": 0.85882,
+      "p05": 0.9126,
+      "duoi_075": 0,
+      "mean_latency_ms": 88.9,
+      "git_dirty_code": false
+    },
+    {
+      "clip": "binh1",
+      "lan": 3,
+      "file": "data/sach_binh1_lan3_metrics.csv",
+      "n": 106,
+      "median": 0.9604,
+      "min": 0.85882,
+      "p05": 0.9126,
+      "duoi_075": 0,
+      "mean_latency_ms": 88.6,
+      "git_dirty_code": false
+    },
+    {
+      "clip": "binh2",
+      "lan": 1,
+      "file": "data/sach_binh2_lan1_metrics.csv",
+      "n": 106,
+      "median": 0.9267,
+      "min": 0.808027,
+      "p05": 0.8141,
+      "duoi_075": 0,
+      "mean_latency_ms": 87.8,
+      "git_dirty_code": false
+    },
+    {
+      "clip": "binh2",
+      "lan": 2,
+      "file": "data/sach_binh2_lan2_metrics.csv",
+      "n": 106,
+      "median": 0.9267,
+      "min": 0.808027,
+      "p05": 0.8141,
+      "duoi_075": 0,
+      "mean_latency_ms": 88.4,
+      "git_dirty_code": false
+    },
+    {
+      "clip": "binh2",
+      "lan": 3,
+      "file": "data/sach_binh2_lan3_metrics.csv",
+      "n": 106,
+      "median": 0.9267,
+      "min": 0.808027,
+      "p05": 0.8141,
+      "duoi_075": 0,
+      "mean_latency_ms": 89.1,
+      "git_dirty_code": false
+    }
+  ],
   "ket_luan": {
-    "min_ca_dung": "0,7836 (binh2) · 0,8996 (binh1) tren tong 648 mau",
-    "cua_so_theta_voi_ca_DUNG": "theta < 0,7836 ⇒ 0 chan oan tren 648 mau; theta = 0,75 cho 0/648",
-    "ca_SAI_da_do_tren_o_ung_vien": "may lanh 0,510–0,719 · chan khung cua 0,912 (do tren o crop, KHONG phai mask)",
-    "he_qua": "theta≈0,75 BAT duoc kieu bam sang vung KHAC tong (may lanh 0,51–0,72) nhung KHONG bat duoc kieu bam sang vung CUNG tong (khung cua 0,912 nam trong dai ca dung)",
-    "con_thieu": "Chua co cos tren MASK cua vung sai (may lanh/khung cua) ⇒ can 1 clip sach quay bang scripts/record_raw.py voi dung canh do. Truoc khi co, KHONG mo cong (PR-2)."
+    "nguong_075_khong_chan_oan": "0/238 mẫu <0,75 trên cả 2 clip khi vật TRONG khung (CLI: 212 mẫu; LIVE: 26 mẫu, min 0.8901)",
+    "theta_075_BAT_DUOC_gi": "CHỈ chứng minh được điều này cho MASK SỤP (mask_area nhỏ) khi vật rời khung. KHÔNG có bằng chứng mask-cos bắt được ca 'bám sang máy lạnh': con số 0,51-0,72 của ca đó là BOX-cos (mask = cả hình chữ nhật gồm nền) — so hai đại lượng khác nhau (P2 review 21-11). Muốn kết luận phải có clip quay đúng cảnh vật cạnh máy lạnh và chấm mask-cos.",
+    "vi_sao_chua_mo_cong": "chưa có mẫu cos của vùng SAI kiểu 'cùng tông' (khung cửa 0,912 nằm TRONG dải ca đúng) ⇒ PR-2 (cổng hành động) chưa có ngưỡng nào đo được là an toàn."
   }
 }

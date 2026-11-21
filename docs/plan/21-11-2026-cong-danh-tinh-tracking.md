@@ -1,7 +1,7 @@
 # Plan 21-11-2026 — Cổng DANH TÍNH trên đường tracking (vật cùng màu nền)
 
 > Plan theo `AGENTS.md` §9.2: 3 ý kiến độc lập (vòng 1) + 1 vòng phản biện chéo (vòng 2) rồi mới chốt.
-> Log thực thi: `docs/task/21-11-2026-cong-danh-tinh-tracking.md`.
+> Log thực thi: `docs/task/21-11-2026-cong-danh-tinh-tracking.md` (đã tạo sau review P1-3).
 
 ## 🎯 Câu hỏi cần quyết
 
@@ -99,27 +99,60 @@ Ràng buộc không được vi phạm:
   - [ ] **0 thay đổi hành vi**: cổng không hành động; test cũ xanh; đường **không re-ID** có
         `track_cos = ""` và `track_cos_n == 0` (không gọi `object_signature` lần nào).
 
-## 📊 KẾT QUẢ ĐO PR-1 (21-11, `git_rev` tại commit PR-1, `git_dirty_code = false`)
+## 📊 KẾT QUẢ ĐO PR-1 (đo lại 21-11 trên **cây SẠCH**, `git_dirty_code = false` 7/7 lần chạy)
 
-Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + gộp) · CSV: `data/neo_<clip>_lan{1,2,3}_metrics.csv`
-· lệnh ghi trong artifact. 3 lần chạy **khác nhau thật** (latency lệch **107/110** dòng, md5 khác) nhưng
-`track_cos` **trùng tới 6 số lẻ** ⇒ mask/ngoại hình tái lập trên clip cố định (đừng suy ra "SAM 2 tất định"
-nói chung — AGENTS §6 vẫn đúng cho ô bao cuối).
+> **ĐÍNH CHÍNH (review độc lập P1-2 + P2):** bảng đầu tiên của mục này ghi `n = 324`(**gộp 3 lần chạy**) và
+> `min = 0,7836`, kèm dòng "artifact có `git_dirty_code = false`" — **cả hai đều sai**:
+> (a) 6/6 `run_info` ghi `git_dirty_code = true` (đo trên cây bẩn), (b) 3 lần chạy **bit-identical** về
+> `track_cos` nên gộp lại **không tăng thông tin** (n thật = 106/clip), (c) 4/108 mẫu mỗi lần chạy là **1,0
+> cấu trúc** (frame được so với chính nó vì `thu()` nạp neo TRƯỚC `cos()`), (d) `p05` tính bằng quy ước
+> phân vị thứ 4 trong repo. Đã sửa cả 4 (xem "Đã sửa sau review") và **đo lại toàn bộ**.
 
-| clip | n (gộp 3 lần) | median | p05 | **min** | số mẫu < 0,75 |
-|---|---|---|---|---|---|
-| `binh1` (chai trong khung) | **324** | 0,9615 | 0,9173 | **0,8996** | **0** |
-| `binh2` | **324** | 0,9227 | 0,8156 | **0,7836** | **0** |
+Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + per-clip, có `git_dirty_code`, ghi rõ
+`vi_sao_sinh_lai`) · CSV CLI: `data/sach_<clip>_lan{1,2,3}_metrics.csv` · CSV **đường LIVE**:
+`data/drift_samples_binh1_2026-11-21_113612.csv` (+ `.meta.json` có `git_rev`/`git_dirty_code`).
+
+### Đường CLI (`tools/run_live.py`, 3 lần/clip, ô chai)
+| clip | ô chọn | n (1 lần chạy) | median | p05 | **min** | < 0,75 | 3 lần giống nhau |
+|---|---|---|---|---|---|---|---|
+| `binh1` | `300,275,150,410` | **106** | 0,9604 | 0,9126 | **0,8588** | **0** | ✅ (bit-identical) |
+| `binh2` | `330,330,150,360` | **106** | 0,9267 | 0,8141 | **0,8080** | **0** | ✅ |
+
+### Đường LIVE (`scripts/measure_live_relay.py`, worker thật qua API, 45 s)
+| cửa sổ | n | median | **min** | < 0,75 |
+|---|---|---|---|---|
+| **vật trong khung `0:110`** | 26 | 0,9531 | **0,8901** | **0** |
+| sau khi vật rời khung | 196 | 0,9591 | 0,4637 | 13 |
+
+- **Tiêu chí "CSV live có `track_cos`" nay ĐO ĐƯỢC** (trước review là **không**: `drift_samples.csv` không
+  có cột, `_worker_telemetry` lọc mất khoá): **98,2 %** frame có `mask_area > 0` có `track_cos`
+  (222/226) ⇒ đạt ngưỡng ≥95 % đã đặt. `p05` của cửa sổ trong-khung = `None` vì n = 26 < 30 (đúng ngưỡng
+  công bố, **không** phải p05 = 0).
+- **Toàn bộ 13 mẫu < 0,75 ở cửa sổ sau-khi-rời-khung có `mask_area` 22–3 767 px** ⇒ đó là **mask sụp**
+  (vật đã ra khỏi khung), **không** phải "bám sang vật khác".
 
 **Hệ quả có số cho θ:**
-- Trên **648 mẫu tracking ĐÚNG**, `min = 0,7836` ⇒ **θ < 0,7836 ⇒ 0 chặn oan**; θ = 0,75 cho **0/648**.
-- Phía **SAI** đã đo trước đó **trên ô ứng viên** (không phải mask): máy lạnh **0,510–0,719**, chân khung
-  cửa **0,912**.
-- ⇒ **θ ≈ 0,75 BẮT được** kiểu bám sang vùng **khác tông** (máy lạnh 0,51–0,72) và **KHÔNG bắt được** kiểu
-  bám sang vùng **cùng tông** (khung cửa 0,912 nằm trong dải ca đúng). Đây là **giới hạn của kênh ngoại
-  hình**, không phải lựa chọn ngưỡng.
-- **Còn thiếu để mở cổng (PR-2):** `cos` trên **MASK** của vùng sai — cần **1 clip sạch** quay bằng
-  `scripts/record_raw.py` ở đúng cảnh (remote trắng + khung cửa + máy lạnh). Trước khi có, **không mở cổng**.
+- Trên **238 mẫu khi vật TRONG khung** (CLI 212 + LIVE 26), `min = 0,8080` ⇒ **θ = 0,75 chặn oan 0 mẫu**.
+- ⇒ θ ≈ 0,75 **bắt được** trạng thái **mask sụp** (giá trị 0,46–0,71 chỉ xuất hiện khi `mask_area` rất nhỏ).
+- ⚠️ **RÚT LẠI** câu "θ ≈ 0,75 BẮT được ca bám sang máy lạnh (0,51–0,72)": các số 0,510–0,719 đó là
+  **BOX-cos** (mask = cả hình chữ nhật, lẫn nền), **không so được** với phân bố mask-cos ở đây (P2 review
+  21-11). Muốn phát biểu phải có clip quay đúng cảnh + chấm **mask-cos** của vùng sai.
+- Vẫn **KHÔNG mở cổng** (PR-2): chưa có mask-cos của vùng sai kiểu **cùng tông** (khung cửa 0,912 nằm
+  **trong** dải ca đúng). Cần **1 clip sạch** bằng `scripts/record_raw.py` ở đúng cảnh.
+
+### Đã sửa sau review độc lập (P1-1, P1-2, 8 P2)
+1. **P1-1** — 4 cột danh tính vào **`drift_samples.csv`** (CSV duy nhất của đường live) + `_worker_telemetry`;
+   tiêu chí "CSV live" trước đó **không thể** đạt.
+2. **P1-2** — đo lại trên cây sạch (`git_dirty_code = false`), `p05` qua `phan_vi` dùng chung, n **theo từng
+   lần chạy**, artifact có `git_dirty_code` + `vi_sao_sinh_lai`.
+3. **P2** — chấm `cos` **TRƯỚC** khi nạp neo (hết mẫu 1,0 cấu trúc); `MIN_ANCHORS` 2 → **3**; neo lọc
+   **dải mép khung** như `_collect_reference`; frame `start()` **không chấm 2 lần**; `mask_area = None`
+   (không phải 0) khi engine không trả mask; thêm test giết được mutant cho **cả 2 đường VOS** (bỏ call ở
+   `_store_vos` ⇒ `vos_every=3` đỏ).
+4. **Còn nợ (P2/P3, ghi ở log):** `object_signature` vẫn tính **2 lần/frame** trên đường CLI (`_collect_reference`
+   + neo) ⇒ ~1,5 ms; `post_ms` bao gồm chi phí neo ở đường có luồng nhưng **không** ở đường inline ⇒
+   `mask_age_total_ms` không so trực tiếp giữa 2 đường; `track_cos` gắn với frame VOS còn `bbox` trong
+   `status.json` là frame hiển thị (lệch thế hệ, chờ V2).
 
 **Đã kiểm trong phiên này (bug tự bắt):** bản đầu đặt neo inline trong `_after_vos` ⇒ đo thật với
 `--vos-every 3` cho `track_cos = None, n = 0` **6/6 lần** vì đường có luồng VOS **không đi qua**
