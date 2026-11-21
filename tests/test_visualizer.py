@@ -393,3 +393,41 @@ class TestKhongVeOChungKhiMatDau:
         img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220)))
         assert not np.array_equal(img[200:220, 200:220], frame[200:220, 200:220]), \
             "có bằng chứng mà không vẽ ô ⇒ test vô nghĩa"
+
+
+class TestCanhBaoOChonPhuMat:
+    """21-11: cảnh báo "ô chọn phủ khuôn mặt" phải VẼ LÊN ẢNH, không chỉ in console.
+
+    Đo thật: console đã in `IoU 0.76` mà người dùng vẫn chọn ô trùm mặt 3 phiên liền ⇒ khoanh đỏ ô mặt
+    là thứ không thể bỏ qua. Vẽ tự hết hạn để không che HUD cả phiên.
+    """
+
+    def test_ve_vien_do_quanh_o_mat(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat((100, 60, 80, 90), giay=30)
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        vien = img[60:63, 100:180]                      # cạnh trên của ô mặt
+        do = ((vien[:, :, 2] > 200) & (vien[:, :, 1] < 80) & (vien[:, :, 0] < 80)).sum()
+        assert do > 100, f"không thấy viền đỏ (đếm {do} px)"
+
+    def test_tu_het_han(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat((100, 60, 80, 90), giay=0.0)   # hết hạn ngay
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        vien = img[60:63, 100:180]
+        do = ((vien[:, :, 2] > 200) & (vien[:, :, 1] < 80) & (vien[:, :, 0] < 80)).sum()
+        assert do == 0, "hết hạn rồi mà vẫn vẽ ⇒ cảnh báo sẽ che HUD cả phiên"
+
+    def test_none_thi_khong_ve(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat(None)
+        img = viz.render(_frame(), _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        assert img is not None

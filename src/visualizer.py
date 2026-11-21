@@ -113,6 +113,34 @@ class Visualizer:
         else:
             self.consecutive_lost = 0
 
+    def canh_bao_o_chon_phu_mat(self, face_xywh, giay: float = 4.0) -> None:
+        """Khoanh đỏ ô KHUÔN MẶT mà ô chọn đang phủ, giữ trên màn hình `giay` giây.
+
+        Vì sao vẽ chứ không chỉ in console (đo 21-11): console đã in `IoU 0.76` mà người dùng vẫn chọn
+        ô trùm mặt 3 lần liền. Khoanh đỏ lên ảnh là thứ không thể bỏ qua.
+        """
+        import time as _time
+
+        if face_xywh is None:
+            self._face_warning = None
+            return
+        self._face_warning = (tuple(float(v) for v in face_xywh[:4]), _time.monotonic() + float(giay))
+
+    def _draw_face_warning(self, img) -> None:
+        canh = getattr(self, "_face_warning", None)
+        if not canh:
+            return
+        import time as _time
+
+        face, het_han = canh
+        if _time.monotonic() > het_han:
+            self._face_warning = None
+            return
+        x, y, w, h = (int(v) for v in face)
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0, 255), 3)
+        for i, chu in enumerate(("O BAN CHON PHU KHUON MAT", "bam 'r' chon lai o CHI quanh vat")):
+            self._put_text(img, chu, (max(6, x), max(20, y - 12 + i * 24)))
+
     def render(self, frame, result, overlay_age_ms=None, display_fps=None,
                switch_warning=False, reid_state=None, reid_score=None):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
@@ -171,6 +199,9 @@ class Visualizer:
             else:
                 detail = f" (khop {reid_score:.2f})"
             self._put_text(img, f"DANG TIM LAI...{detail}", (8, 128))
+
+        # 4b) cảnh báo "ô chọn phủ khuôn mặt" (tự hết hạn) — vẽ ĐÈ lên mọi thứ
+        self._draw_face_warning(img)
 
         # 5) ghi nếu recorder đang mở
         self._write(img)

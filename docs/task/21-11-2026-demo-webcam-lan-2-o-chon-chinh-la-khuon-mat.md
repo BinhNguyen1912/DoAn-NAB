@@ -68,3 +68,30 @@ nhân bằng artifact + ảnh, không đoán.
 - Ảnh bằng chứng: `docs/media/reid/demoip_1121_o_chon_la_mat.jpg` (lưới 18 frame + số IoU)
 - `data/demoip_1121-075227_{summary,run_info}.json`, `data/demoip_1121-075227_metrics.csv`
 - `models/face/face_detection_yunet_2023mar.onnx` (YuNet, dùng chung với `src/reid.py`)
+
+---
+
+## Phiên lần 3 (`data/demoip_1121-080547`, `--image-size 192`, `git_rev 3a3b350`) — ô chọn phủ CẢ mặt và vật
+
+### Số (từ `_summary.json` / CSV)
+| Đại lượng | Số | So với phiên trước |
+|---|---|---|
+| `mean_latency_ms` / p95 | **140,0 / 157,2** (n=215) | **360 → 140 ms** (nhờ `--image-size 192`) ⇒ suy luận ~7,1 lần/giây |
+| `lost` / `reacquiring` / `reacquired` | **6 / 4 / 2** (3 %) | 15/11/2 → 6/4/2 |
+| CPU / RAM | 463 % (≈58 % máy) / 624 MB | |
+| 2 lần nhận lại | f211 **score 0,734 / ncc 0,423** · f215 **score 0,663 / ncc 0,356** | lần 2 **sát ngưỡng** 0,35 |
+
+### Diễn biến (xem ảnh `data/anh_tmp/demoip3_giua.jpg`, `demoip3_cuoi.jpg`)
+- Cảnh báo lúc chọn **đã in đúng**: `PHU KHUON MAT (IoU 0.76…)` — vì ô chọn (260×282) **trùm cả mặt và
+  bình vàng**.
+- **f0–f170**: mask/ô bám **KHUÔN MẶT** (SAM 2 chọn vùng lớn hơn trong hai ứng viên của ô).
+- **~f171–f221**: chuyển sang bám **BÌNH VÀNG** và bám tốt tới cuối (trừ 2 cụm mất dấu ngắn ở f207–210,
+  f213–214).
+⇒ "mất dấu thì focus nhầm chỗ" = **ô chọn đưa cho hệ HAI ứng viên**; nó đổi ứng viên khi vật/người di
+chuyển. Không phải re-ID bịa ra vật mới.
+
+### Sửa: cảnh báo nay VẼ LÊN ẢNH (không thể bỏ qua)
+`Visualizer.canh_bao_o_chon_phu_mat()` khoanh **viền đỏ quanh ô khuôn mặt** (do YuNet tìm) + 2 dòng chữ
+`O BAN CHON PHU KHUON MAT` / `bam 'r' chon lai o CHI quanh vat`, tự hết hạn sau **4 s**. Gắn ở cả hai đường
+chọn ô (`src/smooth_display.py`, `src/live_pipeline.py`), fail-open. 3 test mới (có viền đỏ · hết hạn thì
+không vẽ · `None` không vẽ). Ảnh kiểm: `data/anh_tmp/canh_bao_mat.jpg`.

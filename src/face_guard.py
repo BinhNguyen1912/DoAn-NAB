@@ -97,19 +97,31 @@ class BoDoMat:
             return []
 
 
+def kiem_o_chon(frame, bbox_xywh, bo_do: "BoDoMat | None" = None) -> tuple[str | None, tuple | None]:
+    """`(câu cảnh báo | None, ô mặt bị phủ | None)` — dùng khi cần VẼ ô mặt lên màn hình.
+
+    Trả ô mặt (hệ `(x, y, w, h)`) để tầng hiển thị khoanh đỏ chỗ hệ thống cho là khuôn mặt: người dùng
+    thấy ngay "à, ô mình chọn đang trùm lên mặt" thay vì chỉ đọc một dòng console (đo 21-11: cảnh báo
+    console đã in đúng `IoU 0.76` mà người dùng vẫn chọn ô trùm mặt 3 lần liên tiếp).
+    """
+    if bbox_xywh is None:
+        return None, None
+    bo = bo_do or BoDoMat()
+    mat = mat_bi_phu(bbox_xywh, bo.detect(frame))
+    if mat is None:
+        return None, None
+    face, iou = mat
+    cau = (f"[CANH BAO] o ban chon PHU KHUON MAT (IoU {iou:.2f} voi mat {tuple(int(v) for v in face)}).\n"
+           "            Neu ban muon bam VAT: bam 'r' roi chon lai o CHI quanh vat (dung de mat trong o).\n"
+           "            Ly do do duoc (21-11): vat cung tong mau da canh mat -> re-ID nhan lai vao MAT "
+           "(cosine 0.974 / ncc 0.545) - khong nguong nao chan duoc.")
+    return cau, face
+
+
 def canh_bao_chon_o(frame, bbox_xywh, bo_do: "BoDoMat | None" = None) -> str | None:
     """Câu cảnh báo (ASCII, in ra console) nếu ô chọn phủ khuôn mặt; `None` nếu không.
 
     ASCII vì console Windows (cp1258/cp437) làm hỏng dấu tiếng Việt — cùng quy ước HUD của repo.
     """
-    if bbox_xywh is None:
-        return None
-    bo = bo_do or BoDoMat()
-    mat = mat_bi_phu(bbox_xywh, bo.detect(frame))
-    if mat is None:
-        return None
-    face, iou = mat
-    return (f"[CANH BAO] o ban chon PHU KHUON MAT (IoU {iou:.2f} voi mat {tuple(int(v) for v in face)}).\n"
-            "            Neu ban muon bam VAT: bam 'r' roi chon lai o CHI quanh vat (dung de mat trong o).\n"
-            "            Ly do do duoc (21-11): vat cung tong mau da canh mat -> re-ID nhan lai vao MAT "
-            "(cosine 0.974 / ncc 0.545) - khong nguong nao chan duoc.")
+    cau, _ = kiem_o_chon(frame, bbox_xywh, bo_do=bo_do)
+    return cau

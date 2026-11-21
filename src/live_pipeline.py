@@ -222,19 +222,21 @@ class InteractiveSummary:
     processed: int = 0
 
 
-def _canh_bao_neu_chon_mat(frame, bbox) -> None:
+def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
     """In cảnh báo nếu ô vừa chọn phủ KHUÔN MẶT (plan 21-11; đo: ô chọn trùng mặt IoU 0,768).
 
     Chỉ CẢNH BÁO, không sửa ô: bám mặt là hợp lệ nếu người dùng muốn thế. Fail-open — `face_guard`
     nuốt mọi lỗi để cảnh báo phụ không làm chết phiên demo.
     """
     try:
-        from src.face_guard import canh_bao_chon_o
+        from src.face_guard import kiem_o_chon
 
         x1, y1, x2, y2 = (int(v) for v in bbox)
-        cau = canh_bao_chon_o(frame, (x1, y1, max(1, x2 - x1), max(1, y2 - y1)))
+        cau, mat = kiem_o_chon(frame, (x1, y1, max(1, x2 - x1), max(1, y2 - y1)))
         if cau:
             print(cau, flush=True)
+        if mat is not None and visualizer is not None:
+            visualizer.canh_bao_o_chon_phu_mat(mat)
     except Exception:                          # fail-open: không được giết phiên vì cảnh báo
         pass
 
@@ -288,7 +290,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
-                    _canh_bao_neu_chon_mat(frame, bbox)
+                    _canh_bao_neu_chon_mat(frame, bbox, visualizer)
                     last_result = (reid_session.start(frame, bbox) if reid_session is not None
                                    else engine.start(frame, bbox))
                     state = reid_session.state if reid_session is not None else None
