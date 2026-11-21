@@ -19,6 +19,7 @@ import {
   getLiveStatus,
   LIVE_FRAME_URL,
   LIVE_STREAM_URL,
+  confirmLive,
   startLive,
   stopLive,
   type BBox,
@@ -163,6 +164,16 @@ export function LivePanel(): JSX.Element {
       setFrozenFrame(null)
       setSessionKey((value) => value + 1)
       beginPolling()
+    } catch (err) {
+      setError((err as Error).message)
+    }
+  }
+
+  const onConfirmObject = async (): Promise<void> => {
+    // "Vẫn đúng, tiếp tục": worker xoá trạng thái nghi ⇒ vẽ lại mask/ô. KHÔNG chọn lại ô.
+    setError(null)
+    try {
+      setStatus(await confirmLive())
     } catch (err) {
       setError((err as Error).message)
     }
@@ -382,9 +393,18 @@ export function LivePanel(): JSX.Element {
       {bamLineText && (
         // Ô đã bị ẩn khỏi ẢNH (không chỉ panel) — dòng này là lời giải thích cho người xem vì sao
         // không còn ô/mask. `role="alert"` vì đây là thông tin trung thực, không phải gợi ý.
-        <p className="error" data-testid="bam-no-evidence" role="alert">
-          {bamLineText}
-        </p>
+        <div className="error" data-testid="bam-no-evidence" role="alert">
+          <p>{bamLineText}</p>
+          {(status?.nghi_doi_tuong || status?.bam === 'nghi_doi_tuong') && (
+            // Nút này là đường DUY NHẤT để tiếp tục mà không phải chọn lại ô. Thiếu nó thì một lần
+            // báo nhầm làm buổi demo đứng im (đo 21-11: cổng báo 0,71 % frame nhưng latch giữ tới
+            // khi người dùng quyết).
+            <button type="button" onClick={() => void onConfirmObject()}
+                    data-testid="live-confirm-object">
+              Vẫn đúng, tiếp tục
+            </button>
+          )}
+        </div>
       )}
 
       {maskLine && (

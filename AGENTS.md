@@ -492,5 +492,6 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   Nay `src/identity_guard.IdentityWatch` giữ trạng thái nghi (latch) tới khi bấm `r` (chọn lại) hoặc `c`
   (vẫn đúng) và `visualizer` **không vẽ** mask/ô khi nghi. Chi phí đo được: cổng báo **21 lần/2 973 frame
   (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
-  bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Đường web/worker chưa có cổng
-  này** — đừng nói hai đường hành xử giống nhau.
+  bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
+  "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
+  e2e trên Chrome thật kiểm banner + nút + endpoint).

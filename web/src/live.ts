@@ -241,8 +241,18 @@ export function sourceCheckLine(
  *  - `bam === 'tracking'` ⇒ `null` (không chiếm chỗ trên HUD).
  */
 export function bamLine(status: { bam?: string | null; bam_ly_do?: string | null
-  bam_no_evidence_n?: number } | null | undefined): string | null {
+  bam_no_evidence_n?: number; nghi_doi_tuong?: boolean
+  nghi_doi_tuong_n?: number } | null | undefined): string | null {
   if (!status) return null
+  // Cổng nhảy CÓ NHỚ (21-11). Đo trên phiên thật: cổng báo đúng 1 lần (bám sang cửa/tường be cùng
+  // tông) rồi hệ vẽ mask SAI 65 frame vì chuyển động sau đó lại mượt. Nay worker ẩn ô và HỎI người
+  // dùng — câu này phải nói rõ 2 lựa chọn, không chỉ "đã ẩn".
+  if (status.nghi_doi_tuong === true || status.bam === 'nghi_doi_tuong') {
+    const n = status.nghi_doi_tuong_n ?? 0
+    const dem = n > 0 ? ` · ${n} frame đã ẩn` : ''
+    return 'Nghi đã bám sang ĐỐI TƯỢNG KHÁC (ô bao nhảy vô lý) — ô đã được ẩn khỏi ảnh. '
+      + 'Bấm "Vẫn đúng, tiếp tục" nếu vẫn là vật đã chọn, hoặc chọn lại ô.' + dem
+  }
   if (status.bam == null) return null
   if (status.bam === 'tracking') return null
   // HIỆN CHỈ có `mask_rong`: `lk_tu_choi` từng có trong bản nháp và đã bị bỏ vì ĐO ĐƯỢC nó báo oan

@@ -16,6 +16,7 @@ import pytest
 from src.drift_samples import DRIFT_CSV_NAME
 from src.live_tracking import (
     BBOX_NAME,
+    CONFIRM_NAME,
     FRAME_NAME,
     STATE_ERROR,
     STATE_STOPPED,
@@ -159,7 +160,10 @@ class TestLiveTrackingSession:
         # "mask có nhưng bám sang nền cùng màu" (phiên `demoip_1121-103854`: bám máy lạnh 9 s).
         # P3 review vòng 2: 5 khoá danh tính phải nằm trong `bat_buoc`, không chỉ `cho_phep` —
         # để allowlist không xanh khi ai đó xoá chúng khỏi `status_payload` (tiêu chí của plan).
-        bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n"}
+        bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n",
+                               # 21-11: cổng nhảy CÓ NHỚ. BẮT BUỘC — web cần `bam`/cờ này để hiện
+                               # banner + nút "vẫn đúng"; xoá khỏi `status_payload` thì test phải đỏ.
+                               "nghi_doi_tuong", "nghi_doi_tuong_n"}
         cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
@@ -3028,3 +3032,80 @@ class TestDongCsvMotTheHeKhongTron:
             if r["bbox_x1"] != "" and r["bbox_w"] != "":
                 w = int(r["bbox_x2"]) - int(r["bbox_x1"])
                 assert int(r["bbox_w"]) == w, f"frame {r['frame_idx']}: bbox_w={r['bbox_w']} nhưng ô rộng {w}"
+
+
+class TestCongNhayCoNhoDuongWeb:
+    """21-11: cổng nhảy CÓ NHỚ trên đường WEB (worker) — ẩn ô + xác nhận qua `confirm.json`.
+
+    Vì sao: cùng ca đã đo trên CLI (bám sang cửa/tường be cùng tông, cổng báo đúng 1 lần rồi hệ vẽ
+    mask sai 65 frame). `track_cos` không phân biệt được (0,752–0,989 nằm trong dải ca đúng) ⇒ hành
+    động đúng là NGỪNG VẼ + hỏi người dùng, và phải làm được trên web chứ không chỉ CLI.
+    """
+
+    def _config(self, video_source, tmp_path):
+        out = tmp_path / "live_nhay"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}),
+                                     encoding="utf-8")
+        return out, LiveTrackConfig(source=video_source, out_dir=out, vos_every=1,
+                                    display_fps=60, stop_after_frames=12)
+
+    @pytest.fixture
+    def video_to(self, write_video, tmp_path):
+        """Video 240×320 (KHÔNG dùng fixture 48×64: ngưỡng nhảy = 0,25 × đường chéo = 20 px, hộp
+        nhảy trong khung 48 px không vượt nổi ngưỡng ⇒ test không kiểm được gì)."""
+        frames = np.full((6, 240, 320, 3), 90, np.uint8)
+        return str(write_video(tmp_path / "to.mp4", frames, fps=10))
+
+    def test_o_nhay_thi_bam_nghi_doi_tuong_va_an_o(self, video_to, tmp_path):
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:            # nhảy sang góc kia (vô lý với chuyển động thật)
+                    # Suy kích thước từ FRAME (fixture đổi cỡ ảnh): hộp cứng 240×180 từng rơi ra
+                    # ngoài khung ⇒ mask rỗng ⇒ nhánh `mask_rong` che mất phép kiểm cổng nhảy.
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        st = sess.run()
+        # Frame CUỐI có thể là mask rỗng (video hết) ⇒ `bam` cuối = `no_evidence`; điều phải đúng là
+        # cổng đã BẬT và ĐÃ có frame bị ẩn vì nghi (không phải "chưa từng nghi").
+        assert st.nghi_doi_tuong is True, "cờ nghi phải được giữ sau khi bật"
+        assert st.nghi_doi_tuong_n > 0, "phải có ít nhất 1 frame bị ẩn vì nghi"
+        bam_da_ghi = [b for _, b in sess._bam_by_frame]
+        assert "nghi_doi_tuong" in bam_da_ghi, f"bam đã ghi: {sorted(set(bam_da_ghi))}"
+        payload = json.loads((out / "status.json").read_text(encoding="utf-8"))
+        assert payload["nghi_doi_tuong"] is True and payload["nghi_doi_tuong_n"] > 0
+        # ô ĐÃ BỊ ẨN khỏi ảnh: worker vẽ lại frame gốc, không có mask/ô
+        assert (out / FRAME_NAME).is_file()
+
+    def test_confirm_json_xoa_trang_thai_nghi(self, video_to, tmp_path):
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        # chạy tới khi nghi, rồi ghi `confirm.json` (như API làm) và cho worker xử lý
+        st = sess.run()
+        assert st.nghi_doi_tuong is True
+        (out / CONFIRM_NAME).write_text('{"ts": 1}', encoding="utf-8")
+        sess._check_confirm(out)
+        assert sess._stats.nghi_doi_tuong is False
+        assert sess._stats.bam != "nghi_doi_tuong"
+        assert not (out / CONFIRM_NAME).exists(), "file lệnh phải được xoá để chỉ có hiệu lực 1 lần"

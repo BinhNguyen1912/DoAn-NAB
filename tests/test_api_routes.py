@@ -209,6 +209,8 @@ class TestHopDongOpenApi:
             "/api/live/stream",
             # dò nguồn frame để UI tự điền (13-11-2026)
             "/api/live/sources",
+            # 21-11: xác nhận "vẫn đúng đối tượng" khi cổng nhảy báo nghi (`bam == "nghi_doi_tuong"`)
+            "/api/live/confirm",
         }
         assert bat_buoc <= set(paths), f"thiếu endpoint: {bat_buoc - set(paths)}"
         # không có endpoint lạ ngoài danh sách (bỏ "/" — phụ thuộc web/dist)

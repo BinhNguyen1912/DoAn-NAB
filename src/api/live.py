@@ -146,6 +146,22 @@ class LiveStreamService:
         finally:
             self._start_lock.release()
 
+    def confirm(self) -> LiveStatus:
+        """Xác nhận "vẫn đúng đối tượng" ⇒ worker XOÁ trạng thái nghi đổi đối tượng.
+
+        Dùng khi cổng nhảy (`IdentityWatch`) báo nghi và UI hiện banner: người dùng bấm "vẫn đúng" thì
+        hệ vẽ lại mask/ô mà KHÔNG phải chọn lại. Không có lệnh này thì chỉ còn cách chọn lại ô — quá
+        nặng cho một lần báo nhầm, và trên sân khấu demo thì không kịp.
+        """
+        with self._lock:
+            source = self._source
+        write = getattr(source, "confirm", None)
+        if write is None:
+            raise SourceUnavailable("nguồn hiện tại không hỗ trợ xác nhận đối tượng "
+                                    "(chỉ áp dụng khi đang bám đối tượng)")
+        write()
+        return self.status()
+
     def stop(self) -> LiveStatus:
         """Dừng phát và đóng nguồn.
 
@@ -196,7 +212,12 @@ class LiveStreamService:
                             cau_hinh_lech=detail.cau_hinh_lech,
                             image_size_hieu_luc=detail.image_size_hieu_luc,
                             suc_khoe=detail.suc_khoe,
-                            suc_khoe_cau=detail.suc_khoe_cau)
+                            suc_khoe_cau=detail.suc_khoe_cau,
+                            bam=detail.bam, bam_ly_do=detail.bam_ly_do,
+                            bam_no_evidence_n=detail.bam_no_evidence_n,
+                            # 21-11: cổng nhảy CÓ NHỚ — UI cần biết để hiện banner + nút "vẫn đúng".
+                            nghi_doi_tuong=detail.nghi_doi_tuong,
+                            nghi_doi_tuong_n=detail.nghi_doi_tuong_n)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

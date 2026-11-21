@@ -233,6 +233,9 @@ class TestLiveRoutes:
                              # 3 trường "có bằng chứng về vật" (21-11, plan P4) — KHÁC `state`:
                              # `null` = chưa biết, không được đọc thành "đang bám"
                              "bam", "bam_ly_do", "bam_no_evidence_n",
+                             # 21-11: cổng nhảy CÓ NHỚ — `bam == "nghi_doi_tuong"` + 2 khoá này
+                             # cho UI biết phải hiện banner + nút "vẫn đúng" (`/api/live/confirm`).
+                             "nghi_doi_tuong", "nghi_doi_tuong_n",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -1266,3 +1269,35 @@ class TestBamXuyenTang:
         assert body["bam"] == "no_evidence"
         assert body["bam_ly_do"] == "mask_rong"
         assert body["bam_no_evidence_n"] == 7
+
+
+class TestXacNhanDoiTuong:
+    """21-11: `POST /api/live/confirm` — "vẫn đúng, tiếp tục" khi cổng nhảy báo nghi.
+
+    Vì sao phải có: worker ẩn mask/ô khi nghi đổi đối tượng (đo: cổng báo đúng 1 lần rồi hệ vẽ mask
+    SAI 65 frame). Nếu chỉ có "chọn lại ô" thì một lần báo nhầm làm buổi demo đứng im.
+    """
+
+    def test_confirm_ghi_file_cho_worker(self, tmp_path):
+        from src.api.adapters.worker_source import WorkerFrameSource
+        from src.live_tracking import CONFIRM_NAME
+
+        src = WorkerFrameSource("0", out_dir=tmp_path)
+        src.confirm()
+        assert (tmp_path / CONFIRM_NAME).is_file(), "phải ghi confirm.json cho worker đọc"
+        # lệnh chỉ có hiệu lực MỘT lần: worker tự xoá; ở đây kiểm nội dung là JSON hợp lệ
+        import json
+        json.loads((tmp_path / CONFIRM_NAME).read_text(encoding="utf-8"))
+
+    def test_nguon_khong_ho_tro_thi_bao_loi_mien(self, live_service):
+        # FakeFrameSource không có `confirm` (nguồn raw/chế độ chỉ phát khung hình) ⇒ lỗi MIỀN rõ
+        # ràng, không được im lặng trả "đã xác nhận" trong khi chẳng có gì xảy ra.
+        with pytest.raises(SourceUnavailable):
+            live_service.confirm()
+
+    def test_api_chua_co_phien_tra_loi_mien(self, live_client):
+        res = live_client.post("/api/live/confirm")
+        # chưa có phiên ⇒ lỗi MIỀN (4xx), KHÔNG phải 500
+        assert res.status_code in (400, 409)
+        chi_tiet = res.json()["detail"].lower()
+        assert "xác nhận" in chi_tiet or "phiên" in chi_tiet

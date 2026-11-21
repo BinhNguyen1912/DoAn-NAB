@@ -366,6 +366,44 @@ async function waitJobState(page, wanted, timeout = 240000) {
     await liveCard.getByTestId('suc-khoe-line').count() === 0,
     `số dòng = ${await liveCard.getByTestId('suc-khoe-line').count()}`)
 
+  // Cổng nhảy CÓ NHỚ "nghi đổi đối tượng" (21-11): worker ẩn ô khi nghi bám sang vật khác, và UI
+  // phải cho người dùng ĐƯỜNG TIẾP TỤC (`POST /api/live/confirm`) — thiếu nút thì một lần báo nhầm
+  // làm buổi demo đứng im. Mock route chỉ chứng minh phần HIỂN THỊ + việc gọi đúng endpoint; phần
+  // worker (latch, ẩn ô, xoá file `confirm.json`) có test Python riêng.
+  {
+    await page.unroute('**/api/live/status')
+    await page.route('**/api/live/status', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'stub', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: null, suc_khoe_cau: null,
+          bam: 'nghi_doi_tuong', bam_ly_do: 'o_nhay', bam_no_evidence_n: 0,
+          nghi_doi_tuong: true, nghi_doi_tuong_n: 12 }) })
+    })
+    let goiConfirm = false
+    await page.route('**/api/live/confirm', async (route) => {
+      goiConfirm = true
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'da xac nhan', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: null, suc_khoe_cau: null, bam: 'tracking',
+          bam_ly_do: null, bam_no_evidence_n: 0, nghi_doi_tuong: false, nghi_doi_tuong_n: 0 }) })
+    })
+    await page.waitForTimeout(1300)
+    const chu = ((await liveCard.getByTestId('bam-no-evidence').textContent().catch(() => '')) || '')
+      .replace(/\s+/g, ' ')
+    check('HUD báo NGHI ĐỔI ĐỐI TƯỢNG + nói rõ 2 lựa chọn khi bam=nghi_doi_tuong',
+      /ĐỐI TƯỢNG KHÁC/.test(chu) && /12 frame đã ẩn/.test(chu), chu || '(không thấy dòng nào)')
+    const nut = liveCard.getByTestId('live-confirm-object')
+    check('có nút "Vẫn đúng, tiếp tục" để tiếp tục mà không phải chọn lại ô',
+      await nut.count() === 1)
+    await nut.click()
+    await page.waitForTimeout(400)
+    check('bấm nút gọi ĐÚNG endpoint /api/live/confirm', goiConfirm === true,
+      `goiConfirm=${goiConfirm}`)
+    await page.unroute('**/api/live/confirm')
+  }
+
   // "Có bằng chứng về vật" (21-11, plan P4): `state` = running KHÔNG có nghĩa là đang bám. Ba trạng
   // thái phải phân biệt được trên trình duyệt thật — mock route chỉ chứng minh được phần HIỂN THỊ,
   // phần DTO đã có test Python riêng (`TestBamXuyenTang`) vì e2e mock `**/api/live/status`.

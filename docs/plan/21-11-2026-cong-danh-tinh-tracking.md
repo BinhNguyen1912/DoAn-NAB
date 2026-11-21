@@ -185,7 +185,9 @@ ngoại hình, mà **hành động theo cổng nhảy đã có**.
   giờ bị ẩn**: `data/identity_latch_chi_phi_2026-11-21_metrics.json`.
 - Code: `IdentityWatch` (latch) + `visualizer` **không vẽ** mask khi nghi + banner `r`/`c`; phím `c` =
   xác nhận vẫn đúng; cột CSV `nghi_doi_tuong` để soi lại. Test giết được mutant "bỏ latch".
-- **Nợ**: đường web/worker chưa có cổng này (cần `status.json` + `web/`).
+- **Đã đồng bộ sang đường WEB** (cùng ngày): `bam = "nghi_doi_tuong"` + `nghi_doi_tuong(_n)` trong
+  `status.json`/DTO; `POST /api/live/confirm` (IPC `confirm.json`, worker tự xoá file); web hiện banner
+  `role="alert"` + nút "Vẫn đúng, tiếp tục". `./run e2e` PASS với 3 phép kiểm mới.
 
 ### Đã sửa sau review độc lập (P1-1, P1-2, 8 P2)
 1. **P1-1** — 4 cột danh tính vào **`drift_samples.csv`** (CSV duy nhất của đường live) + `_worker_telemetry`;

@@ -156,9 +156,21 @@ Sau khi đo được "cổng nhảy báo đúng nhưng chỉ in ra", đã làm (
    test end-to-end ẩn overlay + ghi cờ; test `c` không gọi `reset`; **mutant "bỏ latch" làm test ĐỎ**.
    `./run lint` xanh · `./run test` **1698 passed**, 5 deselected.
 
-**Chưa làm (ghi ticket Next steps):** đường **web/worker** (`src/live_tracking.py`) chưa có cổng này —
-worker vẫn vẽ mask của frame VOS; muốn đồng bộ phải thêm cờ vào `status.json` + `bam` một giá trị mới
-(`nghi_doi_tuong`) và cập nhật `web/`.
+### Đã bổ sung vào ĐƯỜNG WEB (cùng ngày, theo yêu cầu)
+1. **Worker** (`src/live_tracking.py`): `IdentityWatch` latch + `bam = "nghi_doi_tuong"` (lý do `o_nhay`);
+   `_annotate` **không vẽ** mask/ô/quỹ đạo và HUD thêm `NGHI DOI TUONG (o nhay) — chon lai hoac XAC NHAN`;
+   ô VOS của chính frame này so với **ô tốt gần nhất**; chọn ô mới (`start()` lần nữa) ⇒ xoá nghi.
+2. **IPC** `confirm.json`: API ghi file, worker đọc + **tự xoá** (lệnh chỉ có hiệu lực 1 lần); dùng file vì
+   worker là tiến trình riêng và hợp đồng sẵn có (`bbox.json`/`status.json`/`frame.jpg`) — không thêm socket.
+3. **API**: `POST /api/live/confirm` → `LiveStreamService.confirm()` → adapter ghi `confirm.json`;
+   nguồn không hỗ trợ ⇒ `SourceUnavailable` (400), không im lặng. `status.json`/DTO thêm
+   `nghi_doi_tuong` + `nghi_doi_tuong_n`; mô tả `bam` có thêm giá trị mới.
+4. **Web**: `LiveStatus` type + `confirmLive()`; `bamLine()` có nhánh riêng nói **2 lựa chọn**;
+   `LivePanel` hiện banner `role="alert"` + nút **"Vẫn đúng, tiếp tục"** (gọi `/api/live/confirm`).
+5. **Kiểm**: Python **1703 passed** (5 deselected) · `./run webtest` **80 passed** · `npm run build` OK ·
+   **`./run e2e` PASS** với **3 phép kiểm mới** trên Chrome thật (banner + nút + bấm nút gọi đúng endpoint).
+   Test Python khoá: latch bật ⇒ `bam/status.json` = `nghi_doi_tuong` + `nghi_doi_tuong_n > 0`; `confirm.json`
+   ⇒ xoá nghi + file bị xoá; 3 test API (ghi file · nguồn không hỗ trợ ⇒ 400 · chưa có phiên ⇒ 4xx).
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **P1 review vòng 2 (nghiêm trọng nhất)**: 4 cột danh tính trong `drift_samples.csv` đọc từ `self._stats`

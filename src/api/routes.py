@@ -214,6 +214,15 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
         """Dừng phát và đóng nguồn (giải phóng webcam)."""
         return _live_status(live.stop())
 
+    @router.post("/api/live/confirm", response_model=LiveStatusResponse)
+    def confirm_live_bbox() -> LiveStatusResponse:
+        """Xác nhận "vẫn đúng đối tượng" ⇒ worker xoá trạng thái nghi đổi đối tượng và vẽ lại mask.
+
+        Dùng khi `bam == "nghi_doi_tuong"` (worker đã ẩn ô vì nghi bám sang vật khác) mà người dùng
+        thấy vẫn đúng. Không có lệnh này thì chỉ còn cách chọn lại ô.
+        """
+        return _live_status(live.confirm())
+
     @router.get("/api/live/status", response_model=LiveStatusResponse)
     def live_status() -> LiveStatusResponse:
         """Trạng thái + số frame + FPS thực đo của phiên live."""
