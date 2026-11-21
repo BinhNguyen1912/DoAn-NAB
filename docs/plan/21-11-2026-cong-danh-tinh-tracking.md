@@ -121,18 +121,28 @@ Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + per-clip, có 
 ### Đường LIVE (`scripts/measure_live_relay.py`, worker thật qua API, 45 s)
 | cửa sổ | n | median | **min** | < 0,75 |
 |---|---|---|---|---|
-| **vật trong khung `0:110`** | 26 | 0,9531 | **0,8901** | **0** |
-| sau khi vật rời khung | 196 | 0,9591 | 0,4637 | 13 |
+| **vật trong khung `0:110`** | 29 | 0,9542 | **0,9070** | **0** |
+| sau khi vật rời khung | 211 | 0,9586 | 0,3115 | 18 |
+
+> Đo lại sau **P1 review vòng 2**: bản trước ghi n=26/min 0,8901 và **18/364 dòng CSV mâu thuẫn**
+> (`empty=1` mà `mask_area = 59 333`) vì 4 cột danh tính đọc từ `self._stats` (lần VOS **gần nhất**).
+> Nay `identity` đi kèm dòng CSV + `pending` 9 phần tử ⇒ **0 dòng mâu thuẫn**, đo bằng
+> `src.drift_samples.thong_ke_danh_tinh()` (`n_dong_mau_thuan_mask_area_vs_empty = 0`).
 
 - **Tiêu chí "CSV live có `track_cos`" nay ĐO ĐƯỢC** (trước review là **không**: `drift_samples.csv` không
-  có cột, `_worker_telemetry` lọc mất khoá): **98,2 %** frame có `mask_area > 0` có `track_cos`
-  (222/226) ⇒ đạt ngưỡng ≥95 % đã đặt. `p05` của cửa sổ trong-khung = `None` vì n = 26 < 30 (đúng ngưỡng
-  công bố, **không** phải p05 = 0).
-- **Toàn bộ 13 mẫu < 0,75 ở cửa sổ sau-khi-rời-khung có `mask_area` 22–3 767 px** ⇒ đó là **mask sụp**
-  (vật đã ra khỏi khung), **không** phải "bám sang vật khác".
+  có cột, whitelist trong script đo lọc mất khoá): **99,2 %** frame có `mask_area > 0` có `track_cos`
+  (240/242) ⇒ đạt ngưỡng ≥95 % đã đặt. `p05` của cửa sổ trong-khung = `None` vì n = 29 < 30 (đúng ngưỡng
+  công bố, **không** phải p05 = 0). `worker_status` trong artifact **có** 5 khoá danh tính
+  (`track_cos = 0,9919`, `track_cos_n = 240`).
+- **Toàn bộ 18 mẫu < 0,75 ở cửa sổ sau-khi-rời-khung có `mask_area` 2–4 170 px** ⇒ đó là **mask sụp**
+  (vật đã ra khỏi khung), **không** phải "bám sang vật khác". (Con số "22–3 767" ở bản trước là **sai** —
+  P2 review vòng 2 bắt được khi đối chiếu dòng CSV.)
+- **Bất biến "mỗi dòng = một frame"** nay có test: `tests/test_drift_samples.py::
+  test_thong_ke_danh_tinh_va_bat_bien_mot_frame` + `tests/test_live_tracking.py::
+  TestDongCsvMotTheHeKhongTron` (test thứ hai **giết được mutant** "trả lại đọc `self._stats`").
 
 **Hệ quả có số cho θ:**
-- Trên **238 mẫu khi vật TRONG khung** (CLI 212 + LIVE 26), `min = 0,8080` ⇒ **θ = 0,75 chặn oan 0 mẫu**.
+- Trên **241 mẫu khi vật TRONG khung** (CLI 212 + LIVE 29), `min = 0,8080` ⇒ **θ = 0,75 chặn oan 0 mẫu**.
 - ⇒ θ ≈ 0,75 **bắt được** trạng thái **mask sụp** (giá trị 0,46–0,71 chỉ xuất hiện khi `mask_area` rất nhỏ).
 - ⚠️ **RÚT LẠI** câu "θ ≈ 0,75 BẮT được ca bám sang máy lạnh (0,51–0,72)": các số 0,510–0,719 đó là
   **BOX-cos** (mask = cả hình chữ nhật, lẫn nền), **không so được** với phân bố mask-cos ở đây (P2 review
@@ -145,7 +155,11 @@ Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + per-clip, có 
    tiêu chí "CSV live" trước đó **không thể** đạt.
 2. **P1-2** — đo lại trên cây sạch (`git_dirty_code = false`), `p05` qua `phan_vi` dùng chung, n **theo từng
    lần chạy**, artifact có `git_dirty_code` + `vi_sao_sinh_lai`.
-3. **P2** — chấm `cos` **TRƯỚC** khi nạp neo (hết mẫu 1,0 cấu trúc); `MIN_ANCHORS` 2 → **3**; neo lọc
+3. **P1 (vòng 2)** — `drift_samples.csv`: 4 cột danh tính phải của **chính frame** đó (`identity` đi kèm
+   dòng + `pending` 9 phần tử), không đọc `self._stats`; `thong_ke_danh_tinh()` parse lại + đếm dòng mâu
+   thuẫn; whitelist trong `scripts/measure_live_relay.py` mang 5 khoá. Trước: **18/364 dòng** trộn hai
+   thế hệ VOS ⇒ chính tiêu chí `mask_area == 0 ⇔ empty == 1` của plan **fail**.
+4. **P2** — chấm `cos` **TRƯỚC** khi nạp neo (hết mẫu 1,0 cấu trúc); `MIN_ANCHORS` 2 → **3**; neo lọc
    **dải mép khung** như `_collect_reference`; frame `start()` **không chấm 2 lần**; `mask_area = None`
    (không phải 0) khi engine không trả mask; thêm test giết được mutant cho **cả 2 đường VOS** (bỏ call ở
    `_store_vos` ⇒ `vos_every=3` đỏ).

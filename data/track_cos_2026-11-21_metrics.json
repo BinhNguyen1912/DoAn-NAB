@@ -1,22 +1,15 @@
 {
-  "do_luc": "2026-11-21T11:37:16",
-  "git_rev": "9e00d9d",
+  "do_luc": "2026-11-21T11:55:24",
+  "git_rev": "59c6917",
   "git_dirty_code": false,
-  "vi_sao_sinh_lai": "P1 review 21-11: artifact cũ ghi git_dirty_code=true ở 6/6 run_info (đo trên cây BẨN) và p05 dùng quy ước phân vị thứ 4; nay đo lại trên cây SẠCH + p05 qua src.drift_samples.phan_vi",
+  "vi_sao_sinh_lai": "Đo lại 21-11 sau review vòng 2: (a) 4 cột danh tính của CSV live là của CHÍNH frame đó (trước: đọc self._stats ⇒ 18/364 dòng mâu thuẫn empty=1 + mask_area>0), (b) p05 qua phan_vi, (c) số khoảng mask_area của mẫu cos thấp đã đính chính.",
   "dinh_nghia": {
-    "track_cos": "cos(mask đang bám, MAX trên 3-5 NEO từ mask 3 frame ĐẦU); None = CHƯA ĐO (chưa đủ 3 neo / mask rỗng)",
+    "track_cos": "cos(mask đang bám, MAX trên 3-5 NEO từ mask 3 frame ĐẦU); None = CHƯA ĐO",
     "p05": "src.drift_samples.phan_vi(q=5, min_samples=30) — một cửa duy nhất (ticket #23)",
-    "n": "số mẫu cos của MỘT lần chạy (1 mẫu/frame VOS). 3 lần chạy BIT-IDENTICAL về track_cos ⇒ KHÔNG cộng dồn 3 lần để 'tăng n'"
+    "n": "số mẫu cos của MỘT lần chạy (1 mẫu/frame VOS). 3 lần CLI bit-identical ⇒ KHÔNG cộng dồn"
   },
-  "da_sua_tu_ban_truoc": [
-    "chấm cos TRƯỚC khi nạp neo ⇒ hết mẫu 1,0 cấu trúc (bản trước: 4/108 mẫu/lần chạy)",
-    "MIN_ANCHORS 2 → 3 (cos lấy MAX ⇒ 2 neo, 1 hỏng = pass-giả)",
-    "neo lọc dải mép khung như ReIdSession._collect_reference (mask rác sát mép không được làm NEO)",
-    "frame start() không còn bị chấm 2 lần (neo #1 ≡ #2 ⇒ 'đủ neo' sau 1 frame)"
-  ],
   "duong_CLI": {
     "binh1": {
-      "bbox": "300,275,150,410",
       "n": 106,
       "median": 0.9604,
       "min": 0.85882,
@@ -25,7 +18,6 @@
       "giong_nhau_3_lan": true
     },
     "binh2": {
-      "bbox": "330,330,150,360",
       "n": 106,
       "median": 0.9267,
       "min": 0.808027,
@@ -35,25 +27,37 @@
     }
   },
   "duong_LIVE": {
-    "file_csv": "data/drift_samples_binh1_2026-11-21_113612.csv",
+    "file_csv": "data/drift_samples_binh1_2026-11-21_115421.csv",
     "artifact": "data/live_danhtinh_sach_2026-11-21_metrics.json",
-    "dong_csv": 364,
-    "dong_co_cos": 222,
-    "ti_le_frame_mask_khong_rong_CO_cos": 98.2,
+    "thong_ke": {
+      "n_dong": 386,
+      "n_co_cos": 240,
+      "n_mask_area_khong_rong": 242,
+      "ti_le_co_cos_tren_frame_co_mask": 99.2,
+      "track_cos_median": 0.9586,
+      "track_cos_min": 0.311493,
+      "track_cos_p05": 0.5965,
+      "n_duoi_075": 18,
+      "mask_area_min": 2,
+      "mask_area_max": 237447,
+      "n_dong_mau_thuan_mask_area_vs_empty": 0
+    },
     "trong_khung_0_110": {
-      "n": 26,
-      "median": 0.9531,
-      "min": 0.890147,
+      "n": 29,
+      "median": 0.9542,
+      "min": 0.907027,
       "p05": null,
       "duoi_075": 0
     },
-    "sau_khi_vat_ra_khung": {
-      "n": 196,
-      "median": 0.9591,
-      "min": 0.463728,
-      "duoi_075": 13,
-      "ghi_chu": "toàn bộ mẫu <0,75 ở đây có mask_area RẤT NHỎ (22-3767 px) = mask sụp khi vật rời khung, KHÔNG phải 'bám sang vật khác'"
+    "mau_duoi_075": {
+      "n": 18,
+      "mask_area_range": [
+        2,
+        4170
+      ],
+      "ghi_chu": "toàn bộ mẫu <0,75 có mask_area RẤT NHỎ (2-4 170 px) = mask sụp khi vật rời khung, KHÔNG phải 'bám sang vật khác'. (Con số 22-3 767 ở bản trước là SAI — P2 review vòng 2.)"
     },
+    "bat_bien_mot_frame": "n_dong_mau_thuan_mask_area_vs_empty = 0 (bản trước: 18)",
     "git_dirty_code": false
   },
   "lan_chay": [
@@ -65,9 +69,7 @@
       "median": 0.9604,
       "min": 0.85882,
       "p05": 0.9126,
-      "duoi_075": 0,
-      "mean_latency_ms": 87.6,
-      "git_dirty_code": false
+      "duoi_075": 0
     },
     {
       "clip": "binh1",
@@ -77,9 +79,7 @@
       "median": 0.9604,
       "min": 0.85882,
       "p05": 0.9126,
-      "duoi_075": 0,
-      "mean_latency_ms": 88.9,
-      "git_dirty_code": false
+      "duoi_075": 0
     },
     {
       "clip": "binh1",
@@ -89,9 +89,7 @@
       "median": 0.9604,
       "min": 0.85882,
       "p05": 0.9126,
-      "duoi_075": 0,
-      "mean_latency_ms": 88.6,
-      "git_dirty_code": false
+      "duoi_075": 0
     },
     {
       "clip": "binh2",
@@ -101,9 +99,7 @@
       "median": 0.9267,
       "min": 0.808027,
       "p05": 0.8141,
-      "duoi_075": 0,
-      "mean_latency_ms": 87.8,
-      "git_dirty_code": false
+      "duoi_075": 0
     },
     {
       "clip": "binh2",
@@ -113,9 +109,7 @@
       "median": 0.9267,
       "min": 0.808027,
       "p05": 0.8141,
-      "duoi_075": 0,
-      "mean_latency_ms": 88.4,
-      "git_dirty_code": false
+      "duoi_075": 0
     },
     {
       "clip": "binh2",
@@ -125,14 +119,12 @@
       "median": 0.9267,
       "min": 0.808027,
       "p05": 0.8141,
-      "duoi_075": 0,
-      "mean_latency_ms": 89.1,
-      "git_dirty_code": false
+      "duoi_075": 0
     }
   ],
   "ket_luan": {
-    "nguong_075_khong_chan_oan": "0/238 mẫu <0,75 trên cả 2 clip khi vật TRONG khung (CLI: 212 mẫu; LIVE: 26 mẫu, min 0.8901)",
-    "theta_075_BAT_DUOC_gi": "CHỈ chứng minh được điều này cho MASK SỤP (mask_area nhỏ) khi vật rời khung. KHÔNG có bằng chứng mask-cos bắt được ca 'bám sang máy lạnh': con số 0,51-0,72 của ca đó là BOX-cos (mask = cả hình chữ nhật gồm nền) — so hai đại lượng khác nhau (P2 review 21-11). Muốn kết luận phải có clip quay đúng cảnh vật cạnh máy lạnh và chấm mask-cos.",
-    "vi_sao_chua_mo_cong": "chưa có mẫu cos của vùng SAI kiểu 'cùng tông' (khung cửa 0,912 nằm TRONG dải ca đúng) ⇒ PR-2 (cổng hành động) chưa có ngưỡng nào đo được là an toàn."
+    "nguong_075_khong_chan_oan": "0/241 mẫu <0,75 khi vật TRONG khung (CLI 212 + LIVE 29)",
+    "theta_075_BAT_DUOC_gi": "CHỈ chứng minh được cho MASK SỤP (mask_area 2-4 170 px) khi vật rời khung. KHÔNG có bằng chứng mask-cos bắt được ca 'bám sang máy lạnh' (số 0,51-0,72 của ca đó là BOX-cos — hai đại lượng khác nhau; P2 review vòng 1).",
+    "vi_sao_chua_mo_cong": "chưa có mask-cos của vùng SAI cùng tông (khung cửa 0,912 nằm TRONG dải ca đúng) ⇒ PR-2 chưa có ngưỡng nào đo được là an toàn."
   }
 }

@@ -79,15 +79,15 @@
 |---|---|---|---|---|---|---|
 | CLI | `binh1` (ô chai) | 106 | 0,9604 | 0,9126 | **0,8588** | **0** |
 | CLI | `binh2` | 106 | 0,9267 | 0,8141 | **0,8080** | **0** |
-| **LIVE** | vật trong khung `0:110` | 26 | 0,9531 | `None` (n<30) | **0,8901** | **0** |
-| LIVE | sau khi vật rời khung | 196 | 0,9591 | — | 0,4637 | 13 |
+| **LIVE** | vật trong khung `0:110` | 29 | 0,9542 | `None` (n<30) | **0,9070** | **0** |
+| LIVE | sau khi vật rời khung | 211 | 0,9586 | — | 0,3115 | 18 |
 
 - **98,2 %** frame live có `mask_area > 0` có `track_cos` (222/226) ⇒ đạt tiêu chí ≥95 % đã đặt trước.
 - 3 lần chạy CLI **bit-identical** về `track_cos` (latency khác nhau 107/110 dòng) ⇒ mask/ngoại hình tái lập
   trên clip cố định (**không** suy ra "SAM 2 tất định" nói chung — AGENTS §6 vẫn đúng cho ô bao cuối).
-- **θ = 0,75 chặn oan 0/238 mẫu** khi vật trong khung.
-- 13 mẫu < 0,75 (live, sau khi vật rời khung) đều có `mask_area` **22–3 767 px** ⇒ **mask sụp**, không phải
-  "bám sang vật khác".
+- **θ = 0,75 chặn oan 0/241 mẫu** khi vật trong khung (CLI 212 + LIVE 29).
+- 18 mẫu < 0,75 (live, sau khi vật rời khung) đều có `mask_area` **2–4 170 px** ⇒ **mask sụp**, không phải
+  "bám sang vật khác". (Con số "22–3 767" ở bản log trước là **sai** — chính review vòng 2 bắt được.)
 
 ### Kết luận trung thực (quan trọng cho báo cáo)
 - θ ≈ 0,75 **chứng minh được** là bắt trạng thái **mask sụp**.
@@ -109,9 +109,24 @@
 
 ### Kiểm
 - `./run lint` xanh · `./run test` **1688 passed**, 5 deselected (117 s).
-- Review độc lập: **P0 = 0**, 3 P1 → đã sửa hết, **8/8 P2 đã sửa**, P3 còn lại ghi ở Next steps.
+- Review độc lập **vòng 1**: `NOT mergeable` (3 P1 + 8 P2) → đã sửa hết.
+- Review độc lập **vòng 2**: `NOT mergeable` (1 P1 mới + 3 P2 + 5 P3) → P1 (dòng CSV trộn hai thế hệ
+  VOS: **18/364 dòng** `empty=1` mà `mask_area = 59 333`) **đã sửa + có test giết mutant**; 3 P2 đã sửa
+  (whitelist script đo, `read_samples`/`thong_ke_danh_tinh`, số `22–3 767` → **2–4 170**); P3 đã sửa
+  (assert `bat_buoc` cho 5 khoá, xoá 12 file `data/neo_*` có provenance bẩn, ký hiệu neo nay đối xứng với
+  `cos`), riêng "reset neo khi chọn lại đối tượng" ghi Next steps (chưa có đường chọn lại giữa phiên).
+- Sau khi sửa P1: đo lại đường live ⇒ **0 dòng mâu thuẫn** (`thong_ke_danh_tinh`), 99,2 % frame có mask có
+  `track_cos`.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
+- **P1 review vòng 2 (nghiêm trọng nhất)**: 4 cột danh tính trong `drift_samples.csv` đọc từ `self._stats`
+  = lần VOS **gần nhất**, trong khi `empty`/`bbox` là của dòng đó ⇒ **18/364 dòng** mâu thuẫn
+  (`empty=1` + `mask_area = 59 333`), tức chính tiêu chí `mask_area == 0 ⇔ empty == 1` của plan **fail**.
+  Sửa: `_cap_nhat_danh_tinh` **trả về** `(bbox_w, bbox_h, mask_area, cos)`; đảo thứ tự để nó chạy **trước**
+  `_measure_drift`; `identity` đi kèm tuple `_pending_drift` (9 phần tử) và `csv_row`; `_log_drift_sample`
+  **không** đọc `self._stats` nữa. Bằng chứng: file CSV **lỗi** `data/drift_samples_binh1_2026-11-21_113612.csv`
+  (giữ lại làm bằng chứng) vs file **đúng** `…_115421.csv` (0 dòng mâu thuẫn, đo bằng
+  `src.drift_samples.thong_ke_danh_tinh`).
 - **Neo không chạy ở đường có luồng** (`--vos-every 3`): đo ra `track_cos = None` 6/6 lần. Sửa: tách hàm,
   gọi ở **cả** `_after_vos` và `_store_vos`, cộng test giết mutant.
 - **`object_signature` lỗi im lặng** trên `gray` ⇒ `None` vĩnh viễn. Sửa: truyền frame màu xuống callback.
@@ -130,6 +145,10 @@
 - [ ] **P3**: `track_cos` gắn frame VOS còn `bbox` trong `status.json` là frame hiển thị ⇒ lệch thế hệ; thêm `vos_frame_idx` (đã defer ở V2 của plan).
 - [ ] **P3**: `_auto_recover`/`_abandon_reacquire`/`_reacquire` trả `Step` **không** có `track_cos` — đúng những frame cần hiệu chuẩn θ nhất.
 - [ ] `neo_n`/`track_cos_none_n` vào `status.json` để phân biệt "chưa đủ neo" với "mask rỗng mọi lần".
+- [ ] **Reset neo + `_danh_tinh_frame_idx` khi `start()` lần hai** (chọn lại đối tượng giữa phiên — yêu cầu
+  sản phẩm AGENTS §1, hiện chưa có đường nào làm việc này nên chưa phải bug; P3 review vòng 2).
+- [ ] Đã xoá 12 file `data/neo_*` (provenance bẩn, chứa `min 0,7836` đã rút lại) — nếu cần đối chiếu lịch
+  sử thì xem commit `214e74b`.
 
 ## 📚 Tài liệu tham khảo
 - `docs/plan/21-11-2026-cong-danh-tinh-tracking.md` — plan 3 ý kiến + phản biện + đính chính số.
