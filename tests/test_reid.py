@@ -1100,6 +1100,27 @@ class TestBaP1Vong2:
         assert s._ref_bbox is None
 
 
+    def test_veto_van_duoc_ghi_khi_frame_do_con_nhan_duoc_ung_vien_khac(self, monkeypatch):
+        """Bug thật 21-11 (phiên `demoip_1121-103221`): `run_info.reid_veto_mat_n = 1` mà CSV
+
+        **không có dòng `vetoed=1`** nào. Nguyên nhân: TRONG CÙNG một frame, hệ bỏ 1 ứng viên trùng
+        mặt rồi NHẬN một ứng viên khác, mà `_reacquire()` trả `Step` mặc định `vetoed=False` ⇒ mất
+        dấu vết veto trên artifact.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        s.step(self._f())                        # mất dấu
+
+        def fake_match(frame):
+            s.veto_mat_n += 1                    # đã bỏ 1 ứng viên trùng mặt…
+            return 0.95, self.VAT, 0.9           # …và trong CÙNG frame nhận được ứng viên khác
+
+        monkeypatch.setattr(s, "_match_object", fake_match)
+        step = s.step(self._f())
+        assert step.reacquired is True
+        assert step.vetoed is True               # ← trước khi vá: False (mất dấu vết veto)
+
+
 class TestCacheKhuonMatTheoFrame:
     """P2 review vòng 3 (21-11): test "1 lần YuNet cho `step()`" KHÔNG giết được mutant bỏ cache.
 

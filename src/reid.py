@@ -538,6 +538,11 @@ class ReIdSession:
                     if self._confirm(bbox):
                         step = self._reacquire(frame, bbox, score)
                         step.ncc = ncc
+                        # Bug thật đo 21-11 trên phiên `demoip_1121-103221`: frame đó BỎ 1 ứng viên
+                        # trùng mặt (`run_info.reid_veto_mat_n = 1`) rồi NHẬN một ứng viên khác ⇒
+                        # `_reacquire` trả Step mặc định `vetoed=False` ⇒ CSV ghi `vetoed=0` và
+                        # không dòng nào giải thích được "veto đã xảy ra ở đâu".
+                        step.vetoed = vetoed
                         return step
             best_score = max(best_score, score)
             best_ncc = max(best_ncc, ncc)   # ghi cả khi BỊ LOẠI — để hiệu chuẩn ngưỡng
