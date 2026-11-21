@@ -618,7 +618,9 @@ class _VosWorker(threading.Thread):
             try:
                 # Bọc CẢ quá trình xử lý kết quả: lỗi trong `_store_vos`/`_smooth` (dữ liệu model
                 # bất thường) cũng phải thành `state=error`, không được để thread chết im lặng.
-                self._on_result(seq, self._engine.process(frame), gray)
+                # Truyền cả FRAME MÀU: `_store_vos` cần nó để chấm danh tính (`object_signature`
+                # dùng BGR→HSV); chỉ có `gray` thì mọi lần chấm đều lỗi và `track_cos` im lặng `None`.
+                self._on_result(seq, self._engine.process(frame), gray, frame)
             except Exception as exc:          # noqa: BLE001 — lỗi model phải thành trạng thái error
                 if self._on_error is not None:
                     self._on_error(exc)
@@ -904,7 +906,7 @@ class LiveTrackingSession:
                 self._stats.message = f"{where}: {exc}"
             self._stats.state = STATE_ERROR
 
-    def _store_vos(self, seq, result, gray) -> None:
+    def _store_vos(self, seq, result, gray, frame=None) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
         # `post_ms` bắt đầu TRƯỚC `_record_vos` (bên trong có `_measure_stability` ⇒ `mask_iou`
         # mask thô ~0,2–1 ms); nếu đo sau nó thì `post_ms` thiếu đúng khoản đó và chuỗi pha không
@@ -923,6 +925,9 @@ class LiveTrackingSession:
         # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
         self._measure_drift(frame_idx, result, seq)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
+        # Đường CÓ luồng VOS (`vos_every>1`) KHÔNG đi qua `_after_vos` ⇒ phải gọi ở đây, nếu không
+        # `track_cos` im lặng `None` (đo thật: 6/6 lần chạy trả None trước khi sửa).
+        self._cap_nhat_danh_tinh(frame, result)
         # TRỪ thời gian ghi PNG: `--dump-mask-frames` là DỤNG CỤ ĐO, không được làm bẩn `post_ms`
         # (rồi `mask_age_total_ms`/p95 của đúng mẫu đó — ticket #26). `cycle_ms`/`queue_ms` lấy từ
         # worker nên VẪN chứa dump của lần trước; đừng nói chúng "đã sạch".
@@ -1032,6 +1037,32 @@ class LiveTrackingSession:
         self._after_vos(frame, result)
         return result
 
+    def _cap_nhat_danh_tinh(self, frame, result) -> None:
+        """Cập nhật NEO danh tính + `cos` + cỡ ô/diện tích mask (plan 21-11-2026, LOG-ONLY).
+
+        **Phải gọi ở CẢ hai đường VOS**: `_after_vos` (đơn luồng, `vos_every=1`) và `_store_vos`
+        (có luồng VOS, `vos_every>1`). Bản đầu tôi đặt inline trong `_after_vos` ⇒ đo thật với
+        `--vos-every 3` cho `track_cos = None, n = 0` (6/6 lần chạy) vì đường có luồng **không đi qua**
+        `_after_vos` — đúng bẫy "cổng đặt sai nhịp ⇒ im lặng" mà plan đã cảnh báo.
+
+        Fail-open: đo đạc KHÔNG được giết phiên; lỗi ⇒ `cos = None` ("chưa đo"), không phải 0.
+        """
+        try:
+            mask = getattr(result, "mask", None)
+            self._neo.thu(frame, mask, getattr(result, "bbox", None))
+            cos = cos_voi_neo(self._neo, frame, mask)
+        except Exception:                       # noqa: BLE001 — đo đạc không giết phiên
+            mask, cos = getattr(result, "mask", None), None
+        bbox = getattr(result, "bbox", None)
+        with self._stats_lock:
+            if bbox is not None:
+                self._stats.bbox_w = max(0, int(bbox[2]) - int(bbox[0]))
+                self._stats.bbox_h = max(0, int(bbox[3]) - int(bbox[1]))
+            self._stats.mask_area = int(mask.sum()) if mask is not None else 0
+            self._stats.track_cos = cos
+            if cos is not None:
+                self._stats.track_cos_n = int(self._stats.track_cos_n or 0) + 1
+
     def _after_vos(self, frame, result, dump: bool = True) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start()).
 
@@ -1057,32 +1088,14 @@ class LiveTrackingSession:
         self._mask_bbox_xywh = xyxy_to_xywh(result.bbox)
         self._lk.reset(self._gray(frame), self._mask_bbox_xywh)
         pre = getattr(result, "pre_ms", None)      # engine không có `pre_ms` ⇒ None (CHƯA ĐO), không 0
-        # --- NEO danh tính + cos (plan 21-11-2026, LOG-ONLY, không hành động) ---
-        # Đặt ở đây vì `_after_vos` là nhịp VOS duy nhất có mask THẬT của model; rẻ: `object_signature`
-        # đã chạy sẵn ở đường re-ID, còn đường web thì đây là lần đầu (~1,5 ms/frame VOS, không phải
-        # mỗi frame hiển thị). Fail-open: lỗi đo không được giết phiên.
-        try:
-            mask_vos = getattr(result, "mask", None)
-            self._neo.thu(frame, mask_vos, getattr(result, "bbox", None))
-            cos = cos_voi_neo(self._neo, frame, mask_vos)
-        except Exception:                       # noqa: BLE001 — đo đạc không giết phiên
-            cos = None
         with self._stats_lock:
             self._stats.post_ms = post_ms
             self._stats.dump_ms = dump_ms if da_ghi else None
-            bbox_vos = getattr(result, "bbox", None)
-            if bbox_vos is not None:
-                self._stats.bbox_w = max(0, int(bbox_vos[2]) - int(bbox_vos[0]))
-                self._stats.bbox_h = max(0, int(bbox_vos[3]) - int(bbox_vos[1]))
-            mask_vos2 = getattr(result, "mask", None)
-            self._stats.mask_area = int(mask_vos2.sum()) if mask_vos2 is not None else 0
-            self._stats.track_cos = cos
-            if cos is not None:
-                self._stats.track_cos_n = int(self._stats.track_cos_n or 0) + 1
             # Ghi `pre_ms` cả ở đường đơn luồng: thiếu nó thì `mask_age_total_ms` (đã gồm pre) không
             # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
             # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).
             self._stats.pre_ms = None if pre is None else round(float(pre), 2)
+        self._cap_nhat_danh_tinh(frame, result)
         # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
         # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
         # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.

@@ -1,0 +1,79 @@
+{
+  "do_luc": "2026-11-21T11:16:59",
+  "git_rev": "9e2acfa",
+  "lenh": "tools/run_live.py --reid --reid-cue object --reid-obj-ncc-min 0.40 --reid-obj-threshold 0.75 --image-size 192 --bbox 300,275,150,410 --max-frames 110",
+  "y_nghia": "Phan bo track_cos (cos giua MASK dang bam va 3-5 NEO danh tinh) tren frame TRACKING DUNG — de biet nguong theta nao khong chan oan. PR-1 log-only, CHUA co cong.",
+  "clips": {
+    "binh1": {
+      "cac_lan": [
+        {
+          "n": 108,
+          "median": 0.9615,
+          "p05": 0.9111,
+          "min": 0.8996,
+          "file": "data/neo_binh1_lan1_metrics.csv"
+        },
+        {
+          "n": 108,
+          "median": 0.9615,
+          "p05": 0.9111,
+          "min": 0.8996,
+          "file": "data/neo_binh1_lan2_metrics.csv"
+        },
+        {
+          "n": 108,
+          "median": 0.9615,
+          "p05": 0.9111,
+          "min": 0.8996,
+          "file": "data/neo_binh1_lan3_metrics.csv"
+        }
+      ],
+      "gop": {
+        "n": 324,
+        "median": 0.9615,
+        "p05": 0.9173,
+        "min": 0.8996,
+        "duoi_0_75": 0
+      }
+    },
+    "binh2": {
+      "cac_lan": [
+        {
+          "n": 108,
+          "median": 0.9227,
+          "p05": 0.8148,
+          "min": 0.7836,
+          "file": "data/neo_binh2_lan1_metrics.csv"
+        },
+        {
+          "n": 108,
+          "median": 0.9227,
+          "p05": 0.8148,
+          "min": 0.7836,
+          "file": "data/neo_binh2_lan2_metrics.csv"
+        },
+        {
+          "n": 108,
+          "median": 0.9227,
+          "p05": 0.8148,
+          "min": 0.7836,
+          "file": "data/neo_binh2_lan3_metrics.csv"
+        }
+      ],
+      "gop": {
+        "n": 324,
+        "median": 0.9227,
+        "p05": 0.8156,
+        "min": 0.7836,
+        "duoi_0_75": 0
+      }
+    }
+  },
+  "ket_luan": {
+    "min_ca_dung": "0,7836 (binh2) · 0,8996 (binh1) tren tong 648 mau",
+    "cua_so_theta_voi_ca_DUNG": "theta < 0,7836 ⇒ 0 chan oan tren 648 mau; theta = 0,75 cho 0/648",
+    "ca_SAI_da_do_tren_o_ung_vien": "may lanh 0,510–0,719 · chan khung cua 0,912 (do tren o crop, KHONG phai mask)",
+    "he_qua": "theta≈0,75 BAT duoc kieu bam sang vung KHAC tong (may lanh 0,51–0,72) nhung KHONG bat duoc kieu bam sang vung CUNG tong (khung cua 0,912 nam trong dai ca dung)",
+    "con_thieu": "Chua co cos tren MASK cua vung sai (may lanh/khung cua) ⇒ can 1 clip sach quay bang scripts/record_raw.py voi dung canh do. Truoc khi co, KHONG mo cong (PR-2)."
+  }
+}

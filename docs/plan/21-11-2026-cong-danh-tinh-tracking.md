@@ -99,6 +99,33 @@ Ràng buộc không được vi phạm:
   - [ ] **0 thay đổi hành vi**: cổng không hành động; test cũ xanh; đường **không re-ID** có
         `track_cos = ""` và `track_cos_n == 0` (không gọi `object_signature` lần nào).
 
+## 📊 KẾT QUẢ ĐO PR-1 (21-11, `git_rev` tại commit PR-1, `git_dirty_code = false`)
+
+Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + gộp) · CSV: `data/neo_<clip>_lan{1,2,3}_metrics.csv`
+· lệnh ghi trong artifact. 3 lần chạy **khác nhau thật** (latency lệch **107/110** dòng, md5 khác) nhưng
+`track_cos` **trùng tới 6 số lẻ** ⇒ mask/ngoại hình tái lập trên clip cố định (đừng suy ra "SAM 2 tất định"
+nói chung — AGENTS §6 vẫn đúng cho ô bao cuối).
+
+| clip | n (gộp 3 lần) | median | p05 | **min** | số mẫu < 0,75 |
+|---|---|---|---|---|---|
+| `binh1` (chai trong khung) | **324** | 0,9615 | 0,9173 | **0,8996** | **0** |
+| `binh2` | **324** | 0,9227 | 0,8156 | **0,7836** | **0** |
+
+**Hệ quả có số cho θ:**
+- Trên **648 mẫu tracking ĐÚNG**, `min = 0,7836` ⇒ **θ < 0,7836 ⇒ 0 chặn oan**; θ = 0,75 cho **0/648**.
+- Phía **SAI** đã đo trước đó **trên ô ứng viên** (không phải mask): máy lạnh **0,510–0,719**, chân khung
+  cửa **0,912**.
+- ⇒ **θ ≈ 0,75 BẮT được** kiểu bám sang vùng **khác tông** (máy lạnh 0,51–0,72) và **KHÔNG bắt được** kiểu
+  bám sang vùng **cùng tông** (khung cửa 0,912 nằm trong dải ca đúng). Đây là **giới hạn của kênh ngoại
+  hình**, không phải lựa chọn ngưỡng.
+- **Còn thiếu để mở cổng (PR-2):** `cos` trên **MASK** của vùng sai — cần **1 clip sạch** quay bằng
+  `scripts/record_raw.py` ở đúng cảnh (remote trắng + khung cửa + máy lạnh). Trước khi có, **không mở cổng**.
+
+**Đã kiểm trong phiên này (bug tự bắt):** bản đầu đặt neo inline trong `_after_vos` ⇒ đo thật với
+`--vos-every 3` cho `track_cos = None, n = 0` **6/6 lần** vì đường có luồng VOS **không đi qua**
+`_after_vos`; và `_store_vos` chỉ nhận `gray` nên `object_signature` (BGR→HSV) lỗi im lặng. Đã tách
+`_cap_nhat_danh_tinh()` gọi ở **cả hai** đường + truyền **frame màu** xuống callback.
+
 ## 📌 Việc tách ra ticket
 
 - [ ] Clip mới `data/remote_bg_*.mp4` (quay `scripts/record_raw.py`) + GT 16–20 frame có ≥8 frame **sau**
