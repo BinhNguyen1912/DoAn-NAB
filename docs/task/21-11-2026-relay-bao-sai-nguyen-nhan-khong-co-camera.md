@@ -1,47 +1,61 @@
-# Ngày 21-11-2026 — `./run relay start` báo sai nguyên nhân: KHÔNG có camera đang cắm
+# Ngày 21-11-2026 — `./run relay start` không có khung hình: chẩn đoán sai 1 lần, sửa bằng "thử MỞ camera"
 
 ## 🎯 Mục tiêu
-Người dùng chạy `./run relay start` và nhận: *"relay sống nhưng KHÔNG có khung hình sau 20s ⇒ camera đang bị
-app Windows giữ"*. Tìm nguyên nhân thật và sửa chẩn đoán để lần sau không chỉ sai đường.
+Người dùng chạy `./run relay start` và nhận *"relay sống nhưng KHÔNG có khung hình sau 20s ⇒ camera đang bị
+app Windows giữ"*, rồi hỏi "ủa là sao". Mục tiêu: tìm nguyên nhân **thật**, làm relay chạy lại, và sửa để
+thông báo không chỉ sai đường nữa.
 
 ## 📥 Input
-- Log người dùng: `[LOI] relay sống nhưng KHÔNG có khung hình sau 20s` (lúc 05:47).
-- Trạng thái relay hiện tại + Windows (WSL gọi `powershell.exe`).
+- Log người dùng (05:47): `[LOI] relay sống nhưng KHÔNG có khung hình sau 20s`.
+- Người dùng nói: *"HD cam, tôi vào camera bình thường mà, đã tắt rồi"* (đã đóng app Camera).
+- Máy: MSI, camera trong máy `HD Webcam` (VID_5986) + webcam rời `PC Camera` (VID_058F) từng cắm.
 
-## 🔨 Công việc đã thực hiện (đo, không đoán)
-1. `curl /info` → `{"w": 0, "h": 0, "fps": 0.0, "camera": 0, "serving": true}`; `/snapshot.jpg` → **không trả gì**
-   (`http=000`, hết 6 s) ⇒ server sống, camera **không ra khung**.
-2. `data/_relay.log` chỉ một dòng: `cv::VideoCapture::open VIDEOIO(DSHOW): ... can't be used to capture by index`.
-3. Tiến trình Windows: **2** `python.exe` chạy `win_camera_relay.py` — nhưng `ParentProcessId` cho thấy
-   tiến trình `wincam-venv\python.exe` (23812) **sinh ra** tiến trình `uv\python` (8588) ⇒ **một** relay
-   (trampoline), không phải hai bản chạy tranh nhau. Port 8090 do PID 8588 giữ.
-4. **`Get-PnpDevice -PresentOnly | Where InstanceId -like '*VID_058F*'` → RỖNG**; thiết bị `PC Camera`
-   (`USB\VID_058F&PID_3841&MI_00`) ở trạng thái **Unknown** (không present). Có **2** instance composite
-   (`&6&2E04BE9A`, `&6&523A538`) = dấu vết webcam bị rớt/re-enumerate.
-5. `./run relay stop` → cả 2 tiến trình mất, port 8090 trống ⇒ **stop không có lỗi** (nghi vấn ban đầu sai).
+## 🔨 Công việc đã thực hiện (theo thứ tự, gồm cả một lần SAI)
+1. `curl /info` → `{"w":0,"h":0,"fps":0.0,"serving":true}`; `/snapshot.jpg` không trả gì ⇒ relay sống,
+   camera không ra khung.
+2. `data/_relay.log`: `cv::VideoCapture::open VIDEOIO(DSHOW): … can't be used to capture by index`
+   ⇒ **lúc 05:47 relay KHÔNG mở được camera** (đúng ca "app giữ cam": app Camera đang mở).
+3. **SAI (đã bác bỏ):** tôi kết luận "Windows không thấy camera nào đang cắm" từ
+   `Get-PnpDevice -PresentOnly -Class Camera` = rỗng. Lúc đó thiết bị đúng là `Present=False`, nhưng
+   **không đủ** để nói "không có camera": sau đó cùng truy vấn trả `OK Camera HD Webcam`, và
+   `pnputil /scan-devices` từ WSL thì `Access is denied` (cần admin) nên không tự khắc phục được.
+4. **Đo quyết định:** chạy `scripts/win_cam_probe.py` trên Windows (bằng đúng
+   `%LOCALAPPDATA%\wincam-venv\Scripts\python.exe`) thử mở index 0..2 với 3 backend:
+   `ANY idx=0 open=True read=True 640x480`, `DSHOW idx=0 open=True read=True`,
+   `MSMF idx=0 open=True read=True`, `idx=2 open=False` ⇒ **camera mở được**, thiết bị không hỏng.
+   ⇒ thủ phạm còn lại: **tiến trình relay cũ giữ thiết bị với handle đã chết** (server vẫn `serving`,
+   `w=0`).
+5. `./run relay stop && ./run relay start` ⇒ **`{"w":640,"h":480,"fps":20.0,"serving":true}`**,
+   `/snapshot.jpg` = 22 166 byte trong **2,5 ms**, ảnh 480×640 độ sáng tb 123,6 (không đen).
 
 ## 📤 Output / Kết quả
-- **Nguyên nhân thật: Windows KHÔNG thấy camera nào đang cắm** (rút dây / USB rớt sau sleep / thiết bị bị
-  disable). Không phải Zalo/Discord/Chrome giữ camera — đóng chúng **không** giúp gì.
-- **Sửa chẩn đoán** (`scripts/cam_relay.sh`): thêm `cam_present()` hỏi PnP `PresentOnly -Class Camera`;
-  ba chỗ (`status`, `start` khi server đã chạy, `start` sau 20 s) nay phân biệt:
-  - **không có thiết bị** ⇒ "cắm lại webcam / thử cổng USB khác … đóng app KHÔNG giúp gì", kèm gợi ý
-    `./run view data/binh2.mp4` khi cần demo mà chưa có camera;
-  - **có thiết bị mà vẫn `w = 0`** ⇒ mới là "app khác giữ camera" (thông báo cũ).
-- Kiểm: `bash -n` OK; `./run relay status` nay in đúng "NGUYÊN NHÂN: Windows KHÔNG thấy camera nào đang cắm".
+- **Relay chạy lại bình thường** (640×480 @ 20 FPS, snapshot 22 KB).
+- **Công cụ mới** `scripts/win_cam_probe.py` (chạy trên Windows, in `OK idx=0 640x480` | `FAIL`):
+  thử **đúng việc relay sẽ làm** thay vì suy đoán từ PnP.
+- **`scripts/cam_relay.sh`**: thay `cam_present()` (PnP) bằng `cam_probe()` dùng script trên; ba chỗ báo
+  lỗi (`status`, `start` khi server đã chạy, `start` sau 20 s) nay phân biệt được **ba** trạng thái:
+  - camera **mở được** ⇒ *"tiến trình relay đang cũ/kẹt ⇒ `./run relay stop && ./run relay start`"*;
+  - camera **không mở được** ⇒ *"app khác đang giữ cam (Camera/Zalo/Discord/Chrome) hoặc thiết bị bị tắt"*;
+  - không gọi được python Windows ⇒ giữ thông báo cũ (app giữ cam / firewall).
+- Kiểm sau khi sửa: `./run relay status` in *"NHƯNG Windows MỞ ĐƯỢC camera (idx=0 640x480) ⇒ tiến trình
+  relay đang cũ/kẹt"* — đúng ca đang gặp, không còn chỉ người dùng đi cắm lại dây.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
-- Thông báo cũ **đoán** nguyên nhân từ một triệu chứng duy nhất (`serving=true` + `w=0`) và chỉ nêu giả
-  thuyết "app giữ camera" ⇒ người dùng mất thời gian đóng app. Bài học: khi chỉ có một triệu chứng, phải
-  **hỏi thêm nguồn sự thật** (ở đây là PnP) trước khi khuyến nghị hành động.
-- Nghi vấn "2 relay tranh camera" **sai** — đã kiểm `ParentProcessId` và bác bỏ trước khi báo.
+- **Một triệu chứng (`serving=true`, `w=0`) không phân biệt được 3 nguyên nhân**: (a) app khác giữ cam,
+  (b) tiến trình relay cũ giữ handle chết, (c) không có thiết bị. Bản vá đầu tiên của tôi chỉ kiểm (c)
+  bằng PnP ⇒ **kết luận sai, làm người dùng mất thời gian cắm lại dây**. Cách đúng: kiểm **hành vi**
+  (mở được camera hay không), không kiểm **danh sách thiết bị**.
+- Bài học chung cho repo: khi thông báo lỗi nêu một **giả thuyết**, phải kèm bước kiểm chứng giả thuyết đó
+  — hoặc nói rõ "có thể do X hoặc Y". Đã áp dụng: mọi nhánh nay in cả kết quả probe.
+- `pnputil /scan-devices` từ WSL **không chạy được** (Access denied) — đừng đưa vào script như bước tự sửa.
 
 ## 📌 Việc cần làm tiếp
-- [ ] Người dùng cắm lại webcam (hoặc thử cổng USB khác) → `./run relay stop && ./run relay start`.
-- [ ] Nếu `Get-PnpDevice -PresentOnly -Class Camera` vẫn rỗng khi dây đã cắm: Device Manager → quét lại
-      (`pnputil /scan-devices`) hoặc gỡ thiết bị + rescan; kiểm camera có bị disable bằng phím Fn/khoá cứng.
-- [ ] Trong lúc chờ: demo bằng clip — `./run view data/binh2.mp4` (hoặc `./run fast <clip>`), không cần webcam.
+- [ ] Người dùng chạy lại `./run demoip --image-size 192` với **vật khác tông màu da** (xem log
+      `21-11-2026-demo-webcam-lan-1-nhan-lai-sai-vao-mat.md`).
+- [ ] Nếu gặp lại `w=0`: chạy `./run relay status` — nó nói ngay nên `stop && start` hay nên đóng app.
+- [ ] Ticket #11: vẫn cần clip chai đen + ≥ 3 ca sai đa dạng để chốt `ncc_min` (`max_bad` nay 0,545).
 
 ## 📚 Tài liệu tham khảo
-- `scripts/cam_relay.sh` (mới: `cam_present()`), `data/_relay.log`, `scripts/win_camera_relay.py`
-- `AGENTS.md` §6 (relay là đường duy nhất khi usbipd kẹt; demo web dùng `/snapshot.jpg`)
+- `scripts/win_cam_probe.py` (mới), `scripts/cam_relay.sh` (`cam_probe()`), `scripts/win_camera_relay.py:65`
+  (`cv2.VideoCapture(cam_index, cv2.CAP_DSHOW)`), `data/_relay.log`
+- `AGENTS.md` §6 (relay `/snapshot.jpg` là đường demo web; không dùng `/video` cho demo web)
