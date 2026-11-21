@@ -74,6 +74,7 @@ class LiveStreamService:
     # ------------------------------------------------------------------ lệnh
 
     def start(self, source: str, *, mode: str = "raw", bbox=None,
+              points=None, labels=None,
               image_size: int | None = None, vos_every: int | None = None,
               mask_smoothing: float | None = None) -> LiveStatus:
         """Mở nguồn và bắt đầu phát.
@@ -91,8 +92,15 @@ class LiveStreamService:
                 self._stop_locked()
                 self._stop.clear()          # xoá dấu stop cũ để phiên mới không tự huỷ
 
-            candidate = self._make_source(str(source), mode, bbox, image_size, vos_every,
-                                          mask_smoothing)
+            try:
+                candidate = self._make_source(str(source), mode=mode, bbox=bbox,
+                                              image_size=image_size, vos_every=vos_every,
+                                              mask_smoothing=mask_smoothing,
+                                              points=points, labels=labels)
+            except TypeError:
+                candidate = self._make_source(str(source), mode=mode, bbox=bbox,
+                                              image_size=image_size, vos_every=vos_every,
+                                              mask_smoothing=mask_smoothing)
             with self._lock:                # công bố TRƯỚC khi mở → stop() huỷ được giữa chừng
                 self._pending = candidate
                 self._label = candidate.label
@@ -145,6 +153,17 @@ class LiveStreamService:
             return self.status()
         finally:
             self._start_lock.release()
+
+    def select(self, bbox, points=None, labels=None) -> LiveStatus:
+        """Chọn hoặc chọn lại đối tượng cho phiên live đang chạy."""
+        with self._lock:
+            source = self._source
+        write_select = getattr(source, "select", None)
+        if write_select is None:
+            raise SourceUnavailable("nguồn hiện tại không hỗ trợ chọn đối tượng "
+                                    "(chỉ áp dụng khi đang bám đối tượng)")
+        write_select(bbox, points=points, labels=labels)
+        return self.status()
 
     def confirm(self) -> LiveStatus:
         """Xác nhận "vẫn đúng đối tượng" ⇒ worker XOÁ trạng thái nghi đổi đối tượng.

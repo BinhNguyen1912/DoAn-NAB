@@ -28,6 +28,14 @@ class BBox(BaseModel):
     h: int = Field(gt=0, description="chiều cao ô")
 
 
+class PointPrompt(BaseModel):
+    """Điểm chỉ định hỗ trợ phân đoạn (positive/negative prompt)."""
+
+    x: float = Field(ge=0, description="toạ độ x (pixel)")
+    y: float = Field(ge=0, description="toạ độ y (pixel)")
+    label: int = Field(default=1, description="1 = positive (thuộc vật thể), 0 = negative (thuộc nền)")
+
+
 class TrackParams(BaseModel):
     """Tham số truyền xuống pipeline (tương ứng flag của tools/run_live.py)."""
 
@@ -52,6 +60,20 @@ class SelectRequest(BaseModel):
     """Chọn đối tượng cần bám trên frame đầu → bắt đầu xử lý."""
 
     bbox: BBox
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định (positive: 1, negative: 0)",
+    )
+
+
+class SelectLiveRequest(BaseModel):
+    """Chọn hoặc chọn lại đối tượng cho phiên live đang chạy."""
+
+    bbox: BBox
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định (positive: 1, negative: 0)",
+    )
 
 
 class JobStatusResponse(BaseModel):
@@ -99,6 +121,10 @@ class LiveStartRequest(BaseModel):
     bbox: Optional[BBox] = Field(
         default=None,
         description="ô chọn đối tượng cho mode=track (bắt buộc khi track)",
+    )
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định cho mode=track (positive: 1, negative: 0)",
     )
     image_size: Optional[int] = Field(
         default=None, ge=64, le=1024,

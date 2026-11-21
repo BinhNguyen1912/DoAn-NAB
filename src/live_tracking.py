@@ -327,8 +327,17 @@ def session_exit_code(stats: "LiveTrackStats") -> int:
     return 1 if stats.state == STATE_ERROR else 0
 
 
-def read_bbox(path: Path):
-    """Đọc ô chọn do API ghi; None nếu chưa có hoặc hỏng."""
+@dataclass
+class PromptSelection:
+    """Thông tin chọn đối tượng: bbox (x, y, w, h) và điểm prompt tuỳ chọn."""
+
+    bbox: tuple[int, int, int, int]
+    points: list[tuple[float, float]] | None = None
+    labels: list[int] | None = None
+
+
+def read_selection(path: Path) -> PromptSelection | None:
+    """Đọc thông tin chọn đối tượng (bbox + points/labels tuỳ chọn) từ file bbox.json."""
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -338,7 +347,27 @@ def read_bbox(path: Path):
         bbox = (int(data["x"]), int(data["y"]), int(data["w"]), int(data["h"]))
     except (KeyError, TypeError, ValueError):
         return None
-    return bbox if bbox[2] > 0 and bbox[3] > 0 else None
+    if bbox[2] <= 0 or bbox[3] <= 0:
+        return None
+
+    raw_points = data.get("points")
+    raw_labels = data.get("labels")
+    points = None
+    labels = None
+    if raw_points is not None and raw_labels is not None and len(raw_points) == len(raw_labels):
+        try:
+            points = [(float(pt[0]), float(pt[1])) for pt in raw_points]
+            labels = [int(lbl) for lbl in raw_labels]
+        except (IndexError, TypeError, ValueError):
+            points, labels = None, None
+
+    return PromptSelection(bbox=bbox, points=points, labels=labels)
+
+
+def read_bbox(path: Path):
+    """Đọc ô chọn do API ghi; None nếu chưa có hoặc hỏng."""
+    sel = read_selection(path)
+    return sel.bbox if sel is not None else None
 
 
 # Ba hàm đọc tiến trình nằm ở `src/proc_pid.py` (dùng chung với adapter API); re-export để chỗ đang
@@ -795,8 +824,8 @@ class LiveTrackingSession:
 
                 if not started:
                     # Trong lúc chờ, vẫn phát khung hình TRƠN để UI hiện luồng và người dùng chọn ô
-                    bbox = read_bbox(out_dir / BBOX_NAME)
-                    if bbox is None:
+                    selection = read_selection(out_dir / BBOX_NAME)
+                    if selection is None:
                         with self._stats_lock:
                             self._stats.state = STATE_WAITING
                         # Frame này bị đọc trong GIAI ĐOẠN CHỜ CHỌN Ô ⇒ nó KHÔNG được bám. Đếm để
@@ -807,6 +836,7 @@ class LiveTrackingSession:
                         continue
                     # bbox.json là (x, y, w, h); SAM 2 nhận box (x1, y1, x2, y2) — BUG thật 10-11:
                     # trước đây truyền thẳng nên hộp chọn trên live bị seed sai (w,h thành x2,y2)
+                    bbox = selection.bbox
                     self._chon_bbox = tuple(bbox)      # vào manifest.json của mask dump
                     # 21-11: người dùng CHỌN LẠI ô = xoá trạng thái "nghi đổi đối tượng" của phiên
                     # trước (nếu không, ô vừa chọn vẫn bị ẩn và người xem tưởng hệ hỏng).
@@ -815,7 +845,15 @@ class LiveTrackingSession:
                         self._last_good_bbox = None
                         self._stats.nghi_doi_tuong = False
                         self._stats.bam = None
-                    result = self._engine.start(frame, xywh_to_xyxy(bbox))
+                    if selection.points is not None and selection.labels is not None:
+                        result = self._engine.start(
+                            frame,
+                            xywh_to_xyxy(bbox),
+                            points=selection.points,
+                            labels=selection.labels,
+                        )
+                    else:
+                        result = self._engine.start(frame, xywh_to_xyxy(bbox))
                     # Đường CÓ luồng: frame `start()` cũng sẽ được worker `process()` lại và
                     # `_store_vos` ghi mask của nó ⇒ dump Ở ĐÂY nữa là ghi đè chính file đó trong cùng
                     # phiên (P1 review 17-11: `so_file_ghi_de` sẽ báo oan, hoặc tệ hơn là bị guard cũ

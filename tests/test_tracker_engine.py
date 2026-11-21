@@ -172,3 +172,104 @@ class TestNguongMask:
         logits = torch.tensor([[[-2.0, 0.1], [0.5, 0.9]]])
         mask, bbox = TrackerEngine._mask_to_bbox(logits, threshold=5.0)
         assert mask.sum() == 0 and bbox == (0, 0, 0, 0)
+
+
+class TestStartPointsAndLabels:
+    """Prompt điểm âm/dương (positive/negative) hỗ trợ bám vật thể ít texture/trắng trơn."""
+
+    def _make_mock_engine(self):
+        from unittest.mock import MagicMock
+        import torch
+        from src.tracker_engine import TrackerEngine
+
+        predictor = MagicMock()
+        tensor0 = torch.zeros((3, 64, 64), dtype=torch.float32)
+        mock_state = {
+            "images": [tensor0],
+            "video_height": 64,
+            "video_width": 64,
+            "output_dict": {
+                "cond_frame_outputs": {0: {"object_score_logits": [2.5]}},
+                "non_cond_frame_outputs": {},
+            },
+        }
+        predictor.init_state.return_value = mock_state
+        video_res_masks = torch.ones((1, 1, 64, 64), dtype=torch.float32)
+        predictor.propagate_in_video.return_value = iter([(0, [0], video_res_masks)])
+        engine = TrackerEngine(predictor)
+        return engine, predictor
+
+    def test_start_truyen_points_va_labels_sang_predictor(self):
+        import numpy as np
+        engine, predictor = self._make_mock_engine()
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+        points = [(30.0, 32.0), (10.0, 15.0)]
+        labels = [1, 0]
+
+        res = engine.start(frame, (10, 10, 50, 50), points=points, labels=labels)
+        assert res.mask.shape == (64, 64)
+        call_kwargs = predictor.add_new_points_or_box.call_args.kwargs
+        assert call_kwargs.get("box") == (10, 10, 50, 50)
+        assert np.allclose(call_kwargs.get("points"), points)
+        assert list(call_kwargs.get("labels")) == labels
+
+    def test_start_loi_khi_points_va_labels_khong_dong_bo(self):
+        import numpy as np
+        import pytest
+        engine, _ = self._make_mock_engine()
+        frame = np.zeros((64, 64, 3), dtype=np.uint8)
+
+        # points có mà labels None
+        with pytest.raises(ValueError, match="points và labels"):
+            engine.start(frame, (10, 10, 50, 50), points=[(30.0, 32.0)])
+
+        # số lượng lệch nhau
+        with pytest.raises(ValueError, match="số lượng"):
+            engine.start(frame, (10, 10, 50, 50), points=[(30.0, 32.0)], labels=[1, 0])
+
+        # label không hợp lệ (không phải 0 hoặc 1)
+        with pytest.raises(ValueError, match="label"):
+            engine.start(frame, (10, 10, 50, 50), points=[(30.0, 32.0)], labels=[2])
+
+        # point ngoài kích thước ảnh
+        with pytest.raises(ValueError, match="ngoài khung"):
+            engine.start(frame, (10, 10, 50, 50), points=[(100.0, 32.0)], labels=[1])
+
+    def test_fixture_vat_trang_tren_nen_sang_khong_tran_mask(self):
+        """Vật thể trắng (255) trên nền sáng (230): prompt điểm âm ở nền chặn tràn mask."""
+        import numpy as np
+        import torch
+        from src.tracker_engine import TrackerEngine
+        from unittest.mock import MagicMock
+
+        predictor = MagicMock()
+        mock_state = {
+            "images": [torch.zeros((3, 64, 64), dtype=torch.float32)],
+            "video_height": 64,
+            "video_width": 64,
+            "output_dict": {
+                "cond_frame_outputs": {0: {"object_score_logits": [3.0]}},
+                "non_cond_frame_outputs": {},
+            },
+        }
+        predictor.init_state.return_value = mock_state
+
+        # Giả lập mask: chỉ vùng đối tượng (20:44, 20:44) có logit dương
+        logits = torch.full((1, 1, 64, 64), -5.0, dtype=torch.float32)
+        logits[0, 0, 20:44, 20:44] = 3.0
+        predictor.propagate_in_video.return_value = iter([(0, [0], logits)])
+
+        engine = TrackerEngine(predictor)
+        frame = np.full((64, 64, 3), 230, dtype=np.uint8)
+        frame[20:44, 20:44] = 255  # vật trắng
+
+        pts = [(32.0, 32.0), (10.0, 10.0), (55.0, 55.0)]
+        lbls = [1, 0, 0]  # 1 positive ở tâm, 2 negative ở nền ngoài
+        res = engine.start(frame, (20, 20, 44, 44), points=pts, labels=lbls)
+
+        # Kiểm tra mask không tràn ra nền bên ngoài
+        assert res.mask.shape == (64, 64)
+        assert res.mask[0:15, 0:15].sum() == 0, "mask không được tràn ra nền góc ngoài"
+        assert res.mask[20:44, 20:44].all(), "mask phải phủ kín vùng vật thể"
+        assert res.bbox == (20, 20, 43, 43)
+

@@ -213,6 +213,51 @@ class TestReadBbox:
         path.write_text(json.dumps({"x": 1, "y": 2, "w": 30, "h": 40}), encoding="utf-8")
         assert read_bbox(path) == (1, 2, 30, 40)
 
+    def test_read_selection_co_points_va_labels(self, tmp_path):
+        from src.live_tracking import read_selection
+
+        path = tmp_path / BBOX_NAME
+        payload = {
+            "x": 10, "y": 20, "w": 30, "h": 40,
+            "points": [[25.0, 35.0], [5.0, 5.0]],
+            "labels": [1, 0],
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        sel = read_selection(path)
+        assert sel is not None
+        assert sel.bbox == (10, 20, 30, 40)
+        assert sel.points == [(25.0, 35.0), (5.0, 5.0)]
+        assert sel.labels == [1, 0]
+
+    def test_live_session_truyen_points_sang_engine_khi_co(self, video_source, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+        out = tmp_path / "live_points"
+        out.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "x": 5, "y": 5, "w": 20, "h": 16,
+            "points": [[10.0, 10.0], [2.0, 2.0]],
+            "labels": [1, 0],
+        }
+        (out / BBOX_NAME).write_text(json.dumps(payload), encoding="utf-8")
+
+        class EngineWithPoints(FakeEngine):
+            def __init__(self):
+                super().__init__()
+                self.received_points = None
+                self.received_labels = None
+
+            def start(self, frame, bbox, points=None, labels=None):
+                self.received_points = points
+                self.received_labels = labels
+                return super().start(frame, bbox)
+
+        engine = EngineWithPoints()
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100,
+                              vos_every=1, stop_after_frames=2)
+        LiveTrackingSession(engine, cfg).run()
+        assert engine.received_points == [(10.0, 10.0), (2.0, 2.0)]
+        assert engine.received_labels == [1, 0]
+
 
 class TestHangSoTrangThai:
     def test_cac_trang_thai_duoc_dung_dung_ten(self):

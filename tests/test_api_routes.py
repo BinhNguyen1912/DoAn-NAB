@@ -211,6 +211,8 @@ class TestHopDongOpenApi:
             "/api/live/sources",
             # 21-11: xác nhận "vẫn đúng đối tượng" khi cổng nhảy báo nghi (`bam == "nghi_doi_tuong"`)
             "/api/live/confirm",
+            # chọn / chọn lại đối tượng kèm điểm prompt cho phiên live đang chạy
+            "/api/live/select",
         }
         assert bat_buoc <= set(paths), f"thiếu endpoint: {bat_buoc - set(paths)}"
         # không có endpoint lạ ngoài danh sách (bỏ "/" — phụ thuộc web/dist)

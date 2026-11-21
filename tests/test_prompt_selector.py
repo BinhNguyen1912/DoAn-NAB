@@ -133,3 +133,43 @@ class TestDraw:
         img = sel.draw(frame)
         assert img.shape == (240, 320, 3)
         assert img.sum() > 0
+
+
+class TestPromptSelectorPoints:
+    """Chọn điểm prompt positive (xanh) / negative (đỏ) sau khi có bbox."""
+
+    def test_them_diem_sau_khi_done(self):
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        # Kéo ô
+        sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 50, 50, 0, None)
+        sel.on_mouse(cv2.EVENT_LBUTTONUP, 150, 150, 0, None)
+        assert sel.state == PromptSelector.DONE
+
+        # Click trái thêm điểm positive (label=1)
+        sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 100, 100, 0, None)
+        # Click phải thêm điểm negative (label=0)
+        sel.on_mouse(cv2.EVENT_RBUTTONDOWN, 40, 40, 0, None)
+
+        assert sel.points == [(100.0, 100.0), (40.0, 40.0)]
+        assert sel.labels == [1, 0]
+
+        bbox, pts, lbls = sel.take_selection()
+        assert bbox == (50, 50, 150, 150)
+        assert pts == [(100.0, 100.0), (40.0, 40.0)]
+        assert lbls == [1, 0]
+        assert sel.state == PromptSelector.IDLE
+        assert sel.points == []
+
+    def test_draw_hien_thi_diem_mau_khac_nhau(self):
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 50, 50, 0, None)
+        sel.on_mouse(cv2.EVENT_LBUTTONUP, 150, 150, 0, None)
+        sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 100, 100, 0, None)  # positive
+        sel.on_mouse(cv2.EVENT_RBUTTONDOWN, 40, 40, 0, None)    # negative
+
+        frame = np.zeros((240, 320, 3), dtype=np.uint8)
+        img = sel.draw(frame)
+        # Điểm positive ở (100, 100) phải có màu xanh lá (kênh G > 0, BGR)
+        assert img[100, 100, 1] > 0
+        # Điểm negative ở (40, 40) phải có màu đỏ (kênh R > 0, BGR)
+        assert img[40, 40, 2] > 0

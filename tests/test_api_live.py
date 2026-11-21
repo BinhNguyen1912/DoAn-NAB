@@ -1301,3 +1301,57 @@ class TestXacNhanDoiTuong:
         assert res.status_code in (400, 409)
         chi_tiet = res.json()["detail"].lower()
         assert "xác nhận" in chi_tiet or "phiên" in chi_tiet
+
+
+class TestLiveSelectPoints:
+    """POST /api/live/select hỗ trợ bbox và points (positive/negative) cho worker live."""
+
+    def test_worker_source_select_ghi_file_co_points(self, tmp_path):
+        import json
+        from src.api.adapters.worker_source import WorkerFrameSource
+        from src.live_tracking import BBOX_NAME
+
+        src = WorkerFrameSource("0", out_dir=tmp_path)
+        src.select((10, 20, 30, 40), points=[(25.0, 35.0), (5.0, 5.0)], labels=[1, 0])
+        data = json.loads((tmp_path / BBOX_NAME).read_text(encoding="utf-8"))
+        assert data["x"] == 10
+        assert data["y"] == 20
+        assert data["w"] == 30
+        assert data["h"] == 40
+        assert data["points"] == [[25.0, 35.0], [5.0, 5.0]]
+        assert data["labels"] == [1, 0]
+
+    def test_select_chua_co_phien_tra_loi_mien(self, live_client):
+        res = live_client.post(
+            "/api/live/select",
+            json={"bbox": {"x": 10, "y": 20, "w": 30, "h": 40}},
+        )
+        assert res.status_code in (400, 404, 409)
+
+    def test_select_khi_dang_chay_truyen_points_sang_source(self, live_service, live_client):
+        called = {}
+
+        class SelectableSource:
+            label = "mock_track"
+            def start(self): pass
+            def stop(self): pass
+            def read_jpeg(self): return None
+            def select(self, bbox, points=None, labels=None):
+                called["bbox"] = bbox
+                called["points"] = points
+                called["labels"] = labels
+
+        live_service._make_source = lambda *args, **kwargs: SelectableSource()
+        live_client.post("/api/live/start", json={"source": "0", "mode": "track", "bbox": {"x": 1, "y": 2, "w": 3, "h": 4}})
+        res = live_client.post(
+            "/api/live/select",
+            json={
+                "bbox": {"x": 10, "y": 20, "w": 30, "h": 40},
+                "points": [{"x": 15.0, "y": 25.0, "label": 1}, {"x": 5.0, "y": 5.0, "label": 0}],
+            },
+        )
+        assert res.status_code == 200
+        assert called["bbox"] == (10, 20, 30, 40)
+        assert called["points"] == [(15.0, 25.0), (5.0, 5.0)]
+        assert called["labels"] == [1, 0]
+

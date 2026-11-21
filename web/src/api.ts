@@ -17,6 +17,13 @@ export interface BBox {
   h: number
 }
 
+export interface PointPrompt {
+  x: number
+  y: number
+  /** 1 = positive (vật thể), 0 = negative (nền) */
+  label?: number
+}
+
 export interface JobSummary {
   total_frames?: number
   /** `0,0` khi chưa có mẫu (hợp đồng `effective_fps = 1000/mean`) — đọc `mean_latency_ms_n` trước. */
@@ -211,6 +218,7 @@ export interface LiveStartOptions {
   /** raw = chỉ phát khung hình · track = bám đối tượng bằng model (cần bbox) */
   mode?: 'raw' | 'track'
   bbox?: BBox
+  points?: PointPrompt[]
   image_size?: number
   /** chạy model mỗi N frame; phần còn lại nội suy bằng LK (mặc định worker: 3) */
   vos_every?: number
@@ -276,6 +284,17 @@ export async function stopLive(): Promise<LiveStatus> {
  */
 export async function confirmLive(): Promise<LiveStatus> {
   const res = await fetch('/api/live/confirm', { method: 'POST' })
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/** Chọn hoặc chọn lại đối tượng cho phiên live đang chạy (kèm điểm âm/dương tuỳ chọn). */
+export async function selectLive(bbox: BBox, points?: PointPrompt[]): Promise<LiveStatus> {
+  const res = await fetch('/api/live/select', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bbox, points }),
+  })
   if (!res.ok) await _error(res)
   return (await res.json()) as LiveStatus
 }

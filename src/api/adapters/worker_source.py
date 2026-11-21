@@ -67,13 +67,16 @@ def live_dir() -> Path:
 class WorkerFrameSource(FrameSource):
     """Frame có bám đối tượng: worker chạy model, adapter chỉ đọc file mới nhất."""
 
-    def __init__(self, source: str, *, bbox=None, image_size: int | None = None,
+    def __init__(self, source: str, *, bbox=None, points=None, labels=None,
+                 image_size: int | None = None,
                  max_fps: float = 30.0, vos_every: int | None = None,
                  mask_smoothing: float | None = None, device: str | None = None,
                  out_dir=None,
                  python_exe: str | None = None, startup_timeout: float = 240.0) -> None:
         self._source = str(source)
         self._bbox = tuple(int(v) for v in bbox) if bbox else None
+        self._points = points
+        self._labels = labels
         self._image_size = image_size
         self._max_fps = max_fps
         self._vos_every = vos_every
@@ -92,7 +95,7 @@ class WorkerFrameSource(FrameSource):
     def start(self) -> None:
         self._prepare_dir()
         if self._bbox is not None:
-            self._write_bbox(self._bbox)
+            self._write_bbox(self._bbox, points=self._points, labels=self._labels)
 
         argv = build_live_worker_command(
             self._source, self._out, image_size=self._image_size,
@@ -316,12 +319,23 @@ class WorkerFrameSource(FrameSource):
         """
         write_json_atomic(self._out / CONFIRM_NAME, {"ts": time.time()})
 
-    def _write_bbox(self, bbox) -> None:
+    def select(self, bbox, points=None, labels=None) -> None:
+        """Ghi nhận ô chọn mới và điểm prompt (tuỳ chọn) cho worker."""
+        self._bbox = tuple(int(v) for v in bbox)
+        self._points = points
+        self._labels = labels
+        self._write_bbox(self._bbox, points=points, labels=labels)
+
+    def _write_bbox(self, bbox, points=None, labels=None) -> None:
         import json
 
         x, y, w, h = bbox
+        data = {"x": x, "y": y, "w": w, "h": h}
+        if points is not None and labels is not None:
+            data["points"] = [[float(p[0]), float(p[1])] for p in points]
+            data["labels"] = [int(lbl) for lbl in labels]
         (self._out / BBOX_NAME).write_text(
-            json.dumps({"x": x, "y": y, "w": w, "h": h}), encoding="utf-8"
+            json.dumps(data), encoding="utf-8"
         )
 
     def _wait_first_frame(self) -> None:

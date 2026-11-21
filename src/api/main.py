@@ -97,10 +97,11 @@ def build_default_live() -> LiveStreamService:
     device = device_from_env()
 
     def make_source(source, mode="raw", bbox=None, image_size=None, vos_every=None,
-                    mask_smoothing=None):
+                    mask_smoothing=None, points=None, labels=None):
         if mode == "track":
             # Mặc định 192: đo trên máy này 192 ≈ 10 FPS, 256 ≈ 6,5 FPS, 1024 ≈ 0,4 FPS.
-            return WorkerFrameSource(source, bbox=bbox, image_size=image_size or 192,
+            return WorkerFrameSource(source, bbox=bbox, points=points, labels=labels,
+                                     image_size=image_size or 192,
                                      vos_every=vos_every, mask_smoothing=mask_smoothing,
                                      device=device)
         return OpenCvFrameSource(source)
