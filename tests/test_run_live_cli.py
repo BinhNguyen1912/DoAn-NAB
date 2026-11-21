@@ -667,3 +667,37 @@ class TestKhongNuotLoiBangUnboundLocalError:
         with pytest.raises(SystemExit) as exc:
             run_live._run_headless(engine=object(), args=args)
         assert exc.value.code == 1          # lỗi THẬT (hướng dẫn tải model), không bị che
+
+
+class TestKhongNuotLoiOHienThi:
+    """P3 review vòng 3: bản vá `reid_session = None` ở `_run_display` không có test.
+
+    Cùng ca với `_run_headless`: `--reid --reid-cue face` thiếu model ⇒ `SystemExit(1)` có hướng
+    dẫn. Nếu thiếu dòng khởi tạo thì `finally` ném `UnboundLocalError`, che lỗi và bỏ đóng cửa sổ.
+    """
+
+    def test_hien_thi_thieu_model_mat_van_bao_loi_huong_dan(self, tmp_path, video, monkeypatch):
+        import argparse
+        args = argparse.Namespace(
+            source=str(video), device="cpu", image_size=192, bbox="10,10,60,60",
+            bbox_file=None, max_frames=1, display=True, record=None, record_fps=10,
+            metrics_csv=None, metrics_summary=None, reid=True, reid_cue="face",
+            reid_threshold=0.36, lost_after_frames=2, reid_min_face_px=40,
+            reid_min_detect_score=0.6, reid_ref_max=8,
+            reid_detector_model="models/face/khong_ton_tai_det.onnx",
+            reid_recognizer_model="models/face/khong_ton_tai_rec.onnx",
+            reid_obj_threshold=0.75, reid_obj_ncc_min=0.4, lost_score_threshold=0.0,
+            reid_confirm=2, reid_verify=2, reid_face_veto=True, reanchor_every=None,
+            smooth=False, show_trajectory=False, hide_trajectory=False,
+            mask_threshold=0.0, max_trajectory=100, smooth_display=False,
+            record_enabled=False, record_path=None, progress_json=None, progress_total=None,
+        )
+        closed = []
+        monkeypatch.setattr("tools.run_live.cv2.namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr("tools.run_live.cv2.setMouseCallback", lambda *a, **k: None)
+        monkeypatch.setattr("tools.run_live.cv2.destroyAllWindows",
+                            lambda *a, **k: closed.append(1))
+        with pytest.raises(SystemExit) as exc:
+            run_live._run_display(engine=object(), args=args)
+        assert exc.value.code == 1
+        assert closed, "phải đóng cửa sổ kể cả khi lỗi (finally không được ném trước đó)"

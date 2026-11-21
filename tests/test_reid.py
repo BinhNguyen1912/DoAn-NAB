@@ -1098,3 +1098,42 @@ class TestBaP1Vong2:
         s.reset()
         assert s._ref_phu_mat is False
         assert s._ref_bbox is None
+
+
+class TestCacheKhuonMatTheoFrame:
+    """P2 review vòng 3 (21-11): test "1 lần YuNet cho `step()`" KHÔNG giết được mutant bỏ cache.
+
+    Lý do: `_match_object` truyền `faces=` cho mọi lần kiểm sau, nên dù bỏ cache thì `calls` vẫn = 1.
+    Muốn khoá cache phải hỏi ĐÚNG hợp đồng của nó: cùng frame ⇒ 1 lần detect, frame mới ⇒ detect lại.
+    """
+
+    MAT = (10, 10, 40, 40)      # xywh
+
+    def _s(self, fm):
+        return ReIdSession(engine=object(), embedder=None, cue="object", face_veto=fm)
+
+    def test_cung_frame_chi_detect_mot_lan(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f = _obj_frame(shape=(60, 60))
+        assert s._mat_trong(f) == ((10.0, 10.0, 40.0, 40.0),)
+        assert s._mat_trong(f) == ((10.0, 10.0, 40.0, 40.0),)
+        assert fm.calls == 1
+
+    def test_frame_moi_thi_detect_lai(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f1 = _obj_frame(shape=(60, 60))
+        f2 = _obj_frame(shape=(60, 60))          # mảng MỚI (nguồn video luôn trả mảng mới)
+        s._mat_trong(f1)
+        s._mat_trong(f2)
+        assert fm.calls == 2
+
+    def test_reset_xoa_cache(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f = _obj_frame(shape=(60, 60))
+        s._mat_trong(f)
+        s.reset()
+        s._mat_trong(f)
+        assert fm.calls == 2                     # sau reset không dùng lại mặt của phiên trước

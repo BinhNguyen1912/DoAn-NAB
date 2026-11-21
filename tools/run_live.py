@@ -132,6 +132,21 @@ def _git_rev() -> str:
         return "unknown"
 
 
+def _git_dirty() -> bool:
+    """Cây làm việc có file thay đổi? `None` = không hỏi được (không phải repo/hỏng git).
+
+    AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn KHÔNG tái lập được (review vòng 3
+    bắt đúng ca `veto_demo_21-11`: `git_rev ee3058a` mà CSV đã có cột của commit sau).
+    Không ném: provenance không được làm chết phiên đo.
+    """
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
+                             text=True, check=True, timeout=10).stdout
+    except (OSError, subprocess.SubprocessError):
+        return None
+    return bool(out.strip())
+
+
 def _make_reid_session(engine, args):
     """Dựng ReIdSession khi bật re-ID (ADR-0003); None nếu tắt. Thiều model → báo lỗi có hướng dẫn."""
     if not getattr(args, "reid", False):
@@ -373,7 +388,7 @@ def _finish_metrics(metrics, args):
     _veto_n = getattr(args, "_reid_veto_n", None)
     if _veto_n:
         print(f"[re-ID] bỏ {_veto_n} ứng viên vì TRÙNG KHUÔN MẶT/ĐẦU (veto) — "
-              f"xem cột `state` trong CSV để biết các frame đó")
+              f"xem cột `vetoed` (=1) trong CSV để biết các frame đó")
     print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
@@ -417,7 +432,9 @@ def _write_run_info(args):
         source=an_userinfo(str(getattr(args, "source", ""))),
         # P2 review 21-11: thêm/sửa một cổng re-ID mà artifact trước/sau TRÔNG Y HỆT NHAU thì
         # không tái lập được ("không chặn oan" nói trên wiki nhưng không có file nào chứng minh).
-        reid_face_veto=getattr(args, "reid_face_veto", None),
+        # chỉ ghi khi re-ID BẬT: ghi `true` lúc re-ID tắt là hứa suông (P3 vòng 3)
+        reid_face_veto=(bool(getattr(args, "reid_face_veto", False))
+                        if getattr(args, "reid", False) else None),
         reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
         reanchor_every=getattr(args, "reanchor_every", None),
@@ -430,8 +447,16 @@ def _write_run_info(args):
         # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
         device=getattr(args, "device", None) or "cpu",
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
-        reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
-        reid_verify_frames=getattr(args, "reid_verify_frames", None),
+        # P3 review vòng 3: đọc SAI tên — `main()` gán `args.reid_confirm`/`args.reid_verify`
+        # (`:759-760`) nên MỌI `data/*_run_info.json` tới nay ghi `null` cho 2 trường này.
+        reid_reacquire_confirm=getattr(args, "reid_confirm",
+                                       getattr(args, "reid_reacquire_confirm", None)),
+        reid_verify_frames=getattr(args, "reid_verify",
+                                   getattr(args, "reid_verify_frames", None)),
+        # AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn thì không tái lập được
+        # (review vòng 3 bắt đúng: `veto_demo_21-11` ghi `git_rev ee3058a` mà CSV đã có cột `vetoed`
+        # của commit sau ⇒ sinh trên cây BẨN).
+        git_dirty=_git_dirty(),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path

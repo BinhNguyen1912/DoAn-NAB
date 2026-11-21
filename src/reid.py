@@ -336,6 +336,7 @@ class ReIdSession:
         self.veto_mat_n = 0            # số ứng viên bị bỏ vì trùng mặt (để đếm/hiệu chuẩn)
         self.frames_vetoed_since_print = 0   # chống spam HINT_VETO_MAT (in mỗi 20 frame bị veto)
         self._faces_frame = None       # cache khuôn mặt của frame gần nhất (tránh detect 2 lần)
+        self._hint_veto_da_in = False  # đã in HINT_VETO_MAT chưa (reset ở `reset()` — P3 vòng 3)
         self._faces = ()
         self._recover_cooldown = 0
         self._last_bbox = None
@@ -415,6 +416,8 @@ class ReIdSession:
         self._ref_phu_mat = False
         self._ref_bbox = None
         self.frames_vetoed_since_print = 0
+        self._hint_veto_da_in = False
+        self._faces_frame = None
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -512,16 +515,19 @@ class ReIdSession:
                 print(HINT_VETO_MAT)
             if vetoed:
                 self.frames_vetoed_since_print += 1
-                if so_veto_truoc == 0:      # P3 vòng 2: `== 1` im lặng khi 1 frame veto ≥ 2 ô
+                if not self._hint_veto_da_in:   # P3 vòng 3: cờ riêng, không dựa bộ đếm cả phiên
+                    self._hint_veto_da_in = True
                     print(HINT_VETO_MAT)
             if bbox is not None and self._trung_mat(frame, bbox):
-                # CHỐT CHẶN 2 (backstop): `_match_object` đã lọc, nhưng nếu vì lý do nào đó vẫn
-                # trả ô trùm mặt thì KHÔNG được `engine.start()` vào mặt người. Chỉ chạy khi có
-                # ứng viên sắp được nhận (hiếm) nên chi phí YuNet ở đây không đáng kể so với
-                # ~200 ms của `engine.start()`.
+                # CHỐT CHẶN 2 (backstop): `_match_object` đã lọc bằng CÙNG danh sách mặt của frame
+                # này, nên với code hiện tại nhánh này **không chạm tới được** (review vòng 3 chỉ ra;
+                # test `fm.calls == 1` cũ không khoá được cache vì thế). Giữ lại làm hàng rào nếu
+                # sau này ai đổi `_match_object` (vd thêm nguồn ứng viên khác); cache `_faces_frame`
+                # bảo đảm nó KHÔNG tốn thêm lần detect nào.
                 self.veto_mat_n += 1
                 vetoed = True
-                if so_veto_truoc == 0:
+                if not self._hint_veto_da_in:
+                    self._hint_veto_da_in = True
                     print(HINT_VETO_MAT)
                 bbox = None
             if bbox is not None:

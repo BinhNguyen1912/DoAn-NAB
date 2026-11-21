@@ -434,3 +434,49 @@ class TestKhongQuayVongHetTocKhiDongBang:
             src.stop()
         assert session.state in ("lost", "reacquiring")
         assert spun <= 20, f"vòng suy luận quay {spun} lần trong 0,4 s — chưa hãm nhịp?"
+
+
+class TestCoVetoQuaInferenceWorker:
+    """P3 review vòng 3 (21-11): đường `--smooth` (đường demo CHÍNH `./run demoip`) là đường **duy
+
+    nhất** không có test chạm `reid_vetoed` — xoá `InferenceWorker.reid_vetoed()` hoặc dòng gán
+    `_reid_vetoed` thì suite vẫn xanh, và HUD sẽ in lại "khop X / can Y" (hiểu ngược: đủ điểm mà
+    không nhận). Test này khoá chuỗi worker → HUD.
+    """
+
+    def test_worker_bao_co_veto_ra_ngoai(self):
+        from src.reid import Step
+        from src.tracker_engine import TrackingResult
+
+        class FakeSession:
+            state = "reacquiring"
+
+            def start(self, frame, bbox):
+                return TrackingResult(frame_idx=0, mask=np.ones((20, 20), bool),
+                                      bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0)
+
+            def step(self, frame):
+                return Step(result=TrackingResult(frame_idx=1, mask=np.zeros((20, 20), bool),
+                                                  bbox=(0, 0, 0, 0), score=0.0, elapsed_ms=1.0),
+                            state="reacquiring", reid_score=0.9, ncc=0.42, vetoed=True)
+
+            def reset(self):
+                pass
+
+        src = LatestFrameSource(FakeSource(delay=0.005))
+        src.start()
+        engine = FakeEngine(delay=0.01)
+        worker = InferenceWorker(engine, src, reid_session=FakeSession())
+        worker.start()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            deadline = time.time() + 2.0
+            seen = False
+            while time.time() < deadline and not seen:
+                time.sleep(0.02)
+                seen = worker.reid_vetoed() is True
+        finally:
+            worker.stop()
+            src.stop()
+
+        assert seen, "HUD không nhận được cờ veto ⇒ sẽ in 'khop X / can Y' gây hiểu ngược"
