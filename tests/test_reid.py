@@ -1037,3 +1037,64 @@ class TestNoiDayVeto:
         monkeypatch.setattr("src.reid.FaceEmbedder", lambda *a, **k: object())
         s = self._session(monkeypatch, self._args(reid_cue="face", reid_face_veto=True))
         assert s.face_veto is None
+
+
+class TestBaP1Vong2:
+    """3 P1 của review vòng 2 (21-11) — mỗi lỗi phải có test giết được mutant."""
+
+    VAT = (10, 10, 90, 90)
+    MAT = (100, 10, 70, 90)              # xywh
+    O_MAT = (110, 20, 160, 90)           # xyxy, nằm trọn trong mặt
+
+    def _f(self):
+        return _obj_frame(box=self.VAT, shape=(120, 260))
+
+    def _f_trong(self):
+        return np.full((120, 260, 3), (35, 37, 32), np.uint8)
+
+    def _s(self, face_veto):
+        engine = FakeEngineMasks([np.zeros((120, 260), bool)], shape=(120, 260))
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           reacquire_confirm=1, verify_frames=0, face_veto=face_veto)
+
+    def test_P1_ung_vien_bi_veto_VAN_GHI_DIEM(self, monkeypatch):
+        """P1-3: bản trước `continue` trước khi chấm ⇒ `reid_score/ncc = -1`, trùng giá trị
+
+        "không có ứng viên" ⇒ artifact không hiệu chuẩn được ngưỡng. Nay phải có số thật.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda f, tpl, **kw: [(self.O_MAT, 0.88)])
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+        score, bbox, ncc = s._match_object(self._f())
+        assert bbox is None                 # không nhận (ô trùng mặt)
+        assert s.veto_mat_n == 1
+        assert score >= 0.0                 # NHƯNG phải có điểm của ô bị bỏ
+        assert ncc == 0.88                  # NCC lấy từ prefilter (miễn phí)
+
+    def test_P2_yunet_chi_1_lan_cho_ca_frame_step(self, monkeypatch):
+        """P2-2: `step()` backstop từng gọi YuNet lần 2 trên CÙNG frame (~29 ms)."""
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        s.start(self._f(), self.VAT)
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda f, tpl, **kw: [(self.O_MAT, 0.88)])
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+        s.step(self._f())                   # mất dấu
+        fm.calls = 0
+        s.step(self._f())                   # tìm lại: _match_object + backstop
+        assert fm.calls == 1
+
+    def test_P2_reset_xoa_quyet_dinh_veto(self):
+        """P2: `reset()` hứa "về trạng thái ban đầu" ⇒ phải xoá `_ref_phu_mat`/`_ref_bbox`.
+
+        Nếu còn `_ref_phu_mat=True` cũ thì veto TẮT IM LẶNG cho phiên sau.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), (110, 20, 160, 90))     # ô chọn phủ mặt ⇒ _ref_phu_mat True
+        assert s._ref_phu_mat is True
+        s.reset()
+        assert s._ref_phu_mat is False
+        assert s._ref_bbox is None

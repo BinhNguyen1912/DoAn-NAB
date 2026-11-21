@@ -335,6 +335,8 @@ class ReIdSession:
         self._ref_bbox = None          # ô chọn ban đầu — để đánh giá lại "phủ mặt" về sau (sticky)
         self.veto_mat_n = 0            # số ứng viên bị bỏ vì trùng mặt (để đếm/hiệu chuẩn)
         self.frames_vetoed_since_print = 0   # chống spam HINT_VETO_MAT (in mỗi 20 frame bị veto)
+        self._faces_frame = None       # cache khuôn mặt của frame gần nhất (tránh detect 2 lần)
+        self._faces = ()
         self._recover_cooldown = 0
         self._last_bbox = None
         self._confirm_count = 0
@@ -408,6 +410,11 @@ class ReIdSession:
         self._last_center = None
         self._recover_cooldown = 0
         self._last_bbox = None
+        # P2 review vòng 2 (21-11): docstring hứa "về trạng thái ban đầu" ⇒ phải xoá cả quyết định
+        # veto. `veto_mat_n` là bộ đếm CẢ PHIÊN (đi vào `run_info`) nên KHÔNG xoá — ghi rõ ở đây.
+        self._ref_phu_mat = False
+        self._ref_bbox = None
+        self.frames_vetoed_since_print = 0
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -505,7 +512,7 @@ class ReIdSession:
                 print(HINT_VETO_MAT)
             if vetoed:
                 self.frames_vetoed_since_print += 1
-                if self.veto_mat_n == 1:
+                if so_veto_truoc == 0:      # P3 vòng 2: `== 1` im lặng khi 1 frame veto ≥ 2 ô
                     print(HINT_VETO_MAT)
             if bbox is not None and self._trung_mat(frame, bbox):
                 # CHỐT CHẶN 2 (backstop): `_match_object` đã lọc, nhưng nếu vì lý do nào đó vẫn
@@ -514,7 +521,7 @@ class ReIdSession:
                 # ~200 ms của `engine.start()`.
                 self.veto_mat_n += 1
                 vetoed = True
-                if self.veto_mat_n == 1:
+                if so_veto_truoc == 0:
                     print(HINT_VETO_MAT)
                 bbox = None
             if bbox is not None:
@@ -544,10 +551,16 @@ class ReIdSession:
         """
         if self.face_veto is None or frame is None:
             return ()
+        # P2 vòng 2: `step()` (backstop) và `_match_object` hỏi cùng một frame ⇒ cache theo ĐỐI TƯỢNG
+        # frame (so sánh `is`, không phải id()) để không chạy YuNet (~29 ms) hai lần.
+        if frame is self._faces_frame:
+            return self._faces
         try:
-            return tuple(self.face_veto.detect(frame) or ())
+            faces = tuple(self.face_veto.detect(frame) or ())
         except Exception:
-            return ()
+            faces = ()
+        self._faces_frame, self._faces = frame, faces
+        return faces
 
     def _phu_mat(self, frame, bbox, faces=None) -> float:
         """Phần diện tích LỚN NHẤT của ô `bbox` (hệ `(x1,y1,x2,y2)`) bị MỘT mặt phủ, 0..1.
@@ -781,6 +794,7 @@ class ReIdSession:
         best_raw = -1.0
         best_box = None
         best_choice = -1.0
+        veto_raw, veto_ncc = -1.0, -1.0      # điểm của ứng viên bị BỎ vì trùng mặt (để hiệu chuẩn)
         height, width = frame.shape[:2]
         # Diện tích chống sai lệch — dùng EMA (size thật) không phải bbox frame cuối (rác mép).
         size_ref = self._size_ema or self._last_obj_size
@@ -806,13 +820,18 @@ class ReIdSession:
                 continue
             mask = np.zeros((height, width), bool)
             mask[max(0, y1):min(y2, height), max(0, x1):min(x2, width)] = True
-            if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
-                self.veto_mat_n += 1           # bỏ ứng viên này, xét tiếp ứng viên kế tiếp
-                continue
             sig = object_signature(frame, mask)
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
+            if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
+                # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
+                # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần
+                # để chốt `NGUONG_PHU_MAT`). Chấm rồi mới bỏ; chi phí ~1,4 ms chỉ khi có veto.
+                self.veto_mat_n += 1
+                if raw > veto_raw:
+                    veto_raw, veto_ncc = raw, ncc
+                continue
             if not accept_candidate(raw, float(ncc), self.obj_threshold, self.obj_ncc_min):
                 continue            # cổng chính = cosine, cổng phụ = NCC (mặc định tắt)
             prior = 1.0
@@ -822,6 +841,10 @@ class ReIdSession:
             choice = raw * prior
             if choice > best_choice:
                 best_choice, best_raw, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
+        if best_box is None and veto_raw >= 0.0:
+            # Không còn ứng viên nào khác ⇒ trả điểm của ô BỊ VETO để CSV/HUD có số thật
+            # (Step.vetoed nói rõ nó đã bị bỏ, nên không ai hiểu nhầm là đã nhận).
+            return veto_raw, None, veto_ncc
         return best_raw, best_box, best_ncc
 
     # -- nội bộ --

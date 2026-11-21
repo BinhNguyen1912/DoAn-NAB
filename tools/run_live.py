@@ -473,6 +473,10 @@ def _run_display(engine, args):
     armed_bbox = _load_bbox(args, first_frame=None)
     viz = None
     metrics = None
+    # P1 review vòng 2: phải có mặt TRƯỚC `try` — `finally` dùng nó, nên lỗi xảy ra trước dòng gán
+    # (vd `_make_reid_session` ném SystemExit khi thiếu model mặt) sẽ thành `UnboundLocalError`
+    # trong `finally`, che lỗi thật và bỏ `cv2.destroyAllWindows()`.
+    reid_session = None
     interrupted = False
 
     try:
@@ -557,6 +561,7 @@ def _run_headless(engine, args):
     viz = None
     metrics = None
     summary = None
+    reid_session = None        # P1 review vòng 2 (xem `_run_display`)
     progress_total = None
     interrupted = False
     try:

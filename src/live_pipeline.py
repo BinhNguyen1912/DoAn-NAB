@@ -117,7 +117,8 @@ def _switch_warning(prev_bbox, result, frame_shape):
     return False
 
 
-def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None) -> FrameRecord:
+def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
+                 vetoed=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     center = ((x1 + x2) // 2, (y1 + y2) // 2) if (x2 > x1 and y2 > y1) else None
@@ -131,6 +132,7 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None)
         reid_score=reid_score,
         reacquired=reacquired,
         ncc=ncc,
+        vetoed=vetoed,
     )
 
 
@@ -207,7 +209,8 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
-                metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc))
+                metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc,
+                                         vetoed=reid_vetoed))
             img = _annotate(frame, result, visualizer, state, reid_score, reid_vetoed)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
@@ -324,6 +327,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     if reid_session is not None:
                         reid_session.reset()
                     state = reid_score = reacquired = None
+                    reid_vetoed = False   # P1 vòng 2: đừng giữ lý do veto của phiên trước
                     selector.bind(frame)  # chọn lại trên frame hiện tại
                     if visualizer is not None:
                         visualizer.reset()  # quỹ đạo đối tượng cũ bỏ đi
@@ -336,11 +340,15 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     step = reid_session.step(frame)
                     last_result, state = step.result, step.state
                     reid_score, reacquired = step.reid_score, step.reacquired
+                    # P1 review vòng 2: nhánh này từng KHÔNG gán ⇒ HUD không bao giờ nói lý do veto
+                    # và (vì reid_score = -1 khi mọi ứng viên bị bỏ) còn in "chua co ung vien…".
+                    reid_vetoed = bool(getattr(step, "vetoed", False))
                 else:
                     reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                                  summary.processed, reanchor_every)
                     last_result = reanchored if reanchored is not None else engine.process(frame)
                     state = reid_score = reacquired = None
+                    reid_vetoed = False
                 switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                 if last_result.mask.any():
                     last_bbox = last_result.bbox
@@ -348,7 +356,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if on_result is not None:
                     on_result(last_result)
                 if metrics is not None:
-                    metrics.log(_record_from(last_result, state, reid_score, reacquired))
+                    metrics.log(_record_from(last_result, state, reid_score, reacquired,
+                                             vetoed=reid_vetoed))
     finally:
         src.close()
     return summary

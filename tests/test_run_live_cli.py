@@ -626,3 +626,44 @@ class TestDongCuaSoBangX:
                                           "--bbox", "60,60,40,40"])
         run_live.main()          # không được treo
         assert list(QUIT_KEYS)      # sanity
+
+
+class TestKhongNuotLoiBangUnboundLocalError:
+    """P1 review vòng 2 (21-11): `reid_session` chưa khởi tạo trước `try` ⇒ `finally` ném
+
+    `UnboundLocalError`, che lỗi THẬT và bỏ `cv2.destroyAllWindows()`.
+
+    Ca thật: `--reid --reid-cue face` thiếu model (`models/` bị gitignore ⇒ clone mới) ném
+    `SystemExit(1)` từ `_make_reid_session` — tức là lỗi có hướng dẫn, nhưng người dùng chỉ thấy
+    traceback `UnboundLocalError`. Test này khoá đúng ca đó.
+    """
+
+    def _args(self, tmp_path, video, **kw):
+        import argparse
+        a = argparse.Namespace(
+            source=str(video), checkpoint=str(video), device="cpu", image_size=192,
+            bbox="10,10,60,60", bbox_file=None, max_frames=1, display=False,
+            record=None, record_fps=10, metrics_csv=None, metrics_summary=None,
+            reid=True, reid_cue="face", reid_threshold=0.36, lost_after_frames=2,
+            reid_min_face_px=40, reid_min_detect_score=0.6, reid_ref_max=8,
+            reid_detector_model="models/face/khong_ton_tai_det.onnx",
+            reid_recognizer_model="models/face/khong_ton_tai_rec.onnx",
+            reid_obj_threshold=0.75, reid_obj_ncc_min=0.4, lost_score_threshold=0.0,
+            reid_confirm=2, reid_verify=2, reid_face_veto=True,
+            reanchor_every=None, smooth=False, show_trajectory=False,
+            hide_trajectory=False, mask_threshold=0.0, max_trajectory=100,
+            smooth_display=False, record_enabled=False, record_path=None,
+            progress_json=None, progress_total=None,
+        )
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def test_thieu_model_mat_thi_bao_loi_huong_dan_khong_phai_unbound(self, tmp_path,
+                                                                     video, monkeypatch):
+        args = self._args(tmp_path, video)
+        monkeypatch.setattr("src.tracker_engine.build_engine", lambda *a, **k: object(),
+                            raising=False)
+        with pytest.raises(SystemExit) as exc:
+            run_live._run_headless(engine=object(), args=args)
+        assert exc.value.code == 1          # lỗi THẬT (hướng dẫn tải model), không bị che

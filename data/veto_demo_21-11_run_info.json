@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-21T09:56:18",
-  "git_rev": "6b2faff",
+  "timestamp": "2026-11-21T10:05:44",
+  "git_rev": "ee3058a",
   "source": "data/binh1.mp4",
   "reid_face_veto": true,
   "reid_veto_mat_n": 0,

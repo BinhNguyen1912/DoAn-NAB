@@ -291,7 +291,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     visualizer.consume(stamped.result)
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
-                                             reacquired, reid_ncc))
+                                             reacquired, reid_ncc,
+                                             vetoed=worker.reid_vetoed()))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:

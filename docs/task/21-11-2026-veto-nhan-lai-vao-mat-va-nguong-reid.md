@@ -131,6 +131,25 @@ Reviewer (agent `reviewer`, chỉ đọc) bắt **3 P1** đều đúng, đã s�
 - Khi `r` chọn lại giữa phiên thì `start()` **có** chạy lại (`smooth_display.py:187`, `live_pipeline.py:294,320`) ⇒ không có `_ref_phu_mat` cũ.
 - Số trong log khớp artifact: `reid_2clip_calib.json` 18 ca (17 good + 1 bad), `min_good` cosine 0,76957 / ncc 0,414731; CSV `demoip_1121-080547` f207–f215 khớp từng giá trị.
 
+## 5c. REVIEW VÒNG 2 (commit `546932a`) — 0 P0, **3 P1**, đã sửa trong `8d1f...`
+
+| Mức | Phát hiện (đều ĐÚNG) | Đã sửa |
+|---|---|---|
+| **P1** | `reid_session` **không** khởi tạo trước `try` ở cả `_run_display`/`_run_headless` ⇒ `finally` ném `UnboundLocalError`, **che lỗi thật** + bỏ `cv2.destroyAllWindows()`. Ca thật: `--reid --reid-cue face` thiếu model (clone mới) ném `SystemExit(1)` có hướng dẫn ⇒ người dùng chỉ thấy traceback | Thêm `reid_session = None` trước `try` ở cả 2 hàm; test `TestKhongNuotLoiBangUnboundLocalError` — **đã kiểm ngược**: bỏ dòng khởi tạo ⇒ test FAIL, khôi phục ⇒ pass |
+| **P1** | `run_interactive` (`--display --reid`, **không** `--smooth`) không gán `reid_vetoed` ⇒ HUD không bao giờ nói lý do veto, và vì `reid_score=-1` còn in **chẩn đoán sai** "chua co ung vien — kiem tra vat chon co cham mep khung" | Gán ở nhánh re-ID + nhánh else + nhánh bấm `r`; test `TestCoVetoToiHudOHaiDuong` (session giả trả `Step(vetoed=True)` ⇒ `visualizer.update` phải nhận `True`) |
+| **P1** | Ứng viên bị veto **không đóng góp điểm** (`continue` trước `object_signature`) ⇒ CSV `reid_score/ncc = -1`, **trùng** giá trị "không có ứng viên" ⇒ **không hiệu chuẩn được** `NGUONG_PHU_MAT` (đúng thứ ta cần) | Chấm rồi mới bỏ (thêm ~1,4 ms **chỉ khi có veto**), trả điểm ô bị bỏ khi không còn ứng viên khác; **thêm cột `vetoed`** vào CSV (`FrameRecord` + `metrics_logger`) để đọc được bằng artifact |
+| P2 | `step()` backstop gọi YuNet **lần 2** trên cùng frame (~29 ms), mà nhánh đó gần như **không thể chạm tới** | Cache khuôn mặt theo **đối tượng frame** (`_faces_frame is frame`) ⇒ 1 lần detect/frame; test `FakeMat.calls == 1` cho cả `step()` |
+| P2 | `reset()` **không** xoá `_ref_phu_mat`/`_ref_bbox` (log vòng 1 nói đã sửa — **sai**) | Xoá (giữ `veto_mat_n` vì là bộ đếm cả phiên, đã ghi rõ trong docstring); test `test_P2_reset_xoa_quyet_dinh_veto` |
+| P2 | Sticky `_ref_phu_mat` **một chiều, im lặng, không test** | Chấp nhận nhưng ghi nợ có tên (xem dưới) — chưa sửa trong phiên này |
+| P3 | `print(HINT_VETO_MAT)` dựa `veto_mat_n == 1` ⇒ **im lặng** nếu 1 frame veto ≥ 2 ô | Đổi sang `so_veto_truoc == 0` |
+| P3 | Print "xem cột `state` trong CSV" — **bất khả** (mọi frame tìm lại đều `reacquiring`) | Nay có cột `vetoed` thật ⇒ câu đó đúng |
+| P3 | Test `assert "can 0.7" not in hud` **rỗng nghĩa** (không set `reid_threshold`) | (nợ — xem dưới) |
+
+**Artifact chứng minh P1-3 đã sửa** (`data/veto_demo_21-11_metrics.csv`, chạy lại sau khi sửa):
+cột thứ 11 = `vetoed`; frame tìm lại có `latency_ms` **thật** (95,4 · 48,5 · 45,5 · 112,6 ms);
+frame 115 `reid_score = 0,854` rồi nhận lại (0,854 ≥ 0,75) — veto **không** kích hoạt vì clip không
+có mặt trong vùng tìm (`reid_veto_mat_n = 0`), đúng như mong đợi.
+
 ### Nợ còn lại (reviewer nêu đúng, xử lý ở phiên sau)
 - **Chạy thật đầu tiên với cấu hình mới** (21-11, `git_rev 6b2faff`) — **trên CLIP `data/binh1.mp4`,
   KHÔNG phải webcam**: `data/veto_demo_21-11_{metrics.csv,summary.json,run_info.json}`, 120 frame,

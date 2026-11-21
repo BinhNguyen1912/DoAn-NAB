@@ -175,3 +175,77 @@ class TestPipelineReId:
         # Record mất dấu được ghi nhận trung thực
         assert any(r.lost for r in metrics.records)
         assert metrics.summary()["lost_count"] >= 1
+
+
+class TestCoVetoToiHudOHaiDuong:
+    """P1 review vòng 2 (21-11): `run_interactive` (đường `--display --reid`, KHÔNG `--smooth`)
+
+    từng KHÔNG gán `reid_vetoed` từ `step` ⇒ nhánh HUD nói lý do veto không bao giờ chạy, và vì
+    `reid_score = -1` khi mọi ứng viên bị bỏ, HUD còn in "chua co ung vien — kiem tra vat chon co
+    cham mep khung" (chẩn đoán SAI). Test khoá cả hai đường.
+    """
+
+    def _step(self, vetoed):
+        from src.reid import Step
+        from src.tracker_engine import TrackingResult
+        r = TrackingResult(
+            frame_idx=1,
+            mask=np.ones((240, 320), dtype=bool),
+            bbox=(60, 60, 100, 100),
+            score=5.0,
+            elapsed_ms=10.0,
+        )
+        return Step(result=r, state="reacquiring", reid_score=0.90, reacquired=False,
+                    ncc=0.42, vetoed=vetoed)
+
+    class _Session:
+        def __init__(self, step):
+            self._step_obj = step
+            self.state = step.state
+
+        def step(self, _frame):
+            return self._step_obj
+
+        def reset(self):
+            pass
+
+        def start(self, _frame, _bbox):
+            return self._step_obj.result
+
+    def test_run_interactive_truyen_co_veto_toi_hud(self, tmp_path, write_video, monkeypatch):
+        from src.live_pipeline import run_interactive
+        fx = generate_tracking_sequence(num_frames=3, frame_size=(240, 320), square_size=40,
+                                        start=(60, 60))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+
+        seen = []
+
+        class Viz:
+            def update(self, frame, result, **kw):
+                seen.append(kw.get("reid_vetoed"))
+                return frame.copy()
+
+            def reset(self):
+                pass
+
+            def close_recorder(self):
+                pass
+
+            def consume(self, _r):
+                pass
+
+            def render(self, frame, result, **kw):
+                seen.append(kw.get("reid_vetoed"))
+                return frame.copy()
+
+        monkeypatch.setattr("src.live_pipeline.cv2.imshow", lambda *a, **k: None)
+        monkeypatch.setattr("src.live_pipeline.cv2.waitKey", lambda *a, **k: 0)
+        from src.prompt_selector import PromptSelector
+        run_interactive(
+            source=str(path), engine=object(), selector=PromptSelector(frame_shape=(240, 320, 3)),
+            display=lambda img, mode: "q",
+            preselect_bbox=fx.bboxes[0],
+            reid_session=self._Session(self._step(True)),
+            visualizer=Viz(),
+        )
+        assert seen and any(v is True for v in seen)   # HUD PHẢI nhận được cờ veto
