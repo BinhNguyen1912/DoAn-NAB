@@ -925,10 +925,13 @@ class LiveTrackingSession:
         dump_ms, da_ghi = self._record_vos(result, frame_video=frame_idx)
         # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
         self._measure_drift(frame_idx, result, seq)
+        # GIỮ mask THÔ trước khi làm mượt: smoother (khi bật) GIỮ mask cũ lúc model trả rỗng ⇒ chấm
+        # danh tính trên mask đã làm mượt là mù đúng lúc mất vật (P2 review 21-11).
+        mask_tho = getattr(result, "mask", None)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         # Đường CÓ luồng VOS (`vos_every>1`) KHÔNG đi qua `_after_vos` ⇒ phải gọi ở đây, nếu không
         # `track_cos` im lặng `None` (đo thật: 6/6 lần chạy trả None trước khi sửa).
-        self._cap_nhat_danh_tinh(frame, result, frame_idx=frame_idx)
+        self._cap_nhat_danh_tinh(frame, result, frame_idx=frame_idx, mask=mask_tho)
         # TRỪ thời gian ghi PNG: `--dump-mask-frames` là DỤNG CỤ ĐO, không được làm bẩn `post_ms`
         # (rồi `mask_age_total_ms`/p95 của đúng mẫu đó — ticket #26). `cycle_ms`/`queue_ms` lấy từ
         # worker nên VẪN chứa dump của lần trước; đừng nói chúng "đã sạch".
@@ -1038,7 +1041,7 @@ class LiveTrackingSession:
         self._after_vos(frame, result)
         return result
 
-    def _cap_nhat_danh_tinh(self, frame, result, frame_idx=None) -> None:
+    def _cap_nhat_danh_tinh(self, frame, result, frame_idx=None, mask=None) -> None:
         """Cập nhật NEO danh tính + `cos` + cỡ ô/diện tích mask (plan 21-11-2026, LOG-ONLY).
 
         **Phải gọi ở CẢ hai đường VOS**: `_after_vos` (đơn luồng, `vos_every=1`) và `_store_vos`
@@ -1053,12 +1056,17 @@ class LiveTrackingSession:
         chỉ sau 1 frame, phá bất biến "2 mẫu khác nhau"), `track_cos_n` +2, và mẫu `cos` đầu tiên là
         **1,0 cấu trúc** (so frame với chính nó). Repo đã gặp đúng bẫy này với `stability`
         (`tests/test_live_tracking.py`: frame 0 vào hai lần ⇒ IoU 1,0 "miễn phí").
+
+        `mask`: mask **THÔ** của VOS. Đường có luồng gọi hàm này SAU `_smooth`, và với
+        `--mask-smoothing 0.5` smoother **GIỮ** mask cũ khi model trả mask rỗng ⇒ nếu chấm trên
+        `result.mask` thì `track_cos`/`mask_area` **mù đúng lúc model mất vật** (P2 review 21-11).
         """
         if frame_idx is not None and frame_idx == self._danh_tinh_frame_idx:
             return
         self._danh_tinh_frame_idx = frame_idx
         try:
-            mask = getattr(result, "mask", None)
+            if mask is None:
+                mask = getattr(result, "mask", None)
             # CHẤM TRƯỚC, nạp neo SAU (P2 review 21-11) — tránh mẫu `cos = 1,0` cấu trúc.
             cos = cos_voi_neo(self._neo, frame, mask)
             self._neo.thu(frame, mask, getattr(result, "bbox", None))
@@ -1092,6 +1100,9 @@ class LiveTrackingSession:
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
         dump_ms, da_ghi = self._record_vos(
             result, frame_video=self._frame_index, dump=dump)
+        # GIỮ mask THÔ trước khi làm mượt (cùng lý do ở `_store_vos`: smoother GIỮ mask cũ lúc model
+        # trả rỗng ⇒ chấm danh tính trên mask đã làm mượt là mù đúng lúc mất vật — P2 review 21-11).
+        mask_tho = getattr(result, "mask", None)
         self._smooth(result)
         # Trừ thời gian ghi PNG (ticket #26): `post_ms` chỉ còn phần XỬ LÝ KẾT QUẢ.
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0 - dump_ms, 2)
@@ -1107,7 +1118,7 @@ class LiveTrackingSession:
             # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
             # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).
             self._stats.pre_ms = None if pre is None else round(float(pre), 2)
-        self._cap_nhat_danh_tinh(frame, result, frame_idx=self._frame_index)
+        self._cap_nhat_danh_tinh(frame, result, frame_idx=self._frame_index, mask=mask_tho)
         # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
         # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
         # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.

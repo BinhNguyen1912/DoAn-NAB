@@ -2924,3 +2924,34 @@ class TestDanhTinhChayOHaiDuongVOS:
         # `track_cos_n >= 1` ⇒ đã chấm được ít nhất 1 lần ⇒ neo có mẫu và `cos` không None
         assert (st.track_cos_n or 0) >= 1, f"vos_every={vos_every}: track_cos không hề được chấm"
         assert st.bbox_w and st.bbox_h and st.mask_area is not None
+
+
+class _EngineRongSau(_EngineVatTo):
+    """Vật đủ lớn 5 frame đầu rồi model trả mask RỖNG (mất dấu) — để kiểm nhánh mask thô."""
+
+    def process(self, frame):
+        self.processed += 1
+        if self.processed > 5:
+            bbox = (10, 10, 10 + self.canh, 10 + self.canh)
+            return _Result(self.processed, bbox, np.zeros(frame.shape[:2], bool))
+        return super().process(frame)
+
+
+class TestDanhTinhDungMaskThoKhiLamMuot:
+    """P2 review 21-11: với `--mask-smoothing 0.5`, smoother GIỮ mask cũ khi model trả rỗng.
+
+    Nếu chấm danh tính trên `result.mask` (đã làm mượt) thì `track_cos`/`mask_area` **mù đúng lúc
+    model mất vật** — tức đúng lúc cần phát hiện nhất. Phải dùng mask THÔ.
+    """
+
+    @pytest.mark.parametrize("vos_every", [1, 3])
+    def test_mask_area_theo_mask_tho_khong_theo_mask_giu(self, video_source, tmp_path, vos_every):
+        out = tmp_path / "live_smooth"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineRongSau(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=vos_every, display_fps=60,
+            mask_smoothing=0.5, stop_after_frames=12))
+        st = sess.run()
+        # mask THÔ đã rỗng ở các frame cuối ⇒ mask_area phải về 0 (nếu dùng mask đã GIỮ thì > 0)
+        assert st.mask_area == 0, f"mask_area={st.mask_area} ⇒ đang chấm trên mask đã làm mượt"

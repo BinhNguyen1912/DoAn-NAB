@@ -57,6 +57,10 @@
   - test dải rác sát mép **không** được làm neo;
   - test `drift_samples.csv` có 4 cột, `None` ⇒ ô **trống** (không phải 0).
 - Xoá 1 assert **chết** trong `tests/test_metrics_logger.py` (`... or True`).
+- **P2 cuối (mask giữ)**: `_smooth` chạy TRƯỚC khi chấm danh tính ở **cả 2 đường**; với
+  `--mask-smoothing 0.5` smoother có thể giữ mask cũ ⇒ `track_cos`/`mask_area` **mù đúng lúc model mất
+  vật**. Nay giữ `mask_tho` trước `_smooth` và chấm trên mask thô; test `MaskTho` giết được mutant ở
+  nhánh có luồng (`vos_every=3` đỏ khi bỏ tham số `mask`).
 
 ### 5. Đo lại trên **cây SẠCH** (`git_dirty_code = false` 7/7 lần chạy)
 - CLI: 3 lần × 2 clip, ô chai đúng (lần đầu tôi quên `--bbox` ⇒ ô mặc định giữa frame 78×84 ⇒ số vô nghĩa;
@@ -101,7 +105,7 @@
 
 ### Kiểm
 - `./run lint` xanh · `./run test` **1688 passed**, 5 deselected (117 s).
-- Review độc lập: **P0 = 0**, 3 P1 → đã sửa hết, 8 P2 → đã sửa, còn 2 P2/P3 ghi ở Next steps.
+- Review độc lập: **P0 = 0**, 3 P1 → đã sửa hết, **8/8 P2 đã sửa**, P3 còn lại ghi ở Next steps.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Neo không chạy ở đường có luồng** (`--vos-every 3`): đo ra `track_cos = None` 6/6 lần. Sửa: tách hàm,
