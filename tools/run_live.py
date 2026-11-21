@@ -171,14 +171,27 @@ def _make_reid_session(engine, args):
         # mất dấu là mất luôn. Nói ngay lúc khởi động thay vì để người dùng đoán.
         print("[re-ID] cue=face CHỈ nhận lại được KHUÔN MẶT. Đang bám VẬT (chai, hộp, remote)? "
               "thêm --reid-cue object (hoặc both).")
-    return ReIdSession(engine, embedder, threshold=args.reid_threshold,
-                       lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
-                       min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
-                       cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
-                       obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0),
-                       lost_score_threshold=getattr(args, "lost_score_threshold", 0.0),
-                       reacquire_confirm=getattr(args, "reid_confirm", 2),
-                       verify_frames=getattr(args, "reid_verify", 2))
+    # Veto "nhận lại vào MẶT/ĐẦU": dùng chính bộ dò mặt của cảnh báo ô chọn (`src/face_guard.py`).
+    # Chỉ bật khi cue có VẬT THỂ (cue=face thì mặt là đích, veto sẽ tự im vì `_ref_phu_mat` True).
+    face_veto = None
+    if cue in ("object", "both") and getattr(args, "reid_face_veto", True):
+        try:
+            from src.face_guard import BoDoMat
+            face_veto = BoDoMat()
+        except Exception:                     # fail-open: thiếu model/opencv ⇒ như cũ
+            face_veto = None
+    session = ReIdSession(engine, embedder, threshold=args.reid_threshold,
+                          lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
+                          min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
+                          cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
+                          obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0),
+                          lost_score_threshold=getattr(args, "lost_score_threshold", 0.0),
+                          reacquire_confirm=getattr(args, "reid_confirm", 2),
+                          verify_frames=getattr(args, "reid_verify", 2),
+                          face_veto=face_veto)
+    if face_veto is not None:
+        print("[re-ID] veto: KHÔNG nhận lại ứng viên trùm khuôn mặt/đầu (khi ô chọn ban đầu không phải mặt)")
+    return session
 
 
 def _window_closed(window_name, seen_visible=None, max_misses=3):
@@ -639,6 +652,10 @@ def main():
     ap.add_argument("--reid-obj-ncc-min", type=float, default=None,
                     help="cổng NCC tối thiểu cho vật ít màu/texture (mặc định 0 = tắt; "
                          "đo: cùng vật 1,000 vs vật đen khác 0,897)")
+    ap.add_argument("--no-reid-face-veto", dest="reid_face_veto", action="store_false",
+                    default=True,
+                    help="TẮT veto 'không nhận lại vào khuôn mặt/đầu' (mặc định BẬT khi "
+                         "cue=object/both; veto tự im nếu ô chọn ban đầu phủ mặt)")
     ap.add_argument("--lost-score-threshold", type=float, default=None,
                     help="score ≤ ngưỡng này coi như mất dấu (mặc định 0; chống SAM 2 "
                          "tưởng tượng mask khi vật đã rời khung)")

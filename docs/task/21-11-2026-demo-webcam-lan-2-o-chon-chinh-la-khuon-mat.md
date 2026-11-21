@@ -84,11 +84,29 @@ nhân bằng artifact + ảnh, không đoán.
 ### Diễn biến (xem ảnh `data/anh_tmp/demoip3_giua.jpg`, `demoip3_cuoi.jpg`)
 - Cảnh báo lúc chọn **đã in đúng**: `PHU KHUON MAT (IoU 0.76…)` — vì ô chọn (260×282) **trùm cả mặt và
   bình vàng**.
-- **f0–f170**: mask/ô bám **KHUÔN MẶT** (SAM 2 chọn vùng lớn hơn trong hai ứng viên của ô).
-- **~f171–f221**: chuyển sang bám **BÌNH VÀNG** và bám tốt tới cuối (trừ 2 cụm mất dấu ngắn ở f207–210,
-  f213–214).
-⇒ "mất dấu thì focus nhầm chỗ" = **ô chọn đưa cho hệ HAI ứng viên**; nó đổi ứng viên khi vật/người di
-chuyển. Không phải re-ID bịa ra vật mới.
+- **f0–~f54**: mask/ô bám **KHUÔN MẶT** (SAM 2 chọn vùng lớn hơn trong hai ứng viên của ô).
+- **f56**: người dùng bấm `r` chọn lại ô quanh **BÌNH VÀNG** (ô nhảy về 372,120→527,316) ⇒ bám đúng.
+- **f207–f221**: mất dấu rồi re-ID nhận lại **vào TRÁN (f211) và vào ĐẦU (f215)** — xem mục "Đính chính"
+  bên dưới.
+
+### ⚠️ ĐÍNH CHÍNH 21-11 (cuối phiên): tôi đã ĐỌC SAI số frame trong ảnh
+Bản đầu của mục này ghi "f0–f170 bám mặt, ~f171–f221 bám bình" và kết luận "ô chọn đưa 2 ứng viên nên nó
+đổi ứng viên". **Sai vì lẫn hai hệ đếm**: file `_web.mp4` có **714 frame ở 30 FPS** (frame HIỂN THỊ) còn
+CSV có **221 frame SUY LUẬN** (~7/s) ⇒ nhãn `f133/f175/f205` ghi trên ảnh là frame video, không phải frame
+suy luận (quy đổi ≈ ×3,23).
+Đọc lại đúng vùng mất dấu (`data/anh_tmp/demoip3_matdau.jpg`, video frame 662–711 ↔ suy luận f205–f220):
+| suy luận | ảnh cho thấy |
+|---|---|
+| f205, f207 | ô + mask trên **bình vàng** — bám đúng |
+| f209, f211 | ô trượt lên trên, mask mất → `MẤT DẤU — TỰ TÌM LẠI` |
+| f211 | nhận lại: **trán/tóc** (score 0,734 / ncc 0,423) |
+| f213 | mất lại |
+| f215 | nhận lại: **đầu** (score 0,663 / **ncc 0,356**) |
+| f218, f220 | **bám cái ĐẦU** — sai vật |
+
+⇒ Vấn đề thật **không** phải "ô chọn có 2 ứng viên", mà là **re-ID nhận lại vào MẶT/ĐẦU** (lần thứ 3 liên
+tiếp trong ngày). Bài học phương pháp: **ảnh video 30 FPS ≠ frame suy luận** — phải quy đổi trước khi gán
+nhãn frame, nếu không kết luận sai hoàn toàn.
 
 ### Sửa: cảnh báo nay VẼ LÊN ẢNH (không thể bỏ qua)
 `Visualizer.canh_bao_o_chon_phu_mat()` khoanh **viền đỏ quanh ô khuôn mặt** (do YuNet tìm) + 2 dòng chữ

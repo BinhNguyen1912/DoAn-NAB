@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from src.reid import (
+    NGUONG_PHU_MAT,
     STATE_LOST,
     accept_candidate,
     STATE_REACQUIRING,
@@ -834,3 +835,88 @@ class TestCongChongNhayKhongTuHuyLanNhanLai:
         session.step(frame)
         assert session.state == "tracking", "cổng chống-nhảy đã tự huỷ lần nhận lại (P0 tái phát)"
         assert len(eng.start_calls) == n_start + 1, f"thừa lần start: {eng.start_calls}"
+
+
+class FakeMat:
+    """Bộ dò mặt giả (duck-type `BoDoMat`): trả danh sách ô `(x, y, w, h)` cố định."""
+
+    def __init__(self, faces):
+        self.faces = list(faces)
+        self.calls = 0
+
+    def detect(self, _frame):
+        self.calls += 1
+        return list(self.faces)
+
+
+class TestVetoNhanLaiVaoMat:
+    """Đo 20–21/11 (3 phiên demo webcam): re-ID nhận lại SAI vào MẶT (cos 0,974/ncc 0,545),
+
+    vào TRÁN (0,734/0,423), vào ĐẦU (0,663/0,356). Ngưỡng điểm KHÔNG cứu được vì ca mặt có
+    ncc 0,545 nằm GIỮA dải ca đúng (0,415–0,741) ⇒ phải dùng thông tin MIỄN PHÍ: ô chọn ban đầu
+    không phủ mặt ⇒ vật cần bám không phải mặt ⇒ ứng viên trùm mặt là SAI theo định nghĩa.
+
+    `_match_object` được THAY BẰNG STUB để test đúng tầng veto (không phụ thuộc cascade NCC).
+    """
+
+    VAT = (10, 10, 90, 90)          # ô chọn ban đầu: góc trên-trái, KHÔNG có mặt
+    MAT = (100, 10, 70, 90)         # một khuôn mặt ở góc phải
+    O_MAT = (110, 20, 160, 90)      # ứng viên nhận lại: nằm TRỌN trong mặt (hệ xyxy)
+    MAT_XYXY = (100, 10, 170, 100)  # cùng khuôn mặt ở hệ xyxy (mọi thứ trong `reid` dùng xyxy)
+
+    def _f(self):
+        return _obj_frame(shape=(120, 260))
+
+    def _f_trong(self):
+        """Frame KHÔNG có vật (nền trơn) ⇒ engine giả trả mask rỗng ⇒ mất dấu."""
+        return np.full((120, 260, 3), (35, 37, 32), np.uint8)
+
+    def _session(self, face_veto):
+        empty = np.zeros((120, 260), bool)
+        engine = FakeEngineMasks([empty], shape=(120, 260))
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           reacquire_confirm=1, verify_frames=0, face_veto=face_veto)
+
+    def _vao_tim_lai(self, s, bbox_chon=None):
+        """start + 2 frame trống ⇒ trạng thái TÌM LẠI, kèm stub trả ứng viên trùng mặt."""
+        s.start(self._f(), bbox_chon or self.VAT)
+        s.step(self._f())                    # mask rỗng ⇒ mất dấu (lost_after_frames=1)
+        s._match_object = lambda frame: (0.9, self.O_MAT, 0.9)   # stub: tìm ra "vật" trong mặt
+        return s
+
+    def test_phu_mat_tinh_dung_phan_dien_tich(self):
+        s = self._session(FakeMat([self.MAT]))
+        assert s._phu_mat(self._f(), self.MAT_XYXY) == 1.0        # ô = đúng mặt
+        assert s._phu_mat(self._f(), self.VAT) == 0.0             # ô vật góc trái
+        assert s._phu_mat(self._f(), (100, 10, 0, 0)) == 0.0      # ô suy biến ⇒ fail-open
+
+    def test_ung_vien_trum_mat_bi_bo_khi_o_chon_khong_phai_mat(self):
+        s = self._vao_tim_lai(self._session(FakeMat([self.MAT])))
+        assert s._ref_phu_mat is False
+        step = s.step(self._f_trong())
+        assert step.reacquired is False           # KHÔNG bám vào mặt
+        assert step.state == STATE_REACQUIRING
+        assert s.veto_mat_n == 1
+        assert step.reid_score >= 0.0             # vẫn ghi điểm để hiệu chuẩn
+
+    def test_tam_o_nam_trong_mat_cung_bi_bo(self):
+        """Ô ứng viên TO hơn mặt (phủ < 30 %) nhưng TÂM nằm trong mặt ⇒ vẫn bỏ (không ngưỡng)."""
+        s = self._session(FakeMat([self.MAT]))
+        to = (60, -40, 240, 160)
+        assert s._trung_mat(self._f(), to) is True
+        assert s._phu_mat(self._f(), to) < NGUONG_PHU_MAT
+
+    def test_tat_veto_thi_van_nhan_nham_nhu_cu(self):
+        s = self._vao_tim_lai(self._session(None))
+        step = s.step(self._f_trong())
+        assert step.reacquired is True            # hành vi CŨ — chứng minh veto là thứ cứu được
+        assert s.veto_mat_n == 0
+
+    def test_o_chon_PHU_MAT_thi_veto_im_lang(self):
+        """Người dùng CHỌN ĐÚNG mặt (muốn bám mặt) ⇒ veto phải tắt, không được chặn."""
+        s = self._vao_tim_lai(self._session(FakeMat([self.MAT])), bbox_chon=self.MAT_XYXY)
+        assert s._ref_phu_mat is True
+        step = s.step(self._f_trong())
+        assert step.reacquired is True
+        assert s.veto_mat_n == 0

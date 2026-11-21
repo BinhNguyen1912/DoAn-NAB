@@ -287,15 +287,19 @@ EOF
       exit 1
     fi
     _stamp="$(date +%m%d-%H%M%S)"
-    # Cổng NCC đã HIỆU CHUẨN (`data/reid_2clip_calib.json`, 01-11): 17 ca nhận lại ĐÚNG có
-    # ncc 0,415–0,741; ca SAI có ncc 0,279 ⇒ ncc_min = 0,35 tách được, còn cosine thì KHÔNG
-    # (ca sai 0,899 > ca đúng thấp nhất 0,770). Đo 21-11: 0,60 còn nhận cả NỀN (cos 0,835).
+    # Ngưỡng re-ID: hiệu chuẩn 01-11 (`data/reid_2clip_calib.json`: 17 ca ĐÚNG ncc 0,415–0,741,
+    # ca SAI ncc 0,279) + 3 ca SAI mới đo 20–21/11 (vào MẶT cos 0,974/ncc 0,545 · vào TRÁN
+    # cos 0,734/ncc 0,423 · vào ĐẦU cos 0,663/ncc 0,356 — `data/reid_ca_sai_vao_mat_2026-11-20_calib.json`).
+    # ⇒ ncc_min 0,40 chặn 0,356; cosine 0,75 chặn 0,663/0,734; tập nhãn vẫn 17/17 đúng, 0 chặn oan.
+    # BIÊN HẸP (min_good 0,770 vs 0,75 = 0,020; 0,415 vs 0,40 = 0,015) — đừng coi là "đã tối ưu".
+    # `--image-size 192`: đo 21-11 — 320 cho latency mean/p95 360/430 ms, 192 cho 140/157 ms (2,5×).
     # Truyền Ở ĐÂY (đường demo) chứ không đổi `configs/default.yaml` — để artifact cũ tái lập được;
     # cờ của người dùng đứng sau nên vẫn đè được.
-    _ncc="0.35"
-    echo "[demoip] re-ID cue=object ncc_min=${_ncc} (hiệu chuẩn 01-11: đúng ≥0,415 > sai ≤0,279)"
+    _ncc="0.40"
+    _objth="0.75"
+    echo "[demoip] re-ID cue=object ncc_min=${_ncc} cosine_min=${_objth}: chặn vào mặt 0,545 · trán 0,423 · đầu 0,356"
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
-      --reid-cue object --reid-obj-ncc-min "$_ncc" --image-size 320 \
+      --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"

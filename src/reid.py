@@ -89,6 +89,22 @@ HINT_CHAM_MEP = (
     "        → bấm r rồi kéo ô bao TRỌN vật, chừa mép khung (đừng để cạnh ô dính sát biên ảnh)."
 )
 
+# --- VETO "nhận lại vào KHUÔN MẶT / ĐẦU" (đo 20–21/11, 3 phiên demo webcam) ---
+# Ba phiên liền re-ID nhận lại SAI vào người: vào MẶT (cosine 0,974 / ncc 0,545), vào TRÁN
+# (0,734 / 0,423), vào ĐẦU (0,663 / 0,356). Ngưỡng điểm KHÔNG cứu được: ca mặt có ncc 0,545 nằm
+# GIỮA dải ca đúng (0,415–0,741). Nhưng có một thông tin MIỄN PHÍ mà hệ chưa dùng: ô chọn ban đầu
+# của người dùng KHÔNG phủ mặt (cảnh báo `src/face_guard.py` đã nói đúng) ⇒ "vật" cần tìm không
+# phải mặt người ⇒ ứng viên trùm mặt là SAI theo định nghĩa.
+# `NGUONG_PHU_MAT`: phần diện tích ô ứng viên bị một mặt phủ. Đặt 0,30 — thấp hơn `face_guard.NGUONG_IOU`
+# (0,35) vì ở đây không cần IoU mà chỉ cần "ô này là mặt/đầu". CHƯA hiệu chuẩn trên clip có nhãn
+# (CSV cũ không ghi w/h của ô ứng viên) — nếu thấy chặn oan thì tắt bằng `--no-reid-face-veto`.
+NGUONG_PHU_MAT = 0.30
+HINT_VETO_MAT = (
+    "[re-ID] BỎ ứng viên nhận lại vì TRÙNG KHUÔN MẶT/ĐẦU — ô chọn ban đầu không phải mặt người "
+    "nên đây là bám nhầm (đo 20–21/11: 3/3 lần nhận lại sai đều vào mặt/trán/đầu).\n"
+    "        → nếu bạn ĐANG muốn bám mặt: chọn ô chỉ quanh mặt rồi chạy lại (veto tự tắt khi ô chọn phủ mặt)."
+)
+
 STATE_TRACKING = "tracking"
 STATE_LOST = "lost"
 STATE_REACQUIRING = "reacquiring"
@@ -288,7 +304,7 @@ class ReIdSession:
                  search_grow_frames=DEFAULT_SEARCH_GROW_FRAMES,
                  search_grow_step=DEFAULT_SEARCH_GROW_STEP,
                  jump_ratio=DEFAULT_JUMP_RATIO,
-                 auto_recover=True):
+                 auto_recover=True, face_veto=None):
         self.engine = engine
         self.embedder = embedder
         self.threshold = float(threshold)
@@ -309,6 +325,11 @@ class ReIdSession:
         self.search_grow_step = float(search_grow_step)
         self.jump_ratio = float(jump_ratio)
         self.auto_recover = bool(auto_recover)
+        # Duck-type `BoDoMat` (`src/face_guard.py`): có `.detect(frame) -> [(x,y,w,h), …]`.
+        # `None` = tắt veto (hành vi cũ). Không bao giờ ném: cảnh báo phụ không được giết phiên.
+        self.face_veto = face_veto
+        self._ref_phu_mat = False      # ô chọn BAN ĐẦU có phủ mặt không (quyết định veto có hiệu lực)
+        self.veto_mat_n = 0            # số ứng viên bị bỏ vì trùng mặt (để đếm/hiệu chuẩn)
         self._recover_cooldown = 0
         self._last_bbox = None
         self._confirm_count = 0
@@ -395,6 +416,8 @@ class ReIdSession:
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
         self._lost_streak = 0
+        # Ô chọn ban đầu phủ mặt? ⇒ người dùng MUỐN bám mặt ⇒ veto phải im lặng tuyệt đối.
+        self._ref_phu_mat = self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT
         self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         if self.object_on and not self._obj_refs and not self._obj_templates:
             print(HINT_CHAM_MEP)
@@ -459,6 +482,13 @@ class ReIdSession:
         # Cue 2: đặc trưng vật thể — cascade: prefilter NCC rẻ → chấm điểm đắt cho top-K
         if self.object_on and self._obj_refs:
             score, bbox, ncc = self._match_object(frame)
+            if bbox is not None and self._trung_mat(frame, bbox):
+                # Vật cần bám KHÔNG phải mặt (ô chọn ban đầu không phủ mặt) mà ứng viên trùm mặt/đầu
+                # ⇒ bỏ, để phiên ở "MẤT DẤU — TỰ TÌM LẠI" còn hơn vẽ ô lên mặt người.
+                self.veto_mat_n += 1
+                if self.veto_mat_n == 1 or self.veto_mat_n % 20 == 0:
+                    print(HINT_VETO_MAT)
+                bbox = None
             if bbox is not None:
                 # Cổng NCC (mặc định tắt): với vật đen/ít texture, cosine không phân biệt
                 # được (đo: 1,000 giữa hai vật đen khác nhau) nên phải có thêm điều kiện hình dạng.
@@ -473,6 +503,57 @@ class ReIdSession:
 
         return Step(result=self._lost_result(), state=self._state,
                     reid_score=best_score, ncc=best_ncc)
+
+    # -- veto "nhận lại vào mặt/đầu" --
+    def _phu_mat(self, frame, bbox) -> float:
+        """Phần diện tích LỚN NHẤT của ô `bbox` (hệ `(x1,y1,x2,y2)`) bị MỘT mặt phủ, 0..1.
+
+        Hàm THUẦN trên kết quả của `face_veto`. Trả 0.0 khi tắt veto/không có mặt/ô suy biến —
+        fail-open, cùng triết lý `src/face_guard.py` (cảnh báo phụ không được giết phiên).
+        """
+        if self.face_veto is None or frame is None or bbox is None:
+            return 0.0
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
+            return 0.0
+        if x2 <= x1 or y2 <= y1:
+            return 0.0
+        try:
+            faces = self.face_veto.detect(frame) or ()
+        except Exception:
+            return 0.0
+        area = (x2 - x1) * (y2 - y1)
+        tot = 0.0
+        for fx, fy, fw, fh in faces:
+            ix1, iy1 = max(x1, fx), max(y1, fy)
+            ix2, iy2 = min(x2, fx + fw), min(y2, fy + fh)
+            if ix2 > ix1 and iy2 > iy1:
+                tot = max(tot, (ix2 - ix1) * (iy2 - iy1) / area)
+        return float(tot)
+
+    def _trung_mat(self, frame, bbox) -> bool:
+        """Ứng viên nhận lại có phải MẶT/ĐẦU không (chỉ khi ô chọn ban đầu KHÔNG phủ mặt).
+
+        Hai điều kiện, OR: (a) TÂM ô nằm trong một mặt — không có ngưỡng nào để hiệu chỉnh;
+        (b) ≥ `NGUONG_PHU_MAT` diện tích ô bị một mặt phủ — bắt ca ô to trùm cả đầu + mặt.
+        """
+        if self.face_veto is None or self._ref_phu_mat:
+            return False
+        if self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT:
+            return True
+        if frame is None or bbox is None:
+            return False
+        try:
+            cx = (float(bbox[0]) + float(bbox[2])) / 2.0
+            cy = (float(bbox[1]) + float(bbox[3])) / 2.0
+            faces = self.face_veto.detect(frame) or ()
+        except Exception:
+            return False
+        for fx, fy, fw, fh in faces:
+            if fx <= cx <= fx + fw and fy <= cy <= fy + fh:
+                return True
+        return False
 
     def _is_suspicious_jump(self, result) -> bool:
         """Ô bao nhảy xa bất thường so với frame trước → nghi bám sang vật khác.

@@ -41,5 +41,47 @@
     "lost_ratio": 0.356,
     "reacquiring_frames": 24,
     "reacquired_count": 1
+  },
+  "ca_sai_thu_hai_va_thu_ba": [
+    {
+      "mo_ta": "binh vang roi khoi khung; re-ID nhan lai vao TRAN/TOC (khong phai binh)",
+      "nguon": "data/demoip_1121-080547_metrics.csv (+ _web.mp4, anh data/anh_tmp/demoip3_matdau.jpg)",
+      "git_rev": "3a3b350",
+      "image_size": 192,
+      "ncc_min": 0.35,
+      "reid_obj_threshold": 0.6,
+      "frame_reacquired": 211,
+      "cosine": 0.734205,
+      "ncc": 0.423159,
+      "dung_vat": false
+    },
+    {
+      "mo_ta": "mat lai roi nhan lai vao DAU; ncc CHI HON NGUONG 0,006",
+      "frame_reacquired": 215,
+      "cosine": 0.66307,
+      "ncc": 0.356091,
+      "dung_vat": false
+    }
+  ],
+  "ket_luan_hieu_chuan": {
+    "max_bad_cosine": 0.9739,
+    "min_good_cosine": 0.76957,
+    "max_bad_ncc": 0.5449,
+    "min_good_ncc": 0.414731,
+    "n_bad": 4,
+    "khong_nguong_nao_tach_het": true,
+    "nhung_tach_duoc_ca_sai_moi_nhat": {
+      "cosine": "> 0,734 (ca sai f211) va phai < 0,770 (min_good) ⇒ dai dung 0,74–0,77 RAT HEP",
+      "ncc": "> 0,356 (ca sai f215) va phai < 0,415 (min_good) ⇒ dai dung 0,36–0,41 RAT HEP"
+    },
+    "de_xuat_demo": {
+      "reid_obj_threshold": 0.75,
+      "reid_obj_ncc_min": 0.4,
+      "margins": {
+        "cosine": "0,770 − 0,75 = 0,020",
+        "ncc": "0,415 − 0,40 = 0,015"
+      },
+      "canh_bao": "biên rất hẹp (1,5–2,6 %) ⇒ có thể CHẶN OAN ca đúng; bắt buộc đo lại trên clip có nhãn trước khi tin"
+    }
   }
 }
