@@ -158,7 +158,13 @@ class Visualizer:
         # (review 21-11, P3). Import trong hàm để `visualizer` không phụ thuộc nặng vào `live_tracking`.
         from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
 
-        dang_mat_dau = self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
+        # 21-11: NGHI ĐỔI ĐỐI TƯỢNG (cổng nhảy, có NHỚ) ẩn y như mất dấu. Vì sao: đo trên phiên
+        # `demoip_1121-121732`, sau cú nhảy ở f178 hệ bám sang cửa/tường be CÙNG TÔNG và vẽ mask sai
+        # thêm 65 frame; `track_cos` chứng minh KHÔNG phân biệt được (0,752–0,989 nằm trong dải ca
+        # đúng) ⇒ chỗ duy nhất còn đúng là NGỪNG VẼ và xin người dùng quyết (r/c), thay vì vẽ một
+        # vùng mà hệ không có bằng chứng.
+        dang_mat_dau = (self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
+                        or switch_warning)
 
         # 1) tô mask bán trong suốt
         if not dang_mat_dau and result.mask is not None and result.mask.any():
@@ -187,7 +193,8 @@ class Visualizer:
         if self.consecutive_lost > 0:
             self._draw_lost_banner(img)
         if switch_warning:
-            self._put_text(img, "NGHI NGO DOI TUONG — TU TIM LAI", (8, 104))
+            # Không còn vẽ ô/mask (xem mục 0) ⇒ câu này phải nói ĐÚNG việc người dùng cần làm.
+            self._put_text(img, "NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc", (8, 104))
         if reid_state == "reacquiring":
             # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.

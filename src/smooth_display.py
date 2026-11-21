@@ -27,7 +27,7 @@ import cv2
 
 from src.live_pipeline import (
     InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
-    _switch_warning, warn_if_bad_selection,
+    CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection,
 )
 from src.video_source import open_video_source
 
@@ -265,6 +265,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     worker = InferenceWorker(engine, frames, reid_session=reid_session).start()
     consumed_seq = 0
     last_bbox = None
+    # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — xem `src/identity_guard.IdentityWatch`.
+    watch = IdentityWatch()
     switch = False
     reid_state = reid_score = reacquired = reid_ncc = None
     reid_vetoed = False
@@ -290,6 +292,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if stamped is not None and stamped.seq != consumed_seq:  # mỗi kết quả 1 lần
                 consumed_seq = stamped.seq
                 summary.processed += 1
+                # Cổng CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi bấm `r`/`c`. Không nhớ thì
+                # đúng ca `demoip_1121-121732` (báo ở f178 rồi vẽ mask SAI 65 frame) không được xử lý.
                 switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
                 reid_state, reid_score, reacquired, reid_ncc = worker.reid_status()
                 reid_vetoed = worker.reid_vetoed()
@@ -297,11 +301,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
+                switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,
                                              vetoed=worker.reid_vetoed(),
-                                             track_cos=worker.track_cos()))
+                                             track_cos=worker.track_cos(),
+                                             nghi_doi_tuong=True if watch.nghi else None))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:
@@ -331,7 +337,15 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 disp_count, disp_t0 = 0, time.monotonic()
             if key in QUIT_KEYS:
                 break
+            if key == CONTINUE_KEY and watch.nghi:
+                # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô.
+                watch.reset()
+                switch = False
+                print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
+                continue
             if key == RESET_KEY:
+                watch.reset()          # chọn lại ⇒ xoá nghi của phiên trước
+                switch = False
                 selector.bind(frame)
                 worker.clear()
                 consumed_seq = 0
@@ -340,6 +354,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 mode = "select"
                 continue
             if mode == "select" and selector.has_bbox():
+                watch.reset()          # phiên bám MỚI ⇒ xoá nghi (nếu không, ô vừa chọn vẫn bị ẩn)
+                switch = False
                 _bbox_moi = selector.take_bbox()
                 # Cảnh báo nếu ô chọn phủ KHUÔN MẶT (đo 21-11: ô chọn trùng mặt IoU 0,768, và đặc trưng
                 # tông da làm re-ID "nhận lại" vào mặt). Chỉ cảnh báo, KHÔNG sửa ô.

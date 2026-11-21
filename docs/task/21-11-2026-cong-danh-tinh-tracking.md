@@ -138,6 +138,28 @@ Người dùng chạy `./run demoip --image-size 192` (webcam qua relay). Đo t�
 - Chỉ số phiên: 278 frame · **158 ms mean / 199 ms p95** · 20 FPS hiển thị · mất dấu **42/278 (15 %)** ·
   `state`: tracking 235, reacquiring 40, lost 3 · `reacquired` 3 · `vetoed` 0.
 
+## ✅ Việc tiếp theo đã làm: cổng nhảy **CÓ NHỚ** ⇒ ẩn overlay + phím `c`
+Sau khi đo được "cổng nhảy báo đúng nhưng chỉ in ra", đã làm (đúng thứ tự: **đo trước, sửa sau**):
+
+1. **Đo chi phí báo** (`data/jump_gate_replay_2026-11-21_metrics.json`, replay 18 phiên = **2 973 frame**):
+   cổng nhảy (`|Δtâm| > 0,25 × đường chéo` = 200 px) báo **21 lần = 0,71 %** số frame ⇒ ẩn khi báo là RẺ.
+2. **Đo chi phí latch** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`): nếu ẩn từ lần báo đầu tới
+   hết phiên và **không ai bấm gì** thì **1 033/2 973 frame (34,7 %)** bị ẩn; **5/18 phiên không bao giờ
+   bị ẩn** (phiên sạch), 13/18 phiên có ≥ 1 lần báo. Trong dùng thật, người dùng bấm `r`/`c` trong ~1–2 s.
+3. **Code**: `src/identity_guard.IdentityWatch` (latch + `reset()`); `visualizer.render` **không vẽ**
+   mask/ô/quỹ đạo khi nghi (y như mất dấu) + banner `NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc`;
+   nối vào **cả 2 vòng demo** (`live_pipeline.run_interactive` + `smooth_display.muc_smooth`); phím `c`
+   = xác nhận vẫn đúng (không chọn lại ô); `r` = chọn lại (xoá nghi); chọn ô mới ⇒ xoá nghi.
+4. **Đo được**: CSV thêm cột cuối `nghi_doi_tuong` (0/1/trống) ⇒ biết đã ẩn frame nào, soi lại được.
+   KHÔNG che số: `_record_from` vẫn log bbox/mask THẬT của frame đó.
+5. **Kiểm**: `IdentityWatch` giữ trạng thái sau cú nhảy và không coi ô rỗng là "đổi danh tính" (3 test);
+   test end-to-end ẩn overlay + ghi cờ; test `c` không gọi `reset`; **mutant "bỏ latch" làm test ĐỎ**.
+   `./run lint` xanh · `./run test` **1698 passed**, 5 deselected.
+
+**Chưa làm (ghi ticket Next steps):** đường **web/worker** (`src/live_tracking.py`) chưa có cổng này —
+worker vẫn vẽ mask của frame VOS; muốn đồng bộ phải thêm cờ vào `status.json` + `bam` một giá trị mới
+(`nghi_doi_tuong`) và cập nhật `web/`.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **P1 review vòng 2 (nghiêm trọng nhất)**: 4 cột danh tính trong `drift_samples.csv` đọc từ `self._stats`
   = lần VOS **gần nhất**, trong khi `empty`/`bbox` là của dòng đó ⇒ **18/364 dòng** mâu thuẫn
@@ -161,8 +183,8 @@ Người dùng chạy `./run demoip --image-size 192` (webcam qua relay). Đo t�
 ## 📌 Việc cần làm tiếp (Next steps)
 - [x] ~~PR-2 (cổng dựa trên `track_cos`)~~ — **BÁC bằng số đo** (phiên `demoip_1121-121732`): dải cos vùng
   sai 0,752–0,989 nằm trong dải đúng ⇒ không θ nào tách được. **Không cần clip mới.**
-- [ ] **Hành động theo cổng NHẢY đã có** (cổng này báo đúng ở f178 nhưng chỉ in ra): dừng vẽ mask / về
-  `no_evidence` / tự chọn lại khi nghi đổi đối tượng. Phải đo trước: bao nhiêu % frame bị ẩn oan.
+- [x] **Hành động theo cổng NHẢY** — xong: `IdentityWatch` latch + ẩn overlay + `c`/`r`, cột CSV
+  `nghi_doi_tuong`. Đã đo trước (0,71 % lần báo; 34,7 % frame bị ẩn nếu không ai bấm gì).
 - [ ] **P2 còn nợ**: `object_signature` tính **2 lần/frame** trên đường CLI (`_collect_reference` + neo) — tái dùng `sig` để tiết kiệm ~1,5 ms; đo A/B wall-clock 3 lần chèn kẽ (CSV `latency_ms` = thời gian engine, **không** thấy chi phí này).
 - [ ] **P2 còn nợ**: `post_ms` bao gồm chi phí neo ở đường có luồng nhưng **không** ở đường inline ⇒ `mask_age_total_ms` giữa 2 đường không so trực tiếp được; cần tách `identity_ms` riêng vào `status.json`.
 - [ ] **P3**: `track_cos` gắn frame VOS còn `bbox` trong `status.json` là frame hiển thị ⇒ lệch thế hệ; thêm `vos_frame_idx` (đã defer ở V2 của plan).

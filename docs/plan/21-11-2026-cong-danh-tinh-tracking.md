@@ -177,8 +177,15 @@ Không cần clip mới: ca "remote cạnh máy lạnh" thực chất là **cùn
 **Tín hiệu THAY THẾ có bằng chứng trong chính phiên này:** cổng **nhảy ô bao** đã báo ĐÚNG ở f178
 (`[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ (561,132,639,389) sang (376,43,476,122)) — bấm r chọn lại`),
 nhưng nó chỉ **in ra** rồi hệ vẫn vẽ mask sai 65 frame. ⇒ Việc đáng làm tiếp không phải nuôi thêm kênh
-ngoại hình, mà **hành động theo cổng nhảy đã có** (dừng vẽ / về `no_evidence` / tự chọn lại) — cần đo
-riêng trước khi làm.
+ngoại hình, mà **hành động theo cổng nhảy đã có**.
+
+**ĐÃ LÀM (21-11, cùng ngày) — đo trước, sửa sau:**
+- Cổng báo **21 lần/2 973 frame = 0,71 %** (replay 18 phiên): `data/jump_gate_replay_2026-11-21_metrics.json`.
+- Nếu ẩn từ lần báo đầu tới hết phiên, **không ai bấm gì**: **34,7 %** frame bị ẩn; **5/18 phiên không bao
+  giờ bị ẩn**: `data/identity_latch_chi_phi_2026-11-21_metrics.json`.
+- Code: `IdentityWatch` (latch) + `visualizer` **không vẽ** mask khi nghi + banner `r`/`c`; phím `c` =
+  xác nhận vẫn đúng; cột CSV `nghi_doi_tuong` để soi lại. Test giết được mutant "bỏ latch".
+- **Nợ**: đường web/worker chưa có cổng này (cần `status.json` + `web/`).
 
 ### Đã sửa sau review độc lập (P1-1, P1-2, 8 P2)
 1. **P1-1** — 4 cột danh tính vào **`drift_samples.csv`** (CSV duy nhất của đường live) + `_worker_telemetry`;

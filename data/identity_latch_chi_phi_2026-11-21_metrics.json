@@ -1,0 +1,135 @@
+{
+  "luat": "IdentityWatch: lần báo ĐẦU ⇒ ẩn overlay tới khi r/c; replay từ center_x/center_y",
+  "nguong_px": 200.0,
+  "phan_tich": [
+    {
+      "file": "demoip_1104-212328_metrics.csv",
+      "n": 62,
+      "bao_dau": 38,
+      "so_frame_an": 25,
+      "pct_an": 40.3
+    },
+    {
+      "file": "demoip_1104-214048_metrics.csv",
+      "n": 75,
+      "bao_dau": 43,
+      "so_frame_an": 33,
+      "pct_an": 44.0
+    },
+    {
+      "file": "demoip_1104-214922_metrics.csv",
+      "n": 177,
+      "bao_dau": 42,
+      "so_frame_an": 135,
+      "pct_an": 76.3
+    },
+    {
+      "file": "demoip_1104-220946_metrics.csv",
+      "n": 86,
+      "bao_dau": 41,
+      "so_frame_an": 46,
+      "pct_an": 53.5
+    },
+    {
+      "file": "demoip_1105-075326_metrics.csv",
+      "n": 52,
+      "bao_dau": 30,
+      "so_frame_an": 22,
+      "pct_an": 42.3
+    },
+    {
+      "file": "demoip_1105-124459_metrics.csv",
+      "n": 113,
+      "bao_dau": 53,
+      "so_frame_an": 60,
+      "pct_an": 53.1
+    },
+    {
+      "file": "demoip_1105-125828_metrics.csv",
+      "n": 392,
+      "bao_dau": 248,
+      "so_frame_an": 144,
+      "pct_an": 36.7
+    },
+    {
+      "file": "demoip_1105-131222_metrics.csv",
+      "n": 326,
+      "bao_dau": null,
+      "so_frame_an": 0,
+      "pct_an": 0.0
+    },
+    {
+      "file": "demoip_1114-060249_metrics.csv",
+      "n": 147,
+      "bao_dau": 63,
+      "so_frame_an": 84,
+      "pct_an": 57.1
+    },
+    {
+      "file": "demoip_1120-224057_metrics.csv",
+      "n": 73,
+      "bao_dau": 16,
+      "so_frame_an": 57,
+      "pct_an": 78.1
+    },
+    {
+      "file": "demoip_1120-233206_metrics.csv",
+      "n": 90,
+      "bao_dau": null,
+      "so_frame_an": 0,
+      "pct_an": 0.0
+    },
+    {
+      "file": "demoip_1121-075227_metrics.csv",
+      "n": 102,
+      "bao_dau": 61,
+      "so_frame_an": 42,
+      "pct_an": 41.2
+    },
+    {
+      "file": "demoip_1121-080547_metrics.csv",
+      "n": 221,
+      "bao_dau": null,
+      "so_frame_an": 0,
+      "pct_an": 0.0
+    },
+    {
+      "file": "demoip_1121-081724_metrics.csv",
+      "n": 92,
+      "bao_dau": 81,
+      "so_frame_an": 11,
+      "pct_an": 12.0
+    },
+    {
+      "file": "demoip_1121-102905_metrics.csv",
+      "n": 122,
+      "bao_dau": null,
+      "so_frame_an": 0,
+      "pct_an": 0.0
+    },
+    {
+      "file": "demoip_1121-103221_metrics.csv",
+      "n": 325,
+      "bao_dau": 51,
+      "so_frame_an": 274,
+      "pct_an": 84.3
+    },
+    {
+      "file": "demoip_1121-103854_metrics.csv",
+      "n": 240,
+      "bao_dau": null,
+      "so_frame_an": 0,
+      "pct_an": 0.0
+    },
+    {
+      "file": "demoip_1121-121732_metrics.csv",
+      "n": 278,
+      "bao_dau": 178,
+      "so_frame_an": 100,
+      "pct_an": 36.0
+    }
+  ],
+  "tong_frame": 2973,
+  "tong_frame_bi_an": 1033,
+  "pct_bi_an": 34.75
+}

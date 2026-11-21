@@ -483,4 +483,14 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - [ ] Review độc lập đã chạy (mục 9.1), P0 = 0, P1 có chủ
 - [ ] CI GitHub xanh trước khi merge
 - [ ] Log `docs/task/…` có kết quả review + quyết định plan
-- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo
+- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
+  Đo 21-11 (phiên `demoip_1121-121732`): cổng nhảy báo ĐÚNG ở f178 (bám sang **cửa/tường be cùng tông** với
+  điện thoại be) nhưng sau cú nhảy chuyển động lại mượt ⇒ cổng **không báo lại**, hệ vẽ mask SAI **65
+  frame**. Mask-cos của vùng sai = **0,752–0,989** (median 0,854) so với ca đúng **0,905** ⇒ **không tồn tại
+  θ tách được** (0,75 bắt 0/65; 0,85 bắt 43 % nhưng **chặn oan 15 %** frame đúng) ⇒ **đừng làm "cổng cos"**,
+  và **đừng trích** "θ bắt được ca máy lạnh" (số 0,51–0,72 của ca đó là **box-cos**, khác đại lượng).
+  Nay `src/identity_guard.IdentityWatch` giữ trạng thái nghi (latch) tới khi bấm `r` (chọn lại) hoặc `c`
+  (vẫn đúng) và `visualizer` **không vẽ** mask/ô khi nghi. Chi phí đo được: cổng báo **21 lần/2 973 frame
+  (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
+  bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Đường web/worker chưa có cổng
+  này** — đừng nói hai đường hành xử giống nhau.

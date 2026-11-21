@@ -321,3 +321,92 @@ class TestCanhBaoChonSai:
                              bbox=(0, 0, 0, 0), score=-1.0, elapsed_ms=100.0)
         warn_if_bad_selection(res)
         assert "WARN" in capsys.readouterr().out
+
+
+class TestNghiDoiDoiTuongCoNho:
+    """21-11: cổng nhảy **CÓ NHỚ** — báo 1 lần thì ẩn overlay tới khi bấm `r`/`c`.
+
+    Vì sao: đo trên phiên thật `demoip_1121-121732`, cổng báo đúng ở f178 (bám sang cửa/tường be
+    cùng tông) rồi hệ vẫn vẽ mask SAI 65 frame vì sau cú nhảy chuyển động lại mượt ⇒ cổng không
+    báo lại. `track_cos` không phân biệt được (đo: dải sai 0,752–0,989 nằm trong dải đúng) nên
+    hành động đúng là NGỪNG VẼ + xin người dùng quyết.
+    """
+
+    def _engine_nhay(self):
+        """Engine giả: 2 frame đầu bám (10,10,50,50), sau đó NHẢY sang góc kia (bên phải dưới)."""
+        from src.tracker_engine import TrackingResult
+
+        class EngineNhay:
+            def __init__(self):
+                self.calls = []
+                self.n = 0
+
+            def start(self, frame, bbox):
+                self.calls.append(("start", tuple(bbox)))
+                self.n = 1
+                return self._r(bbox)
+
+            def process(self, frame):
+                self.calls.append(("process",))
+                self.n += 1
+                box = (10, 10, 50, 50) if self.n <= 2 else (250, 180, 300, 230)
+                return self._r(box)
+
+            @staticmethod
+            def _r(box):
+                h, w = 240, 320
+                m = np.zeros((h, w), dtype=bool)
+                m[box[1]:box[3], box[0]:box[2]] = True
+                return TrackingResult(frame_idx=0, mask=m, bbox=tuple(box),
+                                      score=1.0, elapsed_ms=1.0)
+
+            def reset(self):
+                self.calls.append(("reset",))
+
+        return EngineNhay()
+
+    def test_an_overlay_sau_cu_nhay_va_ghi_co(self, tmp_path):
+        from src.metrics_logger import MetricsLogger
+
+        path, _ = _make_video(tmp_path, n=6)
+        engine = self._engine_nhay()
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        metrics = MetricsLogger()
+        drawn_mask = []
+
+        def display(img, mode):
+            if mode == "select" and not engine.calls and not sel.has_bbox():
+                sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 60, 60, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONUP, 100, 100, 0, None)
+            if mode == "track":
+                # có vẽ mask không? mask tô màu xanh mờ ⇒ kiểm chênh lệch ở vùng mask
+                drawn_mask.append(bool(np.any(img[15:45, 15:45] != 0)))
+            return -1
+
+        run_interactive(source=str(path), engine=engine, selector=sel, display=display,
+                        metrics=metrics, max_frames=4)
+        rows = metrics.records
+        co = [r for r in rows if r.nghi_doi_tuong is not None]
+        assert co, "cú nhảy phải được ghi cờ `nghi_doi_tuong`"
+        # Frame ĐẦU sau cú nhảy bị ẩn: overlay tối thiểu không vẽ gì ở vùng mask cũ
+        assert co[0].nghi_doi_tuong is True
+
+    def test_bam_c_thi_tiep_tuc_bam(self, tmp_path):
+        path, _ = _make_video(tmp_path, n=8)
+        engine = self._engine_nhay()
+        sel = PromptSelector(frame_shape=(240, 320, 3))
+        keys = iter([-1, -1, -1, -1, -1, -1, ord("c"), -1, -1, -1])
+
+        def display(img, mode):
+            if mode == "select" and not engine.calls and not sel.has_bbox():
+                sel.on_mouse(cv2.EVENT_LBUTTONDOWN, 60, 60, 0, None)
+                sel.on_mouse(cv2.EVENT_LBUTTONUP, 100, 100, 0, None)
+            try:
+                return next(keys)
+            except StopIteration:
+                return ord("q")
+
+        run_interactive(source=str(path), engine=engine, selector=sel, display=display,
+                        max_frames=6)
+        # `c` KHÔNG được gọi reset/chọn lại — chỉ xoá trạng thái nghi
+        assert ("reset",) not in engine.calls

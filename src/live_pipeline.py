@@ -18,7 +18,7 @@ import numpy as np
 
 from src.video_source import open_video_source
 from src.metrics_logger import FrameRecord
-from src.identity_guard import is_suspect_switch
+from src.identity_guard import IdentityWatch, is_suspect_switch
 
 _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
@@ -27,6 +27,8 @@ _OVERLAY_ALPHA = 0.35
 # Phím thoát dùng chung (q / ESC) — run_interactive + tools/run_live cùng quy ước
 QUIT_KEYS = (ord("q"), 27)
 RESET_KEY = ord("r")
+# `c` = "vẫn đúng đối tượng, tiếp tục": xoá trạng thái NGHI ĐỔI ĐỐI TƯỢNG mà không chọn lại ô.
+CONTINUE_KEY = ord("c")
 
 # Ngưỡng cảnh báo chọn sai: SAM 2 luôn trả mask cho BẤT KỲ ô nào (kể cả nền trống) —
 # đo thật 18-10: chọn nền nhỏ vẫn được mask 1.2% khung (không phân biệt được với đối tượng),
@@ -36,7 +38,7 @@ MASK_FRAME_WARN_RATIO = 0.6
 # Hint hiển thị trên khung: viết KHÔNG dấu vì font Hershey của cv2.putText
 # không render được chữ có dấu tiếng Việt
 _HINT_SELECT = "[SELECT] keo chuot ve o chon doi tuong | r: chon lai | q/ESC: thoat"
-_HINT_TRACK = "[TRACK] r: chon lai doi tuong | q/ESC: thoat"
+_HINT_TRACK = "[TRACK] r: chon lai | c: van dung | q/ESC: thoat"
 
 
 @dataclass
@@ -118,7 +120,7 @@ def _switch_warning(prev_bbox, result, frame_shape):
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
-                 vetoed=None, track_cos=None) -> FrameRecord:
+                 vetoed=None, track_cos=None, nghi_doi_tuong=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     mask = getattr(result, "mask", None)
@@ -138,6 +140,7 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
         bbox_w=max(0, x2 - x1),
         bbox_h=max(0, y2 - y1),
         mask_area=mask_area,
+        nghi_doi_tuong=nghi_doi_tuong,
         track_cos=track_cos,
     )
 
@@ -291,7 +294,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             selector.on_mouse(cv2.EVENT_LBUTTONUP, preselect_bbox[2], preselect_bbox[3], 0, None)
         mode = "select"
         last_result = None
-        switch = False  # cảnh báo đổi đối tượng: tính lại mỗi frame track, mặc định tắt ở frame đầu
+        # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi người dùng bấm
+        # `r` (chọn lại) hoặc `c` (xác nhận vẫn đúng). Không nhớ thì cảnh báo vô dụng: đo trên
+        # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
+        watch = IdentityWatch()
+        switch = False
         state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
         reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
         track_cos = None                    # cos với neo danh tính (plan 21-11, log-only)
@@ -309,6 +316,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     _canh_bao_neu_chon_mat(frame, bbox, visualizer)
                     last_result = (reid_session.start(frame, bbox) if reid_session is not None
                                    else engine.start(frame, bbox))
+                    # Phiên bám MỚI ⇒ xoá trạng thái nghi của phiên trước (nếu không, ô vừa chọn
+                    # lại vẫn bị ẩn và người dùng tưởng hệ hỏng).
+                    watch.reset()
+                    switch = False
                     state = reid_session.state if reid_session is not None else None
                     reid_score = reacquired = None
                     last_bbox = last_result.bbox if last_result.mask.any() else tuple(bbox)
@@ -331,7 +342,14 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 key = display(img, "track")
                 if key in QUIT_KEYS:
                     break
+                if key == CONTINUE_KEY and watch.nghi:
+                    # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
+                    watch.reset()
+                    switch = False
+                    print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
+                    continue
                 if key == RESET_KEY:
+                    watch.reset()
                     engine.reset()
                     if reid_session is not None:
                         reid_session.reset()
@@ -361,14 +379,18 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     reid_vetoed = False
                     track_cos = None
                 switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
+                switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
                 if last_result.mask.any():
                     last_bbox = last_result.bbox
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)
                 if metrics is not None:
+                    # Vẫn LOG kết quả THẬT (không che số) + cờ đã ẩn overlay hay chưa ⇒ đo được
+                    # "ẩn bao nhiêu frame" và soi lại từ CSV xem ẩn có đúng.
                     metrics.log(_record_from(last_result, state, reid_score, reacquired,
-                                             vetoed=reid_vetoed, track_cos=track_cos))
+                                             vetoed=reid_vetoed, track_cos=track_cos,
+                                             nghi_doi_tuong=True if watch.nghi else None))
     finally:
         src.close()
     return summary
