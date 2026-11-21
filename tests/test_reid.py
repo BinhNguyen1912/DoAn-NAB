@@ -1158,3 +1158,44 @@ class TestCacheKhuonMatTheoFrame:
         s.reset()
         s._mat_trong(f)
         assert fm.calls == 2                     # sau reset không dùng lại mặt của phiên trước
+
+
+class TestReIdGeometricVerification:
+    """Ticket 03: Xác thực hình học và sinh điểm prompt tương phản khi tái bắt đối tượng."""
+
+    def test_loai_bo_ung_vien_khac_ti_le_hinh_hoc(self):
+        from unittest.mock import MagicMock
+        from src.reid import ReIdSession
+
+        engine = MagicMock()
+        session = ReIdSession(engine=engine, embedder=None, cue="object")
+        # Nạp 5 mẫu đối tượng 50x120 (như remote)
+        for _ in range(5):
+            session.geo_profile.update((100, 100, 150, 220))
+
+        # Ứng viên mảng tường ngang (150x40): cùng màu nhưng sai tỷ lệ
+        cand_wall = (200, 200, 350, 240)
+        assert session.geo_profile.is_compatible(cand_wall) is False
+
+        # Ứng viên remote thật khi quay lại (48x118): khớp
+        cand_real = (200, 200, 248, 318)
+        assert session.geo_profile.is_compatible(cand_real) is True
+
+    def test_reacquire_sinh_contrast_points_cho_engine(self):
+        from unittest.mock import MagicMock
+        from src.reid import ReIdSession
+
+        engine = MagicMock()
+        engine.start.return_value = MagicMock(bbox=(20, 20, 60, 100), mask=np.ones((120, 120), bool))
+        session = ReIdSession(engine=engine, embedder=None, cue="object")
+
+        frame = np.zeros((120, 120, 3), dtype=np.uint8)
+        bbox = (20, 20, 60, 100)
+        session._reacquire(frame, bbox, score=0.85)
+
+        assert engine.start.called
+        call_kwargs = engine.start.call_args.kwargs
+        assert "points" in call_kwargs and "labels" in call_kwargs
+        assert call_kwargs["labels"][0] == 1  # positive ở tâm
+        assert 0 in call_kwargs["labels"]     # negative ở viền ngoài
+

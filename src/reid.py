@@ -27,6 +27,7 @@ import time
 import numpy as np
 
 from src.track_identity import NeoDanhTinh, cos_voi_neo
+from src.geometry_guard import GeometricProfile, generate_contrast_points
 from src.appearance import (candidate_boxes, clip_mask_border, mask_to_bbox, object_signature,
                             prefilter_candidates, signature_quality_ok)
 
@@ -343,6 +344,7 @@ class ReIdSession:
         # NEO danh tính (plan 21-11-2026, `src/track_identity.py`): 3–5 mẫu ĐẦU của vật. Khác
         # `_obj_refs` (rolling, bị thay sạch sau 8 frame TRACKING ⇒ "ký ức" thành vật khác).
         self.neo = NeoDanhTinh()
+        self.geo_profile = GeometricProfile()
         self._hint_veto_da_in = False  # đã in HINT_VETO_MAT chưa (reset ở `reset()` — P3 vòng 3)
         self._faces = ()
         self._recover_cooldown = 0
@@ -426,6 +428,7 @@ class ReIdSession:
         self._hint_veto_da_in = False
         self._faces_frame = None
         self.neo.xoa()                  # chọn lại đối tượng ⇒ neo cũ vô nghĩa
+        self.geo_profile.reset()
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -681,7 +684,11 @@ class ReIdSession:
 
     def _reacquire(self, frame, bbox, score: float) -> Step:
         """Nhận lại đối tượng: khởi động bám lại từ ô vừa khớp (dùng chung cho mọi cue)."""
-        result = self.engine.start(frame, bbox)
+        pts, lbls = generate_contrast_points(bbox, frame.shape[:2])
+        try:
+            result = self.engine.start(frame, bbox, points=pts, labels=lbls)
+        except TypeError:
+            result = self.engine.start(frame, bbox)
         # engine.start reset bộ đếm frame của nó → giữ frame_idx liên tục cho CSV/biểu đồ
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
@@ -864,6 +871,8 @@ class ReIdSession:
                 continue
             if not accept_candidate(raw, float(ncc), self.obj_threshold, self.obj_ncc_min):
                 continue            # cổng chính = cosine, cổng phụ = NCC (mặc định tắt)
+            if not self.geo_profile.is_compatible((x1, y1, x2, y2)):
+                continue            # cổng hình học (ticket 03): chặn mảng tường/công tắc khác tỉ lệ diện tích & w/h
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))
@@ -903,6 +912,8 @@ class ReIdSession:
                 self._refs.append(hit.embedding)
         if self.object_on and mask is not None:
             obj_box = mask_to_bbox(mask)
+            if obj_box is not None:
+                self.geo_profile.update(obj_box)
             if obj_box is None or not signature_quality_ok(obj_box, mask, self.obj_min_side,
                                                            self.obj_min_fill):
                 return
