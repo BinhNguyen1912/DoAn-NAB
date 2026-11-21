@@ -78,6 +78,16 @@ export function isUsableBox(box: Box | null): box is Box {
   return box !== null && box.w >= MIN_BOX_SIDE && box.h >= MIN_BOX_SIDE
 }
 
+/** Kiểm tra điểm có nằm trong hộp bao không. */
+export function isPointInsideBox(point: Point, box: Box): boolean {
+  return (
+    point.x >= box.x &&
+    point.x <= box.x + box.w &&
+    point.y >= box.y &&
+    point.y <= box.y + box.h
+  )
+}
+
 /** Mô tả ngắn để hiện dưới canvas. */
 export function describeBox(box: Box | null): string {
   return box ? `${box.x}, ${box.y}, ${box.w}×${box.h}` : 'chưa có'
