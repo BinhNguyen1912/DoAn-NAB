@@ -303,7 +303,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
                 # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
                 switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
-                if stamped.result.mask.any():
+                if stamped.result.mask.any() and not switch:
                     last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)

@@ -22,17 +22,57 @@ def _center(bbox):
     return (x1 + x2) / 2.0, (y1 + y2) / 2.0
 
 
+def search_window_radius(bbox, frame_shape, lk_velocity=None,
+                         motion_scale=1.5, min_ratio=0.10,
+                         max_jump_ratio=DEFAULT_MAX_JUMP_RATIO) -> float:
+    """Tính bán kính dịch chuyển tối đa hợp lý cho đối tượng.
+
+    Dựa trên kích thước đối tượng (size = max(w, h)) và vận tốc Lucas-Kanade.
+    Tránh trường hợp vật thể nhỏ bị nhảy 100-150 px sang tường mà ngưỡng 25% đường chéo
+    khung (200 px) vẫn bỏ lọt (ca remote máy lạnh trắng 21-11).
+    """
+    if not bbox or tuple(bbox) == (0, 0, 0, 0):
+        return 0.0
+    h, w = frame_shape[0], frame_shape[1]
+    diagonal = math.hypot(w, h)
+    w_obj = abs(bbox[2] - bbox[0])
+    h_obj = abs(bbox[3] - bbox[1])
+    size_obj = max(w_obj, h_obj)
+
+    ratio_factor = max_jump_ratio / DEFAULT_MAX_JUMP_RATIO
+    effective_min_ratio = min(min_ratio, max_jump_ratio)
+    radius = max(effective_min_ratio * diagonal, motion_scale * size_obj * ratio_factor)
+    if lk_velocity is not None:
+        vx, vy = float(lk_velocity[0]), float(lk_velocity[1])
+        radius += math.hypot(vx, vy)
+
+    return min(radius, max_jump_ratio * diagonal)
+
+
 def is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
-                      max_jump_ratio=DEFAULT_MAX_JUMP_RATIO):
-    """True nếu tâm ô bao nhảy xa hơn `max_jump_ratio` × đường chéo khung trong 1 bước."""
+                      max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
+                      lk_velocity=None,
+                      use_search_window=True):
+    """True nếu tâm ô bao nhảy ra ngoài bán kính chuyển động hợp lý (search window)."""
     if not prev_bbox or not cur_bbox:
         return False
     if tuple(prev_bbox) == (0, 0, 0, 0) or tuple(cur_bbox) == (0, 0, 0, 0):
         return False
+    (px, py), (cx, cy) = _center(prev_bbox), _center(cur_bbox)
+    expected_x, expected_y = px, py
+    if lk_velocity is not None:
+        expected_x += float(lk_velocity[0])
+        expected_y += float(lk_velocity[1])
+
+    jump = math.hypot(cx - expected_x, cy - expected_y)
+
+    if use_search_window:
+        radius = search_window_radius(prev_bbox, frame_shape, lk_velocity=lk_velocity,
+                                      max_jump_ratio=max_jump_ratio)
+        return jump > radius
+
     h, w = frame_shape[0], frame_shape[1]
     diagonal = math.hypot(w, h)
-    (px, py), (cx, cy) = _center(prev_bbox), _center(cur_bbox)
-    jump = math.hypot(cx - px, cy - py)
     return jump > max_jump_ratio * diagonal
 
 
@@ -64,10 +104,11 @@ class IdentityWatch:
         """Đang ở trạng thái nghi đổi đối tượng (đã báo và CHƯA được xoá)."""
         return self._nghi
 
-    def update(self, prev_bbox, cur_bbox, frame_shape) -> bool:
+    def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None) -> bool:
         """Cập nhật bằng một bước VOS; trả True nếu ĐANG nghi (kể cả các frame sau cú nhảy)."""
         if is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
-                             max_jump_ratio=self.max_jump_ratio):
+                             max_jump_ratio=self.max_jump_ratio,
+                             lk_velocity=lk_velocity):
             self._nghi = True
         return self._nghi
 

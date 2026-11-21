@@ -1856,8 +1856,18 @@ class LiveTrackingSession:
         if obs_bbox is not None:
             _shape = getattr(getattr(result, "mask", None), "shape", None)
             if _shape is not None and len(_shape) >= 2:
-                self._watch.update(self._last_good_bbox, obs_bbox, (int(_shape[0]), int(_shape[1])))
-            self._last_good_bbox = obs_bbox
+                lk_vel = None
+                if getattr(self._interp, "last_dx", None) is not None:
+                    lk_vel = (self._interp.last_dx, self._interp.last_dy)
+                is_nghi = self._watch.update(
+                    self._last_good_bbox, obs_bbox,
+                    (int(_shape[0]), int(_shape[1])),
+                    lk_velocity=lk_vel,
+                )
+                if not is_nghi:
+                    self._last_good_bbox = obs_bbox
+            else:
+                self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
         # `nghi_doi_tuong` ẩn ô Y NHƯ `no_evidence` (cùng luật với CLI): hệ không có bằng chứng về
         # việc "vùng này là vật đã chọn" thì không được vẽ nó ra như đang bám.

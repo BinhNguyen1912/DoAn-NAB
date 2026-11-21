@@ -73,3 +73,54 @@ class TestIdentityWatch:
         assert w.update((100, 100, 200, 200), (0, 0, 0, 0), (480, 640)) is False
         assert w.update((0, 0, 0, 0), (600, 400, 620, 480), (480, 640)) is False
         assert w.nghi is False
+
+
+class TestSearchWindowMotionGate:
+    """Ticket 02: Ràng buộc không gian chuyển động dựa trên kích thước & LK velocity."""
+
+    def test_search_window_radius_vat_nho_chat_hon_vat_to(self):
+        from src.identity_guard import search_window_radius
+
+        frame_shape = (480, 640)  # diagonal = 800
+        small_box = (100, 100, 140, 140)  # size = 40
+        big_box = (100, 100, 300, 300)    # size = 200
+
+        r_small = search_window_radius(small_box, frame_shape)
+        r_big = search_window_radius(big_box, frame_shape)
+
+        assert r_small < r_big
+        assert r_small < 120.0  # chặt hơn ngưỡng 200 px (25%) cũ rất nhiều
+        assert r_big <= 200.0   # không vượt trần 25% đường chéo
+
+    def test_search_window_mo_rong_theo_lk_velocity(self):
+        from src.identity_guard import search_window_radius
+
+        box = (100, 100, 150, 150)
+        frame_shape = (480, 640)
+        r_tinh = search_window_radius(box, frame_shape, lk_velocity=None)
+        r_dong = search_window_radius(box, frame_shape, lk_velocity=(30.0, 40.0))  # mag = 50
+
+        assert r_dong > r_tinh
+        assert abs((r_dong - r_tinh) - 50.0) < 1e-3
+
+    def test_ca_remote_nhay_114px_bi_chan_boi_search_window(self):
+        """Ca remote trắng máy lạnh (f109->f110 trong track_identity.py): nhảy 114 px phải bị chặn."""
+        from src.identity_guard import is_suspect_switch
+
+        prev_remote = (200, 200, 250, 250)  # size = 50 px
+        jumped_wall = (314, 200, 364, 250)  # nhảy 114 px sang tường/máy lạnh
+        frame_shape = (480, 640)
+
+        assert is_suspect_switch(prev_remote, jumped_wall, frame_shape) is True
+
+    def test_di_chuyen_theo_huong_lk_khong_bi_nghi_oan(self):
+        """Vật di chuyển 60 px nhưng có LK xác nhận cùng hướng thì KHÔNG bị báo oan."""
+        from src.identity_guard import is_suspect_switch
+
+        prev = (100, 100, 150, 150)
+        cur = (160, 100, 210, 150)  # dịch 60 px theo trục x
+        frame_shape = (480, 640)
+        lk_vel = (58.0, 0.0)
+
+        assert is_suspect_switch(prev, cur, frame_shape, lk_velocity=lk_vel) is False
+

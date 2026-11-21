@@ -3154,3 +3154,25 @@ class TestCongNhayCoNhoDuongWeb:
         assert sess._stats.nghi_doi_tuong is False
         assert sess._stats.bam != "nghi_doi_tuong"
         assert not (out / CONFIRM_NAME).exists(), "file lệnh phải được xoá để chỉ có hiệu lực 1 lần"
+
+    def test_o_nhay_khong_ghi_de_last_good_bbox(self, video_to, tmp_path):
+        """Khi mask nhảy đột ngột sang nền, gate chặn không nhận vị trí nhảy vào last_good_bbox."""
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        sess.run()
+        h, w = 240, 320
+        jumped_box = (w - 60, h - 60, w - 10, h - 10)
+        assert sess._last_good_bbox is not None
+        assert sess._last_good_bbox != jumped_box, "vị trí nhảy sang nền không được ghi đè vào last_good_bbox"

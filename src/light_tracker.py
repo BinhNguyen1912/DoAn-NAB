@@ -90,6 +90,8 @@ class LkBoxTracker:
         self._prev_gray = gray
         self._prev_bbox = tuple(int(v) for v in bbox)
         self._points = self._seed(self._prev_bbox, gray.shape)
+        self.last_dx = None
+        self.last_dy = None
 
     def update(self, gray):
         """Ước lượng ô bao mới. Trả (bbox, True) hoặc (None, False) khi mất dấu."""
@@ -100,6 +102,8 @@ class LkBoxTracker:
         self.last_ly_do = "chua_ro"        # mọi đường chưa gán ⇒ "chưa rõ", KHÔNG đọc giá trị bước trước
         self.last_ly_do_khop = None
         self.last_n_diem = None
+        self.last_dx = None
+        self.last_dy = None
         if self._prev_gray is None or self._points is None or self._prev_bbox is None:
             self.last_ly_do = "chua_reset"
             return None, False
@@ -130,6 +134,8 @@ class LkBoxTracker:
         # TRUNG VỊ chứ không trung bình: vài điểm trôi theo nền không được kéo cả ô bao đi
         dx = float(np.median(delta[:, 0]))
         dy = float(np.median(delta[:, 1]))
+        self.last_dx = dx
+        self.last_dy = dy
 
         # Kiểm tra ĐỘ TẢN: LK luôn trả về một vector cho mỗi điểm, kể cả khi vật đã biến mất
         # (nó khớp với nhiễu). Vector dịch thật thì rất đồng nhất; khớp nhiễu thì tản mát.

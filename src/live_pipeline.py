@@ -380,7 +380,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     track_cos = None
                 switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                 switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
-                if last_result.mask.any():
+                if last_result.mask.any() and not switch:
                     last_bbox = last_result.bbox
                 summary.processed += 1
                 if on_result is not None:
