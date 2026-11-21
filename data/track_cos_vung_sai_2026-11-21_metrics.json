@@ -1,0 +1,44 @@
+{
+  "nguon": "data/demoip_1121-121732_metrics.csv",
+  "git_rev": "2f333ec",
+  "phien": "demoip_1121-121732 (live webcam qua relay, image_size 192)",
+  "bam_dung": {
+    "cua_so": "f0-86 ∪ f126-175 ∪ f264-277",
+    "n": 145,
+    "med": 0.9045,
+    "min": 0.3762,
+    "max": 0.9979,
+    "p05": 0.8191
+  },
+  "bam_nen_cung_tong": {
+    "cua_so": "f179-243 (mask phủ CỬA/TƯỜNG be, ảnh p3_f180/f200)",
+    "n": 65,
+    "med": 0.8543,
+    "min": 0.7521,
+    "max": 0.9887,
+    "p05": 0.7779
+  },
+  "ket_luan": "cos KHÔNG phân biệt được vùng SAI cùng tông: dải sai 0,796-0,887 nằm TRONG dải đúng; ngưỡng nào bắt được sai đều chặn oan >=20% frame đúng ⇒ KHÔNG mở cổng PR-2.",
+  "bang_nguong": {
+    "0.75": {
+      "bat_sai": 0,
+      "chan_oan_dung": 1
+    },
+    "0.8": {
+      "bat_sai": 6,
+      "chan_oan_dung": 4
+    },
+    "0.85": {
+      "bat_sai": 28,
+      "chan_oan_dung": 22
+    },
+    "0.88": {
+      "bat_sai": 44,
+      "chan_oan_dung": 44
+    },
+    "0.9": {
+      "bat_sai": 49,
+      "chan_oan_dung": 67
+    }
+  }
+}

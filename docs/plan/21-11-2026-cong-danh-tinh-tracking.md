@@ -150,6 +150,36 @@ Artifact: **`data/track_cos_2026-11-21_metrics.json`** (per-run + per-clip, có 
 - Vẫn **KHÔNG mở cổng** (PR-2): chưa có mask-cos của vùng sai kiểu **cùng tông** (khung cửa 0,912 nằm
   **trong** dải ca đúng). Cần **1 clip sạch** bằng `scripts/record_raw.py` ở đúng cảnh.
 
+### 🚫 QUYẾT ĐỊNH (21-11, phiên live thật `demoip_1121-121732`): **BÁC PR-2 dạng "cổng cos"**
+
+Phiên live thật (webcam qua relay, `image_size 192`) có **đúng ca sai**: từ f178 hệ bám sang **cửa/tường be
+cùng tông** với vật (điện thoại be) — xem ảnh `data/anh_tmp/p3_f180.jpg`, `p3_f200.jpg` (ô + mask phủ CỬA,
+điện thoại nằm ở dưới, ngoài ô). Đây là lần đầu tôi có **mask-cos của vùng SAI** (thứ plan ghi "còn thiếu"):
+
+| Cửa sổ (đã xem ảnh để phân loại) | n | median | min | p05 |
+|---|---|---|---|---|
+| **bám ĐÚNG** f0–86 ∪ f126–175 ∪ f264–277 | 145 | **0,9045** | 0,3762 | 0,8191 |
+| **bám NỀN cùng tông** f179–243 | 65 | **0,8543** | **0,7521** | 0,7779 |
+
+| θ | bắt được vùng sai | **chặn oan frame đúng** |
+|---|---|---|
+| 0,75 | **0/65 (0 %)** | 1/145 (1 %) |
+| 0,80 | 6/65 (9 %) | 4/145 (3 %) |
+| 0,85 | 28/65 (**43 %**) | 22/145 (**15 %**) |
+| 0,88 | 44/65 (68 %) | 44/145 (30 %) |
+| 0,90 | 49/65 (75 %) | 67/145 (**46 %**) |
+
+⇒ **Không tồn tại θ tách được hai lớp này** (dải sai 0,752–0,989 nằm TRONG dải đúng): ngưỡng nào bắt ≥40 %
+vùng sai thì chặn oan ≥15 % frame đúng. **PR-2 (cổng dựa trên `track_cos`) KHÔNG được làm** — đây là kết
+luận TỪ SỐ ĐO, không phải "chưa đo được". Artifact: `data/track_cos_vung_sai_2026-11-21_metrics.json`.
+Không cần clip mới: ca "remote cạnh máy lạnh" thực chất là **cùng tông**, và phiên này cho đúng lớp đó.
+
+**Tín hiệu THAY THẾ có bằng chứng trong chính phiên này:** cổng **nhảy ô bao** đã báo ĐÚNG ở f178
+(`[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ (561,132,639,389) sang (376,43,476,122)) — bấm r chọn lại`),
+nhưng nó chỉ **in ra** rồi hệ vẫn vẽ mask sai 65 frame. ⇒ Việc đáng làm tiếp không phải nuôi thêm kênh
+ngoại hình, mà **hành động theo cổng nhảy đã có** (dừng vẽ / về `no_evidence` / tự chọn lại) — cần đo
+riêng trước khi làm.
+
 ### Đã sửa sau review độc lập (P1-1, P1-2, 8 P2)
 1. **P1-1** — 4 cột danh tính vào **`drift_samples.csv`** (CSV duy nhất của đường live) + `_worker_telemetry`;
    tiêu chí "CSV live" trước đó **không thể** đạt.

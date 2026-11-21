@@ -1,0 +1,25 @@
+{
+  "total_frames": 278,
+  "mean_latency_ms": 158.24559292894727,
+  "mean_latency_ms_n": 235,
+  "p95_latency_ms": 199.02381896972653,
+  "p95_latency_ms_n": 235,
+  "effective_fps": 6.319291308472666,
+  "mean_score": 2.0854109823971774,
+  "lost_count": 42,
+  "lost_ratio": 0.1510791366906475,
+  "frozen_frames": 43,
+  "reacquiring_frames": 40,
+  "reacquired_count": 3,
+  "resources": {
+    "cpu_percent_mean": 428.2,
+    "cpu_percent_peak": 490.5,
+    "cpu_percent_of_machine_mean": 53.5,
+    "cpu_count": 8,
+    "rss_mb_mean": 632.5,
+    "rss_mb_peak": 633.8,
+    "gpu": null,
+    "samples": 278,
+    "cpu_note": "cpu_percent tính theo 1 lõi (như psutil/top); % toàn máy = chia cpu_count"
+  }
+}

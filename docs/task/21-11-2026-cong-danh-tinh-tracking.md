@@ -118,6 +118,26 @@
 - Sau khi sửa P1: đo lại đường live ⇒ **0 dòng mâu thuẫn** (`thong_ke_danh_tinh`), 99,2 % frame có mask có
   `track_cos`.
 
+## 🔬 Phiên live thật `demoip_1121-121732` — ca sai có thật, và nó BÁC PR-2
+Người dùng chạy `./run demoip --image-size 192` (webcam qua relay). Đo từ CSV + xem ảnh từng pha:
+
+| Pha | Frame | Chuyện gì (đã xem ảnh) | `track_cos` |
+|---|---|---|---|
+| A | f0–86 | bám **đúng** điện thoại be (ảnh `p3_f005.jpg`) | med 0,887 |
+| – | f89–125 | điện thoại ra khỏi khung (mask rỗng 37 frame) | — |
+| B | f126–175 | bám đúng lại | med 0,955 |
+| **C** | **f179–243** | **bám sang CỬA/TƯỜNG be cùng tông**; điện thoại nằm NGOÀI ô (ảnh `p3_f180.jpg`, `p3_f200.jpg`) | **med 0,854** (0,752–0,887) |
+| D | f264–277 | bám đúng lại | med 0,899 |
+
+- Cổng **nhảy ô bao** đã báo ĐÚNG ở f178 ("nghi ngờ ĐỔI ĐỐI TƯỢNG … bấm r"), **nhưng chỉ in ra** rồi hệ vẫn
+  vẽ mask sai 65 frame ⇒ tín hiệu phát hiện đã có, thiếu **hành động**.
+- So 2 lớp (145 frame đúng vs 65 frame sai): θ = 0,75 bắt **0/65** vùng sai; θ = 0,85 bắt 43 % nhưng
+  **chặn oan 15 %** frame đúng; θ = 0,90 chặn oan **46 %**. ⇒ **không tồn tại θ tách được** ⇒
+  **BÁC PR-2 dạng cổng cos** (bằng số, không phải "chưa đo"). Artifact:
+  `data/track_cos_vung_sai_2026-11-21_metrics.json`. **Không cần quay clip mới.**
+- Chỉ số phiên: 278 frame · **158 ms mean / 199 ms p95** · 20 FPS hiển thị · mất dấu **42/278 (15 %)** ·
+  `state`: tracking 235, reacquiring 40, lost 3 · `reacquired` 3 · `vetoed` 0.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **P1 review vòng 2 (nghiêm trọng nhất)**: 4 cột danh tính trong `drift_samples.csv` đọc từ `self._stats`
   = lần VOS **gần nhất**, trong khi `empty`/`bbox` là của dòng đó ⇒ **18/364 dòng** mâu thuẫn
@@ -139,7 +159,10 @@
   `git checkout --` phục hồi; đã kiểm `git status` sạch trước khi commit.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **PR-2 (cổng hành động)** — chỉ sau khi có clip quay đúng cảnh: `python scripts/record_raw.py --source 0 --seconds 40 --out data/remote_bg.mp4` (giơ remote → hạ → giơ lại cạnh **máy lạnh** → xoay 90° → lại gần/xa).
+- [x] ~~PR-2 (cổng dựa trên `track_cos`)~~ — **BÁC bằng số đo** (phiên `demoip_1121-121732`): dải cos vùng
+  sai 0,752–0,989 nằm trong dải đúng ⇒ không θ nào tách được. **Không cần clip mới.**
+- [ ] **Hành động theo cổng NHẢY đã có** (cổng này báo đúng ở f178 nhưng chỉ in ra): dừng vẽ mask / về
+  `no_evidence` / tự chọn lại khi nghi đổi đối tượng. Phải đo trước: bao nhiêu % frame bị ẩn oan.
 - [ ] **P2 còn nợ**: `object_signature` tính **2 lần/frame** trên đường CLI (`_collect_reference` + neo) — tái dùng `sig` để tiết kiệm ~1,5 ms; đo A/B wall-clock 3 lần chèn kẽ (CSV `latency_ms` = thời gian engine, **không** thấy chi phí này).
 - [ ] **P2 còn nợ**: `post_ms` bao gồm chi phí neo ở đường có luồng nhưng **không** ở đường inline ⇒ `mask_age_total_ms` giữa 2 đường không so trực tiếp được; cần tách `identity_ms` riêng vào `status.json`.
 - [ ] **P3**: `track_cos` gắn frame VOS còn `bbox` trong `status.json` là frame hiển thị ⇒ lệch thế hệ; thêm `vos_frame_idx` (đã defer ở V2 của plan).
