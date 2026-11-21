@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-21T10:05:44",
-  "git_rev": "ee3058a",
+  "timestamp": "2026-11-21T10:16:59",
+  "git_rev": "5e960bc",
   "source": "data/binh1.mp4",
   "reid_face_veto": true,
   "reid_veto_mat_n": 0,
@@ -13,6 +13,7 @@
   "reid_obj_ncc_min": 0.4,
   "device": "cpu",
   "lost_score_threshold": 0.0,
-  "reid_reacquire_confirm": null,
-  "reid_verify_frames": null
+  "reid_reacquire_confirm": 2,
+  "reid_verify_frames": 2,
+  "git_dirty": true
 }

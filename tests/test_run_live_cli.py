@@ -701,3 +701,32 @@ class TestKhongNuotLoiOHienThi:
             run_live._run_display(engine=object(), args=args)
         assert exc.value.code == 1
         assert closed, "phải đóng cửa sổ kể cả khi lỗi (finally không được ném trước đó)"
+
+
+class TestGitDirtyCode:
+    """AGENTS §6: artifact phải phân biệt "cây bẩn" với "bẩn vì CHÍNH file artifact".
+
+    Đo lại lần hai thì file `data/*_metrics.json` bị sửa ⇒ `git_dirty` luôn `true` vô nghĩa;
+    tái lập được ⇔ `git_dirty_code == false` (quy ước `scripts/measure_watchdog.py`).
+    """
+
+    def test_bo_qua_thay_doi_trong_data(self, monkeypatch):
+        import subprocess as sp
+        class R:
+            stdout = " M data/veto_demo_metrics.csv\n?? data/anh_tmp/x.jpg\n"
+        monkeypatch.setattr(sp, "run", lambda *a, **k: R())
+        assert run_live._git_dirty() == (True, False)
+
+    def test_ban_o_code_thi_dirty_code_true(self, monkeypatch):
+        import subprocess as sp
+        class R:
+            stdout = " M data/a.csv\n M src/reid.py\n"
+        monkeypatch.setattr(sp, "run", lambda *a, **k: R())
+        assert run_live._git_dirty() == (True, True)
+
+    def test_khong_hoi_duoc_git_thi_none(self, monkeypatch):
+        import subprocess as sp
+        def boom(*a, **k):
+            raise OSError("no git")
+        monkeypatch.setattr(sp, "run", boom)
+        assert run_live._git_dirty() == (None, None)

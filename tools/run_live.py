@@ -132,19 +132,25 @@ def _git_rev() -> str:
         return "unknown"
 
 
-def _git_dirty() -> bool:
-    """Cây làm việc có file thay đổi? `None` = không hỏi được (không phải repo/hỏng git).
+def _git_dirty() -> tuple:
+    """`(git_dirty, git_dirty_code)`; `(None, None)` = không hỏi được (không phải repo/hỏng git).
 
     AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn KHÔNG tái lập được (review vòng 3
     bắt đúng ca `veto_demo_21-11`: `git_rev ee3058a` mà CSV đã có cột của commit sau).
+
+    `git_dirty_code` = bẩn **bỏ qua `data/`** — vì chính file artifact đang ghi nằm trong `data/` nên
+    `git_dirty` luôn `true` một cách vô nghĩa (đo lại lần hai là file artifact bị sửa). Tái lập được
+    ⇔ `git_dirty_code == false` (cùng quy ước `scripts/measure_watchdog.py`, review 08-11).
     Không ném: provenance không được làm chết phiên đo.
     """
     try:
         out = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
                              text=True, check=True, timeout=10).stdout
     except (OSError, subprocess.SubprocessError):
-        return None
-    return bool(out.strip())
+        return None, None
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    code = [ln for ln in lines if not ln[3:].strip().startswith("data/")]
+    return bool(lines), bool(code)
 
 
 def _make_reid_session(engine, args):
@@ -456,7 +462,8 @@ def _write_run_info(args):
         # AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn thì không tái lập được
         # (review vòng 3 bắt đúng: `veto_demo_21-11` ghi `git_rev ee3058a` mà CSV đã có cột `vetoed`
         # của commit sau ⇒ sinh trên cây BẨN).
-        git_dirty=_git_dirty(),
+        git_dirty=_git_dirty()[0],
+        git_dirty_code=_git_dirty()[1],
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
