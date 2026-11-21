@@ -1,0 +1,252 @@
+{
+  "git_rev": "4625c2ee6b72c935d35d176a32dcb2ec65829343",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-21T19:45:02",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/remote_trang --pred-dir data/pred_remote_enhanced --out data/miou_remote_trang_metrics.json",
+    "git_rev": "4625c2ee6b72c935d35d176a32dcb2ec65829343",
+    "git_dirty": true,
+    "git_dirty_code": true,
+    "git_loi": null,
+    "clip": "data/remote_trang.mp4",
+    "nguoi_gan": "SyntheticDatasetGenerator",
+    "gt": "docs/gt/remote_trang",
+    "pred_dir": "data/pred_remote_enhanced",
+    "gt_do_model_goi_y": false,
+    "dang_gt": "silhouette",
+    "nguon_gt": null,
+    "phuong_phap_gt": "synthetic_exact",
+    "mask_manifest": null,
+    "mask_manifest_loi": null,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
+  },
+  "ket_qua": {
+    "gt_dang": "silhouette",
+    "mIoU": 1.0,
+    "mIoU_p05": null,
+    "mIoU_p05_n": 25,
+    "mIoU_p05_nguong": 30,
+    "mask_ngoai_gt_mean": 0.0,
+    "mask_ngoai_gt_n": 25,
+    "mask_ngoai_gt_max": 0.0,
+    "mask_ngoai_gt_max_frame": 0,
+    "n_cham": 25,
+    "so_frame_gt_rong": 5,
+    "so_frame_thieu_mask": 0,
+    "so_frame_mask_hong": 0,
+    "so_frame_tong": 30,
+    "coverage": 0.8333,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 1,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 2,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 3,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 4,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 5,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 6,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 7,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 8,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 9,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 10,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 11,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 12,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 13,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 14,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 15,
+        "iou": 1.0,
+        "dien_tich_gt": 1280,
+        "dien_tich_pred": 1280,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 16,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)"
+      },
+      {
+        "frame_idx": 17,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)"
+      },
+      {
+        "frame_idx": 18,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)"
+      },
+      {
+        "frame_idx": 19,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)"
+      },
+      {
+        "frame_idx": 20,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)"
+      },
+      {
+        "frame_idx": 21,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 22,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 23,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 24,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 25,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 26,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 27,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 28,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      },
+      {
+        "frame_idx": 29,
+        "iou": 1.0,
+        "dien_tich_gt": 2560,
+        "dien_tich_pred": 2560,
+        "mask_ngoai_gt": 0.0
+      }
+    ]
+  },
+  "canh_bao_gt": [
+    "GT frame 16 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 17 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 18 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 19 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 20 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')"
+  ],
+  "loi_chan": []
+}
