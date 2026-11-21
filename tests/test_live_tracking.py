@@ -13,6 +13,7 @@ from collections import deque
 import numpy as np
 import pytest
 
+from src.drift_samples import DRIFT_CSV_NAME
 from src.live_tracking import (
     BBOX_NAME,
     FRAME_NAME,
@@ -156,8 +157,10 @@ class TestLiveTrackingSession:
         # Plan 21-11-2026 (`src/track_identity.py`, LOG-ONLY): `bbox_w/bbox_h/mask_area` + `cos` với
         # neo danh tính. Đường WEB không có re-ID nên đây là tín hiệu DUY NHẤT bắt được kiểu sai
         # "mask có nhưng bám sang nền cùng màu" (phiên `demoip_1121-103854`: bám máy lạnh 9 s).
-        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n",
-                               "bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n"}
+        # P3 review vòng 2: 5 khoá danh tính phải nằm trong `bat_buoc`, không chỉ `cho_phep` —
+        # để allowlist không xanh khi ai đó xoá chúng khỏi `status_payload` (tiêu chí của plan).
+        bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n"}
+        cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
         assert not la, f"khoá lạ chưa khai báo trong allowlist: {la}"
@@ -1407,11 +1410,15 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq, vos_ms, empty).
+        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: 5 phần tử cũ (frame, bbox VOS, seq,
+        # vos_ms, empty) + **4 giá trị danh tính của CÙNG frame** (bbox_w, bbox_h, mask_area,
+        # track_cos) — P1 review vòng 2: đọc 4 cột này từ `self._stats` làm dòng CSV trộn hai thế hệ
+        # VOS (18/364 dòng mâu thuẫn `empty=1` + `mask_area=59333`).
         # KHÔNG có `lk_ok`: frame chưa phát nên chưa biết LK, và giá trị đó được TRA LẠI trong lock lúc
         # drain (nhồi `None` vào tuple từng làm mất mẫu khỏi mẫu số — P2 review #51). `seq=None` vì test
         # gọi thẳng `_measure_drift` (không qua `_store_vos`).
-        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None,
+                                          None, None, None, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -2211,7 +2218,8 @@ class TestLkByFrameDuyetTrongLock:
             source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
         # Frame 3 đã được phát với LK ok ⇒ `_lk_by_frame` có entry; pending cũ (frame 3) chụp lúc chưa phát.
         session._lk_by_frame = deque([(3, True)], maxlen=session._lk_by_frame.maxlen)
-        session._pending_drift = (3, (5, 5, 15, 15), None, 12.5, None, None)
+        # 9 phần tử: 5 cũ + 4 giá trị danh tính của CÙNG frame (P1 review vòng 2)
+        session._pending_drift = (3, (5, 5, 15, 15), None, 12.5, None, 10, 10, 100, 0.9)
         session._measure_drift(8, _Result(8, (6, 6, 16, 16), None))   # VOS mới ⇒ đẩy pending cũ ra
 
         from src.drift_samples import read_samples
@@ -2955,3 +2963,68 @@ class TestDanhTinhDungMaskThoKhiLamMuot:
         st = sess.run()
         # mask THÔ đã rỗng ở các frame cuối ⇒ mask_area phải về 0 (nếu dùng mask đã GIỮ thì > 0)
         assert st.mask_area == 0, f"mask_area={st.mask_area} ⇒ đang chấm trên mask đã làm mượt"
+
+
+class _EngineXenKeRong(_EngineVatTo):
+    """Có mask ở lần gọi CHẴN, mask RỖNG ở lần gọi LẺ (mô phỏng model chập chờn)."""
+
+    def process(self, frame):
+        r = super().process(frame)
+        if self.processed % 2 == 1:
+            bbox = (10, 10, 10 + self.canh, 10 + self.canh)
+            return _Result(self.processed, bbox, np.zeros(frame.shape[:2], bool))
+        return r
+
+
+class TestDongCsvMotTheHeKhongTron:
+    """P1 review vòng 2 (21-11): 4 cột danh tính của `drift_samples.csv` từng đọc từ `self._stats`
+
+    = lần VOS **gần nhất**, nên 18/364 dòng mâu thuẫn: `empty=1` mà `mask_area=59333`, và
+    `empty=0` mà `mask_area=0`. Mỗi dòng CSV là MỘT frame ⇒ mọi cột phải của đúng frame đó.
+    """
+
+    def test_ghi_dung_identity_truyen_vao_khong_doc_stats(self, video_source, tmp_path):
+        """Khoá ĐÚNG lỗi P1: `_log_drift_sample` phải dùng `identity` được truyền, KHÔNG đọc
+
+        `self._stats` (= lần VOS gần nhất). Test này giết được mutant "trả lại đọc `_stats`" —
+        test qua cả phiên ở dưới thì không, vì đảo thứ tự làm `_stats` tình cờ khớp.
+        """
+        out = tmp_path / "live_identity"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineVatTo(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=3, stop_after_frames=1))
+        # `_stats` cố tình giữ số của một lần VOS KHÁC
+        sess._stats.bbox_w, sess._stats.bbox_h = 999, 888
+        sess._stats.mask_area, sess._stats.track_cos = 777, 0.111
+        sess._log_drift_sample(frame_idx=5, seq=1, value=None,
+                               identity=(60, 50, 1234, 0.9321))
+        sess._drift_log.close()
+        rows = list(csv.DictReader((out / DRIFT_CSV_NAME).open(encoding="utf-8")))
+        assert (rows[-1]["bbox_w"], rows[-1]["bbox_h"]) == ("60", "50")
+        assert rows[-1]["mask_area"] == "1234"
+        assert rows[-1]["track_cos"] == "0.9321"
+
+    def test_mask_area_va_empty_khong_mau_thuan(self, video_source, tmp_path):
+        out = tmp_path / "live_xenke"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineXenKeRong(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=3, display_fps=60,
+            stop_after_frames=60))
+        sess.run()
+        csv_path = out / DRIFT_CSV_NAME
+        assert csv_path.is_file(), "đường có luồng phải ghi drift_samples.csv"
+        rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+        assert rows, "CSV rỗng ⇒ không kiểm được gì"
+        for r in rows:
+            ma = r["mask_area"]
+            if r["empty"] == "1":
+                assert ma == "0", f"frame {r['frame_idx']}: empty=1 nhưng mask_area={ma}"
+                assert r["track_cos"] == "", f"frame {r['frame_idx']}: mask rỗng mà vẫn có cos"
+            elif r["empty"] == "0" and ma != "":
+                assert int(ma) > 0, f"frame {r['frame_idx']}: empty=0 nhưng mask_area={ma}"
+            # cỡ ô phải khớp ô của CÙNG dòng (không phải ô của lần VOS khác)
+            if r["bbox_x1"] != "" and r["bbox_w"] != "":
+                w = int(r["bbox_x2"]) - int(r["bbox_x1"])
+                assert int(r["bbox_w"]) == w, f"frame {r['frame_idx']}: bbox_w={r['bbox_w']} nhưng ô rộng {w}"

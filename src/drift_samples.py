@@ -193,6 +193,11 @@ def read_samples(path) -> list:
                 "empty": _opt_bool(raw.get("empty")),
                 "drift_iou": _opt_float(raw.get("drift_iou")),
                 "bbox": tuple(_opt_int(raw.get(f"bbox_{k}")) for k in ("x1", "y1", "x2", "y2")),
+                # Danh tính (21-11, cột ở CUỐI): CSV cũ không có ⇒ `None` (chưa đo), không phải 0.
+                "bbox_w": _opt_int(raw.get("bbox_w")),
+                "bbox_h": _opt_int(raw.get("bbox_h")),
+                "mask_area": _opt_int(raw.get("mask_area")),
+                "track_cos": _opt_float(raw.get("track_cos")),
                 # CSV sinh TRƯỚC 19-11 không có 2 cột này ⇒ `None` (chưa đo), không phải 0.
                 "hien_thi": tuple(_opt_int(raw.get(f"hien_thi_{k}"))
                                   for k in ("x1", "y1", "x2", "y2")),
@@ -499,6 +504,39 @@ def low_p05_low_empty(rows, *, flag: float = FLAG_P05, max_empty: float = MAX_EM
     }
 
 
+def thong_ke_danh_tinh(rows) -> dict:
+    """Thống kê 4 cột danh tính của CSV **đường live** (P2 review vòng 2, 21-11).
+
+    Vì sao cần: `scripts/analyze_drift_samples.py` và `measure_live_relay.py` đều đi qua
+    `read_samples`/`summarize`; nếu 4 cột mới không được parse lại thì **không công cụ nào trong
+    repo tái lập được** con số "222/226 mẫu có `track_cos`" đã công bố (AGENTS §6: số công bố phải
+    tái lập được). Cũng kiểm luôn bất biến `mask_area == 0 ⇔ empty == 1` — mỗi dòng là MỘT frame.
+    """
+    cos = [row["track_cos"] for row in rows if row.get("track_cos") is not None]
+    co_mask = [row for row in rows if row.get("mask_area")]
+    khong_rong = [row for row in co_mask if row["mask_area"] > 0]
+    mau_thuan = [row for row in rows
+                 if row.get("mask_area") is not None and row.get("empty") is not None
+                 and (row["mask_area"] == 0) != bool(row["empty"])]
+    return {
+        "n_dong": len(rows),
+        "n_co_cos": len(cos),
+        "n_mask_area_khong_rong": len(khong_rong),
+        "ti_le_co_cos_tren_frame_co_mask": (
+            round(100.0 * sum(1 for r in khong_rong if r.get("track_cos") is not None)
+                  / len(khong_rong), 1) if khong_rong else None),
+        "track_cos_median": round(float(np.median(cos)), 4) if cos else None,
+        "track_cos_min": round(float(min(cos)), 6) if cos else None,
+        "track_cos_p05": phan_vi(cos),
+        "n_duoi_075": sum(1 for c in cos if c < 0.75),
+        "mask_area_min": min((r["mask_area"] for r in co_mask), default=None),
+        "mask_area_max": max((r["mask_area"] for r in co_mask), default=None),
+        # PHẢI rỗng: mỗi dòng CSV là một frame, nên `empty` và `mask_area` không được mâu thuẫn
+        # (P1 review vòng 2: 18/364 dòng mâu thuẫn vì ghép hai thế hệ VOS).
+        "n_dong_mau_thuan_mask_area_vs_empty": len(mau_thuan),
+    }
+
+
 def summarize(rows, *, window: int = WINDOW) -> dict:
     """Toàn bộ số của một file mẫu: đếm, tỉ lệ mask rỗng, phân vị, tỉ lệ báo, độ trễ phát hiện.
 
@@ -512,6 +550,7 @@ def summarize(rows, *, window: int = WINDOW) -> dict:
     return {
         "n_dong": len(rows),
         "n_mau_drift": n,
+        "danh_tinh": thong_ke_danh_tinh(rows),
         "empty_frac": round(sum(1 for e in empties if e) / len(empties), 3) if empties else None,
         "drift_iou_mean": round(float(np.mean(values)), 4) if n else None,
         "drift_iou_p05": phan_vi(values),

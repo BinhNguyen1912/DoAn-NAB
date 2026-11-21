@@ -78,7 +78,6 @@ class NeoDanhTinh:
             return False
         if not signature_quality_ok(box, mask):
             return False
-        mask_dung = mask
         h_frame, w_frame = frame.shape[:2]
         # Cùng định nghĩa `reid.touches_frame_edge` (margin 2 px) — chép tại chỗ thay vì import
         # `src.reid` (sẽ thành import VÒNG: reid → track_identity → reid).
@@ -87,8 +86,11 @@ class NeoDanhTinh:
             mask_sach, box_sach = clip_mask_border(mask, w_frame, h_frame)
             if mask_sach is None or not signature_quality_ok(box_sach, mask_sach):
                 return False
-            mask_dung = mask_sach
-        sig = object_signature(frame, mask_dung)
+        # KÝ HIỆU luôn tính trên mask **ĐẦY ĐỦ**, y như `cos_voi_neo` — dải mép chỉ dùng để CHẤM
+        # CHẤT LƯỢNG. Nếu neo ký bằng mask đã cắt mép thì hai phía dùng hai quy ước ⇒ cos lệch
+        # **hệ thống** với mọi frame sau (P3 review vòng 2). Đo 1 lần mỗi biến thể trên `binh1`+`binh2`
+        # (21-11): số **giống hệt** (median 0,9604/0,9267) vì mask của 2 clip này không chạm mép.
+        sig = object_signature(frame, mask)
         if sig is None:
             return False
         self._refs.append(sig)
