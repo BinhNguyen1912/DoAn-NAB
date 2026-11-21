@@ -319,7 +319,19 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 mode = "select"
                 continue
             if mode == "select" and selector.has_bbox():
-                worker.set_bbox(selector.take_bbox())
+                _bbox_moi = selector.take_bbox()
+                # Cảnh báo nếu ô chọn phủ KHUÔN MẶT (đo 21-11: ô chọn trùng mặt IoU 0,768, và đặc trưng
+                # tông da làm re-ID "nhận lại" vào mặt). Chỉ cảnh báo, KHÔNG sửa ô.
+                try:
+                    from src.face_guard import canh_bao_chon_o
+
+                    _x1, _y1, _x2, _y2 = (int(v) for v in _bbox_moi)
+                    _cau = canh_bao_chon_o(frame, (_x1, _y1, max(1, _x2 - _x1), max(1, _y2 - _y1)))
+                    if _cau:
+                        print(_cau, flush=True)
+                except Exception:              # fail-open
+                    pass
+                worker.set_bbox(_bbox_moi)
                 if visualizer is not None:
                     visualizer.reset()
             if max_frames is not None and summary.processed >= max_frames:
