@@ -297,11 +297,16 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
                 reid_state, reid_score, reacquired, reid_ncc = worker.reid_status()
                 reid_vetoed = worker.reid_vetoed()
+                # ⚠ PHẢI cập nhật cổng TRƯỚC khi gán `last_bbox = ô hiện tại`: bản đầu đặt SAU nên
+                # `watch.update(last_bbox, bbox)` so **ô với chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
+                # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
+                # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
+                # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
+                switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
                 if stamped.result.mask.any():
                     last_bbox = stamped.result.bbox
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
-                switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,

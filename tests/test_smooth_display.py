@@ -480,3 +480,24 @@ class TestCoVetoQuaInferenceWorker:
             src.stop()
 
         assert seen, "HUD không nhận được cờ veto ⇒ sẽ in 'khop X / can Y' gây hiểu ngược"
+
+
+class TestCongNhayCoNhoTrenDuongMuot:
+    """21-11 (bug thật, bắt từ phiên `demoip_1121-131421`): `smooth_display` cập nhật `last_bbox`
+
+    TRƯỚC khi gọi `watch.update(last_bbox, bbox)` ⇒ so ô với **chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
+    không bao giờ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Hậu quả người dùng thấy: console
+    in "nghi ngờ ĐỔI ĐỐI TƯỢNG" nhưng hệ **vẫn vẽ** mask của vùng sai (CSV ghi `nghi_doi_tuong` trống
+    cả 334 dòng). Test này khoá THỨ TỰ đó.
+    """
+
+    def test_cong_nhay_bat_duoc_khi_o_nhay(self):
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        cap_nhat = src.index("switch = watch.update(")
+        gan_lai = src.index("last_bbox = stamped.result.bbox")
+        assert cap_nhat < gan_lai, ("cổng nhảy phải được cập nhật TRƯỚC khi gán `last_bbox` = ô hiện "
+                                    "tại, nếu không nó so ô với chính nó và không bao giờ bật")
