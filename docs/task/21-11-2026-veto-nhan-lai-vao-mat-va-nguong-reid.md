@@ -145,20 +145,39 @@ Reviewer (agent `reviewer`, chỉ đọc) bắt **3 P1** đều đúng, đã s�
 | P3 | Print "xem cột `state` trong CSV" — **bất khả** (mọi frame tìm lại đều `reacquiring`) | Nay có cột `vetoed` thật ⇒ câu đó đúng |
 | P3 | Test `assert "can 0.7" not in hud` **rỗng nghĩa** (không set `reid_threshold`) | (nợ — xem dưới) |
 
-**Artifact chứng minh P1-3 đã sửa** (`data/veto_demo_21-11_metrics.csv`, chạy lại sau khi sửa):
-cột thứ 11 = `vetoed`; frame tìm lại có `latency_ms` **thật** (95,4 · 48,5 · 45,5 · 112,6 ms);
-frame 115 `reid_score = 0,854` rồi nhận lại (0,854 ≥ 0,75) — veto **không** kích hoạt vì clip không
-có mặt trong vùng tìm (`reid_veto_mat_n = 0`), đúng như mong đợi.
+**Artifact chứng minh được GÌ** (review vòng 3 bắt đúng là heading cũ nói quá):
+`data/veto_demo_21-11_metrics.csv` chứng minh **(a)** cột thứ 11 `vetoed` tồn tại và **(b)** frame tìm
+lại có `latency_ms` **thật** (121,8 · 58,8 · 70,3 · 125,2 ms ở lần chạy trên cây sạch).
+**KHÔNG** chứng minh "chấm điểm ô bị veto": không có dòng `vetoed = 1` nào (`reid_veto_mat_n = 0`) vì
+clip `binh1` không có mặt trong vùng tìm. Muốn chứng minh phải có **phiên webcam thật** (còn nợ).
+
+## 5d. REVIEW VÒNG 3 (commit `1a35fc8`) — **0 P0, 0 P1 ⇒ mergeable**, 3 P2 + 6 P3
+
+Reviewer xác nhận cả 3 P1 vòng 2 đã sửa **đúng** và **không hồi quy** đường không-re-ID (kiểm cả
+`_annotate`/`_record_from`/`_run_headless`). Đã sửa tiếp trong `5e960bc` + `a0ac012`:
+
+| Mức | Phát hiện (đều ĐÚNG) | Đã sửa |
+|---|---|---|
+| **P3-D** (nay là lỗi **provenance thật**) | `_write_run_info` đọc `args.reid_reacquire_confirm`/`reid_verify_frames`, nhưng `main()` gán `reid_confirm`/`reid_verify` ⇒ **MỌI `data/*_run_info.json` từ trước tới nay ghi `null`** | Đọc đúng tên (fallback tên cũ) ⇒ nay `reid_reacquire_confirm: 2`, `reid_verify_frames: 2` |
+| **P2-C** | `veto_demo_21-11_run_info.json` ghi `git_rev ee3058a` mà CSV đã có cột `vetoed` (commit sau) ⇒ đo trên **cây bẩn**, và `run_info` **không có** `git_dirty` | Thêm `git_dirty` **+ `git_dirty_code`** (bẩn bỏ qua `data/` — vì chính file artifact làm cây bẩn, đúng quy ước `measure_watchdog`); đo lại ⇒ `git_rev a0ac012`, `git_dirty_code: false`; 3 test |
+| **P2-A** | Print cuối phiên vẫn dặn "xem cột `state`" — bất khả (mọi frame tìm lại đều `reacquiring`); log lại khẳng định câu đó đúng | Đổi sang cột `vetoed` (=1) |
+| **P2-B** | Test "1 lần YuNet cho `step()`" **không giết được** mutant bỏ cache (vì `_match_object` đã truyền `faces=`, và backstop **không chạm tới được**) | 3 test khoá **đúng hợp đồng cache** (cùng frame 1 detect · frame mới detect lại · `reset()` xoá cache); ghi rõ backstop là hàng rào không reachable |
+| P3-A | Đường `--smooth` (demo chính `./run demoip`) **không có test nào** chạm `reid_vetoed` | `TestCoVetoQuaInferenceWorker` — **đã kiểm ngược**: gán cứng `False` ⇒ FAIL |
+| P3-B | Nhánh chọn ô không reset `reid_vetoed` (bất biến ngầm) | Reset tường minh ở cả 2 nhánh chọn ô |
+| P3-C | `so_veto_truoc == 0` = "veto đầu **cả phiên**" (vì `reset()` giữ `veto_mat_n`) ⇒ sau khi bấm `r`, hint không in | Cờ riêng `_hint_veto_da_in`, xoá trong `reset()` |
+| P3-E | `veto_mat_n` chỉ đếm ứng viên **đã qua cổng NCC** ⇒ là **cận dưới**; ca "vào ĐẦU" (ncc 0,356) bị cổng 0,40 loại trước nên **không** được đếm là veto | Ghi chú ngay trong code + đây |
+| P3-F | Bản vá `reid_session = None` ở `_run_display` không có test | `TestKhongNuotLoiOHienThi` (thiếu model ⇒ `SystemExit(1)` **và** `destroyAllWindows` vẫn chạy) |
 
 ### Nợ còn lại (reviewer nêu đúng, xử lý ở phiên sau)
-- **Chạy thật đầu tiên với cấu hình mới** (21-11, `git_rev 6b2faff`) — **trên CLIP `data/binh1.mp4`,
+- **Chạy thật đầu tiên với cấu hình mới** — nay đo lại trên CÂY SẠCH (`git_rev a0ac012`,
+  `git_dirty_code: false`); số cũ `git_rev ee3058a` là **cây bẩn**, đã bị thay (review vòng 3, P2-C) — **trên CLIP `data/binh1.mp4`,
   KHÔNG phải webcam**: `data/veto_demo_21-11_{metrics.csv,summary.json,run_info.json}`, 120 frame,
   `image_size 192`, `--reid-obj-ncc-min 0.40 --reid-obj-threshold 0.75 --bbox 300,275,150,410`:
-  mean **104 ms** (n=116) / p95 125 ms · mất dấu **5/120 (4 %)** · `reid_face_veto: true`,
-  `reid_veto_mat_n: **0**` (clip này không có mặt trong vùng tìm ⇒ veto không kích hoạt, đúng như mong đợi
-  — **không** phải bằng chứng "không chặn oan trên webcam"). Frame tìm lại nay có latency **thật**
-  (97,1 · 62,5 · 46,8 · 147,0 ms) thay vì 0,0. ⇒ **Vẫn còn nợ**: 1 phiên webcam thật ~60 s có
-  `reid_veto_mat_n > 0` mới chứng minh được veto hoạt động và không chặn oan.
+  mean **109 ms** (n=116) / p95 **125 ms** · mất dấu **5/120 (4 %)** · `reid_face_veto: true`,
+  `reid_veto_mat_n: **0**` (clip này không có mặt trong vùng tìm ⇒ veto không kích hoạt, đúng như mong
+  đợi — **không** phải bằng chứng "không chặn oan trên webcam"). Frame tìm lại có latency **thật**
+  thay vì 0,0. ⇒ **Vẫn còn nợ**: 1 phiên webcam thật ~60 s có `reid_veto_mat_n > 0` mới chứng minh
+  được veto hoạt động và không chặn oan.
 - ~~`latency_ms` của frame `lost`/`reacquiring` ghi **0.0**~~ → **đã sửa cùng phiên**: nhánh LOST đo
   `time.perf_counter()` và gán `lost.elapsed_ms` ⇒ CSV/summary nay có chi phí **tìm lại** (cascade NCC
   ~28 ms + YuNet ~29 ms khi veto) — tách khỏi `vos_ms` của model; test `test_frame_tim_lai_co_elapsed_ms_that`.

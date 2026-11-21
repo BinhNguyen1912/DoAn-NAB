@@ -1,6 +1,6 @@
 {
-  "timestamp": "2026-11-21T10:16:59",
-  "git_rev": "5e960bc",
+  "timestamp": "2026-11-21T10:18:38",
+  "git_rev": "a0ac012",
   "source": "data/binh1.mp4",
   "reid_face_veto": true,
   "reid_veto_mat_n": 0,
@@ -15,5 +15,6 @@
   "lost_score_threshold": 0.0,
   "reid_reacquire_confirm": 2,
   "reid_verify_frames": 2,
-  "git_dirty": true
+  "git_dirty": true,
+  "git_dirty_code": false
 }

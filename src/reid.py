@@ -820,6 +820,9 @@ class ReIdSession:
         else:
             faces = ()
         for (x1, y1, x2, y2), ncc in pairs:
+            # Lưu ý khi đọc `veto_mat_n` (P3 review vòng 3): cổng NCC đứng TRƯỚC kiểm veto nên bộ đếm
+            # chỉ tính ứng viên **đã qua cổng** ⇒ nó là CẬN DƯỚI của "số ứng viên trùng mặt bị chặn"
+            # (ca "vào ĐẦU" ncc 0,356 bị cổng 0,40 loại trước, không được đếm là veto).
             if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
                 if ncc > best_ncc:
                     best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
