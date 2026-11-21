@@ -505,13 +505,27 @@ class ReIdSession:
                     reid_score=best_score, ncc=best_ncc)
 
     # -- veto "nhận lại vào mặt/đầu" --
-    def _phu_mat(self, frame, bbox) -> float:
+    def _mat_trong(self, frame) -> tuple:
+        """Danh sách mặt `[(x, y, w, h), …]` của frame này (rỗng khi tắt veto/lỗi).
+
+        Gọi YuNet **một lần** cho mỗi lần kiểm — `detect()` là mô hình thật (~29 ms ở 640×480,
+        đo trong `scripts/ab_lk_max_mad.py`), gọi hai lần cho một câu hỏi là tự nhân đôi chi phí
+        trên đúng đường đang cố tìm lại vật. Fail-open y như `src/face_guard.py`.
+        """
+        if self.face_veto is None or frame is None:
+            return ()
+        try:
+            return tuple(self.face_veto.detect(frame) or ())
+        except Exception:
+            return ()
+
+    def _phu_mat(self, frame, bbox, faces=None) -> float:
         """Phần diện tích LỚN NHẤT của ô `bbox` (hệ `(x1,y1,x2,y2)`) bị MỘT mặt phủ, 0..1.
 
         Hàm THUẦN trên kết quả của `face_veto`. Trả 0.0 khi tắt veto/không có mặt/ô suy biến —
         fail-open, cùng triết lý `src/face_guard.py` (cảnh báo phụ không được giết phiên).
         """
-        if self.face_veto is None or frame is None or bbox is None:
+        if self.face_veto is None or bbox is None:
             return 0.0
         try:
             x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
@@ -519,9 +533,9 @@ class ReIdSession:
             return 0.0
         if x2 <= x1 or y2 <= y1:
             return 0.0
-        try:
-            faces = self.face_veto.detect(frame) or ()
-        except Exception:
+        if faces is None:
+            faces = self._mat_trong(frame)
+        if not faces:
             return 0.0
         area = (x2 - x1) * (y2 - y1)
         tot = 0.0
@@ -538,18 +552,18 @@ class ReIdSession:
         Hai điều kiện, OR: (a) TÂM ô nằm trong một mặt — không có ngưỡng nào để hiệu chỉnh;
         (b) ≥ `NGUONG_PHU_MAT` diện tích ô bị một mặt phủ — bắt ca ô to trùm cả đầu + mặt.
         """
-        if self.face_veto is None or self._ref_phu_mat:
-            return False
-        if self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT:
-            return True
-        if frame is None or bbox is None:
+        if self.face_veto is None or self._ref_phu_mat or bbox is None:
             return False
         try:
-            cx = (float(bbox[0]) + float(bbox[2])) / 2.0
-            cy = (float(bbox[1]) + float(bbox[3])) / 2.0
-            faces = self.face_veto.detect(frame) or ()
-        except Exception:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
             return False
+        faces = self._mat_trong(frame)          # MỘT lần detect cho cả hai điều kiện
+        if not faces:
+            return False
+        if self._phu_mat(frame, bbox, faces=faces) >= NGUONG_PHU_MAT:
+            return True
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
         for fx, fy, fw, fh in faces:
             if fx <= cx <= fx + fw and fy <= cy <= fy + fh:
                 return True

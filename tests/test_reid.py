@@ -920,3 +920,16 @@ class TestVetoNhanLaiVaoMat:
         step = s.step(self._f_trong())
         assert step.reacquired is True
         assert s.veto_mat_n == 0
+
+    def test_chi_goi_yunet_mot_lan_moi_lan_kiem(self):
+        """`detect()` là YuNet thật (~29 ms) ⇒ một câu hỏi chỉ được một lần gọi.
+
+        Bản đầu gọi 2 lần/frame tìm lại (`_phu_mat` rồi `_trung_mat`) — tự nhân đôi chi phí trên
+        đúng đường đang cố tìm lại vật.
+        """
+        fm = FakeMat([self.MAT])
+        s = self._session(fm)
+        s.start(self._f(), self.VAT)
+        fm.calls = 0
+        assert s._trung_mat(self._f(), self.O_MAT) is True
+        assert fm.calls == 1
