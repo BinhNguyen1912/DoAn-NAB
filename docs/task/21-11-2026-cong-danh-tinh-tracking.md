@@ -173,6 +173,18 @@ Sau khi đo được "cổng nhảy báo đúng nhưng chỉ in ra", đã làm (
    ⇒ xoá nghi + file bị xoá; 3 test API (ghi file · nguồn không hỗ trợ ⇒ 400 · chưa có phiên ⇒ 4xx).
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
+- **Worker MỒ CÔI của phiên web làm demo chậm 9× mà không ai báo (bắt được cuối phiên):** người dùng
+  chạy `./run demoip --image-size 192` và thấy "không mượt bằng lúc nảy". Đo CSV:
+  **1484 ms mean / 2821 ms p95** (11 frame) so với **158/199 ms** của phiên trước cùng cấu hình. Nguyên
+  nhân: `ps` cho thấy **`tools/live_worker.py --out-dir /dev/shm/doan-live` còn sống 4 phút, ăn 461 % CPU**
+  — worker của **phiên web trước** (đóng tab mà không bấm "Dừng"). API chỉ reap worker cũ khi **mở phiên
+  mới trong cùng thư mục live**, còn CLI không đụng thư mục đó ⇒ im lặng.
+  **Sửa**: `src/proc_pid.find_live_workers()` (quét `/proc`) + `tools/run_live._canh_bao_worker_mo_coi()`
+  in WARN kèm pid, nguồn, thư mục và lệnh `kill -9` **trước khi** mở phiên; 3 test với `/proc` giả.
+  Đã kiểm cảnh báo in đúng trên tiến trình thật. **Không tự giết** (có thể là phiên người khác đang dùng).
+- **Bài học cho báo cáo**: số `latency`/FPS chỉ đáng tin khi `uptime` và `ps` sạch — trước khi trích số
+  phải kiểm "không có worker live khác đang chạy". Đây là lần thứ hai kiểu hỏng này xuất hiện (lần đầu:
+  `uvicorn --reload` để lại worker, đã sửa 08-11 ở `_prepare_dir`).
 - **P1 review vòng 2 (nghiêm trọng nhất)**: 4 cột danh tính trong `drift_samples.csv` đọc từ `self._stats`
   = lần VOS **gần nhất**, trong khi `empty`/`bbox` là của dòng đó ⇒ **18/364 dòng** mâu thuẫn
   (`empty=1` + `mask_area = 59 333`), tức chính tiêu chí `mask_area == 0 ⇔ empty == 1` của plan **fail**.
@@ -197,6 +209,8 @@ Sau khi đo được "cổng nhảy báo đúng nhưng chỉ in ra", đã làm (
   sai 0,752–0,989 nằm trong dải đúng ⇒ không θ nào tách được. **Không cần clip mới.**
 - [x] **Hành động theo cổng NHẢY** — xong: `IdentityWatch` latch + ẩn overlay + `c`/`r`, cột CSV
   `nghi_doi_tuong`. Đã đo trước (0,71 % lần báo; 34,7 % frame bị ẩn nếu không ai bấm gì).
+- [ ] **Web: tự dừng phiên khi client biến mất** (đóng tab ⇒ worker vẫn chạy, ăn CPU + giữ webcam). Hiện
+  chỉ có cảnh báo ở CLI; muốn tự dừng phải có heartbeat từ client (`/api/live/status` polling) + ngưỡng.
 - [ ] **P2 còn nợ**: `object_signature` tính **2 lần/frame** trên đường CLI (`_collect_reference` + neo) — tái dùng `sig` để tiết kiệm ~1,5 ms; đo A/B wall-clock 3 lần chèn kẽ (CSV `latency_ms` = thời gian engine, **không** thấy chi phí này).
 - [ ] **P2 còn nợ**: `post_ms` bao gồm chi phí neo ở đường có luồng nhưng **không** ở đường inline ⇒ `mask_age_total_ms` giữa 2 đường không so trực tiếp được; cần tách `identity_ms` riêng vào `status.json`.
 - [ ] **P3**: `track_cos` gắn frame VOS còn `bbox` trong `status.json` là frame hiển thị ⇒ lệch thế hệ; thêm `vos_frame_idx` (đã defer ở V2 của plan).

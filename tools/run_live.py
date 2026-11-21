@@ -656,6 +656,39 @@ def _run_headless(engine, args):
     print(f"({_device_note(args.device)} — số liệu thực đo theo ADR-0002)")
 
 
+def _canh_bao_worker_mo_coi() -> None:
+    """CẢNH BÁO nếu có worker live KHÁC đang chạy (mồ côi) trước khi mở phiên mới.
+
+    Vì sao (bug thật 21-11): người dùng đóng tab web mà không bấm Dừng ⇒ worker của phiên web vẫn
+    chạy, ăn **461 % CPU** và **giữ webcam**. Lần `./run demoip` sau đó đo được **1484 ms/frame thay
+    vì 158 ms** (chậm 9×) mà KHÔNG có thông báo nào — cả buổi demo bị kết luận sai là "model chậm".
+    API chỉ reap worker cũ khi mở phiên MỚI trong CÙNG thư mục live; CLI không đụng thư mục đó nên
+    phải tự cảnh báo, kèm pid + lệnh giết (không tự giết: có thể là phiên người khác đang dùng).
+    """
+    try:
+        from src.proc_pid import find_live_workers
+
+        others = find_live_workers(exclude_pid=os.getpid())
+    except Exception:                     # noqa: BLE001 — cảnh báo không được làm hỏng lần chạy
+        return
+    if not others:
+        return
+    for pid, argv in others:
+        out_dir = ""
+        for index, arg in enumerate(argv):
+            if arg == "--out-dir" and index + 1 < len(argv):
+                out_dir = argv[index + 1]
+        source = ""
+        for index, arg in enumerate(argv):
+            if arg == "--source" and index + 1 < len(argv):
+                source = argv[index + 1]
+        print(f"[WARN] có worker live KHÁC đang chạy (pid {pid}, nguồn {source or '?'}, "
+              f"thư mục {out_dir or '?'}) — nó ăn CPU và có thể ĐANG GIỮ WEBCAM.")
+        print("[WARN] đo được trên máy này 21-11: 1484 ms/frame thay vì 158 ms ⇒ số của phiên "
+              "này SẼ SAI. Dừng nó trước:  kill -9 " f"{pid}")
+        print("[WARN] (hoặc trên web bấm 'Dừng' — đóng tab KHÔNG dừng worker)")
+
+
 def main():
     ap = argparse.ArgumentParser(
         description="Live/headless pipeline: nguồn video → SAMURAI → HUD + metrics",
@@ -735,6 +768,7 @@ def main():
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
     args = ap.parse_args()
+    _canh_bao_worker_mo_coi()
 
     # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
     cfg = load_config(args.config)

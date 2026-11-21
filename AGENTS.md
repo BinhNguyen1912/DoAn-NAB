@@ -494,4 +494,9 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
   bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
   "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
-  e2e trên Chrome thật kiểm banner + nút + endpoint).
+  e2e trên Chrome thật kiểm banner + nút + endpoint).- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
+  (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
+  một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
+  **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
+  kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.
