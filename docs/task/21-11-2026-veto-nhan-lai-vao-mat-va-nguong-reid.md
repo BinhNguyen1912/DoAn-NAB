@@ -131,7 +131,7 @@ Reviewer (agent `reviewer`, chỉ đọc) bắt **3 P1** đều đúng, đã s�
 - Khi `r` chọn lại giữa phiên thì `start()` **có** chạy lại (`smooth_display.py:187`, `live_pipeline.py:294,320`) ⇒ không có `_ref_phu_mat` cũ.
 - Số trong log khớp artifact: `reid_2clip_calib.json` 18 ca (17 good + 1 bad), `min_good` cosine 0,76957 / ncc 0,414731; CSV `demoip_1121-080547` f207–f215 khớp từng giá trị.
 
-## 5c. REVIEW VÒNG 2 (commit `546932a`) — 0 P0, **3 P1**, đã sửa trong `8d1f...`
+## 5c. REVIEW VÒNG 2 (commit `546932a`) — 0 P0, **3 P1**, đã sửa trong `1a35fc8`
 
 | Mức | Phát hiện (đều ĐÚNG) | Đã sửa |
 |---|---|---|
