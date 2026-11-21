@@ -31,11 +31,14 @@ from typing import Optional
 
 import numpy as np
 
-from src.appearance import mask_to_bbox, object_signature, signature_quality_ok
+from src.appearance import (clip_mask_border, mask_to_bbox, object_signature,
+                            signature_quality_ok)
 
 # Số mẫu neo. 3 là mức tối thiểu để `best_match` (lấy max) không bị MỘT mẫu hỏng làm pass-giả;
 # 5 là mức trần để neo vẫn là "vật lúc chọn" chứ không trôi theo vật.
-MIN_ANCHORS = 2
+# 3 mẫu tối thiểu: `cos` lấy MAX trên các neo, nên 2 neo mà 1 cái hỏng ⇒ còn 1 ⇒ cổng có thể pass-giả.
+# (Bản đầu đặt 2 trong khi docstring/plan nói 3 — P2 review 21-11.)
+MIN_ANCHORS = 3
 MAX_ANCHORS = 5
 
 
@@ -59,8 +62,12 @@ class NeoDanhTinh:
     def thu(self, frame, mask, bbox=None) -> bool:
         """Thử lưu 1 mẫu neo từ MASK. Trả True nếu đã lưu.
 
-        Lọc bằng `signature_quality_ok` (diện tích + tỉ lệ mask/ô + không phải ô rác) — cùng cổng
-        với `_collect_reference`, để neo không nhận mẫu rác sát mép khung.
+        Lọc **cùng cổng với `_collect_reference`** (P2 review 21-11: bản đầu chỉ dùng
+        `signature_quality_ok` ⇒ mask rác sát mép khung, vd dải 71×10 = 710 px ≥ `MIN_AREA`, vẫn được
+        nhận làm NEO và **khoá cái sai cho cả phiên** — đúng ca đã ghi ngày 04-11):
+        1. `signature_quality_ok` (diện tích + tỉ lệ mask/ô + không phải ô rác);
+        2. nếu ô **chạm mép khung** ⇒ cắt dải mép rồi mới chấm (vật bị cắt nửa vẫn học được, dải rác
+           thì không) — y như `ReIdSession._collect_reference`.
         """
         if frame is None or mask is None or not np.any(mask):
             return False
@@ -71,7 +78,17 @@ class NeoDanhTinh:
             return False
         if not signature_quality_ok(box, mask):
             return False
-        sig = object_signature(frame, mask)
+        mask_dung = mask
+        h_frame, w_frame = frame.shape[:2]
+        # Cùng định nghĩa `reid.touches_frame_edge` (margin 2 px) — chép tại chỗ thay vì import
+        # `src.reid` (sẽ thành import VÒNG: reid → track_identity → reid).
+        x1, y1, x2, y2 = (float(v) for v in box)
+        if x1 <= 2 or y1 <= 2 or x2 >= w_frame - 2 or y2 >= h_frame - 2:
+            mask_sach, box_sach = clip_mask_border(mask, w_frame, h_frame)
+            if mask_sach is None or not signature_quality_ok(box_sach, mask_sach):
+                return False
+            mask_dung = mask_sach
+        sig = object_signature(frame, mask_dung)
         if sig is None:
             return False
         self._refs.append(sig)

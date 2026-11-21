@@ -487,9 +487,11 @@ class ReIdSession:
             track_cos = None
             if self.enabled:
                 mask = getattr(result, "mask", None)
-                # Nạp neo ở các frame ĐẦU (tự dừng khi đủ MAX_ANCHORS, tự lọc qua chất lượng mẫu).
-                self.neo.thu(frame, mask, getattr(result, "bbox", None))
+                # CHẤM TRƯỚC, nạp neo SAU (P2 review 21-11): nếu nạp trước thì mẫu `cos` của chính
+                # frame đó = 1,0 **cấu trúc** (so frame với chính nó) ⇒ 4/108 mẫu mỗi lần chạy bị
+                # thổi lên 1,0 và phân bố bị lệch về phía "đúng".
                 track_cos = cos_voi_neo(self.neo, frame, mask)
+                self.neo.thu(frame, mask, getattr(result, "bbox", None))
             return Step(result=result, state=self._state, track_cos=track_cos)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này

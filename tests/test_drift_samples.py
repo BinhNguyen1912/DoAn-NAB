@@ -772,3 +772,26 @@ class TestTiLeLkOk:
         kq = summarize([{"empty": False, "drift_iou": 0.9}], window=2)
         assert kq["n_lk_do_duoc"] == 0
         assert kq["lk_ok_frac"] is None
+
+
+def test_csv_co_cot_danh_tinh(tmp_path):
+    """P1 review 21-11: đường LIVE chỉ có CSV NÀY (không có `metrics.csv` của CLI).
+
+    Thiếu 4 cột ⇒ tiêu chí "`track_cos` có trong CSV live" của plan KHÔNG đo được trên sân khấu web
+    (đúng lỗi "cổng mù" mà PR-1 sinh ra để vá). `None` phải là ô TRỐNG, không phải 0.
+    """
+    import csv as _csv
+
+    log = DriftSampleLog(tmp_path / "d.csv")
+    log.write(frame_idx=1, seq=1, vos_ms=90.0, empty=False, drift_iou=0.9,
+              bbox=(10, 10, 60, 60), hien_thi=(10, 10, 60, 60), lk_ok=True, bam="tracking",
+              bbox_w=50, bbox_h=50, mask_area=1200, track_cos=0.9312)
+    log.write(frame_idx=4, seq=2, vos_ms=None, empty=None, drift_iou=None,
+              bbox=None, track_cos=None)
+    log.close()
+    with open(tmp_path / "d.csv", encoding="utf-8") as f:
+        rows = list(_csv.DictReader(f))
+    assert [c for c in ("bbox_w", "bbox_h", "mask_area", "track_cos")
+            if c not in rows[0]] == []
+    assert rows[0]["track_cos"] == "0.9312" and rows[0]["mask_area"] == "1200"
+    assert rows[1]["track_cos"] == "" and rows[1]["mask_area"] == ""   # chưa đo ≠ 0

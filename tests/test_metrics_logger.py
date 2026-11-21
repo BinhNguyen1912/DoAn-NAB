@@ -291,7 +291,6 @@ class TestTrangThaiTaiNhanDien:
         header = rows[0]
         # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
         # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
-        assert header[-5:] == ["bbox_h", "mask_area", "track_cos"][-5:] or True
         assert header[-9:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
                                "bbox_w", "bbox_h", "mask_area", "track_cos"]
         assert rows[3][header.index("state")] == "reacquiring"

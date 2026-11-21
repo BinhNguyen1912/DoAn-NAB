@@ -724,6 +724,7 @@ class LiveTrackingSession:
         # Neo danh tính của vùng được chọn (plan 21-11-2026, LOG-ONLY). Tạo ở đây để mọi đường
         # (đơn luồng / có luồng VOS) dùng chung một đối tượng.
         self._neo = NeoDanhTinh()
+        self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
         self._frame_index = 0
         # Số frame đã ĐỌC từ nguồn trước khi bắt đầu bám (chọn ô GIỮA phiên ⇒ > 0). Tên file mask đi
@@ -927,7 +928,7 @@ class LiveTrackingSession:
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         # Đường CÓ luồng VOS (`vos_every>1`) KHÔNG đi qua `_after_vos` ⇒ phải gọi ở đây, nếu không
         # `track_cos` im lặng `None` (đo thật: 6/6 lần chạy trả None trước khi sửa).
-        self._cap_nhat_danh_tinh(frame, result)
+        self._cap_nhat_danh_tinh(frame, result, frame_idx=frame_idx)
         # TRỪ thời gian ghi PNG: `--dump-mask-frames` là DỤNG CỤ ĐO, không được làm bẩn `post_ms`
         # (rồi `mask_age_total_ms`/p95 của đúng mẫu đó — ticket #26). `cycle_ms`/`queue_ms` lấy từ
         # worker nên VẪN chứa dump của lần trước; đừng nói chúng "đã sạch".
@@ -1037,7 +1038,7 @@ class LiveTrackingSession:
         self._after_vos(frame, result)
         return result
 
-    def _cap_nhat_danh_tinh(self, frame, result) -> None:
+    def _cap_nhat_danh_tinh(self, frame, result, frame_idx=None) -> None:
         """Cập nhật NEO danh tính + `cos` + cỡ ô/diện tích mask (plan 21-11-2026, LOG-ONLY).
 
         **Phải gọi ở CẢ hai đường VOS**: `_after_vos` (đơn luồng, `vos_every=1`) và `_store_vos`
@@ -1046,11 +1047,21 @@ class LiveTrackingSession:
         `_after_vos` — đúng bẫy "cổng đặt sai nhịp ⇒ im lặng" mà plan đã cảnh báo.
 
         Fail-open: đo đạc KHÔNG được giết phiên; lỗi ⇒ `cos = None` ("chưa đo"), không phải 0.
+
+        `frame_idx`: P2 review 21-11 — frame `start()` đi qua **cả** `_after_vos` **và** `_store_vos`
+        ⇒ nếu không chặn, cùng một frame được chấm 2 lần: neo #1 và #2 là **y hệt** (đủ `MIN_ANCHORS`
+        chỉ sau 1 frame, phá bất biến "2 mẫu khác nhau"), `track_cos_n` +2, và mẫu `cos` đầu tiên là
+        **1,0 cấu trúc** (so frame với chính nó). Repo đã gặp đúng bẫy này với `stability`
+        (`tests/test_live_tracking.py`: frame 0 vào hai lần ⇒ IoU 1,0 "miễn phí").
         """
+        if frame_idx is not None and frame_idx == self._danh_tinh_frame_idx:
+            return
+        self._danh_tinh_frame_idx = frame_idx
         try:
             mask = getattr(result, "mask", None)
-            self._neo.thu(frame, mask, getattr(result, "bbox", None))
+            # CHẤM TRƯỚC, nạp neo SAU (P2 review 21-11) — tránh mẫu `cos = 1,0` cấu trúc.
             cos = cos_voi_neo(self._neo, frame, mask)
+            self._neo.thu(frame, mask, getattr(result, "bbox", None))
         except Exception:                       # noqa: BLE001 — đo đạc không giết phiên
             mask, cos = getattr(result, "mask", None), None
         bbox = getattr(result, "bbox", None)
@@ -1058,7 +1069,8 @@ class LiveTrackingSession:
             if bbox is not None:
                 self._stats.bbox_w = max(0, int(bbox[2]) - int(bbox[0]))
                 self._stats.bbox_h = max(0, int(bbox[3]) - int(bbox[1]))
-            self._stats.mask_area = int(mask.sum()) if mask is not None else 0
+            # `None` = engine KHÔNG trả mask (chưa đo) — khác `0` = mask rỗng thật (P3 review 21-11).
+            self._stats.mask_area = int(mask.sum()) if mask is not None else None
             self._stats.track_cos = cos
             if cos is not None:
                 self._stats.track_cos_n = int(self._stats.track_cos_n or 0) + 1
@@ -1095,7 +1107,7 @@ class LiveTrackingSession:
             # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
             # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).
             self._stats.pre_ms = None if pre is None else round(float(pre), 2)
-        self._cap_nhat_danh_tinh(frame, result)
+        self._cap_nhat_danh_tinh(frame, result, frame_idx=self._frame_index)
         # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
         # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
         # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.
@@ -1448,7 +1460,8 @@ class LiveTrackingSession:
         return not bool(mask.any())
 
     def _log_drift_sample(self, *, frame_idx, seq, value, result=None, vos_ms=None,
-                          empty=None, bbox=None, hien_thi=None, lk_ok=None, bam=None) -> None:
+                          empty=None, bbox=None, hien_thi=None, lk_ok=None, bam=None,
+                          bbox_w=None, bbox_h=None, mask_area=None, track_cos=None) -> None:
         """Ghi MỘT dòng CSV cho mẫu drift (ticket 15). PHẢI gọi khi KHÔNG giữ `_stats_lock`.
 
         `result` là kết quả VOS (có `elapsed_ms`/`mask`/`bbox`); nhánh `_pending_drift` tới hạn thì
@@ -1460,7 +1473,12 @@ class LiveTrackingSession:
             empty=(self._mask_empty(result) if empty is None else empty),
             drift_iou=value,
             bbox=(getattr(result, "bbox", None) if bbox is None else bbox),
-            hien_thi=hien_thi, lk_ok=lk_ok, bam=bam)
+            hien_thi=hien_thi, lk_ok=lk_ok, bam=bam,
+            # P1 review 21-11: đường LIVE chỉ có CSV NÀY ⇒ 4 cột phải đi qua đây.
+            bbox_w=(getattr(self._stats, "bbox_w", None) if bbox_w is None else bbox_w),
+            bbox_h=(getattr(self._stats, "bbox_h", None) if bbox_h is None else bbox_h),
+            mask_area=(getattr(self._stats, "mask_area", None) if mask_area is None else mask_area),
+            track_cos=(getattr(self._stats, "track_cos", None) if track_cos is None else track_cos))
 
     def _record_drift(self, value, empty=None) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).

@@ -40,6 +40,10 @@ CSV_HEADER = [
     # 21-11: "có bằng chứng về vật" của CHÍNH frame này (`tracking` | `no_evidence` | rỗng = chưa đo).
     # Cột ở CUỐI để CSV cũ (14 cột) vẫn đọc được bằng `csv.DictReader` (thiếu khoá ⇒ `None`).
     "bam",
+    # P1 review 21-11: đường LIVE không có `metrics.csv` từng-frame (đó là của CLI) ⇒ nếu 4 khoá này
+    # không có ở ĐÂY thì `track_cos`/cỡ ô KHÔNG BAO GIỜ đo được trên đường web — đúng lỗi "cổng mù
+    # trên sân khấu web". Ở CUỐI để CSV 15 cột cũ vẫn đọc được bằng `csv.DictReader`.
+    "bbox_w", "bbox_h", "mask_area", "track_cos",
 ]
 
 # Cửa sổ phân vị: khớp `_STAT_WINDOW` của `src/live_tracking.py` ⇒ p05 tính từ CSV tái lập đúng
@@ -96,7 +100,8 @@ class DriftSampleLog:
         return self._path
 
     def write(self, *, frame_idx, seq, vos_ms, empty, drift_iou, bbox,
-              hien_thi=None, lk_ok=None, bam=None) -> None:
+              hien_thi=None, lk_ok=None, bam=None, bbox_w=None, bbox_h=None,
+              mask_area=None, track_cos=None) -> None:
         """Ghi MỘT mẫu. Trường nào là `None` ⇒ ô trống (chưa đo), không ghi 0."""
         row = [
             "" if frame_idx is None else int(frame_idx),
@@ -120,6 +125,11 @@ class DriftSampleLog:
         # VẪN được ghi (KHÔNG che mẫu xấu) — cột này để người phân tích LỌC được (vd chỉ `tracking`),
         # thay vì để việc ẩn ô âm thầm làm `drift_iou` đẹp lên (P1 review 21-11).
         row.append("" if bam is None else str(bam))
+        # Cỡ ô + diện tích mask + `cos` với neo danh tính. `None` ⇒ ô trống (CHƯA ĐO), không ghi 0.
+        row.append("" if bbox_w is None else int(bbox_w))
+        row.append("" if bbox_h is None else int(bbox_h))
+        row.append("" if mask_area is None else int(mask_area))
+        row.append("" if track_cos is None else f"{float(track_cos):.6g}")
         line = ",".join(str(v) for v in row) + "\n"
         with self._lock:
             if self._closed:

@@ -2876,3 +2876,51 @@ class TestBamOfDocDequeDuoiLock:
         session._bam_by_frame.append((7, "tracking"))
         with session._stats_lock:
             assert session._bam_of_locked(7) == "tracking"
+
+
+class _EngineVatTo:
+    """Engine giả có vật **đủ lớn** để qua `signature_quality_ok` (`DEFAULT_MIN_AREA = 600` px).
+
+    `FakeEngine` mặc định trả mask 10×10 = **100 px** ⇒ neo bị cổng chất lượng loại ⇒ `track_cos`
+    luôn `None` (đúng hành vi mong đợi, nhưng không dùng được để test đường chấm).
+    """
+
+    def __init__(self, canh=40):
+        self.canh = canh
+        self.processed = 0
+
+    def start(self, frame, bbox):
+        self.processed = 1
+        return self._result(0, (10, 10, 10 + self.canh, 10 + self.canh), frame.shape)
+
+    def process(self, frame):
+        self.processed += 1
+        x = 10 + (self.processed % 3)
+        return self._result(self.processed, (x, 10, x + self.canh, 10 + self.canh), frame.shape)
+
+    @staticmethod
+    def _result(index, bbox, shape):
+        mask = np.zeros(shape[:2], bool)
+        mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+        return _Result(index, bbox, mask)
+
+
+class TestDanhTinhChayOHaiDuongVOS:
+    """P2 review 21-11: test allowlist chỉ kiểm TÊN khoá ⇒ nếu `_store_vos` quên gọi
+
+    `_cap_nhat_danh_tinh` thì `track_cos` im lặng `None` mà cả suite vẫn xanh (đúng bug 6/6 lần chạy
+    đã gặp trước commit `214e74b`). Test này khoá HÀNH VI ở cả hai đường VOS.
+    """
+
+    @pytest.mark.parametrize("vos_every", [1, 3])
+    def test_track_cos_co_so_o_ca_hai_duong(self, video_source, tmp_path, vos_every):
+        out = tmp_path / f"live{vos_every}"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineVatTo(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=vos_every, display_fps=60,
+            stop_after_frames=12))
+        st = sess.run()
+        # `track_cos_n >= 1` ⇒ đã chấm được ít nhất 1 lần ⇒ neo có mẫu và `cos` không None
+        assert (st.track_cos_n or 0) >= 1, f"vos_every={vos_every}: track_cos không hề được chấm"
+        assert st.bbox_w and st.bbox_h and st.mask_area is not None
