@@ -172,6 +172,33 @@ Sau khi đo được "cổng nhảy báo đúng nhưng chỉ in ra", đã làm (
    Test Python khoá: latch bật ⇒ `bam/status.json` = `nghi_doi_tuong` + `nghi_doi_tuong_n > 0`; `confirm.json`
    ⇒ xoá nghi + file bị xoá; 3 test API (ghi file · nguồn không hỗ trợ ⇒ 400 · chưa có phiên ⇒ 4xx).
 
+## ⚡ "Muốn mượt hơn" — đo ra CHỖ CHẶN thật (21-11, sau phiên `demoip_1121-131421`)
+
+Người dùng phản ánh "không mượt". Đo trực tiếp thay vì đoán:
+
+| Đo | Kết quả | Kết luận |
+|---|---|---|
+| Relay `/info` (640×480) | **16,53 fps** | trần hiển thị = **camera**, không phải model |
+| Ảnh `/snapshot.jpg` đổi bao nhiêu lần/s (4 s, 494 lần đọc) | **16,0 lần/s** | xác nhận trần 16 fps |
+| Relay **320×240** (`--width 320 --height 240 --fps 30`) | **16,51 fps** | hạ độ phân giải **KHÔNG** giúp ⇒ **giới hạn cảm biến** |
+| model @`image_size 192` (binh1, 40 frame) | **102 ms** ⇒ 9,8 lần/s | model không chặn độ mượt hình |
+| model @160 | **75 ms** ⇒ 13,3 lần/s | |
+| model @128 | **58 ms** ⇒ 17,3 lần/s | nhanh 1,76× so với 192 |
+
+Chất lượng (fixture che khuất, `data/occlusion_metrics_<size>_metrics.json` — **cận trên**):
+
+| size | mIoU nền | mIoU khi che 50 % | bbox IoU khi che |
+|---|---|---|---|
+| 320 | 0,9557 | 0,8922 | 0,530 |
+| 192 | 0,9132 | 0,8609 | 0,520 |
+| **160** | **0,9270** | **0,8255** | 0,534 |
+| 128 | 0,8976 | 0,7813 | 0,543 |
+
+⇒ **Khuyến nghị**: demo live dùng **`--image-size 160`** (75 ms, 13 lần mask/s, chất lượng ≈192) — đổi
+`image_size` là cách **duy nhất** làm overlay tươi hơn trên CPU này. Muốn hình **mượt hơn 16 fps** thì
+phải đổi **nguồn**: điện thoại 30 fps (`./run phone` để dò URL) hoặc clip 30 fps.
+**GPU free (Colab/Kaggle) KHÔNG giúp live webcam** — không thấy camera laptop, không có URL công khai.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Worker MỒ CÔI của phiên web làm demo chậm 9× mà không ai báo (bắt được cuối phiên):** người dùng
   chạy `./run demoip --image-size 192` và thấy "không mượt bằng lúc nảy". Đo CSV:

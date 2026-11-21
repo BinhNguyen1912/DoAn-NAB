@@ -499,4 +499,11 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
   **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
   kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
-  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
+  = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
+  fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
+  @160 **75 ms**, @128 **58 ms** (17,3 lần/s) — chất lượng (fixture che, cận trên): mIoU nền 0,913/0,927/
+  0,898 và mIoU khi che 50 % 0,861/0,826/0,781. ⇒ Muốn overlay tươi hơn thì hạ `image_size` (**160** là
+  điểm cân bằng); muốn hình >16 fps thì phải **đổi nguồn** (điện thoại 30 fps qua `./run phone`, hoặc
+  clip). **Đừng hứa GPU free làm mượt live** — Colab/Kaggle không thấy webcam laptop và không có URL
+  công khai để relay đẩy ảnh vào; tunnel thêm 50–150 ms/frame.
