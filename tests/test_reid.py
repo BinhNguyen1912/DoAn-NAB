@@ -924,6 +924,17 @@ class TestVetoNhanLaiVaoMat:
         assert step.reacquired is True
         assert s.veto_mat_n == 0
 
+    def test_frame_tim_lai_co_elapsed_ms_that(self):
+        """P2 review 21-11: frame LOST/tìm-lại từng ghi `elapsed_ms = 0.0` ⇒ chi phí tìm (cascade
+
+        NCC + YuNet khi veto) không hiện ở artifact nào, nên "veto có làm chậm không" không kiểm được.
+        """
+        s = self._session(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        s.step(self._f())                        # mất dấu
+        step = s.step(self._f())                 # frame TÌM LẠI
+        assert step.result.elapsed_ms > 0.0      # phải là số đo thật, không phải 0 mặc định
+
     def test_chi_goi_yunet_mot_lan_moi_lan_kiem(self):
         """`detect()` là YuNet thật (~29 ms) ⇒ một câu hỏi chỉ được một lần gọi.
 

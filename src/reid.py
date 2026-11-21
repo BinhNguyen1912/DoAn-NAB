@@ -22,6 +22,8 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
+import time
+
 import numpy as np
 
 from src.appearance import (candidate_boxes, clip_mask_border, mask_to_bbox, object_signature,
@@ -476,6 +478,10 @@ class ReIdSession:
         best_score, best_bbox = -1.0, None
         best_ncc = -1.0
         vetoed = False                 # frame này có ứng viên bị bỏ vì trùng mặt? (HUD cần biết)
+        # P2 review 21-11: frame LOST/tìm-lại từng ghi `elapsed_ms = 0.0` ⇒ chi phí tìm (cascade NCC
+        # ~28 ms + YuNet ~29 ms khi veto) KHÔNG hiện ở artifact nào ⇒ "veto có làm chậm không" là
+        # câu không kiểm được. Đo thật ở đây để CSV/summary có số.
+        _t0 = time.perf_counter()
 
         # Cue 1: khuôn mặt (YuNet + SFace) — cần embedder
         if self.face_on:
@@ -523,7 +529,9 @@ class ReIdSession:
             best_score = max(best_score, score)
             best_ncc = max(best_ncc, ncc)   # ghi cả khi BỊ LOẠI — để hiệu chuẩn ngưỡng
 
-        return Step(result=self._lost_result(), state=self._state,
+        lost = self._lost_result()
+        lost.elapsed_ms = (time.perf_counter() - _t0) * 1000.0   # chi phí TÌM LẠI (không phải VOS)
+        return Step(result=lost, state=self._state,
                     reid_score=best_score, ncc=best_ncc, vetoed=vetoed)
 
     # -- veto "nhận lại vào mặt/đầu" --

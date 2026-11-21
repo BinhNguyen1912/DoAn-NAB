@@ -133,7 +133,9 @@ Reviewer (agent `reviewer`, chỉ đọc) bắt **3 P1** đều đúng, đã s�
 
 ### Nợ còn lại (reviewer nêu đúng, xử lý ở phiên sau)
 - **Chưa có phiên `./run demoip` nào chạy cấu hình mới** trên máy có camera ⇒ "không chặn oan trên webcam thật" vẫn là **chưa đo** (chỉ có test tổng hợp + tập nhãn 18 ca). Cần 1 phiên ~60 s với `run_info` có `reid_face_veto=true`.
-- `latency_ms` của frame `lost`/`reacquiring` ghi **0.0** trong CSV ⇒ chi phí veto (YuNet ~29 ms/lần) **không hiện ở artifact nào**. Nên ghi `elapsed_ms` cho cả frame tìm lại.
+- ~~`latency_ms` của frame `lost`/`reacquiring` ghi **0.0**~~ → **đã sửa cùng phiên**: nhánh LOST đo
+  `time.perf_counter()` và gán `lost.elapsed_ms` ⇒ CSV/summary nay có chi phí **tìm lại** (cascade NCC
+  ~28 ms + YuNet ~29 ms khi veto) — tách khỏi `vos_ms` của model; test `test_frame_tim_lai_co_elapsed_ms_that`.
 - `NGUONG_PHU_MAT = 0,30` vẫn **chưa hiệu chuẩn** (CSV thiếu `bbox_w/bbox_h`).
 - ADR-0004 chưa ghi "cổng thứ 4: veto mặt/đầu" và ngưỡng demo 0,75/0,40.
 
