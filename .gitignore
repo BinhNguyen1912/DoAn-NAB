@@ -74,3 +74,8 @@ data/e2e_*
 # Bộ GT giả do `./run gte2e` sinh ra — không bao giờ commit
 docs/gt/_e2e_*/
 data/gte2e_server.log
+
+# ===== Secrets — KHÔNG BAO GIỜ commit =====
+.env
+.env.*
+!.env.example
