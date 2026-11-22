@@ -80,7 +80,8 @@ def _o_chon_tu_gt(gt_dir: Path):
 
 
 def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[int],
-                      max_frames: int | None, vos_every: int, python: str) -> dict:
+                      max_frames: int | None, vos_every: int, python: str,
+                      stream: bool = False, timeout_s: float = 1800.0) -> dict:
     out = _REPO / "data" / f"_gpu_{device}_{size}_{int(time.time())}"
     masks = out / "masks"
     masks.mkdir(parents=True, exist_ok=True)
@@ -97,7 +98,17 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
     if max_frames:
         argv += ["--stop-after-frames", str(max_frames)]
     t0 = time.perf_counter()
-    proc = subprocess.run(argv, cwd=_REPO, capture_output=True, text=True)
+    if stream:
+        # In TRỰC TIẾP: nạp model + tqdm của SAM 2 chạy 30–90 s, không in gì thì người chạy tưởng
+        # treo và Ctrl-C (đã xảy ra trên Colab 22-11). Vẫn ghi lại đuôi log để chẩn đoán.
+        proc = subprocess.run(argv, cwd=_REPO, stdout=subprocess.PIPE,
+                              stderr=subprocess.STDOUT, text=True, timeout=timeout_s)
+        proc.stdout = proc.stdout or ""
+        # stdout ở chế độ stream là TOÀN BỘ log; chẩn đoán chỉ cần phần đuôi.
+        (out / "worker.log").write_text(proc.stdout[-20000:], encoding="utf-8")
+    else:
+        proc = subprocess.run(argv, cwd=_REPO, capture_output=True, text=True,
+                              timeout=timeout_s)
     wall = time.perf_counter() - t0
 
     status_p = out / "status.json"
@@ -153,6 +164,9 @@ def main(argv=None) -> int:
                     help="1 = mask mỗi frame (chấm mIoU được ở mọi frame có GT)")
     ap.add_argument("--max-frames", type=int, default=None,
                     help="chỉ xử lý N frame đầu (kiểm đường ống; số mIoU KHÔNG công bố được)")
+    ap.add_argument("--stream", action="store_true",
+                    help="in log của worker NGAY khi chạy (nạp model 30–90 s mà im lặng thì dễ tưởng treo)")
+    ap.add_argument("--timeout", type=float, default=1800.0, help="giây cho MỖI cấu hình")
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
 
@@ -187,7 +201,8 @@ def main(argv=None) -> int:
         print(f"[bench] chạy image_size={size} …", flush=True)
         rows.append(chay_mot_cau_hinh(
             size=size, device=args.device, clip=args.clip, bbox=bbox, frames=frames,
-            max_frames=args.max_frames, vos_every=args.vos_every, python=python))
+            max_frames=args.max_frames, vos_every=args.vos_every, python=python,
+            stream=args.stream, timeout_s=args.timeout))
 
     payload = {
         **_provenance(),
