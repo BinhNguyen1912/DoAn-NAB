@@ -499,7 +499,25 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
   **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
   kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
-  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **`image_size` là nút thật cho CHẤT LƯỢNG phân đoạn, nhưng bão hoà ở 512; 1024 là tiền đổ đi.**
+  Đo 22-11 trên T4 (cùng 1 lần chạy, `git_rev 316c6e8`, `git_dirty_code=false`, clip `binh2.mp4`,
+  `vos_every=1`, 360 frame, ô chọn suy từ GT f0 `(334,319,158,568)`, artifact
+  `data/gpu_sweep_binh2_2026-11-22_metrics.json`): mIoU `binh2_tay` **0,7644** @192 (99,5 ms/frame) →
+  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS). ⇒ 192→320
+  là món hời (+0,052 mIoU, +12 % thời gian); 512→1024 là **nhiễu** (+0,003 < ngưỡng ±0,019) với giá
+  3,9×. **GPU dùng 512** (7,7 lần VOS/giây), cần nhịp cao thì 320; **cấm đưa 1024 vào cấu hình nào**.
+  mIoU @192 trên GPU **trùng khít** baseline CPU (0,7644) ⇒ **thiết bị không đổi chất lượng phân
+  đoạn**, chênh lệch chỉ do `image_size` — nên được phép so số GPU với baseline CPU. `ms/frame` ở đây
+  GỒM cả nạp model ⇒ là **cận trên** của độ trễ, không phải `vos_ms`. Mốc để Cutie phải vượt:
+  **mIoU > 0,855** trên `binh2_tay`; dưới đó thì **không đáng đổi model**. Cột `binh2_tay2` chỉ có
+  **n=2** frame có vật ⇒ số 0,81 của nó là bằng chứng YẾU, cấm trích như số chắc.
+- **Trên Colab: `--stop-after-frames` là BẮT BUỘC, và `--stream` phải dùng `Popen`.**
+  `tools/live_worker.py` mặc định `loop_files=True` ⇒ thiếu `--stop-after-frames` thì nó **lặp file vô
+  hạn**, người chạy thấy "chạy quài" và tưởng model chậm (gặp thật 22-11, 2 lần). Và
+  `subprocess.run(stdout=PIPE)` **không stream** (gom hết rồi mới trả) ⇒ im lặng 30–90 s lúc nạp model,
+  người chạy bấm Ctrl-C. `scripts/bench_gpu_binh2.py` nay tự đọc `CAP_PROP_FRAME_COUNT` và luôn truyền
+  cờ, đồng thời in log bằng `Popen` từng dòng.
+- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
   = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
   fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
   @160 **75 ms**, @128 **58 ms** (17,3 lần/s) — chất lượng (fixture che, cận trên): mIoU nền 0,913/0,927/
