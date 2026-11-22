@@ -24,6 +24,18 @@ export interface Box {
 /** Cạnh nhỏ nhất (px gốc) để coi là ô chọn thật — nhỏ hơn là click nhầm. */
 export const MIN_BOX_SIDE = 4
 
+/**
+ * Ngưỡng phân biệt CLICK với KÉO, tính bằng **CSS px** (pixel người dùng thật sự di chuột).
+ *
+ * VÌ SAO KHÔNG dùng px ảnh: khung 1920 hiển thị ở 600 CSS px thì 4 px ảnh = **1,25 CSS px** — tay
+ * người rung 2 px là vượt ngưỡng, thao tác bị hiểu thành KÉO và **xoá mất ô đang chọn** (review độc
+ * lập 22-11, P0). Ngưỡng phải ở không gian người dùng, rồi mới quy đổi sang px ảnh.
+ */
+export const CLICK_TOLERANCE_CSS = 5
+
+/** Bán kính (CSS px) để coi hai điểm prompt là CÙNG một chỗ (click đè = thay điểm cũ). */
+export const POINT_MERGE_CSS = 7
+
 /** Kẹp số về [min, max] rồi làm tròn. NaN → biên dưới (an toàn); ±Infinity → kẹp đúng biên. */
 export function clampInt(value: number, min: number, max: number): number {
   if (Number.isNaN(value)) return min
@@ -73,6 +85,40 @@ export function boxFromPoints(a: Point, b: Point): Box {
   }
 }
 
+/**
+ * Ngưỡng click/kéo quy đổi sang **px ảnh** theo tỉ lệ hiển thị hiện tại.
+ *
+ * rect.width <= 0 (chưa layout) ⇒ trả `MIN_BOX_SIDE` thay vì chia cho 0.
+ */
+export function clickToleranceImagePx(rect: DisplayRect, canvas: CanvasSize): number {
+  if (rect.width <= 0) return MIN_BOX_SIDE
+  // Sàn là 1 PX ẢNH (không phải `MIN_BOX_SIDE`): ngưỡng phải nhất quán trong KHÔNG GIAN NGƯỜI DÙNG.
+  // Lấy sàn 4 px ảnh thì trên khung 160 hiển thị rộng, 4 px ảnh ≈ 15 CSS px — kéo ngắn bị coi là click.
+  return Math.max(1, (CLICK_TOLERANCE_CSS * canvas.width) / rect.width)
+}
+
+/** Bán kính gộp điểm, quy đổi sang px ảnh (cùng lý do với `clickToleranceImagePx`). */
+export function pointMergeRadiusImagePx(rect: DisplayRect, canvas: CanvasSize): number {
+  if (rect.width <= 0) return MIN_POINT_DIST
+  // Cùng lý do: sàn 1 px ảnh. Với khung 160 hiển thị 600 CSS px, `MIN_POINT_DIST = 8` px ảnh là
+  // ~30 CSS px ⇒ hai điểm cách nhau 20 CSS px bị gộp (không thể đặt 2 điểm trên vật nhỏ).
+  return Math.max(1, (POINT_MERGE_CSS * canvas.width) / rect.width)
+}
+
+/**
+ * Kẹp điểm vào TRONG khung (trừ 1 px cuối).
+ *
+ * `toImagePoint` kẹp tới `canvas.width` (bao gồm cả biên) vì ô chọn dùng `x+w`; nhưng
+ * `tracker_engine.start` đòi `0 <= x < w`, nên một điểm ở px cuối cùng làm cả phiên live chết
+ * (`ValueError: point … nằm ngoài khung hình`). Điểm phải kẹp chặt hơn ô (review độc lập 22-11, P2).
+ */
+export function clampPointInCanvas(point: Point, canvas: CanvasSize): Point {
+  return {
+    x: Math.max(0, Math.min(canvas.width - 1, point.x)),
+    y: Math.max(0, Math.min(canvas.height - 1, point.y)),
+  }
+}
+
 /** Hộp có đủ lớn để chọn đối tượng không. */
 export function isUsableBox(box: Box | null): box is Box {
   return box !== null && box.w >= MIN_BOX_SIDE && box.h >= MIN_BOX_SIDE
@@ -108,11 +154,16 @@ export const MIN_POINT_DIST = 8
 /**
  * Thêm một điểm prompt. Điểm mới thay điểm cũ nằm cùng chỗ (bất kể nhãn) để người dùng "sửa lại"
  * bằng cách click đè, và tổng số điểm bị chặn ở `MAX_PROMPT_POINTS` (bỏ điểm CŨ NHẤT).
+ *
+ * `radius` (px ảnh) phải lấy từ `pointMergeRadiusImagePx` — dùng hằng số px ảnh cố định thì trên
+ * khung 1920 "click đè để sửa" là không thể (8 px ảnh chỉ là 2,5 CSS px).
  */
-export function addPoint(points: PromptPoint[], point: PromptPoint): PromptPoint[] {
-  const giu = points.filter(
-    (p) => Math.hypot(p.x - point.x, p.y - point.y) >= MIN_POINT_DIST,
-  )
+export function addPoint(
+  points: PromptPoint[],
+  point: PromptPoint,
+  radius: number = MIN_POINT_DIST,
+): PromptPoint[] {
+  const giu = points.filter((p) => Math.hypot(p.x - point.x, p.y - point.y) >= radius)
   const ra = [...giu, point]
   return ra.length > MAX_PROMPT_POINTS ? ra.slice(ra.length - MAX_PROMPT_POINTS) : ra
 }
@@ -143,6 +194,10 @@ export function describePoints(points: PromptPoint[]): string {
  * Cần thiết vì nếu coi mọi thao tác chuột là kéo thì một cú click sẽ tạo ô 0×0 ⇒ `isUsableBox` sai
  * và ô đã chọn trước đó bị xoá mất (đúng lỗi cũ: click lạc làm mất ô đang có).
  */
-export function isClickNotDrag(start: Point, end: Point): boolean {
-  return Math.hypot(end.x - start.x, end.y - start.y) < MIN_BOX_SIDE
+export function isClickNotDrag(
+  start: Point,
+  end: Point,
+  threshold: number = MIN_BOX_SIDE,
+): boolean {
+  return Math.hypot(end.x - start.x, end.y - start.y) < threshold
 }

@@ -20,8 +20,12 @@ export interface BBox {
 export interface PointPrompt {
   x: number
   y: number
-  /** 1 = positive (vật thể), 0 = negative (nền) */
-  label?: number
+  /**
+   * 1 = positive (vật thể), 0 = negative (nền/vùng bám sai).
+   * BẮT BUỘC: để tuỳ chọn thì payload quên `label` bị backend mặc định thành **dương** trong im
+   * lặng (review độc lập 22-11, P3) — đúng loại "gửi mà không ai nhận biết".
+   */
+  label: 0 | 1
 }
 
 export interface JobSummary {

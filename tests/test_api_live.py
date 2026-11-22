@@ -297,6 +297,43 @@ class TestLiveRoutes:
                         "mask_smoothing": 0.6}
         live_client.post("/api/live/stop")
 
+    def test_diem_duong_am_di_tu_request_toi_nha_may_nguon(self, live_client, monkeypatch):
+        """Điểm prompt dương/âm phải đi từ JSON request → service → nhà máy nguồn.
+
+        Vì sao cần test RIÊNG: E2E **chặn** (mock) `/api/live/start` nên nó chỉ chứng minh UI gửi
+        đúng payload, không chứng minh route chuyển tiếp — đúng kiểu lỗi "DTO bị đánh rơi mà E2E vẫn
+        xanh" (review độc lập 22-11, P2). `spy` phải nhận `**kwargs`: nếu thiếu, `except TypeError`
+        trong `live.start()` sẽ thử lại KHÔNG kèm điểm và test xanh vì lý do sai.
+        """
+        seen = {}
+
+        def spy(source, **kwargs):
+            from tests.conftest import FakeFrameSource
+
+            seen.update(kwargs)
+            return FakeFrameSource(source)
+
+        monkeypatch.setattr(live_client.app.state.live, "_make_source", spy)
+        r = live_client.post("/api/live/start", json={
+            "source": "0", "mode": "track",
+            "bbox": {"x": 10, "y": 20, "w": 30, "h": 40},
+            "points": [{"x": 15, "y": 25, "label": 1}, {"x": 5, "y": 5, "label": 0}],
+        })
+        assert r.status_code == 200
+        assert seen.get("points") == [(15.0, 25.0), (5.0, 5.0)]
+        assert seen.get("labels") == [1, 0]
+        live_client.post("/api/live/stop")
+
+    def test_label_ngoai_0_1_bi_tu_choi_bang_422(self, live_client):
+        """`label=2` trước đây lọt qua Pydantic rồi ném ValueError trong `engine.start` ⇒ phiên live
+        chết mà client chỉ thấy 200. Phải là 422 ngay ở biên API."""
+        r = live_client.post("/api/live/start", json={
+            "source": "0", "mode": "track",
+            "bbox": {"x": 10, "y": 20, "w": 30, "h": 40},
+            "points": [{"x": 15, "y": 25, "label": 2}],
+        })
+        assert r.status_code == 422
+
     @pytest.mark.parametrize("bad", [0, 31, "ba"])
     def test_vos_every_ngoai_khoang_tra_422(self, live_client, bad):
         r = live_client.post("/api/live/start", json={"source": "0", "vos_every": bad})

@@ -10,6 +10,10 @@ import {
   addPoint,
   boxFromPoints,
   clampInt,
+  clampPointInCanvas,
+  clickToleranceImagePx,
+  CLICK_TOLERANCE_CSS,
+  pointMergeRadiusImagePx,
   countPoints,
   describeBox,
   describePoints,
@@ -177,5 +181,73 @@ describe('isClickNotDrag', () => {
     expect(isClickNotDrag({ x: 100, y: 100 }, { x: 101, y: 100 })).toBe(true)
     expect(isClickNotDrag({ x: 100, y: 100 }, { x: 100 + MIN_BOX_SIDE, y: 100 })).toBe(false)
     expect(isClickNotDrag({ x: 100, y: 100 }, { x: 300, y: 250 })).toBe(false)
+  })
+})
+
+// ─── P0 (review độc lập 22-11): ngưỡng click/kéo phải ở KHÔNG GIAN NGƯỜI DÙNG ────────────────────
+describe('clickToleranceImagePx', () => {
+  it('khung 1920 hiển thị 600 CSS px ⇒ ngưỡng quy đổi đúng, KHÔNG phải 4 px ảnh', () => {
+    const nguong = clickToleranceImagePx({ left: 0, top: 0, width: 600, height: 400 }, CANVAS)
+    // 5 CSS px * (1920/600) = 16 px ảnh
+    expect(nguong).toBeCloseTo((CLICK_TOLERANCE_CSS * 1920) / 600, 6)
+    expect(nguong).toBeGreaterThan(4)
+  })
+
+  it('ngưỡng LUÔN nhất quán trong không gian người dùng (≈5 CSS px) ở mọi cỡ khung', () => {
+    const rect = { left: 0, top: 0, width: 600, height: 400 }
+    for (const w of [160, 640, 1280, 1920, 3840]) {
+      const canvas = { width: w, height: Math.round(w * 0.75) }
+      const cssPx = (clickToleranceImagePx(rect, canvas) * rect.width) / canvas.width
+      expect(cssPx).toBeCloseTo(CLICK_TOLERANCE_CSS, 6)
+    }
+  })
+
+  it('rung tay 2 CSS px trên khung 1920 vẫn là CLICK (bug P0: trước đây bị coi là KÉO)', () => {
+    const rect = { left: 0, top: 0, width: 600, height: 400 }
+    const nguong = clickToleranceImagePx(rect, CANVAS)
+    const tiLe = CANVAS.width / rect.width
+    // nhấn-nhả lệch 2 CSS px theo phương ngang = 6,4 px ảnh
+    expect(isClickNotDrag({ x: 100, y: 100 }, { x: 100 + 2 * tiLe, y: 100 }, nguong)).toBe(true)
+  })
+
+  it('kéo thật 40 CSS px vẫn là KÉO', () => {
+    const rect = { left: 0, top: 0, width: 600, height: 400 }
+    const nguong = clickToleranceImagePx(rect, CANVAS)
+    const tiLe = CANVAS.width / rect.width
+    expect(isClickNotDrag({ x: 100, y: 100 }, { x: 100 + 40 * tiLe, y: 100 }, nguong)).toBe(false)
+  })
+
+  it('khung chưa layout (width = 0) thì dùng ngưỡng px ảnh, không chia cho 0', () => {
+    expect(clickToleranceImagePx({ left: 0, top: 0, width: 0, height: 0 }, CANVAS)).toBe(MIN_BOX_SIDE)
+    expect(pointMergeRadiusImagePx({ left: 0, top: 0, width: 0, height: 0 }, CANVAS)).toBe(MIN_POINT_DIST)
+  })
+})
+
+describe('pointMergeRadiusImagePx', () => {
+  it('khung 1920@600: hai cú click cách 3 CSS px là CÙNG chỗ ⇒ thay điểm (trước đây thành 2 điểm)', () => {
+    const rect = { left: 0, top: 0, width: 600, height: 400 }
+    const banKinh = pointMergeRadiusImagePx(rect, CANVAS)
+    const tiLe = CANVAS.width / rect.width
+    const pts = addPoint([{ x: 500, y: 400, label: 1 }], { x: 500 + 3 * tiLe, y: 400, label: 0 }, banKinh)
+    expect(pts).toHaveLength(1)
+    expect(pts[0].label).toBe(0)
+  })
+
+  it('khung nhỏ 160@600: hai cú click cách 20 CSS px là HAI điểm (trước đây bị gộp)', () => {
+    const rect = { left: 0, top: 0, width: 600, height: 450 }
+    const nho = { width: 160, height: 120 }
+    const banKinh = pointMergeRadiusImagePx(rect, nho)
+    const tiLe = nho.width / rect.width
+    const pts = addPoint([{ x: 20, y: 20, label: 1 }], { x: 20 + 20 * tiLe, y: 20, label: 1 }, banKinh)
+    expect(pts).toHaveLength(2)
+  })
+})
+
+// ─── P2 (review độc lập 22-11): điểm ở px CUỐI làm `engine.start` ném ValueError ────────────────
+describe('clampPointInCanvas', () => {
+  it('kẹp vào TRONG khung (w-1, h-1) — biên phải không hợp lệ với điểm', () => {
+    expect(clampPointInCanvas({ x: 1920, y: 1280 }, CANVAS)).toEqual({ x: 1919, y: 1279 })
+    expect(clampPointInCanvas({ x: -3, y: 5000 }, CANVAS)).toEqual({ x: 0, y: 1279 })
+    expect(clampPointInCanvas({ x: 100, y: 200 }, CANVAS)).toEqual({ x: 100, y: 200 })
   })
 })

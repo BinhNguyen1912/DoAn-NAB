@@ -21,11 +21,16 @@ import type { BBox } from '../api'
 import {
   addPoint,
   boxFromPoints,
+  clampPointInCanvas,
+  clickToleranceImagePx,
   describeBox,
   describePoints,
   isClickNotDrag,
   isUsableBox,
+  pointMergeRadiusImagePx,
   toImagePoint,
+  type CanvasSize,
+  type DisplayRect,
   type Point,
   type PromptPoint,
 } from '../selection'
@@ -119,14 +124,25 @@ export function SelectionCanvas({
 
   const loading = size === null
 
-  const pointOf = (event: React.MouseEvent<HTMLCanvasElement>): Point => {
+  /** `rect` + `canvas` của lần tương tác này — cần để quy đổi ngưỡng click/kéo theo tỉ lệ hiển thị. */
+  const geometryOf = (): { rect: DisplayRect; canvas: CanvasSize } | null => {
     const canvas = canvasRef.current
-    if (!canvas) return { x: 0, y: 0 }
-    return toImagePoint(event.clientX, event.clientY, canvas.getBoundingClientRect(), canvas)
+    if (!canvas) return null
+    const r = canvas.getBoundingClientRect()
+    return { rect: r, canvas: { width: canvas.width, height: canvas.height } }
+  }
+
+  const pointOf = (event: React.MouseEvent<HTMLCanvasElement>): Point => {
+    const g = geometryOf()
+    if (!g) return { x: 0, y: 0 }
+    return toImagePoint(event.clientX, event.clientY, g.rect, g.canvas)
   }
 
   const onMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (loading) return
+    // Chỉ chuột TRÁI: chuột phải/giữa là thao tác "huỷ/ngữ cảnh" theo thói quen — nếu nhận thì một cú
+    // right-click vô tình lại đặt ĐIỂM DƯƠNG (review độc lập 22-11, P1).
+    if (event.button !== 0) return
     event.preventDefault()
     const point = pointOf(event)
     startRef.current = point
@@ -135,6 +151,13 @@ export function SelectionCanvas({
 
   const onMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!startRef.current) return
+    // Mất sự kiện mouseup (chuột ra ngoài cửa sổ, chuyển app) ⇒ `startRef` treo và lần di chuột sau
+    // sẽ vẽ ô từ một điểm cũ. Không còn nút nào đang nhấn ⇒ bỏ trạng thái kéo.
+    if (event.buttons === 0) {
+      startRef.current = null
+      setDraft(null)
+      return
+    }
     setDraft(boxFromPoints(startRef.current, pointOf(event)))
   }
 
@@ -145,11 +168,16 @@ export function SelectionCanvas({
     startRef.current = null
     setDraft(null)
 
-    if (isClickNotDrag(start, end)) {
+    const g = geometryOf()
+    const nguong = g ? clickToleranceImagePx(g.rect, g.canvas) : undefined
+    if (isClickNotDrag(start, end, nguong)) {
       // CLICK = đặt ĐIỂM, không phải vẽ ô. Giữ nguyên ô đang có (trước đây click lạc xoá mất ô).
-      // Ctrl/Shift/Alt = điểm ÂM (vùng bám sai); click thường = điểm DƯƠNG (thuộc vật).
+      // Ctrl/Shift/Alt/Meta = điểm ÂM (vùng bám sai); click thường = điểm DƯƠNG (thuộc vật).
       const am = event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
-      onPointsChange?.(addPoint(points, { x: end.x, y: end.y, label: am ? 0 : 1 }))
+      const banKinh = g ? pointMergeRadiusImagePx(g.rect, g.canvas) : undefined
+      // Kẹp vào TRONG khung: `engine.start` đòi `0 <= x < w`, điểm ở px cuối làm chết cả phiên live.
+      const diem = g ? clampPointInCanvas(end, g.canvas) : end
+      onPointsChange?.(addPoint(points, { x: diem.x, y: diem.y, label: am ? 0 : 1 }, banKinh))
       return
     }
     const box = boxFromPoints(start, end)
@@ -166,6 +194,7 @@ export function SelectionCanvas({
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={finish}
+          onContextMenu={(event) => event.preventDefault()}
           onMouseLeave={(event) => {
             if (startRef.current) finish(event)
           }}
@@ -175,11 +204,13 @@ export function SelectionCanvas({
       <p className="hint" data-testid="bbox-hint">
         <strong>Kéo</strong> chuột vẽ ô quanh vật thể cần bám. Toạ độ đang chọn: {describeBox(value)}
       </p>
-      <p className="hint" data-testid="points-hint">
-        <strong>Click</strong> = điểm <span style={{ color: '#22c55e' }}>dương</span> (thuộc vật) ·{' '}
-        <strong>Ctrl/Shift + Click</strong> = điểm <span style={{ color: '#ef4444' }}>âm</span>{' '}
-        (vùng bám <em>sai</em>: nền, cửa, tường cùng tông). Điểm đang đặt: {describePoints(points)}
-      </p>
+      {onPointsChange && (
+        <p className="hint" data-testid="points-hint">
+          <strong>Click</strong> = điểm <span style={{ color: '#22c55e' }}>dương</span> (thuộc vật) ·{' '}
+          <strong>Ctrl/Shift/Alt + Click</strong> = điểm <span style={{ color: '#ef4444' }}>âm</span>{' '}
+          (vùng bám <em>sai</em>: nền, cửa, tường cùng tông). Điểm đang đặt: {describePoints(points)}
+        </p>
+      )}
     </div>
   )
 }

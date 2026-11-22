@@ -277,14 +277,44 @@ async function waitJobState(page, wanted, timeout = 240000) {
   check('canvas có gợi ý điểm dương/âm', /dương/.test(hintDiem) && /âm/.test(hintDiem),
     hintDiem.replace(/\s+/g, ' ') || '(không thấy gợi ý)')
 
+  const boxTruoc = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+
+  // P0 (review 22-11): ngưỡng click/kéo phải ở KHÔNG GIAN NGƯỜI DÙNG. Nhấn-nhả lệch 2 CSS px là
+  // thao tác click bình thường của tay người; trước đây nó bị coi là KÉO ⇒ xoá/thay ô.
+  await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.3, liveCanvas.y + liveCanvas.height * 0.2)
+  await page.mouse.down()
+  await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.3 + 2, liveCanvas.y + liveCanvas.height * 0.2)
+  await page.mouse.up()
+  await page.waitForTimeout(150)
+  const boxSauRung = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+  check('nhấn-nhả rung 2 px KHÔNG làm đổi/xoá ô đang chọn (P0)', boxSauRung === boxTruoc,
+    `trước="${boxTruoc}" sau="${boxSauRung}"`)
+  // Cú "rung 2 px" là một CLICK hợp lệ ⇒ nó ĐÃ thêm 1 điểm dương (đúng ngữ nghĩa). Dọn lại để các
+  // phép đếm bên dưới tất định — nếu không, test sẽ đỏ vì lý do của chính test, không phải của code.
+  if ((await liveCard.getByTestId('undo-point').count()) === 1) {
+    await liveCard.getByTestId('undo-point').click()
+    await page.waitForTimeout(120)
+  }
+  const sauDonDep = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('dọn điểm của cú rung xong ⇒ về "chưa có điểm nào"', /chưa có điểm nào/.test(sauDonDep), sauDonDep)
+
+  // Chuột PHẢI là thao tác huỷ/ngữ cảnh — không được đặt điểm.
+  const demTruoc = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.7, liveCanvas.y + liveCanvas.height * 0.6,
+    { button: 'right' })
+  await page.waitForTimeout(150)
+  const sauChuotPhai = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  check('click chuột PHẢI không đặt điểm nào', sauChuotPhai === demTruoc,
+    `trước="${demTruoc.replace(/\s+/g, ' ')}" sau="${sauChuotPhai.replace(/\s+/g, ' ')}"`)
+
   await page.keyboard.down('Control')
   await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.85, liveCanvas.y + liveCanvas.height * 0.15)
   await page.keyboard.up('Control')
   await page.waitForTimeout(150)
   const sauAm = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
-  const boxConDo = await liveCard.getByTestId('bbox-hint').innerText().catch(() => '')
-  check('Ctrl+Click đặt 1 điểm ÂM và KHÔNG xoá ô đang chọn',
-    /1 điểm âm/.test(sauAm) && !/chưa có/.test(boxConDo), `${sauAm} · ${boxConDo.replace(/\s+/g, ' ')}`)
+  const boxConDo = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+  check('Ctrl+Click đặt 1 điểm ÂM và ô đang chọn KHÔNG ĐỔI (so chuỗi)',
+    /1 điểm âm/.test(sauAm) && boxConDo === boxTruoc, `${sauAm} · trước="${boxTruoc}" sau="${boxConDo}"`)
 
   await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.35, liveCanvas.y + liveCanvas.height * 0.5)
   await page.waitForTimeout(150)
@@ -292,9 +322,20 @@ async function waitJobState(page, wanted, timeout = 240000) {
   check('Click thường đặt thêm 1 điểm DƯƠNG (tổng 1 dương + 1 âm)',
     /1 điểm dương/.test(sauDuong) && /1 điểm âm/.test(sauDuong), sauDuong)
 
-  check('có nút xoá điểm cuối khi đã đặt điểm',
-    (await liveCard.getByTestId('undo-point').count()) === 1,
-    `số nút = ${await liveCard.getByTestId('undo-point').count()}`)
+  const nhanUndo = (await liveCard.getByTestId('undo-point').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('nút xoá điểm cuối hiện kèm SỐ ĐIỂM đang có', /2/.test(nhanUndo), nhanUndo || '(không thấy nút)')
+  await liveCard.getByTestId('undo-point').click()
+  await page.waitForTimeout(150)
+  const sauUndo = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  // Thứ tự đặt là [âm, dương] ⇒ "xoá điểm cuối" bỏ ĐIỂM DƯƠNG, còn lại 1 âm.
+  check('bấm "Xoá điểm cuối" thật sự bỏ điểm VỪA ĐẶT (còn 0 dương, 1 âm)',
+    /0 điểm dương/.test(sauUndo) && /1 điểm âm/.test(sauUndo), sauUndo)
+  // Đặt lại điểm DƯƠNG (click thường ở chỗ khác) để payload bên dưới có đủ cả hai loại.
+  await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.35, liveCanvas.y + liveCanvas.height * 0.5)
+  await page.waitForTimeout(150)
+  const sauDatLai = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('đặt lại được điểm dương sau khi xoá (1 dương + 1 âm)',
+    /1 điểm dương/.test(sauDatLai) && /1 điểm âm/.test(sauDatLai), sauDatLai)
 
   let trackPayload = null
   await page.route('**/api/live/start', async (route) => {
@@ -464,6 +505,11 @@ async function waitJobState(page, wanted, timeout = 240000) {
 
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
+
+  const soGoiYDiemTrenTrangJob = await page.getByTestId('points-hint').count()
+  check('trang JOB offline KHÔNG hiện gợi ý điểm (nó bỏ im lặng points — ticket #05)',
+    soGoiYDiemTrenTrangJob <= 1,
+    `số khối points-hint trên cả trang = ${soGoiYDiemTrenTrangJob} (chỉ khối của LIVE là đúng)`)
 
   check('UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"',
     Boolean(trackPayload && trackPayload.mode === 'track' && trackPayload.bbox),

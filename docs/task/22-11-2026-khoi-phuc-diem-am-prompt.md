@@ -35,14 +35,16 @@
 4. `scripts/e2e_web.js` — thêm 4 kiểm tra trình duyệt thật (AGENTS §4 bắt buộc cho thay đổi UI).
 
 ## 📤 Output / Kết quả
-- `./run lint` xanh · `./run webtest` **88 passed** (24 test cho `selection.ts`, +13 test mới cho điểm)
-  · `npx tsc --noEmit` sạch · `npm run build` OK.
+- `./run lint` xanh · `./run test` **1794 passed** · `./run webtest` **96 passed** (24 → 96 test, thêm
+  test cho ngưỡng theo tỉ lệ hiển thị / kẹp điểm / gộp điểm) · `npx tsc --noEmit` sạch · `npm run build` OK.
 - **`./run e2e` PASS** với 4 kiểm tra mới:
   - canvas có gợi ý dương/âm;
   - **Ctrl+Click đặt 1 điểm ÂM và KHÔNG xoá ô đang chọn** (`32, 36, 48×48` giữ nguyên);
   - Click thường đặt thêm 1 điểm DƯƠNG (tổng 1 dương + 1 âm);
-  - **payload `/api/live/start` có `points`** = `[{"x":136,"y":18,"label":0},{"x":56,"y":60,"label":1}]`
-    ⇒ điểm âm đi hết chuỗi UI → API → `bbox.json` → SAM 2.
+  - **payload `/api/live/start` có `points`** = `[{"x":136,"y":53,"label":0},{"x":56,"y":95,"label":1}]`
+    ⇒ điểm âm đi hết chuỗi UI → API → `bbox.json` → SAM 2;
+  - nhấn-nhả **rung 2 px KHÔNG làm đổi ô**; **chuột phải không đặt điểm**; **nút "Xoá điểm cuối" bấm
+    thật sự bỏ điểm**; **trang job offline không hiện gợi ý điểm**.
 - File thay đổi:
   - `web/src/selection.ts` — hàm thuần cho điểm prompt + `isClickNotDrag`
   - `web/src/selection.test.ts` — 13 test mới
@@ -62,6 +64,30 @@
 - **Chưa đo được hiệu quả**: phải chấm lại trên đúng ca sai (clip `binh2`, vùng cửa/tường be) bằng số
   "số lần bám sang vùng sai / 1000 frame" — **chưa làm trong phiên này**.
 
+## 🔍 Review độc lập (AGENTS §9.1) — vòng 1 và cách xử lý
+
+Agent `reviewer` độc lập (không phải phiên viết code) đọc đúng các file đã sửa. Kết quả: **1 P0 + 2 P1 +
+5 P2 + 6 P3**. Đã sửa **P0, cả 2 P1, cả 5 P2** và 4 P3 trong cùng phiên.
+
+| Mức | Phát hiện | Cách xử lý |
+|---|---|---|
+| **P0** | `isClickNotDrag` so **px ẢNH** với 4 ⇒ khung 1920 hiển thị 600 CSS px thì chỉ là **1,25 CSS px**; tay rung 2 px ⇒ bị coi là KÉO ⇒ **xoá/thay ô** | thêm `clickToleranceImagePx(rect, canvas)` (ngưỡng **5 CSS px** quy đổi), `pointMergeRadiusImagePx` (**7 CSS px**); vitest kiểm ngưỡng ≈5 CSS px ở mọi cỡ khung 160→3840; **E2E: nhấn-nhả rung 2 px ⇒ chuỗi `bbox-hint` KHÔNG đổi** |
+| **P1** | Chuột phải/giữa cũng đặt **điểm dương**; không có `onContextMenu` | `if (event.button !== 0) return` + `onContextMenu` preventDefault + reset `startRef` khi `event.buttons === 0`; **E2E: click chuột phải không đặt điểm** |
+| **P1** | `points-hint` hiện cả ở **trang job offline** (nơi `points` bị bỏ im lặng — ticket #05) | gợi ý chỉ render khi có `onPointsChange`; **E2E: trang job không có khối gợi ý** |
+| **P2** | `toImagePoint` kẹp tới `canvas.width` (bao gồm biên) nhưng `engine.start` đòi `x < w` ⇒ click ở px cuối **làm chết cả phiên live** | thêm `clampPointInCanvas` (kẹp `w-1/h-1`), dùng khi tạo điểm + vitest |
+| **P2** | Chưa có test nào chứng minh route chuyển `points` xuống factory (E2E chỉ **mock** `/start`) | `tests/test_api_live.py::test_diem_duong_am_di_tu_request_toi_nha_may_nguon` (spy nhận `**kwargs`, nếu thiếu thì `except TypeError` làm test xanh vì lý do sai) |
+| **P2** | E2E chỉ kiểm "ô không bị XOÁ", không kiểm "ô không bị ĐỔI" | so **chuỗi** `bbox-hint` trước/sau (cả Ctrl+Click và cú rung 2 px) |
+| **P2** | E2E chỉ **đếm** nút xoá điểm, không bấm | bấm thật + kiểm số điểm sau khi xoá + đặt lại được |
+| **P3** | `PointPrompt.label` tuỳ chọn ⇒ quên `label` thành điểm **dương** trong im lặng; `label=2` lọt Pydantic rồi làm chết phiên | `label: 0\|1` bắt buộc ở `api.ts`; `Field(ge=0, le=1)` + test **422** |
+| **P3** | `onStop`/`onStart` không xoá `points` (chưa gây lỗi vì chỉ `onTrack` gửi) | thêm `setPoints([])` |
+| **P3** | Gợi ý ghi "Ctrl/Shift" nhưng code nhận cả **Alt/Meta** | sửa chữ thành "Ctrl/Shift/Alt" |
+| P3 (không sửa) | Chưa có test E2E nào chạy trên khung ≥1280 (fixture là 160×120) | ghi vào Next steps; các ngưỡng nay đã tính theo tỉ lệ nên hành vi không còn phụ thuộc cỡ khung |
+| P3 (không sửa) | `live_tracking` chỉ đọc `bbox.json` **trước** bước VOS đầu ⇒ `POST /api/live/select` trả 200 mà **không đổi gì** | ghi rõ ở Next steps: muốn "thêm điểm khi ĐANG bám" thì phải đọc lại `bbox.json` mỗi vòng |
+
+**Hai lần E2E đỏ trong lúc sửa — cả hai là test của tôi sai, không phải code:** (a) cú "rung 2 px" giờ
+đúng ngữ nghĩa là CLICK nên nó **thêm 1 điểm** ⇒ phải dọn điểm đó trong test; (b) "xoá điểm cuối" bỏ
+**điểm vừa đặt** (là điểm dương), không phải điểm âm — kỳ vọng cũ của tôi ngược.
+
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Đo hiệu quả điểm âm**: chạy clip `binh2` với 0 điểm vs +1 điểm âm ở vùng cửa, chấm `mIoU` bằng
       `./run miou` + `scripts/paired_miou.py` (so cặp trên cùng frame). Không có số này thì **chưa được
@@ -69,8 +95,10 @@
 - [ ] Cổng hình học khi bám lại (gần vị trí Kalman + tỉ lệ diện tích 0,5–2×) — **việc >4 giờ, phải lập
       plan 3 ý kiến (AGENTS §9.2)** trước khi code.
 - [ ] Ticket #05: đường job offline hoặc nhận điểm, hoặc từ chối rõ ràng.
-- [ ] Cân nhắc cho phép **thêm điểm âm khi ĐANG bám** (endpoint `/api/live/select` đã nhận điểm) —
-      hiện chỉ đặt điểm ở bước chọn.
+- [ ] Cho phép **thêm điểm âm khi ĐANG bám**: endpoint `/api/live/select` đã nhận điểm và trả 200,
+      **nhưng** `live_tracking` chỉ đọc `bbox.json` trước bước VOS đầu (dòng ~840) ⇒ hiện **không có
+      tác dụng**. Phải đọc lại `bbox.json` mỗi vòng (so `mtime`) trước khi hứa tính năng này.
+- [ ] Thêm một E2E trên khung ≥1280 (fixture hiện là 160×120) để khoá hành vi canvas ở cỡ thật.
 
 ## 📚 Tài liệu tham khảo
 - AGENTS §6: "cổng `track_cos` KHÔNG phân biệt được vùng sai cùng tông" (mask-cos 0,752–0,989 vs 0,905)
