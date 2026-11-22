@@ -54,6 +54,14 @@
 - **Bẫy `inspect.getsource` trong test cũ:** `test_cong_nhay_bat_duoc_khi_o_nhay` tìm vị trí `last_bbox = stamped.result.bbox`. Nếu trong nhánh `if reacquired:` dùng chuỗi y hệt thì `str.index` sẽ bắt nhầm lần xuất hiện đầu tiên.
   - *Cách xử lý:* Nhánh `if reacquired:` gán `last_bbox = tuple(stamped.result.bbox)` (vừa bảo đảm immutability, vừa tránh đụng chuỗi test).
 
+## 📋 Kết quả Review độc lập (AGENTS §9.1)
+- **Agent review:** `reviewer` (task `mwsfvhrp-e315`).
+- **Đánh giá:** **Mergeable**, P0 = 0, P1 = 0.
+- **Xác nhận an toàn:**
+  - `reacquired == True` unlatch chính xác: tin tưởng xác thực ngoại hình của Re-ID, không để cổng nhảy bóp nghẹt đối tượng vừa nhận lại.
+  - Phím `c` giải phóng deadlock: cập nhật `last_bbox` sang ô hiện tại, không còn bị re-latch ngay frame sau.
+  - Mất dấu (`mask.any() == False`) đặt `last_bbox = (0, 0, 0, 0)` khớp với hợp đồng `test_o_rong_khong_bi_coi_la_doi_tuong`.
+
 ## 📋 Việc cần làm tiếp (Next steps)
 - [ ] Chạy lại `./run demoip` trên webcam thật và di chuyển vật thể để xác nhận ô vuông phục hồi mượt mà sau khi mất dấu hoặc chạm mép.
 - [ ] Thêm cơ chế tự động mở lại ô (auto-unlatch) sau $N$ frame nếu chuyển động của đối tượng mới hoàn toàn ổn định và liên tục (phòng trường hợp không có Re-ID và người dùng không bấm phím).

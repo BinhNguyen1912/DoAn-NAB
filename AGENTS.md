@@ -561,6 +561,15 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   không đọc được hoặc ≤ 0** (trước đó `if dung_sau:` lặng lẽ bỏ cờ ⇒ lặp vô hạn trở lại), in log bằng
   `Popen` + luồng đọc riêng (`--timeout` mới thực sự cắt được tiến trình treo mà không in gì), và
   **kiểm `image_size_hieu_luc` == yêu cầu** (None = "chưa kiểm được" ⇒ dòng LỖI, không công bố).
+- **`IdentityWatch` latch deadlock: Re-ID reacquire PHẢI reset cổng nghi và cập nhật `last_bbox`.**
+  Đo 22-11 (phiên webcam thật `demoip_1122-195623`): chai nước chạm mép phải (`x2=639`) làm SAM 2
+  giật ô về giữa ⇒ `IdentityWatch` bật cờ nghi (latch) và ẩn ô. Sau đó Re-ID nhận lại chai nước thành
+  công 98% (`reid_score 0.98`, SAM 2 score 22.0) và bám mượt mà suốt 10 s — nhưng người dùng thấy MẤT
+  DẤU VĨNH VIỄN vì: (a) `reacquired=1` không reset `watch` và không cập nhật `last_bbox`, (b) nhánh
+  `if not switch: last_bbox = bbox` đóng băng `last_bbox` ở tọa độ cũ trước cú nhảy, biến mọi frame sau
+  đó thành cú nhảy giả 400 px, khiến visualizer ẩn ô suốt cả phiên. Nay: `reacquired=1` hoặc bấm `c`
+  tự động reset `watch` và cập nhật `last_bbox = result.bbox`; khi mất dấu (`mask.any() == False`),
+  `last_bbox = (0, 0, 0, 0)` để khi vật xuất hiện lại không bị so với ô cũ từ nhiều giây trước.
 - **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
   = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
   fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
