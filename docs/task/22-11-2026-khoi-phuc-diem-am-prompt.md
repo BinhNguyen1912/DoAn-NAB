@@ -35,7 +35,9 @@
 4. `scripts/e2e_web.js` — thêm 4 kiểm tra trình duyệt thật (AGENTS §4 bắt buộc cho thay đổi UI).
 
 ## 📤 Output / Kết quả
-- `./run lint` xanh · `./run test` **1794 passed** · `./run webtest` **96 passed** (24 → 96 test, thêm
+- **Đo A/B điểm âm: KHÔNG có lợi trên `binh2`** (192: +0,0016 không kết luận; 512: −0,0010; ô rộng ở
+  512: **−0,0744**) — chi tiết + artifact ở mục "ĐO HIỆU QUẢ".
+- `./run lint` xanh · `./run test` **1795 passed** · `./run webtest` **96 passed** (24 → 96 test, thêm
   test cho ngưỡng theo tỉ lệ hiển thị / kẹp điểm / gộp điểm) · `npx tsc --noEmit` sạch · `npm run build` OK.
 - **`./run e2e` PASS** với 4 kiểm tra mới:
   - canvas có gợi ý dương/âm;
@@ -63,6 +65,35 @@
   tưởng offline cũng có điểm.
 - **Chưa đo được hiệu quả**: phải chấm lại trên đúng ca sai (clip `binh2`, vùng cửa/tường be) bằng số
   "số lần bám sang vùng sai / 1000 frame" — **chưa làm trong phiên này**.
+
+## 🧪 ĐO HIỆU QUẢ (`scripts/ab_diem_am.py`) — KẾT QUẢ ÂM TÍNH
+
+Thiết kế: cùng clip `binh2`, cùng bộ 19 frame GT, cùng ô suy từ GT; so **theo cặp từng frame**
+(`scripts/paired_miou.py`). Điểm âm sinh từ **HÌNH HỌC** (ngoài 4 cạnh ô / vành giữa ô rộng và vật),
+**không dùng GT** để chọn chỗ đặt — nếu lấy GT quyết định thì con số là tự khen.
+
+**Thí nghiệm 1 — điểm âm quanh ô ĐÚNG** (artifact `data/ab_diem_am_2026-11-22_metrics.json`):
+
+| imgsz | mIoU không điểm | mIoU có 4 điểm âm | so cặp | kết luận |
+|---|---|---|---|---|
+| 192 | 0,7644 | 0,7661 | 5/8 frame, +0,0016, CI95 [−0,0103, +0,0139] | **không phân biệt được** |
+| 512 | 0,8338 | 0,8328 | **1/8**, −0,0010, CI95 [−0,0016, −0,0001] | **hơi TỆ HƠN** |
+
+**Thí nghiệm 2 — mô phỏng đúng lỗi "chọn ô rộng tay bao cả nền"** (ô nới 1,3×; điểm âm đặt trong
+vành giữa ô rộng và vật). Artifact `data/ab_diem_am_512_2026-11-22_metrics.json` + lần chạy 192:
+
+| imgsz | ô ĐÚNG | ô RỘNG (không điểm) | ô RỘNG + điểm âm | ô rộng → +điểm âm |
+|---|---|---|---|---|
+| 192 | 0,7644 | 0,7482 | 0,7570 | +0,0088 nhưng **2/8** frame, CI95 [−0,0112, +0,0431] ⇒ **không kết luận** |
+| 512 | 0,8338 | 0,8153 | **0,7409** | **−0,0744**, **2/8**, CI95 [−0,2200, +0,0007] ⇒ **TỆ HƠN rõ** |
+
+**Vì sao:** trên `binh2` lỗi đang là **mask HỤT diện tích** (đã đo trước đó: `dien_tich_pred` nhỏ hơn
+GT). Thêm điểm âm làm SAM 2 **co mask thêm** ⇒ hụt nặng hơn. Điểm âm chỉ có nghĩa khi mask **TRÀN**
+ra ngoài vật — đúng ca 21-11 (bám sang cửa/tường), mà **clip đó chưa có** trong repo.
+
+**Kết luận trung thực:** tính năng này là **van xả thủ công** cho ca "bám sang vùng cùng tông", **KHÔNG
+phải** một cải thiện đã đo được. **Cấm** viết trong báo cáo "điểm âm đã khắc phục bám nhầm" khi chưa
+có clip tái hiện ca đó. Gợi ý trên canvas nay đã ghi rõ: *"Chỉ dùng khi mask TRÀN ra ngoài vật"*.
 
 ## 🔍 Review độc lập (AGENTS §9.1) — vòng 1 và cách xử lý
 
@@ -104,9 +135,9 @@ Agent `reviewer` độc lập (không phải phiên viết code) đọc đúng c
 **điểm vừa đặt** (là điểm dương), không phải điểm âm — kỳ vọng cũ của tôi ngược.
 
 ## 📌 Việc cần làm tiếp (Next steps)
-- [ ] **Đo hiệu quả điểm âm**: chạy clip `binh2` với 0 điểm vs +1 điểm âm ở vùng cửa, chấm `mIoU` bằng
-      `./run miou` + `scripts/paired_miou.py` (so cặp trên cùng frame). Không có số này thì **chưa được
-      nói "đã chữa được"**.
+- [x] ~~Đo hiệu quả điểm âm trên `binh2`~~ → **đã đo, kết quả ÂM TÍNH** (mục "ĐO HIỆU QUẢ" ở trên).
+- [ ] **Quay clip tái hiện ca 21-11** (vật be trơn, VOS bám sang cửa/tường be) rồi lặp lại A/B — đó là
+      thí nghiệm DUY NHẤT chứng minh được điểm âm có tác dụng. Chưa có clip đó thì không được tuyên bố.
 - [ ] Cổng hình học khi bám lại (gần vị trí Kalman + tỉ lệ diện tích 0,5–2×) — **việc >4 giờ, phải lập
       plan 3 ý kiến (AGENTS §9.2)** trước khi code.
 - [ ] Ticket #05: đường job offline hoặc nhận điểm, hoặc từ chối rõ ràng.

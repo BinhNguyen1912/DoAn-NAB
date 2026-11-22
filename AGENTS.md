@@ -520,6 +520,15 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
   0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
   mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Điểm prompt ÂM không phải "liều thuốc chung": trên clip mà lỗi là mask HỤT, nó làm HỤT THÊM.**
+  Đo 22-11 (`scripts/ab_diem_am.py`, so cặp từng frame, điểm âm sinh từ HÌNH HỌC chứ không từ GT):
+  trên `binh2` (lỗi đang là **hụt diện tích**) — điểm âm quanh ô ĐÚNG: 192 **+0,0016** (5/8 frame, CI95
+  chứa 0 ⇒ không kết luận), 512 **−0,0010** (1/8); mô phỏng "chọn ô rộng tay" (ô nới 1,3×, điểm âm
+  trong vành): 192 +0,0088 (2/8, CI95 chứa 0), **512 −0,0744 (2/8, CI95 [−0,2200, +0,0007])**.
+  ⇒ **Chỉ dùng điểm âm khi mask TRÀN ra ngoài vật** (ca 21-11 bám sang cửa/tường cùng tông); gợi ý
+  trên canvas đã ghi đúng câu đó. **Cấm** viết "điểm âm đã khắc phục bám nhầm" khi chưa có clip tái
+  hiện ca 21-11 (repo **chưa có** clip đó). Đây là kết quả ÂM TÍNH có artifact:
+  `data/ab_diem_am_2026-11-22_metrics.json`, `data/ab_diem_am_512_2026-11-22_metrics.json`.
 - **Muốn so hai cấu hình thì so CẶP theo frame (`scripts/paired_miou.py`), đừng so hai giá trị trung
   bình.** So trung bình cần ngưỡng nhiễu mIoU — repo **CHƯA có**; mọi lần trích trước đây đều mượn của
   đại lượng khác (0,019 = `drift_iou`; 0,022–0,034 = `iou_mean` hộp-vs-GT trên `binh1`/`b1b`) nên
