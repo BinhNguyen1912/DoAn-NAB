@@ -156,6 +156,20 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
 
+    # Clip KHÔNG nằm trong git (`data/` bị .gitignore chặn: 3–20 MB/clip) ⇒ trên Colab bản clone
+    # KHÔNG có video. Không kiểm ở đây thì worker chết với "Không mở được video file" và người chạy
+    # chỉ thấy một dòng lỗi của tầng dưới, không biết phải làm gì. Chặn ở cửa vào + nói rõ cách sửa.
+    clip_p = Path(args.clip)
+    if not clip_p.is_absolute() and not clip_p.is_file():
+        clip_p = _REPO / args.clip
+    if not clip_p.is_file():
+        print(f"[loi] KHÔNG có clip: {args.clip}\n"
+              f"      (repo KHÔNG chứa video — `data/` bị .gitignore chặn)\n"
+              f"      Cách sửa trên Colab: kéo file vào `/content/DoAn-NAB/data/` rồi chạy lại;\n"
+              f"      hoặc trong cell: `from google.colab import files; files.upload()` rồi\n"
+              f"      `!mv binh2.mp4 data/binh2.mp4`.")
+        return 2
+
     gt_dirs = [(_REPO / d) for d in GT_DIRS if (_REPO / d / "index.json").is_file()]
     if not gt_dirs:
         print("[loi] không thấy bộ GT nào trong", GT_DIRS)
