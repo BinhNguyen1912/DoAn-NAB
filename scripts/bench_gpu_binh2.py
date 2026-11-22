@@ -45,7 +45,12 @@ GT_DIRS = ("docs/gt/binh2_tay", "docs/gt/binh2_tay2")
 
 # Khoá mô tả "cùng một phép đo". Hai artifact chỉ được GỘP khi mọi khoá này trùng — gộp số của ô chọn
 # khác vào cùng một file là cách nhanh nhất để tạo ra một bảng không tái lập được.
-META_KHOA = ("clip", "o_chon_xywh", "frames_gt", "vos_every", "gt_dirs", "git_rev")
+META_KHOA = ("clip", "o_chon_xywh", "frames_gt", "vos_every", "gt_dirs", "git_rev", "schema")
+
+# Phiên bản lược đồ artifact. `1` = `chi_tiet.*.frames` là cặp `[idx, iou]` (bản 22-11 sáng);
+# `2` = mỗi frame là dict của `score_miou.cham` (có `dien_tich_gt`/`dien_tich_pred`/`ly_do`).
+# Gộp hai lược đồ vào một file là cách tạo ra artifact không đọc được bằng một đoạn code duy nhất.
+SCHEMA = 2
 
 
 class LoiBench(Exception):
@@ -110,6 +115,12 @@ def _o_chon_tu_gt(gt_dir: Path):
     raise LoiBench(f"[loi] {gt_dir}: không có frame GT nào có vật — không suy được ô chọn")
 
 
+def _open_capture(path: Path):
+    """Seam để test được nhánh `isOpened() == True` mà `FRAME_COUNT == 0` (P0, review 22-11)."""
+    import cv2
+    return cv2.VideoCapture(str(path))
+
+
 def _so_frame_cua_clip(path: Path) -> int:
     """Số frame của clip — để đặt `--stop-after-frames` ĐÚNG BẰNG độ dài clip.
 
@@ -118,7 +129,7 @@ def _so_frame_cua_clip(path: Path) -> int:
     Trả 0 hoặc âm ⇒ NÉM, không được lặng lẽ bỏ cờ (review độc lập 22-11, P0).
     """
     import cv2
-    cap = cv2.VideoCapture(str(path))
+    cap = _open_capture(path)
     try:
         if not cap.isOpened():
             raise LoiBench(f"[loi] không mở được clip: {path}")
@@ -177,15 +188,17 @@ def _kiem_image_size(status: dict, size: int) -> str | None:
     **CHƯA KIỂM ĐƯỢC**, không phải "khớp". Ghi một lần chạy 1024 vào dòng 512 là công bố số sai.
     """
     ch = status.get("cau_hinh") or {}
+    # `cau_hinh_lech` là SIBLING của `cau_hinh` (src/live_tracking.py:489), KHÔNG nằm trong nó —
+    # đọc sai chỗ thì mọi thông điệp chẩn đoán in ra `None` (review độc lập 22-11, P3).
+    lech = status.get("cau_hinh_lech")
     if ch.get("image_size_kiem_duoc") is False:
-        return ("worker báo CHƯA KIỂM ĐƯỢC image_size hiệu lực "
-                f"(cau_hinh_lech={ch.get('cau_hinh_lech')})")
+        return f"worker báo CHƯA KIỂM ĐƯỢC image_size hiệu lực (cau_hinh_lech={lech})"
     hieu_luc = ch.get("image_size_hieu_luc")
     if hieu_luc is None:
         return "worker không khai báo `image_size_hieu_luc` — chưa kiểm được cấu hình"
     if int(hieu_luc) != int(size):
         return (f"image_size hiệu lực {hieu_luc} ≠ yêu cầu {size} "
-                f"(cau_hinh_lech={ch.get('cau_hinh_lech')})")
+                f"(cau_hinh_lech={lech})")
     return None
 
 
@@ -237,6 +250,9 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
                                   timeout=timeout_s)
             ma_thoat = proc.returncode
             stdout_duoi, stderr_duoi = (proc.stdout or "")[-1200:], (proc.stderr or "")[-600:]
+            (out / "worker.log").write_text(
+                ((proc.stdout or "") + "\n--- stderr ---\n" + (proc.stderr or ""))[-20000:],
+                encoding="utf-8")
         except subprocess.TimeoutExpired as exc:
             het_han = True
             ma_thoat = -9
@@ -246,11 +262,11 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
 
     def _loi(ly_do: str) -> dict:
         return {
+            **(meta or {}),
             "image_size": size, "device": device,
             "ma_thoat": ma_thoat, "lenh": lenh, "status_message": ly_do,
             "het_han": het_han, "wall_s": round(wall, 1),
             "stdout_duoi": stdout_duoi, "stderr_duoi": stderr_duoi,
-            **(meta or {}),
         }
 
     if het_han:
@@ -297,7 +313,11 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
             "frames": kq["frames"],
         }
     return {
+        # `**meta` ĐẦU TIÊN: khoá của phép đo phải thắng, không được để meta ghi đè `image_size`/
+        # `mIoU` nếu sau này ai thêm khoá trùng tên (review độc lập 22-11, P3).
+        **(meta or {}),
         "image_size": size, "device": device, "vos_every": vos_every,
+        "lenh": lenh,
         "image_size_hieu_luc": ch.get("image_size_hieu_luc"),
         "frames_phat": frames_phat,
         "measured_fps": status.get("measured_fps"),
@@ -308,7 +328,6 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
         "n_cham": {k: v["n_cham"] for k, v in ket_qua.items()},
         "phu_gt": thong_ke,
         "chi_tiet": ket_qua,
-        **(meta or {}),
     }
 
 
@@ -362,6 +381,7 @@ def tao_payload(*, rows: list[dict], meta: dict, provenance: dict, lenh: str,
         **meta,
         "gt_dirs": [Path(d).name for d in gt_dirs],
         "max_frames": max_frames,
+        "schema": SCHEMA,
         "ket_qua": rows,
         "dinh_nghia": "mIoU = trung bình IoU(mask, GT silhouette) trên frame GT CÓ vật; GT rỗng "
                       "không chấm. `ms_moi_frame` = thời gian tường / số frame PHÁT (gồm cả nạp "
@@ -392,6 +412,17 @@ def main(argv=None) -> int:
     ap.add_argument("--out", default="")
     args = ap.parse_args(argv)
 
+    try:
+        args.sizes_list = [int(s) for s in str(args.sizes).split(",") if s.strip()]
+    except ValueError:
+        ap.error(f"--sizes phải là danh sách số nguyên, nhận {args.sizes!r}")
+    if not args.sizes_list:
+        ap.error("--sizes rỗng")
+    if args.max_frames is not None and args.max_frames <= 0:
+        ap.error("--max-frames phải > 0")
+    if args.max_frames and args.out and "_smoke" not in Path(args.out).name:
+        ap.error("--max-frames là lần chạy KIỂM ĐƯỜNG ỐNG, không được ghi vào artifact công bố: "
+                 "bỏ `--out`, hoặc đặt tên file có '_smoke'.")
     try:
         return _run(args)
     except LoiBench as exc:
@@ -429,14 +460,35 @@ def _run(args) -> int:
     print(f"[bench] ô chọn (từ GT frame đầu): {bbox} · {len(frames)} frame GT "
           f"· device={args.device}")
 
-    stop_after = _so_frame_cua_clip(clip_p)
-    sizes = [int(s) for s in args.sizes.split(",") if s.strip()]
+    # Chỉ cần số frame của clip khi KHÔNG có `--max-frames`: đọc vô điều kiện thì đúng cái "dùng
+    # `--max-frames N` để chỉ định thủ công" mà thông điệp lỗi khuyên lại tiếp tục ném (P2, review 22-11).
+    stop_after = None if args.max_frames else _so_frame_cua_clip(clip_p)
+    sizes = args.sizes_list
+    meta = {
+        "clip": args.clip, "o_chon_xywh": list(bbox), "vos_every": args.vos_every,
+        "frames_gt": frames, "gt_dirs": [d.name for d in gt_dirs],
+        "git_rev": _provenance()["git_rev"], "schema": SCHEMA,
+    }
+    if args.out:
+        out = Path(args.out)
+    else:
+        # Lần chạy "kiểm đường ống" (`--max-frames`) KHÔNG được ghi vào artifact công bố: nó sẽ thay
+        # dòng 192 thật bằng một dòng 60-frame trên CPU (review độc lập 22-11).
+        hauto = "_smoke" if args.max_frames else ""
+        out = _REPO / "data" / f"gpu_sweep_binh2_{datetime.now():%Y-%m-%d}{hauto}_metrics.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    cu = None if args.max_frames else _doc_artifact_cu(out)
+    if cu is not None:
+        # Kiểm TRƯỚC khi chạy: khác ô chọn/`git_rev` ⇒ dừng ngay, không đốt GPU rồi mới báo.
+        gop_ket_qua(cu, [], meta)
+
     python = sys.executable
     rows = []
     for size in sizes:
         print(f"[bench] chạy image_size={size} …", flush=True)
         meta_row = {
-            "lenh_rieng": "", "git_rev": _provenance()["git_rev"],
+            "lenh_rieng": "", "git_rev": meta["git_rev"], "schema": SCHEMA,
+            "git_dirty_code": _provenance()["git_dirty_code"],
             "do_luc_rieng": datetime.now().isoformat(timespec="seconds"),
         }
         rows.append(chay_mot_cau_hinh(
@@ -446,24 +498,9 @@ def _run(args) -> int:
             stop_after=stop_after, meta=meta_row))
 
     # Dòng lỗi không có `mIoU` ⇒ bảng dưới in riêng, không trộn.
-    meta = {
-        "clip": args.clip, "o_chon_xywh": list(bbox), "vos_every": args.vos_every,
-        "frames_gt": frames, "gt_dirs": [d.name for d in gt_dirs],
-        "git_rev": _provenance()["git_rev"],
-    }
     for r in rows:
         r["lenh_rieng"] = r.get("lenh", "")
-
-    if args.out:
-        out = Path(args.out)
-    else:
-        # Lần chạy "kiểm đường ống" (`--max-frames`) KHÔNG được ghi vào artifact công bố: nó sẽ thay
-        # dòng 192 thật bằng một dòng 60-frame trên CPU (review độc lập 22-11, P2).
-        hauto = "_smoke" if args.max_frames else ""
-        out = _REPO / "data" / f"gpu_sweep_binh2_{datetime.now():%Y-%m-%d}{hauto}_metrics.json"
-    out.parent.mkdir(parents=True, exist_ok=True)
-
-    cu = None if args.max_frames else _doc_artifact_cu(out)
+    hong_lan_nay = [r.get("image_size") for r in rows if "ma_thoat" in r]
     rows = gop_ket_qua(cu, rows, meta)
 
     payload = tao_payload(
@@ -482,12 +519,20 @@ def _run(args) -> int:
             print("        stdout:", (r.get("stdout_duoi") or "").strip()[-500:])
             continue
         miou = ", ".join(f"{k}={v}" for k, v in (r.get("mIoU") or {}).items())
-        print(f"{r.get('image_size')!s:>6} {str(r.get('image_size_hieu_luc')):>9} "
+        # `None` ở đây là CHƯA KIỂM ĐƯỢC (dòng cũ trước 15-11), không phải "đã khớp" (AGENTS §6).
+        hieu_luc = r.get("image_size_hieu_luc")
+        print(f"{r.get('image_size')!s:>6} "
+              f"{('CHƯA KIỂM' if hieu_luc is None else str(hieu_luc)):>9} "
               f"{str(r.get('ms_moi_frame')):>9} {str(r.get('vos_fps')):>8}  {miou}")
 
-    hong = [r.get("image_size") for r in rows if "ma_thoat" in r]
-    if hong:
-        print(f"[loi] cấu hình KHÔNG đo được: {hong} — xem `status_message` ở trên")
+    # Mã thoát chỉ nói về LẦN CHẠY NÀY: một dòng lỗi cũ nằm trong artifact không được làm mọi lần
+    # chạy sau exit 1 (review độc lập 22-11, P2).
+    cu_hong = [r.get("image_size") for r in rows if "ma_thoat" in r and r.get("image_size") not in hong_lan_nay]
+    if cu_hong:
+        print(f"[canh-bao] artifact còn dòng LỖI của lần chạy trước: {cu_hong} "
+              "— chạy lại đúng image_size đó để thay, hoặc dùng `--out` file mới")
+    if hong_lan_nay:
+        print(f"[loi] cấu hình KHÔNG đo được trong lần này: {hong_lan_nay} — xem `status_message`")
         return 1
     return 0
 

@@ -483,7 +483,8 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - [ ] Review độc lập đã chạy (mục 9.1), P0 = 0, P1 có chủ
 - [ ] CI GitHub xanh trước khi merge
 - [ ] Log `docs/task/…` có kết quả review + quyết định plan
-- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
+- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo
+- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
   Đo 21-11 (phiên `demoip_1121-121732`): cổng nhảy báo ĐÚNG ở f178 (bám sang **cửa/tường be cùng tông** với
   điện thoại be) nhưng sau cú nhảy chuyển động lại mượt ⇒ cổng **không báo lại**, hệ vẽ mask SAI **65
   frame**. Mask-cos của vùng sai = **0,752–0,989** (median 0,854) so với ca đúng **0,905** ⇒ **không tồn tại
@@ -494,37 +495,42 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
   bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
   "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
-  e2e trên Chrome thật kiểm banner + nút + endpoint).- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
+  e2e trên Chrome thật kiểm banner + nút + endpoint).
+- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
   (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
   **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
   kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
   `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.
-- **`image_size` là nút thật cho CHẤT LƯỢNG phân đoạn, và 1024 là tiền đổ đi.**
+- **`image_size`: đo được XU HƯỚNG, nhưng CHƯA có ngưỡng nhiễu mIoU ⇒ chưa được tuyên bố "tốt hơn".**
   Đo 22-11 trên T4 (clip `binh2.mp4`, `vos_every=1`, 360 frame, ô chọn suy từ GT frame đầu
   `(334,319,158,568)`, mIoU `binh2_tay` n=8 frame có vật): **0,7644** @192 (99,5 ms/frame) →
-  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS). Nguồn:
-  192/320 và 512/1024 là **hai lần chạy khác nhau** (script gộp nhầm đã làm mất dòng 192/320 khỏi
-  file — xem bullet dưới), nay phải chạy `--sizes 192,320,512,1024` trong MỘT lần để artifact có
-  provenance thống nhất.
-  **Đọc số cho đúng:** ngưỡng nhiễu của họ mIoU trên chính clip này là **0,022–0,034** (KHÔNG phải
-  ±0,019 — đó là `drift_iou` của phiên ngắn, đại lượng khác) ⇒ **192→320 (+0,052) là khác thật**;
-  **320→512 (+0,018) và 512→1024 (+0,003) KHÔNG phân biệt được** với n=1 mỗi cấu hình. Vì vậy
-  "512 tốt hơn 320" là **chưa chứng minh**; chỉ nói 512 là lựa chọn chất lượng/giá đắt hơn 15 %.
-  **Cấm đưa 1024 vào cấu hình nào** (nhiễu, 3,9× chậm). mIoU @192 trên GPU trùng khít baseline CPU
-  (0,7644) ⇒ **thiết bị không đổi chất lượng phân đoạn**; nhưng thời gian CPU @192 đo được là
-  **~100–107 ms/frame** (AGENTS ở trên), KHÔNG phải con số "342 ms" từng ghi trong log 22-11.
-  `ms/frame` ở đây GỒM cả nạp model ⇒ **cận trên**, không phải `vos_ms`. Mốc để Cutie phải vượt:
-  **mIoU ≥ 0,856–0,868** (= 0,8338 + ngưỡng nhiễu đo được), và mốc đó là **tạm thời** vì n=1.
-  Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ số 0,81 của nó là bằng chứng YẾU, cấm trích.
+  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS).
+  `192/320` và `512/1024` đo ở **hai lần chạy khác nhau** (artifact `data/gpu_sweep_...` chỉ còn
+  512/1024 — xem bullet dưới), và **mỗi cấu hình mới đo n=1**.
+  **Cấm kết luận "cấu hình này tốt hơn"**: repo CHƯA đo ngưỡng nhiễu cho **mIoU mask vs GT** trên clip
+  này. Con số 0,022–0,034 từng bị trích cho việc đó là **`iou_mean` (hộp vs GT) trên `binh1`/`b1b`**
+  (`docs/task/20-11-...`), **không** phải mIoU trên `binh2_tay`; còn ±0,019 là `drift_iou`. Theo quy
+  tắc n=1 ở trên, cả ba so sánh (192→320, 320→512, 512→1024) **đều chưa kết luận được**; muốn tuyên
+  bố thì chạy **3 lần/cấu hình** (`./run ab`-kiểu chèn kẽ) rồi mới có `±`.
+  **Điều DUY NHẤT chắc chắn từ số này là GIÁ:** 1024 chậm **3,9×** (507 ms = 2 FPS) mà mIoU chỉ nhích
+  +0,003 ⇒ **cấm đưa 1024 vào cấu hình nào**; 320→512 đắt thêm 15 %.
+  mIoU @192 trên GPU **trùng khít** baseline CPU (0,7644) ⇒ thiết bị không đổi chất lượng phân đoạn
+  (thời gian CPU @192 đo được ~100–107 ms/frame, KHÔNG phải "342 ms"). `ms/frame` ở đây GỒM cả nạp
+  model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
+  0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
+  mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
 - **Gộp artifact nhiều lần chạy: `payload["ket_qua"]` phải được gán SAU khi gộp, và mỗi DÒNG phải mang
   provenance riêng.** Bản đầu gán payload trước rồi gán lại `rows` ⇒ file ghi ra chỉ có cột của đợt
   cuối, còn bảng in ra thì đủ dòng; người đọc tưởng "cùng một lần chạy" và trích số từ một file
   KHÔNG chứa số đó (review độc lập 22-11 bắt đúng, artifact `gpu_sweep_binh2_2026-11-22` là bằng
   chứng: `lenh = --sizes 512,1024` mà log lại trích cả 192/320). Nay: `tao_payload()` chỉ nhận list
   ĐÃ gộp; gộp **từ chối** khi khác `clip`/`o_chon_xywh`/`frames_gt`/`vos_every`/`gt_dirs`/`git_rev`;
-  mỗi dòng có `lenh_rieng` + `do_luc_rieng` để đọc đúng nguồn từng số. Test:
-  `tests/test_bench_gpu_binh2.py`.
+  mỗi dòng có `lenh_rieng` + `do_luc_rieng` để đọc đúng nguồn từng số, và file có `schema` (đổi cấu
+  trúc `chi_tiet` thì tăng số, không trộn hai lược đồ). Vòng review thứ hai bắt thêm: dòng THÀNH CÔNG
+  từng **không có `lenh`** (nên `lenh_rieng` rỗng đúng ở dòng có số), `--max-frames` + `--out` vẫn ghi
+  đè được artifact công bố, và mã thoát bị dòng LỖI cũ trong file làm exit 1. Test:
+  `tests/test_bench_gpu_binh2.py` (29 case).
 - **Trên Colab: `--stop-after-frames` là BẮT BUỘC, và `--stream` phải dùng `Popen`.**
   `tools/live_worker.py` mặc định `loop_files=True` ⇒ thiếu `--stop-after-frames` thì nó **lặp file vô
   hạn**, người chạy thấy "chạy quài" và tưởng model chậm (gặp thật 22-11, 2 lần). Và

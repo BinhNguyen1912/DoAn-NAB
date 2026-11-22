@@ -21,6 +21,7 @@ from scripts.bench_gpu_binh2 import (  # noqa: E402
     _o_chon_tu_gt,
     _so_frame_cua_clip,
     gop_ket_qua,
+    main,
     tao_payload,
 )
 
@@ -95,10 +96,27 @@ def test_so_frame_clip_khong_mo_duoc(tmp_path):
 
 
 def test_so_frame_clip_hong_bao_0(tmp_path, monkeypatch):
-    """File rác: cv2 mở được nhưng `FRAME_COUNT` = 0 ⇒ phải NÉM (trước đây lặng lẽ bỏ cờ ⇒ lặp vô hạn)."""
+    """`FRAME_COUNT` = 0 dù MỞ ĐƯỢC ⇒ phải NÉM (trước đây lặng lẽ bỏ cờ ⇒ lặp file vô hạn).
+
+    Phải giả `cv2.VideoCapture`: file rác thì OpenCV có thể từ chối ngay ở `isOpened()`, tức là test
+    "qua được" mà KHÔNG hề chạy nhánh `n <= 0` — đúng cái nhánh là lõi của P0 (review 22-11, P3).
+    """
+    import scripts.bench_gpu_binh2 as mod
+
+    class _Cap:
+        def isOpened(self):
+            return True
+
+        def get(self, _prop):
+            return 0
+
+        def release(self):
+            pass
+
+    monkeypatch.setattr(mod, "_open_capture", lambda _p: _Cap())
     p = tmp_path / "rac.mp4"
-    p.write_bytes(b"khong-phai-video")
-    with pytest.raises(LoiBench):
+    p.write_bytes(b"x")
+    with pytest.raises(LoiBench, match="số frame"):
         _so_frame_cua_clip(p)
 
 
@@ -161,3 +179,74 @@ def test_o_chon_khong_co_vat_nao(tmp_path):
     d = _gt_dir(tmp_path, [(0, False)])
     with pytest.raises(LoiBench):
         _o_chon_tu_gt(d)
+
+
+# ── P1 (review vòng 2): dòng THÀNH CÔNG phải mang `lenh_rieng` non-empty ────────────────────────
+def test_dong_thanh_cong_co_lenh_rieng(tmp_path, monkeypatch):
+    import scripts.bench_gpu_binh2 as mod
+
+    def _gia(**kw):
+        return {"image_size": kw["size"], "device": kw.get("device"), "lenh": "lenh-that",
+                "mIoU": {"binh2_tay": 0.8}, "n_cham": {"binh2_tay": 8},
+                "image_size_hieu_luc": kw["size"], "frames_phat": 10, "ms_moi_frame": 1.0,
+                **(kw.get("meta") or {})}
+
+    monkeypatch.setattr(mod, "chay_mot_cau_hinh", _gia)
+    monkeypatch.setattr(mod, "_so_frame_cua_clip", lambda _p: 10)
+    rc = main(["--device", "cpu", "--sizes", "192", "--out", str(tmp_path / "a.json")])
+    assert rc == 0
+    d = json.loads((tmp_path / "a.json").read_text(encoding="utf-8"))
+    assert d["ket_qua"][0]["lenh_rieng"] == "lenh-that"
+    assert d["schema"] == 2
+
+
+# ── P2 (review vòng 2): mã thoát chỉ nói về LẦN NÀY, không bị dòng lỗi cũ làm nhiễu ────────────
+def test_ma_thoat_chi_tinh_lan_nay(tmp_path, monkeypatch):
+    import scripts.bench_gpu_binh2 as mod
+
+    out = tmp_path / "a.json"
+
+    def _ok(**kw):
+        return {"image_size": kw["size"], "lenh": "x", "mIoU": {"binh2_tay": 0.8},
+                "n_cham": {"binh2_tay": 8}, "image_size_hieu_luc": kw["size"],
+                "frames_phat": 5, "ms_moi_frame": 1.0, **(kw.get("meta") or {})}
+
+    monkeypatch.setattr(mod, "chay_mot_cau_hinh", _ok)
+    monkeypatch.setattr(mod, "_so_frame_cua_clip", lambda _p: 10)
+    # Lần 1: artifact HỢP LỆ (meta tính từ GT thật, nên không phải bịa).
+    assert main(["--device", "cpu", "--sizes", "192", "--out", str(out)]) == 0
+    # Chèn một dòng LỖI của "lần chạy trước" rồi chạy một size KHÁC.
+    d = json.loads(out.read_text(encoding="utf-8"))
+    d["ket_qua"].append({"image_size": 512, "ma_thoat": 1, "status_message": "nổ"})
+    out.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
+
+    rc = main(["--device", "cpu", "--sizes", "320", "--out", str(out)])
+    assert rc == 0, "dòng lỗi CŨ không được làm lần chạy sạch exit 1"
+    d = json.loads(out.read_text(encoding="utf-8"))
+    assert [r["image_size"] for r in d["ket_qua"]] == [192, 320, 512]
+
+
+def test_sizes_sai_bi_tu_choi(tmp_path):
+    with pytest.raises(SystemExit):
+        main(["--sizes", "192,x"])
+
+
+def test_max_frames_khong_duoc_ghi_de_artifact_cong_bo(tmp_path):
+    with pytest.raises(SystemExit):
+        main(["--max-frames", "20", "--out", str(tmp_path / "gpu_sweep.json")])
+
+
+# ── P1 (review vòng 2): gộp bị TỪ CHỐI phải phát hiện TRƯỚC khi chạy model ─────────────────────
+def test_tu_choi_gop_phat_hien_truoc_khi_chay(tmp_path, monkeypatch):
+    import scripts.bench_gpu_binh2 as mod
+
+    out = tmp_path / "a.json"
+    out.write_text(json.dumps({"schema": 1, "clip": "data/binh2.mp4", "o_chon_xywh": [9, 9, 9, 9],
+                               "vos_every": 1, "frames_gt": [0], "gt_dirs": ["binh2_tay"],
+                               "git_rev": mod._provenance()["git_rev"], "ket_qua": []}),
+                   encoding="utf-8")
+    da_chay = []
+    monkeypatch.setattr(mod, "chay_mot_cau_hinh",
+                        lambda **kw: da_chay.append(kw) or {})
+    rc = main(["--device", "cpu", "--sizes", "192", "--out", str(out)])
+    assert rc == 2 and da_chay == [], "phải từ chối trước khi đốt GPU/thời gian"

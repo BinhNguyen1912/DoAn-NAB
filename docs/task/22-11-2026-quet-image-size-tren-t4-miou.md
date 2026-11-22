@@ -49,22 +49,32 @@
 > Cả hai dùng cùng clip/ô chọn/bộ frame GT nên so sánh được, nhưng **KHÔNG phải "cùng 1 lần chạy"** —
 > bản đầu của log này ghi sai như vậy, review độc lập 22-11 bắt được.
 
-**Đọc số (theo đúng ngưỡng nhiễu):**
-- Ngưỡng nhiễu của họ mIoU trên chính clip này là **0,022–0,034** (đo trên `binh2_tay`).
-- `192 → 320`: **+0,052** > ngưỡng ⇒ **khác thật**, chỉ chậm **+12 %**. Món hời nhất.
-- `320 → 512`: **+0,018** < ngưỡng ⇒ **KHÔNG phân biệt được** (n=1 mỗi cấu hình).
-- `512 → 1024`: **+0,003** ⇒ **KHÔNG phân biệt được**, mà **chậm 3,9×** (507 ms = 2 FPS).
-  ⇒ **Cấm đưa 1024 vào bất kỳ cấu hình nào.**
+**Đọc số — theo ĐÚNG quy tắc của repo:**
+- **Repo CHƯA đo ngưỡng nhiễu cho `mIoU mask vs GT`** trên clip/bộ GT này. Hai con số từng bị mượn
+  đều KHÔNG dùng được: **±0,019** là `drift_iou` của phiên ngắn (đại lượng khác), và **0,022–0,034**
+  là `iou_mean` **hộp vs GT** trên `binh1`/`b1b` (`docs/task/20-11-2026-*`), không phải mask mIoU trên
+  `binh2_tay`. Bản nháp trước của log này trích 0,022–0,034 cho mIoU — **sai**, đã sửa.
+- **Mỗi cấu hình đo n=1** ⇒ theo AGENTS §6 ("`n < 2` (một lần chạy) thì không kết luận được gì"),
+  **cả ba so sánh đều CHƯA kết luận được**: 192→320 (+0,052), 320→512 (+0,018), 512→1024 (+0,003).
+  Xu hướng tăng là nhất quán và 192→320 là bước nhảy lớn nhất, nhưng **chưa được tuyên bố "tốt hơn"**.
+- **Cái CHẮC CHẮN đo được là GIÁ:** 1024 chậm **3,9×** (507,4 ms = 2 FPS) mà mIoU nhích **+0,003**
+  ⇒ **cấm đưa 1024 vào bất kỳ cấu hình nào**. 320→512 đắt thêm **15 %** thời gian.
 - `mIoU @192` trên GPU **trùng khít** baseline CPU (0,7644) ⇒ **thiết bị không đổi chất lượng phân
-  đoạn**, chênh lệch chỉ do `image_size`.
+  đoạn**, chênh lệch chỉ do `image_size` (thời gian CPU @192 đã đo là ~100–107 ms/frame, AGENTS §6 —
+  con số "342 ms" trong bản nháp trước không có nguồn, đã bỏ).
 - `ms/frame` là thời gian tường / số frame PHÁT, **gồm cả nạp model** ⇒ **cận trên** của độ trễ thật,
   **không phải** `vos_ms`; `vos_fps` là nhịp VOS worker tự báo.
+- `coverage` trong `phu_gt` = tỉ lệ frame **chấm được** trên số frame ĐÃ HỎI, **gồm cả frame GT rỗng**
+  ⇒ với `binh2_tay` con số đúng là ~0,42 (8 chấm / 19 hỏi, 11 frame GT rỗng). Đọc kèm `n_cham`, đừng
+  đọc thành "model chỉ phủ 42 % frame".
 
-**Quyết định (tạm thời, vì n=1):** GPU chạy **320** làm mặc định (chất lượng đã đạt bước nhảy lớn nhất,
-giá rẻ nhất); dùng **512** khi ưu tiên chi tiết vật nhỏ. **Chưa đổi model.** Mốc để Cutie phải vượt:
-**mIoU ≥ 0,856–0,868** (= 0,8338 + ngưỡng nhiễu đo được).
-**Việc bắt buộc tiếp theo:** chạy `--sizes 192,320,512,1024` trong **MỘT lần** để artifact có
-provenance thống nhất, rồi lặp 3 lần nếu cần tách 320 vs 512.
+**Quyết định (tạm thời, vì n=1):** GPU mặc định **320** (bước nhảy lớn nhất, giá rẻ nhất); dùng **512**
+khi cần chi tiết vật nhỏ và chấp nhận +15 % thời gian. **Cấm 1024.** **Chưa đổi model** — và **chưa
+được đặt mốc cho Cutie** bằng số mượn: phải tự đo ngưỡng nhiễu mIoU trước (3 lần/cấu hình), rồi mới
+đặt mốc.
+**Việc bắt buộc tiếp theo:** chạy `--sizes 192,320,512,1024` trong **MỘT lần** (ô 4 của `colab.ipynb`
+nay chỉ còn 1 lần chạy) để artifact có provenance thống nhất, rồi lặp 3 lần/cấu hình nếu muốn kết luận
+320 vs 512.
 
 - File thay đổi:
   - `scripts/bench_gpu_binh2.py` — quét `image_size`, chấm mIoU, `--stream` thật, luôn
@@ -82,8 +92,11 @@ provenance thống nhất, rồi lặp 3 lần nếu cần tách 320 vs 512.
   512/1024 trong khi bảng in ra đủ 4 dòng. **Đã sửa** bằng `tao_payload()` chỉ nhận list đã gộp + test
   `test_payload_mang_list_da_gop`. **Hệ quả tồn tại:** dòng 192/320 không còn trong artifact ⇒ phải
   chạy lại (đã ghi ở trên).
-- **P1 do review bắt: mượn ngưỡng nhiễu của `drift_iou` (±0,019) cho mIoU.** Ngưỡng mIoU là
-  **0,022–0,034** ⇒ hai kết luận "320→512 tốt hơn" và "512→1024 tốt hơn" **bị rút lại**.
+- **P1 do review bắt (2 vòng): mượn ngưỡng nhiễu của đại lượng khác cho mIoU.** Vòng 1 tôi lấy ±0,019
+  (`drift_iou`); vòng 2 tôi lại lấy 0,022–0,034 — nhưng đó là `iou_mean` **hộp vs GT** trên
+  `binh1`/`b1b`, KHÔNG phải mask mIoU trên `binh2_tay`. Kết luận đúng: **repo chưa có ngưỡng nhiễu cho
+  mIoU ở cấu hình này**, n=1 mỗi cấu hình ⇒ **cả ba so sánh đều chưa kết luận được**; chỉ GIÁ là chắc
+  (1024 = 3,9× mà +0,003 ⇒ cấm).
 - **`git pull` báo `divergent branches`**: nhánh `colab-bench` bị force-push ⇒ notebook dùng
   `checkout -B <nhánh> origin/<nhánh>`.
 - **"Không mở được video file 'data/binh2.mp4'"**: `data/` bị `.gitignore` nên bản clone không có clip.
@@ -95,7 +108,10 @@ provenance thống nhất, rồi lặp 3 lần nếu cần tách 320 vs 512.
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Chạy `--sizes 192,320,512,1024` **một lần** trên T4 ⇒ 1 artifact 4 dòng cùng `git_rev`; lặp 3
       lần nếu cần kết luận 320 vs 512 (n=1 chưa kết luận được).
-- [ ] Chốt A/B **Cutie trên T4** — chỉ đáng nếu vượt **0,856–0,868**.
+- [ ] **Đo ngưỡng nhiễu mIoU trước** (3 lần/cấu hình, chèn kẽ) — chưa có số này thì không được đặt
+      mốc cho Cutie, và cũng không được tuyên bố 320 vs 512.
+- [ ] Chốt A/B **Cutie trên T4** — mốc = (mIoU tốt nhất của SAM 2) + (ngưỡng nhiễu ĐO ĐƯỢC ở bước
+      trên); hiện **chưa có mốc** vì chưa đo được ngưỡng.
 - [ ] Tô thêm GT cho `binh2_tay2` (hiện 2 frame có vật) để cột đó có ý nghĩa thống kê.
 - [ ] Đo đường **live** trên GPU @320/512 (`scripts/measure_live_relay.py`) — số ở đây là **batch**;
       demo webcam vẫn phải chạy CPU @192 (Colab không thấy webcam laptop).
