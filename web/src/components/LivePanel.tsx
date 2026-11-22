@@ -138,6 +138,7 @@ export function LivePanel(): JSX.Element {
   const onStart = async (): Promise<void> => {
     touchedRef.current = true        // đã chốt nguồn: kết quả dò về sau không được đổi nó
     setError(null)
+    setPoints([])   // điểm của phiên trước không được dính sang vật mới
     setPicking(false)
     setBox(null)
     setMode('raw')
@@ -192,6 +193,7 @@ export function LivePanel(): JSX.Element {
   const onStop = async (): Promise<void> => {
     stopPolling()
     setPicking(false)
+    setPoints([])
     setFrozenFrame(null)
     setMode('raw')
     try {

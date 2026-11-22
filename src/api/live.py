@@ -98,6 +98,10 @@ class LiveStreamService:
                                               mask_smoothing=mask_smoothing,
                                               points=points, labels=labels)
             except TypeError:
+                # Im lặng ở đây = "gửi điểm mà không ai nhận": người dùng đặt điểm âm để loại vùng
+                # bám sai mà phiên vẫn chạy KHÔNG có điểm (review độc lập 22-11, P2). Phải log.
+                logger.warning("nhà máy nguồn không nhận `points`/`labels` — thử lại KHÔNG kèm điểm "
+                               "(điểm prompt của người dùng sẽ bị BỎ)", exc_info=True)
                 candidate = self._make_source(str(source), mode=mode, bbox=bbox,
                                               image_size=image_size, vos_every=vos_every,
                                               mask_smoothing=mask_smoothing)

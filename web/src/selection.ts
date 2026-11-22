@@ -91,18 +91,23 @@ export function boxFromPoints(a: Point, b: Point): Box {
  * rect.width <= 0 (chưa layout) ⇒ trả `MIN_BOX_SIDE` thay vì chia cho 0.
  */
 export function clickToleranceImagePx(rect: DisplayRect, canvas: CanvasSize): number {
-  if (rect.width <= 0) return MIN_BOX_SIDE
+  if (rect.width <= 0 || rect.height <= 0) return MIN_BOX_SIDE
   // Sàn là 1 PX ẢNH (không phải `MIN_BOX_SIDE`): ngưỡng phải nhất quán trong KHÔNG GIAN NGƯỜI DÙNG.
   // Lấy sàn 4 px ảnh thì trên khung 160 hiển thị rộng, 4 px ảnh ≈ 15 CSS px — kéo ngắn bị coi là click.
-  return Math.max(1, (CLICK_TOLERANCE_CSS * canvas.width) / rect.width)
+  //
+  // Dùng tỉ lệ LỚN HƠN của hai chiều: `isClickNotDrag` đo bằng hypot (đẳng hướng) nên nếu CSS ép
+  // chiều cao khác chiều rộng thì lấy riêng tỉ lệ X sẽ làm vùng click méo theo một chiều.
+  const tiLe = Math.max(canvas.width / rect.width, canvas.height / rect.height)
+  return Math.max(1, CLICK_TOLERANCE_CSS * tiLe)
 }
 
 /** Bán kính gộp điểm, quy đổi sang px ảnh (cùng lý do với `clickToleranceImagePx`). */
 export function pointMergeRadiusImagePx(rect: DisplayRect, canvas: CanvasSize): number {
-  if (rect.width <= 0) return MIN_POINT_DIST
+  if (rect.width <= 0 || rect.height <= 0) return MIN_POINT_DIST
   // Cùng lý do: sàn 1 px ảnh. Với khung 160 hiển thị 600 CSS px, `MIN_POINT_DIST = 8` px ảnh là
   // ~30 CSS px ⇒ hai điểm cách nhau 20 CSS px bị gộp (không thể đặt 2 điểm trên vật nhỏ).
-  return Math.max(1, (POINT_MERGE_CSS * canvas.width) / rect.width)
+  const tiLe = Math.max(canvas.width / rect.width, canvas.height / rect.height)
+  return Math.max(1, POINT_MERGE_CSS * tiLe)
 }
 
 /**

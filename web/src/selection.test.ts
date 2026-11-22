@@ -194,9 +194,11 @@ describe('clickToleranceImagePx', () => {
   })
 
   it('ngưỡng LUÔN nhất quán trong không gian người dùng (≈5 CSS px) ở mọi cỡ khung', () => {
-    const rect = { left: 0, top: 0, width: 600, height: 400 }
+    // `rect` phải CÙNG tỉ lệ khung với canvas, nếu không thì đây là ca "CSS ép méo" (kiểm riêng bên
+    // dưới) và ngưỡng đúng là lớn hơn 5 CSS px theo chiều bị ép.
     for (const w of [160, 640, 1280, 1920, 3840]) {
       const canvas = { width: w, height: Math.round(w * 0.75) }
+      const rect = { left: 0, top: 0, width: 600, height: (600 * canvas.height) / canvas.width }
       const cssPx = (clickToleranceImagePx(rect, canvas) * rect.width) / canvas.width
       expect(cssPx).toBeCloseTo(CLICK_TOLERANCE_CSS, 6)
     }
@@ -249,5 +251,27 @@ describe('clampPointInCanvas', () => {
     expect(clampPointInCanvas({ x: 1920, y: 1280 }, CANVAS)).toEqual({ x: 1919, y: 1279 })
     expect(clampPointInCanvas({ x: -3, y: 5000 }, CANVAS)).toEqual({ x: 0, y: 1279 })
     expect(clampPointInCanvas({ x: 100, y: 200 }, CANVAS)).toEqual({ x: 100, y: 200 })
+  })
+})
+
+describe('nhánh SÀN của ngưỡng (khung nhỏ phóng to) — review vòng 2', () => {
+  it('160 px hiển thị 1000 CSS px ⇒ ngưỡng chạm sàn, quy ra CSS px vẫn nhỏ (≤ 6,5) và kéo 40 CSS px vẫn là KÉO', () => {
+    const rect = { left: 0, top: 0, width: 1000, height: 750 }
+    const nho = { width: 160, height: 120 }
+    const nguong = clickToleranceImagePx(rect, nho)
+    const tiLe = nho.width / rect.width            // 0,16
+    const cssPx = (nguong * rect.width) / nho.width
+    expect(cssPx).toBeGreaterThan(5)
+    expect(cssPx).toBeLessThanOrEqual(6.5)
+    expect(isClickNotDrag({ x: 10, y: 10 }, { x: 10 + 2 * tiLe, y: 10 }, nguong)).toBe(true)
+    expect(isClickNotDrag({ x: 10, y: 10 }, { x: 10 + 40 * tiLe, y: 10 }, nguong)).toBe(false)
+  })
+
+  it('CSS ép chiều cao (khung méo) ⇒ ngưỡng lấy tỉ lệ LỚN HƠN, không méo theo một chiều', () => {
+    const meo = { left: 0, top: 0, width: 600, height: 200 }   // cao bị ép
+    const canvas = { width: 1280, height: 720 }
+    const nguong = clickToleranceImagePx(meo, canvas)
+    // tỉ lệ Y = 720/200 = 3,6 > tỉ lệ X = 1280/600 ≈ 2,13 ⇒ phải dùng 3,6
+    expect(nguong).toBeCloseTo(CLICK_TOLERANCE_CSS * 3.6, 4)
   })
 })

@@ -162,26 +162,34 @@ export function SelectionCanvas({
   }
 
   const finish = (event: React.MouseEvent<HTMLCanvasElement>) => {
+    // Chỉ chuột TRÁI: nhả chuột phải/giữa giữa lúc đang kéo không được "chốt" ô hay điểm.
+    if (event.button !== 0) return
     const start = startRef.current
     if (!start) return
     const end = pointOf(event)
     startRef.current = null
     setDraft(null)
 
+    // Không có hình học ⇒ KHÔNG làm gì. Trước đây nhánh này lặng lẽ dùng ngưỡng px ảnh cũ, tức
+    // đúng cái bug P0 vẫn còn nằm sau một nhánh vô hình (review vòng 2, P3).
     const g = geometryOf()
-    const nguong = g ? clickToleranceImagePx(g.rect, g.canvas) : undefined
+    if (!g) return
+    const nguong = clickToleranceImagePx(g.rect, g.canvas)
     if (isClickNotDrag(start, end, nguong)) {
       // CLICK = đặt ĐIỂM, không phải vẽ ô. Giữ nguyên ô đang có (trước đây click lạc xoá mất ô).
       // Ctrl/Shift/Alt/Meta = điểm ÂM (vùng bám sai); click thường = điểm DƯƠNG (thuộc vật).
       const am = event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
-      const banKinh = g ? pointMergeRadiusImagePx(g.rect, g.canvas) : undefined
+      const banKinh = pointMergeRadiusImagePx(g.rect, g.canvas)
       // Kẹp vào TRONG khung: `engine.start` đòi `0 <= x < w`, điểm ở px cuối làm chết cả phiên live.
-      const diem = g ? clampPointInCanvas(end, g.canvas) : end
+      const diem = clampPointInCanvas(end, g.canvas)
       onPointsChange?.(addPoint(points, { x: diem.x, y: diem.y, label: am ? 0 : 1 }, banKinh))
       return
     }
+    // Kéo ngắn hơn `MIN_BOX_SIDE` px ẢNH: KHÔNG xoá ô đang có. Trước đây nó gọi `onChange(null)`,
+    // mà `MIN_BOX_SIDE` là px ảnh trong khi ngưỡng click là CSS px ⇒ trên khung nhỏ hiển thị rộng có
+    // một khoảng kéo (≈6,6–26,5 CSS px) làm MẤT ô (review vòng 2, P3). Muốn bỏ chọn thì đã có nút "Huỷ".
     const box = boxFromPoints(start, end)
-    onChange(isUsableBox(box) ? box : null)   // kéo quá nhỏ → bỏ chọn
+    if (isUsableBox(box)) onChange(box)
   }
 
   return (

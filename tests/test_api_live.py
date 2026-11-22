@@ -306,10 +306,12 @@ class TestLiveRoutes:
         trong `live.start()` sẽ thử lại KHÔNG kèm điểm và test xanh vì lý do sai.
         """
         seen = {}
+        so_lan = {"n": 0}
 
         def spy(source, **kwargs):
             from tests.conftest import FakeFrameSource
 
+            so_lan["n"] += 1
             seen.update(kwargs)
             return FakeFrameSource(source)
 
@@ -322,7 +324,20 @@ class TestLiveRoutes:
         assert r.status_code == 200
         assert seen.get("points") == [(15.0, 25.0), (5.0, 5.0)]
         assert seen.get("labels") == [1, 0]
+        # Đúng MỘT lần gọi: nếu là 2 thì nhánh `except TypeError` đã chạy lại KHÔNG kèm điểm —
+        # `seen` vẫn còn điểm của lần đầu nên assertion trên vẫn xanh dù điểm đã bị bỏ.
+        assert so_lan["n"] == 1, "nhà máy nguồn bị gọi lại (điểm có thể đã bị bỏ im lặng)"
         live_client.post("/api/live/stop")
+
+    def test_thieu_label_bi_tu_choi_bang_422(self, live_client):
+        """`label` nay BẮT BUỘC: trước đây thiếu `label` ⇒ Pydantic mặc định 1 ⇒ điểm ÂM của người
+        dùng thành điểm DƯƠNG trong im lặng (review độc lập 22-11, P3)."""
+        r = live_client.post("/api/live/start", json={
+            "source": "0", "mode": "track",
+            "bbox": {"x": 10, "y": 20, "w": 30, "h": 40},
+            "points": [{"x": 15, "y": 25}],
+        })
+        assert r.status_code == 422
 
     def test_label_ngoai_0_1_bi_tu_choi_bang_422(self, live_client):
         """`label=2` trước đây lọt qua Pydantic rồi ném ValueError trong `engine.start` ⇒ phiên live

@@ -79,10 +79,25 @@ Agent `reviewer` độc lập (không phải phiên viết code) đọc đúng c
 | **P2** | E2E chỉ kiểm "ô không bị XOÁ", không kiểm "ô không bị ĐỔI" | so **chuỗi** `bbox-hint` trước/sau (cả Ctrl+Click và cú rung 2 px) |
 | **P2** | E2E chỉ **đếm** nút xoá điểm, không bấm | bấm thật + kiểm số điểm sau khi xoá + đặt lại được |
 | **P3** | `PointPrompt.label` tuỳ chọn ⇒ quên `label` thành điểm **dương** trong im lặng; `label=2` lọt Pydantic rồi làm chết phiên | `label: 0\|1` bắt buộc ở `api.ts`; `Field(ge=0, le=1)` + test **422** |
-| **P3** | `onStop`/`onStart` không xoá `points` (chưa gây lỗi vì chỉ `onTrack` gửi) | thêm `setPoints([])` |
+| **P3** | `onStop`/`onStart` không xoá `points` (chưa gây lỗi vì chỉ `onTrack` gửi) | **vòng 2 bắt được là tôi MỚI GHI vào log chứ CHƯA sửa** — nay đã thêm `setPoints([])` thật ở cả `onStart` và `onStop` |
 | **P3** | Gợi ý ghi "Ctrl/Shift" nhưng code nhận cả **Alt/Meta** | sửa chữ thành "Ctrl/Shift/Alt" |
 | P3 (không sửa) | Chưa có test E2E nào chạy trên khung ≥1280 (fixture là 160×120) | ghi vào Next steps; các ngưỡng nay đã tính theo tỉ lệ nên hành vi không còn phụ thuộc cỡ khung |
 | P3 (không sửa) | `live_tracking` chỉ đọc `bbox.json` **trước** bước VOS đầu ⇒ `POST /api/live/select` trả 200 mà **không đổi gì** | ghi rõ ở Next steps: muốn "thêm điểm khi ĐANG bám" thì phải đọc lại `bbox.json` mỗi vòng |
+
+### Review vòng 2 (sau khi sửa) — kết luận **MERGEABLE**, còn 2 P2 + vài P3
+
+| Mức | Phát hiện | Cách xử lý |
+|---|---|---|
+| **P2** | Bấm nút "Xoá điểm cuối" làm **cuộn trang** ⇒ `boundingBox` đo từ trước là toạ độ **CŨ**, mọi cú click sau lệch **+35 px ảnh**; payload ghi `y=53,95` trong khi ý định là `18,60` ⇒ điểm "trong vật" thật ra **rơi ra ngoài ô** mà test vẫn xanh | thêm `bamCanvas(fx, fy)` đo `boundingBox` **tại thời điểm bấm** + 2 kiểm tra mới: **toạ độ khớp ý định (±3 px)** và **điểm dương NẰM TRONG ô / điểm âm NGOÀI ô**. Nay payload = `[{"x":136,"y":18,"label":0},{"x":56,"y":60,"label":1}]`, ô `(32,36,48×48)` |
+| **P2** | `except TypeError` trong `live.start` thử lại **KHÔNG kèm điểm** và **không log** ⇒ điểm của người dùng bị bỏ trong im lặng; test route không thấy vì `seen` giữ nguyên từ lần đầu | thêm `logger.warning(...)` + test đếm **`so_lan["n"] == 1`** (nếu là 2 là nhánh retry đã chạy) |
+| P3 | `MIN_BOX_SIDE` vẫn là px ẢNH ⇒ trên khung nhỏ phóng to có khoảng kéo (≈6,6–26,5 CSS px) **làm mất ô** | kéo không đủ lớn ⇒ **KHÔNG xoá ô** (muốn bỏ chọn thì bấm "Huỷ"); bỏ `onChange(null)` |
+| P3 | Nhánh `g === null` trong `finish` lặng lẽ dùng lại ngưỡng px ảnh cũ (đúng bug P0 nấp sau nhánh vô hình) | `if (!g) return` — không còn fallback ngầm |
+| P3 | `onMouseUp` không lọc nút ⇒ **nhả chuột phải** giữa lúc kéo vẫn chốt ô/điểm | `if (event.button !== 0) return` ở đầu `finish` |
+| P3 | Ngưỡng chỉ dùng tỉ lệ **X**; nếu CSS ép chiều cao thì vùng click méo theo một chiều | lấy **tỉ lệ lớn hơn** của hai chiều + vitest cho ca "khung méo" |
+| P3 | Test "nhất quán mọi cỡ khung" **không chạm nhánh sàn** | thêm test `160 px @ 1000 CSS px` (sàn) — và sửa fixture: `rect` phải cùng tỉ lệ khung, trước đó test sai vì fixture lệch tỉ lệ |
+| P3 | `schemas.PointPrompt.label` còn `default=1` ⇒ client ngoài UI quên `label` thành điểm dương | `label: ...` **bắt buộc** + test **422 khi thiếu label** |
+| P3 | Log **ghi quá** (nhận đã thêm `setPoints([])` trong khi chưa) | đã thêm thật, đúng như log |
+| P3 | "Điểm âm nằm trong ô mới vẽ lại thì không bị lọc" — **không ghi ở đâu cả** (AGENTS §9.1 cấm im lặng) | ghi vào Next steps bên dưới |
 
 **Hai lần E2E đỏ trong lúc sửa — cả hai là test của tôi sai, không phải code:** (a) cú "rung 2 px" giờ
 đúng ngữ nghĩa là CLICK nên nó **thêm 1 điểm** ⇒ phải dọn điểm đó trong test; (b) "xoá điểm cuối" bỏ
@@ -99,6 +114,12 @@ Agent `reviewer` độc lập (không phải phiên viết code) đọc đúng c
       **nhưng** `live_tracking` chỉ đọc `bbox.json` trước bước VOS đầu (dòng ~840) ⇒ hiện **không có
       tác dụng**. Phải đọc lại `bbox.json` mỗi vòng (so `mtime`) trước khi hứa tính năng này.
 - [ ] Thêm một E2E trên khung ≥1280 (fixture hiện là 160×120) để khoá hành vi canvas ở cỡ thật.
+- [ ] **Điểm âm nằm trong ô mới vẽ lại thì KHÔNG bị lọc** (đã ghi nhận, chưa xử lý): nếu người dùng
+      đặt điểm âm ở vùng nền rồi kéo một ô lớn hơn bao trùm vùng đó, prompt thành mâu thuẫn
+      (ô = "vật ở đây", điểm âm = "chỗ này là nền"). SAM 2 vẫn xử lý được (điểm âm loại phần bên
+      trong ô), nên **không** tự lọc — nhưng phải biết đây là hành vi CỐ Ý, không phải bỏ sót.
+- [ ] Chạm trần `MAX_PROMPT_POINTS = 8` thì **bỏ điểm CŨ NHẤT** (cố ý, có test) — cùng lý do trên,
+      ghi lại để người dùng không tưởng điểm mới bị mất.
 
 ## 📚 Tài liệu tham khảo
 - AGENTS §6: "cổng `track_cos` KHÔNG phân biệt được vùng sai cùng tông" (mask-cos 0,752–0,989 vs 0,905)

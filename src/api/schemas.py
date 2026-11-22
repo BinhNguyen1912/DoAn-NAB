@@ -35,7 +35,9 @@ class PointPrompt(BaseModel):
     y: float = Field(ge=0, description="toạ độ y (pixel)")
     # `ge/le`: `label=2` trước đây qua được Pydantic rồi ném `ValueError` trong
     # `tracker_engine.start` (`np.isin`) ⇒ cả phiên live chết thay vì trả 422 (review 22-11, P3).
-    label: int = Field(default=1, ge=0, le=1,
+    # BẮT BUỘC (bỏ `default=1`): để mặc định thì client quên `label` biến thành điểm DƯƠNG trong
+    # im lặng — đúng kiểu "gửi mà không ai biết" (review độc lập 22-11, P3).
+    label: int = Field(..., ge=0, le=1,
                        description="1 = positive (thuộc vật thể), 0 = negative (thuộc nền)")
 
 
