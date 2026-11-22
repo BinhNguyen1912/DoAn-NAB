@@ -520,6 +520,19 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
   0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
   mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Muốn so hai cấu hình thì so CẶP theo frame (`scripts/paired_miou.py`), đừng so hai giá trị trung
+  bình.** So trung bình cần ngưỡng nhiễu mIoU — repo **CHƯA có**; mọi lần trích trước đây đều mượn của
+  đại lượng khác (0,019 = `drift_iou`; 0,022–0,034 = `iou_mean` hộp-vs-GT trên `binh1`/`b1b`) nên
+  **đều sai**. Cách đúng: chấm trên **cùng bộ frame** rồi lấy chênh lệch TỪNG frame (khử phương sai
+  giữa frame), báo `n`, số frame cùng dấu, mean/median, CI95 bootstrap, sign test chính xác.
+  Đo 22-11 (`binh2_tay`, 8 frame chung, hai artifact cùng `git_rev 316c6e8` trong `data/`):
+  **192→320** 7/8 dương, mean **+0,0517**, CI95 **[+0,0249, +0,0842]**, sign p **0,070** ⇒ "có khả năng
+  thật, CHƯA đạt ngưỡng tuyên bố" (sign test cần 8/8 mới p<0,05); **320→512** 6/8, +0,0176,
+  CI [+0,0036, +0,0315], p 0,289 ⇒ **chưa kết luận**; **512→1024** 4/8, +0,0030, CI **[-0,0071,
+  +0,0140] chứa 0**, p 1,000 ⇒ **không khác biệt** (bằng chứng ÂM TÍNH, mạnh hơn "chưa đo") mà chậm
+  **3,9×** ⇒ **cấm 1024**. Cảnh báo: frame trong một clip KHÔNG độc lập ⇒ p chỉ là chỉ báo; 8 frame là
+  rất ít, muốn chốt phải lặp 3 lần/cấu hình. Frame tệ nhất (`163`, 0,746–0,750) **không** tốt lên khi
+  tăng `image_size` ⇒ lỗi còn lại không phải do độ phân giải.
 - **Gộp artifact nhiều lần chạy: `payload["ket_qua"]` phải được gán SAU khi gộp, và mỗi DÒNG phải mang
   provenance riêng.** Bản đầu gán payload trước rồi gán lại `rows` ⇒ file ghi ra chỉ có cột của đợt
   cuối, còn bảng in ra thì đủ dòng; người đọc tưởng "cùng một lần chạy" và trích số từ một file

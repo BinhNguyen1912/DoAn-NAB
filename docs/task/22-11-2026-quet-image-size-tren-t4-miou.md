@@ -49,29 +49,45 @@
 > Cả hai dùng cùng clip/ô chọn/bộ frame GT nên so sánh được, nhưng **KHÔNG phải "cùng 1 lần chạy"** —
 > bản đầu của log này ghi sai như vậy, review độc lập 22-11 bắt được.
 
-**Đọc số — theo ĐÚNG quy tắc của repo:**
-- **Repo CHƯA đo ngưỡng nhiễu cho `mIoU mask vs GT`** trên clip/bộ GT này. Hai con số từng bị mượn
-  đều KHÔNG dùng được: **±0,019** là `drift_iou` của phiên ngắn (đại lượng khác), và **0,022–0,034**
-  là `iou_mean` **hộp vs GT** trên `binh1`/`b1b` (`docs/task/20-11-2026-*`), không phải mask mIoU trên
-  `binh2_tay`. Bản nháp trước của log này trích 0,022–0,034 cho mIoU — **sai**, đã sửa.
-- **Mỗi cấu hình đo n=1** ⇒ theo AGENTS §6 ("`n < 2` (một lần chạy) thì không kết luận được gì"),
-  **cả ba so sánh đều CHƯA kết luận được**: 192→320 (+0,052), 320→512 (+0,018), 512→1024 (+0,003).
-  Xu hướng tăng là nhất quán và 192→320 là bước nhảy lớn nhất, nhưng **chưa được tuyên bố "tốt hơn"**.
-- **Cái CHẮC CHẮN đo được là GIÁ:** 1024 chậm **3,9×** (507,4 ms = 2 FPS) mà mIoU nhích **+0,003**
-  ⇒ **cấm đưa 1024 vào bất kỳ cấu hình nào**. 320→512 đắt thêm **15 %** thời gian.
-- `mIoU @192` trên GPU **trùng khít** baseline CPU (0,7644) ⇒ **thiết bị không đổi chất lượng phân
-  đoạn**, chênh lệch chỉ do `image_size` (thời gian CPU @192 đã đo là ~100–107 ms/frame, AGENTS §6 —
-  con số "342 ms" trong bản nháp trước không có nguồn, đã bỏ).
-- `ms/frame` là thời gian tường / số frame PHÁT, **gồm cả nạp model** ⇒ **cận trên** của độ trễ thật,
-  **không phải** `vos_ms`; `vos_fps` là nhịp VOS worker tự báo.
-- `coverage` trong `phu_gt` = tỉ lệ frame **chấm được** trên số frame ĐÃ HỎI, **gồm cả frame GT rỗng**
-  ⇒ với `binh2_tay` con số đúng là ~0,42 (8 chấm / 19 hỏi, 11 frame GT rỗng). Đọc kèm `n_cham`, đừng
-  đọc thành "model chỉ phủ 42 % frame".
+**Đọc số — so sánh CẶP theo từng frame (`scripts/paired_miou.py`, 22-11):**
 
-**Quyết định (tạm thời, vì n=1):** GPU mặc định **320** (bước nhảy lớn nhất, giá rẻ nhất); dùng **512**
-khi cần chi tiết vật nhỏ và chấp nhận +15 % thời gian. **Cấm 1024.** **Chưa đổi model** — và **chưa
-được đặt mốc cho Cutie** bằng số mượn: phải tự đo ngưỡng nhiễu mIoU trước (3 lần/cấu hình), rồi mới
-đặt mốc.
+So hai giá trị TRUNG BÌNH của hai lần chạy cần ngưỡng nhiễu mIoU — repo **chưa có**. Nhưng cả 4 cấu
+hình đều chấm trên **cùng 8 frame** (`binh2_tay`), nên so **theo cặp** (frame i của A vs frame i của B)
+là cách đúng: nó khử phương sai GIỮA các frame (thứ chi phối mọi so sánh trung bình) và không cần
+mượn ngưỡng của đại lượng khác.
+
+| So sánh | n | frame B>A | mean Δ | median Δ | CI95 (bootstrap theo frame) | sign test | ms/frame |
+|---|---|---|---|---|---|---|---|
+| 192 → 320 | 8 | **7/8** | **+0,0517** | +0,0371 | **[+0,0249, +0,0842]** (không chứa 0) | p = 0,070 (biên) | 99,5 → 111,9 (+12 %) |
+| 320 → 512 | 8 | 6/8 | +0,0176 | +0,0251 | [+0,0036, +0,0315] (sát 0) | p = 0,289 | 111,9 → 129,1 (+15 %) |
+| **512 → 1024** | 8 | **4/8** | **+0,0030** | +0,0062 | **[-0,0071, +0,0140] (CHỨA 0)** | p = 1,000 | 129,1 → **507,4 (+293 %)** |
+
+Chênh lệch từng frame (192→320): `0:+0,142 · 33:+0,037 · 65:+0,035 · 98:+0,094 · 131:+0,031 ·
+163:-0,004 · 228:+0,026 · 261:+0,053` — 7 frame tăng, **frame 163 giảm nhẹ** (và 163 là frame tệ nhất
+ở MỌI kích thước: 0,746–0,750) ⇒ lỗi còn lại **không phải** do độ phân giải.
+
+**Kết luận được phép rút ra:**
+1. **512 → 1024 là KHÔNG KHÁC BIỆT** — đây là kết luận **âm tính có bằng chứng** (4/8 frame, CI chứa 0),
+   mạnh hơn "chưa đo được"; cộng với **chậm 3,9×** ⇒ **cấm 1024**.
+2. **192 → 320 là chênh lệch lớn nhất** (+0,052; CI không chứa 0) nhưng sign test **p = 0,070 > 0,05**
+   vì chỉ có 8 frame (sign test cần 8/8 cùng dấu để p < 0,05) ⇒ viết **"có khả năng thật, chưa đạt
+   ngưỡng tuyên bố"**, KHÔNG viết "tốt hơn".
+3. **320 → 512: chưa kết luận** (6/8, p = 0,29, CI sát 0). Muốn chốt thì lặp 3 lần/cấu hình.
+4. Các frame trong một clip **không độc lập** ⇒ p-value là chỉ báo; đừng trích "p" như bằng chứng cứng.
+
+- `coverage` trong `phu_gt` = tỉ lệ frame **chấm được** trên số frame ĐÃ HỎI, **gồm cả frame GT rỗng**
+  ⇒ với `binh2_tay` con số đúng là ~0,42 (8 chấm / 19 hỏi, 11 frame GT rỗng). Đọc kèm `n_cham`.
+- `mIoU @192` trên GPU **trùng khít** baseline CPU (0,7644) ⇒ thiết bị không đổi chất lượng phân đoạn
+  (thời gian CPU @192 đã đo ~100–107 ms/frame, AGENTS §6 — con số "342 ms" ở bản nháp trước **không
+  có nguồn**, đã bỏ).
+- `ms/frame` là thời gian tường / số frame PHÁT, **gồm cả nạp model** ⇒ **cận trên**, không phải `vos_ms`.
+- Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ mọi số từ cột đó là bằng chứng YẾU, cấm trích.
+
+**Quyết định:** GPU mặc định **320** (chênh lệch lớn nhất so với 192, giá rẻ nhất); dùng **512** khi
+cần chi tiết vật nhỏ và chấp nhận +15 % thời gian (320 vs 512 **chưa kết luận**). **Cấm 1024** (đã có
+bằng chứng âm tính + chậm 3,9×). **Chưa đổi model.** Mốc cho Cutie: dùng lại `scripts/paired_miou.py`
+— Cutie phải **thắng theo cặp trên cùng bộ frame** (CI95 không chứa 0), không phải hơn trung bình một
+chút.
 **Việc bắt buộc tiếp theo:** chạy `--sizes 192,320,512,1024` trong **MỘT lần** (ô 4 của `colab.ipynb`
 nay chỉ còn 1 lần chạy) để artifact có provenance thống nhất, rồi lặp 3 lần/cấu hình nếu muốn kết luận
 320 vs 512.
@@ -80,6 +96,11 @@ nay chỉ còn 1 lần chạy) để artifact có provenance thống nhất, r�
   - `scripts/bench_gpu_binh2.py` — quét `image_size`, chấm mIoU, `--stream` thật, luôn
     `--stop-after-frames`, gộp artifact ĐÚNG, kiểm `image_size_hieu_luc`
   - `tests/test_bench_gpu_binh2.py` — 24 test cho gộp artifact / ô chọn / số frame / kiểm cấu hình
+  - `scripts/paired_miou.py` — so sánh CẶP mIoU giữa hai cấu hình trên cùng frame (sign test + CI
+    bootstrap), `--gt` để chọn bộ GT; đọc được cả 2 lược đồ `chi_tiet`
+  - `tests/test_paired_miou.py` — 14 test (trọng tâm: sign test đúng — bản nháp đầu tôi quên chia 2^n)
+  - `data/gpu_sweep_binh2_2026-11-22_lan{192-320,512-1024}_metrics.json` — 2 artifact THẬT của 2 lần
+    chạy (cùng `git_rev 316c6e8`), đủ để tái lập bảng cặp ở trên
   - `colab.ipynb` — notebook 6 ô ở gốc repo (tên ngắn để link Colab không bị cắt)
   - `AGENTS.md` §6 — 3 bài học: `image_size` bão hoà ở 512, cạm bẫy gộp artifact, Colab phải
     `--stop-after-frames` + `Popen`
@@ -108,10 +129,9 @@ nay chỉ còn 1 lần chạy) để artifact có provenance thống nhất, r�
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] Chạy `--sizes 192,320,512,1024` **một lần** trên T4 ⇒ 1 artifact 4 dòng cùng `git_rev`; lặp 3
       lần nếu cần kết luận 320 vs 512 (n=1 chưa kết luận được).
-- [ ] **Đo ngưỡng nhiễu mIoU trước** (3 lần/cấu hình, chèn kẽ) — chưa có số này thì không được đặt
-      mốc cho Cutie, và cũng không được tuyên bố 320 vs 512.
-- [ ] Chốt A/B **Cutie trên T4** — mốc = (mIoU tốt nhất của SAM 2) + (ngưỡng nhiễu ĐO ĐƯỢC ở bước
-      trên); hiện **chưa có mốc** vì chưa đo được ngưỡng.
+- [ ] Lặp **3 lần/cấu hình** cho 320 và 512 rồi so cặp (gộp thêm mẫu) — cách duy nhất để chốt 320 vs
+      512 và để nâng 192→320 từ "có khả năng" lên "kết luận".
+- [ ] Chốt A/B **Cutie trên T4** bằng `scripts/paired_miou.py` (CI95 không chứa 0 mới tính là thắng).
 - [ ] Tô thêm GT cho `binh2_tay2` (hiện 2 frame có vật) để cột đó có ý nghĩa thống kê.
 - [ ] Đo đường **live** trên GPU @320/512 (`scripts/measure_live_relay.py`) — số ở đây là **batch**;
       demo webcam vẫn phải chạy CPU @192 (Colab không thấy webcam laptop).
