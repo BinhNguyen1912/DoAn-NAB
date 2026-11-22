@@ -28,7 +28,6 @@ import time
 from datetime import datetime
 from pathlib import Path
 
-import cv2
 import numpy as np
 
 _REPO = Path(__file__).resolve().parents[1]
@@ -100,11 +99,23 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
     t0 = time.perf_counter()
     proc = subprocess.run(argv, cwd=_REPO, capture_output=True, text=True)
     wall = time.perf_counter() - t0
-    if proc.returncode != 0:
-        return {"image_size": size, "device": device, "loi": (proc.stderr or "")[-800:]}
 
     status_p = out / "status.json"
     status = json.loads(status_p.read_text(encoding="utf-8")) if status_p.is_file() else {}
+
+    # Chẩn đoán khi lỗi: lấy CẢ HAI luồng + mã thoát + `status.json.message`. Bản đầu chỉ lấy
+    # `stderr[-800:]` ⇒ trên Colab nó trả về đúng một dòng `UserWarning` của torch, che mất lỗi thật
+    # (lỗi của worker đi ra stdout qua `[LOI]`/`print`). Không có chỗ này thì "LỖI: UserWarning" là
+    # câu vô nghĩa với người chạy.
+    if proc.returncode != 0 or status.get("state") == "error":
+        return {
+            "image_size": size, "device": device,
+            "ma_thoat": proc.returncode,
+            "lenh": " ".join(argv),
+            "status_message": status.get("message"),
+            "stdout_duoi": (proc.stdout or "")[-1200:],
+            "stderr_duoi": (proc.stderr or "")[-600:],
+        }
     frames_phat = int(status.get("frames") or 0)
     ket_qua = {}
     for d in GT_DIRS:
@@ -187,8 +198,11 @@ def main(argv=None) -> int:
     print(f"\n[bench] {out}")
     print(f"{'imgsz':>6} {'hiệu lực':>9} {'ms/frame':>9} {'display_fps':>12}  mIoU")
     for r in rows:
-        if r.get("loi"):
-            print(f"{r['image_size']:>6}  LỖI: {r['loi'][:80]}")
+        if r.get("status_message") is not None or "ma_thoat" in r:
+            print(f"{r['image_size']:>6}  LỖI (mã thoát {r.get('ma_thoat')}): "
+                  f"{r.get('status_message') or '(không có message)'}")
+            print("        lệnh:", r.get("lenh"))
+            print("        stdout:", (r.get("stdout_duoi") or "").strip()[-500:])
             continue
         miou = ", ".join(f"{k}={v}" for k, v in (r.get("mIoU") or {}).items())
         print(f"{r['image_size']:>6} {str(r.get('image_size_hieu_luc')):>9} "
