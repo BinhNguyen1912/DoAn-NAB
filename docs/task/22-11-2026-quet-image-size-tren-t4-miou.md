@@ -99,7 +99,7 @@ nay chỉ còn 1 lần chạy) để artifact có provenance thống nhất, r�
   - `scripts/paired_miou.py` — so sánh CẶP mIoU giữa hai cấu hình trên cùng frame (sign test + CI
     bootstrap), `--gt` để chọn bộ GT; đọc được cả 2 lược đồ `chi_tiet`
   - `tests/test_paired_miou.py` — 14 test (trọng tâm: sign test đúng — bản nháp đầu tôi quên chia 2^n)
-  - `data/gpu_sweep_binh2_2026-11-22_lan{192-320,512-1024}_metrics.json` — 2 artifact THẬT của 2 lần
+  - `data/gpu_sweep_binh2_2026-11-22_lan{192-320,512-1024}_metrics.json — **BẢN TRÍCH** (xem `_trich_tu` trong file)` — 2 artifact THẬT của 2 lần
     chạy (cùng `git_rev 316c6e8`), đủ để tái lập bảng cặp ở trên
   - `colab.ipynb` — notebook 6 ô ở gốc repo (tên ngắn để link Colab không bị cắt)
   - `AGENTS.md` §6 — 3 bài học: `image_size` bão hoà ở 512, cạm bẫy gộp artifact, Colab phải

@@ -1,3 +1,123 @@
-{"git_rev":"316c6e8","lenh":"--sizes 192,320","ket_qua":[
- {"image_size":192,"frames_phat":360,"ms_moi_frame":99.5,"chi_tiet":{"binh2_tay":{"n_cham":8,"mask_ngoai_gt_mean":0.0464,"frames":[[0,0.6849],[33,0.7934],[65,0.7821],[98,0.7575],[131,0.7576],[163,0.7502],[228,0.7758],[261,0.814]]},"binh2_tay2":{"n_cham":2,"frames":[[230,0.7128],[250,0.8238]]}}},
- {"image_size":320,"frames_phat":360,"ms_moi_frame":111.9,"chi_tiet":{"binh2_tay":{"n_cham":8,"mask_ngoai_gt_mean":0.0514,"frames":[[0,0.8273],[33,0.8305],[65,0.8172],[98,0.8514],[131,0.7883],[163,0.7461],[228,0.8014],[261,0.867]]},"binh2_tay2":{"n_cham":2,"frames":[[230,0.7316],[250,0.8207]]}}}]}
+{
+  "git_rev": "316c6e8",
+  "lenh": "python3 scripts/bench_gpu_binh2.py --device cuda --sizes 192,320 --stream",
+  "ket_qua": [
+    {
+      "image_size": 192,
+      "frames_phat": 360,
+      "ms_moi_frame": 99.5,
+      "chi_tiet": {
+        "binh2_tay": {
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0464,
+          "frames": [
+            [
+              0,
+              0.6849
+            ],
+            [
+              33,
+              0.7934
+            ],
+            [
+              65,
+              0.7821
+            ],
+            [
+              98,
+              0.7575
+            ],
+            [
+              131,
+              0.7576
+            ],
+            [
+              163,
+              0.7502
+            ],
+            [
+              228,
+              0.7758
+            ],
+            [
+              261,
+              0.814
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "n_cham": 2,
+          "frames": [
+            [
+              230,
+              0.7128
+            ],
+            [
+              250,
+              0.8238
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "image_size": 320,
+      "frames_phat": 360,
+      "ms_moi_frame": 111.9,
+      "chi_tiet": {
+        "binh2_tay": {
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0514,
+          "frames": [
+            [
+              0,
+              0.8273
+            ],
+            [
+              33,
+              0.8305
+            ],
+            [
+              65,
+              0.8172
+            ],
+            [
+              98,
+              0.8514
+            ],
+            [
+              131,
+              0.7883
+            ],
+            [
+              163,
+              0.7461
+            ],
+            [
+              228,
+              0.8014
+            ],
+            [
+              261,
+              0.867
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "n_cham": 2,
+          "frames": [
+            [
+              230,
+              0.7316
+            ],
+            [
+              250,
+              0.8207
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "_trich_tu": "BẢN TRÍCH (không phải artifact đầy đủ) của artifact Colab 22-11 do người dùng chạy: chỉ giữ `image_size`/`ms_moi_frame`/`chi_tiet` để `scripts/paired_miou.py` tái lập bảng so sánh CẶP. Đầy đủ (mIoU, n_cham, frames_gt, o_chon_xywh, phu_gt) nằm trong log 22-11 và phiên Colab."
+}

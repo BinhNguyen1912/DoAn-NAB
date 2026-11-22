@@ -1,0 +1,420 @@
+{
+  "git_rev": "316c6e8018b57f2bece05001a4e38de91d012f3a",
+  "git_dirty_code": false,
+  "do_luc": "2026-11-22T07:52:35",
+  "lenh": "python3 scripts/bench_gpu_binh2.py --device cuda --sizes 512,1024 --stream",
+  "clip": "data/binh2.mp4",
+  "o_chon_xywh": [
+    334,
+    319,
+    158,
+    568
+  ],
+  "vos_every": 1,
+  "frames_gt": [
+    0,
+    33,
+    65,
+    98,
+    131,
+    163,
+    170,
+    180,
+    190,
+    196,
+    200,
+    215,
+    228,
+    230,
+    250,
+    261,
+    294,
+    326,
+    359
+  ],
+  "gt_dirs": [
+    "binh2_tay",
+    "binh2_tay2"
+  ],
+  "ket_qua": [
+    {
+      "image_size": 512,
+      "device": "cuda",
+      "vos_every": 1,
+      "frames_phat": 360,
+      "display_fps": null,
+      "mask_fps": null,
+      "image_size_hieu_luc": 512,
+      "wall_s": 46.5,
+      "ms_moi_frame": 129.1,
+      "mIoU": {
+        "binh2_tay": 0.8338,
+        "binh2_tay2": 0.8118
+      },
+      "n_cham": {
+        "binh2_tay": 8,
+        "binh2_tay2": 2
+      },
+      "chi_tiet": {
+        "binh2_tay": {
+          "mIoU": 0.8338,
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0521,
+          "frames": [
+            [
+              0,
+              0.8524
+            ],
+            [
+              33,
+              0.884
+            ],
+            [
+              65,
+              0.8447
+            ],
+            [
+              98,
+              0.8734
+            ],
+            [
+              131,
+              0.7957
+            ],
+            [
+              163,
+              0.7307
+            ],
+            [
+              170,
+              null
+            ],
+            [
+              180,
+              null
+            ],
+            [
+              190,
+              null
+            ],
+            [
+              196,
+              null
+            ],
+            [
+              200,
+              null
+            ],
+            [
+              215,
+              null
+            ],
+            [
+              228,
+              0.7958
+            ],
+            [
+              230,
+              null
+            ],
+            [
+              250,
+              null
+            ],
+            [
+              261,
+              0.8936
+            ],
+            [
+              294,
+              null
+            ],
+            [
+              326,
+              null
+            ],
+            [
+              359,
+              null
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "mIoU": 0.8118,
+          "n_cham": 2,
+          "mask_ngoai_gt_mean": 0.014,
+          "frames": [
+            [
+              0,
+              null
+            ],
+            [
+              33,
+              null
+            ],
+            [
+              65,
+              null
+            ],
+            [
+              98,
+              null
+            ],
+            [
+              131,
+              null
+            ],
+            [
+              163,
+              null
+            ],
+            [
+              170,
+              null
+            ],
+            [
+              180,
+              null
+            ],
+            [
+              190,
+              null
+            ],
+            [
+              196,
+              null
+            ],
+            [
+              200,
+              null
+            ],
+            [
+              215,
+              null
+            ],
+            [
+              228,
+              null
+            ],
+            [
+              230,
+              0.744
+            ],
+            [
+              250,
+              0.8797
+            ],
+            [
+              261,
+              null
+            ],
+            [
+              294,
+              null
+            ],
+            [
+              326,
+              null
+            ],
+            [
+              359,
+              null
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "image_size": 1024,
+      "device": "cuda",
+      "vos_every": 1,
+      "frames_phat": 360,
+      "display_fps": null,
+      "mask_fps": null,
+      "image_size_hieu_luc": 1024,
+      "wall_s": 182.7,
+      "ms_moi_frame": 507.4,
+      "mIoU": {
+        "binh2_tay": 0.8368,
+        "binh2_tay2": 0.8198
+      },
+      "n_cham": {
+        "binh2_tay": 8,
+        "binh2_tay2": 2
+      },
+      "chi_tiet": {
+        "binh2_tay": {
+          "mIoU": 0.8368,
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0583,
+          "frames": [
+            [
+              0,
+              0.8425
+            ],
+            [
+              33,
+              0.8794
+            ],
+            [
+              65,
+              0.8516
+            ],
+            [
+              98,
+              0.8728
+            ],
+            [
+              131,
+              0.8298
+            ],
+            [
+              163,
+              0.743
+            ],
+            [
+              170,
+              null
+            ],
+            [
+              180,
+              null
+            ],
+            [
+              190,
+              null
+            ],
+            [
+              196,
+              null
+            ],
+            [
+              200,
+              null
+            ],
+            [
+              215,
+              null
+            ],
+            [
+              228,
+              0.7755
+            ],
+            [
+              230,
+              null
+            ],
+            [
+              250,
+              null
+            ],
+            [
+              261,
+              0.8998
+            ],
+            [
+              294,
+              null
+            ],
+            [
+              326,
+              null
+            ],
+            [
+              359,
+              null
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "mIoU": 0.8198,
+          "n_cham": 2,
+          "mask_ngoai_gt_mean": 0.0159,
+          "frames": [
+            [
+              0,
+              null
+            ],
+            [
+              33,
+              null
+            ],
+            [
+              65,
+              null
+            ],
+            [
+              98,
+              null
+            ],
+            [
+              131,
+              null
+            ],
+            [
+              163,
+              null
+            ],
+            [
+              170,
+              null
+            ],
+            [
+              180,
+              null
+            ],
+            [
+              190,
+              null
+            ],
+            [
+              196,
+              null
+            ],
+            [
+              200,
+              null
+            ],
+            [
+              215,
+              null
+            ],
+            [
+              228,
+              null
+            ],
+            [
+              230,
+              0.7551
+            ],
+            [
+              250,
+              0.8845
+            ],
+            [
+              261,
+              null
+            ],
+            [
+              294,
+              null
+            ],
+            [
+              326,
+              null
+            ],
+            [
+              359,
+              null
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "dinh_nghia": "mIoU = trung bình IoU(mask, GT silhouette) trên frame GT CÓ vật; GT rỗng không chấm. `ms_moi_frame` = thời gian tường / số frame PHÁT (gồm cả nạp model) ⇒ là CẬN TRÊN của độ trễ thật, không phải `vos_ms`.",
+  "canh_bao": [
+    "mIoU ở đây là GT NGƯỜI TÔ (silhouette), không phải cận trên tổng hợp.",
+    "Nếu `--max-frames` được dùng thì số chỉ để kiểm đường ống: KHÔNG công bố."
+  ]
+}
