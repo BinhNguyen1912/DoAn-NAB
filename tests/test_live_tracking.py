@@ -3176,3 +3176,101 @@ class TestCongNhayCoNhoDuongWeb:
         jumped_box = (w - 60, h - 60, w - 10, h - 10)
         assert sess._last_good_bbox is not None
         assert sess._last_good_bbox != jumped_box, "vị trí nhảy sang nền không được ghi đè vào last_good_bbox"
+
+
+class TestTuDongChonMucTieu:
+    """22-11: `--auto-detect` — phiên tự tìm vật bằng YOLO-World, không cần ai kéo chuột.
+
+    Vì sao: đường "thiết bị camera" không có màn hình để chọn ô. Detector chạy 38–52 ms/lần trên
+    máy này nên phải THROTTLE, và mọi thứ phải fail-open (thiếu weights ⇒ chờ như cũ, không chết).
+    """
+
+    def _sess(self, video_source, tmp_path, **cfg_kw):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live_auto"
+        out.mkdir(parents=True, exist_ok=True)
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100,
+                              vos_every=1, stop_after_frames=4, **cfg_kw)
+        return LiveTrackingSession(FakeEngine(), cfg), out
+
+    def test_tat_mac_dinh_thi_khong_co_detector(self, video_source, tmp_path):
+        sess, _ = self._sess(video_source, tmp_path)
+        assert sess._detector is None
+        assert sess._auto_selection(np.zeros((48, 64, 3), np.uint8)) is None
+
+    def test_bat_thi_tao_detector_theo_mo_ta_van_ban(self, video_source, tmp_path):
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control")
+        assert sess._detector is not None
+        assert sess._detector.classes == ("remote control",)
+
+    def test_throttle_chi_hoi_detector_moi_n_frame(self, video_source, tmp_path):
+        from src.open_vocab_detector import Detection
+
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control",
+                             auto_detect_every=3)
+        goi = []
+
+        class _Dem:
+            last_ms = 40.0
+            def best(self, frame):
+                goi.append(1)
+                return Detection(bbox=(10, 10, 60, 60), conf=0.9, label="remote control")
+
+        sess._detector = _Dem()
+        frame = np.zeros((48, 64, 3), np.uint8)
+        for _ in range(6):
+            sess._auto_selection(frame)
+        assert len(goi) == 2, "6 frame / every=3 ⇒ đúng 2 lần hỏi detector"
+
+    def test_o_qua_nho_bi_loai_va_o_hop_le_thanh_xywh(self, video_source, tmp_path):
+        from src.open_vocab_detector import Detection
+
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control",
+                             auto_detect_every=1)
+        frame = np.zeros((48, 64, 3), np.uint8)
+
+        class _Nho:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(10, 10, 20, 20), conf=0.9, label="remote control")
+
+        sess._detector = _Nho()
+        assert sess._auto_selection(frame) is None, "ô 10×10 < MIN_BOX 16 ⇒ dương tính giả"
+
+        class _To:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(10, 12, 50, 52), conf=0.8, label="remote control")
+
+        sess._detector = _To()
+        sel = sess._auto_selection(frame)
+        assert sel is not None
+        assert sel.bbox == (10, 12, 40, 40)      # xyxy -> xywh (x, y, w, h)
+        assert sel.points is None                # KHÔNG có prompt tay nào
+
+    def test_phien_tu_bam_duoc_khi_khong_ai_chon_o(self, video_source, tmp_path):
+        """Không có bbox.json mà có `auto_detect` ⇒ phiên TỰ bám (không kẹt `waiting_selection`)."""
+        from src.open_vocab_detector import Detection
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live_tu_dong"
+        out.mkdir(parents=True, exist_ok=True)
+        assert not (out / BBOX_NAME).exists(), "tiền đề: KHÔNG ai chọn ô"
+
+        sess = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=1,
+            stop_after_frames=6, auto_detect="remote control", auto_detect_every=1))
+
+        class _Detector:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(5, 5, 45, 45), conf=0.9, label="remote control")
+
+        sess._detector = _Detector()
+        stats = sess.run()
+
+        # `stop_after_frames` làm phiên kết thúc ở `stopped`; điều phải đúng là nó ĐÃ bám được
+        # (không kẹt `waiting_selection`) và ô dùng đúng box của detector.
+        assert stats.frames > 0, "phiên phải phát được frame trong trạng thái bám"
+        assert sess._chon_bbox == (5, 5, 40, 40)   # xyxy -> xywh, ghi vào manifest

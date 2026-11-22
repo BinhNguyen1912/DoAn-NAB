@@ -10,7 +10,6 @@ import {
   boxFromPoints,
   clampInt,
   describeBox,
-  isPointInsideBox,
   isUsableBox,
   MIN_BOX_SIDE,
   toImagePoint,
@@ -96,14 +95,6 @@ describe('isUsableBox', () => {
 
   it('null bị loại', () => {
     expect(isUsableBox(null)).toBe(false)
-  })
-
-  it('kiểm tra điểm nằm trong hoặc ngoài ô bao', () => {
-    const box = { x: 50, y: 50, w: 100, h: 100 }
-    expect(isPointInsideBox({ x: 80, y: 80 }, box)).toBe(true)
-    expect(isPointInsideBox({ x: 50, y: 50 }, box)).toBe(true)
-    expect(isPointInsideBox({ x: 20, y: 80 }, box)).toBe(false)
-    expect(isPointInsideBox({ x: 180, y: 80 }, box)).toBe(false)
   })
 })
 

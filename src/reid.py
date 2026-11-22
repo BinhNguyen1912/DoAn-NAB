@@ -312,9 +312,18 @@ class ReIdSession:
                  search_grow_frames=DEFAULT_SEARCH_GROW_FRAMES,
                  search_grow_step=DEFAULT_SEARCH_GROW_STEP,
                  jump_ratio=DEFAULT_JUMP_RATIO,
-                 auto_recover=True, face_veto=None):
+                 auto_recover=True, face_veto=None,
+                 detector=None, detector_every=3):
         self.engine = engine
         self.embedder = embedder
+        # Cue 0 (22-11): TÌM LẠI THEO MÔ TẢ VĂN BẢN (YOLO-World). Đây là cue DUY NHẤT không dựa
+        # vào đặc trưng thị giác của vật — nên nó là thứ cứu ca "vật đơn sắc cùng tông nền" khi
+        # `cos` bó tay (đo 21-11: mask-cos vùng SAI 0,752–0,989 nằm trong dải ca ĐÚNG).
+        # `None` = TẮT (mặc định) ⇒ hành vi cũ giữ nguyên.
+        self.detector = detector
+        self.detector_every = max(1, int(detector_every))
+        self.detector_hits = 0          # số lần detector đề xuất ứng viên được dùng
+        self.detector_rejects = 0       # số lần bị cổng hình học loại
         self.threshold = float(threshold)
         self.lost_after_frames = int(lost_after_frames)
         self.min_face_px = min_face_px
@@ -501,6 +510,23 @@ class ReIdSession:
         self._recover_cooldown = max(0, self._recover_cooldown - 1)
         self._state = STATE_REACQUIRING
         self._lost_age += 1
+
+        # Cue 0 (22-11): YOLO-World theo mô tả văn bản — chạy THROTTLE vì 38–52 ms/lần trên CPU.
+        # Đặt TRƯỚC `if not self.enabled`: cue này KHÔNG dùng mẫu đặc trưng nào, nên nó phải chạy
+        # được kể cả khi re-ID ngoại hình bị tắt (`--reid` không bật) — đó chính là ca "thiết bị
+        # camera không có ai chọn ô": bật `--auto-detect` là đã có re-ID theo ngữ nghĩa.
+        # Vẫn phải qua `_confirm` (2 frame cùng chỗ) + cổng hình học: detector một mình KHÔNG đủ
+        # tin (đo 22-11 trên `binh1`: nó từng trả box conf 0,29–0,30 ở vùng nền).
+        if self.detector is not None and self._lost_age % self.detector_every == 0:
+            hit = self.detector.best(frame)
+            if hit is not None:
+                if self.geo_profile.is_compatible(hit.bbox):
+                    self.detector_hits += 1
+                    if self._confirm(hit.bbox):
+                        return self._reacquire(frame, hit.bbox, float(hit.conf))
+                else:
+                    self.detector_rejects += 1
+
         if not self.enabled:
             return Step(result=self._lost_result(), state=self._state)
 

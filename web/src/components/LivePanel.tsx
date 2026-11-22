@@ -25,7 +25,6 @@ import {
   type BBox,
   type LiveSources,
   type LiveStatus,
-  type PointPrompt,
 } from '../api'
 import {
   deviceLine,
@@ -61,7 +60,6 @@ export function LivePanel(): JSX.Element {
   const [picking, setPicking] = useState(false)
   const [frozenFrame, setFrozenFrame] = useState<string | null>(null)
   const [box, setBox] = useState<BBox | null>(null)
-  const [points, setPoints] = useState<PointPrompt[]>([])
   const timerRef = useRef<number | null>(null)
   // Người dùng đã động vào ô nguồn chưa: có rồi thì kết quả dò (về sau) không được đè lên.
   const touchedRef = useRef(false)
@@ -152,7 +150,6 @@ export function LivePanel(): JSX.Element {
     // Đóng băng khung hình hiện tại để kéo chuột (ảnh tĩnh dễ chọn hơn luồng đang chạy)
     setFrozenFrame(`${LIVE_FRAME_URL}?t=${Date.now()}`)
     setBox(null)
-    setPoints([])
     setPicking(true)
   }
 
@@ -160,11 +157,7 @@ export function LivePanel(): JSX.Element {
     if (!box) return
     setError(null)
     try {
-      const next = await startLive(source, {
-        mode: 'track',
-        bbox: box,
-        points: points.length > 0 ? points : undefined,
-      })
+      const next = await startLive(source, { mode: 'track', bbox: box })
       setStatus(next)
       setMode('track')
       setPicking(false)
@@ -467,29 +460,12 @@ export function LivePanel(): JSX.Element {
 
       {picking && frozenFrame && (
         <>
-          <SelectionCanvas
-            src={frozenFrame}
-            value={box}
-            points={points}
-            onChange={(newBox, newPts) => {
-              setBox(newBox)
-              setPoints(newPts || [])
-            }}
-          />
+          <SelectionCanvas src={frozenFrame} value={box} onChange={setBox} />
           <div className="row">
             <button type="button" onClick={() => void onTrack()} disabled={!box}>
               Bám đối tượng
             </button>
-            <button
-              type="button"
-              className="button ghost"
-              onClick={() => {
-                setPicking(false)
-                setFrozenFrame(null)
-                setBox(null)
-                setPoints([])
-              }}
-            >
+            <button type="button" className="button ghost" onClick={() => { setPicking(false); setFrozenFrame(null); setBox(null) }}>
               Huỷ
             </button>
           </div>

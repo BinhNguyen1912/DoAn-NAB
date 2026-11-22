@@ -39,6 +39,7 @@ from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src import tracking_health
 from src.identity_guard import IdentityWatch
+from src.open_vocab_detector import OpenVocabDetector
 from src.track_identity import NeoDanhTinh, cos_voi_neo
 from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask, warp_mask
 from src.mask_filter import MaskSmoother, mask_iou
@@ -99,6 +100,12 @@ class LiveTrackConfig:
     out_dir: Path
     display_fps: float = 30.0     # nhịp PHÁT frame (LK/lặp frame), không phải nhịp VOS
     vos_every: int = 3            # 1 = chạy VOS mỗi frame (tắt LK, hình ~10 FPS @192)
+    # ---- TỰ ĐỘNG CHỌN MỤC TIÊU (22-11): mô tả văn bản cho YOLO-World, vd "remote control".
+    # Chuỗi rỗng = TẮT (mặc định: giữ hành vi cũ, phải có `bbox.json` mới bám). Bật thì phiên tự
+    # tìm vật theo NGỮ NGHĨA ⇒ không cần ai kéo chuột, và tự nhận lại khi vật quay vào khung.
+    auto_detect: str = ""
+    auto_detect_every: int = 5    # chỉ chạy detector mỗi N frame đang CHỜ (đo 22-11: 38–52 ms/lần)
+    auto_detect_conf: float = 0.30
     trajectory_len: int = 100
     mask_smoothing: float = 1.0   # 1.0 = TẮT làm mượt (mặc định: đo 10-11 thấy không cải
                                   # thiện IoU hiển thị mà thêm trễ — xem docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md)
@@ -681,6 +688,14 @@ class LiveTrackingSession:
         # từ frame VOS gần nhất) cùng sinh ra ô hiển thị, lệch ngưỡng thì số đo không nói được gì.
         self._lk = lk_tracker or LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
         self._interp = LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
+        # 22-11: TỰ ĐỘNG chọn mục tiêu bằng YOLO-World (mô tả văn bản) — không cần ai kéo chuột.
+        # `None` = TẮT (mặc định) ⇒ hành vi cũ giữ nguyên từng byte.
+        self._detector = None
+        if getattr(config, "auto_detect", ""):
+            self._detector = OpenVocabDetector(
+                classes=(config.auto_detect,), conf=config.auto_detect_conf)
+        self._auto_wait_frames = 0
+        self._auto_da_bao = False
         self._stats = LiveTrackStats(device=config.device)
         # Echo cấu hình NGAY khi dựng phiên (engine đã nạp ⇒ `image_size` hiệu lực đã biết): từ đây
         # `status.json` trả lời được "phiên này chạy cấu hình nào" mà không cần đọc `worker.log`.
@@ -825,6 +840,9 @@ class LiveTrackingSession:
                 if not started:
                     # Trong lúc chờ, vẫn phát khung hình TRƠN để UI hiện luồng và người dùng chọn ô
                     selection = read_selection(out_dir / BBOX_NAME)
+                    if selection is None:
+                        # 22-11: TỰ ĐỘNG — không có ai chọn ô thì hỏi YOLO-World theo mô tả văn bản.
+                        selection = self._auto_selection(frame)
                     if selection is None:
                         with self._stats_lock:
                             self._stats.state = STATE_WAITING
@@ -1094,6 +1112,35 @@ class LiveTrackingSession:
             # Truyền cờ của lần VOS đang dùng (LK chỉ DỊCH mask đó, không "thấy" gì thêm).
             raw_lost=getattr(base_result, "raw_lost", None),
         )
+
+    # ------------------------------------------------------------------ tự động chọn mục tiêu
+
+    def _auto_selection(self, frame) -> "PromptSelection | None":
+        """Hỏi YOLO-World khi CHƯA có ô chọn — chạy tối đa 1 lần mỗi `auto_detect_every` frame.
+
+        Chạy detector MỖI frame là phí: đo 22-11 trên máy này 38–52 ms/lần ở `imgsz 320`, trong khi
+        frame đang ở giai đoạn CHỜ nên không cần tức thời. Trả `None` = chưa thấy (cứ tiếp tục chờ).
+        """
+        if self._detector is None:
+            return None
+        self._auto_wait_frames += 1
+        moi_n = max(1, int(getattr(self._cfg, "auto_detect_every", 5)))
+        if self._auto_wait_frames % moi_n != 0:
+            return None
+        best = self._detector.best(frame)
+        if best is None:
+            return None
+        x1, y1, x2, y2 = best.bbox
+        # Cùng ngưỡng với `PromptSelector.MIN_BOX` (16 px) — ô nhỏ hơn là dương tính giả.
+        if (x2 - x1) < 16 or (y2 - y1) < 16:
+            return None
+        if not self._auto_da_bao:
+            ms = self._detector.last_ms
+            chi_tiet = f" · {ms:.0f} ms" if ms is not None else ""
+            print(f"[auto] YOLO-World thấy '{best.label}' conf={best.conf:.2f} "
+                  f"box=({x1},{y1},{x2},{y2}){chi_tiet}", flush=True)
+            self._auto_da_bao = True
+        return PromptSelection(bbox=(x1, y1, x2 - x1, y2 - y1))
 
     # ------------------------------------------------------------------ đường đơn luồng
 

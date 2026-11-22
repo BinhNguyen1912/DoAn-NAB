@@ -158,6 +158,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
                     + data/reid_metrics.csv + data/reid_summary.json
     calibrate <csv> [--good …] [--bad …]
                     Hiệu chỉnh ngưỡng nhận lại từ CSV có nhãn (--list để xem sự kiện)
+    autodemo "mô tả"  BÁM TỰ ĐỘNG, KHÔNG CHỌN Ô: YOLO-World tìm vật theo mô tả văn bản
+                    (vd "remote control") rồi SAM 2 bám. Thêm --source <clip|cam|URL>.
+                    Cần weights models/yolo-world/yolov8s-worldv2.pt (thiếu → chờ chọn ô như cũ)
 
   KIỂM TRA CHẤT LƯỢNG
     test            Test nhanh (~30 giây, không cần checkpoint)
@@ -623,6 +626,30 @@ PY
       echo
       cat "$ROOT/scripts/aliases.sh"
     fi
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  autodemo)
+    # 22-11: DEMO KHÔNG CHẠM TAY — YOLO-World tự tìm vật theo MÔ TẢ VĂN BẢN rồi SAM 2 bám.
+    # Dùng khi không có màn hình/chuột (thiết bị camera) hoặc để demo "hệ tự tìm mục tiêu".
+    # Ví dụ: ./run autodemo "remote control"        ./run autodemo "bottle" --source data/binh1.mp4
+    activate_env
+    _mo_ta="${1:-remote control}"
+    if [ $# -gt 0 ]; then shift; fi
+    _src="0"
+    _out="${TMPDIR:-/tmp}/doan-auto"
+    _args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --source) _src="$2"; shift 2 ;;
+        --out-dir) _out="$2"; shift 2 ;;
+        *) _args+=("$1"); shift ;;
+      esac
+    done
+    mkdir -p "$_out"
+    exec "$PYTHON" tools/live_worker.py --source "$_src" --out-dir "$_out" \
+      --auto-detect "$_mo_ta" --image-size 192 --vos-every 3 "${_args[@]}"
     ;;
   help|-h|--help)
     usage

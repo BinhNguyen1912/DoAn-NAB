@@ -1199,3 +1199,73 @@ class TestReIdGeometricVerification:
         assert call_kwargs["labels"][0] == 1  # positive ở tâm
         assert 0 in call_kwargs["labels"]     # negative ở viền ngoài
 
+
+
+class TestTimLaiBangMoTaVanBan:
+    """22-11: cue 0 — YOLO-World tìm lại vật theo MÔ TẢ VĂN BẢN.
+
+    Vì sao cần: mọi cue cũ (mặt / đặc trưng vật) đều dựa vào thị giác; vật đơn sắc cùng tông nền
+    làm `cos` mù (đo 21-11: mask-cos vùng SAI 0,752–0,989 nằm trong dải ca ĐÚNG) ⇒ cần một cue
+    NGỮ NGHĨA. Detector một mình vẫn phải qua `_confirm` + cổng hình học.
+    """
+
+    def _session(self, detector, every=1):
+        from src.reid import ReIdSession
+        s = ReIdSession(engine=object(), embedder=None, cue="object",
+                        detector=detector, detector_every=every, reacquire_confirm=1)
+        for _ in range(5):
+            s.geo_profile.update((100, 100, 150, 220))   # vật 50×120 như remote
+        return s
+
+    def test_detector_hop_le_thi_nhan_lai(self):
+        from src.open_vocab_detector import Detection
+
+        class _Det:
+            def __init__(self, box):
+                self.box, self.calls = box, 0
+            def best(self, frame):
+                self.calls += 1
+                return Detection(bbox=self.box, conf=0.9, label="remote control") if self.box else None
+
+        det = _Det((200, 200, 248, 318))                 # 48×118: khớp hình học
+        s = self._session(det)
+        s._state = "lost"
+        s.engine = type("E", (), {"start": lambda self_, frame, bbox, **kw: type(
+            "R", (), {"bbox": bbox, "mask": np.ones((240, 320), bool),
+                      "score": 5.0, "elapsed_ms": 1.0})()})()
+        step = s.step(np.zeros((240, 320, 3), np.uint8))
+        assert step.reacquired is True
+        assert det.calls == 1
+        assert s.detector_hits == 1
+
+    def test_detector_sai_hinh_hoc_thi_bi_loai(self):
+        from src.open_vocab_detector import Detection
+
+        class _Det:
+            def best(self, frame):
+                return Detection(bbox=(200, 200, 350, 240), conf=0.9, label="remote control")
+
+        s = self._session(_Det())                        # 150×40: sai tỉ lệ với 50×120
+        s._state = "lost"
+        step = s.step(np.zeros((240, 320, 3), np.uint8))
+        assert step.reacquired is not True
+        assert s.detector_rejects == 1
+        assert s.detector_hits == 0
+
+    def test_throttle_theo_lost_age(self):
+        class _Det:
+            """Không thấy gì (trả None) ⇒ phiên ở lại `lost` và ta đếm được số lần HỎI detector."""
+            def __init__(self):
+                self.calls = 0
+            def best(self, frame):
+                self.calls += 1
+                return None
+
+        det = _Det()
+        s = self._session(det, every=3)
+        s._state = "lost"
+        s.enabled = False          # tắt các cue khác để chỉ đo cue 0
+        for _ in range(6):
+            s._state = "lost"
+            s.step(np.zeros((240, 320, 3), np.uint8))
+        assert det.calls == 2, "6 frame / every=3 ⇒ đúng 2 lần hỏi detector"
