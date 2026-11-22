@@ -499,24 +499,40 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
   **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
   kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
-  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **`image_size` là nút thật cho CHẤT LƯỢNG phân đoạn, nhưng bão hoà ở 512; 1024 là tiền đổ đi.**
-  Đo 22-11 trên T4 (cùng 1 lần chạy, `git_rev 316c6e8`, `git_dirty_code=false`, clip `binh2.mp4`,
-  `vos_every=1`, 360 frame, ô chọn suy từ GT f0 `(334,319,158,568)`, artifact
-  `data/gpu_sweep_binh2_2026-11-22_metrics.json`): mIoU `binh2_tay` **0,7644** @192 (99,5 ms/frame) →
-  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS). ⇒ 192→320
-  là món hời (+0,052 mIoU, +12 % thời gian); 512→1024 là **nhiễu** (+0,003 < ngưỡng ±0,019) với giá
-  3,9×. **GPU dùng 512** (7,7 lần VOS/giây), cần nhịp cao thì 320; **cấm đưa 1024 vào cấu hình nào**.
-  mIoU @192 trên GPU **trùng khít** baseline CPU (0,7644) ⇒ **thiết bị không đổi chất lượng phân
-  đoạn**, chênh lệch chỉ do `image_size` — nên được phép so số GPU với baseline CPU. `ms/frame` ở đây
-  GỒM cả nạp model ⇒ là **cận trên** của độ trễ, không phải `vos_ms`. Mốc để Cutie phải vượt:
-  **mIoU > 0,855** trên `binh2_tay`; dưới đó thì **không đáng đổi model**. Cột `binh2_tay2` chỉ có
-  **n=2** frame có vật ⇒ số 0,81 của nó là bằng chứng YẾU, cấm trích như số chắc.
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.
+- **`image_size` là nút thật cho CHẤT LƯỢNG phân đoạn, và 1024 là tiền đổ đi.**
+  Đo 22-11 trên T4 (clip `binh2.mp4`, `vos_every=1`, 360 frame, ô chọn suy từ GT frame đầu
+  `(334,319,158,568)`, mIoU `binh2_tay` n=8 frame có vật): **0,7644** @192 (99,5 ms/frame) →
+  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS). Nguồn:
+  192/320 và 512/1024 là **hai lần chạy khác nhau** (script gộp nhầm đã làm mất dòng 192/320 khỏi
+  file — xem bullet dưới), nay phải chạy `--sizes 192,320,512,1024` trong MỘT lần để artifact có
+  provenance thống nhất.
+  **Đọc số cho đúng:** ngưỡng nhiễu của họ mIoU trên chính clip này là **0,022–0,034** (KHÔNG phải
+  ±0,019 — đó là `drift_iou` của phiên ngắn, đại lượng khác) ⇒ **192→320 (+0,052) là khác thật**;
+  **320→512 (+0,018) và 512→1024 (+0,003) KHÔNG phân biệt được** với n=1 mỗi cấu hình. Vì vậy
+  "512 tốt hơn 320" là **chưa chứng minh**; chỉ nói 512 là lựa chọn chất lượng/giá đắt hơn 15 %.
+  **Cấm đưa 1024 vào cấu hình nào** (nhiễu, 3,9× chậm). mIoU @192 trên GPU trùng khít baseline CPU
+  (0,7644) ⇒ **thiết bị không đổi chất lượng phân đoạn**; nhưng thời gian CPU @192 đo được là
+  **~100–107 ms/frame** (AGENTS ở trên), KHÔNG phải con số "342 ms" từng ghi trong log 22-11.
+  `ms/frame` ở đây GỒM cả nạp model ⇒ **cận trên**, không phải `vos_ms`. Mốc để Cutie phải vượt:
+  **mIoU ≥ 0,856–0,868** (= 0,8338 + ngưỡng nhiễu đo được), và mốc đó là **tạm thời** vì n=1.
+  Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ số 0,81 của nó là bằng chứng YẾU, cấm trích.
+- **Gộp artifact nhiều lần chạy: `payload["ket_qua"]` phải được gán SAU khi gộp, và mỗi DÒNG phải mang
+  provenance riêng.** Bản đầu gán payload trước rồi gán lại `rows` ⇒ file ghi ra chỉ có cột của đợt
+  cuối, còn bảng in ra thì đủ dòng; người đọc tưởng "cùng một lần chạy" và trích số từ một file
+  KHÔNG chứa số đó (review độc lập 22-11 bắt đúng, artifact `gpu_sweep_binh2_2026-11-22` là bằng
+  chứng: `lenh = --sizes 512,1024` mà log lại trích cả 192/320). Nay: `tao_payload()` chỉ nhận list
+  ĐÃ gộp; gộp **từ chối** khi khác `clip`/`o_chon_xywh`/`frames_gt`/`vos_every`/`gt_dirs`/`git_rev`;
+  mỗi dòng có `lenh_rieng` + `do_luc_rieng` để đọc đúng nguồn từng số. Test:
+  `tests/test_bench_gpu_binh2.py`.
 - **Trên Colab: `--stop-after-frames` là BẮT BUỘC, và `--stream` phải dùng `Popen`.**
   `tools/live_worker.py` mặc định `loop_files=True` ⇒ thiếu `--stop-after-frames` thì nó **lặp file vô
   hạn**, người chạy thấy "chạy quài" và tưởng model chậm (gặp thật 22-11, 2 lần). Và
   `subprocess.run(stdout=PIPE)` **không stream** (gom hết rồi mới trả) ⇒ im lặng 30–90 s lúc nạp model,
-  người chạy bấm Ctrl-C. `scripts/bench_gpu_binh2.py` nay tự đọc `CAP_PROP_FRAME_COUNT` và luôn truyền
-  cờ, đồng thời in log bằng `Popen` từng dòng.
+  người chạy bấm Ctrl-C. `scripts/bench_gpu_binh2.py` nay tự đọc `CAP_PROP_FRAME_COUNT` và **NÉM nếu
+  không đọc được hoặc ≤ 0** (trước đó `if dung_sau:` lặng lẽ bỏ cờ ⇒ lặp vô hạn trở lại), in log bằng
+  `Popen` + luồng đọc riêng (`--timeout` mới thực sự cắt được tiến trình treo mà không in gì), và
+  **kiểm `image_size_hieu_luc` == yêu cầu** (None = "chưa kiểm được" ⇒ dòng LỖI, không công bố).
 - **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
   = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
   fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
