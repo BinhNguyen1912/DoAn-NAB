@@ -1,43 +1,102 @@
 /**
- * SelectionCanvas — vẽ frame đầu của video và cho người dùng kéo chuột chọn đối tượng.
+ * SelectionCanvas — vẽ frame đầu của video, cho người dùng kéo chuột chọn ô VÀ click điểm dương/âm.
  *
- * Chức năng: hiển thị ảnh preview trên <canvas>, bắt sự kiện chuột để tạo ô chữ nhật.
- * Input  : src (URL ảnh preview), value (ô đang chọn, null = chưa chọn), onChange (callback).
- * Output : gọi onChange với toạ độ ĐÃ QUY ĐỔI về pixel gốc của video.
- * Lưu ý  : toàn bộ toán học nằm ở `selection.ts` (hàm thuần, có test vitest). Component này chỉ
- *          lo vẽ + nối sự kiện, nhờ vậy không có hai bản logic quy đổi toạ độ lệch nhau.
+ * Chức năng: hiển thị ảnh preview trên <canvas>, bắt sự kiện chuột:
+ *   - KÉO chuột  → tạo ô chữ nhật (như cũ)
+ *   - CLICK      → thêm điểm DƯƠNG (thuộc vật) ở chỗ vừa click
+ *   - Ctrl/Shift/Alt + CLICK → thêm điểm ÂM (vùng bám sai: nền, cửa, tường cùng tông)
+ * Input  : src, value (ô đang chọn), points (điểm prompt), onChange, onPointsChange.
+ * Output : toạ độ ĐÃ QUY ĐỔI về pixel gốc của video.
+ * Lưu ý  : toàn bộ toán học nằm ở `selection.ts` (hàm thuần, có test vitest), gồm cả
+ *          `isClickNotDrag` — nếu coi mọi thao tác chuột là kéo thì một cú click sẽ tạo ô 0×0 và
+ *          XOÁ MẤT ô đang chọn (lỗi cũ). Component này chỉ vẽ + nối sự kiện.
+ *
+ * Vì sao có điểm âm: ca thật 21-11, vật be trơn bị bám sang cửa/tường be cùng tông; đo mask-cos
+ * vùng sai 0,752–0,989 vs ca đúng 0,905 ⇒ không có ngưỡng cos nào tách được (AGENTS §6). Cách chữa
+ * rẻ nhất là để người dùng chỉ thẳng vùng sai ngay ở bước prompt.
  */
 
 import { useCallback, useEffect, useRef, useState } from 'react'
 import type { BBox } from '../api'
-import { boxFromPoints, describeBox, isUsableBox, toImagePoint, type Point } from '../selection'
+import {
+  addPoint,
+  boxFromPoints,
+  clampPointInCanvas,
+  clickToleranceImagePx,
+  describeBox,
+  describePoints,
+  isClickNotDrag,
+  isUsableBox,
+  pointMergeRadiusImagePx,
+  toImagePoint,
+  type CanvasSize,
+  type DisplayRect,
+  type Point,
+  type PromptPoint,
+} from '../selection'
 
 interface Props {
   src: string
   value: BBox | null
   onChange: (box: BBox | null) => void
+  /**
+   * Điểm prompt dương/âm — TUỲ CHỌN vì đường job offline chưa nhận điểm: `SelectRequest` KHAI
+   * `points` nhưng `routes.select_object` chỉ chuyển bbox xuống service (routes.py:124), tức gửi
+   * điểm lên đó sẽ bị bỏ IM LẶNG. Đường LIVE đã nối đủ (API → bbox.json → live_tracking).
+   */
+  points?: PromptPoint[]
+  onPointsChange?: (points: PromptPoint[]) => void
 }
 
-export function SelectionCanvas({ src, value, onChange }: Props): JSX.Element {
+export function SelectionCanvas({
+  src,
+  value,
+  onChange,
+  points = [],
+  onPointsChange,
+}: Props): JSX.Element {
   const canvasRef = useRef<HTMLCanvasElement | null>(null)
   const imageRef = useRef<HTMLImageElement | null>(null)
   const startRef = useRef<Point | null>(null)
   const [draft, setDraft] = useState<BBox | null>(null)
   const [size, setSize] = useState<{ w: number; h: number } | null>(null)
 
-  const paint = useCallback((box: BBox | null) => {
+  const paint = useCallback((box: BBox | null, diem: PromptPoint[]) => {
     const canvas = canvasRef.current
     const img = imageRef.current
     if (!canvas || !img) return
     const ctx = canvas.getContext('2d')
     if (!ctx) return
     ctx.drawImage(img, 0, 0, canvas.width, canvas.height)
-    if (!box) return
-    ctx.lineWidth = Math.max(2, canvas.width / 320)
-    ctx.strokeStyle = '#ffd400'
-    ctx.strokeRect(box.x, box.y, box.w, box.h)
-    ctx.fillStyle = 'rgba(255, 212, 0, 0.15)'
-    ctx.fillRect(box.x, box.y, box.w, box.h)
+    if (box) {
+      ctx.lineWidth = Math.max(2, canvas.width / 320)
+      ctx.strokeStyle = '#ffd400'
+      ctx.strokeRect(box.x, box.y, box.w, box.h)
+      ctx.fillStyle = 'rgba(255, 212, 0, 0.15)'
+      ctx.fillRect(box.x, box.y, box.w, box.h)
+    }
+    // Điểm prompt: xanh = dương (vật), đỏ = âm (vùng KHÔNG phải vật).
+    const r = Math.max(4, canvas.width / 140)
+    for (const p of diem) {
+      ctx.beginPath()
+      ctx.arc(p.x, p.y, r, 0, Math.PI * 2)
+      ctx.fillStyle = p.label === 1 ? '#22c55e' : '#ef4444'
+      ctx.fill()
+      ctx.lineWidth = Math.max(1.5, r / 3)
+      ctx.strokeStyle = '#ffffff'
+      ctx.stroke()
+      // Dấu + / − để người mù màu vẫn phân biệt được hai loại điểm.
+      ctx.beginPath()
+      ctx.lineWidth = Math.max(1.5, r / 3)
+      ctx.strokeStyle = '#0b0b0b'
+      ctx.moveTo(p.x - r / 2, p.y)
+      ctx.lineTo(p.x + r / 2, p.y)
+      if (p.label === 1) {
+        ctx.moveTo(p.x, p.y - r / 2)
+        ctx.lineTo(p.x, p.y + r / 2)
+      }
+      ctx.stroke()
+    }
   }, [])
 
   // Nạp ảnh preview: canvas chỉ được render SAU khi biết kích thước thật của video.
@@ -60,19 +119,30 @@ export function SelectionCanvas({ src, value, onChange }: Props): JSX.Element {
 
   // Vẽ lại khi ảnh sẵn sàng hoặc khi hộp chọn thay đổi (canvas đã mount ở lần render này)
   useEffect(() => {
-    if (size) paint(draft ?? value)
-  }, [size, value, draft, paint])
+    if (size) paint(draft ?? value, points)
+  }, [size, value, draft, points, paint])
 
   const loading = size === null
 
-  const pointOf = (event: React.MouseEvent<HTMLCanvasElement>): Point => {
+  /** `rect` + `canvas` của lần tương tác này — cần để quy đổi ngưỡng click/kéo theo tỉ lệ hiển thị. */
+  const geometryOf = (): { rect: DisplayRect; canvas: CanvasSize } | null => {
     const canvas = canvasRef.current
-    if (!canvas) return { x: 0, y: 0 }
-    return toImagePoint(event.clientX, event.clientY, canvas.getBoundingClientRect(), canvas)
+    if (!canvas) return null
+    const r = canvas.getBoundingClientRect()
+    return { rect: r, canvas: { width: canvas.width, height: canvas.height } }
+  }
+
+  const pointOf = (event: React.MouseEvent<HTMLCanvasElement>): Point => {
+    const g = geometryOf()
+    if (!g) return { x: 0, y: 0 }
+    return toImagePoint(event.clientX, event.clientY, g.rect, g.canvas)
   }
 
   const onMouseDown = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (loading) return
+    // Chỉ chuột TRÁI: chuột phải/giữa là thao tác "huỷ/ngữ cảnh" theo thói quen — nếu nhận thì một cú
+    // right-click vô tình lại đặt ĐIỂM DƯƠNG (review độc lập 22-11, P1).
+    if (event.button !== 0) return
     event.preventDefault()
     const point = pointOf(event)
     startRef.current = point
@@ -81,15 +151,45 @@ export function SelectionCanvas({ src, value, onChange }: Props): JSX.Element {
 
   const onMouseMove = (event: React.MouseEvent<HTMLCanvasElement>) => {
     if (!startRef.current) return
+    // Mất sự kiện mouseup (chuột ra ngoài cửa sổ, chuyển app) ⇒ `startRef` treo và lần di chuột sau
+    // sẽ vẽ ô từ một điểm cũ. Không còn nút nào đang nhấn ⇒ bỏ trạng thái kéo.
+    if (event.buttons === 0) {
+      startRef.current = null
+      setDraft(null)
+      return
+    }
     setDraft(boxFromPoints(startRef.current, pointOf(event)))
   }
 
   const finish = (event: React.MouseEvent<HTMLCanvasElement>) => {
-    if (!startRef.current) return
-    const box = boxFromPoints(startRef.current, pointOf(event))
+    // Chỉ chuột TRÁI: nhả chuột phải/giữa giữa lúc đang kéo không được "chốt" ô hay điểm.
+    if (event.button !== 0) return
+    const start = startRef.current
+    if (!start) return
+    const end = pointOf(event)
     startRef.current = null
     setDraft(null)
-    onChange(isUsableBox(box) ? box : null)   // click nhầm (hộp quá nhỏ) → bỏ chọn
+
+    // Không có hình học ⇒ KHÔNG làm gì. Trước đây nhánh này lặng lẽ dùng ngưỡng px ảnh cũ, tức
+    // đúng cái bug P0 vẫn còn nằm sau một nhánh vô hình (review vòng 2, P3).
+    const g = geometryOf()
+    if (!g) return
+    const nguong = clickToleranceImagePx(g.rect, g.canvas)
+    if (isClickNotDrag(start, end, nguong)) {
+      // CLICK = đặt ĐIỂM, không phải vẽ ô. Giữ nguyên ô đang có (trước đây click lạc xoá mất ô).
+      // Ctrl/Shift/Alt/Meta = điểm ÂM (vùng bám sai); click thường = điểm DƯƠNG (thuộc vật).
+      const am = event.ctrlKey || event.shiftKey || event.altKey || event.metaKey
+      const banKinh = pointMergeRadiusImagePx(g.rect, g.canvas)
+      // Kẹp vào TRONG khung: `engine.start` đòi `0 <= x < w`, điểm ở px cuối làm chết cả phiên live.
+      const diem = clampPointInCanvas(end, g.canvas)
+      onPointsChange?.(addPoint(points, { x: diem.x, y: diem.y, label: am ? 0 : 1 }, banKinh))
+      return
+    }
+    // Kéo ngắn hơn `MIN_BOX_SIDE` px ẢNH: KHÔNG xoá ô đang có. Trước đây nó gọi `onChange(null)`,
+    // mà `MIN_BOX_SIDE` là px ảnh trong khi ngưỡng click là CSS px ⇒ trên khung nhỏ hiển thị rộng có
+    // một khoảng kéo (≈6,6–26,5 CSS px) làm MẤT ô (review vòng 2, P3). Muốn bỏ chọn thì đã có nút "Huỷ".
+    const box = boxFromPoints(start, end)
+    if (isUsableBox(box)) onChange(box)
   }
 
   return (
@@ -102,6 +202,7 @@ export function SelectionCanvas({ src, value, onChange }: Props): JSX.Element {
           onMouseDown={onMouseDown}
           onMouseMove={onMouseMove}
           onMouseUp={finish}
+          onContextMenu={(event) => event.preventDefault()}
           onMouseLeave={(event) => {
             if (startRef.current) finish(event)
           }}
@@ -109,8 +210,15 @@ export function SelectionCanvas({ src, value, onChange }: Props): JSX.Element {
       )}
       {loading && <p className="hint">Đang tải khung hình…</p>}
       <p className="hint" data-testid="bbox-hint">
-        Kéo chuột vẽ ô quanh vật thể cần bám. Toạ độ đang chọn: {describeBox(value)}
+        <strong>Kéo</strong> chuột vẽ ô quanh vật thể cần bám. Toạ độ đang chọn: {describeBox(value)}
       </p>
+      {onPointsChange && (
+        <p className="hint" data-testid="points-hint">
+          <strong>Click</strong> = điểm <span style={{ color: '#22c55e' }}>dương</span> (thuộc vật) ·{' '}
+          <strong>Ctrl/Shift/Alt + Click</strong> = điểm <span style={{ color: '#ef4444' }}>âm</span>{' '}
+          (vùng bám <em>sai</em>: nền, cửa, tường cùng tông). Điểm đang đặt: {describePoints(points)}
+        </p>
+      )}
     </div>
   )
 }

@@ -1,0 +1,123 @@
+{
+  "git_rev": "316c6e8",
+  "lenh": "python3 scripts/bench_gpu_binh2.py --device cuda --sizes 512,1024 --stream",
+  "ket_qua": [
+    {
+      "image_size": 512,
+      "frames_phat": 360,
+      "ms_moi_frame": 129.1,
+      "chi_tiet": {
+        "binh2_tay": {
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0521,
+          "frames": [
+            [
+              0,
+              0.8524
+            ],
+            [
+              33,
+              0.884
+            ],
+            [
+              65,
+              0.8447
+            ],
+            [
+              98,
+              0.8734
+            ],
+            [
+              131,
+              0.7957
+            ],
+            [
+              163,
+              0.7307
+            ],
+            [
+              228,
+              0.7958
+            ],
+            [
+              261,
+              0.8936
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "n_cham": 2,
+          "frames": [
+            [
+              230,
+              0.744
+            ],
+            [
+              250,
+              0.8797
+            ]
+          ]
+        }
+      }
+    },
+    {
+      "image_size": 1024,
+      "frames_phat": 360,
+      "ms_moi_frame": 507.4,
+      "chi_tiet": {
+        "binh2_tay": {
+          "n_cham": 8,
+          "mask_ngoai_gt_mean": 0.0583,
+          "frames": [
+            [
+              0,
+              0.8425
+            ],
+            [
+              33,
+              0.8794
+            ],
+            [
+              65,
+              0.8516
+            ],
+            [
+              98,
+              0.8728
+            ],
+            [
+              131,
+              0.8298
+            ],
+            [
+              163,
+              0.743
+            ],
+            [
+              228,
+              0.7755
+            ],
+            [
+              261,
+              0.8998
+            ]
+          ]
+        },
+        "binh2_tay2": {
+          "n_cham": 2,
+          "frames": [
+            [
+              230,
+              0.7551
+            ],
+            [
+              250,
+              0.8845
+            ]
+          ]
+        }
+      }
+    }
+  ],
+  "_trich_tu": "BẢN TRÍCH (không phải artifact đầy đủ) của artifact Colab 22-11 do người dùng chạy: chỉ giữ `image_size`/`ms_moi_frame`/`chi_tiet` để `scripts/paired_miou.py` tái lập bảng so sánh CẶP. Đầy đủ (mIoU, n_cham, frames_gt, o_chon_xywh, phu_gt) nằm trong log 22-11 và phiên Colab."
+}

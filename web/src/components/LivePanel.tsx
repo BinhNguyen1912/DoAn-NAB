@@ -42,6 +42,7 @@ import {
   bamLine,
 } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
+import { removeLastPoint, type PromptPoint } from '../selection'
 
 const POLL_MS = 1000
 const KIND_LABEL: Record<string, string> = {
@@ -60,6 +61,9 @@ export function LivePanel(): JSX.Element {
   const [picking, setPicking] = useState(false)
   const [frozenFrame, setFrozenFrame] = useState<string | null>(null)
   const [box, setBox] = useState<BBox | null>(null)
+  // Điểm prompt dương/âm: ca vật be trơn bám sang cửa/tường be cùng tông (21-11) không chữa được
+  // bằng ngưỡng cos hay đổi model (AGENTS §6) — chỉ chữa được bằng cách chỉ thẳng vùng SAI.
+  const [points, setPoints] = useState<PromptPoint[]>([])
   const timerRef = useRef<number | null>(null)
   // Người dùng đã động vào ô nguồn chưa: có rồi thì kết quả dò (về sau) không được đè lên.
   const touchedRef = useRef(false)
@@ -134,6 +138,7 @@ export function LivePanel(): JSX.Element {
   const onStart = async (): Promise<void> => {
     touchedRef.current = true        // đã chốt nguồn: kết quả dò về sau không được đổi nó
     setError(null)
+    setPoints([])   // điểm của phiên trước không được dính sang vật mới
     setPicking(false)
     setBox(null)
     setMode('raw')
@@ -150,6 +155,7 @@ export function LivePanel(): JSX.Element {
     // Đóng băng khung hình hiện tại để kéo chuột (ảnh tĩnh dễ chọn hơn luồng đang chạy)
     setFrozenFrame(`${LIVE_FRAME_URL}?t=${Date.now()}`)
     setBox(null)
+    setPoints([])          // điểm của lần chọn TRƯỚC không được dính sang vật mới
     setPicking(true)
   }
 
@@ -157,7 +163,12 @@ export function LivePanel(): JSX.Element {
     if (!box) return
     setError(null)
     try {
-      const next = await startLive(source, { mode: 'track', bbox: box })
+      // `points` rỗng ⇒ gửi `undefined` để payload giống hệt trước đây (không đổi hành vi cũ).
+      const next = await startLive(source, {
+        mode: 'track',
+        bbox: box,
+        points: points.length ? points : undefined,
+      })
       setStatus(next)
       setMode('track')
       setPicking(false)
@@ -182,6 +193,7 @@ export function LivePanel(): JSX.Element {
   const onStop = async (): Promise<void> => {
     stopPolling()
     setPicking(false)
+    setPoints([])
     setFrozenFrame(null)
     setMode('raw')
     try {
@@ -460,12 +472,37 @@ export function LivePanel(): JSX.Element {
 
       {picking && frozenFrame && (
         <>
-          <SelectionCanvas src={frozenFrame} value={box} onChange={setBox} />
+          <SelectionCanvas
+            src={frozenFrame}
+            value={box}
+            points={points}
+            onChange={setBox}
+            onPointsChange={setPoints}
+          />
           <div className="row">
             <button type="button" onClick={() => void onTrack()} disabled={!box}>
               Bám đối tượng
             </button>
-            <button type="button" className="button ghost" onClick={() => { setPicking(false); setFrozenFrame(null); setBox(null) }}>
+            {points.length > 0 && (
+              <button
+                type="button"
+                className="button ghost"
+                data-testid="undo-point"
+                onClick={() => setPoints((cu) => removeLastPoint(cu))}
+              >
+                Xoá điểm cuối ({points.length})
+              </button>
+            )}
+            <button
+              type="button"
+              className="button ghost"
+              onClick={() => {
+                setPicking(false)
+                setFrozenFrame(null)
+                setBox(null)
+                setPoints([])
+              }}
+            >
               Huỷ
             </button>
           </div>

@@ -270,6 +270,83 @@ async function waitJobState(page, wanted, timeout = 240000) {
   await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.5, liveCanvas.y + liveCanvas.height * 0.7, { steps: 5 })
   await page.mouse.up()
 
+  // 9c. ĐIỂM PROMPT dương/âm (khôi phục 22-11): ca vật be trơn bám sang cửa/tường be cùng tông
+  //     KHÔNG chữa được bằng ngưỡng cos hay đổi model (AGENTS §6) — phải cho người dùng chỉ vùng SAI.
+  //     Ctrl+Click = điểm ÂM (ngoài ô, vùng bám sai) · Click thường = điểm DƯƠNG (trong vật).
+  const hintDiem = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  check('canvas có gợi ý điểm dương/âm', /dương/.test(hintDiem) && /âm/.test(hintDiem),
+    hintDiem.replace(/\s+/g, ' ') || '(không thấy gợi ý)')
+
+  /** Bấm chuột ở toạ độ TƯƠNG ĐỐI trên canvas, đo `boundingBox` TẠI THỜI ĐIỂM BẤM.
+   *  Vì sao: sau mỗi lần bấm nút, layout có thể cuộn/dịch ⇒ `boundingBox` đo từ trước là toạ độ CŨ và
+   *  mọi cú click sau lệch đi (bản trước lệch +35 px ảnh, đủ để điểm "trong vật" rơi RA NGOÀI ô —
+   *  review độc lập vòng 2, P2). */
+  const bamCanvas = async (fx, fy, opts = {}) => {
+    const bb = await liveCard.locator('canvas').boundingBox()
+    await page.mouse.click(bb.x + bb.width * fx, bb.y + bb.height * fy, opts)
+  }
+
+  const boxTruoc = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+
+  // P0 (review 22-11): ngưỡng click/kéo phải ở KHÔNG GIAN NGƯỜI DÙNG. Nhấn-nhả lệch 2 CSS px là
+  // thao tác click bình thường của tay người; trước đây nó bị coi là KÉO ⇒ xoá/thay ô.
+  const bbRung = await liveCard.locator('canvas').boundingBox()
+  const yRung = bbRung.y + bbRung.height * 0.2
+  await page.mouse.move(bbRung.x + bbRung.width * 0.3, yRung)
+  await page.mouse.down()
+  await page.mouse.move(bbRung.x + bbRung.width * 0.3 + 2, yRung)
+  await page.mouse.up()
+  await page.waitForTimeout(150)
+  const boxSauRung = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+  check('nhấn-nhả rung 2 px KHÔNG làm đổi/xoá ô đang chọn (P0)', boxSauRung === boxTruoc,
+    `trước="${boxTruoc}" sau="${boxSauRung}"`)
+  // Cú "rung 2 px" là một CLICK hợp lệ ⇒ nó ĐÃ thêm 1 điểm dương (đúng ngữ nghĩa). Dọn lại để các
+  // phép đếm bên dưới tất định — nếu không, test sẽ đỏ vì lý do của chính test, không phải của code.
+  if ((await liveCard.getByTestId('undo-point').count()) === 1) {
+    await liveCard.getByTestId('undo-point').click()
+    await page.waitForTimeout(120)
+  }
+  const sauDonDep = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('dọn điểm của cú rung xong ⇒ về "chưa có điểm nào"', /chưa có điểm nào/.test(sauDonDep), sauDonDep)
+
+  // Chuột PHẢI là thao tác huỷ/ngữ cảnh — không được đặt điểm.
+  const demTruoc = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  await bamCanvas(0.7, 0.6, { button: 'right' })
+  await page.waitForTimeout(150)
+  const sauChuotPhai = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  check('click chuột PHẢI không đặt điểm nào', sauChuotPhai === demTruoc,
+    `trước="${demTruoc.replace(/\s+/g, ' ')}" sau="${sauChuotPhai.replace(/\s+/g, ' ')}"`)
+
+  await page.keyboard.down('Control')
+  await bamCanvas(0.85, 0.15)
+  await page.keyboard.up('Control')
+  await page.waitForTimeout(150)
+  const sauAm = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  const boxConDo = (await liveCard.getByTestId('bbox-hint').innerText()).replace(/\s+/g, ' ')
+  check('Ctrl+Click đặt 1 điểm ÂM và ô đang chọn KHÔNG ĐỔI (so chuỗi)',
+    /1 điểm âm/.test(sauAm) && boxConDo === boxTruoc, `${sauAm} · trước="${boxTruoc}" sau="${boxConDo}"`)
+
+  await bamCanvas(0.35, 0.5)
+  await page.waitForTimeout(150)
+  const sauDuong = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('Click thường đặt thêm 1 điểm DƯƠNG (tổng 1 dương + 1 âm)',
+    /1 điểm dương/.test(sauDuong) && /1 điểm âm/.test(sauDuong), sauDuong)
+
+  const nhanUndo = (await liveCard.getByTestId('undo-point').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('nút xoá điểm cuối hiện kèm SỐ ĐIỂM đang có', /2/.test(nhanUndo), nhanUndo || '(không thấy nút)')
+  await liveCard.getByTestId('undo-point').click()
+  await page.waitForTimeout(150)
+  const sauUndo = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  // Thứ tự đặt là [âm, dương] ⇒ "xoá điểm cuối" bỏ ĐIỂM DƯƠNG, còn lại 1 âm.
+  check('bấm "Xoá điểm cuối" thật sự bỏ điểm VỪA ĐẶT (còn 0 dương, 1 âm)',
+    /0 điểm dương/.test(sauUndo) && /1 điểm âm/.test(sauUndo), sauUndo)
+  // Đặt lại điểm DƯƠNG (click thường ở chỗ khác) để payload bên dưới có đủ cả hai loại.
+  await bamCanvas(0.35, 0.5)
+  await page.waitForTimeout(150)
+  const sauDatLai = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('đặt lại được điểm dương sau khi xoá (1 dương + 1 âm)',
+    /1 điểm dương/.test(sauDatLai) && /1 điểm âm/.test(sauDatLai), sauDatLai)
+
   let trackPayload = null
   await page.route('**/api/live/start', async (route) => {
     trackPayload = JSON.parse(route.request().postData() || '{}')
@@ -439,9 +516,37 @@ async function waitJobState(page, wanted, timeout = 240000) {
   await page.unroute('**/api/live/status')
   await page.unroute('**/api/live/start')
 
+  const soGoiYDiemTrenTrangJob = await page.getByTestId('points-hint').count()
+  check('trang JOB offline KHÔNG hiện gợi ý điểm (nó bỏ im lặng points — ticket #05)',
+    soGoiYDiemTrenTrangJob <= 1,
+    `số khối points-hint trên cả trang = ${soGoiYDiemTrenTrangJob} (chỉ khối của LIVE là đúng)`)
+
   check('UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"',
     Boolean(trackPayload && trackPayload.mode === 'track' && trackPayload.bbox),
     JSON.stringify(trackPayload))
+  if (trackPayload && Array.isArray(trackPayload.points) && trackPayload.bbox) {
+    // Toạ độ phải khớp Ý ĐỊNH, không chỉ khớp số lượng: bản trước ghi y=53/95 (lệch +35 px ảnh) mà
+    // vẫn xanh, tức điểm "trong vật" thật ra rơi ra ngoài ô.
+    const W = 160
+    const H = 120
+    const am = trackPayload.points.find((p) => p.label === 0)
+    const duong = trackPayload.points.find((p) => p.label === 1)
+    const lech = (a, b) => Math.abs(a - b)
+    check('toạ độ điểm khớp vị trí đã click (không lệch do boundingBox cũ)',
+      am && duong && lech(am.x, 0.85 * W) <= 3 && lech(am.y, 0.15 * H) <= 3
+        && lech(duong.x, 0.35 * W) <= 3 && lech(duong.y, 0.5 * H) <= 3,
+      JSON.stringify(trackPayload.points))
+    const o = trackPayload.bbox
+    check('điểm DƯƠNG nằm TRONG ô đã kéo, điểm ÂM nằm NGOÀI ô',
+      duong && duong.x >= o.x && duong.x <= o.x + o.w && duong.y >= o.y && duong.y <= o.y + o.h
+        && am && (am.x < o.x || am.x > o.x + o.w || am.y < o.y || am.y > o.y + o.h),
+      `ô=${JSON.stringify(o)} · dương=${JSON.stringify(duong)} · âm=${JSON.stringify(am)}`)
+  }
+
+  check('payload /api/live/start có ĐIỂM kèm bbox (điểm âm đi được hết chuỗi UI → API)',
+    Array.isArray(trackPayload && trackPayload.points) && trackPayload.points.length === 2
+      && trackPayload.points.some((p) => p.label === 0) && trackPayload.points.some((p) => p.label === 1),
+    JSON.stringify(trackPayload && trackPayload.points))
   if (trackPayload && trackPayload.bbox) {
     const live = trackPayload.bbox
     check('bbox gửi đi nằm trong khung video live',

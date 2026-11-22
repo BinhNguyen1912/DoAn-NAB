@@ -483,7 +483,8 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - [ ] Review độc lập đã chạy (mục 9.1), P0 = 0, P1 có chủ
 - [ ] CI GitHub xanh trước khi merge
 - [ ] Log `docs/task/…` có kết quả review + quyết định plan
-- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
+- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo
+- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
   Đo 21-11 (phiên `demoip_1121-121732`): cổng nhảy báo ĐÚNG ở f178 (bám sang **cửa/tường be cùng tông** với
   điện thoại be) nhưng sau cú nhảy chuyển động lại mượt ⇒ cổng **không báo lại**, hệ vẽ mask SAI **65
   frame**. Mask-cos của vùng sai = **0,752–0,989** (median 0,854) so với ca đúng **0,905** ⇒ **không tồn tại
@@ -494,12 +495,64 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
   bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
   "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
-  e2e trên Chrome thật kiểm banner + nút + endpoint).- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
+  e2e trên Chrome thật kiểm banner + nút + endpoint).
+- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
   (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
   **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
   kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
-  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.
+- **`image_size`: đo được XU HƯỚNG, nhưng CHƯA có ngưỡng nhiễu mIoU ⇒ chưa được tuyên bố "tốt hơn".**
+  Đo 22-11 trên T4 (clip `binh2.mp4`, `vos_every=1`, 360 frame, ô chọn suy từ GT frame đầu
+  `(334,319,158,568)`, mIoU `binh2_tay` n=8 frame có vật): **0,7644** @192 (99,5 ms/frame) →
+  **0,8161** @320 (111,9) → **0,8338** @512 (129,1) → **0,8368** @1024 (**507,4** = 2 FPS).
+  `192/320` và `512/1024` đo ở **hai lần chạy khác nhau** (artifact `data/gpu_sweep_...` chỉ còn
+  512/1024 — xem bullet dưới), và **mỗi cấu hình mới đo n=1**.
+  **Cấm kết luận "cấu hình này tốt hơn"**: repo CHƯA đo ngưỡng nhiễu cho **mIoU mask vs GT** trên clip
+  này. Con số 0,022–0,034 từng bị trích cho việc đó là **`iou_mean` (hộp vs GT) trên `binh1`/`b1b`**
+  (`docs/task/20-11-...`), **không** phải mIoU trên `binh2_tay`; còn ±0,019 là `drift_iou`. Theo quy
+  tắc n=1 ở trên, cả ba so sánh (192→320, 320→512, 512→1024) **đều chưa kết luận được**; muốn tuyên
+  bố thì chạy **3 lần/cấu hình** (`./run ab`-kiểu chèn kẽ) rồi mới có `±`.
+  **Điều DUY NHẤT chắc chắn từ số này là GIÁ:** 1024 chậm **3,9×** (507 ms = 2 FPS) mà mIoU chỉ nhích
+  +0,003 ⇒ **cấm đưa 1024 vào cấu hình nào**; 320→512 đắt thêm 15 %.
+  mIoU @192 trên GPU **trùng khít** baseline CPU (0,7644) ⇒ thiết bị không đổi chất lượng phân đoạn
+  (thời gian CPU @192 đo được ~100–107 ms/frame, KHÔNG phải "342 ms"). `ms/frame` ở đây GỒM cả nạp
+  model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
+  0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
+  mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Muốn so hai cấu hình thì so CẶP theo frame (`scripts/paired_miou.py`), đừng so hai giá trị trung
+  bình.** So trung bình cần ngưỡng nhiễu mIoU — repo **CHƯA có**; mọi lần trích trước đây đều mượn của
+  đại lượng khác (0,019 = `drift_iou`; 0,022–0,034 = `iou_mean` hộp-vs-GT trên `binh1`/`b1b`) nên
+  **đều sai**. Cách đúng: chấm trên **cùng bộ frame** rồi lấy chênh lệch TỪNG frame (khử phương sai
+  giữa frame), báo `n`, số frame cùng dấu, mean/median, CI95 bootstrap, sign test chính xác.
+  Đo 22-11 (`binh2_tay`, 8 frame chung, hai artifact cùng `git_rev 316c6e8` trong `data/`):
+  **192→320** 7/8 dương, mean **+0,0517**, CI95 **[+0,0249, +0,0842]**, sign p **0,070** ⇒ "có khả năng
+  thật, CHƯA đạt ngưỡng tuyên bố" (sign test cần 8/8 mới p<0,05); **320→512** 6/8, +0,0176,
+  CI [+0,0036, +0,0315], p 0,289 ⇒ **chưa kết luận**; **512→1024** 4/8, +0,0030, CI **[-0,0071,
+  +0,0140] chứa 0**, p 1,000 ⇒ **không khác biệt** (bằng chứng ÂM TÍNH, mạnh hơn "chưa đo") mà chậm
+  **3,9×** ⇒ **cấm 1024**. Cảnh báo: frame trong một clip KHÔNG độc lập ⇒ p chỉ là chỉ báo; 8 frame là
+  rất ít, muốn chốt phải lặp 3 lần/cấu hình. Frame tệ nhất (`163`, 0,746–0,750) **không** tốt lên khi
+  tăng `image_size` ⇒ lỗi còn lại không phải do độ phân giải.
+- **Gộp artifact nhiều lần chạy: `payload["ket_qua"]` phải được gán SAU khi gộp, và mỗi DÒNG phải mang
+  provenance riêng.** Bản đầu gán payload trước rồi gán lại `rows` ⇒ file ghi ra chỉ có cột của đợt
+  cuối, còn bảng in ra thì đủ dòng; người đọc tưởng "cùng một lần chạy" và trích số từ một file
+  KHÔNG chứa số đó (review độc lập 22-11 bắt đúng, artifact `gpu_sweep_binh2_2026-11-22` là bằng
+  chứng: `lenh = --sizes 512,1024` mà log lại trích cả 192/320). Nay: `tao_payload()` chỉ nhận list
+  ĐÃ gộp; gộp **từ chối** khi khác `clip`/`o_chon_xywh`/`frames_gt`/`vos_every`/`gt_dirs`/`git_rev`;
+  mỗi dòng có `lenh_rieng` + `do_luc_rieng` để đọc đúng nguồn từng số, và file có `schema` (đổi cấu
+  trúc `chi_tiet` thì tăng số, không trộn hai lược đồ). Vòng review thứ hai bắt thêm: dòng THÀNH CÔNG
+  từng **không có `lenh`** (nên `lenh_rieng` rỗng đúng ở dòng có số), `--max-frames` + `--out` vẫn ghi
+  đè được artifact công bố, và mã thoát bị dòng LỖI cũ trong file làm exit 1. Test:
+  `tests/test_bench_gpu_binh2.py` (29 case).
+- **Trên Colab: `--stop-after-frames` là BẮT BUỘC, và `--stream` phải dùng `Popen`.**
+  `tools/live_worker.py` mặc định `loop_files=True` ⇒ thiếu `--stop-after-frames` thì nó **lặp file vô
+  hạn**, người chạy thấy "chạy quài" và tưởng model chậm (gặp thật 22-11, 2 lần). Và
+  `subprocess.run(stdout=PIPE)` **không stream** (gom hết rồi mới trả) ⇒ im lặng 30–90 s lúc nạp model,
+  người chạy bấm Ctrl-C. `scripts/bench_gpu_binh2.py` nay tự đọc `CAP_PROP_FRAME_COUNT` và **NÉM nếu
+  không đọc được hoặc ≤ 0** (trước đó `if dung_sau:` lặng lẽ bỏ cờ ⇒ lặp vô hạn trở lại), in log bằng
+  `Popen` + luồng đọc riêng (`--timeout` mới thực sự cắt được tiến trình treo mà không in gì), và
+  **kiểm `image_size_hieu_luc` == yêu cầu** (None = "chưa kiểm được" ⇒ dòng LỖI, không công bố).
+- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
   = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
   fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
   @160 **75 ms**, @128 **58 ms** (17,3 lần/s) — chất lượng (fixture che, cận trên): mIoU nền 0,913/0,927/

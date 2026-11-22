@@ -1,0 +1,10 @@
+frame_idx,latency_ms,score,center_x,center_y,lost,state,reid_score,reacquired,ncc,vetoed,bbox_w,bbox_h,mask_area,track_cos,nghi_doi_tuong
+0,3113.8,17.659,419,240,0,tracking,,0,,0,112,238,18471,,
+1,3130.6,3.33973,462,229,0,tracking,-1,0,-1,0,84,215,14622,,
+2,3663.4,0.33879,314,211,0,tracking,-1,0,-1,0,85,218,12053,,
+3,1955.2,-1.08979,,,1,tracking,-1,0,-1,0,0,0,0,,
+4,5596.3,-3.22959,,,1,lost,-1,0,-1,0,0,0,0,,
+5,175.5,0,,,1,reacquiring,-1,0,0.338514,0,0,0,0,,
+6,30.7,0,,,1,reacquiring,-1,0,0.329388,0,0,0,0,,
+7,74.5,0,,,1,reacquiring,-1,0,0.330113,0,0,0,0,,
+8,56.8,0,,,1,reacquiring,-1,0,0.321325,0,0,0,0,,
