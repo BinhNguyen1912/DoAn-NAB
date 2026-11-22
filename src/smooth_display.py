@@ -292,19 +292,29 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if stamped is not None and stamped.seq != consumed_seq:  # mỗi kết quả 1 lần
                 consumed_seq = stamped.seq
                 summary.processed += 1
-                # Cổng CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi bấm `r`/`c`. Không nhớ thì
-                # đúng ca `demoip_1121-121732` (báo ở f178 rồi vẽ mask SAI 65 frame) không được xử lý.
-                switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
                 reid_state, reid_score, reacquired, reid_ncc = worker.reid_status()
                 reid_vetoed = worker.reid_vetoed()
-                # ⚠ PHẢI cập nhật cổng TRƯỚC khi gán `last_bbox = ô hiện tại`: bản đầu đặt SAU nên
-                # `watch.update(last_bbox, bbox)` so **ô với chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
-                # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
-                # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
-                # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
-                switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
-                if stamped.result.mask.any() and not switch:
-                    last_bbox = stamped.result.bbox
+                if reacquired:
+                    # Re-ID đã tìm lại được đối tượng và xác nhận danh tính ⇒ xoá nghi, đặt lại mốc
+                    watch.reset()
+                    switch = False
+                    last_bbox = tuple(stamped.result.bbox) if stamped.result.mask.any() else None
+                else:
+                    # Cổng CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi bấm `r`/`c`. Không nhớ thì
+                    # đúng ca `demoip_1121-121732` (báo ở f178 rồi vẽ mask SAI 65 frame) không được xử lý.
+                    switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                    # ⚠ PHẢI cập nhật cổng TRƯỚC khi gán `last_bbox = ô hiện tại`: bản đầu đặt SAU nên
+                    # `watch.update(last_bbox, bbox)` so **ô với chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
+                    # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
+                    # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
+                    # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
+                    switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
+                    if stamped.result.mask.any():
+                        last_bbox = stamped.result.bbox
+                    else:
+                        # Mất dấu ⇒ đặt mốc rỗng để khi vật xuất hiện lại không bị so với ô cũ
+                        # từ nhiều giây trước (luật của is_suspect_switch).
+                        last_bbox = (0, 0, 0, 0)
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
                 if metrics is not None:
@@ -346,11 +356,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô.
                 watch.reset()
                 switch = False
+                last_bbox = tuple(stamped.result.bbox) if (stamped and stamped.result.mask.any()) else None
                 print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                 continue
             if key == RESET_KEY:
                 watch.reset()          # chọn lại ⇒ xoá nghi của phiên trước
                 switch = False
+                last_bbox = None
                 selector.bind(frame)
                 worker.clear()
                 consumed_seq = 0

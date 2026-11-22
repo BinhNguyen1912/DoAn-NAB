@@ -249,3 +249,21 @@ class TestCoVetoToiHudOHaiDuong:
             visualizer=Viz(),
         )
         assert seen and any(v is True for v in seen)   # HUD PHẢI nhận được cờ veto
+
+
+class TestLivePipelineIdentityLatchFix:
+    """Test fix cho deadlock IdentityWatch trong run_interactive."""
+
+    def test_reacquired_va_mat_dau_pipeline(self):
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        assert "if reacquired:" in src
+        assert "watch.reset()" in src
+        assert "last_bbox = (0, 0, 0, 0)" in src
+        pos_reacq = src.index("if reacquired:")
+        pos_reset = src.index("watch.reset()", pos_reacq)
+        assert pos_reacq < pos_reset
+

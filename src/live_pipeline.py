@@ -346,6 +346,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
                     watch.reset()
                     switch = False
+                    last_bbox = tuple(last_result.bbox) if last_result.mask.any() else None
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:
@@ -355,6 +356,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         reid_session.reset()
                     state = reid_score = reacquired = None
                     reid_vetoed = False   # P1 vòng 2: đừng giữ lý do veto của phiên trước
+                    last_bbox = None
                     selector.bind(frame)  # chọn lại trên frame hiện tại
                     if visualizer is not None:
                         visualizer.reset()  # quỹ đạo đối tượng cũ bỏ đi
@@ -371,6 +373,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # và (vì reid_score = -1 khi mọi ứng viên bị bỏ) còn in "chua co ung vien…".
                     reid_vetoed = bool(getattr(step, "vetoed", False))
                     track_cos = getattr(step, "track_cos", None)
+                    if reacquired:
+                        # Re-ID đã tìm lại được đối tượng và xác nhận danh tính ⇒ xoá nghi, đặt lại mốc
+                        watch.reset()
+                        switch = False
+                        last_bbox = tuple(last_result.bbox) if last_result.mask.any() else None
                 else:
                     reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                                  summary.processed, reanchor_every)
@@ -378,10 +385,13 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     state = reid_score = reacquired = None
                     reid_vetoed = False
                     track_cos = None
-                switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
-                switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
-                if last_result.mask.any() and not switch:
-                    last_bbox = last_result.bbox
+                if not reacquired:
+                    switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
+                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
+                    if last_result.mask.any():
+                        last_bbox = last_result.bbox
+                    else:
+                        last_bbox = (0, 0, 0, 0)
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)

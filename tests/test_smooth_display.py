@@ -501,3 +501,47 @@ class TestCongNhayCoNhoTrenDuongMuot:
         gan_lai = src.index("last_bbox = stamped.result.bbox")
         assert cap_nhat < gan_lai, ("cổng nhảy phải được cập nhật TRƯỚC khi gán `last_bbox` = ô hiện "
                                     "tại, nếu không nó so ô với chính nó và không bao giờ bật")
+
+    def test_reacquired_giai_phong_latch_nghi_doi_tuong(self):
+        """22-11 (bug thật, phiên `demoip_1122-195623`): vật chạm mép nhảy ô ⇒ `IdentityWatch`
+
+        latch nghi ngờ; sau đó Re-ID tìm lại được vật (khớp 98%), nhưng vì `reacquired` không
+        reset `watch` nên ô bao bị giấu vĩnh viễn suốt 10 giây còn lại. Khi Re-ID đã nhận lại,
+        hệ thống phải tin Re-ID, xoá cờ nghi và đặt lại mốc `last_bbox`.
+        """
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        assert "if reacquired:" in src
+        pos_reacq = src.index("if reacquired:")
+        pos_reset = src.index("watch.reset()", pos_reacq)
+        pos_switch_false = src.index("switch = False", pos_reacq)
+        assert pos_reacq < pos_reset < pos_switch_false
+
+    def test_phim_c_giai_phong_deadlock_last_bbox(self):
+        """Khi bấm 'c' xác nhận, `last_bbox` phải được cập nhật sang ô hiện tại (không giữ ô cũ
+
+        từ trước cú nhảy). Nếu giữ ô cũ, frame kế tiếp lại so với ô cũ > 200px ⇒ latch lại ngay.
+        """
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        pos_gan_c = src.index("last_bbox = tuple(stamped.result.bbox)", pos_c)
+        assert pos_c < pos_gan_c
+
+    def test_mat_dau_dat_moc_last_bbox_rong(self):
+        """Khi mask rỗng (mất dấu), `last_bbox` phải được đặt `(0, 0, 0, 0)` để khi vật xuất hiện
+
+        lại ở vị trí mới, `is_suspect_switch` không so với ô từ nhiều giây trước.
+        """
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        assert "last_bbox = (0, 0, 0, 0)" in src
