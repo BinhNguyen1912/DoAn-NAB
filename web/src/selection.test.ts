@@ -7,9 +7,16 @@
 
 import { describe, expect, it } from 'vitest'
 import {
+  addPoint,
   boxFromPoints,
   clampInt,
+  countPoints,
   describeBox,
+  describePoints,
+  isClickNotDrag,
+  MAX_PROMPT_POINTS,
+  MIN_POINT_DIST,
+  removeLastPoint,
   isUsableBox,
   MIN_BOX_SIDE,
   toImagePoint,
@@ -105,5 +112,70 @@ describe('describeBox', () => {
 
   it('chưa chọn thì nói rõ', () => {
     expect(describeBox(null)).toBe('chưa có')
+  })
+})
+
+// ─── Điểm prompt dương/âm (khôi phục 22-11: ca vật be trơn bám sang cửa/tường cùng tông) ──────────
+
+describe('addPoint', () => {
+  it('thêm điểm dương rồi điểm âm, giữ đúng nhãn', () => {
+    let pts = addPoint([], { x: 10, y: 10, label: 1 })
+    pts = addPoint(pts, { x: 200, y: 200, label: 0 })
+    expect(pts).toHaveLength(2)
+    expect(countPoints(pts)).toEqual({ duong: 1, am: 1 })
+  })
+
+  it('click đè lên điểm cũ thì THAY, không cộng dồn (kể cả đổi nhãn)', () => {
+    const pts = addPoint([{ x: 10, y: 10, label: 1 }], { x: 12, y: 11, label: 0 })
+    expect(pts).toHaveLength(1)
+    expect(pts[0].label).toBe(0)
+  })
+
+  it(`hai điểm cách nhau >= ${MIN_POINT_DIST}px là hai điểm khác nhau`, () => {
+    const pts = addPoint([{ x: 10, y: 10, label: 1 }], { x: 10 + MIN_POINT_DIST, y: 10, label: 1 })
+    expect(pts).toHaveLength(2)
+  })
+
+  it(`chặn ở ${MAX_PROMPT_POINTS} điểm và bỏ điểm CŨ NHẤT`, () => {
+    let pts: { x: number; y: number; label: 0 | 1 }[] = []
+    for (let i = 0; i < MAX_PROMPT_POINTS + 3; i += 1) {
+      pts = addPoint(pts, { x: i * 20, y: 0, label: 1 })
+    }
+    expect(pts).toHaveLength(MAX_PROMPT_POINTS)
+    expect(pts[0].x).toBe(3 * 20)                // 3 điểm đầu đã bị bỏ
+    expect(pts[pts.length - 1].x).toBe((MAX_PROMPT_POINTS + 2) * 20)
+  })
+
+  it('không sửa mảng đầu vào (hàm thuần)', () => {
+    const goc = [{ x: 1, y: 1, label: 1 as const }]
+    addPoint(goc, { x: 100, y: 100, label: 0 })
+    expect(goc).toHaveLength(1)
+  })
+})
+
+describe('removeLastPoint', () => {
+  it('bỏ điểm thêm sau cùng; mảng rỗng vẫn rỗng', () => {
+    const pts = [
+      { x: 1, y: 1, label: 1 as const },
+      { x: 50, y: 50, label: 0 as const },
+    ]
+    expect(removeLastPoint(pts)).toEqual([{ x: 1, y: 1, label: 1 }])
+    expect(removeLastPoint([])).toEqual([])
+  })
+})
+
+describe('describePoints', () => {
+  it('chưa có điểm thì nói rõ, không hiện "0 điểm" mơ hồ', () => {
+    expect(describePoints([])).toBe('chưa có điểm nào')
+    expect(describePoints([{ x: 1, y: 1, label: 1 }])).toContain('1 điểm dương')
+    expect(describePoints([{ x: 1, y: 1, label: 0 }])).toContain('1 điểm âm')
+  })
+})
+
+describe('isClickNotDrag', () => {
+  it('nhấn-nhả cùng chỗ là CLICK (đặt điểm), không phải kéo (vẽ ô)', () => {
+    expect(isClickNotDrag({ x: 100, y: 100 }, { x: 101, y: 100 })).toBe(true)
+    expect(isClickNotDrag({ x: 100, y: 100 }, { x: 100 + MIN_BOX_SIDE, y: 100 })).toBe(false)
+    expect(isClickNotDrag({ x: 100, y: 100 }, { x: 300, y: 250 })).toBe(false)
   })
 })

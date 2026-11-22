@@ -270,6 +270,32 @@ async function waitJobState(page, wanted, timeout = 240000) {
   await page.mouse.move(liveCanvas.x + liveCanvas.width * 0.5, liveCanvas.y + liveCanvas.height * 0.7, { steps: 5 })
   await page.mouse.up()
 
+  // 9c. ĐIỂM PROMPT dương/âm (khôi phục 22-11): ca vật be trơn bám sang cửa/tường be cùng tông
+  //     KHÔNG chữa được bằng ngưỡng cos hay đổi model (AGENTS §6) — phải cho người dùng chỉ vùng SAI.
+  //     Ctrl+Click = điểm ÂM (ngoài ô, vùng bám sai) · Click thường = điểm DƯƠNG (trong vật).
+  const hintDiem = await liveCard.getByTestId('points-hint').innerText().catch(() => '')
+  check('canvas có gợi ý điểm dương/âm', /dương/.test(hintDiem) && /âm/.test(hintDiem),
+    hintDiem.replace(/\s+/g, ' ') || '(không thấy gợi ý)')
+
+  await page.keyboard.down('Control')
+  await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.85, liveCanvas.y + liveCanvas.height * 0.15)
+  await page.keyboard.up('Control')
+  await page.waitForTimeout(150)
+  const sauAm = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  const boxConDo = await liveCard.getByTestId('bbox-hint').innerText().catch(() => '')
+  check('Ctrl+Click đặt 1 điểm ÂM và KHÔNG xoá ô đang chọn',
+    /1 điểm âm/.test(sauAm) && !/chưa có/.test(boxConDo), `${sauAm} · ${boxConDo.replace(/\s+/g, ' ')}`)
+
+  await page.mouse.click(liveCanvas.x + liveCanvas.width * 0.35, liveCanvas.y + liveCanvas.height * 0.5)
+  await page.waitForTimeout(150)
+  const sauDuong = (await liveCard.getByTestId('points-hint').innerText().catch(() => '')).replace(/\s+/g, ' ')
+  check('Click thường đặt thêm 1 điểm DƯƠNG (tổng 1 dương + 1 âm)',
+    /1 điểm dương/.test(sauDuong) && /1 điểm âm/.test(sauDuong), sauDuong)
+
+  check('có nút xoá điểm cuối khi đã đặt điểm',
+    (await liveCard.getByTestId('undo-point').count()) === 1,
+    `số nút = ${await liveCard.getByTestId('undo-point').count()}`)
+
   let trackPayload = null
   await page.route('**/api/live/start', async (route) => {
     trackPayload = JSON.parse(route.request().postData() || '{}')
@@ -442,6 +468,10 @@ async function waitJobState(page, wanted, timeout = 240000) {
   check('UI gửi mode=track kèm bbox khi bấm "Bám đối tượng"',
     Boolean(trackPayload && trackPayload.mode === 'track' && trackPayload.bbox),
     JSON.stringify(trackPayload))
+  check('payload /api/live/start có ĐIỂM kèm bbox (điểm âm đi được hết chuỗi UI → API)',
+    Array.isArray(trackPayload && trackPayload.points) && trackPayload.points.length === 2
+      && trackPayload.points.some((p) => p.label === 0) && trackPayload.points.some((p) => p.label === 1),
+    JSON.stringify(trackPayload && trackPayload.points))
   if (trackPayload && trackPayload.bbox) {
     const live = trackPayload.bbox
     check('bbox gửi đi nằm trong khung video live',
