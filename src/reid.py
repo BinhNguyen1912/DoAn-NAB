@@ -22,8 +22,12 @@ from dataclasses import dataclass, field
 from typing import List, Optional, Sequence, Tuple
 
 import cv2
+import time
+
 import numpy as np
 
+from src.track_identity import NeoDanhTinh, cos_voi_neo
+from src.geometry_guard import GeometricProfile, generate_contrast_points
 from src.appearance import (candidate_boxes, clip_mask_border, mask_to_bbox, object_signature,
                             prefilter_candidates, signature_quality_ok)
 
@@ -89,6 +93,22 @@ HINT_CHAM_MEP = (
     "        → bấm r rồi kéo ô bao TRỌN vật, chừa mép khung (đừng để cạnh ô dính sát biên ảnh)."
 )
 
+# --- VETO "nhận lại vào KHUÔN MẶT / ĐẦU" (đo 20–21/11, 3 phiên demo webcam) ---
+# Ba phiên liền re-ID nhận lại SAI vào người: vào MẶT (cosine 0,974 / ncc 0,545), vào TRÁN
+# (0,734 / 0,423), vào ĐẦU (0,663 / 0,356). Ngưỡng điểm KHÔNG cứu được: ca mặt có ncc 0,545 nằm
+# GIỮA dải ca đúng (0,415–0,741). Nhưng có một thông tin MIỄN PHÍ mà hệ chưa dùng: ô chọn ban đầu
+# của người dùng KHÔNG phủ mặt (cảnh báo `src/face_guard.py` đã nói đúng) ⇒ "vật" cần tìm không
+# phải mặt người ⇒ ứng viên trùm mặt là SAI theo định nghĩa.
+# `NGUONG_PHU_MAT`: phần diện tích ô ứng viên bị một mặt phủ. Đặt 0,30 — thấp hơn `face_guard.NGUONG_IOU`
+# (0,35) vì ở đây không cần IoU mà chỉ cần "ô này là mặt/đầu". CHƯA hiệu chuẩn trên clip có nhãn
+# (CSV cũ không ghi w/h của ô ứng viên) — nếu thấy chặn oan thì tắt bằng `--no-reid-face-veto`.
+NGUONG_PHU_MAT = 0.30
+HINT_VETO_MAT = (
+    "[re-ID] BỎ ứng viên nhận lại vì TRÙNG KHUÔN MẶT/ĐẦU — ô chọn ban đầu không phải mặt người "
+    "nên đây là bám nhầm (đo 20–21/11: 3/3 lần nhận lại sai đều vào mặt/trán/đầu).\n"
+    "        → nếu bạn ĐANG muốn bám mặt: chọn ô chỉ quanh mặt rồi chạy lại (veto tự tắt khi ô chọn phủ mặt)."
+)
+
 STATE_TRACKING = "tracking"
 STATE_LOST = "lost"
 STATE_REACQUIRING = "reacquiring"
@@ -136,6 +156,10 @@ class Step:
     reid_score: float = -1.0     # cosine tốt nhất frame này (-1 = không có ứng viên nào)
     reacquired: bool = False     # True ở đúng frame vừa nhận lại đối tượng
     ncc: float = -1.0            # điểm NCC của ô được chọn (-1 = không dùng NCC / chưa có)
+    vetoed: bool = False         # frame này ứng viên bị BỎ vì trùng khuôn mặt/đầu (HUD phải nói rõ)
+    # `cos` giữa MASK đang bám và NEO danh tính (`src/track_identity.py`); `None` = chưa đo được
+    # (chưa đủ neo / mask rỗng) — KHÔNG phải 0. Plan 21-11-2026: chỉ GHI, chưa hành động.
+    track_cos: Optional[float] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -288,9 +312,18 @@ class ReIdSession:
                  search_grow_frames=DEFAULT_SEARCH_GROW_FRAMES,
                  search_grow_step=DEFAULT_SEARCH_GROW_STEP,
                  jump_ratio=DEFAULT_JUMP_RATIO,
-                 auto_recover=True):
+                 auto_recover=True, face_veto=None,
+                 detector=None, detector_every=3):
         self.engine = engine
         self.embedder = embedder
+        # Cue 0 (22-11): TÌM LẠI THEO MÔ TẢ VĂN BẢN (YOLO-World). Đây là cue DUY NHẤT không dựa
+        # vào đặc trưng thị giác của vật — nên nó là thứ cứu ca "vật đơn sắc cùng tông nền" khi
+        # `cos` bó tay (đo 21-11: mask-cos vùng SAI 0,752–0,989 nằm trong dải ca ĐÚNG).
+        # `None` = TẮT (mặc định) ⇒ hành vi cũ giữ nguyên.
+        self.detector = detector
+        self.detector_every = max(1, int(detector_every))
+        self.detector_hits = 0          # số lần detector đề xuất ứng viên được dùng
+        self.detector_rejects = 0       # số lần bị cổng hình học loại
         self.threshold = float(threshold)
         self.lost_after_frames = int(lost_after_frames)
         self.min_face_px = min_face_px
@@ -309,6 +342,20 @@ class ReIdSession:
         self.search_grow_step = float(search_grow_step)
         self.jump_ratio = float(jump_ratio)
         self.auto_recover = bool(auto_recover)
+        # Duck-type `BoDoMat` (`src/face_guard.py`): có `.detect(frame) -> [(x,y,w,h), …]`.
+        # `None` = tắt veto (hành vi cũ). Không bao giờ ném: cảnh báo phụ không được giết phiên.
+        self.face_veto = face_veto
+        self._ref_phu_mat = False      # ô chọn BAN ĐẦU có phủ mặt không (quyết định veto có hiệu lực)
+        self._ref_bbox = None          # ô chọn ban đầu — để đánh giá lại "phủ mặt" về sau (sticky)
+        self.veto_mat_n = 0            # số ứng viên bị bỏ vì trùng mặt (để đếm/hiệu chuẩn)
+        self.frames_vetoed_since_print = 0   # chống spam HINT_VETO_MAT (in mỗi 20 frame bị veto)
+        self._faces_frame = None       # cache khuôn mặt của frame gần nhất (tránh detect 2 lần)
+        # NEO danh tính (plan 21-11-2026, `src/track_identity.py`): 3–5 mẫu ĐẦU của vật. Khác
+        # `_obj_refs` (rolling, bị thay sạch sau 8 frame TRACKING ⇒ "ký ức" thành vật khác).
+        self.neo = NeoDanhTinh()
+        self.geo_profile = GeometricProfile()
+        self._hint_veto_da_in = False  # đã in HINT_VETO_MAT chưa (reset ở `reset()` — P3 vòng 3)
+        self._faces = ()
         self._recover_cooldown = 0
         self._last_bbox = None
         self._confirm_count = 0
@@ -382,6 +429,15 @@ class ReIdSession:
         self._last_center = None
         self._recover_cooldown = 0
         self._last_bbox = None
+        # P2 review vòng 2 (21-11): docstring hứa "về trạng thái ban đầu" ⇒ phải xoá cả quyết định
+        # veto. `veto_mat_n` là bộ đếm CẢ PHIÊN (đi vào `run_info`) nên KHÔNG xoá — ghi rõ ở đây.
+        self._ref_phu_mat = False
+        self._ref_bbox = None
+        self.frames_vetoed_since_print = 0
+        self._hint_veto_da_in = False
+        self._faces_frame = None
+        self.neo.xoa()                  # chọn lại đối tượng ⇒ neo cũ vô nghĩa
+        self.geo_profile.reset()
 
     # -- vòng đời --
     def start(self, frame, bbox) -> object:
@@ -395,6 +451,12 @@ class ReIdSession:
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
         self._lost_streak = 0
+        # Ô chọn ban đầu phủ mặt? ⇒ người dùng MUỐN bám mặt ⇒ veto phải im lặng tuyệt đối.
+        # P2 review 21-11: đây là quyết định MỘT frame — YuNet (min_score 0,6) trượt ở frame chọn
+        # (mặt quay đi/mờ) là veto bật cho CẢ phiên, dù người dùng chọn đúng mặt. Vì vậy giữ ô chọn
+        # và ĐÁNH GIÁ LẠI (sticky, chỉ bật thêm, không tắt) khi đang tìm lại.
+        self._ref_bbox = tuple(float(v) for v in bbox[:4]) if bbox is not None else None
+        self._ref_phu_mat = self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT
         self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         if self.object_on and not self._obj_refs and not self._obj_templates:
             print(HINT_CHAM_MEP)
@@ -434,17 +496,47 @@ class ReIdSession:
                         return self._abandon_reacquire()
                 if self.enabled and self._verify_left == 0:
                     self._collect_reference(frame, result.bbox, getattr(result, "mask", None))
-            return Step(result=result, state=self._state)
+            track_cos = None
+            if self.enabled:
+                mask = getattr(result, "mask", None)
+                # CHẤM TRƯỚC, nạp neo SAU (P2 review 21-11): nếu nạp trước thì mẫu `cos` của chính
+                # frame đó = 1,0 **cấu trúc** (so frame với chính nó) ⇒ 4/108 mẫu mỗi lần chạy bị
+                # thổi lên 1,0 và phân bố bị lệch về phía "đúng".
+                track_cos = cos_voi_neo(self.neo, frame, mask)
+                self.neo.thu(frame, mask, getattr(result, "bbox", None))
+            return Step(result=result, state=self._state, track_cos=track_cos)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
         self._recover_cooldown = max(0, self._recover_cooldown - 1)
         self._state = STATE_REACQUIRING
         self._lost_age += 1
+
+        # Cue 0 (22-11): YOLO-World theo mô tả văn bản — chạy THROTTLE vì 38–52 ms/lần trên CPU.
+        # Đặt TRƯỚC `if not self.enabled`: cue này KHÔNG dùng mẫu đặc trưng nào, nên nó phải chạy
+        # được kể cả khi re-ID ngoại hình bị tắt (`--reid` không bật) — đó chính là ca "thiết bị
+        # camera không có ai chọn ô": bật `--auto-detect` là đã có re-ID theo ngữ nghĩa.
+        # Vẫn phải qua `_confirm` (2 frame cùng chỗ) + cổng hình học: detector một mình KHÔNG đủ
+        # tin (đo 22-11 trên `binh1`: nó từng trả box conf 0,29–0,30 ở vùng nền).
+        if self.detector is not None and self._lost_age % self.detector_every == 0:
+            hit = self.detector.best(frame)
+            if hit is not None:
+                if self.geo_profile.is_compatible(hit.bbox):
+                    self.detector_hits += 1
+                    if self._confirm(hit.bbox):
+                        return self._reacquire(frame, hit.bbox, float(hit.conf))
+                else:
+                    self.detector_rejects += 1
+
         if not self.enabled:
             return Step(result=self._lost_result(), state=self._state)
 
         best_score, best_bbox = -1.0, None
         best_ncc = -1.0
+        vetoed = False                 # frame này có ứng viên bị bỏ vì trùng mặt? (HUD cần biết)
+        # P2 review 21-11: frame LOST/tìm-lại từng ghi `elapsed_ms = 0.0` ⇒ chi phí tìm (cascade NCC
+        # ~28 ms + YuNet ~29 ms khi veto) KHÔNG hiện ở artifact nào ⇒ "veto có làm chậm không" là
+        # câu không kiểm được. Đo thật ở đây để CSV/summary có số.
+        _t0 = time.perf_counter()
 
         # Cue 1: khuôn mặt (YuNet + SFace) — cần embedder
         if self.face_on:
@@ -458,7 +550,31 @@ class ReIdSession:
 
         # Cue 2: đặc trưng vật thể — cascade: prefilter NCC rẻ → chấm điểm đắt cho top-K
         if self.object_on and self._obj_refs:
+            # Veto mặt/đầu đã lọc TRONG `_match_object` (ứng viên bị bỏ, ứng viên kế tiếp được xét)
+            # ⇒ ở đây chỉ còn câu hỏi "frame này có bị veto không" để HUD nói ĐÚNG lý do.
+            so_veto_truoc = self.veto_mat_n
             score, bbox, ncc = self._match_object(frame)
+            vetoed = self.veto_mat_n > so_veto_truoc
+            if vetoed and self.frames_vetoed_since_print >= 20:
+                self.frames_vetoed_since_print = 0
+                print(HINT_VETO_MAT)
+            if vetoed:
+                self.frames_vetoed_since_print += 1
+                if not self._hint_veto_da_in:   # P3 vòng 3: cờ riêng, không dựa bộ đếm cả phiên
+                    self._hint_veto_da_in = True
+                    print(HINT_VETO_MAT)
+            if bbox is not None and self._trung_mat(frame, bbox):
+                # CHỐT CHẶN 2 (backstop): `_match_object` đã lọc bằng CÙNG danh sách mặt của frame
+                # này, nên với code hiện tại nhánh này **không chạm tới được** (review vòng 3 chỉ ra;
+                # test `fm.calls == 1` cũ không khoá được cache vì thế). Giữ lại làm hàng rào nếu
+                # sau này ai đổi `_match_object` (vd thêm nguồn ứng viên khác); cache `_faces_frame`
+                # bảo đảm nó KHÔNG tốn thêm lần detect nào.
+                self.veto_mat_n += 1
+                vetoed = True
+                if not self._hint_veto_da_in:
+                    self._hint_veto_da_in = True
+                    print(HINT_VETO_MAT)
+                bbox = None
             if bbox is not None:
                 # Cổng NCC (mặc định tắt): với vật đen/ít texture, cosine không phân biệt
                 # được (đo: 1,000 giữa hai vật đen khác nhau) nên phải có thêm điều kiện hình dạng.
@@ -467,12 +583,91 @@ class ReIdSession:
                     if self._confirm(bbox):
                         step = self._reacquire(frame, bbox, score)
                         step.ncc = ncc
+                        # Bug thật đo 21-11 trên phiên `demoip_1121-103221`: frame đó BỎ 1 ứng viên
+                        # trùng mặt (`run_info.reid_veto_mat_n = 1`) rồi NHẬN một ứng viên khác ⇒
+                        # `_reacquire` trả Step mặc định `vetoed=False` ⇒ CSV ghi `vetoed=0` và
+                        # không dòng nào giải thích được "veto đã xảy ra ở đâu".
+                        step.vetoed = vetoed
                         return step
             best_score = max(best_score, score)
             best_ncc = max(best_ncc, ncc)   # ghi cả khi BỊ LOẠI — để hiệu chuẩn ngưỡng
 
-        return Step(result=self._lost_result(), state=self._state,
-                    reid_score=best_score, ncc=best_ncc)
+        lost = self._lost_result()
+        lost.elapsed_ms = (time.perf_counter() - _t0) * 1000.0   # chi phí TÌM LẠI (không phải VOS)
+        return Step(result=lost, state=self._state,
+                    reid_score=best_score, ncc=best_ncc, vetoed=vetoed)
+
+    # -- veto "nhận lại vào mặt/đầu" --
+    def _mat_trong(self, frame) -> tuple:
+        """Danh sách mặt `[(x, y, w, h), …]` của frame này (rỗng khi tắt veto/lỗi).
+
+        Gọi YuNet **một lần** cho mỗi lần kiểm — `detect()` là mô hình thật (~29 ms ở 640×480,
+        đo trong `scripts/ab_lk_max_mad.py`), gọi hai lần cho một câu hỏi là tự nhân đôi chi phí
+        trên đúng đường đang cố tìm lại vật. Fail-open y như `src/face_guard.py`.
+        """
+        if self.face_veto is None or frame is None:
+            return ()
+        # P2 vòng 2: `step()` (backstop) và `_match_object` hỏi cùng một frame ⇒ cache theo ĐỐI TƯỢNG
+        # frame (so sánh `is`, không phải id()) để không chạy YuNet (~29 ms) hai lần.
+        if frame is self._faces_frame:
+            return self._faces
+        try:
+            faces = tuple(self.face_veto.detect(frame) or ())
+        except Exception:
+            faces = ()
+        self._faces_frame, self._faces = frame, faces
+        return faces
+
+    def _phu_mat(self, frame, bbox, faces=None) -> float:
+        """Phần diện tích LỚN NHẤT của ô `bbox` (hệ `(x1,y1,x2,y2)`) bị MỘT mặt phủ, 0..1.
+
+        Hàm THUẦN trên kết quả của `face_veto`. Trả 0.0 khi tắt veto/không có mặt/ô suy biến —
+        fail-open, cùng triết lý `src/face_guard.py` (cảnh báo phụ không được giết phiên).
+        """
+        if self.face_veto is None or bbox is None:
+            return 0.0
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
+            return 0.0
+        if x2 <= x1 or y2 <= y1:
+            return 0.0
+        if faces is None:
+            faces = self._mat_trong(frame)
+        if not faces:
+            return 0.0
+        area = (x2 - x1) * (y2 - y1)
+        tot = 0.0
+        for fx, fy, fw, fh in faces:
+            ix1, iy1 = max(x1, fx), max(y1, fy)
+            ix2, iy2 = min(x2, fx + fw), min(y2, fy + fh)
+            if ix2 > ix1 and iy2 > iy1:
+                tot = max(tot, (ix2 - ix1) * (iy2 - iy1) / area)
+        return float(tot)
+
+    def _trung_mat(self, frame, bbox, faces=None) -> bool:
+        """Ứng viên nhận lại có phải MẶT/ĐẦU không (chỉ khi ô chọn ban đầu KHÔNG phủ mặt).
+
+        Hai điều kiện, OR: (a) TÂM ô nằm trong một mặt — không có ngưỡng nào để hiệu chỉnh;
+        (b) ≥ `NGUONG_PHU_MAT` diện tích ô bị một mặt phủ — bắt ca ô to trùm cả đầu + mặt.
+        """
+        if self.face_veto is None or self._ref_phu_mat or bbox is None:
+            return False
+        try:
+            x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
+        except (TypeError, ValueError):
+            return False
+        if faces is None:
+            faces = self._mat_trong(frame)      # MỘT lần detect cho cả hai điều kiện
+        if not faces:
+            return False
+        if self._phu_mat(frame, bbox, faces=faces) >= NGUONG_PHU_MAT:
+            return True
+        cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
+        for fx, fy, fw, fh in faces:
+            if fx <= cx <= fx + fw and fy <= cy <= fy + fh:
+                return True
+        return False
 
     def _is_suspicious_jump(self, result) -> bool:
         """Ô bao nhảy xa bất thường so với frame trước → nghi bám sang vật khác.
@@ -515,7 +710,11 @@ class ReIdSession:
 
     def _reacquire(self, frame, bbox, score: float) -> Step:
         """Nhận lại đối tượng: khởi động bám lại từ ô vừa khớp (dùng chung cho mọi cue)."""
-        result = self.engine.start(frame, bbox)
+        pts, lbls = generate_contrast_points(bbox, frame.shape[:2])
+        try:
+            result = self.engine.start(frame, bbox, points=pts, labels=lbls)
+        except TypeError:
+            result = self.engine.start(frame, bbox)
         # engine.start reset bộ đếm frame của nó → giữ frame_idx liên tục cho CSV/biểu đồ
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
@@ -655,11 +854,29 @@ class ReIdSession:
         best_raw = -1.0
         best_box = None
         best_choice = -1.0
+        veto_raw, veto_ncc = -1.0, -1.0      # điểm của ứng viên bị BỎ vì trùng mặt (để hiệu chuẩn)
         height, width = frame.shape[:2]
         # Diện tích chống sai lệch — dùng EMA (size thật) không phải bbox frame cuối (rác mép).
         size_ref = self._size_ema or self._last_obj_size
         target_area = (size_ref[0] * size_ref[1]) if size_ref else None
+        # VETO mặt/đầu — lọc TRONG vòng lặp, không phải sau khi đã chọn xong.
+        # P1 review 21-11: bản đầu veto ô tốt nhất rồi bỏ CẢ frame ⇒ nếu MẶT xếp hạng trên vật
+        # thật (đo: mặt cosine 0,9739 > ca đúng thấp nhất 0,770) thì vật nằm trong top-K nhưng
+        # không bao giờ được xét ⇒ phiên kẹt `reacquiring` vô hạn dù vật đang trong khung.
+        # Detect MỘT lần cho cả vòng lặp (YuNet ~29 ms), chỉ khi veto đang có hiệu lực.
+        if self.face_veto is not None and not self._ref_phu_mat:
+            faces = self._mat_trong(frame)
+            # sticky: mặt phủ ô chọn BAN ĐẦU ⇒ người dùng vốn muốn bám mặt ⇒ tắt veto từ đây
+            if faces and self._ref_bbox is not None:
+                if self._phu_mat(frame, self._ref_bbox, faces=faces) >= NGUONG_PHU_MAT:
+                    self._ref_phu_mat = True
+                    faces = ()
+        else:
+            faces = ()
         for (x1, y1, x2, y2), ncc in pairs:
+            # Lưu ý khi đọc `veto_mat_n` (P3 review vòng 3): cổng NCC đứng TRƯỚC kiểm veto nên bộ đếm
+            # chỉ tính ứng viên **đã qua cổng** ⇒ nó là CẬN DƯỚI của "số ứng viên trùng mặt bị chặn"
+            # (ca "vào ĐẦU" ncc 0,356 bị cổng 0,40 loại trước, không được đếm là veto).
             if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
                 if ncc > best_ncc:
                     best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
@@ -670,8 +887,18 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
+            if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
+                # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
+                # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần
+                # để chốt `NGUONG_PHU_MAT`). Chấm rồi mới bỏ; chi phí ~1,4 ms chỉ khi có veto.
+                self.veto_mat_n += 1
+                if raw > veto_raw:
+                    veto_raw, veto_ncc = raw, ncc
+                continue
             if not accept_candidate(raw, float(ncc), self.obj_threshold, self.obj_ncc_min):
                 continue            # cổng chính = cosine, cổng phụ = NCC (mặc định tắt)
+            if not self.geo_profile.is_compatible((x1, y1, x2, y2)):
+                continue            # cổng hình học (ticket 03): chặn mảng tường/công tắc khác tỉ lệ diện tích & w/h
             prior = 1.0
             if target_area:
                 area = max(1, (x2 - x1) * (y2 - y1))
@@ -679,6 +906,10 @@ class ReIdSession:
             choice = raw * prior
             if choice > best_choice:
                 best_choice, best_raw, best_box, best_ncc = choice, raw, (x1, y1, x2, y2), ncc
+        if best_box is None and veto_raw >= 0.0:
+            # Không còn ứng viên nào khác ⇒ trả điểm của ô BỊ VETO để CSV/HUD có số thật
+            # (Step.vetoed nói rõ nó đã bị bỏ, nên không ai hiểu nhầm là đã nhận).
+            return veto_raw, None, veto_ncc
         return best_raw, best_box, best_ncc
 
     # -- nội bộ --
@@ -707,6 +938,8 @@ class ReIdSession:
                 self._refs.append(hit.embedding)
         if self.object_on and mask is not None:
             obj_box = mask_to_bbox(mask)
+            if obj_box is not None:
+                self.geo_profile.update(obj_box)
             if obj_box is None or not signature_quality_ok(obj_box, mask, self.obj_min_side,
                                                            self.obj_min_fill):
                 return

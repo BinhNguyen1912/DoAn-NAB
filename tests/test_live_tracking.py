@@ -13,8 +13,10 @@ from collections import deque
 import numpy as np
 import pytest
 
+from src.drift_samples import DRIFT_CSV_NAME
 from src.live_tracking import (
     BBOX_NAME,
+    CONFIRM_NAME,
     FRAME_NAME,
     STATE_ERROR,
     STATE_STOPPED,
@@ -153,6 +155,15 @@ class TestLiveTrackingSession:
         #   `chan_doan_lk` — chẩn đoán LK của frame gần nhất (ticket #39)
         # `bam`/`bam_ly_do`/`bam_no_evidence_n` = "có bằng chứng về vật" (plan 21-11 P4) — thêm vào
         # allowlist là CỐ Ý: khoá mới phải được khai báo để người đọc status.json biết nó tồn tại.
+        # Plan 21-11-2026 (`src/track_identity.py`, LOG-ONLY): `bbox_w/bbox_h/mask_area` + `cos` với
+        # neo danh tính. Đường WEB không có re-ID nên đây là tín hiệu DUY NHẤT bắt được kiểu sai
+        # "mask có nhưng bám sang nền cùng màu" (phiên `demoip_1121-103854`: bám máy lạnh 9 s).
+        # P3 review vòng 2: 5 khoá danh tính phải nằm trong `bat_buoc`, không chỉ `cho_phep` —
+        # để allowlist không xanh khi ai đó xoá chúng khỏi `status_payload` (tiêu chí của plan).
+        bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n",
+                               # 21-11: cổng nhảy CÓ NHỚ. BẮT BUỘC — web cần `bam`/cờ này để hiện
+                               # banner + nút "vẫn đúng"; xoá khỏi `status_payload` thì test phải đỏ.
+                               "nghi_doi_tuong", "nghi_doi_tuong_n"}
         cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
@@ -201,6 +212,51 @@ class TestReadBbox:
         path = tmp_path / BBOX_NAME
         path.write_text(json.dumps({"x": 1, "y": 2, "w": 30, "h": 40}), encoding="utf-8")
         assert read_bbox(path) == (1, 2, 30, 40)
+
+    def test_read_selection_co_points_va_labels(self, tmp_path):
+        from src.live_tracking import read_selection
+
+        path = tmp_path / BBOX_NAME
+        payload = {
+            "x": 10, "y": 20, "w": 30, "h": 40,
+            "points": [[25.0, 35.0], [5.0, 5.0]],
+            "labels": [1, 0],
+        }
+        path.write_text(json.dumps(payload), encoding="utf-8")
+        sel = read_selection(path)
+        assert sel is not None
+        assert sel.bbox == (10, 20, 30, 40)
+        assert sel.points == [(25.0, 35.0), (5.0, 5.0)]
+        assert sel.labels == [1, 0]
+
+    def test_live_session_truyen_points_sang_engine_khi_co(self, video_source, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+        out = tmp_path / "live_points"
+        out.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "x": 5, "y": 5, "w": 20, "h": 16,
+            "points": [[10.0, 10.0], [2.0, 2.0]],
+            "labels": [1, 0],
+        }
+        (out / BBOX_NAME).write_text(json.dumps(payload), encoding="utf-8")
+
+        class EngineWithPoints(FakeEngine):
+            def __init__(self):
+                super().__init__()
+                self.received_points = None
+                self.received_labels = None
+
+            def start(self, frame, bbox, points=None, labels=None):
+                self.received_points = points
+                self.received_labels = labels
+                return super().start(frame, bbox)
+
+        engine = EngineWithPoints()
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100,
+                              vos_every=1, stop_after_frames=2)
+        LiveTrackingSession(engine, cfg).run()
+        assert engine.received_points == [(10.0, 10.0), (2.0, 2.0)]
+        assert engine.received_labels == [1, 0]
 
 
 class TestHangSoTrangThai:
@@ -1403,11 +1459,15 @@ class TestShownByFrameDocTrongLock:
         session._measure_drift(0, _Result(0, (4, 4, 12, 12), None))
         assert da_giu_lock[0] is None, "lần gán trong `__init__`: chưa có lock (không phải lỗi)"
         assert da_giu_lock[-1] is True, "ghi `_pending_drift` ngoài `__init__` phải trong lock"
-        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: (frame, bbox VOS, seq, vos_ms, empty).
+        # Tuple hẹn mang dữ liệu để ghi dòng CSV khi tới hạn: 5 phần tử cũ (frame, bbox VOS, seq,
+        # vos_ms, empty) + **4 giá trị danh tính của CÙNG frame** (bbox_w, bbox_h, mask_area,
+        # track_cos) — P1 review vòng 2: đọc 4 cột này từ `self._stats` làm dòng CSV trộn hai thế hệ
+        # VOS (18/364 dòng mâu thuẫn `empty=1` + `mask_area=59333`).
         # KHÔNG có `lk_ok`: frame chưa phát nên chưa biết LK, và giá trị đó được TRA LẠI trong lock lúc
         # drain (nhồi `None` vào tuple từng làm mất mẫu khỏi mẫu số — P2 review #51). `seq=None` vì test
         # gọi thẳng `_measure_drift` (không qua `_store_vos`).
-        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None)
+        assert session._pending_drift == (0, (4, 4, 12, 12), None, 12.5, None,
+                                          None, None, None, None)
 
 
 class TestStabilityCoEncodingChuaDo:
@@ -2207,7 +2267,8 @@ class TestLkByFrameDuyetTrongLock:
             source=video_source, out_dir=tmp_path / "live", display_fps=100, vos_every=3))
         # Frame 3 đã được phát với LK ok ⇒ `_lk_by_frame` có entry; pending cũ (frame 3) chụp lúc chưa phát.
         session._lk_by_frame = deque([(3, True)], maxlen=session._lk_by_frame.maxlen)
-        session._pending_drift = (3, (5, 5, 15, 15), None, 12.5, None, None)
+        # 9 phần tử: 5 cũ + 4 giá trị danh tính của CÙNG frame (P1 review vòng 2)
+        session._pending_drift = (3, (5, 5, 15, 15), None, 12.5, None, 10, 10, 100, 0.9)
         session._measure_drift(8, _Result(8, (6, 6, 16, 16), None))   # VOS mới ⇒ đẩy pending cũ ra
 
         from src.drift_samples import read_samples
@@ -2872,3 +2933,344 @@ class TestBamOfDocDequeDuoiLock:
         session._bam_by_frame.append((7, "tracking"))
         with session._stats_lock:
             assert session._bam_of_locked(7) == "tracking"
+
+
+class _EngineVatTo:
+    """Engine giả có vật **đủ lớn** để qua `signature_quality_ok` (`DEFAULT_MIN_AREA = 600` px).
+
+    `FakeEngine` mặc định trả mask 10×10 = **100 px** ⇒ neo bị cổng chất lượng loại ⇒ `track_cos`
+    luôn `None` (đúng hành vi mong đợi, nhưng không dùng được để test đường chấm).
+    """
+
+    def __init__(self, canh=40):
+        self.canh = canh
+        self.processed = 0
+
+    def start(self, frame, bbox):
+        self.processed = 1
+        return self._result(0, (10, 10, 10 + self.canh, 10 + self.canh), frame.shape)
+
+    def process(self, frame):
+        self.processed += 1
+        x = 10 + (self.processed % 3)
+        return self._result(self.processed, (x, 10, x + self.canh, 10 + self.canh), frame.shape)
+
+    @staticmethod
+    def _result(index, bbox, shape):
+        mask = np.zeros(shape[:2], bool)
+        mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+        return _Result(index, bbox, mask)
+
+
+class TestDanhTinhChayOHaiDuongVOS:
+    """P2 review 21-11: test allowlist chỉ kiểm TÊN khoá ⇒ nếu `_store_vos` quên gọi
+
+    `_cap_nhat_danh_tinh` thì `track_cos` im lặng `None` mà cả suite vẫn xanh (đúng bug 6/6 lần chạy
+    đã gặp trước commit `214e74b`). Test này khoá HÀNH VI ở cả hai đường VOS.
+    """
+
+    @pytest.mark.parametrize("vos_every", [1, 3])
+    def test_track_cos_co_so_o_ca_hai_duong(self, video_source, tmp_path, vos_every):
+        out = tmp_path / f"live{vos_every}"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 5, "y": 5, "w": 20, "h": 16}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineVatTo(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=vos_every, display_fps=60,
+            stop_after_frames=12))
+        st = sess.run()
+        # `track_cos_n >= 1` ⇒ đã chấm được ít nhất 1 lần ⇒ neo có mẫu và `cos` không None
+        assert (st.track_cos_n or 0) >= 1, f"vos_every={vos_every}: track_cos không hề được chấm"
+        assert st.bbox_w and st.bbox_h and st.mask_area is not None
+
+
+class _EngineRongSau(_EngineVatTo):
+    """Vật đủ lớn 5 frame đầu rồi model trả mask RỖNG (mất dấu) — để kiểm nhánh mask thô."""
+
+    def process(self, frame):
+        self.processed += 1
+        if self.processed > 5:
+            bbox = (10, 10, 10 + self.canh, 10 + self.canh)
+            return _Result(self.processed, bbox, np.zeros(frame.shape[:2], bool))
+        return super().process(frame)
+
+
+class TestDanhTinhDungMaskThoKhiLamMuot:
+    """P2 review 21-11: với `--mask-smoothing 0.5`, smoother GIỮ mask cũ khi model trả rỗng.
+
+    Nếu chấm danh tính trên `result.mask` (đã làm mượt) thì `track_cos`/`mask_area` **mù đúng lúc
+    model mất vật** — tức đúng lúc cần phát hiện nhất. Phải dùng mask THÔ.
+    """
+
+    @pytest.mark.parametrize("vos_every", [1, 3])
+    def test_mask_area_theo_mask_tho_khong_theo_mask_giu(self, video_source, tmp_path, vos_every):
+        out = tmp_path / "live_smooth"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineRongSau(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=vos_every, display_fps=60,
+            mask_smoothing=0.5, stop_after_frames=12))
+        st = sess.run()
+        # mask THÔ đã rỗng ở các frame cuối ⇒ mask_area phải về 0 (nếu dùng mask đã GIỮ thì > 0)
+        assert st.mask_area == 0, f"mask_area={st.mask_area} ⇒ đang chấm trên mask đã làm mượt"
+
+
+class _EngineXenKeRong(_EngineVatTo):
+    """Có mask ở lần gọi CHẴN, mask RỖNG ở lần gọi LẺ (mô phỏng model chập chờn)."""
+
+    def process(self, frame):
+        r = super().process(frame)
+        if self.processed % 2 == 1:
+            bbox = (10, 10, 10 + self.canh, 10 + self.canh)
+            return _Result(self.processed, bbox, np.zeros(frame.shape[:2], bool))
+        return r
+
+
+class TestDongCsvMotTheHeKhongTron:
+    """P1 review vòng 2 (21-11): 4 cột danh tính của `drift_samples.csv` từng đọc từ `self._stats`
+
+    = lần VOS **gần nhất**, nên 18/364 dòng mâu thuẫn: `empty=1` mà `mask_area=59333`, và
+    `empty=0` mà `mask_area=0`. Mỗi dòng CSV là MỘT frame ⇒ mọi cột phải của đúng frame đó.
+    """
+
+    def test_ghi_dung_identity_truyen_vao_khong_doc_stats(self, video_source, tmp_path):
+        """Khoá ĐÚNG lỗi P1: `_log_drift_sample` phải dùng `identity` được truyền, KHÔNG đọc
+
+        `self._stats` (= lần VOS gần nhất). Test này giết được mutant "trả lại đọc `_stats`" —
+        test qua cả phiên ở dưới thì không, vì đảo thứ tự làm `_stats` tình cờ khớp.
+        """
+        out = tmp_path / "live_identity"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineVatTo(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=3, stop_after_frames=1))
+        # `_stats` cố tình giữ số của một lần VOS KHÁC
+        sess._stats.bbox_w, sess._stats.bbox_h = 999, 888
+        sess._stats.mask_area, sess._stats.track_cos = 777, 0.111
+        sess._log_drift_sample(frame_idx=5, seq=1, value=None,
+                               identity=(60, 50, 1234, 0.9321))
+        sess._drift_log.close()
+        rows = list(csv.DictReader((out / DRIFT_CSV_NAME).open(encoding="utf-8")))
+        assert (rows[-1]["bbox_w"], rows[-1]["bbox_h"]) == ("60", "50")
+        assert rows[-1]["mask_area"] == "1234"
+        assert rows[-1]["track_cos"] == "0.9321"
+
+    def test_mask_area_va_empty_khong_mau_thuan(self, video_source, tmp_path):
+        out = tmp_path / "live_xenke"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}), encoding="utf-8")
+        sess = LiveTrackingSession(_EngineXenKeRong(), LiveTrackConfig(
+            source=video_source, out_dir=out, vos_every=3, display_fps=60,
+            stop_after_frames=60))
+        sess.run()
+        csv_path = out / DRIFT_CSV_NAME
+        assert csv_path.is_file(), "đường có luồng phải ghi drift_samples.csv"
+        rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+        assert rows, "CSV rỗng ⇒ không kiểm được gì"
+        for r in rows:
+            ma = r["mask_area"]
+            if r["empty"] == "1":
+                assert ma == "0", f"frame {r['frame_idx']}: empty=1 nhưng mask_area={ma}"
+                assert r["track_cos"] == "", f"frame {r['frame_idx']}: mask rỗng mà vẫn có cos"
+            elif r["empty"] == "0" and ma != "":
+                assert int(ma) > 0, f"frame {r['frame_idx']}: empty=0 nhưng mask_area={ma}"
+            # cỡ ô phải khớp ô của CÙNG dòng (không phải ô của lần VOS khác)
+            if r["bbox_x1"] != "" and r["bbox_w"] != "":
+                w = int(r["bbox_x2"]) - int(r["bbox_x1"])
+                assert int(r["bbox_w"]) == w, f"frame {r['frame_idx']}: bbox_w={r['bbox_w']} nhưng ô rộng {w}"
+
+
+class TestCongNhayCoNhoDuongWeb:
+    """21-11: cổng nhảy CÓ NHỚ trên đường WEB (worker) — ẩn ô + xác nhận qua `confirm.json`.
+
+    Vì sao: cùng ca đã đo trên CLI (bám sang cửa/tường be cùng tông, cổng báo đúng 1 lần rồi hệ vẽ
+    mask sai 65 frame). `track_cos` không phân biệt được (0,752–0,989 nằm trong dải ca đúng) ⇒ hành
+    động đúng là NGỪNG VẼ + hỏi người dùng, và phải làm được trên web chứ không chỉ CLI.
+    """
+
+    def _config(self, video_source, tmp_path):
+        out = tmp_path / "live_nhay"
+        out.mkdir(parents=True, exist_ok=True)
+        (out / BBOX_NAME).write_text(json.dumps({"x": 10, "y": 10, "w": 40, "h": 40}),
+                                     encoding="utf-8")
+        return out, LiveTrackConfig(source=video_source, out_dir=out, vos_every=1,
+                                    display_fps=60, stop_after_frames=12)
+
+    @pytest.fixture
+    def video_to(self, write_video, tmp_path):
+        """Video 240×320 (KHÔNG dùng fixture 48×64: ngưỡng nhảy = 0,25 × đường chéo = 20 px, hộp
+        nhảy trong khung 48 px không vượt nổi ngưỡng ⇒ test không kiểm được gì)."""
+        frames = np.full((6, 240, 320, 3), 90, np.uint8)
+        return str(write_video(tmp_path / "to.mp4", frames, fps=10))
+
+    def test_o_nhay_thi_bam_nghi_doi_tuong_va_an_o(self, video_to, tmp_path):
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:            # nhảy sang góc kia (vô lý với chuyển động thật)
+                    # Suy kích thước từ FRAME (fixture đổi cỡ ảnh): hộp cứng 240×180 từng rơi ra
+                    # ngoài khung ⇒ mask rỗng ⇒ nhánh `mask_rong` che mất phép kiểm cổng nhảy.
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        st = sess.run()
+        # Frame CUỐI có thể là mask rỗng (video hết) ⇒ `bam` cuối = `no_evidence`; điều phải đúng là
+        # cổng đã BẬT và ĐÃ có frame bị ẩn vì nghi (không phải "chưa từng nghi").
+        assert st.nghi_doi_tuong is True, "cờ nghi phải được giữ sau khi bật"
+        assert st.nghi_doi_tuong_n > 0, "phải có ít nhất 1 frame bị ẩn vì nghi"
+        bam_da_ghi = [b for _, b in sess._bam_by_frame]
+        assert "nghi_doi_tuong" in bam_da_ghi, f"bam đã ghi: {sorted(set(bam_da_ghi))}"
+        payload = json.loads((out / "status.json").read_text(encoding="utf-8"))
+        assert payload["nghi_doi_tuong"] is True and payload["nghi_doi_tuong_n"] > 0
+        # ô ĐÃ BỊ ẨN khỏi ảnh: worker vẽ lại frame gốc, không có mask/ô
+        assert (out / FRAME_NAME).is_file()
+
+    def test_confirm_json_xoa_trang_thai_nghi(self, video_to, tmp_path):
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        # chạy tới khi nghi, rồi ghi `confirm.json` (như API làm) và cho worker xử lý
+        st = sess.run()
+        assert st.nghi_doi_tuong is True
+        (out / CONFIRM_NAME).write_text('{"ts": 1}', encoding="utf-8")
+        sess._check_confirm(out)
+        assert sess._stats.nghi_doi_tuong is False
+        assert sess._stats.bam != "nghi_doi_tuong"
+        assert not (out / CONFIRM_NAME).exists(), "file lệnh phải được xoá để chỉ có hiệu lực 1 lần"
+
+    def test_o_nhay_khong_ghi_de_last_good_bbox(self, video_to, tmp_path):
+        """Khi mask nhảy đột ngột sang nền, gate chặn không nhận vị trí nhảy vào last_good_bbox."""
+        out, cfg = self._config(video_to, tmp_path)
+
+        class EngineNhay(_EngineVatTo):
+            def process(self, frame):
+                r = super().process(frame)
+                if self.processed > 4:
+                    h, w = frame.shape[:2]
+                    box = (w - 60, h - 60, w - 10, h - 10)
+                    m = np.zeros((h, w), bool)
+                    m[box[1]:box[3], box[0]:box[2]] = True
+                    return _Result(self.processed, box, m)
+                return r
+
+        sess = LiveTrackingSession(EngineNhay(), cfg)
+        sess.run()
+        h, w = 240, 320
+        jumped_box = (w - 60, h - 60, w - 10, h - 10)
+        assert sess._last_good_bbox is not None
+        assert sess._last_good_bbox != jumped_box, "vị trí nhảy sang nền không được ghi đè vào last_good_bbox"
+
+
+class TestTuDongChonMucTieu:
+    """22-11: `--auto-detect` — phiên tự tìm vật bằng YOLO-World, không cần ai kéo chuột.
+
+    Vì sao: đường "thiết bị camera" không có màn hình để chọn ô. Detector chạy 38–52 ms/lần trên
+    máy này nên phải THROTTLE, và mọi thứ phải fail-open (thiếu weights ⇒ chờ như cũ, không chết).
+    """
+
+    def _sess(self, video_source, tmp_path, **cfg_kw):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live_auto"
+        out.mkdir(parents=True, exist_ok=True)
+        cfg = LiveTrackConfig(source=video_source, out_dir=out, display_fps=100,
+                              vos_every=1, stop_after_frames=4, **cfg_kw)
+        return LiveTrackingSession(FakeEngine(), cfg), out
+
+    def test_tat_mac_dinh_thi_khong_co_detector(self, video_source, tmp_path):
+        sess, _ = self._sess(video_source, tmp_path)
+        assert sess._detector is None
+        assert sess._auto_selection(np.zeros((48, 64, 3), np.uint8)) is None
+
+    def test_bat_thi_tao_detector_theo_mo_ta_van_ban(self, video_source, tmp_path):
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control")
+        assert sess._detector is not None
+        assert sess._detector.classes == ("remote control",)
+
+    def test_throttle_chi_hoi_detector_moi_n_frame(self, video_source, tmp_path):
+        from src.open_vocab_detector import Detection
+
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control",
+                             auto_detect_every=3)
+        goi = []
+
+        class _Dem:
+            last_ms = 40.0
+            def best(self, frame):
+                goi.append(1)
+                return Detection(bbox=(10, 10, 60, 60), conf=0.9, label="remote control")
+
+        sess._detector = _Dem()
+        frame = np.zeros((48, 64, 3), np.uint8)
+        for _ in range(6):
+            sess._auto_selection(frame)
+        assert len(goi) == 2, "6 frame / every=3 ⇒ đúng 2 lần hỏi detector"
+
+    def test_o_qua_nho_bi_loai_va_o_hop_le_thanh_xywh(self, video_source, tmp_path):
+        from src.open_vocab_detector import Detection
+
+        sess, _ = self._sess(video_source, tmp_path, auto_detect="remote control",
+                             auto_detect_every=1)
+        frame = np.zeros((48, 64, 3), np.uint8)
+
+        class _Nho:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(10, 10, 20, 20), conf=0.9, label="remote control")
+
+        sess._detector = _Nho()
+        assert sess._auto_selection(frame) is None, "ô 10×10 < MIN_BOX 16 ⇒ dương tính giả"
+
+        class _To:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(10, 12, 50, 52), conf=0.8, label="remote control")
+
+        sess._detector = _To()
+        sel = sess._auto_selection(frame)
+        assert sel is not None
+        assert sel.bbox == (10, 12, 40, 40)      # xyxy -> xywh (x, y, w, h)
+        assert sel.points is None                # KHÔNG có prompt tay nào
+
+    def test_phien_tu_bam_duoc_khi_khong_ai_chon_o(self, video_source, tmp_path):
+        """Không có bbox.json mà có `auto_detect` ⇒ phiên TỰ bám (không kẹt `waiting_selection`)."""
+        from src.open_vocab_detector import Detection
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live_tu_dong"
+        out.mkdir(parents=True, exist_ok=True)
+        assert not (out / BBOX_NAME).exists(), "tiền đề: KHÔNG ai chọn ô"
+
+        sess = LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source=video_source, out_dir=out, display_fps=100, vos_every=1,
+            stop_after_frames=6, auto_detect="remote control", auto_detect_every=1))
+
+        class _Detector:
+            last_ms = 40.0
+            def best(self, frame):
+                return Detection(bbox=(5, 5, 45, 45), conf=0.9, label="remote control")
+
+        sess._detector = _Detector()
+        stats = sess.run()
+
+        # `stop_after_frames` làm phiên kết thúc ở `stopped`; điều phải đúng là nó ĐÃ bám được
+        # (không kẹt `waiting_selection`) và ô dùng đúng box của detector.
+        assert stats.frames > 0, "phiên phải phát được frame trong trạng thái bám"
+        assert sess._chon_bbox == (5, 5, 40, 40)   # xyxy -> xywh, ghi vào manifest

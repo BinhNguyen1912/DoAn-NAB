@@ -240,7 +240,10 @@ def _worker_telemetry(out_dir) -> dict:
             "drift_iou", "drift_iou_p05", "drift_n", "mask_age_ms", "mask_age_cu_ms",
             "mask_age_total_ms", "mask_age_p95", "age_n", "stability", "stability_n",
             "stability_shown", "stability_shown_n", "empty_runs", "empty_frac_window",
-            "empty_window_n", "mask_holds", "mask_drops", "lost_streak")
+            "empty_window_n", "mask_holds", "mask_drops", "lost_streak",
+            # Danh tính (PR-1, 21-11): P2 review vòng 2 — whitelist này từng lọc mất 5 khoá ⇒
+            # artifact live KHÔNG có `track_cos` dù `status.json` có.
+            "bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n")
     return {key: data.get(key) for key in keys if key in data}
 
 

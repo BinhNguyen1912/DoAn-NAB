@@ -1,0 +1,163 @@
+{
+  "git_rev": "460cab69ffcdc8f45a278800f04cdc818fe56999",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-22T12:51:39",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/binh2_tay --pred-dir /tmp/b2/masks --out data/miou_baseline_binh2_2026-11-22_metrics.json",
+    "git_rev": "460cab69ffcdc8f45a278800f04cdc818fe56999",
+    "git_dirty": true,
+    "git_dirty_code": false,
+    "git_loi": null,
+    "clip": "data/binh2.mp4",
+    "nguoi_gan": "Binh",
+    "gt": "docs/gt/binh2_tay",
+    "pred_dir": "/tmp/b2/masks",
+    "gt_do_model_goi_y": false,
+    "dang_gt": "silhouette",
+    "nguon_gt": "ngưỡng màu HSV (script `gt_gan_nhanh.py`) + người sửa tay",
+    "phuong_phap_gt": "GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ hoàn toàn",
+    "mask_manifest": {
+      "nguon": "data/binh2.mp4",
+      "image_size": 192,
+      "image_size_hieu_luc": 192,
+      "vos_every": 1,
+      "mask_smoothing": 1.0,
+      "bbox_xywh": [
+        334,
+        319,
+        158,
+        568
+      ],
+      "frames_yeu_cau": [
+        0,
+        33,
+        65,
+        98,
+        131,
+        163,
+        228,
+        261
+      ],
+      "frame_goc_cua_phien": 0,
+      "frames_da_ghi": [
+        0,
+        33,
+        65,
+        98,
+        131,
+        163,
+        228,
+        261
+      ],
+      "so_file_ghi_de": 0,
+      "ghi_chu": "mask THÔ của model (trước bước làm mượt); tên file = chỉ số frame VIDEO"
+    },
+    "mask_manifest_loi": null,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
+  },
+  "ket_qua": {
+    "gt_dang": "silhouette",
+    "mIoU": 0.7644,
+    "mIoU_p05": null,
+    "mIoU_p05_n": 8,
+    "mIoU_p05_nguong": 30,
+    "mask_ngoai_gt_mean": 0.0464,
+    "mask_ngoai_gt_n": 8,
+    "mask_ngoai_gt_max": 0.2036,
+    "mask_ngoai_gt_max_frame": 163,
+    "n_cham": 8,
+    "so_frame_gt_rong": 0,
+    "so_frame_thieu_mask": 4,
+    "so_frame_mask_hong": 0,
+    "so_frame_tong": 12,
+    "coverage": 0.6667,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.6849,
+        "dien_tich_gt": 39706,
+        "dien_tich_pred": 27429,
+        "mask_ngoai_gt": 0.005
+      },
+      {
+        "frame_idx": 33,
+        "iou": 0.7934,
+        "dien_tich_gt": 37990,
+        "dien_tich_pred": 30673,
+        "mask_ngoai_gt": 0.0097
+      },
+      {
+        "frame_idx": 65,
+        "iou": 0.7821,
+        "dien_tich_gt": 38599,
+        "dien_tich_pred": 30343,
+        "mask_ngoai_gt": 0.0028
+      },
+      {
+        "frame_idx": 98,
+        "iou": 0.7575,
+        "dien_tich_gt": 39015,
+        "dien_tich_pred": 30485,
+        "mask_ngoai_gt": 0.0174
+      },
+      {
+        "frame_idx": 131,
+        "iou": 0.7576,
+        "dien_tich_gt": 45159,
+        "dien_tich_pred": 34388,
+        "mask_ngoai_gt": 0.0029
+      },
+      {
+        "frame_idx": 163,
+        "iou": 0.7502,
+        "dien_tich_gt": 33246,
+        "dien_tich_pred": 38752,
+        "mask_ngoai_gt": 0.2036
+      },
+      {
+        "frame_idx": 196,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 228,
+        "iou": 0.7758,
+        "dien_tich_gt": 32337,
+        "dien_tich_pred": 32226,
+        "mask_ngoai_gt": 0.1248
+      },
+      {
+        "frame_idx": 261,
+        "iou": 0.814,
+        "dien_tich_gt": 55938,
+        "dien_tich_pred": 45926,
+        "mask_ngoai_gt": 0.0047
+      },
+      {
+        "frame_idx": 294,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 326,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      },
+      {
+        "frame_idx": 359,
+        "iou": null,
+        "ly_do": "thiếu mask của model"
+      }
+    ]
+  },
+  "canh_bao_gt": [
+    "GT frame 196 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 294 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 326 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 359 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT có frame [196, 294, 326, 359] KHÔNG nằm trong `frames_yeu_cau` của mask ([0, 33, 65, 98, 131, 163, 228, 261]) — đúng lớp lỗi 'ghép GT với mask của frame khác'"
+  ],
+  "loi_chan": []
+}

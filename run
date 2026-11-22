@@ -158,6 +158,9 @@ Lệnh tắt của đồ án Camera AI — ./run <lệnh>
                     + data/reid_metrics.csv + data/reid_summary.json
     calibrate <csv> [--good …] [--bad …]
                     Hiệu chỉnh ngưỡng nhận lại từ CSV có nhãn (--list để xem sự kiện)
+    autodemo "mô tả"  BÁM TỰ ĐỘNG, KHÔNG CHỌN Ô: YOLO-World tìm vật theo mô tả văn bản
+                    (vd "remote control") rồi SAM 2 bám. Thêm --source <clip|cam|URL>.
+                    Cần weights models/yolo-world/yolov8s-worldv2.pt (thiếu → chờ chọn ô như cũ)
 
   KIỂM TRA CHẤT LƯỢNG
     test            Test nhanh (~30 giây, không cần checkpoint)
@@ -287,15 +290,22 @@ EOF
       exit 1
     fi
     _stamp="$(date +%m%d-%H%M%S)"
-    # Cổng NCC đã HIỆU CHUẨN (`data/reid_2clip_calib.json`, 01-11): 17 ca nhận lại ĐÚNG có
-    # ncc 0,415–0,741; ca SAI có ncc 0,279 ⇒ ncc_min = 0,35 tách được, còn cosine thì KHÔNG
-    # (ca sai 0,899 > ca đúng thấp nhất 0,770). Đo 21-11: 0,60 còn nhận cả NỀN (cos 0,835).
+    # Ngưỡng re-ID: hiệu chuẩn 01-11 (`data/reid_2clip_calib.json`: 17 ca ĐÚNG ncc 0,415–0,741,
+    # ca SAI ncc 0,279) + 3 ca SAI mới đo 20–21/11 (vào MẶT cos 0,974/ncc 0,545 · vào TRÁN
+    # cos 0,734/ncc 0,423 · vào ĐẦU cos 0,663/ncc 0,356 — `data/reid_ca_sai_vao_mat_2026-11-20_calib.json`).
+    # ⇒ ncc_min 0,40 chặn 0,356; cosine 0,75 chặn 0,663/0,734; tập nhãn vẫn 17/17 đúng, 0 chặn oan.
+    # BIÊN HẸP (min_good 0,770 vs 0,75 = 0,020; 0,415 vs 0,40 = 0,015) — đừng coi là "đã tối ưu".
+    # `--image-size 192`: đo 21-11 — 320 cho latency mean/p95 360/430 ms, 192 cho 140/157 ms (2,5×).
     # Truyền Ở ĐÂY (đường demo) chứ không đổi `configs/default.yaml` — để artifact cũ tái lập được;
     # cờ của người dùng đứng sau nên vẫn đè được.
-    _ncc="0.35"
-    echo "[demoip] re-ID cue=object ncc_min=${_ncc} (hiệu chuẩn 01-11: đúng ≥0,415 > sai ≤0,279)"
+    _ncc="0.40"
+    _objth="0.75"
+    # ĐÍNH CHÍNH (review 21-11, P3): ca vào MẶT (ncc 0,545 / cosine 0,974) **KHÔNG** bị ngưỡng nào
+    # chặn — nó nằm giữa dải ca đúng (ncc 0,415–0,741). Ca đó CHỈ bị veto mặt/đầu chặn.
+    echo "[demoip] re-ID cue=object ncc_min=${_ncc} cosine_min=${_objth}: chặn trán 0,423 · đầu 0,356; ca MẶT chỉ bị VETO chặn"
+    echo "[demoip] veto: không nhận lại ứng viên trùm khuôn mặt/đầu (tắt: --no-reid-face-veto)"
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
-      --reid-cue object --reid-obj-ncc-min "$_ncc" --image-size 320 \
+      --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"
@@ -616,6 +626,30 @@ PY
       echo
       cat "$ROOT/scripts/aliases.sh"
     fi
+    ;;
+  help|-h|--help)
+    usage
+    ;;
+  autodemo)
+    # 22-11: DEMO KHÔNG CHẠM TAY — YOLO-World tự tìm vật theo MÔ TẢ VĂN BẢN rồi SAM 2 bám.
+    # Dùng khi không có màn hình/chuột (thiết bị camera) hoặc để demo "hệ tự tìm mục tiêu".
+    # Ví dụ: ./run autodemo "remote control"        ./run autodemo "bottle" --source data/binh1.mp4
+    activate_env
+    _mo_ta="${1:-remote control}"
+    if [ $# -gt 0 ]; then shift; fi
+    _src="0"
+    _out="${TMPDIR:-/tmp}/doan-auto"
+    _args=()
+    while [ $# -gt 0 ]; do
+      case "$1" in
+        --source) _src="$2"; shift 2 ;;
+        --out-dir) _out="$2"; shift 2 ;;
+        *) _args+=("$1"); shift ;;
+      esac
+    done
+    mkdir -p "$_out"
+    exec "$PYTHON" tools/live_worker.py --source "$_src" --out-dir "$_out" \
+      --auto-detect "$_mo_ta" --image-size 192 --vos-every 3 "${_args[@]}"
     ;;
   help|-h|--help)
     usage

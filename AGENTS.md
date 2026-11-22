@@ -483,4 +483,27 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - [ ] Review độc lập đã chạy (mục 9.1), P0 = 0, P1 có chủ
 - [ ] CI GitHub xanh trước khi merge
 - [ ] Log `docs/task/…` có kết quả review + quyết định plan
-- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo
+- [ ] Số liệu trong log/README lấy từ file CSV/status.json thật, ghi rõ môi trường đo- **Cổng "nghi đổi đối tượng" phải CÓ NHỚ, và `track_cos` KHÔNG phân biệt được vùng sai cùng tông.**
+  Đo 21-11 (phiên `demoip_1121-121732`): cổng nhảy báo ĐÚNG ở f178 (bám sang **cửa/tường be cùng tông** với
+  điện thoại be) nhưng sau cú nhảy chuyển động lại mượt ⇒ cổng **không báo lại**, hệ vẽ mask SAI **65
+  frame**. Mask-cos của vùng sai = **0,752–0,989** (median 0,854) so với ca đúng **0,905** ⇒ **không tồn tại
+  θ tách được** (0,75 bắt 0/65; 0,85 bắt 43 % nhưng **chặn oan 15 %** frame đúng) ⇒ **đừng làm "cổng cos"**,
+  và **đừng trích** "θ bắt được ca máy lạnh" (số 0,51–0,72 của ca đó là **box-cos**, khác đại lượng).
+  Nay `src/identity_guard.IdentityWatch` giữ trạng thái nghi (latch) tới khi bấm `r` (chọn lại) hoặc `c`
+  (vẫn đúng) và `visualizer` **không vẽ** mask/ô khi nghi. Chi phí đo được: cổng báo **21 lần/2 973 frame
+  (0,71 %)** trên 18 phiên; ẩn tới hết phiên mà không ai bấm gì = **34,7 %** frame, **5/18 phiên sạch không
+  bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
+  "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
+  e2e trên Chrome thật kiểm banner + nút + endpoint).- **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
+  (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
+  một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
+  **158/199 ms** (chậm 9×) và cả phiên bị kết luận sai là "model chậm". Nay `tools/run_live.py` in WARN
+  kèm pid + `kill -9 <pid>` trước khi mở phiên (`src/proc_pid.find_live_workers`). Kiểm nhanh:
+  `ps -eo pid,pcpu,etime,cmd | grep live_worker` và `uptime`.- **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
+  = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
+  fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
+  @160 **75 ms**, @128 **58 ms** (17,3 lần/s) — chất lượng (fixture che, cận trên): mIoU nền 0,913/0,927/
+  0,898 và mIoU khi che 50 % 0,861/0,826/0,781. ⇒ Muốn overlay tươi hơn thì hạ `image_size` (**160** là
+  điểm cân bằng); muốn hình >16 fps thì phải **đổi nguồn** (điện thoại 30 fps qua `./run phone`, hoặc
+  clip). **Đừng hứa GPU free làm mượt live** — Colab/Kaggle không thấy webcam laptop và không có URL
+  công khai để relay đẩy ảnh vào; tunnel thêm 50–150 ms/frame.

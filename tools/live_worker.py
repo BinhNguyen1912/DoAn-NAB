@@ -150,12 +150,27 @@ def main() -> int:
                         help="ghi ô bao đang hiển thị mỗi frame ra CSV (đo chất lượng ô vs GT)")
     parser.add_argument("--dump-mask-dir", default="",
                         help="thư mục ghi mask (mặc định <out-dir>/masks)")
+    # 22-11: TỰ ĐỘNG chọn mục tiêu — bỏ bước kéo chuột, cần cho thiết bị không có màn hình.
+    parser.add_argument("--auto-detect", default="",
+                        help='mô tả VĂN BẢN cho YOLO-World để tự tìm vật (vd "remote control"). '
+                             "Bật thì không cần --bbox/bbox.json: phiên tự chờ tới khi thấy vật")
+    parser.add_argument("--auto-detect-every", type=int, default=5,
+                        help="chỉ chạy detector mỗi N frame đang chờ (mặc định 5)")
+    parser.add_argument("--auto-detect-conf", type=float, default=0.30,
+                        help="ngưỡng conf của detector (mặc định 0.30; đo 22-11: 0.25 bắt nhầm)")
     args = parser.parse_args()
 
     # Validate ở cửa vào: trước đây CLI clamp im lặng 0.0 → 0.05 còn schema API lại cho 0.0
     # (lỗi hợp đồng P2, review 08-11).
     if not 0.0 < args.mask_smoothing <= 1.0:
         parser.error("--mask-smoothing phải trong khoảng (0, 1]; 1.0 = tắt làm mượt")
+    if args.auto_detect_every < 1:
+        parser.error("--auto-detect-every phải >= 1 (đơn vị: frame)")
+    if not 0.0 < args.auto_detect_conf <= 1.0:
+        parser.error("--auto-detect-conf phải trong khoảng (0, 1]")
+    if args.auto_detect and args.bbox:
+        # Hai đường cùng chỉ định mục tiêu thì không rõ cái nào thắng — chặn thay vì đoán.
+        parser.error("chọn MỘT trong hai: --auto-detect (tự tìm) hoặc --bbox (chỉ định tay)")
 
     # `--bbox x,y,w,h` (dạng xywh, cùng dạng bbox.json). KIỂM ngay nhưng GHI SAU khi mọi validate
     # xong: ghi trước như bản nháp sẽ để lại bbox.json rác khi chính lệnh đó sai tham số (`--vos-every
@@ -296,6 +311,9 @@ def main() -> int:
         lk_max_mad=args.lk_max_mad,
         lk_scale=args.lk_scale,
         dump_shown_csv=args.dump_shown_csv,
+        auto_detect=args.auto_detect,
+        auto_detect_every=args.auto_detect_every,
+        auto_detect_conf=args.auto_detect_conf,
     )
     stats = LiveTrackingSession(engine, config).run(stop)
     print(f"[worker] kết thúc: {stats.frames} frame phát, {stats.vos_runs} lần VOS | "

@@ -132,6 +132,31 @@ def _git_rev() -> str:
         return "unknown"
 
 
+def _git_dirty() -> tuple:
+    """`(git_dirty, git_dirty_code)`; `(None, None)` = không hỏi được (không phải repo/hỏng git).
+
+    AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn KHÔNG tái lập được (review vòng 3
+    bắt đúng ca `veto_demo_21-11`: `git_rev ee3058a` mà CSV đã có cột của commit sau).
+
+    `git_dirty_code` = bẩn **bỏ qua `data/`** — vì chính file artifact đang ghi nằm trong `data/` nên
+    `git_dirty` luôn `true` một cách vô nghĩa (đo lại lần hai là file artifact bị sửa). Tái lập được
+    ⇔ `git_dirty_code == false` (cùng quy ước `scripts/measure_watchdog.py`, review 08-11).
+    Không ném: provenance không được làm chết phiên đo.
+    """
+    try:
+        out = subprocess.run(["git", "status", "--porcelain"], capture_output=True,
+                             text=True, check=True, timeout=10).stdout
+    # BUG THẬT 21-11 (phiên `demoip_1121-103854`): hàm này chạy trong `finally` sau Ctrl+C ⇒
+    # `subprocess.run` ném **KeyboardInterrupt** ⇒ mất `run_info` VÀ bản H.264 hỏng (moov atom
+    # not found). Cleanup KHÔNG được ném: bắt cả KeyboardInterrupt ở đây (Ctrl+C lần hai vẫn thoát
+    # ở chỗ khác), đúng tinh thần "Ctrl+C không được làm mất số liệu" của `_finish_outputs`.
+    except (OSError, subprocess.SubprocessError, KeyboardInterrupt):
+        return None, None
+    lines = [ln for ln in out.splitlines() if ln.strip()]
+    code = [ln for ln in lines if not ln[3:].strip().startswith("data/")]
+    return bool(lines), bool(code)
+
+
 def _make_reid_session(engine, args):
     """Dựng ReIdSession khi bật re-ID (ADR-0003); None nếu tắt. Thiều model → báo lỗi có hướng dẫn."""
     if not getattr(args, "reid", False):
@@ -171,14 +196,34 @@ def _make_reid_session(engine, args):
         # mất dấu là mất luôn. Nói ngay lúc khởi động thay vì để người dùng đoán.
         print("[re-ID] cue=face CHỈ nhận lại được KHUÔN MẶT. Đang bám VẬT (chai, hộp, remote)? "
               "thêm --reid-cue object (hoặc both).")
-    return ReIdSession(engine, embedder, threshold=args.reid_threshold,
-                       lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
-                       min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
-                       cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
-                       obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0),
-                       lost_score_threshold=getattr(args, "lost_score_threshold", 0.0),
-                       reacquire_confirm=getattr(args, "reid_confirm", 2),
-                       verify_frames=getattr(args, "reid_verify", 2))
+    # Veto "nhận lại vào MẶT/ĐẦU": dùng chính bộ dò mặt của cảnh báo ô chọn (`src/face_guard.py`).
+    # Chỉ bật khi cue có VẬT THỂ (cue=face thì mặt là đích, veto sẽ tự im vì `_ref_phu_mat` True).
+    face_veto = None
+    if cue in ("object", "both") and getattr(args, "reid_face_veto", True):
+        try:
+            from src.face_guard import BoDoMat
+            face_veto = BoDoMat()
+        except Exception:                     # fail-open: thiếu model/opencv ⇒ như cũ
+            face_veto = None
+    session = ReIdSession(engine, embedder, threshold=args.reid_threshold,
+                          lost_after_frames=args.lost_after_frames, ref_max=args.reid_ref_max,
+                          min_face_px=args.reid_min_face_px, min_score=args.reid_min_detect_score,
+                          cue=cue, obj_threshold=getattr(args, "reid_obj_threshold", 0.6),
+                          obj_ncc_min=getattr(args, "reid_obj_ncc_min", 0.0),
+                          lost_score_threshold=getattr(args, "lost_score_threshold", 0.0),
+                          reacquire_confirm=getattr(args, "reid_confirm", 2),
+                          verify_frames=getattr(args, "reid_verify", 2),
+                          face_veto=face_veto)
+    if face_veto is not None:
+        # P3 review 21-11: `BoDoMat` là LƯỜI — thiếu `.onnx` thì `detect()` im lặng trả `[]`.
+        # In "đã bật" lúc đó là hứa suông (clone mới không có model vì `models/` bị gitignore).
+        _co_model = os.path.isfile(os.path.join(getattr(face_veto, "_model", "") or ""))
+        if _co_model:
+            print("[re-ID] veto: KHÔNG nhận lại ứng viên trùm khuôn mặt/đầu (khi ô chọn ban đầu không phải mặt)")
+        else:
+            print("[re-ID] veto mặt/đầu TẮT THẬT (thiếu models/face/face_detection_yunet_2023mar.onnx) "
+                  "— xem docs/adr/0003 để tải model")
+    return session
 
 
 def _window_closed(window_name, seen_visible=None, max_misses=3):
@@ -297,13 +342,17 @@ def _finish_recording(viz, args):
         _export_web_record(args)
 
 
-def _finish_outputs(viz, metrics, args):
+def _finish_outputs(viz, metrics, args, reid_session=None):
     """Chốt số liệu TRƯỚC, xuất video SAU — nhưng video PHẢI luôn được đóng/xuất.
 
     `try/finally` là bắt buộc (review vòng 2, P2): `_finish_metrics` có thể ném (đĩa đầy, git không
     chạy được, Ctrl+C lần hai). Nếu không có `finally` thì recorder không được đóng TƯỜNG MINH và
     `demo_web.mp4` (bản duy nhất Chrome phát được) không bao giờ được tạo — đúng thứ PR này muốn có.
     """
+    # P2 review 21-11: số ứng viên bị veto phải tới được artifact — nếu không thì "veto không chặn
+    # oan" là câu không kiểm được. Gắn vào `args` (đã có sẵn ở mọi nhánh finally).
+    if reid_session is not None:
+        args._reid_veto_n = int(getattr(reid_session, "veto_mat_n", 0) or 0)
     try:
         if metrics is not None:
             _finish_metrics(metrics, args)
@@ -342,10 +391,17 @@ def _finish_metrics(metrics, args):
     metrics.write_csv(args.metrics_csv)
     if args.metrics_summary:
         metrics.write_summary_json(args.metrics_summary)
-    _write_run_info(args)
+    try:
+        _write_run_info(args)
+    except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
+        print(f"[canh bao] không ghi được run_info: {type(exc).__name__}: {exc}")
     s = metrics.summary()
     mean_txt = ("chưa đo" if not s.get("mean_latency_ms_n")
                 else f"{s['mean_latency_ms']:.0f} ms (n={s['mean_latency_ms_n']})")
+    _veto_n = getattr(args, "_reid_veto_n", None)
+    if _veto_n:
+        print(f"[re-ID] bỏ {_veto_n} ứng viên vì TRÙNG KHUÔN MẶT/ĐẦU (veto) — "
+              f"xem cột `vetoed` (=1) trong CSV để biết các frame đó")
     print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
@@ -387,6 +443,12 @@ def _write_run_info(args):
         # Che `user:pass@` (ticket 29): file `data/*_run_info.json` ĐƯỢC COMMIT
         # (`.gitignore` có `!data/*_run_info.json`).
         source=an_userinfo(str(getattr(args, "source", ""))),
+        # P2 review 21-11: thêm/sửa một cổng re-ID mà artifact trước/sau TRÔNG Y HỆT NHAU thì
+        # không tái lập được ("không chặn oan" nói trên wiki nhưng không có file nào chứng minh).
+        # chỉ ghi khi re-ID BẬT: ghi `true` lúc re-ID tắt là hứa suông (P3 vòng 3)
+        reid_face_veto=(bool(getattr(args, "reid_face_veto", False))
+                        if getattr(args, "reid", False) else None),
+        reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
@@ -398,8 +460,17 @@ def _write_run_info(args):
         # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
         device=getattr(args, "device", None) or "cpu",
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
-        reid_reacquire_confirm=getattr(args, "reid_reacquire_confirm", None),
-        reid_verify_frames=getattr(args, "reid_verify_frames", None),
+        # P3 review vòng 3: đọc SAI tên — `main()` gán `args.reid_confirm`/`args.reid_verify`
+        # (`:759-760`) nên MỌI `data/*_run_info.json` tới nay ghi `null` cho 2 trường này.
+        reid_reacquire_confirm=getattr(args, "reid_confirm",
+                                       getattr(args, "reid_reacquire_confirm", None)),
+        reid_verify_frames=getattr(args, "reid_verify",
+                                   getattr(args, "reid_verify_frames", None)),
+        # AGENTS §6: artifact phải có `git_dirty` — số đo trên cây bẩn thì không tái lập được
+        # (review vòng 3 bắt đúng: `veto_demo_21-11` ghi `git_rev ee3058a` mà CSV đã có cột `vetoed`
+        # của commit sau ⇒ sinh trên cây BẨN).
+        git_dirty=_git_dirty()[0],
+        git_dirty_code=_git_dirty()[1],
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -441,6 +512,10 @@ def _run_display(engine, args):
     armed_bbox = _load_bbox(args, first_frame=None)
     viz = None
     metrics = None
+    # P1 review vòng 2: phải có mặt TRƯỚC `try` — `finally` dùng nó, nên lỗi xảy ra trước dòng gán
+    # (vd `_make_reid_session` ném SystemExit khi thiếu model mặt) sẽ thành `UnboundLocalError`
+    # trong `finally`, che lỗi thật và bỏ `cv2.destroyAllWindows()`.
+    reid_session = None
     interrupted = False
 
     try:
@@ -508,7 +583,7 @@ def _run_display(engine, args):
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (demo hay dừng kiểu này).
         # Thứ tự: SỐ LIỆU trước, chuyển mã video sau (ffmpeg im lặng — người dùng hay bấm Ctrl+C
         # lần hai; số liệu không được phụ thuộc vào bước phụ này).
-        _finish_outputs(viz, metrics, args)
+        _finish_outputs(viz, metrics, args, reid_session)
         cv2.destroyAllWindows()
 
     if interrupted:
@@ -525,6 +600,7 @@ def _run_headless(engine, args):
     viz = None
     metrics = None
     summary = None
+    reid_session = None        # P1 review vòng 2 (xem `_run_display`)
     progress_total = None
     interrupted = False
     try:
@@ -563,7 +639,7 @@ def _run_headless(engine, args):
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (số liệu trước, chuyển mã sau)
-        _finish_outputs(viz, metrics, args)
+        _finish_outputs(viz, metrics, args, reid_session)
         # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
         frames_done = summary.total_frames if summary is not None else 0
         _write_progress(args.progress_json, frames_done, progress_total)
@@ -578,6 +654,39 @@ def _run_headless(engine, args):
     print(f"[kết quả] {summary.total_frames} frame | mean={mean_txt} | "
           f"p95={p95_txt} | FPS hiệu dụng ≈ {summary.effective_fps:.2f}")
     print(f"({_device_note(args.device)} — số liệu thực đo theo ADR-0002)")
+
+
+def _canh_bao_worker_mo_coi() -> None:
+    """CẢNH BÁO nếu có worker live KHÁC đang chạy (mồ côi) trước khi mở phiên mới.
+
+    Vì sao (bug thật 21-11): người dùng đóng tab web mà không bấm Dừng ⇒ worker của phiên web vẫn
+    chạy, ăn **461 % CPU** và **giữ webcam**. Lần `./run demoip` sau đó đo được **1484 ms/frame thay
+    vì 158 ms** (chậm 9×) mà KHÔNG có thông báo nào — cả buổi demo bị kết luận sai là "model chậm".
+    API chỉ reap worker cũ khi mở phiên MỚI trong CÙNG thư mục live; CLI không đụng thư mục đó nên
+    phải tự cảnh báo, kèm pid + lệnh giết (không tự giết: có thể là phiên người khác đang dùng).
+    """
+    try:
+        from src.proc_pid import find_live_workers
+
+        others = find_live_workers(exclude_pid=os.getpid())
+    except Exception:                     # noqa: BLE001 — cảnh báo không được làm hỏng lần chạy
+        return
+    if not others:
+        return
+    for pid, argv in others:
+        out_dir = ""
+        for index, arg in enumerate(argv):
+            if arg == "--out-dir" and index + 1 < len(argv):
+                out_dir = argv[index + 1]
+        source = ""
+        for index, arg in enumerate(argv):
+            if arg == "--source" and index + 1 < len(argv):
+                source = argv[index + 1]
+        print(f"[WARN] có worker live KHÁC đang chạy (pid {pid}, nguồn {source or '?'}, "
+              f"thư mục {out_dir or '?'}) — nó ăn CPU và có thể ĐANG GIỮ WEBCAM.")
+        print("[WARN] đo được trên máy này 21-11: 1484 ms/frame thay vì 158 ms ⇒ số của phiên "
+              "này SẼ SAI. Dừng nó trước:  kill -9 " f"{pid}")
+        print("[WARN] (hoặc trên web bấm 'Dừng' — đóng tab KHÔNG dừng worker)")
 
 
 def main():
@@ -639,6 +748,10 @@ def main():
     ap.add_argument("--reid-obj-ncc-min", type=float, default=None,
                     help="cổng NCC tối thiểu cho vật ít màu/texture (mặc định 0 = tắt; "
                          "đo: cùng vật 1,000 vs vật đen khác 0,897)")
+    ap.add_argument("--no-reid-face-veto", dest="reid_face_veto", action="store_false",
+                    default=True,
+                    help="TẮT veto 'không nhận lại vào khuôn mặt/đầu' (mặc định BẬT khi "
+                         "cue=object/both; veto tự im nếu ô chọn ban đầu phủ mặt)")
     ap.add_argument("--lost-score-threshold", type=float, default=None,
                     help="score ≤ ngưỡng này coi như mất dấu (mặc định 0; chống SAM 2 "
                          "tưởng tượng mask khi vật đã rời khung)")
@@ -655,6 +768,7 @@ def main():
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
     args = ap.parse_args()
+    _canh_bao_worker_mo_coi()
 
     # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
     cfg = load_config(args.config)

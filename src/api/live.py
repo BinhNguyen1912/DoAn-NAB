@@ -74,6 +74,7 @@ class LiveStreamService:
     # ------------------------------------------------------------------ lệnh
 
     def start(self, source: str, *, mode: str = "raw", bbox=None,
+              points=None, labels=None,
               image_size: int | None = None, vos_every: int | None = None,
               mask_smoothing: float | None = None) -> LiveStatus:
         """Mở nguồn và bắt đầu phát.
@@ -91,8 +92,15 @@ class LiveStreamService:
                 self._stop_locked()
                 self._stop.clear()          # xoá dấu stop cũ để phiên mới không tự huỷ
 
-            candidate = self._make_source(str(source), mode, bbox, image_size, vos_every,
-                                          mask_smoothing)
+            try:
+                candidate = self._make_source(str(source), mode=mode, bbox=bbox,
+                                              image_size=image_size, vos_every=vos_every,
+                                              mask_smoothing=mask_smoothing,
+                                              points=points, labels=labels)
+            except TypeError:
+                candidate = self._make_source(str(source), mode=mode, bbox=bbox,
+                                              image_size=image_size, vos_every=vos_every,
+                                              mask_smoothing=mask_smoothing)
             with self._lock:                # công bố TRƯỚC khi mở → stop() huỷ được giữa chừng
                 self._pending = candidate
                 self._label = candidate.label
@@ -146,6 +154,33 @@ class LiveStreamService:
         finally:
             self._start_lock.release()
 
+    def select(self, bbox, points=None, labels=None) -> LiveStatus:
+        """Chọn hoặc chọn lại đối tượng cho phiên live đang chạy."""
+        with self._lock:
+            source = self._source
+        write_select = getattr(source, "select", None)
+        if write_select is None:
+            raise SourceUnavailable("nguồn hiện tại không hỗ trợ chọn đối tượng "
+                                    "(chỉ áp dụng khi đang bám đối tượng)")
+        write_select(bbox, points=points, labels=labels)
+        return self.status()
+
+    def confirm(self) -> LiveStatus:
+        """Xác nhận "vẫn đúng đối tượng" ⇒ worker XOÁ trạng thái nghi đổi đối tượng.
+
+        Dùng khi cổng nhảy (`IdentityWatch`) báo nghi và UI hiện banner: người dùng bấm "vẫn đúng" thì
+        hệ vẽ lại mask/ô mà KHÔNG phải chọn lại. Không có lệnh này thì chỉ còn cách chọn lại ô — quá
+        nặng cho một lần báo nhầm, và trên sân khấu demo thì không kịp.
+        """
+        with self._lock:
+            source = self._source
+        write = getattr(source, "confirm", None)
+        if write is None:
+            raise SourceUnavailable("nguồn hiện tại không hỗ trợ xác nhận đối tượng "
+                                    "(chỉ áp dụng khi đang bám đối tượng)")
+        write()
+        return self.status()
+
     def stop(self) -> LiveStatus:
         """Dừng phát và đóng nguồn.
 
@@ -196,7 +231,12 @@ class LiveStreamService:
                             cau_hinh_lech=detail.cau_hinh_lech,
                             image_size_hieu_luc=detail.image_size_hieu_luc,
                             suc_khoe=detail.suc_khoe,
-                            suc_khoe_cau=detail.suc_khoe_cau)
+                            suc_khoe_cau=detail.suc_khoe_cau,
+                            bam=detail.bam, bam_ly_do=detail.bam_ly_do,
+                            bam_no_evidence_n=detail.bam_no_evidence_n,
+                            # 21-11: cổng nhảy CÓ NHỚ — UI cần biết để hiện banner + nút "vẫn đúng".
+                            nghi_doi_tuong=detail.nghi_doi_tuong,
+                            nghi_doi_tuong_n=detail.nghi_doi_tuong_n)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

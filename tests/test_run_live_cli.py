@@ -626,3 +626,149 @@ class TestDongCuaSoBangX:
                                           "--bbox", "60,60,40,40"])
         run_live.main()          # không được treo
         assert list(QUIT_KEYS)      # sanity
+
+
+class TestKhongNuotLoiBangUnboundLocalError:
+    """P1 review vòng 2 (21-11): `reid_session` chưa khởi tạo trước `try` ⇒ `finally` ném
+
+    `UnboundLocalError`, che lỗi THẬT và bỏ `cv2.destroyAllWindows()`.
+
+    Ca thật: `--reid --reid-cue face` thiếu model (`models/` bị gitignore ⇒ clone mới) ném
+    `SystemExit(1)` từ `_make_reid_session` — tức là lỗi có hướng dẫn, nhưng người dùng chỉ thấy
+    traceback `UnboundLocalError`. Test này khoá đúng ca đó.
+    """
+
+    def _args(self, tmp_path, video, **kw):
+        import argparse
+        a = argparse.Namespace(
+            source=str(video), checkpoint=str(video), device="cpu", image_size=192,
+            bbox="10,10,60,60", bbox_file=None, max_frames=1, display=False,
+            record=None, record_fps=10, metrics_csv=None, metrics_summary=None,
+            reid=True, reid_cue="face", reid_threshold=0.36, lost_after_frames=2,
+            reid_min_face_px=40, reid_min_detect_score=0.6, reid_ref_max=8,
+            reid_detector_model="models/face/khong_ton_tai_det.onnx",
+            reid_recognizer_model="models/face/khong_ton_tai_rec.onnx",
+            reid_obj_threshold=0.75, reid_obj_ncc_min=0.4, lost_score_threshold=0.0,
+            reid_confirm=2, reid_verify=2, reid_face_veto=True,
+            reanchor_every=None, smooth=False, show_trajectory=False,
+            hide_trajectory=False, mask_threshold=0.0, max_trajectory=100,
+            smooth_display=False, record_enabled=False, record_path=None,
+            progress_json=None, progress_total=None,
+        )
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def test_thieu_model_mat_thi_bao_loi_huong_dan_khong_phai_unbound(self, tmp_path,
+                                                                     video, monkeypatch):
+        args = self._args(tmp_path, video)
+        monkeypatch.setattr("src.tracker_engine.build_engine", lambda *a, **k: object(),
+                            raising=False)
+        with pytest.raises(SystemExit) as exc:
+            run_live._run_headless(engine=object(), args=args)
+        assert exc.value.code == 1          # lỗi THẬT (hướng dẫn tải model), không bị che
+
+
+class TestKhongNuotLoiOHienThi:
+    """P3 review vòng 3: bản vá `reid_session = None` ở `_run_display` không có test.
+
+    Cùng ca với `_run_headless`: `--reid --reid-cue face` thiếu model ⇒ `SystemExit(1)` có hướng
+    dẫn. Nếu thiếu dòng khởi tạo thì `finally` ném `UnboundLocalError`, che lỗi và bỏ đóng cửa sổ.
+    """
+
+    def test_hien_thi_thieu_model_mat_van_bao_loi_huong_dan(self, tmp_path, video, monkeypatch):
+        import argparse
+        args = argparse.Namespace(
+            source=str(video), device="cpu", image_size=192, bbox="10,10,60,60",
+            bbox_file=None, max_frames=1, display=True, record=None, record_fps=10,
+            metrics_csv=None, metrics_summary=None, reid=True, reid_cue="face",
+            reid_threshold=0.36, lost_after_frames=2, reid_min_face_px=40,
+            reid_min_detect_score=0.6, reid_ref_max=8,
+            reid_detector_model="models/face/khong_ton_tai_det.onnx",
+            reid_recognizer_model="models/face/khong_ton_tai_rec.onnx",
+            reid_obj_threshold=0.75, reid_obj_ncc_min=0.4, lost_score_threshold=0.0,
+            reid_confirm=2, reid_verify=2, reid_face_veto=True, reanchor_every=None,
+            smooth=False, show_trajectory=False, hide_trajectory=False,
+            mask_threshold=0.0, max_trajectory=100, smooth_display=False,
+            record_enabled=False, record_path=None, progress_json=None, progress_total=None,
+        )
+        closed = []
+        monkeypatch.setattr("tools.run_live.cv2.namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr("tools.run_live.cv2.setMouseCallback", lambda *a, **k: None)
+        monkeypatch.setattr("tools.run_live.cv2.destroyAllWindows",
+                            lambda *a, **k: closed.append(1))
+        with pytest.raises(SystemExit) as exc:
+            run_live._run_display(engine=object(), args=args)
+        assert exc.value.code == 1
+        assert closed, "phải đóng cửa sổ kể cả khi lỗi (finally không được ném trước đó)"
+
+
+class TestGitDirtyCode:
+    """AGENTS §6: artifact phải phân biệt "cây bẩn" với "bẩn vì CHÍNH file artifact".
+
+    Đo lại lần hai thì file `data/*_metrics.json` bị sửa ⇒ `git_dirty` luôn `true` vô nghĩa;
+    tái lập được ⇔ `git_dirty_code == false` (quy ước `scripts/measure_watchdog.py`).
+    """
+
+    def test_bo_qua_thay_doi_trong_data(self, monkeypatch):
+        import subprocess as sp
+        class R:
+            stdout = " M data/veto_demo_metrics.csv\n?? data/anh_tmp/x.jpg\n"
+        monkeypatch.setattr(sp, "run", lambda *a, **k: R())
+        assert run_live._git_dirty() == (True, False)
+
+    def test_ban_o_code_thi_dirty_code_true(self, monkeypatch):
+        import subprocess as sp
+        class R:
+            stdout = " M data/a.csv\n M src/reid.py\n"
+        monkeypatch.setattr(sp, "run", lambda *a, **k: R())
+        assert run_live._git_dirty() == (True, True)
+
+    def test_khong_hoi_duoc_git_thi_none(self, monkeypatch):
+        import subprocess as sp
+        def boom(*a, **k):
+            raise OSError("no git")
+        monkeypatch.setattr(sp, "run", boom)
+        assert run_live._git_dirty() == (None, None)
+
+
+class TestProvenanceKhongDuocGietPhien:
+    """BUG THẬT 21-11 (`demoip_1121-103854`): `_git_dirty()` chạy trong `finally` sau Ctrl+C ⇒
+
+    `subprocess.run` ném **KeyboardInterrupt** ⇒ **mất `run_info.json`** và bản H.264 hỏng
+    (`moov atom not found`). Cleanup không bao giờ được ném.
+    """
+
+    def test_git_dirty_khong_nem_khi_bi_ctrl_c(self, monkeypatch):
+        import subprocess as sp
+        def boom(*a, **k):
+            raise KeyboardInterrupt
+        monkeypatch.setattr(sp, "run", boom)
+        assert run_live._git_dirty() == (None, None)
+
+    def test_finish_metrics_van_in_so_lieu_khi_run_info_loi(self, tmp_path, monkeypatch, capsys):
+        class FakeMetrics:
+            records = [1]
+
+            def write_csv(self, path):
+                return str(path)
+
+            def write_summary_json(self, path):
+                return str(path)
+
+            def summary(self):
+                return {"total_frames": 1, "mean_latency_ms": 100.0, "mean_latency_ms_n": 1,
+                        "p95_latency_ms": 110.0, "p95_latency_ms_n": 1, "lost_count": 0,
+                        "lost_ratio": 0.0, "mean_score": 1.0, "resources": {}}
+
+        import argparse
+        args = argparse.Namespace(metrics_csv=str(tmp_path / "m.csv"),
+                                  metrics_summary=None, source="x", device="cpu",
+                                  image_size=192, reid=False)
+
+        def boom(_args):
+            raise OSError("đĩa hỏng")
+        monkeypatch.setattr(run_live, "_write_run_info", boom)
+        run_live._finish_metrics(FakeMetrics(), args)      # KHÔNG được ném
+        out = capsys.readouterr().out
+        assert "run_info" in out and "[metrics]" in out     # vẫn in số liệu cho người dùng

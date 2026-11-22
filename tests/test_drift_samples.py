@@ -772,3 +772,60 @@ class TestTiLeLkOk:
         kq = summarize([{"empty": False, "drift_iou": 0.9}], window=2)
         assert kq["n_lk_do_duoc"] == 0
         assert kq["lk_ok_frac"] is None
+
+
+def test_csv_co_cot_danh_tinh(tmp_path):
+    """P1 review 21-11: đường LIVE chỉ có CSV NÀY (không có `metrics.csv` của CLI).
+
+    Thiếu 4 cột ⇒ tiêu chí "`track_cos` có trong CSV live" của plan KHÔNG đo được trên sân khấu web
+    (đúng lỗi "cổng mù" mà PR-1 sinh ra để vá). `None` phải là ô TRỐNG, không phải 0.
+    """
+    import csv as _csv
+
+    log = DriftSampleLog(tmp_path / "d.csv")
+    log.write(frame_idx=1, seq=1, vos_ms=90.0, empty=False, drift_iou=0.9,
+              bbox=(10, 10, 60, 60), hien_thi=(10, 10, 60, 60), lk_ok=True, bam="tracking",
+              bbox_w=50, bbox_h=50, mask_area=1200, track_cos=0.9312)
+    log.write(frame_idx=4, seq=2, vos_ms=None, empty=None, drift_iou=None,
+              bbox=None, track_cos=None)
+    log.close()
+    with open(tmp_path / "d.csv", encoding="utf-8") as f:
+        rows = list(_csv.DictReader(f))
+    assert [c for c in ("bbox_w", "bbox_h", "mask_area", "track_cos")
+            if c not in rows[0]] == []
+    assert rows[0]["track_cos"] == "0.9312" and rows[0]["mask_area"] == "1200"
+    assert rows[1]["track_cos"] == "" and rows[1]["mask_area"] == ""   # chưa đo ≠ 0
+
+
+def test_thong_ke_danh_tinh_va_bat_bien_mot_frame(tmp_path):
+    """P2/P1 review vòng 2: 4 cột mới phải (a) parse lại được, (b) phát hiện dòng MÂU THUẪN.
+
+    Mỗi dòng CSV là MỘT frame ⇒ `empty == 1` và `mask_area == 0` phải cùng đúng. Bản đầu đọc 4 cột
+    từ `self._stats` (lần VOS gần nhất) ⇒ 18/364 dòng mâu thuẫn trên artifact live thật.
+    """
+    from src.drift_samples import read_samples, summarize, thong_ke_danh_tinh
+
+    log = DriftSampleLog(tmp_path / "d.csv")
+    log.write(frame_idx=1, seq=1, vos_ms=90.0, empty=False, drift_iou=0.9,
+              bbox=(10, 10, 60, 60), bbox_w=50, bbox_h=50, mask_area=1200, track_cos=0.91)
+    log.write(frame_idx=4, seq=2, vos_ms=90.0, empty=True, drift_iou=None,
+              bbox=(0, 0, 0, 0), bbox_w=0, bbox_h=0, mask_area=0, track_cos=None)
+    # dòng MÂU THUẪN (ghép hai thế hệ VOS) — phải bị đếm
+    log.write(frame_idx=7, seq=3, vos_ms=90.0, empty=True, drift_iou=None,
+              bbox=(0, 0, 0, 0), bbox_w=50, bbox_h=50, mask_area=1200, track_cos=0.95)
+    log.close()
+
+    rows = read_samples(tmp_path / "d.csv")
+    tk = thong_ke_danh_tinh(rows)
+    assert tk["n_dong"] == 3 and tk["n_co_cos"] == 2
+    assert tk["n_mask_area_khong_rong"] == 2
+    assert tk["ti_le_co_cos_tren_frame_co_mask"] == 100.0
+    assert tk["track_cos_min"] == 0.91
+    assert tk["n_dong_mau_thuan_mask_area_vs_empty"] == 1     # đúng 1 dòng mâu thuẫn
+    # CSV cũ (không có 4 cột) ⇒ None (chưa đo), KHÔNG phải 0
+    (tmp_path / "cu.csv").write_text("frame_idx,seq,vos_ms,empty,drift_iou\n1,1,90.0,0,0.9\n",
+                                     encoding="utf-8")
+    cu = read_samples(tmp_path / "cu.csv")
+    assert cu[0]["track_cos"] is None and cu[0]["mask_area"] is None
+    assert thong_ke_danh_tinh(cu)["n_co_cos"] == 0
+    assert summarize(cu)["danh_tinh"]["n_dong"] == 1

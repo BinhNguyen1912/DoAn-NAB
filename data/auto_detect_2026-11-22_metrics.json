@@ -1,0 +1,49 @@
+{
+  "git_rev": "437074ebb4a93c096e64e39acd7f5c4460892037",
+  "git_dirty_code": true,
+  "do_luc": "2026-11-22T12:18:46",
+  "lenh": "tools/live_worker.py --source data/binh1.mp4 --out-dir /tmp/auto_binh1 --auto-detect bottle --image-size 192 --vos-every 3 --stop-after-frames 40",
+  "muc_dich": "Do duong TU DONG chon muc tieu (YOLO-World) bang model THAT, KHONG co bbox.json",
+  "ket_qua": {
+    "phat_hien_lan_dau": {
+      "label": "bottle",
+      "conf": 0.79,
+      "box_xyxy": [
+        298,
+        285,
+        437,
+        737
+      ],
+      "ms": 207,
+      "ghi_chu": "207 ms la lan dau (nạp CLIP text encoder); do rieng sau do 38-52 ms"
+    },
+    "phien": {
+      "frames": 40,
+      "display_fps": null,
+      "mask_fps": null,
+      "bam": "tracking",
+      "state": "stopped",
+      "bbox_cuoi": [
+        299,
+        274,
+        435,
+        717
+      ]
+    },
+    "cau_hinh": {
+      "image_size_hieu_luc": 192,
+      "vos_every": 3,
+      "device": "cpu"
+    }
+  },
+  "do_toc_do_detector_rieng": {
+    "imgsz_320": "38-52 ms (19-26 FPS)",
+    "imgsz_640": "160-242 ms (4-6 FPS)",
+    "may": "CPU Iris Xe, torch 2.14.1+cpu, khong GPU roi"
+  },
+  "HANH_CHE_PHAI_DOC": [
+    "CHUA do tren vat THAT 'remote trang tron': khong co footage. Tren clip tong hop data/remote_trang.mp4 (hinh chu nhat trang tron) detector tra 0 box ⇒ clip tong hop KHONG dung duoc de nghiem thu huong nay.",
+    "Detector chi biet LOP NGU NGHIA co trong YOLO-World; vat la (but bi, mat kinh) co the khong co lop phu hop.",
+    "Phu thuoc TUY CHON: ultralytics + 25 MB weights + CLIP text encoder (tu dong cai clip/ftfy/regex). Thieu ⇒ fail-open (available=False), phien cho nhu cu."
+  ]
+}

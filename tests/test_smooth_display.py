@@ -434,3 +434,70 @@ class TestKhongQuayVongHetTocKhiDongBang:
             src.stop()
         assert session.state in ("lost", "reacquiring")
         assert spun <= 20, f"vòng suy luận quay {spun} lần trong 0,4 s — chưa hãm nhịp?"
+
+
+class TestCoVetoQuaInferenceWorker:
+    """P3 review vòng 3 (21-11): đường `--smooth` (đường demo CHÍNH `./run demoip`) là đường **duy
+
+    nhất** không có test chạm `reid_vetoed` — xoá `InferenceWorker.reid_vetoed()` hoặc dòng gán
+    `_reid_vetoed` thì suite vẫn xanh, và HUD sẽ in lại "khop X / can Y" (hiểu ngược: đủ điểm mà
+    không nhận). Test này khoá chuỗi worker → HUD.
+    """
+
+    def test_worker_bao_co_veto_ra_ngoai(self):
+        from src.reid import Step
+        from src.tracker_engine import TrackingResult
+
+        class FakeSession:
+            state = "reacquiring"
+
+            def start(self, frame, bbox):
+                return TrackingResult(frame_idx=0, mask=np.ones((20, 20), bool),
+                                      bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0)
+
+            def step(self, frame):
+                return Step(result=TrackingResult(frame_idx=1, mask=np.zeros((20, 20), bool),
+                                                  bbox=(0, 0, 0, 0), score=0.0, elapsed_ms=1.0),
+                            state="reacquiring", reid_score=0.9, ncc=0.42, vetoed=True)
+
+            def reset(self):
+                pass
+
+        src = LatestFrameSource(FakeSource(delay=0.005))
+        src.start()
+        engine = FakeEngine(delay=0.01)
+        worker = InferenceWorker(engine, src, reid_session=FakeSession())
+        worker.start()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            deadline = time.time() + 2.0
+            seen = False
+            while time.time() < deadline and not seen:
+                time.sleep(0.02)
+                seen = worker.reid_vetoed() is True
+        finally:
+            worker.stop()
+            src.stop()
+
+        assert seen, "HUD không nhận được cờ veto ⇒ sẽ in 'khop X / can Y' gây hiểu ngược"
+
+
+class TestCongNhayCoNhoTrenDuongMuot:
+    """21-11 (bug thật, bắt từ phiên `demoip_1121-131421`): `smooth_display` cập nhật `last_bbox`
+
+    TRƯỚC khi gọi `watch.update(last_bbox, bbox)` ⇒ so ô với **chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
+    không bao giờ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Hậu quả người dùng thấy: console
+    in "nghi ngờ ĐỔI ĐỐI TƯỢNG" nhưng hệ **vẫn vẽ** mask của vùng sai (CSV ghi `nghi_doi_tuong` trống
+    cả 334 dòng). Test này khoá THỨ TỰ đó.
+    """
+
+    def test_cong_nhay_bat_duoc_khi_o_nhay(self):
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        cap_nhat = src.index("switch = watch.update(")
+        gan_lai = src.index("last_bbox = stamped.result.bbox")
+        assert cap_nhat < gan_lai, ("cổng nhảy phải được cập nhật TRƯỚC khi gán `last_bbox` = ô hiện "
+                                    "tại, nếu không nó so ô với chính nó và không bao giờ bật")

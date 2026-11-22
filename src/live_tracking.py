@@ -38,6 +38,9 @@ import numpy as np
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src import tracking_health
+from src.identity_guard import IdentityWatch
+from src.open_vocab_detector import OpenVocabDetector
+from src.track_identity import NeoDanhTinh, cos_voi_neo
 from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask, warp_mask
 from src.mask_filter import MaskSmoother, mask_iou
 from src.live_pipeline import _OVERLAY_ALPHA, _OVERLAY_COLOR_BOX, _OVERLAY_COLOR_MASK
@@ -55,6 +58,10 @@ BBOX_NAME = "bbox.json"
 # PID của worker đang giữ thư mục live (adapter API ghi). Khai ở ĐÂY để CLI (`tools/live_worker.py`)
 # kiểm được "thư mục này đang có phiên khác dùng" mà không phải import module API (ticket #37).
 PID_NAME = "worker.pid"
+# IPC một chiều API → worker: có file này ⇒ worker XOÁ trạng thái "nghi đổi đối tượng" (`bam`) và tự
+# xoá file. Dùng file thay vì socket vì worker là tiến trình riêng và repo đã có sẵn hợp đồng
+# `bbox.json`/`status.json` cùng thư mục (không thêm kênh mới để hỏng).
+CONFIRM_NAME = "confirm.json"
 
 STATE_LOADING = "loading"            # đang nạp model (20–60 s trên CPU)
 STATE_WAITING = "waiting_selection"  # đã có khung hình, chờ người dùng chọn đối tượng
@@ -93,6 +100,12 @@ class LiveTrackConfig:
     out_dir: Path
     display_fps: float = 30.0     # nhịp PHÁT frame (LK/lặp frame), không phải nhịp VOS
     vos_every: int = 3            # 1 = chạy VOS mỗi frame (tắt LK, hình ~10 FPS @192)
+    # ---- TỰ ĐỘNG CHỌN MỤC TIÊU (22-11): mô tả văn bản cho YOLO-World, vd "remote control".
+    # Chuỗi rỗng = TẮT (mặc định: giữ hành vi cũ, phải có `bbox.json` mới bám). Bật thì phiên tự
+    # tìm vật theo NGỮ NGHĨA ⇒ không cần ai kéo chuột, và tự nhận lại khi vật quay vào khung.
+    auto_detect: str = ""
+    auto_detect_every: int = 5    # chỉ chạy detector mỗi N frame đang CHỜ (đo 22-11: 38–52 ms/lần)
+    auto_detect_conf: float = 0.30
     trajectory_len: int = 100
     mask_smoothing: float = 1.0   # 1.0 = TẮT làm mượt (mặc định: đo 10-11 thấy không cải
                                   # thiện IoU hiển thị mà thêm trễ — xem docs/task/08-11-2026-minh-bach-nhip-mask-va-fix-bbox-live.md)
@@ -238,8 +251,22 @@ class LiveTrackStats:
     # Trễ `_BAM_NO_EVIDENCE_FRAMES` frame trước khi tuyên bố `no_evidence`: một frame LK trượt không
     # được làm ô nhấp nháy (cùng lý do `MISS_MIN` của watchdog).
     bam: str | None = None
+    # Plan 21-11-2026 (log-only): cỡ ô + diện tích mask + `cos` với NEO danh tính. Đường WEB không
+    # có re-ID, nên đây là tín hiệu DUY NHẤT phát hiện được kiểu sai "mask có nhưng bám sang vùng
+    # nền cùng màu" (phiên `demoip_1121-103854`: ô trượt sang máy lạnh 9 s, `score` còn TĂNG).
+    # `None` = CHƯA ĐO (không phải 0).
+    bbox_w: int | None = None
+    bbox_h: int | None = None
+    mask_area: int | None = None
+    track_cos: float | None = None
+    track_cos_n: int = 0          # số mẫu đã chấm (0 ⇒ `track_cos = None` KHÔNG phải "đo được 0")
     bam_ly_do: str = ""
     bam_no_evidence_n: int = 0     # số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra)
+    # 21-11: cổng nhảy CÓ NHỚ (`src/identity_guard.IdentityWatch`). `True` = ĐANG nghi đã bám sang đối
+    # tượng khác ⇒ `bam = "nghi_doi_tuong"` và worker KHÔNG vẽ mask/ô (cùng luật với `no_evidence`).
+    # `nghi_doi_tuong_n` = số frame ĐÃ PHÁT trong trạng thái đó (0 ⇒ chưa từng nghi).
+    nghi_doi_tuong: bool = False
+    nghi_doi_tuong_n: int = 0
     bbox: list = field(default_factory=list)
     message: str = ""
 
@@ -307,8 +334,17 @@ def session_exit_code(stats: "LiveTrackStats") -> int:
     return 1 if stats.state == STATE_ERROR else 0
 
 
-def read_bbox(path: Path):
-    """Đọc ô chọn do API ghi; None nếu chưa có hoặc hỏng."""
+@dataclass
+class PromptSelection:
+    """Thông tin chọn đối tượng: bbox (x, y, w, h) và điểm prompt tuỳ chọn."""
+
+    bbox: tuple[int, int, int, int]
+    points: list[tuple[float, float]] | None = None
+    labels: list[int] | None = None
+
+
+def read_selection(path: Path) -> PromptSelection | None:
+    """Đọc thông tin chọn đối tượng (bbox + points/labels tuỳ chọn) từ file bbox.json."""
     try:
         with open(path, "r", encoding="utf-8") as handle:
             data = json.load(handle)
@@ -318,7 +354,27 @@ def read_bbox(path: Path):
         bbox = (int(data["x"]), int(data["y"]), int(data["w"]), int(data["h"]))
     except (KeyError, TypeError, ValueError):
         return None
-    return bbox if bbox[2] > 0 and bbox[3] > 0 else None
+    if bbox[2] <= 0 or bbox[3] <= 0:
+        return None
+
+    raw_points = data.get("points")
+    raw_labels = data.get("labels")
+    points = None
+    labels = None
+    if raw_points is not None and raw_labels is not None and len(raw_points) == len(raw_labels):
+        try:
+            points = [(float(pt[0]), float(pt[1])) for pt in raw_points]
+            labels = [int(lbl) for lbl in raw_labels]
+        except (IndexError, TypeError, ValueError):
+            points, labels = None, None
+
+    return PromptSelection(bbox=bbox, points=points, labels=labels)
+
+
+def read_bbox(path: Path):
+    """Đọc ô chọn do API ghi; None nếu chưa có hoặc hỏng."""
+    sel = read_selection(path)
+    return sel.bbox if sel is not None else None
 
 
 # Ba hàm đọc tiến trình nằm ở `src/proc_pid.py` (dùng chung với adapter API); re-export để chỗ đang
@@ -472,9 +528,18 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         # "Có bằng chứng về vật" (plan 21-11 P4): `state` KHÔNG trả lời được câu này, và UI cũ in
         # "running" trong lúc hệ không có bằng chứng nào. `None` = chưa đủ dữ liệu ⇒ UI phải in
         # "chưa xác định", KHÔNG được in "đang bám".
+        # Cỡ ô/diện tích mask/cos-với-neo (plan 21-11-2026, LOG-ONLY): `None` = chưa đo.
+        "bbox_w": stats.bbox_w,
+        "bbox_h": stats.bbox_h,
+        "mask_area": stats.mask_area,
+        "track_cos": stats.track_cos,
+        "track_cos_n": stats.track_cos_n,
         "bam": stats.bam,
         "bam_ly_do": stats.bam_ly_do or None,
         "bam_no_evidence_n": stats.bam_no_evidence_n,
+        # Cổng nhảy có NHỚ (21-11): `true` ⇒ worker ĐÃ ẨN mask/ô. `nghi_doi_tuong_n == 0` = chưa từng.
+        "nghi_doi_tuong": bool(stats.nghi_doi_tuong),
+        "nghi_doi_tuong_n": int(stats.nghi_doi_tuong_n),
         "bbox": stats.bbox,
         "message": stats.message,
     }
@@ -602,7 +667,9 @@ class _VosWorker(threading.Thread):
             try:
                 # Bọc CẢ quá trình xử lý kết quả: lỗi trong `_store_vos`/`_smooth` (dữ liệu model
                 # bất thường) cũng phải thành `state=error`, không được để thread chết im lặng.
-                self._on_result(seq, self._engine.process(frame), gray)
+                # Truyền cả FRAME MÀU: `_store_vos` cần nó để chấm danh tính (`object_signature`
+                # dùng BGR→HSV); chỉ có `gray` thì mọi lần chấm đều lỗi và `track_cos` im lặng `None`.
+                self._on_result(seq, self._engine.process(frame), gray, frame)
             except Exception as exc:          # noqa: BLE001 — lỗi model phải thành trạng thái error
                 if self._on_error is not None:
                     self._on_error(exc)
@@ -621,6 +688,14 @@ class LiveTrackingSession:
         # từ frame VOS gần nhất) cùng sinh ra ô hiển thị, lệch ngưỡng thì số đo không nói được gì.
         self._lk = lk_tracker or LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
         self._interp = LkBoxTracker(max_mad=config.lk_max_mad, scale=config.lk_scale)
+        # 22-11: TỰ ĐỘNG chọn mục tiêu bằng YOLO-World (mô tả văn bản) — không cần ai kéo chuột.
+        # `None` = TẮT (mặc định) ⇒ hành vi cũ giữ nguyên từng byte.
+        self._detector = None
+        if getattr(config, "auto_detect", ""):
+            self._detector = OpenVocabDetector(
+                classes=(config.auto_detect,), conf=config.auto_detect_conf)
+        self._auto_wait_frames = 0
+        self._auto_da_bao = False
         self._stats = LiveTrackStats(device=config.device)
         # Echo cấu hình NGAY khi dựng phiên (engine đã nạp ⇒ `image_size` hiệu lực đã biết): từ đây
         # `status.json` trả lời được "phiên này chạy cấu hình nào" mà không cần đọc `worker.log`.
@@ -703,6 +778,16 @@ class LiveTrackingSession:
         self._vos_state = None
         self._mask = None               # mask lần VOS gần nhất (đường chạy đơn luồng)
         self._mask_bbox_xywh = None     # ô bao tại lần VOS đó (để tính độ dịch cho LK)
+        # Neo danh tính của vùng được chọn (plan 21-11-2026, LOG-ONLY). Tạo ở đây để mọi đường
+        # (đơn luồng / có luồng VOS) dùng chung một đối tượng.
+        self._neo = NeoDanhTinh()
+        # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — cùng luật với CLI (`src/identity_guard.py`).
+        # Đo trên phiên thật: cổng nhảy báo đúng 1 lần rồi chuyển động lại mượt ⇒ nếu không nhớ thì
+        # worker vẫn vẽ mask của vùng SAI. Xoá khi: API ghi `confirm.json` (`xac_nhan_doi_tuong`),
+        # hoặc người dùng chọn ô mới (`start()`).
+        self._watch = IdentityWatch()
+        self._last_good_bbox = None
+        self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
         self._frame_index = 0
         # Số frame đã ĐỌC từ nguồn trước khi bắt đầu bám (chọn ô GIỮA phiên ⇒ > 0). Tên file mask đi
@@ -754,8 +839,11 @@ class LiveTrackingSession:
 
                 if not started:
                     # Trong lúc chờ, vẫn phát khung hình TRƠN để UI hiện luồng và người dùng chọn ô
-                    bbox = read_bbox(out_dir / BBOX_NAME)
-                    if bbox is None:
+                    selection = read_selection(out_dir / BBOX_NAME)
+                    if selection is None:
+                        # 22-11: TỰ ĐỘNG — không có ai chọn ô thì hỏi YOLO-World theo mô tả văn bản.
+                        selection = self._auto_selection(frame)
+                    if selection is None:
                         with self._stats_lock:
                             self._stats.state = STATE_WAITING
                         # Frame này bị đọc trong GIAI ĐOẠN CHỜ CHỌN Ô ⇒ nó KHÔNG được bám. Đếm để
@@ -766,8 +854,24 @@ class LiveTrackingSession:
                         continue
                     # bbox.json là (x, y, w, h); SAM 2 nhận box (x1, y1, x2, y2) — BUG thật 10-11:
                     # trước đây truyền thẳng nên hộp chọn trên live bị seed sai (w,h thành x2,y2)
+                    bbox = selection.bbox
                     self._chon_bbox = tuple(bbox)      # vào manifest.json của mask dump
-                    result = self._engine.start(frame, xywh_to_xyxy(bbox))
+                    # 21-11: người dùng CHỌN LẠI ô = xoá trạng thái "nghi đổi đối tượng" của phiên
+                    # trước (nếu không, ô vừa chọn vẫn bị ẩn và người xem tưởng hệ hỏng).
+                    with self._stats_lock:
+                        self._watch.reset()
+                        self._last_good_bbox = None
+                        self._stats.nghi_doi_tuong = False
+                        self._stats.bam = None
+                    if selection.points is not None and selection.labels is not None:
+                        result = self._engine.start(
+                            frame,
+                            xywh_to_xyxy(bbox),
+                            points=selection.points,
+                            labels=selection.labels,
+                        )
+                    else:
+                        result = self._engine.start(frame, xywh_to_xyxy(bbox))
                     # Đường CÓ luồng: frame `start()` cũng sẽ được worker `process()` lại và
                     # `_store_vos` ghi mask của nó ⇒ dump Ở ĐÂY nữa là ghi đè chính file đó trong cùng
                     # phiên (P1 review 17-11: `so_file_ghi_de` sẽ báo oan, hoặc tệ hơn là bị guard cũ
@@ -856,7 +960,7 @@ class LiveTrackingSession:
         # cho nó (review thay thế PR #50, P3: `pending[5]` gần như luôn `None`, đừng để đọc thành "LK hỏng").
         self._log_drift_sample(frame_idx=pending[0], seq=pending[2], vos_ms=pending[3],
                                empty=pending[4], value=None, bbox=pending[1], lk_ok=None,
-                               bam=self._bam_of(pending[0]))
+                               bam=self._bam_of(pending[0]), identity=tuple(pending[5:9]))
 
     def _stop_worker(self) -> None:
         if self._worker is not None:
@@ -885,7 +989,7 @@ class LiveTrackingSession:
                 self._stats.message = f"{where}: {exc}"
             self._stats.state = STATE_ERROR
 
-    def _store_vos(self, seq, result, gray) -> None:
+    def _store_vos(self, seq, result, gray, frame=None) -> None:
         """Callback của luồng VOS: chỉ ghi kết quả mới nhất (không chặn, không vẽ)."""
         # `post_ms` bắt đầu TRƯỚC `_record_vos` (bên trong có `_measure_stability` ⇒ `mask_iou`
         # mask thô ~0,2–1 ms); nếu đo sau nó thì `post_ms` thiếu đúng khoản đó và chuỗi pha không
@@ -900,9 +1004,19 @@ class LiveTrackingSession:
         # `mask_000013.png` chứa mask của frame 42, ghép với `gt_000013.png` ⇒ mIoU SAI mà không cảnh
         # báo (P0, review độc lập 14-11). Cùng lý do đã ghi cho CSV drift ở `_measure_drift`.
         frame_idx = self._seq_frame.pop(seq, None)
+        # GIỮ mask THÔ trước khi làm mượt: smoother (khi bật) GIỮ mask cũ lúc model trả rỗng ⇒ chấm
+        # danh tính trên mask đã làm mượt là mù đúng lúc mất vật (P2 review 21-11).
+        mask_tho = getattr(result, "mask", None)
+        # Đường CÓ luồng VOS (`vos_every>1`) KHÔNG đi qua `_after_vos` ⇒ phải gọi ở đây, nếu không
+        # `track_cos` im lặng `None` (đo thật: 6/6 lần chạy trả None trước khi sửa).
+        #
+        # PHẢI CHẠY **TRƯỚC** `_measure_drift`: dòng CSV drift là MỘT frame, nên 4 cột danh tính phải
+        # của đúng frame đó (`identity`). Đọc `self._stats` ở `_log_drift_sample` từng cho 18/364 dòng
+        # mâu thuẫn (`empty=1` + `mask_area=59333`) — P1 review vòng 2.
+        identity = self._cap_nhat_danh_tinh(frame, result, frame_idx=frame_idx, mask=mask_tho)
         dump_ms, da_ghi = self._record_vos(result, frame_video=frame_idx)
         # Nội suy LK lệch bao nhiêu ở ĐÚNG frame đó (`seq` để dòng CSV truy được về lần VOS nào)
-        self._measure_drift(frame_idx, result, seq)
+        self._measure_drift(frame_idx, result, seq, identity=identity)
         self._smooth(result)          # làm mượt + đo độ ổn định NGAY khi mask mới về
         # TRỪ thời gian ghi PNG: `--dump-mask-frames` là DỤNG CỤ ĐO, không được làm bẩn `post_ms`
         # (rồi `mask_age_total_ms`/p95 của đúng mẫu đó — ticket #26). `cycle_ms`/`queue_ms` lấy từ
@@ -999,6 +1113,35 @@ class LiveTrackingSession:
             raw_lost=getattr(base_result, "raw_lost", None),
         )
 
+    # ------------------------------------------------------------------ tự động chọn mục tiêu
+
+    def _auto_selection(self, frame) -> "PromptSelection | None":
+        """Hỏi YOLO-World khi CHƯA có ô chọn — chạy tối đa 1 lần mỗi `auto_detect_every` frame.
+
+        Chạy detector MỖI frame là phí: đo 22-11 trên máy này 38–52 ms/lần ở `imgsz 320`, trong khi
+        frame đang ở giai đoạn CHỜ nên không cần tức thời. Trả `None` = chưa thấy (cứ tiếp tục chờ).
+        """
+        if self._detector is None:
+            return None
+        self._auto_wait_frames += 1
+        moi_n = max(1, int(getattr(self._cfg, "auto_detect_every", 5)))
+        if self._auto_wait_frames % moi_n != 0:
+            return None
+        best = self._detector.best(frame)
+        if best is None:
+            return None
+        x1, y1, x2, y2 = best.bbox
+        # Cùng ngưỡng với `PromptSelector.MIN_BOX` (16 px) — ô nhỏ hơn là dương tính giả.
+        if (x2 - x1) < 16 or (y2 - y1) < 16:
+            return None
+        if not self._auto_da_bao:
+            ms = self._detector.last_ms
+            chi_tiet = f" · {ms:.0f} ms" if ms is not None else ""
+            print(f"[auto] YOLO-World thấy '{best.label}' conf={best.conf:.2f} "
+                  f"box=({x1},{y1},{x2},{y2}){chi_tiet}", flush=True)
+            self._auto_da_bao = True
+        return PromptSelection(bbox=(x1, y1, x2 - x1, y2 - y1))
+
     # ------------------------------------------------------------------ đường đơn luồng
 
     def _result_inline(self, frame):
@@ -1012,6 +1155,57 @@ class LiveTrackingSession:
         result = self._engine.process(frame)
         self._after_vos(frame, result)
         return result
+
+    def _cap_nhat_danh_tinh(self, frame, result, frame_idx=None, mask=None) -> None:
+        """Cập nhật NEO danh tính + `cos` + cỡ ô/diện tích mask (plan 21-11-2026, LOG-ONLY).
+
+        **TRẢ về** `(bbox_w, bbox_h, mask_area, cos)` của CHÍNH frame này (hoặc `None` khi frame đã
+        chấm rồi / lỗi). Vì sao phải trả: `drift_samples.csv` ghi MỘT dòng cho MỘT frame, nên 4 cột
+        này **không được** đọc từ `self._stats` (đó là lần VOS gần nhất ⇒ lệch thế hệ). Đo 21-11:
+        18/364 dòng có `empty=1` mà `mask_area=59333` (và ngược lại) — đúng lỗi ghép hai thế hệ
+        (P1 review vòng 2).
+
+        **Phải gọi ở CẢ hai đường VOS**: `_after_vos` (đơn luồng, `vos_every=1`) và `_store_vos`
+        (có luồng VOS, `vos_every>1`). Bản đầu tôi đặt inline trong `_after_vos` ⇒ đo thật với
+        `--vos-every 3` cho `track_cos = None, n = 0` (6/6 lần chạy) vì đường có luồng **không đi qua**
+        `_after_vos` — đúng bẫy "cổng đặt sai nhịp ⇒ im lặng" mà plan đã cảnh báo.
+
+        Fail-open: đo đạc KHÔNG được giết phiên; lỗi ⇒ `cos = None` ("chưa đo"), không phải 0.
+
+        `frame_idx`: P2 review 21-11 — frame `start()` đi qua **cả** `_after_vos` **và** `_store_vos`
+        ⇒ nếu không chặn, cùng một frame được chấm 2 lần: neo #1 và #2 là **y hệt** (đủ `MIN_ANCHORS`
+        chỉ sau 1 frame, phá bất biến "2 mẫu khác nhau"), `track_cos_n` +2, và mẫu `cos` đầu tiên là
+        **1,0 cấu trúc** (so frame với chính nó). Repo đã gặp đúng bẫy này với `stability`
+        (`tests/test_live_tracking.py`: frame 0 vào hai lần ⇒ IoU 1,0 "miễn phí").
+
+        `mask`: mask **THÔ** của VOS. Đường có luồng gọi hàm này SAU `_smooth`, và với
+        `--mask-smoothing 0.5` smoother **GIỮ** mask cũ khi model trả mask rỗng ⇒ nếu chấm trên
+        `result.mask` thì `track_cos`/`mask_area` **mù đúng lúc model mất vật** (P2 review 21-11).
+        """
+        if frame_idx is not None and frame_idx == self._danh_tinh_frame_idx:
+            return None
+        self._danh_tinh_frame_idx = frame_idx
+        try:
+            if mask is None:
+                mask = getattr(result, "mask", None)
+            # CHẤM TRƯỚC, nạp neo SAU (P2 review 21-11) — tránh mẫu `cos = 1,0` cấu trúc.
+            cos = cos_voi_neo(self._neo, frame, mask)
+            self._neo.thu(frame, mask, getattr(result, "bbox", None))
+        except Exception:                       # noqa: BLE001 — đo đạc không giết phiên
+            # KHÔNG gán lại `mask`: mask thô đã được truyền vào từ ngoài (P3 review vòng 2 — gán lại
+            # `result.mask` ở đây là mất đúng bảo vệ của `mask_tho` ngay lúc có lỗi).
+            cos = None
+        bbox = getattr(result, "bbox", None)
+        with self._stats_lock:
+            if bbox is not None:
+                self._stats.bbox_w = max(0, int(bbox[2]) - int(bbox[0]))
+                self._stats.bbox_h = max(0, int(bbox[3]) - int(bbox[1]))
+            # `None` = engine KHÔNG trả mask (chưa đo) — khác `0` = mask rỗng thật (P3 review 21-11).
+            self._stats.mask_area = int(mask.sum()) if mask is not None else None
+            self._stats.track_cos = cos
+            if cos is not None:
+                self._stats.track_cos_n = int(self._stats.track_cos_n or 0) + 1
+            return (self._stats.bbox_w, self._stats.bbox_h, self._stats.mask_area, cos)
 
     def _after_vos(self, frame, result, dump: bool = True) -> None:
         """Ghi nhận một lần VOS + đặt mốc LK (đường đơn luồng và frame start()).
@@ -1030,6 +1224,9 @@ class LiveTrackingSession:
         # 14-11: đường `vos_every=1` chạy inline ở đây, thiếu tham số này thì mask KHÔNG được dump.
         dump_ms, da_ghi = self._record_vos(
             result, frame_video=self._frame_index, dump=dump)
+        # GIỮ mask THÔ trước khi làm mượt (cùng lý do ở `_store_vos`: smoother GIỮ mask cũ lúc model
+        # trả rỗng ⇒ chấm danh tính trên mask đã làm mượt là mù đúng lúc mất vật — P2 review 21-11).
+        mask_tho = getattr(result, "mask", None)
         self._smooth(result)
         # Trừ thời gian ghi PNG (ticket #26): `post_ms` chỉ còn phần XỬ LÝ KẾT QUẢ.
         post_ms = round((time.perf_counter() - bat_dau_post) * 1000.0 - dump_ms, 2)
@@ -1045,6 +1242,7 @@ class LiveTrackingSession:
             # tách được khoản nào — artifact `bangcau --every 1` có `pre_ms.n = 0` và tuổi mask cao
             # hơn `vos_ms` ~10 ms mà không cột nào giải thích (P2 review độc lập 17-11).
             self._stats.pre_ms = None if pre is None else round(float(pre), 2)
+        self._cap_nhat_danh_tinh(frame, result, frame_idx=self._frame_index, mask=mask_tho)
         # Tuổi của mask đang hiển thị = **0** ở đường đơn luồng: frame vừa được VOS xử lý CHÍNH LÀ
         # frame đang phát (không có frame nào chen giữa như đường có LK). Các khoản còn lại lấy từ
         # chính kết quả này (pre/vos), `queue_ms = 0` vì không có hàng đợi worker.
@@ -1322,7 +1520,7 @@ class LiveTrackingSession:
                 return ok
         return None
 
-    def _measure_drift(self, frame_idx, result, seq=None) -> None:
+    def _measure_drift(self, frame_idx, result, seq=None, identity=None) -> None:
         """Nội suy LK **sai bao nhiêu** ở đúng frame mà VOS vừa trả kết quả.
 
         Ý nghĩa: `drift_iou` = IoU giữa ô bao mà người xem đã thấy ở frame đó (do LK nội suy) và
@@ -1332,6 +1530,11 @@ class LiveTrackingSession:
 
         Bỏ đo khi tắt LK (`vos_every=1`): lúc đó không có nội suy, thứ đo được chỉ là độ ổn định
         bbox của chính VOS — gọi nó là drift sẽ khiến "tắt LK" trông tốt hơn một cách vô nghĩa.
+
+        `identity` = `(bbox_w, bbox_h, mask_area, track_cos)` của CHÍNH frame này (kết quả
+        `_cap_nhat_danh_tinh`), mang theo vào dòng CSV và vào `_pending_drift` ⇒ dòng CSV không bao
+        giờ trộn số của lần VOS khác (P1 review vòng 2: 18/364 dòng từng mâu thuẫn
+        `empty=1` + `mask_area=59333`).
         """
         if not self._use_lk:
             return
@@ -1342,7 +1545,7 @@ class LiveTrackingSession:
             # cột `empty` luôn 0 và `empty_frac` nói dối (binh2 12-11: 81 lần mask rỗng trong
             # status.json nhưng CSV ghi 0,0 — bắt được khi đo thật).
             self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result,
-                                   bam=self._bam_of(frame_idx))
+                                   bam=self._bam_of(frame_idx), identity=identity)
             return
         # Tra cứu + hẹn pending trong MỘT critical section: nếu tách hai khối thì luồng chính có thể
         # phát đúng frame này xen vào giữa (thấy `_pending_drift` còn cũ ⇒ bỏ) ⇒ mất một mẫu drift
@@ -1367,26 +1570,28 @@ class LiveTrackingSession:
                 # 5 phần tử: (frame, bbox VOS, seq, vos_ms, empty). `lk_ok` KHÔNG nằm trong tuple —
                 # frame này chưa được phát nên chưa biết LK, và phải TRA LẠI trong lock lúc drain
                 # (nhồi `None` vào tuple từng làm mẫu bị mất khỏi mẫu số của `lk_ok_frac` — P2 review #51).
+                # 9 phần tử: 5 cũ + 4 giá trị danh tính của CÙNG frame (P1 review vòng 2).
                 self._pending_drift = (frame_idx, tuple(fresh), seq,
                                        float(getattr(result, "elapsed_ms", 0.0)),
-                                       self._mask_empty(result))
+                                       self._mask_empty(result)) + tuple(identity or (None,) * 4)
         if da_hen:
             if cu is not None:
                 with self._stats_lock:
                     lk_ok_cu = self._lk_ok_of(cu[0])
                 self._log_drift_sample(frame_idx=cu[0], seq=cu[2], vos_ms=cu[3],
                                        empty=cu[4], value=None, bbox=cu[1], lk_ok=lk_ok_cu,
-                                       bam=self._bam_of(cu[0]))
+                                       bam=self._bam_of(cu[0]), identity=cu[5:9])
             return
         if shown is None:
             # Frame đã phát nhưng KHÔNG có ô bao hiển thị ⇒ không có gì để so (ghi dòng, drift trống).
             self._log_drift_sample(frame_idx=frame_idx, seq=seq, value=None, result=result,
-                                   bam=self._bam_of(frame_idx))
+                                   bam=self._bam_of(frame_idx), identity=identity)
             return
         value = _bbox_iou(shown, fresh)
         self._record_drift(value, self._mask_empty(result))
         self._log_drift_sample(frame_idx=frame_idx, seq=seq, result=result, value=value,
-                               hien_thi=shown, lk_ok=lk_ok, bam=self._bam_of(frame_idx))
+                               hien_thi=shown, lk_ok=lk_ok, bam=self._bam_of(frame_idx),
+                               identity=identity)
 
     @staticmethod
     def _mask_empty(result):
@@ -1397,7 +1602,8 @@ class LiveTrackingSession:
         return not bool(mask.any())
 
     def _log_drift_sample(self, *, frame_idx, seq, value, result=None, vos_ms=None,
-                          empty=None, bbox=None, hien_thi=None, lk_ok=None, bam=None) -> None:
+                          empty=None, bbox=None, hien_thi=None, lk_ok=None, bam=None,
+                          identity=None) -> None:
         """Ghi MỘT dòng CSV cho mẫu drift (ticket 15). PHẢI gọi khi KHÔNG giữ `_stats_lock`.
 
         `result` là kết quả VOS (có `elapsed_ms`/`mask`/`bbox`); nhánh `_pending_drift` tới hạn thì
@@ -1409,7 +1615,15 @@ class LiveTrackingSession:
             empty=(self._mask_empty(result) if empty is None else empty),
             drift_iou=value,
             bbox=(getattr(result, "bbox", None) if bbox is None else bbox),
-            hien_thi=hien_thi, lk_ok=lk_ok, bam=bam)
+            hien_thi=hien_thi, lk_ok=lk_ok, bam=bam,
+            # P1 review 21-11: đường LIVE chỉ có CSV NÀY ⇒ 4 cột phải đi qua đây.
+            # P1 review vòng 2: phải là 4 giá trị của CHÍNH frame này (`identity`), KHÔNG đọc
+            # `self._stats` — đó là lần VOS gần nhất, đọc ngoài lock, và từng làm 18/364 dòng
+            # mâu thuẫn (`empty=1` + `mask_area=59333`).
+            bbox_w=identity[0] if identity else None,
+            bbox_h=identity[1] if identity else None,
+            mask_area=identity[2] if identity else None,
+            track_cos=identity[3] if identity else None)
 
     def _record_drift(self, value, empty=None) -> None:
         """Ghi một mẫu drift (bỏ mẫu `None` — ô suy biến thì không đủ tin để chấm).
@@ -1684,8 +1898,30 @@ class LiveTrackingSession:
         raw_lost = lost if _raw is None else bool(_raw)
         # TÍNH `bam` TRƯỚC khi suy ra `shown`: bản trước đọc `bam` của frame TRƯỚC (off-by-one) nên
         # đúng frame chuyển trạng thái, CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh trống.
+        # 21-11: cập nhật cổng nhảy CÓ NHỚ bằng ô VOS của CHÍNH frame này (so với ô TỐT gần nhất).
+        # Ở đây ĐANG giữ `_stats_lock`; `IdentityWatch.update` là hàm thuần, không I/O.
+        if obs_bbox is not None:
+            _shape = getattr(getattr(result, "mask", None), "shape", None)
+            if _shape is not None and len(_shape) >= 2:
+                lk_vel = None
+                if getattr(self._interp, "last_dx", None) is not None:
+                    lk_vel = (self._interp.last_dx, self._interp.last_dy)
+                is_nghi = self._watch.update(
+                    self._last_good_bbox, obs_bbox,
+                    (int(_shape[0]), int(_shape[1])),
+                    lk_velocity=lk_vel,
+                )
+                if not is_nghi:
+                    self._last_good_bbox = obs_bbox
+            else:
+                self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
-        shown = None if self._stats.bam == "no_evidence" else obs_bbox
+        # `nghi_doi_tuong` ẩn ô Y NHƯ `no_evidence` (cùng luật với CLI): hệ không có bằng chứng về
+        # việc "vùng này là vật đã chọn" thì không được vẽ nó ra như đang bám.
+        an_o = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
+        if self._stats.bam == "nghi_doi_tuong":
+            self._stats.nghi_doi_tuong_n = int(self._stats.nghi_doi_tuong_n or 0) + 1
+        shown = None if an_o else obs_bbox
         # Drift chấm trên ô QUAN SÁT (không phải ô đã vẽ) — xem giải thích ở trên.
         self._shown_by_frame.append((self._frame_index, obs_bbox))
         # Dụng cụ đo (#38): nhớ ô HIỂN THỊ của frame này để ghi ra CSV ngoài lock.
@@ -1711,6 +1947,8 @@ class LiveTrackingSession:
                 csv_row = {"frame_idx": self._frame_index, "seq": pending[2],
                            "vos_ms": pending[3], "empty": pending[4],
                            "value": value, "bbox": pending[1],
+                           # 4 cột danh tính của CHÍNH lần VOS đã hẹn (không phải `_stats` hiện tại)
+                           "identity": tuple(pending[5:9]),
                            "hien_thi": obs_bbox, "lk_ok": self._lk_ok_of(self._frame_index),
                            # `bam` của CHÍNH frame này: mẫu VẪN được ghi khi không bằng chứng
                            # (không che mẫu), và người phân tích LỌC ĐƯỢC theo cột này.
@@ -1726,6 +1964,7 @@ class LiveTrackingSession:
                 khop_frame = pending[0] == self._frame_index
                 csv_row = {"frame_idx": pending[0], "seq": pending[2], "vos_ms": pending[3],
                            "empty": pending[4], "value": None, "bbox": pending[1],
+                           "identity": tuple(pending[5:9]),
                            "bam": (self._bam_of_locked(self._frame_index) or "") if khop_frame else "",
                            "lk_ok": self._lk_ok_of(self._frame_index) if khop_frame else None}
         self._stats.bbox = [int(v) for v in result.bbox]
@@ -1757,8 +1996,16 @@ class LiveTrackingSession:
         ly_do = "mask_rong" if (lost or (raw_lost if raw_lost is not None else False)) else ""
         if not ly_do:
             self._bam_khong_bang_chung = 0
+            # 21-11: cổng nhảy CÓ NHỚ. `mask rỗng` là bằng chứng CHẮC hơn nên xét ở trên; ở đây chỉ
+            # còn ca "mask có nhưng ô nhảy vô lý" — đúng ca bám sang cửa/tường cùng tông.
+            if self._watch.nghi:
+                self._stats.bam = "nghi_doi_tuong"
+                self._stats.bam_ly_do = "o_nhay"
+                self._stats.nghi_doi_tuong = True
+                return
             self._stats.bam = "tracking"
             self._stats.bam_ly_do = ""
+            self._stats.nghi_doi_tuong = False
             return
         if self._stats.bam is None:
             # FRAME ĐẦU TIÊN đã mất bằng chứng: dung sai 2 frame để chống NHẤP NHÁY giữa phiên, không
@@ -1773,6 +2020,9 @@ class LiveTrackingSession:
             self._stats.bam = "no_evidence"
             self._stats.bam_ly_do = ly_do
             self._stats.bam_no_evidence_n += 1
+            # Đang nghi đổi đối tượng VẪN phải hiện cờ cho web (nếu không, web mất nút "vẫn đúng"
+            # đúng lúc người dùng cần bấm nhất) — nhưng lý do ưu tiên vẫn là `mask_rong`.
+            self._stats.nghi_doi_tuong = self._stats.nghi_doi_tuong or self._watch.nghi
         else:
             # Chưa đủ số frame ⇒ giữ nguyên trạng thái trước (không nhấp nháy); frame đầu = "tracking"
             # vì chưa có gì chứng minh ngược lại.
@@ -1791,7 +2041,8 @@ class LiveTrackingSession:
             # Nguồn đổi độ phân giải giữa phiên (relay /snapshot.jpg, điện thoại xoay máy) ⇒
             # `tint[mask]` sẽ IndexError. Bỏ mask frame này, không làm chết phiên.
             mask = None
-        khong_bang_chung = self._stats.bam == "no_evidence"
+        # 21-11: `nghi_doi_tuong` ẩn y như `no_evidence` (xem `IdentityWatch`) — cùng luật với CLI.
+        khong_bang_chung = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
         if mask is not None and mask.any() and not khong_bang_chung:
             tint = img.copy()
             tint[mask] = _OVERLAY_COLOR_MASK
@@ -1810,7 +2061,10 @@ class LiveTrackingSession:
                f"{self._stats.vos_ms:.0f}ms | LK {self._stats.lk_ms:.1f}ms")
         if khong_bang_chung:
             # Khắc lên CHÍNH ẢNH, không chỉ panel: panel có thể không ai nhìn khi đang chiếu.
-            hud += f" | KHONG CO BANG CHUNG ({self._stats.bam_ly_do})"
+            if self._stats.bam == "nghi_doi_tuong":
+                hud += " | NGHI DOI TUONG (o nhay) — chon lai hoac XAC NHAN"
+            else:
+                hud += f" | KHONG CO BANG CHUNG ({self._stats.bam_ly_do})"
         if self._stats.lost_streak:
             hud += f" | LOST {self._stats.lost_streak}"
         # ASCII (không dấu) là BẮT BUỘC: cv2.putText/Hershey không render được dấu tiếng Việt
@@ -1826,8 +2080,34 @@ class LiveTrackingSession:
         if ok:
             write_bytes_atomic(out_dir / FRAME_NAME, bytes(buffer))
 
+    def _check_confirm(self, out_dir: Path) -> None:
+        """Xử lý `confirm.json` do API ghi ("vẫn đúng đối tượng, tiếp tục").
+
+        Vì sao dùng FILE chứ không socket: worker là tiến trình riêng, hợp đồng với API vốn đã là
+        file trong cùng thư mục (`bbox.json`/`status.json`/`frame.jpg`); thêm một kênh mới (socket,
+        signal) là thêm đường hỏng mà không cần thiết. File được XOÁ ngay sau khi xử lý ⇒ lệnh chỉ
+        có hiệu lực MỘT lần (không xoá thì lần `bam` nghi sau sẽ tự khỏi ngay — sai).
+        """
+        path = out_dir / CONFIRM_NAME
+        try:
+            if not path.exists():
+                return
+            path.unlink(missing_ok=True)
+        except OSError:
+            return                        # không đọc/xoá được thì bỏ qua nhịp này, không giết phiên
+        with self._stats_lock:
+            self._watch.reset()
+            self._last_good_bbox = None
+            self._stats.nghi_doi_tuong = False
+            self._stats.nghi_doi_tuong_n = 0
+            if self._stats.bam == "nghi_doi_tuong":
+                self._stats.bam = "tracking"
+                self._stats.bam_ly_do = ""
+        self._stats.message = "da xac nhan: tiep tuc bam doi tuong hien tai"
+
     def _publish_status(self, out_dir: Path) -> None:
         """Ghi ảnh chụp NHẤT QUÁN của `_stats` (không trộn số của hai thế hệ)."""
+        self._check_confirm(out_dir)
         with self._stats_lock:
             snapshot = replace(self._stats)
         write_json_atomic(out_dir / STATUS_NAME, status_payload(snapshot))

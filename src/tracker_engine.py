@@ -158,11 +158,35 @@ class TrackerEngine:
 
     # ---------- API công khai ----------
 
-    def start(self, frame_bgr: np.ndarray, bbox: tuple) -> TrackingResult:
-        """Bắt đầu phiên track: frame đầu + bbox chọn đối tượng (toạ độ gốc)."""
+    def start(self, frame_bgr: np.ndarray, bbox: tuple,
+              points: list[tuple[float, float]] | np.ndarray | None = None,
+              labels: list[int] | np.ndarray | None = None) -> TrackingResult:
+        """Bắt đầu phiên track: frame đầu + bbox chọn đối tượng (toạ độ gốc).
+
+        points: danh sách toạ độ (x, y) gốc frame (tuỳ chọn)
+        labels: 1 (positive: vật thể) hoặc 0 (negative: nền sát mép) (tuỳ chọn)
+        """
         if self._state is not None:
             self.reset()
         self._video_hw = (frame_bgr.shape[0], frame_bgr.shape[1])
+        h, w = self._video_hw
+
+        pts_arr = None
+        lbls_arr = None
+        if points is not None or labels is not None:
+            if points is None or labels is None:
+                raise ValueError("points và labels phải được cung cấp cùng nhau")
+            pts_arr = np.asarray(points, dtype=np.float32)
+            lbls_arr = np.asarray(labels, dtype=np.int32)
+            if pts_arr.ndim != 2 or pts_arr.shape[1] != 2:
+                raise ValueError(f"points phải có dạng (N, 2), nhận được {pts_arr.shape}")
+            if len(pts_arr) != len(lbls_arr):
+                raise ValueError(f"số lượng points ({len(pts_arr)}) và labels ({len(lbls_arr)}) phải khớp nhau")
+            if not np.all(np.isin(lbls_arr, [0, 1])):
+                raise ValueError(f"mỗi label phải là 1 (positive) hoặc 0 (negative), nhận được {lbls_arr}")
+            for x, y in pts_arr:
+                if not (0 <= x < w and 0 <= y < h):
+                    raise ValueError(f"point ({x}, {y}) nằm ngoài khung hình ({w}x{h})")
 
         # init_state cần một thư mục JPG — chỉ chứa frame 0 (streaming nạp phần còn lại)
         self._tmpdir = tempfile.TemporaryDirectory(prefix="tracker_engine_")
@@ -184,7 +208,14 @@ class TrackerEngine:
         self._state["images"] = self._images
         self._frame_count = 1
 
-        self._predictor.add_new_points_or_box(self._state, box=tuple(bbox), frame_idx=0, obj_id=0)
+        prompt_kwargs = {"box": tuple(bbox)}
+        if pts_arr is not None and len(pts_arr) > 0:
+            prompt_kwargs["points"] = pts_arr
+            prompt_kwargs["labels"] = lbls_arr
+
+        self._predictor.add_new_points_or_box(
+            self._state, frame_idx=0, obj_id=0, **prompt_kwargs
+        )
         # Propagate riêng frame 0 (đã consolidate trong preflight — không tính lại)
         result = self._propagate_one(0, t0)
         # tensor frame 0 đã xử lý xong — giải phóng để tiết kiệm RAM (cond memory đã encode sẵn)
@@ -230,7 +261,8 @@ class TrackerEngine:
                 self._state, start_frame_idx=frame_idx, max_frame_num_to_track=1
             )
             yielded = next(gen, None)
-            gen.close()
+            if hasattr(gen, "close"):
+                gen.close()
         if yielded is None:
             raise RuntimeError(f"propagate không trả kết quả cho frame {frame_idx}")
         out_idx, obj_ids, video_res_masks = yielded

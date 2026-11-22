@@ -29,7 +29,15 @@ import numpy as np
 LOST_SCORE_THRESHOLD = 0.0
 
 CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost",
-              "state", "reid_score", "reacquired", "ncc"]
+              "state", "reid_score", "reacquired", "ncc", "vetoed",
+              # Plan 21-11-2026 (log-only): cỡ ô + diện tích mask + cos với NEO danh tính.
+              # Thiếu chúng thì KHÔNG chứng minh được bằng artifact câu "ô chọn quá rộng / mask ăn nền"
+              # (phiên `demoip_1121-103854` chỉ có center_x/center_y ⇒ phải miêu tả bằng lời).
+              "bbox_w", "bbox_h", "mask_area", "track_cos",
+              # 21-11: `1` = frame này hệ NGHI đã bám sang đối tượng khác (cổng nhảy có NHỚ) ⇒ overlay
+              # bị ẩn. Có cột này mới đo được "ẩn bao nhiêu frame" và soi lại xem ẩn có đúng không —
+              # không có thì thay đổi hành vi là không kiểm chứng được. Trống = không nghi.
+              "nghi_doi_tuong"]
 
 
 @dataclass
@@ -46,6 +54,19 @@ class FrameRecord:
     reid_score: Optional[float] = None    # cosine tốt nhất frame đó (-1 = không có ứng viên)
     reacquired: Optional[bool] = None     # True ở đúng frame vừa nhận lại đối tượng
     ncc: Optional[float] = None           # điểm NCC của ô được chọn (-1/None = không dùng)
+    # P1 review vòng 2 (21-11): frame này có ứng viên bị BỎ vì trùng khuôn mặt/đầu. Thiếu cột này
+    # thì `state` = "reacquiring" cho MỌI frame tìm lại ⇒ không đọc được bằng artifact cái gì đã
+    # xảy ra (và `reid_score` một mình không nói được vì ứng viên bị bỏ cũng có điểm).
+    vetoed: Optional[bool] = None
+    # Cỡ ô + diện tích mask: chứng minh "ô chọn quá rộng/ mask ăn nền" bằng SỐ, không bằng lời.
+    bbox_w: Optional[int] = None
+    bbox_h: Optional[int] = None
+    mask_area: Optional[int] = None
+    # `cos` giữa mask đang bám và 3–5 NEO danh tính (`src/track_identity.py`). `None` = CHƯA ĐO
+    # (không bật / chưa đủ neo) — không được ghi thành 0.
+    track_cos: Optional[float] = None
+    # `True` = cổng nhảy đã báo nghi đổi đối tượng và CHƯA được xoá (overlay bị ẩn).
+    nghi_doi_tuong: Optional[bool] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -161,6 +182,12 @@ class MetricsLogger:
                     f"{float(r.reid_score):.6g}" if r.reid_score is not None else "",
                     (1 if r.reacquired else 0) if r.reacquired is not None else "",
                     f"{float(r.ncc):.6g}" if r.ncc is not None else "",
+                    (1 if r.vetoed else 0) if r.vetoed is not None else "",
+                    r.bbox_w if r.bbox_w is not None else "",
+                    r.bbox_h if r.bbox_h is not None else "",
+                    r.mask_area if r.mask_area is not None else "",
+                    f"{float(r.track_cos):.6g}" if r.track_cos is not None else "",
+                    "" if r.nghi_doi_tuong is None else (1 if r.nghi_doi_tuong else 0),
                 ])
         return str(path)
 

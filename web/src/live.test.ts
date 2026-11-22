@@ -371,3 +371,21 @@ describe('bamLine — "không có bằng chứng về vật" (plan 21-11 P4)', (
     expect(line).toContain('Không có bằng chứng')
   })
 })
+
+describe('bamLine — cổng nhảy CÓ NHỚ "nghi đổi đối tượng" (21-11)', () => {
+  it('báo rõ 2 lựa chọn khi worker đang nghi (không chỉ nói "đã ẩn")', () => {
+    const line = bamLine({ bam: 'nghi_doi_tuong', bam_ly_do: 'o_nhay', nghi_doi_tuong_n: 12 })
+    expect(line).toContain('Nghi đã bám sang ĐỐI TƯỢNG KHÁC')
+    expect(line).toContain('Vẫn đúng, tiếp tục')
+    expect(line).toContain('12 frame đã ẩn')
+  })
+
+  it('cờ nghi_doi_tuong một mình cũng đủ (bam có thể là no_evidence do mask rỗng)', () => {
+    const line = bamLine({ bam: 'no_evidence', bam_ly_do: 'mask_rong', nghi_doi_tuong: true })
+    expect(line).toContain('ĐỐI TƯỢNG KHÁC')
+  })
+
+  it('không nghi thì KHÔNG hiện banner nghi', () => {
+    expect(bamLine({ bam: 'tracking', nghi_doi_tuong: false })).toBeNull()
+  })
+})

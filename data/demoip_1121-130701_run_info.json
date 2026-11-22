@@ -1,0 +1,20 @@
+{
+  "timestamp": "2026-11-21T13:07:53",
+  "git_rev": "1b12684",
+  "source": "http://172.19.176.1:8090/snapshot.jpg",
+  "reid_face_veto": true,
+  "reid_veto_mat_n": 0,
+  "image_size": 192,
+  "reanchor_every": null,
+  "max_frames": null,
+  "reid": true,
+  "reid_cue": "object",
+  "reid_obj_threshold": 0.75,
+  "reid_obj_ncc_min": 0.4,
+  "device": "cpu",
+  "lost_score_threshold": 0.0,
+  "reid_reacquire_confirm": 2,
+  "reid_verify_frames": 2,
+  "git_dirty": true,
+  "git_dirty_code": false
+}

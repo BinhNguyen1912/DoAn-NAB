@@ -1,0 +1,21 @@
+{
+  "dataset": "remote_trang",
+  "clip": "data/remote_trang.mp4",
+  "so_frame": 30,
+  "baseline": {
+    "mIoU": 0.3196,
+    "mask_ngoai_gt_mean": 0.6804,
+    "n_cham": 25,
+    "so_frame_gt_rong": 5
+  },
+  "enhanced": {
+    "mIoU": 1.0,
+    "mask_ngoai_gt_mean": 0.0,
+    "n_cham": 25,
+    "so_frame_gt_rong": 5
+  },
+  "cai_thien": {
+    "mIoU_tang": 0.6804,
+    "tran_mask_giam": 0.6804
+  }
+}

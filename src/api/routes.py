@@ -24,6 +24,7 @@ from src.api.schemas import (
     LiveStartRequest,
     LiveStatusResponse,
     ReidCue,
+    SelectLiveRequest,
     SelectRequest,
     TrackParams,
 )
@@ -203,8 +204,11 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
         bbox = None
         if payload.bbox is not None:
             bbox = (payload.bbox.x, payload.bbox.y, payload.bbox.w, payload.bbox.h)
+        pts = [(p.x, p.y) for p in payload.points] if payload.points else None
+        lbls = [p.label for p in payload.points] if payload.points else None
         return _live_status(
             live.start(payload.source, mode=payload.mode, bbox=bbox,
+                       points=pts, labels=lbls,
                        image_size=payload.image_size, vos_every=payload.vos_every,
                        mask_smoothing=payload.mask_smoothing)
         )
@@ -213,6 +217,23 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
     def stop_live() -> LiveStatusResponse:
         """Dừng phát và đóng nguồn (giải phóng webcam)."""
         return _live_status(live.stop())
+
+    @router.post("/api/live/select", response_model=LiveStatusResponse)
+    def select_live_target(payload: SelectLiveRequest) -> LiveStatusResponse:
+        """Chọn hoặc chọn lại đối tượng cho phiên live đang chạy (kèm điểm âm/dương tuỳ chọn)."""
+        bbox = (payload.bbox.x, payload.bbox.y, payload.bbox.w, payload.bbox.h)
+        pts = [(p.x, p.y) for p in payload.points] if payload.points else None
+        lbls = [p.label for p in payload.points] if payload.points else None
+        return _live_status(live.select(bbox, points=pts, labels=lbls))
+
+    @router.post("/api/live/confirm", response_model=LiveStatusResponse)
+    def confirm_live_bbox() -> LiveStatusResponse:
+        """Xác nhận "vẫn đúng đối tượng" ⇒ worker xoá trạng thái nghi đổi đối tượng và vẽ lại mask.
+
+        Dùng khi `bam == "nghi_doi_tuong"` (worker đã ẩn ô vì nghi bám sang vật khác) mà người dùng
+        thấy vẫn đúng. Không có lệnh này thì chỉ còn cách chọn lại ô.
+        """
+        return _live_status(live.confirm())
 
     @router.get("/api/live/status", response_model=LiveStatusResponse)
     def live_status() -> LiveStatusResponse:

@@ -28,6 +28,14 @@ class BBox(BaseModel):
     h: int = Field(gt=0, description="chiều cao ô")
 
 
+class PointPrompt(BaseModel):
+    """Điểm chỉ định hỗ trợ phân đoạn (positive/negative prompt)."""
+
+    x: float = Field(ge=0, description="toạ độ x (pixel)")
+    y: float = Field(ge=0, description="toạ độ y (pixel)")
+    label: int = Field(default=1, description="1 = positive (thuộc vật thể), 0 = negative (thuộc nền)")
+
+
 class TrackParams(BaseModel):
     """Tham số truyền xuống pipeline (tương ứng flag của tools/run_live.py)."""
 
@@ -52,6 +60,20 @@ class SelectRequest(BaseModel):
     """Chọn đối tượng cần bám trên frame đầu → bắt đầu xử lý."""
 
     bbox: BBox
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định (positive: 1, negative: 0)",
+    )
+
+
+class SelectLiveRequest(BaseModel):
+    """Chọn hoặc chọn lại đối tượng cho phiên live đang chạy."""
+
+    bbox: BBox
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định (positive: 1, negative: 0)",
+    )
 
 
 class JobStatusResponse(BaseModel):
@@ -99,6 +121,10 @@ class LiveStartRequest(BaseModel):
     bbox: Optional[BBox] = Field(
         default=None,
         description="ô chọn đối tượng cho mode=track (bắt buộc khi track)",
+    )
+    points: Optional[list[PointPrompt]] = Field(
+        default=None,
+        description="danh sách điểm chỉ định cho mode=track (positive: 1, negative: 0)",
     )
     image_size: Optional[int] = Field(
         default=None, ge=64, le=1024,
@@ -160,14 +186,26 @@ class LiveStatusResponse(BaseModel):
         default=None,
         description="CÓ BẰNG CHỨNG về vật hay không (KHÁC `state`: `state` chỉ là tiến trình). "
                     "`tracking` = mask/VOS/LK đang quan sát được vật; `no_evidence` = ô hiển thị "
-                    "là suy diễn ⇒ worker ĐÃ ẨN ô khỏi ảnh; `null` = CHƯA BIẾT (worker bản cũ / "
-                    "frame đầu) — KHÔNG được đọc thành 'đang bám'",
+                    "là suy diễn ⇒ worker ĐÃ ẨN ô khỏi ảnh; `nghi_doi_tuong` = ô bao nhảy vô lý "
+                    "(nghi bám sang đối tượng khác) ⇒ worker ĐÃ ẨN ô tới khi chọn lại hoặc xác nhận "
+                    "(`POST /api/live/confirm`); `null` = CHƯA BIẾT (worker bản cũ / frame đầu) — "
+                    "KHÔNG được đọc thành 'đang bám'",
     )
     bam_ly_do: str | None = Field(
         default=None,
         description="Vì sao mất bằng chứng. Hiện CHỈ có `'mask_rong'` (model không thấy vật; bản nháp "
                     "từng có `'lk_tu_choi'` nhưng ĐO ĐƯỢC là báo oan 74 % frame nên đã bỏ) — `null` = "
                     "không áp dụng",
+    )
+    nghi_doi_tuong: bool = Field(
+        default=False,
+        description="Cổng nhảy CÓ NHỚ: `true` = worker đang NGHI đã bám sang đối tượng khác và đã ẩn "
+                    "mask/ô. UI phải hiện banner + nút 'vẫn đúng' (`POST /api/live/confirm`) — im "
+                    "lặng thì người xem tưởng hệ hỏng",
+    )
+    nghi_doi_tuong_n: int = Field(
+        default=0, ge=0,
+        description="Số frame ĐÃ PHÁT trong trạng thái nghi đổi đối tượng (`0` = chưa từng nghi)",
     )
     bam_no_evidence_n: int = Field(
         default=0, ge=0,

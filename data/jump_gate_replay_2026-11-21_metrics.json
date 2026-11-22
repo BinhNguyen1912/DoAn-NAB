@@ -1,0 +1,151 @@
+{
+  "nguong_px": 200.0,
+  "luat": "is_suspect_switch: |Δtâm| > 0,25 × đường chéo khung",
+  "phan_tich": [
+    {
+      "file": "demoip_1104-212328_metrics.csv",
+      "n": 62,
+      "so_lan_bao": 1,
+      "frame": [
+        38
+      ]
+    },
+    {
+      "file": "demoip_1104-214048_metrics.csv",
+      "n": 75,
+      "so_lan_bao": 1,
+      "frame": [
+        43
+      ]
+    },
+    {
+      "file": "demoip_1104-214922_metrics.csv",
+      "n": 177,
+      "so_lan_bao": 2,
+      "frame": [
+        42,
+        45
+      ]
+    },
+    {
+      "file": "demoip_1104-220946_metrics.csv",
+      "n": 86,
+      "so_lan_bao": 3,
+      "frame": [
+        41,
+        48,
+        87
+      ]
+    },
+    {
+      "file": "demoip_1105-075326_metrics.csv",
+      "n": 52,
+      "so_lan_bao": 2,
+      "frame": [
+        30,
+        33
+      ]
+    },
+    {
+      "file": "demoip_1105-124459_metrics.csv",
+      "n": 113,
+      "so_lan_bao": 2,
+      "frame": [
+        53,
+        101
+      ]
+    },
+    {
+      "file": "demoip_1105-125828_metrics.csv",
+      "n": 392,
+      "so_lan_bao": 1,
+      "frame": [
+        248
+      ]
+    },
+    {
+      "file": "demoip_1105-131222_metrics.csv",
+      "n": 326,
+      "so_lan_bao": 0,
+      "frame": []
+    },
+    {
+      "file": "demoip_1114-060249_metrics.csv",
+      "n": 147,
+      "so_lan_bao": 3,
+      "frame": [
+        63,
+        137,
+        142
+      ]
+    },
+    {
+      "file": "demoip_1120-224057_metrics.csv",
+      "n": 73,
+      "so_lan_bao": 1,
+      "frame": [
+        16
+      ]
+    },
+    {
+      "file": "demoip_1120-233206_metrics.csv",
+      "n": 90,
+      "so_lan_bao": 0,
+      "frame": []
+    },
+    {
+      "file": "demoip_1121-075227_metrics.csv",
+      "n": 102,
+      "so_lan_bao": 2,
+      "frame": [
+        61,
+        76
+      ]
+    },
+    {
+      "file": "demoip_1121-080547_metrics.csv",
+      "n": 221,
+      "so_lan_bao": 0,
+      "frame": []
+    },
+    {
+      "file": "demoip_1121-081724_metrics.csv",
+      "n": 92,
+      "so_lan_bao": 1,
+      "frame": [
+        81
+      ]
+    },
+    {
+      "file": "demoip_1121-102905_metrics.csv",
+      "n": 122,
+      "so_lan_bao": 0,
+      "frame": []
+    },
+    {
+      "file": "demoip_1121-103221_metrics.csv",
+      "n": 325,
+      "so_lan_bao": 1,
+      "frame": [
+        51
+      ]
+    },
+    {
+      "file": "demoip_1121-103854_metrics.csv",
+      "n": 240,
+      "so_lan_bao": 0,
+      "frame": []
+    },
+    {
+      "file": "demoip_1121-121732_metrics.csv",
+      "n": 278,
+      "so_lan_bao": 1,
+      "frame": [
+        178
+      ]
+    }
+  ],
+  "tong_frame": 2973,
+  "tong_lan_bao": 21,
+  "ghi_chu": "CSV trước 21-11 không có bbox_w/bbox_h ⇒ dựng lại từ center_x/center_y (luật chỉ dùng TÂM)"
+}

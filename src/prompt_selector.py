@@ -24,6 +24,8 @@ HINT_TOO_SMALL = "[chọn] ô quá nhỏ — kéo rộng hơn quanh đối tư�
 
 _COLOR_DRAG = (0, 255, 0)    # xanh lá — đang kéo
 _COLOR_DONE = (0, 200, 255)  # cam — đã xác nhận
+_COLOR_POS = (0, 255, 0)     # xanh lá — điểm positive (thuộc đối tượng)
+_COLOR_NEG = (0, 0, 255)     # đỏ — điểm negative (thuộc nền sát mép)
 
 
 class PromptSelector:
@@ -51,6 +53,8 @@ class PromptSelector:
         self._start = None
         self._end = None
         self.bbox = None
+        self.points: list[tuple[float, float]] = []
+        self.labels: list[int] = []
 
     def has_bbox(self):
         """True khi đã thả chuột và ô đủ lớn — sẵn sàng lấy ra khởi động track."""
@@ -62,10 +66,30 @@ class PromptSelector:
         self.reset()
         return bbox
 
+    def take_selection(self):
+        """Lấy bbox kèm danh sách điểm positive/negative đã chọn rồi reset."""
+        bbox = self.bbox
+        points = list(self.points)
+        labels = list(self.labels)
+        self.reset()
+        return bbox, points, labels
+
     def on_mouse(self, event, x, y, flags, param):
         """Mouse callback OpenCV — gắn bằng cv2.setMouseCallback(window, selector.on_mouse)."""
         x = max(0, min(self._w - 1, int(x)))
         y = max(0, min(self._h - 1, int(y)))
+        if self.state == self.DONE:
+            # Sau khi đã chọn xong bbox: click trái thêm điểm positive, click phải thêm điểm negative
+            if event == cv2.EVENT_LBUTTONDOWN:
+                self.points.append((float(x), float(y)))
+                self.labels.append(1)
+            elif event == cv2.EVENT_RBUTTONDOWN:
+                self.points.append((float(x), float(y)))
+                self.labels.append(0)
+            elif event == cv2.EVENT_MBUTTONDOWN:
+                self.reset()
+            return
+
         if event == cv2.EVENT_LBUTTONDOWN:
             self.state = self.DRAGGING
             self._start = (x, y)
@@ -97,6 +121,11 @@ class PromptSelector:
         elif self.state == self.DONE and self.bbox is not None:
             x1, y1, x2, y2 = self.bbox
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_DONE, 2)
+            for (px, py), lbl in zip(self.points, self.labels):
+                col = _COLOR_POS if lbl == 1 else _COLOR_NEG
+                ix, iy = int(px), int(py)
+                cv2.circle(img, (ix, iy), 4, col, -1)
+                cv2.circle(img, (ix, iy), 5, (255, 255, 255), 1)
         return img
 
     # ---------- nội bộ ----------

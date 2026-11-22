@@ -393,3 +393,74 @@ class TestKhongVeOChungKhiMatDau:
         img = viz.render(frame, _result(frame_idx=1, bbox=(200, 200, 220, 220)))
         assert not np.array_equal(img[200:220, 200:220], frame[200:220, 200:220]), \
             "có bằng chứng mà không vẽ ô ⇒ test vô nghĩa"
+
+
+class TestCanhBaoOChonPhuMat:
+    """21-11: cảnh báo "ô chọn phủ khuôn mặt" phải VẼ LÊN ẢNH, không chỉ in console.
+
+    Đo thật: console đã in `IoU 0.76` mà người dùng vẫn chọn ô trùm mặt 3 phiên liền ⇒ khoanh đỏ ô mặt
+    là thứ không thể bỏ qua. Vẽ tự hết hạn để không che HUD cả phiên.
+    """
+
+    def test_ve_vien_do_quanh_o_mat(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat((100, 60, 80, 90), giay=30)
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        vien = img[60:63, 100:180]                      # cạnh trên của ô mặt
+        do = ((vien[:, :, 2] > 200) & (vien[:, :, 1] < 80) & (vien[:, :, 0] < 80)).sum()
+        assert do > 100, f"không thấy viền đỏ (đếm {do} px)"
+
+    def test_tu_het_han(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat((100, 60, 80, 90), giay=0.0)   # hết hạn ngay
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        vien = img[60:63, 100:180]
+        do = ((vien[:, :, 2] > 200) & (vien[:, :, 1] < 80) & (vien[:, :, 0] < 80)).sum()
+        assert do == 0, "hết hạn rồi mà vẫn vẽ ⇒ cảnh báo sẽ che HUD cả phiên"
+
+    def test_none_thi_khong_ve(self):
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        viz.canh_bao_o_chon_phu_mat(None)
+        img = viz.render(_frame(), _result(frame_idx=0, bbox=(200, 200, 220, 220)))
+        assert img is not None
+
+
+class TestHudNoiDungKhiVeto:
+    """P1 review 21-11: khi ứng viên bị BỎ vì trùng khuôn mặt, HUD phải nói ĐÚNG lý do.
+
+    Trước đó HUD in "DANG TIM LAI... (khop 0.90 / can 0.75)" ⇒ người xem (và hội đồng) hiểu
+    NGƯỢC là "hệ đủ điểm mà không nhận = hệ hỏng", trong khi lý do thật là veto.
+    """
+
+    def _render(self, monkeypatch, **kw):
+        viz = Visualizer()
+        texts = []
+        monkeypatch.setattr(viz, "_put_text", lambda img, text, org: texts.append(str(text)))
+        viz.render(_frame(), _result(), **kw)
+        return texts
+
+    def test_bi_veto_thi_hien_ly_do_trung_khuon_mat(self, monkeypatch):
+        texts = self._render(monkeypatch, reid_state="reacquiring",
+                             reid_score=0.90, reid_vetoed=True)
+        hud = " | ".join(texts)
+        assert "KHUON MAT" in hud            # nói rõ lý do
+        assert "can 0.7" not in hud          # KHÔNG hiện "khớp X / cần Y" (gây hiểu ngược)
+
+    def test_khong_veto_thi_van_hien_khop_va_nguong(self, monkeypatch):
+        viz = Visualizer()
+        viz.reid_threshold = 0.75
+        texts = []
+        monkeypatch.setattr(viz, "_put_text", lambda img, text, org: texts.append(str(text)))
+        viz.render(_frame(), _result(), reid_state="reacquiring",
+                   reid_score=0.62, reid_vetoed=False)
+        hud = " | ".join(texts)
+        assert "khop 0.62" in hud and "can 0.75" in hud
+        assert "KHUON MAT" not in hud

@@ -17,6 +17,13 @@ export interface BBox {
   h: number
 }
 
+export interface PointPrompt {
+  x: number
+  y: number
+  /** 1 = positive (vật thể), 0 = negative (nền) */
+  label?: number
+}
+
 export interface JobSummary {
   total_frames?: number
   /** `0,0` khi chưa có mẫu (hợp đồng `effective_fps = 1000/mean`) — đọc `mean_latency_ms_n` trước. */
@@ -193,17 +200,25 @@ export interface LiveStatus {
    * CÓ BẰNG CHỨNG về vật hay không — KHÁC `state` (state chỉ là tiến trình: running/stopped…).
    * `null` = CHƯA BIẾT (worker bản cũ / frame đầu), KHÔNG được đọc thành `'tracking'`.
    */
-  bam: 'tracking' | 'no_evidence' | null
-  /** `'mask_rong' | 'lk_tu_choi'` | null */
+  bam: 'tracking' | 'no_evidence' | 'nghi_doi_tuong' | null
+  /** `'mask_rong' | 'o_nhay'` | null */
   bam_ly_do: string | null
   /** số frame ĐÃ PHÁT ở trạng thái `no_evidence` */
   bam_no_evidence_n: number
+  /**
+   * Cổng nhảy CÓ NHỚ: `true` = worker ĐANG NGHI đã bám sang đối tượng khác và ĐÃ ẨN mask/ô.
+   * UI phải hiện banner + nút "vẫn đúng" (`confirmLive`) — im lặng thì người xem tưởng hệ hỏng.
+   */
+  nghi_doi_tuong?: boolean
+  /** số frame ĐÃ PHÁT trong trạng thái nghi (`0` = chưa từng nghi) */
+  nghi_doi_tuong_n?: number
 }
 
 export interface LiveStartOptions {
   /** raw = chỉ phát khung hình · track = bám đối tượng bằng model (cần bbox) */
   mode?: 'raw' | 'track'
   bbox?: BBox
+  points?: PointPrompt[]
   image_size?: number
   /** chạy model mỗi N frame; phần còn lại nội suy bằng LK (mặc định worker: 3) */
   vos_every?: number
@@ -256,6 +271,30 @@ export async function startLive(source: string, options: LiveStartOptions = {}):
 /** Dừng phát và giải phóng nguồn (webcam). */
 export async function stopLive(): Promise<LiveStatus> {
   const res = await fetch('/api/live/stop', { method: 'POST' })
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/**
+ * Xác nhận "vẫn đúng đối tượng" ⇒ worker xoá trạng thái nghi đổi đối tượng và VẼ LẠI mask/ô.
+ *
+ * Dùng khi banner `nghi_doi_tuong` hiện ra mà người dùng thấy vẫn đúng: không cần chọn lại ô.
+ * (21-11: đo được `track_cos` KHÔNG phân biệt được vùng sai cùng tông ⇒ hệ không tự phán quyết
+ * được, phải hỏi người.)
+ */
+export async function confirmLive(): Promise<LiveStatus> {
+  const res = await fetch('/api/live/confirm', { method: 'POST' })
+  if (!res.ok) await _error(res)
+  return (await res.json()) as LiveStatus
+}
+
+/** Chọn hoặc chọn lại đối tượng cho phiên live đang chạy (kèm điểm âm/dương tuỳ chọn). */
+export async function selectLive(bbox: BBox, points?: PointPrompt[]): Promise<LiveStatus> {
+  const res = await fetch('/api/live/select', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ bbox, points }),
+  })
   if (!res.ok) await _error(res)
   return (await res.json()) as LiveStatus
 }

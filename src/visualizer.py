@@ -87,7 +87,8 @@ class Visualizer:
 
     # ---------- API công khai ----------
 
-    def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None):
+    def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None,
+               reid_vetoed=False):
         """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
 
         Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
@@ -95,7 +96,8 @@ class Visualizer:
         """
         self.consume(result)
         return self.render(frame, result, switch_warning=switch_warning,
-                           reid_state=reid_state, reid_score=reid_score)
+                           reid_state=reid_state, reid_score=reid_score,
+                           reid_vetoed=reid_vetoed)
 
     def consume(self, result):
         """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
@@ -113,8 +115,36 @@ class Visualizer:
         else:
             self.consecutive_lost = 0
 
+    def canh_bao_o_chon_phu_mat(self, face_xywh, giay: float = 4.0) -> None:
+        """Khoanh đỏ ô KHUÔN MẶT mà ô chọn đang phủ, giữ trên màn hình `giay` giây.
+
+        Vì sao vẽ chứ không chỉ in console (đo 21-11): console đã in `IoU 0.76` mà người dùng vẫn chọn
+        ô trùm mặt 3 lần liền. Khoanh đỏ lên ảnh là thứ không thể bỏ qua.
+        """
+        import time as _time
+
+        if face_xywh is None:
+            self._face_warning = None
+            return
+        self._face_warning = (tuple(float(v) for v in face_xywh[:4]), _time.monotonic() + float(giay))
+
+    def _draw_face_warning(self, img) -> None:
+        canh = getattr(self, "_face_warning", None)
+        if not canh:
+            return
+        import time as _time
+
+        face, het_han = canh
+        if _time.monotonic() > het_han:
+            self._face_warning = None
+            return
+        x, y, w, h = (int(v) for v in face)
+        cv2.rectangle(img, (x, y), (x + w, y + h), (0, 0, 255), 3)
+        for i, chu in enumerate(("O BAN CHON PHU KHUON MAT", "bam 'r' chon lai o CHI quanh vat")):
+            self._put_text(img, chu, (max(6, x), max(20, y - 12 + i * 24)))
+
     def render(self, frame, result, overlay_age_ms=None, display_fps=None,
-               switch_warning=False, reid_state=None, reid_score=None):
+               switch_warning=False, reid_state=None, reid_score=None, reid_vetoed=False):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
 
@@ -128,7 +158,13 @@ class Visualizer:
         # (review 21-11, P3). Import trong hàm để `visualizer` không phụ thuộc nặng vào `live_tracking`.
         from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
 
-        dang_mat_dau = self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
+        # 21-11: NGHI ĐỔI ĐỐI TƯỢNG (cổng nhảy, có NHỚ) ẩn y như mất dấu. Vì sao: đo trên phiên
+        # `demoip_1121-121732`, sau cú nhảy ở f178 hệ bám sang cửa/tường be CÙNG TÔNG và vẽ mask sai
+        # thêm 65 frame; `track_cos` chứng minh KHÔNG phân biệt được (0,752–0,989 nằm trong dải ca
+        # đúng) ⇒ chỗ duy nhất còn đúng là NGỪNG VẼ và xin người dùng quyết (r/c), thay vì vẽ một
+        # vùng mà hệ không có bằng chứng.
+        dang_mat_dau = (self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
+                        or switch_warning)
 
         # 1) tô mask bán trong suốt
         if not dang_mat_dau and result.mask is not None and result.mask.any():
@@ -157,12 +193,18 @@ class Visualizer:
         if self.consecutive_lost > 0:
             self._draw_lost_banner(img)
         if switch_warning:
-            self._put_text(img, "NGHI NGO DOI TUONG — TU TIM LAI", (8, 104))
+            # Không còn vẽ ô/mask (xem mục 0) ⇒ câu này phải nói ĐÚNG việc người dùng cần làm.
+            self._put_text(img, "NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc", (8, 104))
         if reid_state == "reacquiring":
             # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.
             thr = getattr(self, "reid_threshold", None)
-            if reid_score is None or reid_score < 0:
+            if reid_vetoed:
+                # P1 review 21-11: ứng viên VƯỢT ngưỡng nhưng bị BỎ vì trùng khuôn mặt/đầu.
+                # Không nói rõ thì HUD in "khop 0.90 / can 0.75" ⇒ người xem hiểu NGƯỢC
+                # ("đủ điểm mà không nhận" = hệ hỏng), trong khi lý do thật là veto.
+                detail = " (BO: ung vien trung KHUON MAT)"
+            elif reid_score is None or reid_score < 0:
                 # "không có ứng viên" thường vì CHƯA CÓ MẪU ĐẶC TRƯNG (ô chọn chạm mép khung —
                 # xem src/reid.py HINT_CHAM_MEP); nói thẳng để người xem/demo không đoán mò.
                 detail = " (chua co ung vien — kiem tra vat chon co cham mep khung)"
@@ -171,6 +213,9 @@ class Visualizer:
             else:
                 detail = f" (khop {reid_score:.2f})"
             self._put_text(img, f"DANG TIM LAI...{detail}", (8, 128))
+
+        # 4b) cảnh báo "ô chọn phủ khuôn mặt" (tự hết hạn) — vẽ ĐÈ lên mọi thứ
+        self._draw_face_warning(img)
 
         # 5) ghi nếu recorder đang mở
         self._write(img)

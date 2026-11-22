@@ -41,10 +41,14 @@ class TestCsv:
             rows = list(csv.reader(f))
         assert rows[0] == ["frame_idx", "latency_ms", "score",
                            "center_x", "center_y", "lost",
-                           "state", "reid_score", "reacquired", "ncc"]
+                           "state", "reid_score", "reacquired", "ncc", "vetoed",
+                           "bbox_w", "bbox_h", "mask_area", "track_cos",
+                           "nghi_doi_tuong"]   # 21-11: cổng nhảy có NHỚ (0/1/trống)
         assert len(rows) == 6  # header + 5 dòng
-        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", ""]
-        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", ""]
+        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "",
+                           "", "", "", "", ""]
+        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "",
+                           "", "", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -57,7 +61,8 @@ class TestCsv:
         logger.write_csv(str(out))
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
-        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", ""]
+        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "",
+                           "", "", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -285,7 +290,11 @@ class TestTrangThaiTaiNhanDien:
         with open(path, encoding="utf-8") as f:
             rows = list(csv.reader(f))
         header = rows[0]
-        assert header[-4:] == ["state", "reid_score", "reacquired", "ncc"]
+        # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
+        # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
+        # 21-11 (cổng nhảy CÓ NHỚ): thêm cột `nghi_doi_tuong` ở CUỐI ⇒ 10 cột cuối.
+        assert header[-10:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
+                                "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong"]
         assert rows[3][header.index("state")] == "reacquiring"
         assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
         assert rows[4][header.index("reacquired")] == "1"

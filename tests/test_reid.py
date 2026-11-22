@@ -6,6 +6,7 @@ import numpy as np
 import pytest
 
 from src.reid import (
+    NGUONG_PHU_MAT,
     STATE_LOST,
     accept_candidate,
     STATE_REACQUIRING,
@@ -834,3 +835,437 @@ class TestCongChongNhayKhongTuHuyLanNhanLai:
         session.step(frame)
         assert session.state == "tracking", "cổng chống-nhảy đã tự huỷ lần nhận lại (P0 tái phát)"
         assert len(eng.start_calls) == n_start + 1, f"thừa lần start: {eng.start_calls}"
+
+
+class FakeMat:
+    """Bộ dò mặt giả (duck-type `BoDoMat`): trả danh sách ô `(x, y, w, h)` cố định."""
+
+    def __init__(self, faces):
+        self.faces = list(faces)
+        self.calls = 0
+
+    def detect(self, _frame):
+        self.calls += 1
+        return list(self.faces)
+
+
+class TestVetoNhanLaiVaoMat:
+    """Đo 20–21/11 (3 phiên demo webcam): re-ID nhận lại SAI vào MẶT (cos 0,974/ncc 0,545),
+
+    vào TRÁN (0,734/0,423), vào ĐẦU (0,663/0,356). Ngưỡng điểm KHÔNG cứu được vì ca mặt có
+    ncc 0,545 nằm GIỮA dải ca đúng (0,415–0,741) ⇒ phải dùng thông tin MIỄN PHÍ: ô chọn ban đầu
+    không phủ mặt ⇒ vật cần bám không phải mặt ⇒ ứng viên trùm mặt là SAI theo định nghĩa.
+
+    `_match_object` được THAY BẰNG STUB để test đúng tầng veto (không phụ thuộc cascade NCC).
+    """
+
+    VAT = (10, 10, 90, 90)          # ô chọn ban đầu: góc trên-trái, KHÔNG có mặt
+    MAT = (100, 10, 70, 90)         # một khuôn mặt ở góc phải
+    O_MAT = (110, 20, 160, 90)      # ứng viên nhận lại: nằm TRỌN trong mặt (hệ xyxy)
+    MAT_XYXY = (100, 10, 170, 100)  # cùng khuôn mặt ở hệ xyxy (mọi thứ trong `reid` dùng xyxy)
+
+    def _f(self):
+        return _obj_frame(shape=(120, 260))
+
+    def _f_at(self, box):
+        return _obj_frame(box=box, shape=(120, 260))
+
+    def _f_trong(self):
+        """Frame KHÔNG có vật (nền trơn) ⇒ engine giả trả mask rỗng ⇒ mất dấu."""
+        return np.full((120, 260, 3), (35, 37, 32), np.uint8)
+
+    def _session(self, face_veto):
+        empty = np.zeros((120, 260), bool)
+        engine = FakeEngineMasks([empty], shape=(120, 260))
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           reacquire_confirm=1, verify_frames=0, face_veto=face_veto)
+
+    def _vao_tim_lai(self, s, bbox_chon=None):
+        """start + 2 frame trống ⇒ trạng thái TÌM LẠI, kèm stub trả ứng viên trùng mặt."""
+        s.start(self._f(), bbox_chon or self.VAT)
+        s.step(self._f())                    # mask rỗng ⇒ mất dấu (lost_after_frames=1)
+        s._match_object = lambda frame: (0.9, self.O_MAT, 0.9)   # stub: tìm ra "vật" trong mặt
+        return s
+
+    def test_phu_mat_tinh_dung_phan_dien_tich(self):
+        s = self._session(FakeMat([self.MAT]))
+        assert s._phu_mat(self._f(), self.MAT_XYXY) == 1.0        # ô = đúng mặt
+        assert s._phu_mat(self._f(), self.VAT) == 0.0             # ô vật góc trái
+        assert s._phu_mat(self._f(), (100, 10, 0, 0)) == 0.0      # ô suy biến ⇒ fail-open
+
+    def test_ung_vien_trum_mat_bi_bo_khi_o_chon_khong_phai_mat(self):
+        s = self._vao_tim_lai(self._session(FakeMat([self.MAT])))
+        assert s._ref_phu_mat is False
+        step = s.step(self._f_trong())
+        assert step.reacquired is False           # KHÔNG bám vào mặt
+        assert step.state == STATE_REACQUIRING
+        assert s.veto_mat_n == 1
+        assert step.reid_score >= 0.0             # vẫn ghi điểm để hiệu chuẩn
+
+    def test_tam_o_nam_trong_mat_cung_bi_bo(self):
+        """Ô ứng viên TO hơn mặt (phủ < 30 %) nhưng TÂM nằm trong mặt ⇒ vẫn bỏ (không ngưỡng)."""
+        s = self._session(FakeMat([self.MAT]))
+        to = (60, -40, 240, 160)
+        assert s._trung_mat(self._f(), to) is True
+        assert s._phu_mat(self._f(), to) < NGUONG_PHU_MAT
+
+    def test_tat_veto_thi_van_nhan_nham_nhu_cu(self):
+        s = self._vao_tim_lai(self._session(None))
+        step = s.step(self._f_trong())
+        assert step.reacquired is True            # hành vi CŨ — chứng minh veto là thứ cứu được
+        assert s.veto_mat_n == 0
+
+    def test_o_chon_PHU_MAT_thi_veto_im_lang(self):
+        """Người dùng CHỌN ĐÚNG mặt (muốn bám mặt) ⇒ veto phải tắt, không được chặn."""
+        s = self._vao_tim_lai(self._session(FakeMat([self.MAT])), bbox_chon=self.MAT_XYXY)
+        assert s._ref_phu_mat is True
+        step = s.step(self._f_trong())
+        assert step.reacquired is True
+        assert s.veto_mat_n == 0
+
+    def test_frame_tim_lai_co_elapsed_ms_that(self):
+        """P2 review 21-11: frame LOST/tìm-lại từng ghi `elapsed_ms = 0.0` ⇒ chi phí tìm (cascade
+
+        NCC + YuNet khi veto) không hiện ở artifact nào, nên "veto có làm chậm không" không kiểm được.
+        """
+        s = self._session(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        s.step(self._f())                        # mất dấu
+        step = s.step(self._f())                 # frame TÌM LẠI
+        assert step.result.elapsed_ms > 0.0      # phải là số đo thật, không phải 0 mặc định
+
+    def test_chi_goi_yunet_mot_lan_moi_lan_kiem(self):
+        """`detect()` là YuNet thật (~29 ms) ⇒ một câu hỏi chỉ được một lần gọi.
+
+        Bản đầu gọi 2 lần/frame tìm lại (`_phu_mat` rồi `_trung_mat`) — tự nhân đôi chi phí trên
+        đúng đường đang cố tìm lại vật.
+        """
+        fm = FakeMat([self.MAT])
+        s = self._session(fm)
+        s.start(self._f(), self.VAT)
+        fm.calls = 0
+        # Ô KHÔNG phủ mặt: bản 2-detect (564dcb0) sẽ gọi 2 lần (điều kiện tâm chạy detect riêng).
+        assert s._trung_mat(self._f(), self.VAT) is False
+        assert fm.calls == 1
+
+    def test_ung_vien_KHONG_trung_mat_van_duoc_nhan(self):
+        """CHIỀU ÂM — thiếu test này thì mutant "cứ `_ref_phu_mat=False` là veto hết" vẫn xanh.
+
+        Ứng viên nằm ngoài mọi khuôn mặt ⇒ phải nhận bình thường, `veto_mat_n` phải bằng 0.
+        """
+        fm = FakeMat([self.MAT])
+        s = self._session(fm)
+        s.start(self._f(), self.VAT)
+        s._match_object = lambda frame: (0.9, self.VAT, 0.9)   # stub: ứng viên = đúng ô vật
+        fm.calls = 0
+        step = s.step(self._f())                  # mất dấu
+        step = s.step(self._f())                  # tìm lại → phải NHẬN
+        assert step.reacquired is True
+        assert step.vetoed is False
+        assert s.veto_mat_n == 0
+
+    def test_veto_loc_UNG_VIEN_chu_khong_bo_ca_frame(self, monkeypatch):
+        """P1 review 21-11: mặt xếp hạng trên vật ⇒ phải xét tiếp ứng viên KẾ TIẾP, không bỏ frame.
+
+        Bản đầu veto ô tốt nhất rồi `bbox=None` ⇒ vật (dù nằm trong top-K) không bao giờ được xét
+        ⇒ phiên kẹt `reacquiring` vô hạn dù vật đang trong khung. Ca thật: mặt cosine 0,9739 > ca
+        đúng thấp nhất 0,770.
+        """
+        s = self._session(FakeMat([self.MAT]))
+        s.start(self._f_at(self.VAT), self.VAT)
+        assert s._obj_templates                      # có template ⇒ nhánh prefilter chạy
+        # 2 ứng viên: TRONG MẶT đứng trước (ncc cao hơn), vật thật đứng sau
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda frame, tpl, **kw: [(self.O_MAT, 1.0), (self.VAT, 0.9)])
+        # bán kính tìm không liên quan câu hỏi này (và nó phụ thuộc số frame đã mất dấu)
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+
+        frame = self._f_at(self.VAT)
+        fx, fy, fw, fh = self.MAT
+        frame[fy:fy + fh, fx:fx + fw] = self._f_at(self.O_MAT)[fy:fy + fh, fx:fx + fw]
+
+        score, bbox, ncc = s._match_object(frame)
+        assert s.veto_mat_n == 1                     # ứng viên trong mặt bị bỏ
+        assert bbox == self.VAT                      # NHẬN ứng viên kế tiếp, không bỏ cả frame
+        assert score >= 0.0 and ncc == 0.9
+
+
+class TestNoiDayVeto:
+    """P2 review 21-11: cờ `--no-reid-face-veto` phải thực sự điều khiển việc nối `BoDoMat`.
+
+    Rủi ro đã kiểm bằng đọc code: `merge_cli_overrides` (`src/config.py`) KHÔNG có key
+    `reid_face_veto` và `main()` không gán lại ⇒ không bị config đè; `run demoip "$@"` đứng sau
+    nên cờ người dùng tới được argparse. Test này khoá lại để lần sau không ai làm hỏng.
+    """
+
+    def _args(self, **kw):
+        import argparse
+        a = argparse.Namespace(reid_threshold=0.75, lost_after_frames=5, reid_ref_max=8,
+                               reid_min_face_px=40, reid_min_detect_score=0.6,
+                               reid_obj_threshold=0.75, reid_obj_ncc_min=0.40,
+                               lost_score_threshold=0.0, reid_confirm=2, reid_verify=2,
+                               reid_face_veto=True, reid_cue="object", reid=True,
+                               reid_detector_model="models/face/det.onnx",
+                               reid_recognizer_model="models/face/rec.onnx")
+        for k, v in kw.items():
+            setattr(a, k, v)
+        return a
+
+    def _session(self, monkeypatch, args):
+        from tools.run_live import _make_reid_session
+        monkeypatch.setattr("src.face_guard.BoDoMat",
+                            lambda *a, **k: type("F", (), {"detect": lambda self, f: []})())
+        return _make_reid_session(engine=object(), args=args)
+
+    def test_bat_thi_gan_face_veto(self, monkeypatch):
+        s = self._session(monkeypatch, self._args(reid_face_veto=True))
+        assert s.face_veto is not None
+
+    def test_co_no_reid_face_veto_thi_tat(self, monkeypatch):
+        s = self._session(monkeypatch, self._args(reid_face_veto=False))
+        assert s.face_veto is None
+
+    def test_cue_face_khong_noi_veto(self, monkeypatch):
+        """Bám MẶT mà lại veto mặt là tự chặn mình ⇒ khi cue=face phải KHÔNG nối veto.
+
+        Dùng `BoDoMat` giả + bỏ qua kiểm tra tồn tại file model của embedder mặt (test này chỉ
+        hỏi nhánh nối veto, không hỏi model thật).
+        """
+        import tools.run_live as rl
+        monkeypatch.setattr(rl.os.path, "isfile", lambda p: True)
+        monkeypatch.setattr("src.reid.FaceEmbedder", lambda *a, **k: object())
+        s = self._session(monkeypatch, self._args(reid_cue="face", reid_face_veto=True))
+        assert s.face_veto is None
+
+
+class TestBaP1Vong2:
+    """3 P1 của review vòng 2 (21-11) — mỗi lỗi phải có test giết được mutant."""
+
+    VAT = (10, 10, 90, 90)
+    MAT = (100, 10, 70, 90)              # xywh
+    O_MAT = (110, 20, 160, 90)           # xyxy, nằm trọn trong mặt
+
+    def _f(self):
+        return _obj_frame(box=self.VAT, shape=(120, 260))
+
+    def _f_trong(self):
+        return np.full((120, 260, 3), (35, 37, 32), np.uint8)
+
+    def _s(self, face_veto):
+        engine = FakeEngineMasks([np.zeros((120, 260), bool)], shape=(120, 260))
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5,
+                           reacquire_confirm=1, verify_frames=0, face_veto=face_veto)
+
+    def test_P1_ung_vien_bi_veto_VAN_GHI_DIEM(self, monkeypatch):
+        """P1-3: bản trước `continue` trước khi chấm ⇒ `reid_score/ncc = -1`, trùng giá trị
+
+        "không có ứng viên" ⇒ artifact không hiệu chuẩn được ngưỡng. Nay phải có số thật.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda f, tpl, **kw: [(self.O_MAT, 0.88)])
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+        score, bbox, ncc = s._match_object(self._f())
+        assert bbox is None                 # không nhận (ô trùng mặt)
+        assert s.veto_mat_n == 1
+        assert score >= 0.0                 # NHƯNG phải có điểm của ô bị bỏ
+        assert ncc == 0.88                  # NCC lấy từ prefilter (miễn phí)
+
+    def test_P2_yunet_chi_1_lan_cho_ca_frame_step(self, monkeypatch):
+        """P2-2: `step()` backstop từng gọi YuNet lần 2 trên CÙNG frame (~29 ms)."""
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        s.start(self._f(), self.VAT)
+        monkeypatch.setattr("src.reid.prefilter_candidates",
+                            lambda f, tpl, **kw: [(self.O_MAT, 0.88)])
+        monkeypatch.setattr(s, "_filter_by_radius", lambda pairs, shape: pairs)
+        s.step(self._f())                   # mất dấu
+        fm.calls = 0
+        s.step(self._f())                   # tìm lại: _match_object + backstop
+        assert fm.calls == 1
+
+    def test_P2_reset_xoa_quyet_dinh_veto(self):
+        """P2: `reset()` hứa "về trạng thái ban đầu" ⇒ phải xoá `_ref_phu_mat`/`_ref_bbox`.
+
+        Nếu còn `_ref_phu_mat=True` cũ thì veto TẮT IM LẶNG cho phiên sau.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), (110, 20, 160, 90))     # ô chọn phủ mặt ⇒ _ref_phu_mat True
+        assert s._ref_phu_mat is True
+        s.reset()
+        assert s._ref_phu_mat is False
+        assert s._ref_bbox is None
+
+
+    def test_veto_van_duoc_ghi_khi_frame_do_con_nhan_duoc_ung_vien_khac(self, monkeypatch):
+        """Bug thật 21-11 (phiên `demoip_1121-103221`): `run_info.reid_veto_mat_n = 1` mà CSV
+
+        **không có dòng `vetoed=1`** nào. Nguyên nhân: TRONG CÙNG một frame, hệ bỏ 1 ứng viên trùng
+        mặt rồi NHẬN một ứng viên khác, mà `_reacquire()` trả `Step` mặc định `vetoed=False` ⇒ mất
+        dấu vết veto trên artifact.
+        """
+        s = self._s(FakeMat([self.MAT]))
+        s.start(self._f(), self.VAT)
+        s.step(self._f())                        # mất dấu
+
+        def fake_match(frame):
+            s.veto_mat_n += 1                    # đã bỏ 1 ứng viên trùng mặt…
+            return 0.95, self.VAT, 0.9           # …và trong CÙNG frame nhận được ứng viên khác
+
+        monkeypatch.setattr(s, "_match_object", fake_match)
+        step = s.step(self._f())
+        assert step.reacquired is True
+        assert step.vetoed is True               # ← trước khi vá: False (mất dấu vết veto)
+
+
+class TestCacheKhuonMatTheoFrame:
+    """P2 review vòng 3 (21-11): test "1 lần YuNet cho `step()`" KHÔNG giết được mutant bỏ cache.
+
+    Lý do: `_match_object` truyền `faces=` cho mọi lần kiểm sau, nên dù bỏ cache thì `calls` vẫn = 1.
+    Muốn khoá cache phải hỏi ĐÚNG hợp đồng của nó: cùng frame ⇒ 1 lần detect, frame mới ⇒ detect lại.
+    """
+
+    MAT = (10, 10, 40, 40)      # xywh
+
+    def _s(self, fm):
+        return ReIdSession(engine=object(), embedder=None, cue="object", face_veto=fm)
+
+    def test_cung_frame_chi_detect_mot_lan(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f = _obj_frame(shape=(60, 60))
+        assert s._mat_trong(f) == ((10.0, 10.0, 40.0, 40.0),)
+        assert s._mat_trong(f) == ((10.0, 10.0, 40.0, 40.0),)
+        assert fm.calls == 1
+
+    def test_frame_moi_thi_detect_lai(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f1 = _obj_frame(shape=(60, 60))
+        f2 = _obj_frame(shape=(60, 60))          # mảng MỚI (nguồn video luôn trả mảng mới)
+        s._mat_trong(f1)
+        s._mat_trong(f2)
+        assert fm.calls == 2
+
+    def test_reset_xoa_cache(self):
+        fm = FakeMat([self.MAT])
+        s = self._s(fm)
+        f = _obj_frame(shape=(60, 60))
+        s._mat_trong(f)
+        s.reset()
+        s._mat_trong(f)
+        assert fm.calls == 2                     # sau reset không dùng lại mặt của phiên trước
+
+
+class TestReIdGeometricVerification:
+    """Ticket 03: Xác thực hình học và sinh điểm prompt tương phản khi tái bắt đối tượng."""
+
+    def test_loai_bo_ung_vien_khac_ti_le_hinh_hoc(self):
+        from unittest.mock import MagicMock
+        from src.reid import ReIdSession
+
+        engine = MagicMock()
+        session = ReIdSession(engine=engine, embedder=None, cue="object")
+        # Nạp 5 mẫu đối tượng 50x120 (như remote)
+        for _ in range(5):
+            session.geo_profile.update((100, 100, 150, 220))
+
+        # Ứng viên mảng tường ngang (150x40): cùng màu nhưng sai tỷ lệ
+        cand_wall = (200, 200, 350, 240)
+        assert session.geo_profile.is_compatible(cand_wall) is False
+
+        # Ứng viên remote thật khi quay lại (48x118): khớp
+        cand_real = (200, 200, 248, 318)
+        assert session.geo_profile.is_compatible(cand_real) is True
+
+    def test_reacquire_sinh_contrast_points_cho_engine(self):
+        from unittest.mock import MagicMock
+        from src.reid import ReIdSession
+
+        engine = MagicMock()
+        engine.start.return_value = MagicMock(bbox=(20, 20, 60, 100), mask=np.ones((120, 120), bool))
+        session = ReIdSession(engine=engine, embedder=None, cue="object")
+
+        frame = np.zeros((120, 120, 3), dtype=np.uint8)
+        bbox = (20, 20, 60, 100)
+        session._reacquire(frame, bbox, score=0.85)
+
+        assert engine.start.called
+        call_kwargs = engine.start.call_args.kwargs
+        assert "points" in call_kwargs and "labels" in call_kwargs
+        assert call_kwargs["labels"][0] == 1  # positive ở tâm
+        assert 0 in call_kwargs["labels"]     # negative ở viền ngoài
+
+
+
+class TestTimLaiBangMoTaVanBan:
+    """22-11: cue 0 — YOLO-World tìm lại vật theo MÔ TẢ VĂN BẢN.
+
+    Vì sao cần: mọi cue cũ (mặt / đặc trưng vật) đều dựa vào thị giác; vật đơn sắc cùng tông nền
+    làm `cos` mù (đo 21-11: mask-cos vùng SAI 0,752–0,989 nằm trong dải ca ĐÚNG) ⇒ cần một cue
+    NGỮ NGHĨA. Detector một mình vẫn phải qua `_confirm` + cổng hình học.
+    """
+
+    def _session(self, detector, every=1):
+        from src.reid import ReIdSession
+        s = ReIdSession(engine=object(), embedder=None, cue="object",
+                        detector=detector, detector_every=every, reacquire_confirm=1)
+        for _ in range(5):
+            s.geo_profile.update((100, 100, 150, 220))   # vật 50×120 như remote
+        return s
+
+    def test_detector_hop_le_thi_nhan_lai(self):
+        from src.open_vocab_detector import Detection
+
+        class _Det:
+            def __init__(self, box):
+                self.box, self.calls = box, 0
+            def best(self, frame):
+                self.calls += 1
+                return Detection(bbox=self.box, conf=0.9, label="remote control") if self.box else None
+
+        det = _Det((200, 200, 248, 318))                 # 48×118: khớp hình học
+        s = self._session(det)
+        s._state = "lost"
+        s.engine = type("E", (), {"start": lambda self_, frame, bbox, **kw: type(
+            "R", (), {"bbox": bbox, "mask": np.ones((240, 320), bool),
+                      "score": 5.0, "elapsed_ms": 1.0})()})()
+        step = s.step(np.zeros((240, 320, 3), np.uint8))
+        assert step.reacquired is True
+        assert det.calls == 1
+        assert s.detector_hits == 1
+
+    def test_detector_sai_hinh_hoc_thi_bi_loai(self):
+        from src.open_vocab_detector import Detection
+
+        class _Det:
+            def best(self, frame):
+                return Detection(bbox=(200, 200, 350, 240), conf=0.9, label="remote control")
+
+        s = self._session(_Det())                        # 150×40: sai tỉ lệ với 50×120
+        s._state = "lost"
+        step = s.step(np.zeros((240, 320, 3), np.uint8))
+        assert step.reacquired is not True
+        assert s.detector_rejects == 1
+        assert s.detector_hits == 0
+
+    def test_throttle_theo_lost_age(self):
+        class _Det:
+            """Không thấy gì (trả None) ⇒ phiên ở lại `lost` và ta đếm được số lần HỎI detector."""
+            def __init__(self):
+                self.calls = 0
+            def best(self, frame):
+                self.calls += 1
+                return None
+
+        det = _Det()
+        s = self._session(det, every=3)
+        s._state = "lost"
+        s.enabled = False          # tắt các cue khác để chỉ đo cue 0
+        for _ in range(6):
+            s._state = "lost"
+            s.step(np.zeros((240, 320, 3), np.uint8))
+        assert det.calls == 2, "6 frame / every=3 ⇒ đúng 2 lần hỏi detector"
