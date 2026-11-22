@@ -63,3 +63,13 @@
 - 8 + 7 = 15 frame GT trên 360 frame ⇒ mIoU **không** đại diện cả clip (coverage 15/360).
 - Chỉ 1 lần chạy ⇒ chưa có `±`; muốn so sánh phải ≥ 3 lần (`./run ab`).
 - Số trên là **CPU @192**; số GPU **chưa có** (chưa thuê/chưa chạy Colab).
+
+## 🐞 Bẫy đã gặp: Colab KHÔNG mở được notebook trên nhánh có dấu `/`
+- URL `.../blob/feat/nhan-lai-vat-live/notebooks/x.ipynb` ⇒ Colab gọi API
+  `/contents/nhan-lai-vat-live/notebooks?ref=feat` — nó cắt chuỗi ở dấu `/` ĐẦU TIÊN sau `blob/`,
+  nên hiểu nhầm nhánh là `feat` và đường dẫn là `nhan-lai-vat-live/notebooks`.
+- Cách chữa: giữ một nhánh **KHÔNG có dấu `/`** trỏ đúng commit cần dùng (`colab-bench`), rồi mở
+  `.../blob/colab-bench/notebooks/colab_gpu_evaluation.ipynb`.
+- Kiểm tra trước khi gửi link (1 lệnh): `curl -o /dev/null -w "%{http_code}" \
+  "https://api.github.com/repos/<owner>/<repo>/contents/notebooks?ref=<nhánh>"` phải trả `200`.
+- Nhánh `colab-bench` là nhánh TẠM cho Colab — xoá sau khi đo xong.
