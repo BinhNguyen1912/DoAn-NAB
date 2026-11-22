@@ -82,7 +82,7 @@ def _o_chon_tu_gt(gt_dir: Path):
 def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[int],
                       max_frames: int | None, vos_every: int, python: str,
                       stream: bool = False, timeout_s: float = 1800.0) -> dict:
-    out = _REPO / "data" / f"_gpu_{device}_{size}_{int(time.time())}"
+    out = _REPO / "data" / f"_gpu_{device}_{size}"
     masks = out / "masks"
     masks.mkdir(parents=True, exist_ok=True)
     argv = [
@@ -99,13 +99,29 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
         argv += ["--stop-after-frames", str(max_frames)]
     t0 = time.perf_counter()
     if stream:
-        # In TRỰC TIẾP: nạp model + tqdm của SAM 2 chạy 30–90 s, không in gì thì người chạy tưởng
-        # treo và Ctrl-C (đã xảy ra trên Colab 22-11). Vẫn ghi lại đuôi log để chẩn đoán.
-        proc = subprocess.run(argv, cwd=_REPO, stdout=subprocess.PIPE,
-                              stderr=subprocess.STDOUT, text=True, timeout=timeout_s)
-        proc.stdout = proc.stdout or ""
-        # stdout ở chế độ stream là TOÀN BỘ log; chẩn đoán chỉ cần phần đuôi.
-        (out / "worker.log").write_text(proc.stdout[-20000:], encoding="utf-8")
+        # `subprocess.run(stdout=PIPE)` KHÔNG stream: nó gom hết rồi mới trả ⇒ người chạy thấy im
+        # lặng 30–90 s lúc nạp model và bấm Ctrl-C (xảy ra 2 lần trên Colab 22-11). Muốn thấy tiến
+        # trình thật thì phải `Popen` + đọc từng dòng.
+        proc = subprocess.Popen(argv, cwd=_REPO, stdout=subprocess.PIPE,
+                                stderr=subprocess.STDOUT, text=True, bufsize=1)
+        lines: list[str] = []
+        deadline = t0 + timeout_s
+        assert proc.stdout is not None
+        for line in proc.stdout:
+            print("   " + line.rstrip(), flush=True)
+            lines.append(line)
+            if time.perf_counter() > deadline:
+                proc.kill()
+                break
+        proc.wait()
+        gom = "".join(lines)
+        (out / "worker.log").write_text(gom[-20000:], encoding="utf-8")
+
+        class _P:                      # giữ cùng hình dạng với nhánh không-stream
+            returncode = proc.returncode
+            stdout = gom
+            stderr = ""
+        proc = _P()
     else:
         proc = subprocess.run(argv, cwd=_REPO, capture_output=True, text=True,
                               timeout=timeout_s)
