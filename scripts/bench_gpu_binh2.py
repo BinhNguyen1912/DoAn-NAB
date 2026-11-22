@@ -79,9 +79,25 @@ def _o_chon_tu_gt(gt_dir: Path):
     return int(xs.min()), int(ys.min()), int(xs.max() - xs.min()), int(ys.max() - ys.min())
 
 
+def _so_frame_cua_clip(path: Path) -> int:
+    """Số frame của clip — để đặt `--stop-after-frames` ĐÚNG BẰNG độ dài clip.
+
+    Bắt buộc: `live_worker` mặc định `loop_files=True` (phát lại từ đầu khi hết file), nên không
+    truyền cờ này thì tiến trình không bao giờ thoát và không có bảng số.
+    """
+    import cv2
+    cap = cv2.VideoCapture(str(path))
+    try:
+        n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0)
+    finally:
+        cap.release()
+    return n
+
+
 def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[int],
                       max_frames: int | None, vos_every: int, python: str,
-                      stream: bool = False, timeout_s: float = 1800.0) -> dict:
+                      stream: bool = False, timeout_s: float = 1800.0,
+                      stop_after: int | None = None) -> dict:
     out = _REPO / "data" / f"_gpu_{device}_{size}"
     masks = out / "masks"
     masks.mkdir(parents=True, exist_ok=True)
@@ -95,8 +111,11 @@ def chay_mot_cau_hinh(*, size: int, device: str, clip: str, bbox, frames: list[i
         # Nhịp phát không được là nút thắt: ta đo MODEL, không đo webcam.
         "--max-fps", "1000",
     ]
-    if max_frames:
-        argv += ["--stop-after-frames", str(max_frames)]
+    # LUÔN có: `max_frames` (kiểm đường ống) → `stop_after` (độ dài clip). Thiếu cả hai thì worker
+    # lặp vô hạn — đúng lỗi "chạy quài" trên Colab 22-11.
+    dung_sau = max_frames or stop_after
+    if dung_sau:
+        argv += ["--stop-after-frames", str(int(dung_sau))]
     t0 = time.perf_counter()
     if stream:
         # `subprocess.run(stdout=PIPE)` KHÔNG stream: nó gom hết rồi mới trả ⇒ người chạy thấy im
@@ -218,7 +237,8 @@ def main(argv=None) -> int:
         rows.append(chay_mot_cau_hinh(
             size=size, device=args.device, clip=args.clip, bbox=bbox, frames=frames,
             max_frames=args.max_frames, vos_every=args.vos_every, python=python,
-            stream=args.stream, timeout_s=args.timeout))
+            stream=args.stream, timeout_s=args.timeout,
+            stop_after=_so_frame_cua_clip(clip_p)))
 
     payload = {
         **_provenance(),
@@ -238,6 +258,16 @@ def main(argv=None) -> int:
     out = Path(args.out) if args.out else (
         _REPO / "data" / f"gpu_sweep_binh2_{datetime.now():%Y-%m-%d}_metrics.json")
     out.parent.mkdir(parents=True, exist_ok=True)
+    # Chạy thành nhiều đợt (192,320 rồi 512,1024) không được xoá số của đợt trước: gộp theo
+    # `image_size`, đợt SAU thắng nếu trùng.
+    if out.is_file() and not args.out:
+        try:
+            cu = json.loads(out.read_text(encoding="utf-8")).get("ket_qua") or []
+        except (json.JSONDecodeError, OSError):
+            cu = []
+        moi = {r.get("image_size") for r in rows}
+        rows = [r for r in cu if r.get("image_size") not in moi] + rows
+        rows.sort(key=lambda r: r.get("image_size") or 0)
     out.write_text(json.dumps(payload, ensure_ascii=False, indent=2), encoding="utf-8")
 
     print(f"\n[bench] {out}")
