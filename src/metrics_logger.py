@@ -43,7 +43,11 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # được cổng xác minh không" chỉ là SUY LUẬN (phiên `demoip_1123-101110` nhận lại vào
               # tường: cos 0,976/ncc 0,484 mà không có một con số verify nào được ghi).
               # Trống = chưa chấm / không phải frame nhận lại.
-              "verify_cos"]
+              "verify_cos",
+              # 23-11-2026 (review vòng 2): cosine CAO NHẤT của frame, chấm TRƯỚC mọi cổng.
+              # `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng ⇒ không tách được "bộ sinh không
+              # đưa vật vào danh sách" với "cổng chặn". Cột này tách được. Trống = chưa chấm.
+              "cos_truoc_cong"]
 
 
 @dataclass
@@ -76,6 +80,8 @@ class FrameRecord:
     # `cos` mask-vs-mask của lần xác minh sau khi NHẬN LẠI (`None` = chưa chấm / không phải frame
     # nhận lại). Đo được thì mới trả lời được "cổng xác minh có tách được vùng sai không".
     verify_cos: Optional[float] = None
+    # Cosine cao nhất của frame chấm TRƯỚC mọi cổng (`None` = chưa chấm).
+    cos_truoc_cong: Optional[float] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -218,6 +224,7 @@ class MetricsLogger:
                     "" if r.nghi_doi_tuong is None else (1 if r.nghi_doi_tuong else 0),
                     # `verify_cos`: TRỐNG = chưa chấm (không phải 0) — cùng luật với `track_cos`.
                     f"{float(r.verify_cos):.6g}" if r.verify_cos is not None else "",
+                    f"{float(r.cos_truoc_cong):.6g}" if r.cos_truoc_cong is not None else "",
                 ])
         return str(path)
 

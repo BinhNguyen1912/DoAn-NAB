@@ -173,6 +173,11 @@ class Step:
     # tách được vùng sai không" trước đây chỉ suy luận được (phiên `demoip_1123-101110` nhận lại
     # vào TƯỜNG rồi tracking tới hết phiên ⇒ `_verify_ok` pass 2/2 nhưng không có số nào để soi).
     verify_cos: Optional[float] = None
+    # Cosine CAO NHẤT trong số ứng viên của frame này, chấm **TRƯỚC** mọi cổng (veto/NCC/hình học/
+    # ngưỡng). 23-11-2026: `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng, nên artifact cũ không
+    # phân biệt được "bộ sinh không đưa vật vào danh sách" với "cổng chặn" — đúng thứ phải tách
+    # trước khi quyết có nên xác minh ứng viên bằng mask hay không.
+    cos_truoc_cong: Optional[float] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -411,6 +416,7 @@ class ReIdSession:
         # 15,4 % phiên, `mask_area` med 43 512 px).
         self._suspicious = False
         self._last_verify_cos = None    # cos của lần XÁC MINH gần nhất (`None` = chưa chấm)
+        self._cos_truoc_cong = -1.0     # cosine CAO NHẤT của frame, chấm trước mọi cổng
 
     # -- trạng thái --
     @property
@@ -604,6 +610,7 @@ class ReIdSession:
             # Veto mặt/đầu đã lọc TRONG `_match_object` (ứng viên bị bỏ, ứng viên kế tiếp được xét)
             # ⇒ ở đây chỉ còn câu hỏi "frame này có bị veto không" để HUD nói ĐÚNG lý do.
             so_veto_truoc = self.veto_mat_n
+            self._cos_truoc_cong = -1.0        # mỗi frame một giá trị (không rò sang frame sau)
             score, bbox, ncc = self._match_object(frame)
             vetoed = self.veto_mat_n > so_veto_truoc
             if vetoed and self.frames_vetoed_since_print >= 20:
@@ -646,7 +653,9 @@ class ReIdSession:
         lost = self._lost_result()
         lost.elapsed_ms = (time.perf_counter() - _t0) * 1000.0   # chi phí TÌM LẠI (không phải VOS)
         return Step(result=lost, state=self._state,
-                    reid_score=best_score, ncc=best_ncc, vetoed=vetoed)
+                    reid_score=best_score, ncc=best_ncc, vetoed=vetoed,
+                    cos_truoc_cong=(self._cos_truoc_cong
+                                    if self._cos_truoc_cong >= 0.0 else None))
 
     # -- veto "nhận lại vào mặt/đầu" --
     def _mat_trong(self, frame) -> tuple:
@@ -888,7 +897,12 @@ class ReIdSession:
         self._verify_left = 0
         self._confirm_count = 0
         self._confirm_box = None
-        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0)
+        # P1 vòng 2 review: ca ĐÁNG QUAN TÂM NHẤT là verify **THẤT BẠI**, mà bản đầu trả Step
+        # không mang cos ⇒ CSV trống đúng ở ca cần soi ("cổng xác minh có chặn được vùng sai không").
+        cos = self._last_verify_cos
+        self._last_verify_cos = None
+        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0,
+                    verify_cos=cos)
 
     def _match_object(self, frame):
         """Tìm lại vật: lọc rẻ bằng NCC (top-K) rồi chấm `object_signature` cho từng ô.
@@ -969,6 +983,8 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
+            if raw > self._cos_truoc_cong:
+                self._cos_truoc_cong = float(raw)   # TRƯỚC mọi cổng (để tách "bộ sinh" vs "cổng")
             if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
                 # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
                 # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần

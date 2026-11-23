@@ -121,7 +121,8 @@ def _switch_warning(prev_bbox, result, frame_shape):
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
-                 vetoed=None, track_cos=None, nghi_doi_tuong=None, verify_cos=None) -> FrameRecord:
+                 vetoed=None, track_cos=None, nghi_doi_tuong=None, verify_cos=None,
+                 cos_truoc_cong=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     mask = getattr(result, "mask", None)
@@ -144,6 +145,7 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
         nghi_doi_tuong=nghi_doi_tuong,
         track_cos=track_cos,
         verify_cos=verify_cos,
+        cos_truoc_cong=cos_truoc_cong,
     )
 
 
@@ -329,6 +331,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
         track_cos = None                    # cos với neo danh tính (plan 21-11, log-only)
         verify_cos = None                   # cos của cổng XÁC MINH mask-vs-mask (23-11, log-only)
+        cos_truoc = None                    # cos cao nhất chấm TRƯỚC mọi cổng (23-11, log-only)
 
         while max_frames is None or summary.processed < max_frames or mode == "select":
             if mode == "select":
@@ -413,6 +416,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     reid_vetoed = bool(getattr(step, "vetoed", False))
                     track_cos = getattr(step, "track_cos", None)
                     verify_cos = getattr(step, "verify_cos", None)
+                    cos_truoc = getattr(step, "cos_truoc_cong", None)
                     if reacquired:
                         # Re-ID đã tìm lại được đối tượng và xác nhận danh tính ⇒ xoá nghi, đặt lại mốc
                         watch.reset()
@@ -445,7 +449,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     metrics.log(_record_from(last_result, state, reid_score, reacquired,
                                              vetoed=reid_vetoed, track_cos=track_cos,
                                              nghi_doi_tuong=True if watch.nghi else None,
-                                             verify_cos=verify_cos))
+                                             verify_cos=verify_cos,
+                                             cos_truoc_cong=cos_truoc))
     finally:
         src.close()
     return summary

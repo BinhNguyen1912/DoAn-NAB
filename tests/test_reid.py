@@ -1478,3 +1478,54 @@ class TestGhiCosXacMinh:
         session.start(frame, self.BOX)
         step = session.step(frame)
         assert step.verify_cos is None
+
+
+class TestCosTruocCong:
+    """23-11-2026 (review vòng 2): `reid_score` chỉ là điểm của ứng viên **ĐÃ QUA cổng** ⇒ artifact
+
+    cũ không phân biệt được "bộ sinh không đưa vật vào danh sách" với "cổng chặn". Đo được: phiên
+    `095901` có 82/160 bước tìm lại với `reid_score = -1` mà **không biết** cosine cao nhất là bao
+    nhiêu. Cột `cos_truoc_cong` trả lời đúng câu đó.
+    """
+
+    BOX = (20, 20, 60, 60)
+
+    def test_cos_truoc_cong_co_so_ke_ca_khi_moi_ung_vien_bi_chan(self):
+        # ngưỡng cosine không thể đạt ⇒ KHÔNG ứng viên nào được nhận, nhưng vẫn phải ghi điểm tốt nhất
+        empty = np.zeros((96, 96), bool)
+        engine = FakeEngineMasks([empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=1.01,
+                              obj_ncc_min=0.0, reacquire_confirm=1, verify_frames=0)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)                     # mất dấu
+        step = session.step(frame)              # đang tìm lại
+        assert step.reacquired is False
+        assert isinstance(step.cos_truoc_cong, float) and step.cos_truoc_cong >= 0.0, (
+            "phải ghi cosine cao nhất TRƯỚC cổng; nếu None thì lại không tách được 'bộ sinh' vs 'cổng'"
+        )
+
+    def test_ca_verify_that_bai_van_ghi_verify_cos(self):
+        """P1 vòng 2: ca ĐÁNG QUAN TÂM NHẤT là xác minh THẤT BẠI — bản đầu trả `Step` không có cos."""
+        empty = np.zeros((96, 96), bool)
+        # mẫu #3 = `None` ⇒ engine giả trả mask theo ô (đúng ca "bám lại bình thường" để
+        # `_verify_ok` có mask mà chấm).
+        engine = FakeEngineMasks([empty, None], shape=(96, 96))
+        # `auto_recover=False`: cô lập đúng cổng XÁC MINH (cổng nhảy nội bộ sẽ bỏ track trước và
+        # làm test này đo sai thứ — đã gặp khi viết test).
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.5,
+                              reacquire_confirm=1, verify_frames=2, auto_recover=False)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)                     # mất dấu
+        step = session.step(frame)              # nhận lại
+        assert step.reacquired is True
+        # ép ngưỡng lên trên mức cosine đạt được ⇒ `_verify_ok` phải trả False
+        session.obj_threshold = 1.5
+        sau = session.step(_obj_frame((30, 30, 70, 70)))    # frame "kiểm chứng" KHÔNG giống vật
+        assert sau.state == STATE_LOST, "verify thất bại phải bỏ lần nhận lại"
+        assert isinstance(sau.verify_cos, float), (
+            "verify thất bại phải ghi được cos — đây là ca cần soi nhất"
+        )
