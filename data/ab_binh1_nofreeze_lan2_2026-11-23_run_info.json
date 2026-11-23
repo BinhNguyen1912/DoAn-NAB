@@ -1,0 +1,22 @@
+{
+  "timestamp": "2026-11-23T11:36:19",
+  "git_rev": "f065a98",
+  "source": "data/binh1.mp4",
+  "reid_face_veto": null,
+  "reid_veto_mat_n": null,
+  "image_size": 192,
+  "reanchor_every": null,
+  "max_frames": 333,
+  "reid": false,
+  "reid_cue": "face",
+  "reid_obj_threshold": 0.6,
+  "reid_obj_ncc_min": 0.0,
+  "device": "cpu",
+  "lost_score_threshold": -99.0,
+  "reid_reacquire_confirm": 2,
+  "reid_verify_frames": 2,
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "prompt_bbox": null,
+  "reselect_n": null
+}
