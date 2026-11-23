@@ -620,3 +620,32 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - **Veto mặt: chặn theo HÌNH HỌC là đúng, nhưng nó KHÔNG phải thứ chữa "không nhận lại được".** Sau khi
   nới veto (chỉ chặn ô giống hình mặt), phiên `demoip_1123-101110` có `vetoed = 0` và vẫn bám sai —
   vì cổng chính là cosine. Đừng quy lỗi "không nhận lại" cho veto mà không nhìn `reid_score`/`ncc`.
+- **CƠ CHẾ ĐÚNG ĐỂ "TỰ TÌM LẠI" LÀ KHÔNG ĐÓNG BĂNG LAN TRUYỀN — KHÔNG PHẢI RE-ID.** Đo 23-11
+  (`data/ab_binh1_*`, `git_rev f065a98`, `git_dirty_code = false`, **3+3 lần chèn kẽ, cả 6 lần giống
+  nhau tới 4 chữ số**), clip `data/binh1.mp4` @192, `bbox 300,275,150,410`, 333 frame, chấm
+  `./run miou score --gt docs/gt/b1`: **A** (`--reid --reid-cue object --reid-obj-threshold 0.75
+  --reid-obj-ncc-min 0.40`) → mIoU **0,4236**, `mất dấu 5/333`, mask NGOÀI GT **43,1 %** (tệ nhất
+  **100 %**), f181/f211/f241 = **0,0016 / 0,0 / 0,0**; **C** (không `--reid`, `--lost-after-frames 999
+  --lost-score-threshold -99`) → mIoU **0,7794**, `113/333`, ngoài GT **0,6 %**, f181/f211/f241 =
+  **0,7994 / 0,8495 / 0,8435**. C **trùng khít** `data/miou_b1_2026-11-20_metrics.json` ⇒ artifact
+  20-11 là **lan truyền liên tục**, KHÔNG phải re-ID (đừng trích nó làm "bằng chứng re-ID chạy được").
+  ⇒ (a) re-ID **nhận lại SAI** trên clip này, mà HUD lại đẹp nhất từ trước tới giờ (`5/333`): đúng dạng
+  "chỉ số đẹp, kết quả sai"; (b) nút thắt thật là **cổng đóng băng** `--lost-after-frames` (mặc định
+  **2**): đóng băng thì pipeline **không gọi SAM 2 nữa** ⇒ model mất khả năng tự bám lại và mọi trách
+  nhiệm dồn cho re-ID; (c) vì thế 9 commit sửa ngưỡng/mẫu/loại mặt nạ re-ID ngày 23-11 **không thể**
+  cứu demo — chúng tối ưu sai cơ chế. Plan + 2 vòng phản biện:
+  `docs/plan/23-11-2026-chon-co-che-tu-tim-lai.md`.
+- **A/B trên FILE phải chạy thẳng `tools/run_live.py`, TUYỆT ĐỐI không qua `./run view`.** `./run view`
+  = `--display --smooth --reid --image-size 384`; `--smooth` trên file dùng `LatestFrameSource` (chỉ giữ
+  frame mới nhất) ⇒ **mất frame** và ra số vô nghĩa (lần đầu tôi đo được "mất dấu 36/40" trong khi
+  chạy đúng chỉ mất 4/40). Muốn chấm mIoU cho phiên CLI thì dùng
+  `--dump-mask-frames 0,30,... --dump-mask-dir <dir>` (thêm 23-11): tên file theo **số frame video**,
+  mask RỖNG vẫn ghi, mask `None` thì không ghi file + cảnh báo, có `manifest.json` để `score_miou`
+  đối chiếu. Trước 23-11 chỉ `tools/live_worker.py` (đường web) xuất được mask.
+- **Telemetry tìm lại: `reid_score = -1` KHÔNG nói được gì; phải đọc `cand_n` + `cos_truoc_cong`.**
+  `-1` xuất hiện ở cả ba ca khác nhau: không có ứng viên nào qua prefilter NCC (`cand_n = 0`), ứng viên
+  có cos 0,70–0,74 bị ngưỡng chặn (`cand_n > 0`), và cả frame `tracking`. Phiên `095901`: 175/254 dòng
+  `-1`, trong đó 170 dòng `ncc = -1` (bộ sinh rỗng) và 5 dòng `ncc` 0,33–0,40 (cổng NCC loại) — nếu
+  chỉ đọc `-1` thì kết luận "bộ sinh rỗng" là **suy diễn**, không phải số. Từ 23-11 CSV có
+  `cos_truoc_cong` (cos cao nhất chấm TRƯỚC mọi cổng) và `cand_n` (số ứng viên đã chấm); `verify_cos`
+  ghi ở **cả** nhánh xác minh thất bại (ca cần soi nhất).
