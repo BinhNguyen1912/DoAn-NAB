@@ -772,3 +772,79 @@ class TestProvenanceKhongDuocGietPhien:
         run_live._finish_metrics(FakeMetrics(), args)      # KHÔNG được ném
         out = capsys.readouterr().out
         assert "run_info" in out and "[metrics]" in out     # vẫn in số liệu cho người dùng
+
+
+class TestDumpMask:
+    """`--dump-mask-frames` (23-11-2026): đường CLI phải xuất được mask để `./run miou` chấm.
+
+    Vì sao cần: chỉ `tools/live_worker.py` (web) có dump mask, còn CLI thì không ⇒ **không chấm
+    được** bất kỳ phiên CLI nào, kể cả phiên có Re-ID (đường web không có Re-ID). Đo 23-11: phải có
+    mask mới trả lời được "Re-ID nhận lại ĐÚNG vật hay nhận bừa" — mà đó là câu quyết định.
+    """
+
+    def test_dump_cfg_doi_xuong_thu_muc_canh_metrics_csv(self, tmp_path):
+        args = type("A", (), {"dump_mask_frames": "0, 30,181", "dump_mask_dir": "",
+                              "metrics_csv": str(tmp_path / "x.csv")})()
+        frames, out_dir = run_live._dump_cfg(args)
+        assert frames == {0, 30, 181}
+        assert out_dir == str(tmp_path / "x_masks")
+
+    def test_dump_cfg_tu_choi_khi_sai_dinh_dang(self):
+        args = type("A", (), {"dump_mask_frames": "0,abc", "dump_mask_dir": "/tmp/x",
+                              "metrics_csv": None})()
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(args)
+
+    def test_dump_cfg_tu_choi_so_am(self):
+        args = type("A", (), {"dump_mask_frames": "0,-3", "dump_mask_dir": "/tmp/x",
+                              "metrics_csv": None})()
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(args)
+
+    def test_dump_cfg_can_thu_muc_khi_khong_co_metrics_csv(self):
+        args = type("A", (), {"dump_mask_frames": "5", "dump_mask_dir": "",
+                              "metrics_csv": None})()
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(args)
+
+    def test_ghi_dung_frame_va_ten_file_theo_frame_video(self, tmp_path):
+        """Tên file phải theo **số frame video**, KHÔNG theo `result.frame_idx` (bài học P0 14-11)."""
+        cb = run_live._dump_mask_callback(str(tmp_path), {1, 3}, {"nguon": "x.mp4"}, base=None)
+        for n in range(5):
+            mask = np.zeros((8, 8), bool)
+            mask[0:2, 0:2] = True
+            # cố tình cho `frame_idx` LỆCH để bắt bug đặt tên theo engine
+            res = TrackingResult(frame_idx=100 + n, mask=mask, bbox=(0, 0, 1, 1), score=1.0, elapsed_ms=1.0)
+            assert cb(None, res) is True
+        assert sorted(p.name for p in tmp_path.glob("mask_*.png")) == ["mask_000001.png", "mask_000003.png"]
+        img = cv2.imread(str(tmp_path / "mask_000001.png"), cv2.IMREAD_GRAYSCALE)
+        assert img.max() == 255 and img.min() == 0        # mask nhị phân 0/255
+
+    def test_mask_rong_van_duoc_ghi(self, tmp_path):
+        """Mask rỗng = kết quả ĐO ĐƯỢC (phải chấm 0,0 khi GT có vật), không được bỏ qua."""
+        cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+        res = TrackingResult(frame_idx=0, mask=np.zeros((8, 8), bool), bbox=(0, 0, 1, 1),
+                             score=0.0, elapsed_ms=1.0)
+        cb(None, res)
+        img = cv2.imread(str(tmp_path / "mask_000000.png"), cv2.IMREAD_GRAYSCALE)
+        assert img is not None and img.max() == 0
+
+    def test_none_mask_khong_ghi_file(self, tmp_path):
+        cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+        res = TrackingResult(frame_idx=0, mask=None, bbox=(0, 0, 1, 1), score=0.0, elapsed_ms=1.0)
+        cb(None, res)
+        assert list(tmp_path.glob("mask_*.png")) == []
+
+    def test_manifest_du_khoa_va_khong_ghi_de(self, tmp_path):
+        info = {"nguon": "data/binh1.mp4", "image_size": 192, "bbox_xywh": [300, 275, 150, 410]}
+        cb = run_live._dump_mask_callback(str(tmp_path), {0, 1}, info, base=None)
+        for n in range(2):
+            cb(None, TrackingResult(frame_idx=n, mask=np.ones((4, 4), bool), bbox=(0, 0, 1, 1),
+                                    score=1.0, elapsed_ms=1.0))
+        man = json.loads((tmp_path / "manifest.json").read_text())
+        assert man["nguon"] == "data/binh1.mp4"
+        assert man["frames_yeu_cau"] == [0, 1] and man["frames_da_ghi"] == [0, 1]
+        assert man["so_file_ghi_de"] == 0 and man["frame_goc_cua_phien"] == 0
+        # gọi lại: KHÔNG được ghi đè manifest (mask có thể của lần chạy khác)
+        cb.write_manifest()
+        assert json.loads((tmp_path / "manifest.json").read_text())["frames_da_ghi"] == [0, 1]

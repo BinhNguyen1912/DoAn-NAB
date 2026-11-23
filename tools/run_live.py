@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
@@ -45,6 +46,7 @@ except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn prog
 
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
+from src.live_tracking import xyxy_to_xywh                   # noqa: E402
 from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import REPO_ROOT, load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
@@ -102,6 +104,87 @@ def _total_frames_hint(source):
     finally:
         cap.release()
     return total if total > 0 else None
+
+def _dump_cfg(args):
+    """Đọc `--dump-mask-frames`/`--dump-mask-dir` ⇒ `(set[int], str)`. Sai định dạng ⇒ SystemExit."""
+    raw = (getattr(args, "dump_mask_frames", "") or "").strip()
+    if not raw:
+        return set(), ""
+    try:
+        frames = {int(x) for x in raw.replace(" ", "").split(",") if x != ""}
+    except ValueError:
+        raise SystemExit(f"[LOI] --dump-mask-frames phải là danh sách số, nhận {raw!r}")
+    if any(f < 0 for f in frames):
+        raise SystemExit("[LOI] --dump-mask-frames: số frame không âm")
+    out_dir = getattr(args, "dump_mask_dir", "") or ""
+    if not out_dir:
+        csv = getattr(args, "metrics_csv", None)
+        if not csv:
+            raise SystemExit("[LOI] --dump-mask-frames cần --dump-mask-dir (hoặc --metrics-csv)")
+        out_dir = str(Path(csv).with_suffix("")) + "_masks"
+    return frames, out_dir
+
+
+def _dump_mask_callback(out_dir, frames, info, base=None):
+    """Tạo `on_frame` ghi `mask_<số frame video>.png` cho các frame trong `frames`.
+
+    Vì sao cần ở đường CLI: `tools/live_worker.py` (web) đã có `--dump-mask-frames`, còn
+    `tools/run_live.py` thì KHÔNG ⇒ không chấm được `./run miou` cho bất kỳ phiên CLI nào (kể cả
+    phiên có Re-ID — đường mà web không có). Đo 23-11: A/B `binh1` phải chấm mask-vs-GT thì mới
+    trả lời được "Re-ID nhận lại ĐÚNG vật hay nhận bừa", mà không có file mask nào để chấm.
+
+    Tên file đi theo **số frame video** (đếm theo thứ tự callback, nguồn đọc tuần tự từ frame 0),
+    KHÔNG theo `result.frame_idx` (bộ đếm nội bộ engine) — bài học P0 14-11: đặt tên theo engine
+    làm `mask_000013.png` chứa mask của frame 42 ⇒ mIoU sai mà không cảnh báo.
+
+    Mask RỖNG vẫn ghi (file toàn 0): "model trả rỗng" là kết quả ĐO ĐƯỢC, phải chấm 0,0 khi GT có
+    vật — không có file sẽ bị đọc thành "chưa đo" (AGENTS §6).
+    """
+    if not out_dir or not frames:
+        return base
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    da_ghi, ghi_de = [], []
+    state = {"n": 0}
+
+    def _cb(img, result):
+        n = state["n"]
+        state["n"] = n + 1
+        if n in frames:
+            mask = getattr(result, "mask", None)
+            if mask is None:
+                print(f"[canh-bao] frame {n}: model không trả mask ⇒ không ghi file "
+                      "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)")
+            else:
+                d = target / f"mask_{n:06d}.png"
+                if d.exists():
+                    ghi_de.append(n)
+                ok = cv2.imwrite(str(d), (np.asarray(mask) > 0).astype(np.uint8) * 255)
+                if not ok:
+                    print(f"[canh-bao] frame {n}: ghi mask thất bại ({d})")
+                else:
+                    da_ghi.append(n)
+            if len(da_ghi) + len(ghi_de) >= len(frames):
+                _write_mask_manifest(target, info, frames, da_ghi, ghi_de)
+        return base(img, result) if base is not None else True
+
+    _cb.write_manifest = lambda: _write_mask_manifest(target, info, frames, da_ghi, ghi_de)
+    return _cb
+
+
+def _write_mask_manifest(target, info, frames, da_ghi, ghi_de):
+    """Ghi `manifest.json` cạnh mask để `score_miou` đối chiếu được (cùng clip, cùng frame)."""
+    path = Path(target) / "manifest.json"
+    if path.exists():           # hai lần chạy vào cùng thư mục: KHÔNG ghi đè rồi im lặng
+        print(f"[canh-bao] {path} đã có — KHÔNG ghi đè manifest (mask có thể của lần chạy khác)")
+        return
+    data = dict(info)
+    data.update({"frames_yeu_cau": sorted(frames), "frames_da_ghi": sorted(da_ghi),
+                 "so_file_ghi_de": len(ghi_de), "frame_goc_cua_phien": 0})
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as exc:
+        print(f"[canh-bao] không ghi được {path}: {exc}")
 
 
 def _progress_callback(path, total, every=5):
@@ -617,6 +700,7 @@ def _run_headless(engine, args):
     summary = None
     reid_session = None        # P1 review vòng 2 (xem `_run_display`)
     progress_total = None
+    on_frame = None
     interrupted = False
     try:
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
@@ -638,6 +722,16 @@ def _run_headless(engine, args):
         reid_session = _make_reid_session(engine, args)
         # Tổng frame dự kiến để backend vẽ progress bar (biết chắc khi nguồn là FILE)
         progress_total = args.max_frames or _total_frames_hint(args.source)
+        dump_frames, dump_dir = _dump_cfg(args)
+        on_frame = _progress_callback(args.progress_json, progress_total)
+        if dump_frames:
+            info = {"nguon": str(args.source), "image_size": getattr(args, "image_size", None),
+                    "vos_every": getattr(args, "vos_every", None) or 1,
+                    "mask_smoothing": getattr(args, "mask_smoothing", None) or 1.0,
+                    # `bbox` nội bộ là (x1,y1,x2,y2); manifest/GT dùng (x,y,w,h) — đổi trước khi ghi
+                    "bbox_xywh": list(xyxy_to_xywh(bbox)) if bbox else None,
+                    "lenh": " ".join(sys.argv)}
+            on_frame = _dump_mask_callback(dump_dir, dump_frames, info, base=on_frame)
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -647,13 +741,15 @@ def _run_headless(engine, args):
             metrics=metrics,
             reanchor_every=args.reanchor_every,
             reid_session=reid_session,
-            on_frame=_progress_callback(args.progress_json, progress_total),
+            on_frame=on_frame,
         )
     except KeyboardInterrupt:
         interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (số liệu trước, chuyển mã sau)
+        if on_frame is not None and hasattr(on_frame, "write_manifest"):
+            on_frame.write_manifest()      # dừng sớm (Ctrl+C/--max-frames) vẫn phải có manifest
         _finish_outputs(viz, metrics, args, reid_session)
         # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
         frames_done = summary.total_frames if summary is not None else 0
@@ -774,6 +870,10 @@ def main():
                     help="số frame liên tiếp phải khớp cùng một chỗ mới nhận lại (mặc định 2)")
     ap.add_argument("--reid-verify", type=int, default=None,
                     help="số frame kiểm chứng sau khi nhận lại (mặc định 2; fail → về LOST)")
+    ap.add_argument("--dump-mask-frames", default="",
+                    help='ghi mask ra PNG cho các frame này, vd "0,30,181" (chấm ./run miou)')
+    ap.add_argument("--dump-mask-dir", default="",
+                    help="thư mục ghi mask (mặc định: cạnh --metrics-csv, thư mục <tag>_masks)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
