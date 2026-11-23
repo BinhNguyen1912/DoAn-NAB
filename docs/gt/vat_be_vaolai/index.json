@@ -1,0 +1,48 @@
+{
+  "clip": "data/clip_be2.mp4",
+  "ten": "vat_be_vaolai",
+  "frames": [
+    {
+      "frame_idx": 0
+    },
+    {
+      "frame_idx": 100
+    },
+    {
+      "frame_idx": 352
+    },
+    {
+      "frame_idx": 380
+    },
+    {
+      "frame_idx": 400
+    },
+    {
+      "frame_idx": 440
+    }
+  ],
+  "frame_hw": [
+    480,
+    640
+  ],
+  "gt_rong": [],
+  "nguoi_gan": "Binh",
+  "gt_do_model_goi_y": false,
+  "dang_gt": "silhouette",
+  "nguon_gt": "người tô tay trên frame gốc",
+  "phuong_phap_gt": "người tô tay từ frame trống",
+  "sai_so_bo_goi_y": null,
+  "chon_frame": {
+    "frames": [
+      0,
+      100,
+      352,
+      380,
+      400,
+      440
+    ]
+  },
+  "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
+  "tao_luc": "2026-11-23T12:35:20",
+  "huong_dan": "Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được ghi thẳng vào thư mục này."
+}

@@ -1,0 +1,139 @@
+{
+  "git_rev": "1b4fa3cb3c0e3d31becb97f7125189dd934c3592",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-23T12:39:36",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/vat_be_vaolai --pred-dir data/be2_reid_masks --out data/miou_be2_reid_2026-11-23_metrics.json",
+    "git_rev": "1b4fa3cb3c0e3d31becb97f7125189dd934c3592",
+    "git_dirty": true,
+    "git_dirty_code": true,
+    "git_loi": null,
+    "clip": "data/clip_be2.mp4",
+    "nguoi_gan": "Binh",
+    "gt": "docs/gt/vat_be_vaolai",
+    "pred_dir": "data/be2_reid_masks",
+    "gt_do_model_goi_y": false,
+    "dang_gt": "silhouette",
+    "nguon_gt": "người tô tay trên frame gốc",
+    "phuong_phap_gt": "người tô tay từ frame trống",
+    "mask_manifest": {
+      "nguon": "data/clip_be2.mp4",
+      "image_size_yeu_cau": 192,
+      "image_size_hieu_luc": 192,
+      "vos_every": 1,
+      "mask_smoothing": 1.0,
+      "bbox_xywh": [
+        205,
+        130,
+        125,
+        260
+      ],
+      "lenh": "tools/run_live.py --source data/clip_be2.mp4 --image-size 192 --bbox 205,130,125,260 --max-frames 444 --reid --reid-cue object --reid-obj-threshold 0.75 --reid-obj-ncc-min 0.40 --dump-mask-frames 0,100,200,240,250,258,270,300,336,344,352,380,400,440 --dump-mask-dir data/be2_reid_masks --metrics-csv data/be2_reid_2026-11-23_metrics.csv",
+      "git_rev": "1b4fa3c",
+      "git_dirty": true,
+      "git_dirty_code": false,
+      "do_luc": "2026-11-23T12:33:53",
+      "frames_yeu_cau": [
+        0,
+        100,
+        200,
+        240,
+        250,
+        258,
+        270,
+        300,
+        336,
+        344,
+        352,
+        380,
+        400,
+        440
+      ],
+      "frames_da_ghi": [
+        0,
+        100,
+        200,
+        240,
+        250,
+        258,
+        270,
+        300,
+        336,
+        344,
+        352,
+        380,
+        400,
+        440
+      ],
+      "so_file_ghi_de": 0,
+      "frame_goc_cua_phien": 0
+    },
+    "mask_manifest_loi": null,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
+  },
+  "ket_qua": {
+    "gt_dang": "silhouette",
+    "mIoU": 0.8577,
+    "mIoU_p05": null,
+    "mIoU_p05_n": 6,
+    "mIoU_p05_nguong": 30,
+    "mask_ngoai_gt_mean": 0.0231,
+    "mask_ngoai_gt_n": 6,
+    "mask_ngoai_gt_max": 0.0601,
+    "mask_ngoai_gt_max_frame": 352,
+    "n_cham": 6,
+    "so_frame_gt_rong": 0,
+    "so_frame_thieu_mask": 0,
+    "so_frame_mask_hong": 0,
+    "so_frame_tong": 6,
+    "coverage": 1.0,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.8237,
+        "dien_tich_gt": 28057,
+        "dien_tich_pred": 23157,
+        "mask_ngoai_gt": 0.0011
+      },
+      {
+        "frame_idx": 100,
+        "iou": 0.9143,
+        "dien_tich_gt": 45662,
+        "dien_tich_pred": 43665,
+        "mask_ngoai_gt": 0.0229
+      },
+      {
+        "frame_idx": 352,
+        "iou": 0.8602,
+        "dien_tich_gt": 61817,
+        "dien_tich_pred": 59861,
+        "mask_ngoai_gt": 0.0601
+      },
+      {
+        "frame_idx": 380,
+        "iou": 0.8381,
+        "dien_tich_gt": 50628,
+        "dien_tich_pred": 43285,
+        "mask_ngoai_gt": 0.0107
+      },
+      {
+        "frame_idx": 400,
+        "iou": 0.8248,
+        "dien_tich_gt": 32625,
+        "dien_tich_pred": 27044,
+        "mask_ngoai_gt": 0.0027
+      },
+      {
+        "frame_idx": 440,
+        "iou": 0.8854,
+        "dien_tich_gt": 34969,
+        "dien_tich_pred": 33569,
+        "mask_ngoai_gt": 0.0412
+      }
+    ]
+  },
+  "canh_bao_gt": [],
+  "loi_chan": []
+}
