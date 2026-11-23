@@ -103,3 +103,31 @@ done
 - GT `b1` làm bằng **ngưỡng màu HSV + người sửa tay** (`docs/gt/b1/index.json`), nên nó bao cả phần bị
   che — đúng cho "silhouette vật" nhưng **không** phải "phần nhìn thấy". Đây là lý do f0 chỉ 0,55.
 - Mọi số ở đây là **CPU, `vos_every 1`, file**. Không suy ra cho webcam (nhịp khác, `vos_every 3`).
+
+## 7. Bảng 2×2 ĐẦY ĐỦ (re-ID × cổng đóng băng) — quyết định 23-11
+
+Ô "cổng đóng" = `--lost-after-frames 2` (mặc định); "cổng mở" = `--lost-after-frames 999
+--lost-score-threshold -99`. Cùng clip, cùng GT, cùng `image_size 192`, CPU, `git_dirty_code=false`.
+
+| clip (GT) | **không re-ID** | **không re-ID, cổng mở** | **có re-ID** | **có re-ID, cổng mở** |
+|---|---|---|---|---|
+| `binh1` (7 frame) | **0,7794** | 0,7794 | **0,4236** | 0,7794 |
+| `clip_be2` (6 frame) | **0,8754** | 0,8754 | 0,8577 | **0,5668** |
+
+Ba điều rút ra:
+
+1. **Cờ cổng đóng băng KHÔNG có tác dụng khi không bật re-ID** (0,7794 / 0,8754 ở cả hai cột) —
+   vì "đóng băng" nằm **trong `ReIdSession`**, không phải trong vòng lặp pipeline. ⇒ muốn "để model
+   tự bám lại" thì chỉ cần **không bật re-ID**, không phải sửa cờ nào.
+2. **re-ID không thắng ô nào trong 4 ô.** Tệ nhất: `clip_be2` + cổng mở = **0,5668** (mask tràn ra
+   ngoài GT **19,6 %**, tệ nhất 50,9 % ở f352) — vì cổng nhảy vẫn reset engine rồi re-ID đi tìm và
+   khoá vào vùng khác.
+3. ⇒ **Quyết định: `./run demoip` mặc định TẮT re-ID** (`--no-reid`), bật lại bằng `--reid`.
+   Không sửa mặc định của `tools/run_live.py` (artifact cũ vẫn tái lập được).
+
+### Đường lui (backup)
+
+- Tag `demo-ok-23-11` + nhánh `backup/demo-ok-23-11` = trạng thái **trước** quyết định này, mọi số ở
+  §1–§6 tái lập được y nguyên.
+- Quay lại: `git switch backup/demo-ok-23-11` (hoặc `git switch -c ten-moi demo-ok-23-11`).
+- Chạy demo kiểu cũ (bật re-ID) **không cần đổi nhánh**: `./run demoip --reid`.

@@ -304,7 +304,15 @@ EOF
     # chặn — nó nằm giữa dải ca đúng (ncc 0,415–0,741). Ca đó CHỈ bị veto mặt/đầu chặn.
     echo "[demoip] re-ID cue=object ncc_min=${_ncc} cosine_min=${_objth}: chặn trán 0,423 · đầu 0,356; ca MẶT chỉ bị VETO chặn"
     echo "[demoip] veto: không nhận lại ứng viên trùm khuôn mặt/đầu (tắt: --no-reid-face-veto)"
-    exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --reid \
+    # ⚠️ QUYẾT ĐỊNH LỚN 23-11-2026: MẶC ĐỊNH TẮT re-ID cho demo (trước đây bật).
+    # Đo 23-11 trên 2 clip CÓ GT (bảng 2×2 đầy đủ, `data/fac_*`, `data/be2_*`, `git_dirty_code=false`):
+    #   binh1 : không re-ID 0,7794 · có re-ID 0,4236 (bịa mask 5/5 frame vô vật) · re-ID + cổng mở 0,7794
+    #   be2   : không re-ID 0,8754 · có re-ID 0,8577 · re-ID + cổng mở **0,5668** (tệ nhất)
+    # ⇒ re-ID **không thắng ô nào** trong 4 ô, và ở ô xấu nhất nó mất 0,36 mIoU + bịa mask trên vùng
+    # không có vật. Tắt mặc định; bật lại bằng `--reid` (cờ của người dùng đứng SAU nên đè được).
+    # Đường lui: `git switch backup/demo-ok-23-11` (tag `demo-ok-23-11`) = bản bật re-ID như trước.
+    echo "[demoip] chế độ: LAN TRUYỀN LIÊN TỤC (re-ID TẮT) — bật lại bằng --reid. Lý do: mIoU 0,7794 vs 0,4236"
+    exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --no-reid \
       --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
