@@ -395,8 +395,83 @@ def _is_clip(source) -> bool:
     return looks_like_file(source) and Path(str(source)).suffix.lower() in FILE_SUFFIXES
 
 
+# Mốc: từ 23-11-2026 `_write()` giữ nhịp thời gian thực cho nguồn LIVE (ticket #44).
+# Phiên ghi TRƯỚC mốc này mắc lỗi đã biết ⇒ chỉ cảnh báo, không chặn preflight.
+_NGAY_SUA_GHI_VIDEO = __import__("datetime").datetime(2026, 11, 23, 15, 0).timestamp()
+
+
+def check_video_duration(moi_nhat: Path | None = None) -> Check:
+    """Phiên live gần nhất: **video phải dài đúng bằng thời gian chạy** (ticket #44).
+
+    Vì sao có mục này: `--record` ghi 1 frame cho mỗi frame HIỂN THỊ, mà nhịp hiển thị thật
+    (~20 fps) thấp hơn fps khai báo (30) ⇒ video **ngắn hơn thực 1,5 lần**. Đo phiên thật
+    `demoip_1123-144505`: suy luận **30,76 s**, file **20,83 s**. Không ai phát hiện cho tới lúc
+    chiếu, vì không mục nào của democheck từng đọc thời lượng video.
+
+    `moi_nhat`: đường dẫn `*_summary.json` (mặc định: file mới nhất trong `data/`). Không có phiên
+    nào ⇒ OK "chưa có phiên" (không chặn buổi demo đầu tiên).
+    """
+    import cv2
+
+    if moi_nhat is None:
+        ung_vien = sorted(_REPO_ROOT.glob("data/demoip_*_summary.json"),
+                          key=lambda p: p.stat().st_mtime, reverse=True)
+        if not ung_vien:
+            # `live_*/status.json` (đường web) cũng có thể là phiên gần nhất
+            ung_vien = sorted(_REPO_ROOT.glob("data/live_*/status.json"),
+                              key=lambda p: p.stat().st_mtime, reverse=True)
+        if not ung_vien:
+            return Check("thời lượng video", True, "chưa có phiên nào — chạy ./run demoip rồi kiểm lại")
+        moi_nhat = ung_vien[0]
+    moi_nhat = Path(moi_nhat)
+
+    try:
+        du_lieu = json.loads(moi_nhat.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return Check("thời lượng video", False, f"không đọc được {moi_nhat.name}")
+    so_frame = du_lieu.get("total_frames") or du_lieu.get("frames")
+    do_tre = du_lieu.get("mean_latency_ms")
+    if not so_frame or not do_tre:
+        return Check("thời lượng video", True,
+                     f"{moi_nhat.name}: thiếu total_frames/mean_latency_ms — bỏ qua", bat_buoc=False)
+    thuc_s = float(so_frame) * float(do_tre) / 1000.0
+
+    # Video cùng tên: `X.mp4` hoặc bản H.264 `X_web.mp4`
+    goc = moi_nhat.with_name(moi_nhat.name.replace("_summary.json", ""))
+    for ten in (f"{goc.name}_web.mp4", f"{goc.name}.mp4"):
+        video = moi_nhat.with_name(ten)
+        if video.is_file():
+            break
+    else:
+        return Check("thời lượng video", True,
+                     f"{moi_nhat.name}: không thấy file mp4 (phiên không bật --record?)",
+                     bat_buoc=False)
+
+    cap = cv2.VideoCapture(str(video))
+    if not cap.isOpened():
+        return Check("thời lượng video", False, f"không mở được {video.name}")
+    n = int(cap.get(cv2.CAP_PROP_FRAME_COUNT))
+    fps = cap.get(cv2.CAP_PROP_FPS)
+    cap.release()
+    if n <= 0 or not fps:
+        return Check("thời lượng video", False, f"{video.name}: không đọc được frame/fps")
+    video_s = n / fps
+    lech = abs(video_s - thuc_s) / thuc_s if thuc_s > 0 else 0.0
+    chi_tiet = (f"{video.name}: {video_s:.1f} s vs thực {thuc_s:.1f} s "
+                f"({100 * lech:+.0f} %)")
+    if lech <= 0.05:
+        return Check("thời lượng video", True, chi_tiet)
+    if video.stat().st_mtime < _NGAY_SUA_GHI_VIDEO:
+        # Phiên ghi TRƯỚC 23-11-2026 mắc lỗi đã biết (ghi 1:1) ⇒ cảnh báo, không chặn.
+        return Check("thời lượng video", False,
+                     chi_tiet + " — phiên ghi trước 23-11 (lỗi đã biết, quay lại phiên mới)",
+                     bat_buoc=False)
+    return Check("thời lượng video", False,
+                 chi_tiet + " — video KHÔNG đúng thời gian thực ⇒ kiểm `_write()`/`pace_realtime`")
+
+
 def run_checks(args) -> list:
-    """9 mục kiểm + (tuỳ chọn) diễn tập `--full`. Tách khỏi `main()` để test gọi thẳng."""
+    """10 mục kiểm + (tuỳ chọn) diễn tập `--full`. Tách khỏi `main()` để test gọi thẳng."""
     source = args.source or _default_source()
     frames, err, took_ms = probe_source(source, read_frames, timeout_s=args.timeout)
     api_ok = _http_json(f"{args.base_url.rstrip('/')}/health", timeout=2.0) is not None
@@ -412,6 +487,7 @@ def run_checks(args) -> list:
         check_source_frames(source, frames, err, took_ms, timeout_s=args.timeout),
         check_source_moving(frames),
         check_git(_provenance),
+        check_video_duration(),
     ]
     if args.full:
         checks.append(_rehearsal(args, source))

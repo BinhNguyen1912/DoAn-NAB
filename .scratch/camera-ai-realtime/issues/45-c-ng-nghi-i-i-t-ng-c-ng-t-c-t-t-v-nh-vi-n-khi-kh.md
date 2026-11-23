@@ -12,8 +12,8 @@ Chọn phương án **(a)**: khi nghi, **vẫn vẽ ô bao NÉT ĐỨT** màu c�
 
 **Status:** ready-for-agent
 
-- [ ] Khi `switch_warning=True` và KHÔNG có re-ID: vẽ ô NÉT ĐỨT màu cảnh báo + nhãn "NGHI", KHÔNG tô mask, KHÔNG vẽ quỹ đạo
-- [ ] Hai đường (CLI `Visualizer.render` và worker `live_tracking._annotate`) hành xử GIỐNG nhau — có test chốt
-- [ ] Banner `NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc` vẫn hiện
-- [ ] Test: `render(switch_warning=True)` với mask không rỗng ⇒ có pixel màu cảnh báo ở viền ô, KHÔNG có pixel màu mask bên trong
-- [ ] `./run lint`, `./run test`, `./run webtest`, `./run e2e` xanh
+- [x] Khi `switch_warning=True` và KHÔNG có re-ID: vẽ ô NÉT ĐỨT màu cảnh báo + nhãn "NGHI", KHÔNG tô mask, KHÔNG vẽ quỹ đạo
+- [x] Hai đường (CLI `Visualizer.render` và worker `live_tracking._annotate`) hành xử GIỐNG nhau — có test chốt
+- [x] Banner `NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc` vẫn hiện
+- [x] Test: `render(switch_warning=True)` với mask không rỗng ⇒ có pixel màu cảnh báo ở viền ô, KHÔNG có pixel màu mask bên trong
+- [x] `./run lint`, `./run test`, `./run webtest`, `./run e2e` xanh

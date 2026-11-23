@@ -467,11 +467,12 @@ class _Clock:
 
 
 class TestRunChecks:
-    def test_9_muc_khi_khong_full(self, tmp_path, monkeypatch):
+    def test_10_muc_khi_khong_full(self, tmp_path, monkeypatch):
         monkeypatch.setattr(dp, "read_frames", lambda *a, **k: ([], "RuntimeError: không có nguồn"))
         args = self._args(tmp_path)
         checks = dp.run_checks(args)
-        assert len(checks) == 9
+        # 10 mục từ 23-11-2026: thêm `thời lượng video` (ticket #44)
+        assert len(checks) == 10
         assert dp.verdict(checks) == 1                 # thiếu nguồn là LỖI (bắt buộc)
 
     def test_nguon_che_la_che_khong_phai_clip(self, tmp_path, monkeypatch):
@@ -489,7 +490,7 @@ class TestRunChecks:
                             lambda *a, **k: ([np.zeros((4, 4, 3), np.uint8)] * 8, None))
         monkeypatch.setattr(dp, "_rehearsal", lambda *a: dp.Check("diễn tập phiên", True, "ok"))
         checks = dp.run_checks(self._args(tmp_path, full=True))
-        assert len(checks) == 10
+        assert len(checks) == 11
 
     @staticmethod
     def _args(tmp_path, **kw):
@@ -537,3 +538,66 @@ class TestGoiYPhaiNhatQuan:
         """`"²".isdigit()` là True nhưng không phải index camera (factory dùng `isdecimal()`)."""
         c = dp.check_source_frames("²", [], "RuntimeError: bận", 5.0)
         assert "relay" not in c.chi_tiet, c.chi_tiet
+
+
+class TestKiemThoiLuongVideo:
+    """Ticket #44 → cổng hồi quy trong `./run democheck`.
+
+    Vì sao cần cổng: đây là lỗi **kiểm được bằng máy tính bỏ túi** (194 frame × 158 ms = 30,76 s
+    nhưng file 20,83 s) mà không mục nào của preflight từng đọc — nên nó sống nhiều tuần và chỉ lộ
+    ra khi chiếu trước hội đồng. Không có cổng thì lần sau ai sửa `_write()` là lỗi quay lại.
+    """
+
+    @staticmethod
+    def _tao_phien(tmp_path, so_frame, do_tre_ms, so_frame_video, fps=30.0):
+        import json
+        import cv2
+        import numpy as np
+
+        summary = tmp_path / "demoip_x_summary.json"
+        summary.write_text(json.dumps({"total_frames": so_frame,
+                                       "mean_latency_ms": do_tre_ms}), encoding="utf-8")
+        video = tmp_path / "demoip_x_web.mp4"
+        w = cv2.VideoWriter(str(video), cv2.VideoWriter_fourcc(*"mp4v"), fps, (64, 48))
+        for _ in range(so_frame_video):
+            w.write(np.zeros((48, 64, 3), np.uint8))
+        w.release()
+        return summary
+
+    def test_dung_thoi_gian_thuc_thi_ok(self, tmp_path):
+        from scripts.demo_preflight import check_video_duration
+        # 100 frame × 100 ms = 10,0 s thực; video 300 frame @30 fps = 10,0 s
+        s = self._tao_phien(tmp_path, 100, 100.0, 300)
+        c = check_video_duration(s)
+        assert c.ok, c.chi_tiet
+
+    def test_ngan_hon_thuc_thi_LOI(self, tmp_path):
+        from scripts.demo_preflight import check_video_duration
+        # 10,0 s thực nhưng video 200 frame = 6,67 s (−33 %) — đúng ca phiên 144505
+        s = self._tao_phien(tmp_path, 100, 100.0, 200)
+        c = check_video_duration(s)
+        assert not c.ok
+        assert c.bat_buoc is True, "phiên MỚI phải là LỖI (chặn), không chỉ cảnh báo"
+
+    def test_phien_cu_chi_canh_bao(self, tmp_path, monkeypatch):
+        """Phiên ghi trước 23-11 mắc lỗi đã biết ⇒ chỉ cảnh báo, không chặn buổi demo."""
+        import scripts.demo_preflight as dp
+        s = self._tao_phien(tmp_path, 100, 100.0, 200)
+        monkeypatch.setattr(dp, "_NGAY_SUA_GHI_VIDEO", float("inf"))
+        c = dp.check_video_duration(s)
+        assert not c.ok and c.bat_buoc is False
+        assert "trước 23-11" in c.chi_tiet
+
+    def test_chua_co_phien_thi_khong_chan(self, tmp_path, monkeypatch):
+        import scripts.demo_preflight as dp
+        monkeypatch.setattr(dp, "_REPO_ROOT", tmp_path)
+        c = dp.check_video_duration()
+        assert c.ok and "chưa có phiên" in c.chi_tiet
+
+    def test_thieu_du_lieu_thi_bo_qua_khong_chan(self, tmp_path):
+        import json
+        from scripts.demo_preflight import check_video_duration
+        s = tmp_path / "demoip_y_summary.json"
+        s.write_text(json.dumps({"total_frames": 10}), encoding="utf-8")
+        c = check_video_duration(s)
+        assert c.ok and c.bat_buoc is False

@@ -21,3 +21,18 @@ Việc này đổi **thuật toán** (thêm ràng buộc hình học/diện tíc
 - [ ] Plan `docs/plan/24-11-2026-*.md` có 3 ý kiến + vòng phản biện + quyết định kèm lý do bác phương án còn lại
 - [ ] Phương án được chọn có tiêu chí nghiệm thu BẰNG SỐ trên cả 2 clip GT (`binh1` 0,7794 và `clip_be2` 0,8754 là mốc hiện tại)
 - [ ] Đo lại được trên chính phiên `demoip_1123-144505` đã có CSV (32 % frame mask > 2,5× vật ⇒ phải giảm)
+
+## Comments
+
+ĐÍNH CHÍNH số (đối chiếu độc lập, 23-11 15:20):
+
+1. **"63,5 % ô chạm mép khung" TÁI LẬP ĐƯỢC** — 115/181 frame, công thức `(cx±w/2, cy±h/2)`. Đã kiểm chéo 4 frame với log `run_live` (`f0 CSV→(171,319,247,395)` khớp đúng `[f0] bbox=(171,319,247,395)`; `f124 → (265,183,423,479)` khớp) ⇒ `center_x/center_y` ĐÚNG là tâm ô bao, công thức hợp lệ.
+
+2. **Nhưng lý do tôi viết kèm là SAI**: tôi ghi "`bbox_h` = 479 = hết chiều cao khung". SAI — `bbox_h` **max = 376** (78 % chiều cao khung 480); số 479 là **toạ độ `y2`** in trong log `run_live`, không phải chiều cao. Cấm trích "bbox_h=479".
+
+3. Phân rã theo mép (n=181 frame có mask) — **đây là số nên dùng**:
+   - mép **dưới** `y2 ≥ 478`: **104 frame (57,5 %)**
+   - mép phải `x2 ≥ 638`: 13 (7,2 %) · mép trái `x1 ≤ 2`: 5 (2,8 %) · mép trên `y1 ≤ 2`: **0 (0,0 %)**
+   ⇒ tín hiệu gần như CHỈ là "mask ăn xuống mặt bàn phía dưới", không phải "lan mọi phía".
+
+4. Một reviewer độc lập đo ra **28,7 % (52/181)** cho cùng câu hỏi ⇒ trước khi lên slide phải ghi rõ công thức + n. Dùng dòng phân rã ở mục 3 thay cho một con số tổng.

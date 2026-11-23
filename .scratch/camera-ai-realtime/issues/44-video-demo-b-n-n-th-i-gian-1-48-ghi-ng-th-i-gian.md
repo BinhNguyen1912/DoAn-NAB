@@ -12,8 +12,8 @@ Yêu cầu: `_write()` giữ **nhịp theo đồng hồ thực** — mỗi lần
 
 **Status:** ready-for-agent
 
-- [ ] `_web.mp4` của phiên live có thời lượng = thời lượng thực (sai lệch < 5 %), không còn 20,83 s cho 30,76 s
-- [ ] Số frame ghi = duration_thuc × fps, frame lặp là frame ĐANG hiển thị (không bịa nội dung)
-- [ ] Chặn trần: một lần treo > 2 s không đẩy hàng trăm frame lặp (có test)
-- [ ] Test: 10 frame hiển thị trong 1 s với fps=30 ⇒ file ghi 30 frame
-- [ ] `./run lint`, `./run test`, `./run e2e` xanh
+- [x] `_web.mp4` của phiên live có thời lượng = thời lượng thực (sai lệch < 5 %), không còn 20,83 s cho 30,76 s
+- [x] Số frame ghi = duration_thuc × fps, frame lặp là frame ĐANG hiển thị (không bịa nội dung)
+- [x] Chặn trần: một lần treo > 2 s không đẩy hàng trăm frame lặp (có test)
+- [x] Test: 10 frame hiển thị trong 1 s với fps=30 ⇒ file ghi 30 frame
+- [x] `./run lint`, `./run test`, `./run e2e` xanh

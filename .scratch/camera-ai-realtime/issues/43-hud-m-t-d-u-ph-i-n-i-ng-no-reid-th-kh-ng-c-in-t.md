@@ -13,7 +13,17 @@ Hai đường (CLI `Visualizer.render`, worker `_annotate`) phải in giống nh
 
 **Status:** claimed
 
-- [ ] `Visualizer.render(..., reid_enabled=False)` in "MẤT DẤU — bấm r chọn lại", `True` in "MẤT DẤU — TỰ TÌM LẠI"
-- [ ] Đường worker (`live_tracking`) in cùng câu theo cùng điều kiện
-- [ ] Test mới phủ cả hai nhánh + hai đường (CLI và worker)
-- [ ] `./run lint` và `./run test` xanh
+- [x] `Visualizer.render(..., reid_enabled=False)` in "MẤT DẤU — bấm r chọn lại", `True` in "MẤT DẤU — TỰ TÌM LẠI"
+- [x] Đường worker (`live_tracking`) in cùng câu theo cùng điều kiện
+- [x] Test mới phủ cả hai nhánh + hai đường (CLI và worker)
+- [x] `./run lint` và `./run test` xanh
+
+## Comments
+
+ĐÍNH CHÍNH tiêu chí 2 ("đường worker in cùng câu") — đã kiểm lại, tiêu chí đó viết SAI, không phải code thiếu:
+
+- `src/live_tracking._annotate` **cố ý không có banner chữ nào**; nó chỉ in `LOST n` trong dòng HUD ASCII (font Hershey không có dấu tiếng Việt).
+- Lời giải thích cho người xem web nằm ở **panel**, không burn vào ảnh: `web/src/components/LivePanel.tsx:408` `data-testid="bam-no-evidence"` (`bamLineText`) + nút `live-confirm-object` ("Vẫn đúng, tiếp tục").
+- `grep -rn "TU TIM LAI\|TỰ TÌM LẠI" src/ web/src/` → **0 kết quả** ⇒ đường web **không bao giờ** hứa "tự tìm lại", nên không có câu sai cần sửa. Tiêu chí đúng là: "không đường nào được in câu hứa đó khi không có re-ID" — nay đã đúng và có test (`test_visualizer.TestBannerNoiDungTheoReId`).
+
+Còn lại: **CLI** (đường ghi video nộp bài) đã sửa và có test. Từ #45, khung hình cũng tự nói "NGHI" bằng ô nét đứt nên không cần banner chữ trong ảnh worker.
