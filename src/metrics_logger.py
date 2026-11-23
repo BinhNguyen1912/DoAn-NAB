@@ -79,8 +79,11 @@ class FrameRecord:
     track_cos: Optional[float] = None
     # `True` = cổng nhảy đã báo nghi đổi đối tượng và CHƯA được xoá (overlay bị ẩn).
     nghi_doi_tuong: Optional[bool] = None
-    # `cos` mask-vs-mask của lần xác minh sau khi NHẬN LẠI (`None` = chưa chấm / không phải frame
-    # nhận lại). Đo được thì mới trả lời được "cổng xác minh có tách được vùng sai không".
+    # `cos` mask-vs-mask của lần XÁC MINH. CẨN THẬN: cổng xác minh chạy ở các frame **SAU** frame
+    # nhận lại (`verify_frames = 2` ⇒ f119/f120 khi nhận lại ở f118), không phải ở chính frame nhận
+    # lại (review vòng 2, 23-11: comment cũ ghi "frame vừa nhận lại" nên phân tích phiên `101110` đã
+    # đọc nhầm f118 — f118 là frame NHẬN, số cos nằm ở f119/f120).
+    # `None` = chưa chấm / không phải frame xác minh.
     verify_cos: Optional[float] = None
     # Cosine cao nhất của frame chấm TRƯỚC mọi cổng (`None` = chưa chấm).
     cos_truoc_cong: Optional[float] = None

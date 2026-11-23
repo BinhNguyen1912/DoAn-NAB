@@ -71,6 +71,24 @@ python tools/run_live.py --source data/binh1.mp4 --image-size 192 --bbox 300,275
 - Nhánh A: HUD báo `mất dấu 5/333` — **chỉ số đẹp nhất từ trước tới giờ** — nhưng mask nằm **hoàn
   toàn ngoài vật** ở cả 3 frame có GT sau khi vật về. Đúng dạng lỗi "chỉ số đẹp, kết quả sai".
 
+## 🔍 Phát hiện thêm: re-ID còn BỊA mask khi vật đã rời khung
+
+Diện tích mask thực tế trong 2 bộ dump đã commit (`data/ab_binh1_*_lan1_masks/`):
+
+| frame | GT (`docs/gt/b1`) | A (re-ID) | C (lan truyền) |
+|---|---|---|---|
+| 121 | **rỗng** (vật đã cất) | **33 199 px** | **0 px** |
+| 151 | **rỗng** | **37 574 px** | **0 px** |
+| 181 | có vật (82 293) | 130 289 px — IoU **0,0016** | 65 832 px — IoU **0,7994** |
+| 211 | có vật (261 042) | 53 134 px — IoU **0,0** | 222 440 px — IoU **0,8495** |
+| 241 | có vật (41 081) | 79 338 px — IoU **0,0** | 35 769 px — IoU **0,8435** |
+| 272 / 302 / 332 | **rỗng** | 6 385 / 34 696 / 52 056 px | **0 / 0 / 0 px** |
+
+⇒ Re-ID **sai ở CẢ HAI chiều** trên clip này: **bịa mask ở 5/5 frame vô vật** (6,4k–52k px trên
+tường/áo) và **đặt mask sai ở 3/3 frame có vật**. Ngược lại SAM 2 lan truyền trả **mask rỗng đúng
+lúc vật vắng** — tức lý do tồn tại của cổng đóng băng ("chống SAM 2 tưởng tượng mask") **không đúng
+trên clip này**: thứ tưởng tượng mask là re-ID, không phải model.
+
 ### Kết luận
 
 1. **Re-ID đang làm HỎNG kết quả trên clip này** (mIoU 0,4236 vs 0,7794; mask tràn ra ngoài 43 % vs

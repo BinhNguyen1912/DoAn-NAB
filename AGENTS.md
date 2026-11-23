@@ -649,3 +649,10 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   chỉ đọc `-1` thì kết luận "bộ sinh rỗng" là **suy diễn**, không phải số. Từ 23-11 CSV có
   `cos_truoc_cong` (cos cao nhất chấm TRƯỚC mọi cổng) và `cand_n` (số ứng viên đã chấm); `verify_cos`
   ghi ở **cả** nhánh xác minh thất bại (ca cần soi nhất).
+- **Re-ID "bịa mask" khi vật đã rời khung — đo được, 5/5 frame.** Cùng bộ dump với mIoU ở trên
+  (`data/ab_binh1_*_lan1_masks/`, 23-11): tại các frame GT **rỗng** (121/151/272/302/332 — vật đã
+  cất), nhánh **có re-ID** trả mask **33 199 / 37 574 / 6 385 / 34 696 / 52 056 px** (tường, áo,
+  điều hoà), còn nhánh **lan truyền liên tục** trả **0 px ở cả 5 frame**. ⇒ Lý do tồn tại của cổng
+  đóng băng ("chống SAM 2 tưởng tượng mask khi vật đã rời khung") **không đúng trên clip này**: thứ
+  tưởng tượng mask là re-ID chứ không phải model. Muốn nói "re-ID có ích" thì phải có clip mà vật
+  **thật sự rời khung rồi vào lại** + mIoU chứng minh, repo **chưa có** clip đó.

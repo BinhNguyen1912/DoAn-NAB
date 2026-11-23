@@ -66,6 +66,24 @@ Trước khi chốt, chạy đúng câu hỏi của plan. Clip `data/binh1.mp4`,
   mặc định 2): khi nó đóng băng, SAM 2 **không được gọi nữa** nên khả năng tự bám lại của model bị
   vô hiệu hoá, và toàn bộ máy re-ID phải gánh — rồi gánh sai.
 
+## 🔍 Phát hiện thêm: re-ID còn BỊA mask khi vật đã rời khung
+
+Diện tích mask thực tế trong 2 bộ dump đã commit (`data/ab_binh1_*_lan1_masks/`):
+
+| frame | GT (`docs/gt/b1`) | A (re-ID) | C (lan truyền) |
+|---|---|---|---|
+| 121 | **rỗng** (vật đã cất) | **33 199 px** | **0 px** |
+| 151 | **rỗng** | **37 574 px** | **0 px** |
+| 181 | có vật (82 293) | 130 289 px — IoU **0,0016** | 65 832 px — IoU **0,7994** |
+| 211 | có vật (261 042) | 53 134 px — IoU **0,0** | 222 440 px — IoU **0,8495** |
+| 241 | có vật (41 081) | 79 338 px — IoU **0,0** | 35 769 px — IoU **0,8435** |
+| 272 / 302 / 332 | **rỗng** | 6 385 / 34 696 / 52 056 px | **0 / 0 / 0 px** |
+
+⇒ Re-ID **sai ở CẢ HAI chiều** trên clip này: **bịa mask ở 5/5 frame vô vật** (6,4k–52k px trên
+tường/áo) và **đặt mask sai ở 3/3 frame có vật**. Ngược lại SAM 2 lan truyền trả **mask rỗng đúng
+lúc vật vắng** — tức lý do tồn tại của cổng đóng băng ("chống SAM 2 tưởng tượng mask") **không đúng
+trên clip này**: thứ tưởng tượng mask là re-ID, không phải model.
+
 ## ✅ Quyết định
 
 - **Chọn:** **C là cơ chế của demo** — ưu tiên "không đóng băng lan truyền" + giữ Re-ID **tắt mặc
