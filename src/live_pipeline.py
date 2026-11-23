@@ -122,7 +122,8 @@ def _switch_warning(prev_bbox, result, frame_shape):
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
                  vetoed=None, track_cos=None, nghi_doi_tuong=None, verify_cos=None,
-                 cos_truoc_cong=None, cand_n=None) -> FrameRecord:
+                 cos_truoc_cong=None, cand_n=None, cand_sinh_n=None,
+                 cand_ncc_loai=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     mask = getattr(result, "mask", None)
@@ -147,6 +148,8 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
         verify_cos=verify_cos,
         cos_truoc_cong=cos_truoc_cong,
         cand_n=cand_n,
+        cand_sinh_n=cand_sinh_n,
+        cand_ncc_loai=cand_ncc_loai,
     )
 
 
@@ -197,6 +200,8 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         warn_if_bad_selection(result)
         if metrics is not None:
             metrics.log(_record_from(result, state))
+        verify_cos = cos_truoc = cand_n = None     # frame đầu chưa qua `step()`
+        cand_sinh = cand_ncc_loai = None
         img = _annotate(frame, result, visualizer, state)
         summary.latencies_ms.append(result.elapsed_ms)
         summary.total_frames += 1
@@ -214,6 +219,14 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 reid_vetoed = bool(getattr(step, "vetoed", False))
                 track_cos = getattr(step, "track_cos", None)
                 reid_ncc = step.ncc
+                # P1 review độc lập 23-11: `run_tracking` (đường HEADLESS — đường DUY NHẤT có
+                # `--dump-mask-frames`) không truyền 3 số này ⇒ artifact dùng để ra quyết định A/B
+                # có 3 cột LUÔN TRỐNG, tức không trả lời được chính câu hỏi chúng sinh ra để trả lời.
+                verify_cos = getattr(step, "verify_cos", None)
+                cos_truoc = getattr(step, "cos_truoc_cong", None)
+                cand_n = getattr(step, "cand_n", None)
+                cand_sinh = getattr(step, "cand_sinh_n", None)
+                cand_ncc_loai = getattr(step, "cand_ncc_loai", None)
             else:
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                              summary.total_frames, reanchor_every)
@@ -222,11 +235,16 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 reid_ncc = None
                 reid_vetoed = False
                 track_cos = None
+                verify_cos = cos_truoc = cand_n = None
+                cand_sinh = cand_ncc_loai = None
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
                 metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc,
-                                         vetoed=reid_vetoed, track_cos=track_cos))
+                                         vetoed=reid_vetoed, track_cos=track_cos,
+                                         verify_cos=verify_cos, cos_truoc_cong=cos_truoc,
+                                         cand_n=cand_n, cand_sinh_n=cand_sinh,
+                                         cand_ncc_loai=cand_ncc_loai))
             img = _annotate(frame, result, visualizer, state, reid_score, reid_vetoed)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
@@ -420,6 +438,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     verify_cos = getattr(step, "verify_cos", None)
                     cos_truoc = getattr(step, "cos_truoc_cong", None)
                     cand_n = getattr(step, "cand_n", None)
+                    cand_sinh = getattr(step, "cand_sinh_n", None)
+                    cand_ncc_loai = getattr(step, "cand_ncc_loai", None)
                     if reacquired:
                         # Re-ID đã tìm lại được đối tượng và xác nhận danh tính ⇒ xoá nghi, đặt lại mốc
                         watch.reset()
@@ -432,6 +452,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     state = reid_score = reacquired = None
                     reid_vetoed = False
                     track_cos = None
+                    verify_cos = cos_truoc = cand_n = None
+                    cand_sinh = cand_ncc_loai = None
                 if not reacquired:
                     switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                     switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
@@ -453,7 +475,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                                              vetoed=reid_vetoed, track_cos=track_cos,
                                              nghi_doi_tuong=True if watch.nghi else None,
                                              verify_cos=verify_cos,
-                                             cos_truoc_cong=cos_truoc, cand_n=cand_n))
+                                             cos_truoc_cong=cos_truoc, cand_n=cand_n,
+                                             cand_sinh_n=cand_sinh,
+                                             cand_ncc_loai=cand_ncc_loai))
     finally:
         src.close()
     return summary

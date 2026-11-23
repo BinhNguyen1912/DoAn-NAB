@@ -178,10 +178,14 @@ class Step:
     # phân biệt được "bộ sinh không đưa vật vào danh sách" với "cổng chặn" — đúng thứ phải tách
     # trước khi quyết có nên xác minh ứng viên bằng mask hay không.
     cos_truoc_cong: Optional[float] = None
-    # Số ứng viên ĐÃ CHẤM điểm ở frame này (sau prefilter NCC, trước mọi cổng). `0` = bộ sinh rỗng
-    # ⇒ mọi kỹ thuật xác minh/xếp hạng đều vô ích; `>0` mà `reid_score = -1` = CỔNG chặn.
-    # (23-11-2026, review vòng 2: `reid_score = -1` một mình không phân biệt được hai ca đó.)
+    # Số ứng viên ĐÃ CHẤM `object_signature` ở frame này (sau prefilter NCC). `0` có thể là bộ sinh
+    # rỗng, cũng có thể là "mọi ứng viên bị bán kính/NCC loại" ⇒ **phải đọc kèm 2 bộ đếm dưới**
+    # (P1 review độc lập 23-11: bản đầu ghi "`0` = bộ sinh rỗng" là SAI).
     cand_n: Optional[int] = None
+    # Số ô mà BỘ SINH đưa ra ở frame này (trước `_filter_by_radius` và trước cổng NCC).
+    cand_sinh_n: Optional[int] = None
+    # Số ứng viên bị CỔNG NCC (`obj_ncc_min`) loại — tách "không có ứng viên" khỏi "cổng chặn".
+    cand_ncc_loai: Optional[int] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -422,6 +426,8 @@ class ReIdSession:
         self._last_verify_cos = None    # cos của lần XÁC MINH gần nhất (`None` = chưa chấm)
         self._cos_truoc_cong = -1.0     # cosine CAO NHẤT của frame, chấm trước mọi cổng
         self._cand_n = 0                # số ứng viên đã chấm ở frame này
+        self._cand_sinh_n = 0           # số ô bộ sinh đưa ra (trước bán kính + trước cổng NCC)
+        self._cand_ncc_loai = 0         # số ứng viên bị cổng `obj_ncc_min` loại
 
     # -- trạng thái --
     @property
@@ -617,6 +623,8 @@ class ReIdSession:
             so_veto_truoc = self.veto_mat_n
             self._cos_truoc_cong = -1.0        # mỗi frame một giá trị (không rò sang frame sau)
             self._cand_n = 0
+            self._cand_sinh_n = 0
+            self._cand_ncc_loai = 0
             score, bbox, ncc = self._match_object(frame)
             vetoed = self.veto_mat_n > so_veto_truoc
             if vetoed and self.frames_vetoed_since_print >= 20:
@@ -662,7 +670,8 @@ class ReIdSession:
                     reid_score=best_score, ncc=best_ncc, vetoed=vetoed,
                     cos_truoc_cong=(self._cos_truoc_cong
                                     if self._cos_truoc_cong >= 0.0 else None),
-                    cand_n=self._cand_n)
+                    cand_n=self._cand_n, cand_sinh_n=self._cand_sinh_n,
+                    cand_ncc_loai=self._cand_ncc_loai)
 
     # -- veto "nhận lại vào mặt/đầu" --
     def _mat_trong(self, frame) -> tuple:
@@ -944,6 +953,10 @@ class ReIdSession:
             boxes = candidate_boxes(frame.shape[:2], size_grid, **grid_kwargs)
             pairs = [(b, -1.0) for b in boxes[: self.obj_top_k]]
 
+        # ĐẾM BỘ SINH ở đây (trước lọc bán kính + trước cổng NCC) — P1 review 23-11: đếm sau 2 cổng
+        # đó thì `cand_n = 0` lẫn ba ca khác nhau và artifact không trả lời được "bộ sinh có đưa vật
+        # vào danh sách hay không".
+        self._cand_sinh_n = len(pairs)
         # Vùng tìm nở DẦN: mấy frame đầu chỉ tìm quanh chỗ cũ → không nhảy sang vật khác
         # ở góc phòng (bug thật 29-10: dấu cái ly lại bám vào bóng đèn).
         pairs = self._filter_by_radius(pairs, frame.shape[:2])
@@ -981,6 +994,7 @@ class ReIdSession:
             # chỉ tính ứng viên **đã qua cổng** ⇒ nó là CẬN DƯỚI của "số ứng viên trùng mặt bị chặn"
             # (ca "vào ĐẦU" ncc 0,356 bị cổng 0,40 loại trước, không được đếm là veto).
             if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
+                self._cand_ncc_loai += 1
                 if ncc > best_ncc:
                     best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
                 continue

@@ -48,8 +48,12 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng ⇒ không tách được "bộ sinh không
               # đưa vật vào danh sách" với "cổng chặn". Cột này tách được. Trống = chưa chấm.
               "cos_truoc_cong",
-              # 23-11-2026: số ứng viên đã chấm (0 = bộ sinh rỗng; >0 mà reid_score=-1 = cổng chặn)
-              "cand_n"]
+              # 23-11-2026: số ứng viên ĐÃ CHẤM (sau prefilter NCC)
+              "cand_n",
+              # 23-11-2026 (P1 review): số ô BỘ SINH đưa ra (trước bán kính + trước cổng NCC) và số
+              # bị cổng NCC loại — thiếu 2 số này thì `cand_n = 0` không phân biệt được
+              # "bộ sinh rỗng" với "cổng chặn".
+              "cand_sinh_n", "cand_ncc_loai"]
 
 
 @dataclass
@@ -89,6 +93,10 @@ class FrameRecord:
     cos_truoc_cong: Optional[float] = None
     # Số ứng viên đã chấm điểm ở frame này (`None` = không ở chế độ tìm lại).
     cand_n: Optional[int] = None
+    # Số ô bộ sinh đưa ra (trước lọc bán kính + trước cổng NCC) — `0` mới là "bộ sinh rỗng".
+    cand_sinh_n: Optional[int] = None
+    # Số ứng viên bị cổng NCC (`obj_ncc_min`) loại.
+    cand_ncc_loai: Optional[int] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -233,6 +241,8 @@ class MetricsLogger:
                     f"{float(r.verify_cos):.6g}" if r.verify_cos is not None else "",
                     f"{float(r.cos_truoc_cong):.6g}" if r.cos_truoc_cong is not None else "",
                     "" if r.cand_n is None else str(int(r.cand_n)),
+                    "" if r.cand_sinh_n is None else str(int(r.cand_sinh_n)),
+                    "" if r.cand_ncc_loai is None else str(int(r.cand_ncc_loai)),
                 ])
         return str(path)
 

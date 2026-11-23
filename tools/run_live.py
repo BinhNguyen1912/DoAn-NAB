@@ -116,6 +116,16 @@ def _dump_cfg(args):
         raise SystemExit(f"[LOI] --dump-mask-frames phải là danh sách số, nhận {raw!r}")
     if any(f < 0 for f in frames):
         raise SystemExit("[LOI] --dump-mask-frames: số frame không âm")
+    src = str(getattr(args, "source", ""))
+    # P2 review độc lập 23-11: với webcam/relay/RTSP thì "số frame" là bộ đếm PHIÊN, không phải frame
+    # của clip ⇒ `mask_NNNNNN.png` không ghép được với GT nào. Và không có `--bbox` thì `_load_bbox`
+    # im lặng dùng ô giữa 80×80 (bẫy "hộp mặc định rơi vào nền", AGENTS §6 ca Colab 13-11).
+    if not (Path(src).is_file() if src else False):
+        raise SystemExit(f"[LOI] --dump-mask-frames chỉ dùng cho nguồn là FILE (đang là {src!r}): "
+                         "với webcam/RTSP số frame là bộ đếm phiên, không ghép được với GT")
+    if not getattr(args, "bbox", None) and not getattr(args, "bbox_file", None):
+        raise SystemExit("[LOI] --dump-mask-frames cần --bbox/--bbox-file tường minh: ô mặc định "
+                         "giữa frame hay rơi vào nền ⇒ mask chấm ra số vô nghĩa")
     out_dir = getattr(args, "dump_mask_dir", "") or ""
     if not out_dir:
         csv = getattr(args, "metrics_csv", None)
@@ -165,18 +175,24 @@ def _dump_mask_callback(out_dir, frames, info, base=None):
                 else:
                     da_ghi.append(n)
             if len(da_ghi) + len(ghi_de) >= len(frames):
-                _write_mask_manifest(target, info, frames, da_ghi, ghi_de)
+                _write_mask_manifest(target, info, frames, da_ghi, ghi_de, state["man"])
+                state["man"] = True
         return base(img, result) if base is not None else True
 
-    _cb.write_manifest = lambda: _write_mask_manifest(target, info, frames, da_ghi, ghi_de)
+    state["man"] = False
+    _cb.write_manifest = lambda: _write_mask_manifest(target, info, frames, da_ghi, ghi_de,
+                                                      state["man"])
     return _cb
 
 
-def _write_mask_manifest(target, info, frames, da_ghi, ghi_de):
+def _write_mask_manifest(target, info, frames, da_ghi, ghi_de, da_ghi_lan_nay=False):
     """Ghi `manifest.json` cạnh mask để `score_miou` đối chiếu được (cùng clip, cùng frame)."""
     path = Path(target) / "manifest.json"
+    if da_ghi_lan_nay:
+        return                  # `finally` gọi lần hai trong CÙNG phiên ⇒ không phải cảnh báo
     if path.exists():           # hai lần chạy vào cùng thư mục: KHÔNG ghi đè rồi im lặng
-        print(f"[canh-bao] {path} đã có — KHÔNG ghi đè manifest (mask có thể của lần chạy khác)")
+        print(f"[canh-bao] {path} đã có — KHÔNG ghi đè manifest (mask có thể của lần chạy khác) "
+              "⇒ dùng --dump-mask-dir MỚI cho mỗi lần chạy")
         return
     data = dict(info)
     data.update({"frames_yeu_cau": sorted(frames), "frames_da_ghi": sorted(da_ghi),
@@ -725,12 +741,21 @@ def _run_headless(engine, args):
         dump_frames, dump_dir = _dump_cfg(args)
         on_frame = _progress_callback(args.progress_json, progress_total)
         if dump_frames:
-            info = {"nguon": str(args.source), "image_size": getattr(args, "image_size", None),
+            # P2 review độc lập 23-11: `image_size` phải tách YÊU CẦU vs HIỆU LỰC (bẫy AGENTS §6
+            # 15-11: override không áp được thì model chạy 1024 mà không báo), và manifest phải mang
+            # `git_rev`/`git_dirty_code` — không thì artifact mIoU (đọc `meta.mask_manifest`) biết rev
+            # của lần CHẤM mà mất rev của lần SINH MASK.
+            _dirty, _dirty_code = _git_dirty()
+            info = {"nguon": str(args.source),
+                    "image_size_yeu_cau": getattr(args, "image_size", None),
+                    "image_size_hieu_luc": getattr(engine, "image_size_hieu_luc", None),
                     "vos_every": getattr(args, "vos_every", None) or 1,
                     "mask_smoothing": getattr(args, "mask_smoothing", None) or 1.0,
                     # `bbox` nội bộ là (x1,y1,x2,y2); manifest/GT dùng (x,y,w,h) — đổi trước khi ghi
                     "bbox_xywh": list(xyxy_to_xywh(bbox)) if bbox else None,
-                    "lenh": " ".join(sys.argv)}
+                    "lenh": " ".join(sys.argv),
+                    "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
+                    "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}
             on_frame = _dump_mask_callback(dump_dir, dump_frames, info, base=on_frame)
         summary = run_tracking(
             source=args.source,

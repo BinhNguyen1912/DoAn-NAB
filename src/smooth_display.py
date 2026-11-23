@@ -226,6 +226,14 @@ class InferenceWorker:
                 with self._lock:
                     self._started = False
                     self._bbox = bbox_req if action in ("start", "reanchor") else None
+                    # P2 review độc lập 23-11: KHÔNG reset bộ đếm lỗi ở đây thì 2 cú chập của phiên
+                    # TRƯỚC + 1 lỗi đầu tiên của phiên MỚI ⇒ `so_lan = 3` ⇒ bỏ ô ngay và in
+                    # "3 lần liên tiếp" (sai sự thật). Cùng bài học AGENTS §6: bộ đếm phải reset
+                    # trong `start()`.
+                    self._loi_lien_tiep = 0
+                    # P3 review: `_reid_ncc` cũng phải reset — nếu không, frame `start()` đầu tiên
+                    # của vật MỚI mang `ncc` của phiên TRƯỚC (cùng lớp lỗi vừa sửa cho verify_cos).
+                    self._reid_ncc = None
                     if action not in ("start", "reanchor"):
                         self._stamped = None
             # 1b) Cờ "nghi đổi đối tượng" từ main thread — đặt SAU reset (reset() xoá cờ)

@@ -1530,8 +1530,11 @@ class TestCosTruocCong:
             "verify thất bại phải ghi được cos — đây là ca cần soi nhất"
         )
 
-    def test_cand_n_la_0_khi_bo_sinh_rong(self):
-        """`cand_n` tách được "bộ sinh rỗng" (0) khỏi "cổng chặn" (>0 mà `reid_score=-1`).
+    def test_cand_n_va_cand_sinh_n_tach_bo_sinh_voi_cong(self):
+        """`cand_sinh_n` = số ô BỘ SINH đưa ra; `cand_n` = số ứng viên ĐÃ CHẤM (sau cổng NCC).
+
+        Đính chính (P1 review độc lập 23-11): bản đầu chỉ có `cand_n` và docstring ghi "0 = bộ sinh
+        rỗng" — SAI, vì `cand_n` được đếm SAU `_filter_by_radius` và SAU cổng `obj_ncc_min`.
 
         Reviewer vòng 2 chỉ đúng: `reid_score = -1` một mình KHÔNG nói được cái nào — 170/175 dòng
         `-1` của phiên `095901` có `ncc = -1` (bộ sinh rỗng) nhưng 5 dòng có ncc 0,33–0,40 (bị cổng
@@ -1550,3 +1553,25 @@ class TestCosTruocCong:
         assert isinstance(step.cand_n, int) and step.cand_n >= 1, (
             "prefilter NCC vẫn sinh ứng viên ⇒ cand_n > 0 (bị chặn ở CỔNG, không phải bộ sinh)"
         )
+        assert isinstance(step.cand_sinh_n, int) and step.cand_sinh_n >= step.cand_n
+
+    def test_cong_ncc_loai_thi_cand_n_bang_0_nhung_bo_sinh_khong_rong(self):
+        """`obj_ncc_min` cao ⇒ mọi ứng viên bị loại: `cand_n = 0` NHƯNG `cand_sinh_n > 0`.
+
+        Đây đúng ca mà bản đầu báo sai thành "bộ sinh rỗng" (P1 review độc lập 23-11).
+        """
+        empty = np.zeros((96, 96), bool)
+        # 2 mask rỗng: frame 2 = mất dấu, frame 3 = vẫn rỗng ⇒ mới vào nhánh TÌM LẠI (đã mắc lỗi
+        # nàykhi viết test: engine trả mask theo ô thì step 3 quay lại `tracking` và `cand_n = None`)
+        engine = FakeEngineMasks([empty, empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.5,
+                              # 1,5 > mọi NCC (≤1) ⇒ cổng NCC loại HẾT ứng viên
+                              obj_ncc_min=1.5, reacquire_confirm=1)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)
+        step = session.step(_obj_frame((30, 30, 70, 70)))
+        assert step.cand_n == 0, "cổng NCC loại hết ⇒ không ứng viên nào được CHẤM"
+        assert step.cand_sinh_n >= 1, "bộ sinh VẪN đưa ra ô ⇒ không được gọi là 'bộ sinh rỗng'"
+        assert step.cand_ncc_loai >= 1

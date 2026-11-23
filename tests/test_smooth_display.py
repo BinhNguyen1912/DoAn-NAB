@@ -303,7 +303,7 @@ class TestThreadSafety:
             time.sleep(1.0)          # đủ cho 3 lần thử lại (0,1 s/lần) + lần bỏ cuộc
             assert worker.is_tracking() is False      # về chế độ chọn
             assert worker.latest_result() is None
-            # ĐẾM CÓ TRẦN: 3 lần thử lại + 1 lần bỏ cuộc = 4 dòng, không phải vòng lặp spam
+            # ĐẾM CÓ TRẦN: 2 dòng "thử lại" + 1 dòng bỏ cuộc = 3 dòng (không phải vòng lặp spam)
             n_err = capsys.readouterr().out.count("[LOI]")
             assert n_err == 3, f"in {n_err} dòng [LOI] — phải có trần (2 thử lại + 1 bỏ cuộc)"
         finally:

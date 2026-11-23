@@ -782,30 +782,45 @@ class TestDumpMask:
     mask mới trả lời được "Re-ID nhận lại ĐÚNG vật hay nhận bừa" — mà đó là câu quyết định.
     """
 
+    def _args(self, tmp_path, **kw):
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"")
+        base = {"dump_mask_frames": "0, 30,181", "dump_mask_dir": "",
+                "metrics_csv": str(tmp_path / "x.csv"), "source": str(clip),
+                "bbox": "1,2,3,4", "bbox_file": None}
+        base.update(kw)
+        return type("A", (), base)()
+
     def test_dump_cfg_doi_xuong_thu_muc_canh_metrics_csv(self, tmp_path):
-        args = type("A", (), {"dump_mask_frames": "0, 30,181", "dump_mask_dir": "",
-                              "metrics_csv": str(tmp_path / "x.csv")})()
-        frames, out_dir = run_live._dump_cfg(args)
+        frames, out_dir = run_live._dump_cfg(self._args(tmp_path))
         assert frames == {0, 30, 181}
         assert out_dir == str(tmp_path / "x_masks")
 
-    def test_dump_cfg_tu_choi_khi_sai_dinh_dang(self):
-        args = type("A", (), {"dump_mask_frames": "0,abc", "dump_mask_dir": "/tmp/x",
-                              "metrics_csv": None})()
-        with pytest.raises(SystemExit):
-            run_live._dump_cfg(args)
+    def test_dump_mask_tu_choi_nguon_khong_phai_file(self, tmp_path):
+        """Webcam/relay/RTSP: số frame là bộ đếm PHIÊN ⇒ mask_NNNNNN.png không ghép được GT nào."""
+        for src in ("0", "http://127.0.0.1:8090/snapshot.jpg", "rtsp://cam/s"):
+            with pytest.raises(SystemExit):
+                run_live._dump_cfg(self._args(tmp_path, source=src))
 
-    def test_dump_cfg_tu_choi_so_am(self):
-        args = type("A", (), {"dump_mask_frames": "0,-3", "dump_mask_dir": "/tmp/x",
-                              "metrics_csv": None})()
+    def test_dump_mask_bat_buoc_co_bbox_tuong_minh(self, tmp_path):
+        """Không có --bbox thì `_load_bbox` im lặng dùng ô giữa 80x80 (bẫy 'hộp mặc định vào nền')."""
         with pytest.raises(SystemExit):
-            run_live._dump_cfg(args)
+            run_live._dump_cfg(self._args(tmp_path, bbox=None, bbox_file=None))
+        frames, _ = run_live._dump_cfg(self._args(tmp_path, bbox=None,
+                                                 bbox_file=str(tmp_path / "b.txt")))
+        assert frames == {0, 30, 181}
 
-    def test_dump_cfg_can_thu_muc_khi_khong_co_metrics_csv(self):
-        args = type("A", (), {"dump_mask_frames": "5", "dump_mask_dir": "",
-                              "metrics_csv": None})()
+    def test_dump_cfg_tu_choi_khi_sai_dinh_dang(self, tmp_path):
         with pytest.raises(SystemExit):
-            run_live._dump_cfg(args)
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="0,abc"))
+
+    def test_dump_cfg_tu_choi_so_am(self, tmp_path):
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="0,-3"))
+
+    def test_dump_cfg_can_thu_muc_khi_khong_co_metrics_csv(self, tmp_path):
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="5", metrics_csv=None))
 
     def test_ghi_dung_frame_va_ten_file_theo_frame_video(self, tmp_path):
         """Tên file phải theo **số frame video**, KHÔNG theo `result.frame_idx` (bài học P0 14-11)."""
