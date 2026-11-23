@@ -747,6 +747,9 @@ def _run_display(engine, args):
                 visualizer=viz,
                 metrics=metrics,
                 reid_session=reid_session,
+                # Nguồn live: đọc tối đa 30 lần/s (đo 293/s trên relay 16 fps ⇒ 18 lần giải mã vô ích
+                # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
+                source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
             args._prompt_bbox = summary.prompt_bbox
             args._reselect_n = summary.reselect_n

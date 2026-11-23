@@ -877,3 +877,44 @@ class TestBannerMatDauNoiDungTheoReId:
     def test_khong_reid_thi_banner_bao_bam_r(self, tmp_path, write_video):
         viz = self._chay(tmp_path, write_video, None)
         assert viz.reid_enabled is False
+
+
+class TestTranDocNguon:
+    """Plan 24-11 việc 3 — vòng đọc nguồn phải có TRẦN cho nguồn live.
+
+    Số đo: relay ảnh JPEG localhost 16 fps bị đọc **263–293 lần/s** (18 lần giải mã vô ích mỗi
+    khung, 1,6 MB/s loopback, **0,36 lõi = 8 % của 4,3 lõi**) trong khi model đã ăn 85 %.
+    """
+
+    def test_co_tran_thi_doc_dung_nhip(self):
+        import time as _time
+
+        src = LatestFrameSource(FakeSource(delay=0.0, limit=10_000), max_fps=30.0).start()
+        _time.sleep(1.0)
+        n = src.frames_captured
+        src.stop()
+        assert 20 <= n <= 40, f"{n} lần đọc trong 1 s — trần 30 phải cho ~30"
+
+    def test_mac_dinh_khong_tran(self):
+        """`None` = không chặn: nguồn FILE phải đọc nhanh nhất để replay đúng thứ tự frame."""
+        import time as _time
+
+        src = LatestFrameSource(FakeSource(delay=0.0, limit=10_000)).start()
+        _time.sleep(0.5)
+        n = src.frames_captured
+        src.stop()
+        assert n > 200, f"{n} lần đọc trong 0,5 s — mặc định phải KHÔNG chặn"
+
+    def test_ngu_dung_moc_dau_vong_khong_cong_don(self):
+        """Bài học AGENTS §6: `sleep(interval)` SAU khi làm việc ⇒ chu kỳ = việc + interval.
+
+        Nguồn giả chậm 20 ms: nếu code sai (ngủ thêm 1/30 s), nhịp = 20 + 33 = 53 ms ⇒ 19 lần/s;
+        nếu đúng (trừ thời gian đọc), nhịp ≈ 33 ms ⇒ ~30 lần/s.
+        """
+        import time as _time
+
+        src = LatestFrameSource(FakeSource(delay=0.02, limit=10_000), max_fps=30.0).start()
+        _time.sleep(1.2)
+        n = src.frames_captured
+        src.stop()
+        assert n >= 26, f"{n} lần đọc/1,2 s ⇒ ~{n/1.2:.0f}/s: đang CỘNG DỒN thời gian ngủ"

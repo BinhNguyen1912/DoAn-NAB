@@ -39,9 +39,18 @@ _LOI_THU_LAI = 3
 class LatestFrameSource:
     """Luồng capture: luôn giữ frame MỚI NHẤT + mốc thời gian (không xếp hàng frame cũ)."""
 
-    def __init__(self, source):
-        """source: đối tượng có read()/close() (VideoSource đã open)."""
+    def __init__(self, source, max_fps=None):
+        """source: đối tượng có read()/close() (VideoSource đã open).
+
+        `max_fps`: TRẦN số lần đọc nguồn mỗi giây (`None` = không chặn).
+        Vì sao có (plan 24-11, việc 3): vòng này đọc **hết tốc lực**, đo trên relay ảnh JPEG
+        localhost = **293 lần/s** cho một nguồn chỉ phát **~16 fps** ⇒ 18 lần giải mã JPEG vô ích
+        mỗi khung, 1,6 MB/s loopback, và **0,36 lõi (8 % của 4,3 lõi)** trong khi model đã ăn 85 %.
+        Ngủ theo **mốc ĐẦU vòng** (bài học relay AGENTS §6: đừng `sleep(interval)` sau khi đã làm
+        việc, vì chu kỳ = công việc + interval ⇒ chậm hơn `max_fps` một cách âm thầm).
+        """
         self._source = source
+        self._max_fps = float(max_fps) if max_fps else None
         self._frame = None
         self._ts = 0.0
         self._lock = threading.Lock()
@@ -58,6 +67,7 @@ class LatestFrameSource:
 
     def _loop(self):
         while not self._stop.is_set():
+            moc = time.monotonic()               # mốc ĐẦU vòng, trước khi đọc
             frame = self._source.read()
             if frame is None:                    # nguồn cạn (file) → nghỉ ngắn rồi thử lại
                 time.sleep(0.02)
@@ -66,6 +76,10 @@ class LatestFrameSource:
                 self._frame = frame
                 self._ts = time.monotonic()
                 self.frames_captured += 1
+            if self._max_fps:
+                con_lai = moc + 1.0 / self._max_fps - time.monotonic()
+                if con_lai > 0:
+                    time.sleep(con_lai)
 
     def latest(self):
         """(frame, ts) mới nhất hoặc (None, 0.0)."""
@@ -334,7 +348,7 @@ class InferenceWorker:
 
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
-                       on_result=None, reid_session=None) -> InteractiveSummary:
+                       on_result=None, reid_session=None, source_max_fps=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -344,7 +358,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     if visualizer is not None:
         # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43): không re-ID thì in "bấm r chọn lại".
         visualizer.reid_enabled = reid_session is not None
-    frames = LatestFrameSource(open_video_source(source).open()).start()
+    # `source_max_fps` chỉ nên đặt cho nguồn LIVE (relay/webcam/RTSP): nguồn FILE phải đọc nhanh
+    # nhất có thể để replay đúng thứ tự frame.
+    frames = LatestFrameSource(open_video_source(source).open(),
+                               max_fps=source_max_fps).start()
     worker = InferenceWorker(engine, frames, reid_session=reid_session).start()
     consumed_seq = 0
     last_bbox = None
