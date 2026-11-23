@@ -78,8 +78,11 @@ class LatestFrameSource:
                 self.frames_captured += 1
             if self._max_fps:
                 con_lai = moc + 1.0 / self._max_fps - time.monotonic()
-                if con_lai > 0:
-                    time.sleep(con_lai)
+                # `self._stop.wait(...)`: `time.sleep` không ngắt được ⇒ `stop()` có thể join hết hạn
+                # 2 s (khi `max_fps` nhỏ) rồi `close()` chạy trong lúc thread còn `read()` ⇒ nguồn ném
+                # RuntimeError sau Ctrl+C (P3 review 24-11). `wait` trả True ngay khi có tín hiệu dừng.
+                if con_lai > 0 and self._stop.wait(con_lai):
+                    return
 
     def latest(self):
         """(frame, ts) mới nhất hoặc (None, 0.0)."""

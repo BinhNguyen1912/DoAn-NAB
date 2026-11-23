@@ -826,3 +826,28 @@ class TestQuyDaoTheoThoiGian:
                                    bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=100.0))
         viz.reset()
         assert len(viz.trajectory_points) == 0 and len(viz._traj_ts) == 0
+
+
+class TestBienP2_Review2411:
+    """3 lỗi biên do review 24-11 chỉ ra (mỗi lỗi làm quỹ đạo "đổi nghĩa" mà không ai biết)."""
+
+    def test_cua_so_thoi_gian_khong_bi_tran_so_diem_cat(self, monkeypatch):
+        """`max_trajectory=100` từng âm thầm cắt cửa sổ 5 s xuống 3,33 s ở 30 bước/s."""
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer(max_trajectory=100, trajectory_seconds=5.0)
+        for i in range(180):                  # 30 bước/s × 6 s
+            hop["t"] = i / 30.0
+            viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
+                                       bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=33.0))
+        assert len(viz.trajectory_points) >= 140, len(viz.trajectory_points)
+
+    def test_cua_so_cuc_nho_khong_lam_rong_quy_dao(self, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer(trajectory_seconds=1e-6)
+        for i in range(5):
+            hop["t"] = 100.0 + i
+            viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
+                                       bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=1.0))
+            assert len(viz.trajectory_points) >= 1

@@ -230,7 +230,7 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
     def confirm_live_bbox() -> LiveStatusResponse:
         """Xác nhận "vẫn đúng đối tượng" ⇒ worker xoá trạng thái nghi đổi đối tượng và vẽ lại mask.
 
-        Dùng khi `bam == "nghi_doi_tuong"` (worker đã ẩn ô vì nghi bám sang vật khác) mà người dùng
+        Dùng khi `bam == "nghi_doi_tuong"` (worker đang vẽ ô NÉT ĐỨT vì nghi bám sang vật khác) mà người dùng
         thấy vẫn đúng. Không có lệnh này thì chỉ còn cách chọn lại ô.
         """
         return _live_status(live.confirm())

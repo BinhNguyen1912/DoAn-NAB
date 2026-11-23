@@ -625,6 +625,10 @@ def _write_run_info(args):
         # Độ dài file video phụ thuộc 2 thứ này (ticket #44) — thiếu chúng thì artifact KHÔNG tự
         # giải thích được thời lượng (P3 review 23-11).
         record_fps=getattr(args, "_record_fps", None),
+        # Cửa sổ quỹ đạo: không ghi thì `./run demoip` (5 s) không phân biệt được với mặc định
+        # 100 điểm ⇒ "quỹ đạo trong video dài 5 s" không tái lập được (P2 review 24-11).
+        trajectory_seconds=getattr(args, "trajectory_seconds", None),
+        max_trajectory=getattr(args, "max_trajectory", None),
         record_pace_realtime=getattr(args, "_record_pace", None),
         reid_cue=getattr(args, "reid_cue", None),
         reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
@@ -1002,16 +1006,16 @@ def build_parser():
     return ap
 
 
-def main():
-    args = build_parser().parse_args()
-    _canh_bao_worker_mo_coi()
-
-    # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
-    cfg = load_config(args.config)
-    cfg = merge_cli_overrides(cfg, {
+def _cfg_tu_cli(args) -> dict:
+    """Cờ CLI → dict để `merge_cli_overrides` (CLI thắng YAML). Tách ra để TEST được đường hợp
+    nhất thật: test chỉ kiểm `parse_args` từng bỏ lọt việc `--no-reid` có thắng `reid_enabled:
+    true` trong YAML hay không (P2 review 24-11).
+    """
+    return {
         "checkpoint": args.ckpt,
         "source": args.source,
         "max_trajectory": args.max_trajectory,
+        "trajectory_seconds": getattr(args, "trajectory_seconds", None),
         "reanchor_every": args.reanchor_every,
         "image_size": args.image_size,
         "device": args.device,
@@ -1023,7 +1027,7 @@ def main():
         "record_fps": args.record_fps,
         "metrics_csv": args.metrics_csv,
         "metrics_summary": args.metrics_summary,
-        "reid_enabled": (True if args.reid else None),
+        "reid_enabled": args.reid,   # tri-state: None = không nói, False = --no-reid
         "reid_threshold": args.reid_threshold,
         "lost_after_frames": args.lost_after_frames,
         "reid_min_face_px": args.reid_min_face_px,
@@ -1034,7 +1038,16 @@ def main():
         "lost_score_threshold": args.lost_score_threshold,
         "reid_reacquire_confirm": args.reid_confirm,
         "reid_verify_frames": args.reid_verify,
-    })
+    }
+
+
+def main():
+    args = build_parser().parse_args()
+    _canh_bao_worker_mo_coi()
+
+    # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
+    cfg = load_config(args.config)
+    cfg = merge_cli_overrides(cfg, _cfg_tu_cli(args))
     checkpoint = resolve_checkpoint(cfg["checkpoint"])
     if cfg["source"] is None:
         print("[LOI] chưa chỉ định nguồn — truyền --source hoặc đặt 'source:' trong file config")
@@ -1043,6 +1056,9 @@ def main():
     if isinstance(args.source, str) and args.source.isdigit():
         args.source = int(args.source)
     args.max_trajectory = cfg["max_trajectory"]
+    # Cờ mới 24-11: CLI nói rõ thì thắng, không nói (None) thì lấy YAML.
+    if getattr(args, "trajectory_seconds", None) is None:
+        args.trajectory_seconds = cfg.get("trajectory_seconds")
     args.reanchor_every = cfg["reanchor_every"]
     args.image_size = cfg["image_size"]
     args.device = cfg["device"]

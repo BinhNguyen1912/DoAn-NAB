@@ -59,6 +59,12 @@ def hop_tu_gt(gt_dir: Path) -> dict[int, tuple[int, int, int, int]]:
     ĐỌC KÈM `gt_rong_cua()` — bỏ `gt_rong` ở đây là ĐÚNG (không có vật thì không có IoU để chấm),
     nhưng trước 21-11 không ai dùng tập đó ⇒ hành vi "vẽ ô trên frame KHÔNG có vật" **không bị phạt**.
     Đó là lý do có `ty_le_o_ma`.
+
+    ⚠️ 24-11-2026 (review độc lập, P1): từ ticket #45, frame `bam = nghi_doi_tuong` **VẪN ĐƯỢC VẼ**
+    (ô NÉT ĐỨT + nhãn "NGHI", không tô mask) ⇒ `dump-shown-csv` **có** toạ độ cho các frame đó và
+    `ty_le_o_ma` tính chúng là "vẽ ô" — đúng với ảnh người xem thấy. Muốn đếm riêng "ô ĐẶC" (kết quả
+    đã kiểm) thì lọc theo cột `bam`: chỉ `bam == "tracking"` mới là ô đặc. Trước 24-11 `shown` bị đặt
+    `None` cho cả `nghi_doi_tuong` ⇒ metric nói ngược lại ảnh (đếm 0/9 trong khi màn hình có ô).
     """
     import cv2
 

@@ -57,7 +57,10 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # 24-11-2026 (plan "chống tràn nền cùng tông", việc 4): `diện tích ô / EMA(diện tích ô)`
               # — CHỈ ĐỂ CHẨN ĐOÁN, KHÔNG phải cổng (xem `src/bbox_area_watch.py`). Đặt ở CUỐI để
               # CSV cũ vẫn đọc được bằng `DictReader` và thứ tự cột không lệch với dòng dữ liệu.
-              "bbox_area_ratio"]
+              "bbox_area_ratio",
+              # Mốc (px) + số mẫu đã cập nhật: plan 24-11 đòi "công thức diện tích tham chiếu phải ghi
+              # trong cột" — thiếu 2 cột này thì không ai kiểm lại được tỉ lệ (review 24-11).
+              "bbox_area_ref", "bbox_area_n"]
 
 
 @dataclass
@@ -144,11 +147,16 @@ class MetricsLogger:
     def log(self, record: FrameRecord) -> None:
         """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame).
 
-        `bbox_area_ratio` được tính Ở ĐÂY (không trong từng pipeline) để mọi đường — CLI tuần tự,
-        `--smooth`, worker web — có cùng cột, và luật EMA chỉ tồn tại ở MỘT chỗ.
+        `bbox_area_ratio` được tính Ở ĐÂY để đường CLI (tuần tự + `--smooth`) có cùng cột và luật EMA
+        chỉ tồn tại ở MỘT chỗ. **Worker web KHÔNG dựng `MetricsLogger`** (nó ghi `status.json` +
+        `drift_samples.csv`/`shown.csv`) ⇒ đừng đọc "không thấy cột" thành "chưa đo" trên artifact web
+        (P2 review 24-11).
         """
+        # Luôn TIẾN EMA, kể cả khi record đã có sẵn ratio (nhánh replay) — nếu chỉ cập nhật khi `None`
+        # thì các frame sau lệch mốc (P3 review 24-11).
+        ti_le = self._area_watch.update(record.bbox_w, record.bbox_h)
         if record.bbox_area_ratio is None:
-            record.bbox_area_ratio = self._area_watch.update(record.bbox_w, record.bbox_h)
+            record.bbox_area_ratio = ti_le
         self.records.append(record)
         if self.sampler is not None:
             self.sampler.sample()
@@ -272,6 +280,8 @@ class MetricsLogger:
                     "" if r.cand_ncc_loai is None else str(int(r.cand_ncc_loai)),
                     # TRỐNG = chưa đo, không phải 0 (ô rỗng hoặc ô < 8×8 px).
                     f"{float(r.bbox_area_ratio):.3f}" if r.bbox_area_ratio is not None else "",
+                    f"{self._area_watch.ema:.0f}" if self._area_watch.ema else "",
+                    self._area_watch.n or "",
                 ])
         return str(path)
 

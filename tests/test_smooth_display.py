@@ -887,13 +887,33 @@ class TestTranDocNguon:
     """
 
     def test_co_tran_thi_doc_dung_nhip(self):
+        """Cận TRÊN theo thời gian ĐO ĐƯỢC — không phải "phải đúng 30".
+
+        Trên CI dùng chung, `sleep(33 ms)` trượt thành 45–50 ms ⇒ nhịp thật 20–22/s; test cũ đòi
+        `n >= 20` nên sát biên và đã từng flaky (P3 review 24-11). Hợp đồng của code là **trần**,
+        không phải "luôn đạt 30" ⇒ khẳng định `n <= 1,2 × 30 × elapsed` và `n >= 5` (có chạy).
+        """
         import time as _time
 
         src = LatestFrameSource(FakeSource(delay=0.0, limit=10_000), max_fps=30.0).start()
+        _t0 = _time.monotonic()
         _time.sleep(1.0)
         n = src.frames_captured
+        elapsed = _time.monotonic() - _t0
         src.stop()
-        assert 20 <= n <= 40, f"{n} lần đọc trong 1 s — trần 30 phải cho ~30"
+        assert n <= 1.2 * 30.0 * elapsed, f"{n} lần đọc trong {elapsed:.2f} s — VƯỢT trần 30/s"
+        assert n >= 5, f"{n} lần đọc trong {elapsed:.2f} s — trần chặn quá tay"
+
+    def test_stop_ngat_duoc_giac_ngu_tran_doc(self):
+        """`max_fps` nhỏ ⇒ `time.sleep` dài không ngắt được ⇒ `stop()` join hết 2 s rồi `close()`
+        chạy trong lúc thread còn `read()` ⇒ nguồn ném RuntimeError sau Ctrl+C (P3 review 24-11)."""
+        import time as _time
+
+        src = LatestFrameSource(FakeSource(delay=0.0, limit=10_000), max_fps=1.0).start()
+        _time.sleep(0.05)
+        _t0 = _time.monotonic()
+        src.stop()
+        assert _time.monotonic() - _t0 < 0.5, "stop() phải ngắt được giấc ngủ (dùng _stop.wait)"
 
     def test_mac_dinh_khong_tran(self):
         """`None` = không chặn: nguồn FILE phải đọc nhanh nhất để replay đúng thứ tự frame."""
@@ -914,7 +934,14 @@ class TestTranDocNguon:
         import time as _time
 
         src = LatestFrameSource(FakeSource(delay=0.02, limit=10_000), max_fps=30.0).start()
+        _t0 = _time.monotonic()
         _time.sleep(1.2)
         n = src.frames_captured
+        elapsed = _time.monotonic() - _t0
         src.stop()
-        assert n >= 26, f"{n} lần đọc/1,2 s ⇒ ~{n/1.2:.0f}/s: đang CỘNG DỒN thời gian ngủ"
+        # Sai (cộng dồn): chu kỳ 20+33 = 53 ms ⇒ ~19/s. Đúng: ≈ 33 ms ⇒ tối đa 30/s.
+        # Khẳng định theo NHỊP ĐO ĐƯỢC chứ không theo hằng số 26 (flaky khi máy bận — P3 24-11).
+        nhip = n / elapsed
+        assert nhip >= 0.60 * 30.0, (
+            f"{nhip:.0f} lần/s (n={n}, {elapsed:.2f} s) ⇒ quá xa trần 30: đang CỘNG DỒN thời gian ngủ")
+        assert nhip <= 1.2 * 30.0, f"{nhip:.0f} lần/s — VƯỢT trần 30/s"

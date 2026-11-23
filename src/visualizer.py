@@ -137,8 +137,13 @@ class Visualizer:
         self.max_trajectory = int(max_trajectory)
         self.trajectory_seconds = (float(trajectory_seconds)
                                   if trajectory_seconds and float(trajectory_seconds) > 0 else None)
-        self._trajectory = deque(maxlen=self.max_trajectory)  # (cx, cy) tâm đối tượng
-        self._traj_ts = deque(maxlen=self.max_trajectory)     # mốc thời gian của từng điểm
+        # Khi bật cửa sổ THỜI GIAN, trần theo SỐ ĐIỂM phải nới ra: 5 s ở 30 bước/s là 150 điểm, mà
+        # `maxlen=100` sẽ âm thầm cắt còn 3,33 s (P2 review 24-11). Cửa sổ thời gian là trần thật.
+        _tran = self.max_trajectory
+        if self.trajectory_seconds:
+            _tran = max(_tran, int(self.trajectory_seconds * 60) + 2)
+        self._trajectory = deque(maxlen=_tran)  # (cx, cy) tâm đối tượng
+        self._traj_ts = deque(maxlen=_tran)     # mốc thời gian của từng điểm
         self._latencies = deque(maxlen=_LATENCY_WINDOW)       # ms, cửa sổ trượt
         self._font_path = font_path or find_vietnamese_font()
         self._font_size = int(font_size)
@@ -198,7 +203,9 @@ class Visualizer:
         if not self.trajectory_seconds or not self._traj_ts:
             return
         moc = time.monotonic() - self.trajectory_seconds
-        while self._traj_ts and self._traj_ts[0] < moc:
+        # `len > 1`: cửa sổ cực nhỏ (hoặc 2 lần gọi dồn) không được xoá sạch quỹ đạo — giữ ít nhất
+        # điểm vừa thêm (P3 review 24-11).
+        while len(self._traj_ts) > 1 and self._traj_ts[0] < moc:
             self._traj_ts.popleft()
             if self._trajectory:
                 self._trajectory.popleft()

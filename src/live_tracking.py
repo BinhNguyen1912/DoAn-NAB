@@ -1916,9 +1916,15 @@ class LiveTrackingSession:
             else:
                 self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
-        # `nghi_doi_tuong` ẩn ô Y NHƯ `no_evidence` (cùng luật với CLI): hệ không có bằng chứng về
-        # việc "vùng này là vật đã chọn" thì không được vẽ nó ra như đang bám.
-        an_o = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
+        # `no_evidence` ẩn ô (ô do LK suy diễn ⇒ vẽ ra là nói dối).
+        # `nghi_doi_tuong` từ 23-11 **KHÔNG ẩn nữa**: `_annotate` vẽ ô NÉT ĐỨT + nhãn "NGHI" (ticket #45).
+        # P1 review 24-11: bản trước vẫn gộp `nghi_doi_tuong` vào `an_o` ⇒ `shown = None` trong khi ảnh
+        # CÓ ô nét đứt ⇒ `shown.csv` + `scripts/ab_o_hien_thi_vs_gt.py::ty_le_o_ma` đếm "không vẽ ô" trên
+        # frame GT rỗng, tức metric nói ngược lại điều người xem thấy. Nay:
+        #   - `shown` = ô ĐÃ VẼ (nét đứt vẫn là ô được vẽ) ⇒ metric khớp ảnh;
+        #   - `bam` (cột thứ 12 của CSV) đã phân biệt `nghi_doi_tuong` với `tracking` ⇒ ai cần
+        #     "ô này chưa được kiểm" thì lọc theo cột đó, không cần bóp méo `shown`.
+        an_o = self._stats.bam == "no_evidence"
         if self._stats.bam == "nghi_doi_tuong":
             self._stats.nghi_doi_tuong_n = int(self._stats.nghi_doi_tuong_n or 0) + 1
         shown = None if an_o else obs_bbox

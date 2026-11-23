@@ -978,3 +978,31 @@ class TestSummaryCoNhipPhat:
         d = json.loads(out.read_text(encoding="utf-8"))
         assert d["wall_s"] == 30.76 and d["ti_le_thoi_luong"] == 0.677
         assert d["total_frames"] == 1, "extra không được ghi đè số của MetricsLogger"
+
+
+def test_no_reid_thang_yaml_qua_duong_hop_nhat_that():
+    """P2 review 24-11: test cũ chỉ kiểm `parse_args` (thứ tự cờ) — KHÔNG đi qua bước hợp nhất
+    YAML ⇒ đúng ca hỏng (YAML `reid_enabled: true`) không bị khoá.
+
+    Đo được: `_cfg_tu_cli` phải là **tri-state** (None/True/False) và `--no-reid` phải thắng YAML.
+    """
+    from src.config import merge_cli_overrides
+
+    ap = run_live.build_parser()
+    cfg_yaml = {"reid_enabled": True, "source": "data/binh1.mp4", "checkpoint": "tiny"}
+    cfg = merge_cli_overrides(dict(cfg_yaml), run_live._cfg_tu_cli(ap.parse_args(["--no-reid"])))
+    assert cfg["reid_enabled"] is False, "YAML bật re-ID mà --no-reid không thắng ⇒ tắt không được"
+    cfg = merge_cli_overrides(dict(cfg_yaml), run_live._cfg_tu_cli(ap.parse_args(["--reid"])))
+    assert cfg["reid_enabled"] is True
+    # không nói gì ⇒ giữ YAML
+    cfg = merge_cli_overrides({"reid_enabled": False}, run_live._cfg_tu_cli(ap.parse_args([])))
+    assert cfg["reid_enabled"] is False
+
+
+def test_run_info_ghi_cua_so_quy_dao(tmp_path):
+    """`run_info.json` phải nói quỹ đạo dài bao nhiêu — không có thì `./run demoip` (5 s) không
+    phân biệt được với mặc định 100 điểm (P2 review 24-11)."""
+    import inspect
+
+    src = inspect.getsource(run_live._write_run_info)
+    assert "trajectory_seconds" in src and "max_trajectory" in src

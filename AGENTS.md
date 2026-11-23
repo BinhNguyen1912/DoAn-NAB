@@ -729,9 +729,15 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   của "video nén 1,48×" trước ngày 23-11. Đừng tối ưu LK cho demo CLI; đừng hứa 30 FPS cho CLI.
 - **Vòng đọc nguồn cũ chạy hết tốc lực: relay ảnh JPEG 16 fps bị đọc 263–293 lần/s.** Đo 24-11 trên relay
   thật: `LatestFrameSource` đọc **263 lần/s** cho nguồn 16 fps ⇒ 18 lần giải mã JPEG vô ích mỗi khung,
-  1,6 MB/s loopback, **0,36 lõi (8 % của 4,3 lõi)**. Nay có `max_fps` (nguồn live 30, nguồn file `None`) và
+  1,6 MB/s loopback, **0,36 lõi (8 % của 4,3 lõi)**. Nay `LatestFrameSource` có trần đọc (CLI: `--smooth` đặt **30 lần ĐỌC nguồn/giây** — **KHÔNG phải 30 FPS
+  hiển thị**: nhịp vẽ vẫn ~20 tick/s, xem bullet `--smooth` ngay trên). Trước đó (nguồn live 30, nguồn file `None`) và
   ngủ theo **mốc đầu vòng**; đo lại: **60 lần/2 s = 30/s**. Nguồn **file** còn đọc **715 lần/s** (giải mã clip
   20 lần, ffmpeg mở 8 luồng tranh torch) — chưa sửa, cần quyết "skip hay block".
+- **`--trajectory-seconds` là WALL CLOCK — với nguồn FILE nó đổi nghĩa (đọc kèm khi trích số).** 5 s wall ở
+  6,3 bước/s = 31 frame video = **1,05 s clip 30 fps**; ở 9 bước/s = 45 frame = 1,5 s clip. Với `./run demoip`
+  (live) wall ≈ video nên đúng; với `./run video` thì "5 s quỹ đạo" **không** phải 5 s của clip ⇒ khi báo cáo
+  phải ghi "cửa sổ wall clock" và cấu hình máy. Trần số điểm tự nới theo cửa sổ (24-11) nên 30 bước/s × 5 s
+  vẫn đủ 150 điểm.
 - **"Quỹ đạo 100 điểm" KHÔNG phải "quỹ đạo theo thời gian".** Cùng 100 điểm = **16 s** ở 6,3 bước/s nhưng
   **32 s** ở 3,1 bước/s ⇒ đại lượng đổi nghĩa theo tốc độ máy. Từ 24-11 có `--trajectory-seconds` (cắt theo
   mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.

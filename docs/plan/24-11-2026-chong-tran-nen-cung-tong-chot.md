@@ -46,7 +46,7 @@ Ràng buộc không được vi phạm:
 ### C. Độ bền & hiệu năng
 
 - Không có nút thắt ẩn: **model ≈ 85 % của 4,3 lõi**; đọc nguồn 0,36 lõi (8 %) — `LatestFrameSource`
-  đọc **155 lần/s** trên relay 16 fps và **715 lần/s** trên nguồn file; vẽ + ghi mp4v 0,16 lõi (4 %).
+  đọc **263–293 lần/s** trên relay 16 fps và **715 lần/s** trên nguồn file (con số 155 là lần đo ĐẦU, trước khi sửa relay — nay thống nhất dùng 263–293, đo 24-11 trên relay thật); vẽ + ghi mp4v 0,16 lõi (4 %).
 - **Gốc của "video nén 1,48×"** là `smooth_display.py:528` ngủ nguyên 33,3 ms **sau** khi làm việc
   ⇒ **20,3 tick/s** (625 frame / 30,76 s khớp tuyệt đối).
 - Đính chính: `--smooth` **KHÔNG có LK** (LK chỉ ở `live_tracking`, đường web) ⇒ câu AGENTS §6
@@ -66,7 +66,7 @@ Ràng buộc không được vi phạm:
 | **Clip GT: tự sinh hay quay thật?** | Tự sinh `make_flood_gt_clip.py` (1,5 h, +3 h nếu quay) | Quay raw (rẻ, thật) | Synthetic ⇒ mIoU là **cận trên** (cấm trích) và **không** kiểm được cơ chế tràn thật | **Quay thật** (0,5 h người dùng), kiêm cảnh "hạn chế" của báo cáo |
 | **Video hiện tại tệ đến đâu?** | #45 chỉ phủ 5,3 s cuối; **5,1 s mask SAI** (f96→f143) vẫn còn | ~50 % video xấu | **B mô tả video của code CŨ**: sau #44 tổng là ≈ 30,8 s, sau #45 là nét đứt chứ không trắng | **Phải quay lại 1 phiên rồi mới nói** (việc 1) |
 | **`wall_s` có cần không?** | (không nêu) | (không nêu) | **Có, là bug fix**: mục 10 `democheck` vừa merge dùng **proxy** `Σ frame × mean_latency`, bỏ model load + thời gian kéo lại ô ⇒ có thể **FAIL oan** trên video đúng | **Có** — và đã làm một phần hôm 23-11 (`ti_le_thoi_luong` tự khai) |
-| **Chặn vòng đọc nguồn (8 % CPU)** | (không nêu) | Bán độ tươi, không mua FPS | Relay **155 lần/s** cho nguồn 16 fps; **file 715 lần/s** (giải mã clip 20 lần, ffmpeg mở 8 luồng tranh torch) | **Làm cho nguồn LIVE** (155 → ≤ 30/s). Nguồn file: để riêng (đổi ngữ nghĩa skip/block, cần quyết khác) |
+| **Chặn vòng đọc nguồn (8 % CPU)** | (không nêu) | Bán độ tươi, không mua FPS | Relay **263–293 lần/s** cho nguồn 16 fps (155 là lần đo đầu, cùng ngày, trước khi sửa relay); **file 715 lần/s** (giải mã clip 20 lần, ffmpeg mở 8 luồng tranh torch) | **Làm cho nguồn LIVE** (263–293 → ≤ 30/s).  **Làm cho nguồn LIVE** (263–293 → ≤ 30/s). Nguồn file: để riêng (đổi ngữ nghĩa skip/block, cần quyết khác) |
 | **Tô mask theo ROI (tiết 3,1 ms/tick)** | (không nêu) | (không nêu) | Đề xuất | **Bác**: fill mask/bbox 0,15–0,84 ⇒ có phần tràn **ngoài** ô; cắt theo ROI là **giấu đúng phần cần phơi ra**; 1,5 % của 4,3 lõi ⇒ không đáng |
 | **Nhịp phát theo deadline (20,3 → 29 Hz)** | (không nêu) | (không nêu) | Đề xuất (kèm cảnh báo CPU tăng) | **Hoãn**: sau #44 thời lượng đã đúng; trần thật là **relay 16 fps** ⇒ chỉ là mượt mắt, CPU tăng |
 | **Quỹ đạo 5 giây** | (không nêu) | 0,75 h | `--max-trajectory` **đã có**; 5 s = `round(5×vos_fps)` ⇒ **0,2 h**. Lý do thật: 100 điểm = **16 s** ở 6,3 bước/s nhưng **32 s** ở 3,1 bước/s ⇒ "quỹ đạo theo thời gian" đổi nghĩa theo tốc độ máy | **Làm** (0,4 h) |
@@ -82,7 +82,7 @@ Ràng buộc không được vi phạm:
 |---|---|---|---|---|
 | 1 | Quay 1 phiên live 25–30 s + `./run democheck` + **xem video** + đếm `nghi_doi_tuong` | 0,4 | mục 10 xanh (`|lệch| ≤ 5 %`); video ≥ 25 s; % frame nghi là số (mốc cũ 25,8 %); ghi `loadavg` | **người dùng** |
 | 2 | `wall_s` + `loadavg_1m`/`cpu_count` vào summary/run_info; mục 10 dùng số **tự khai** thay proxy | 1,0 | (a) `144505`: proxy 30,75 s vs `wall_s`; (b) ca kéo lại ô giữa phiên 10 s ⇒ proxy FAIL→PASS; (c) 2 test | đã làm 23-11, còn phần test ca (b) |
-| 3 | Chặn vòng đọc nguồn LIVE (`LatestFrameSource`, mốc đầu vòng) | 0,5 | relay **155 → ≤ 30** lần/s; CPU luồng capture **0,36 → ≤ 0,10 lõi**; `mask_age_p95` **không đổi** (đo trước/sau) | agent |
+| 3 | Chặn vòng đọc nguồn LIVE (`LatestFrameSource`, mốc đầu vòng) | 0,5 | relay **263–293 → 30** lần/s (đo: `f069e52`); CPU luồng capture **0,36 → ≤ 0,10 lõi**; `mask_age_p95` **không đổi** — ĐÃ ĐỔI TIÊU CHÍ (review 24-11, P2): telemetry tuổi mask nằm ở `status.json` của đường WEB, `max_fps` chỉ có ở đường CLI ⇒ không đo được trên đường vừa sửa. Tiêu chí thay bằng cận trên lý thuyết: nguồn 16,5 fps + trần đọc 30/s ⇒ ảnh cũ thêm ≤ 33 ms (trung bình ~16 ms) trên `mask_age_p95` 200–400 ms | agent |
 | 4 | Ghi `bbox_area_ratio` + `nghi_ly_do` ra CSV/`status.json` — **chỉ để chẩn đoán** | 1,0 | tái lập **tràn bắt đầu f96** từ CSV; **công thức diện tích tham chiếu phải ghi trong cột** (median 3 920 px ⇒ 35 %; 5 776 px ⇒ 32 %) | agent |
 | 5 | Quỹ đạo theo **thời gian** (5 s ⇒ `round(5×vos_fps)`, kẹp 16–64) | 0,4 | cùng 5 s: **32 điểm** ở 6,3 bước/s, **16 điểm** ở 3,1 bước/s; test hàm thuần | agent |
 | 6 | **1 clip GT tràn**: quay raw (take B = vật be trên tường be) + take C ("approach") + chạy `--no-reid @192 --vos-every 1`; người dùng tô ≥ 10 frame | 0,6 máy + người | **kill criterion**: baseline phải có **≥ 10 %** frame `area_ratio > 2,5`; take C: **0 lần báo** cổng diện tích (nếu báo ⇒ đóng `#46` = "KHÔNG BẬT") | agent + người dùng |

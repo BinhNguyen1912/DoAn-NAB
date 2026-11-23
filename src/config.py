@@ -22,6 +22,8 @@ DEFAULTS = {
     "model_cfg": os.path.join("configs", "samurai", "sam2.1_hiera_t.yaml"),
     "source": 0,                   # nguồn mặc định: webcam index 0 | rtsp:// | file
     "max_trajectory": 100,
+    # 24-11: cửa sổ quỹ đạo theo THỜI GIAN (giây). None = dùng số điểm (hành vi cũ).
+    "trajectory_seconds": None,
     "record_enabled": False,
     "record_path": "data/demo_hud.mp4",
     "record_fps": None,            # None → lấy từ nguồn (headless) / 30 (display)
@@ -83,7 +85,8 @@ _INT_KEYS = ("max_trajectory", "max_frames", "reanchor_every", "image_size",
              "reid_obj_ref_max", "reid_obj_min_side", "reid_obj_top_k",
              "reid_reacquire_confirm", "reid_verify_frames",
              "reid_search_grow_frames")   # source có thể int (webcam) hoặc str (file/RTSP)
-_FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score")
+_FLOAT_KEYS = ("record_fps", "mask_threshold", "reid_threshold", "reid_min_detect_score",
+                "trajectory_seconds")
 
 
 def _validate(cfg: dict) -> dict:

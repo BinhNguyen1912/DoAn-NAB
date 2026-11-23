@@ -737,6 +737,14 @@ class TestVeSinhWorkerCu:
             (tmp_path / PID_NAME).write_text(str(proc.pid), encoding="utf-8")
             WorkerFrameSource("0", out_dir=tmp_path)._prepare_dir()
 
+            # `SIGTERM` là bất đồng bộ: đọc `poll()` NGAY sau khi gửi thì dưới tải của full suite
+            # (1917 test) tiến trình chưa kịp chết ⇒ test flaky (gặp 24-11 khi chạy cả bộ, chạy
+            # riêng thì luôn xanh). Chờ CÓ HẠN 5 s — vẫn là khẳng định "phải bị dọn", chỉ không đòi
+            # nó xảy ra trong cùng một micro giây.
+            for _ in range(100):
+                if proc.poll() is not None:
+                    break
+                time.sleep(0.05)
             assert proc.poll() is not None, "worker cũ còn sống phải bị dọn"
             assert not (tmp_path / PID_NAME).exists()
         finally:

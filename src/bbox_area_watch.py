@@ -22,10 +22,21 @@ MIN_BBOX_AREA = 64        # ô nhỏ hơn 8×8 px thì không đủ tin để l�
 class BboxAreaWatch:
     """EMA diện tích ô bao + tỉ lệ hiện tại. Thuần số học, không I/O, không phụ thuộc frame."""
 
-    def __init__(self, alpha: float = EMA_ALPHA, min_area: int = MIN_BBOX_AREA):
+    SEED_N = 10               # số frame hợp lệ đầu để lấy TRUNG VỊ làm mốc
+
+    def __init__(self, alpha: float = EMA_ALPHA, min_area: int = MIN_BBOX_AREA,
+                 seed_n: int = SEED_N):
         self.alpha = float(alpha)
         self.min_area = int(min_area)
+        self.seed_n = max(1, int(seed_n))
         self.ema = None       # None = CHƯA có mốc (đừng ghi 0 — "chưa đo" khác "đo được 0")
+        self._seed: list = []  # diện tích `seed_n` frame hợp lệ đầu
+        self.n = 0             # số frame ĐÃ cập nhật mốc (0..seed_n = đang warm-up)
+
+    @property
+    def warming_up(self) -> bool:
+        """Chưa đủ `seed_n` mẫu ⇒ mốc còn tạm (frame đầu hẹp/rộng làm mốc sai — review 24-11)."""
+        return len(self._seed) < self.seed_n
 
     def update(self, bbox_w, bbox_h):
         """(w, h) → tỉ lệ `dien_tich / EMA` của frame này. `None` = chưa đủ dữ liệu / ô không hợp lệ.
@@ -41,8 +52,18 @@ class BboxAreaWatch:
         if dien_tich < self.min_area:
             return None
         if self.ema is None:
-            self.ema = float(dien_tich)
+            # Mốc = TRUNG VỊ `seed_n` frame hợp lệ đầu, không phải frame 1: ô kéo tay hẹp 2×/cạnh
+            # (diện tích ¼) làm mốc thì 4 frame sau cho tỉ lệ 4,00 / 3,67 / 3,40 / 3,17 — "báo tràn"
+            # trong một phiên ĐÚNG.
+            self._seed.append(float(dien_tich))
+            if len(self._seed) < self.seed_n:
+                return None            # warm-up: CHƯA công bố tỉ lệ
+            self._seed.sort()
+            giua = len(self._seed) // 2
+            self.ema = float(self._seed[giua])
+            self.n = len(self._seed)
             return 1.0
         ti_le = dien_tich / self.ema if self.ema > 0 else None
         self.ema = (1.0 - self.alpha) * self.ema + self.alpha * dien_tich
+        self.n += 1
         return ti_le

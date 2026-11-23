@@ -49,10 +49,13 @@ class TestCsv:
                            "cand_n",            # 23-11: số ứng viên đã chấm (sau prefilter NCC)
                            "cand_sinh_n",       # 23-11: số ô BỘ SINH đưa ra (trước bán kính/NCC)
                            "cand_ncc_loai",     # 23-11: số ứng viên bị cổng NCC loại
-                           "bbox_area_ratio"]   # 24-11: diện tích ô / EMA — CHỈ chẩn đoán
+                           "bbox_area_ratio",
+                           # 24-11 (review P2): mốc px + số mẫu — thiếu 2 cột này thì tỉ lệ
+                           # "ô / mốc" không kiểm lại được.
+                           "bbox_area_ref", "bbox_area_n"]
         assert len(rows) == 6  # header + 5 dòng
-        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
-        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -65,7 +68,7 @@ class TestCsv:
         logger.write_csv(str(out))
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
-        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -296,12 +299,12 @@ class TestTrangThaiTaiNhanDien:
         # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
         # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
         # 21-11 (cổng nhảy CÓ NHỚ): thêm cột `nghi_doi_tuong` ở CUỐI ⇒ 10 cột cuối.
-        assert header[-16:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
+        assert header[-18:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
                                 "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong",
                                 "verify_cos", "cos_truoc_cong", "cand_n", "cand_sinh_n",
                                 "cand_ncc_loai",
                                 # 24-11: cột chẩn đoán tràn, đặt ở CUỐI để CSV cũ vẫn đọc được
-                                "bbox_area_ratio"]
+                                "bbox_area_ratio", "bbox_area_ref", "bbox_area_n"]
         assert rows[3][header.index("state")] == "reacquiring"
         assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
         assert rows[4][header.index("reacquired")] == "1"
@@ -479,7 +482,7 @@ class TestCotChanDoanTran:
 
         from src.metrics_logger import CSV_HEADER, FrameRecord
 
-        assert CSV_HEADER[-1] == "bbox_area_ratio"
+        assert CSV_HEADER[-3:] == ["bbox_area_ratio", "bbox_area_ref", "bbox_area_n"]
         m = self._m()
         m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(10, 10),
                           lost=False, bbox_w=76, bbox_h=76))
@@ -487,8 +490,18 @@ class TestCotChanDoanTran:
         m.write_csv(str(out))
         rows = list(csv.DictReader(open(out, encoding="utf-8")))
         assert len(rows[0]) == len(CSV_HEADER), "header và dòng dữ liệu lệch số cột"
-        assert rows[0]["bbox_area_ratio"] == "1.000"
+        # 24-11 (review P2): mốc lấy TRUNG VỊ 10 frame đầu ⇒ frame ĐẦU chưa công bố tỉ lệ.
+        assert rows[0]["bbox_area_ratio"] == "", "warm-up phải TRỐNG, không phải 1.000 giả"
         assert rows[0]["bbox_w"] == "76"          # cột cũ vẫn đúng chỗ
+        # Sau warm-up: ô giữ nguyên cỡ ⇒ tỉ lệ đúng 1,000 và mốc ghi được để kiểm lại.
+        for i in range(1, 12):
+            m.log(FrameRecord(frame_idx=i, latency_ms=100.0, score=1.0, center=(10, 10),
+                              lost=False, bbox_w=76, bbox_h=76))
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert rows[-1]["bbox_area_ratio"] == "1.000"
+        assert rows[-1]["bbox_area_ref"] == "5776"
+        assert int(rows[-1]["bbox_area_n"]) == 12
 
     def test_o_rong_thi_cot_trong_khong_phai_0(self, tmp_path):
         import csv
