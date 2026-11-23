@@ -135,10 +135,24 @@ Diễn biến từng frame (đọc từ CSV, `mask_area`):
 
 | | C — lan truyền | A — re-ID |
 |---|---|---|
-| mask khi vật vắng (f258–336) | **0 px** cả 84 frame | 0 px… **trừ f280: `reacquired=1`, 8 971 px, `score` 17,33** ⇒ **nhận bừa trên vùng không có vật** |
-| vật vào lại ở f344 | **bám ngay** (83 660 px) | **0 px** — cổng xác minh **loại đúng vật vừa vào** |
-| nhận lại muộn nhất | – | f348 (73 506 px) ⇒ chậm **~8 frame (~0,3 s)** |
+| mask khi vật vắng (f253–337) | **0 px** ở 81/85 frame | **0 px** ở 64/444 frame; **25 lần `reacquired=1`**, trong đó **23 lần trong cửa sổ vắng, mỗi lần sống đúng 1 frame**, `mask_area` 257 → **22 202 px**, `score` **17,0–18,1** (cao nhất phiên) |
+| vật vào lại ở f344 | bám ngay (83 660 px) | `reid_score` **0,842** > ngưỡng 0,75, `cos_truoc_cong` 0,8556 ⇒ **không bị veto**; trễ **1 frame cấu trúc** do `reid_reacquire_confirm=2` (f345 mới `reacquired=1`) |
 | chi phí tìm lại | 0 | 64 bước × 26 ms |
+
+### ĐÍNH CHÍNH (23-11, sau khi đọc CSV thay vì đọc mắt)
+
+Bốn câu viết trước đó trong chính log này **sai**, sửa lại:
+
+| câu cũ | sự thật đo được |
+|---|---|
+| "SAM 2 gần như không bao giờ trả rỗng" | chỉ đúng với `rawrakhung` (**0/652**). `binh1` **113/333** rỗng, `be2` **81/444**. binh1 **có re-ID chỉ còn 5/333** rỗng — re-ID **lấp** chỗ rỗng bằng mask bịa ⇒ "ít mất dấu trên HUD" là dấu hiệu **xấu** |
+| "re-ID chậm ~8 frame" | trễ **1 frame cấu trúc** (`reid_reacquire_confirm=2`); phần còn lại chỉ là 4 frame GT sau khi về thấp hơn (0,003–0,058) |
+| "cổng xác minh **loại** đúng vật vừa vào" | **SAI** — không veto, `reid_score` 0,842 vượt ngưỡng. Ngược lại cổng đó **PASS một phantom** (f338 → f340 `verify_cos` 0,856 → f343 `lost`) |
+| "nhận bừa **1 lần** ở f280" | **25 lần** `reacquired=1`, **23 lần** trong cửa sổ vắng sống đúng **1 frame**, `score` 17–18 (**cao nhất phiên**), `track_cos = None` **25/25** |
+
+Và: **`track_cos` = 0 mẫu trên nhánh `--no-reid`** (`src/live_pipeline.py:237,454` gán cứng `None`) +
+`None` ở 25/25 frame `_reacquire` ⇒ cos **mù đúng chỗ** cần nhất; muốn dùng làm cổng phải bịt 2 lỗ rồi
+**đo lại**. `score` **không cùng thang**: `engine.start()` 17–22 vs `process()` 4–10 ⇒ cấm một θ tuyệt đối.
 
 **Mức được phép tuyên bố:** "trên clip này, cả 4 frame sau khi vật vào lại đều nghiêng về lan truyền
 (4/4, chênh trung bình **+0,027**)"; **CẤM** nói "lan truyền tốt hơn re-ID" như kết luận thống kê —
