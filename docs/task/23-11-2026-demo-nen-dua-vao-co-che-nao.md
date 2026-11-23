@@ -45,7 +45,7 @@
   `so_file_ghi_de`, `frame_goc_cua_phien`) để `score_miou` đối chiếu; **không ghi đè** manifest có sẵn;
 - 8 test mới (`tests/test_run_live_cli.py::TestDumpMask`).
 
-### 3. A/B quyết định — 3 lần mỗi nhánh, chèn kẽ, cây sạch (`git_rev 7bac7ae`)
+### 3. A/B quyết định — 3 lần mỗi nhánh, chèn kẽ, cây sạch (`git_rev 2fb1455`)
 
 Lệnh (nhánh A; nhánh C bỏ `--reid ...` và thêm `--lost-after-frames 999 --lost-score-threshold -99`):
 
@@ -88,6 +88,32 @@ Diện tích mask thực tế trong 2 bộ dump đã commit (`data/ab_binh1_*_la
 tường/áo) và **đặt mask sai ở 3/3 frame có vật**. Ngược lại SAM 2 lan truyền trả **mask rỗng đúng
 lúc vật vắng** — tức lý do tồn tại của cổng đóng băng ("chống SAM 2 tưởng tượng mask") **không đúng
 trên clip này**: thứ tưởng tượng mask là re-ID, không phải model.
+
+### 4. Telemetry sau khi sửa (review độc lập bắt 2 lỗi P1) — và nó nói được gì
+
+Review chỉ ra `run_tracking` **không truyền** 3 số telemetry ⇒ 3 cột **luôn trống** trong chính
+artifact quyết định. Sau khi sửa (`2fb1455`), CSV của nhánh A cho chuỗi sự kiện đầy đủ:
+
+| frame | state | `cand_sinh_n` (bộ sinh) | `cand_n` (đã chấm) | `cand_ncc_loai` | `reid_score` / ncc | `verify_cos` |
+|---|---|---|---|---|---|---|
+| 112 | lost | – | – | – | – | – |
+| 113 | reacquiring | **14** | **0** | **0** | −1 | – |
+| 114 | reacquiring | **14** | **0** | **0** | −1 | – |
+| 115 | reacquiring | 14 | 12 | 0 | 0,854 (ncc 0,614) | – |
+| 116 | tracking (**nhận lại**) | – | – | – | 0,841 | – |
+| 117 | tracking | – | – | – | – | **0,8707** |
+| 118 | tracking | – | – | – | – | **0,8746** |
+
+Ba điều đọc được, không phải suy đoán:
+
+1. **Bộ sinh KHÔNG rỗng** (14 ô) mà `cand_n = 0` ở f113/114 — và `cand_ncc_loai = 0` ⇒ **không phải
+   cổng NCC**. Thủ phạm là `_filter_by_radius` ("vùng tìm nở dần" chỉ tìm quanh chỗ cũ).
+2. **Cổng XÁC MINH mask-vs-mask PASS** với cos **0,871 / 0,875** ở f117/f118 — ngay sau lần nhận lại
+   ở f116 — mà lần nhận đó vẫn là **nhận SAI** (IoU 0,0016 ở f181). ⇒ Cổng mask-cos **không tách
+   được** vùng sai: đúng như dải cos vùng sai đo được trước đó (0,75–0,99). Đừng "sửa" bằng cách
+   hạ/nâng ngưỡng cos.
+3. `verify_cos` nằm ở **2 frame SAU** frame nhận lại (`verify_frames = 2`), không phải frame nhận lại
+   — đã sửa comment cột trong `src/metrics_logger.py` để lần sau không đọc nhầm.
 
 ### Kết luận
 

@@ -1,12 +1,12 @@
 {
-  "git_rev": "f065a98573c8fb906b1049393e5d1ff781d4a39c",
+  "git_rev": "2fb1455c46ae33e7e3c503583b8e20d83b65ee9f",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-23T11:38:08",
+    "do_luc": "2026-11-23T11:58:20",
     "lenh": "scripts/score_miou.py score --gt docs/gt/b1 --pred-dir data/ab_binh1_nofreeze_lan3_masks --out data/miou_binh1_nofreeze_lan3_2026-11-23_metrics.json",
-    "git_rev": "f065a98573c8fb906b1049393e5d1ff781d4a39c",
+    "git_rev": "2fb1455c46ae33e7e3c503583b8e20d83b65ee9f",
     "git_dirty": true,
     "git_dirty_code": false,
     "git_loi": null,
@@ -20,7 +20,8 @@
     "phuong_phap_gt": "GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ hoàn toàn",
     "mask_manifest": {
       "nguon": "data/binh1.mp4",
-      "image_size": 192,
+      "image_size_yeu_cau": 192,
+      "image_size_hieu_luc": 192,
       "vos_every": 1,
       "mask_smoothing": 1.0,
       "bbox_xywh": [
@@ -30,6 +31,10 @@
         410
       ],
       "lenh": "tools/run_live.py --source data/binh1.mp4 --image-size 192 --bbox 300,275,150,410 --max-frames 333 --lost-after-frames 999 --lost-score-threshold -99 --dump-mask-frames 0,30,60,91,121,151,181,211,241,272,302,332 --dump-mask-dir data/ab_binh1_nofreeze_lan3_masks --metrics-csv data/ab_binh1_nofreeze_lan3_2026-11-23_metrics.csv",
+      "git_rev": "2fb1455",
+      "git_dirty": true,
+      "git_dirty_code": false,
+      "do_luc": "2026-11-23T11:57:28",
       "frames_yeu_cau": [
         0,
         30,
