@@ -715,3 +715,23 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   video nộp bài. Nay `visualizer.lost_banner_text(tu_tim_lai)` chọn câu theo khả năng THẬT, `reid_enabled` được
   set ở cả `smooth_display` và `live_pipeline`; mặc định `False` (không biết thì không hứa). Khi thêm đường
   vẽ mới: phải đi qua `lost_banner_text`, đừng viết chuỗi mới.
+- **Số hiệu năng chỉ được trích theo TỈ LỆ, không trích ms tuyệt đối làm số công bố.** Đo 23-11 trên cùng
+  một code, máy có `loadavg` 6,2–8,2 (agent khác chạy `pytest`/`npm`): file **201–223 ms**, relay **211–393 ms**;
+  lúc máy rảnh (`loadavg` 1,5–4,3) cùng code cho **206/303 ms** và **293/321 ms** — tức **2–3× chậm hơn** số
+  lưu trữ (87–103 ms) chỉ vì trạng thái máy. Vì thế `run_info.json` từ 23-11 ghi `loadavg_1m`/`cpu_count`/
+  `live_workers_khac`; **thiếu `loadavg` thì con số không được vào báo cáo**. Cũng đừng trích
+  "live chậm 1,8× so với file" — hai số đó lấy từ hai artifact khác ngày, `n = 1`, và hôm nay đo chèn kẽ
+  **không tách được**.
+- **`--smooth` (đường `./run demoip`) KHÔNG có LK** — `grep light_tracker src/smooth_display.py` = 0; LK chỉ
+  ở `live_tracking` (đường web/worker). Câu trong mục này *"live 108 ms mà hình vẫn 30 FPS là nhờ luồng riêng
+  + LK"* **chỉ đúng cho đường web**. Với CLI, overlay là kết quả VOS gần nhất vẽ lên frame mới, và nhịp vẽ thật
+  là **20,3 tick/s** vì `smooth_display.py` ngủ `1/30 s` **sau** khi đã làm việc (16 + 33 ms) — chính là gốc
+  của "video nén 1,48×" trước ngày 23-11. Đừng tối ưu LK cho demo CLI; đừng hứa 30 FPS cho CLI.
+- **Vòng đọc nguồn cũ chạy hết tốc lực: relay ảnh JPEG 16 fps bị đọc 263–293 lần/s.** Đo 24-11 trên relay
+  thật: `LatestFrameSource` đọc **263 lần/s** cho nguồn 16 fps ⇒ 18 lần giải mã JPEG vô ích mỗi khung,
+  1,6 MB/s loopback, **0,36 lõi (8 % của 4,3 lõi)**. Nay có `max_fps` (nguồn live 30, nguồn file `None`) và
+  ngủ theo **mốc đầu vòng**; đo lại: **60 lần/2 s = 30/s**. Nguồn **file** còn đọc **715 lần/s** (giải mã clip
+  20 lần, ffmpeg mở 8 luồng tranh torch) — chưa sửa, cần quyết "skip hay block".
+- **"Quỹ đạo 100 điểm" KHÔNG phải "quỹ đạo theo thời gian".** Cùng 100 điểm = **16 s** ở 6,3 bước/s nhưng
+  **32 s** ở 3,1 bước/s ⇒ đại lượng đổi nghĩa theo tốc độ máy. Từ 24-11 có `--trajectory-seconds` (cắt theo
+  mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.

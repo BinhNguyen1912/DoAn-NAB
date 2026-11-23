@@ -48,10 +48,11 @@ class TestCsv:
                            "cos_truoc_cong",    # 23-11: cos cao nhất TRƯỚC mọi cổng
                            "cand_n",            # 23-11: số ứng viên đã chấm (sau prefilter NCC)
                            "cand_sinh_n",       # 23-11: số ô BỘ SINH đưa ra (trước bán kính/NCC)
-                           "cand_ncc_loai"]     # 23-11: số ứng viên bị cổng NCC loại
+                           "cand_ncc_loai",     # 23-11: số ứng viên bị cổng NCC loại
+                           "bbox_area_ratio"]   # 24-11: diện tích ô / EMA — CHỈ chẩn đoán
         assert len(rows) == 6  # header + 5 dòng
-        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
-        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -64,7 +65,7 @@ class TestCsv:
         logger.write_csv(str(out))
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
-        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -295,10 +296,12 @@ class TestTrangThaiTaiNhanDien:
         # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
         # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
         # 21-11 (cổng nhảy CÓ NHỚ): thêm cột `nghi_doi_tuong` ở CUỐI ⇒ 10 cột cuối.
-        assert header[-15:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
+        assert header[-16:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
                                 "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong",
                                 "verify_cos", "cos_truoc_cong", "cand_n", "cand_sinh_n",
-                                "cand_ncc_loai"]
+                                "cand_ncc_loai",
+                                # 24-11: cột chẩn đoán tràn, đặt ở CUỐI để CSV cũ vẫn đọc được
+                                "bbox_area_ratio"]
         assert rows[3][header.index("state")] == "reacquiring"
         assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
         assert rows[4][header.index("reacquired")] == "1"
@@ -456,3 +459,46 @@ class TestChiPhiTimLai:
         assert s["search_n"] == 1, "chỉ frame ĐO ĐƯỢC mới vào mẫu"
         assert s["search_mean_ms"] == 400.0, "0,0 không được kéo mean xuống"
         assert s["search_khong_do_n"] == 2, "phải khai riêng số frame đóng băng KHÔNG đo được"
+
+
+class TestCotChanDoanTran:
+    """Plan 24-11 việc 4 — `bbox_area_ratio` là cột CUỐI của CSV, TRỐNG = chưa đo.
+
+    Vì sao phải là cột CUỐI: `DictReader` của mọi script phân tích cũ đọc theo tên, nhưng CSV cũ
+    (trước 24-11) không có cột này ⇒ chèn vào giữa sẽ làm lệch thứ tự giữa header và dòng dữ liệu
+    (đã xảy ra trong lúc làm: header 22 cột còn dòng 22 giá trị nhưng lệch vị trí, cột đọc ra rỗng).
+    """
+
+    def _m(self):
+        from src.metrics_logger import MetricsLogger
+
+        return MetricsLogger()
+
+    def test_cot_nam_o_cuoi_va_csv_cu_van_doc_duoc(self, tmp_path):
+        import csv
+
+        from src.metrics_logger import CSV_HEADER, FrameRecord
+
+        assert CSV_HEADER[-1] == "bbox_area_ratio"
+        m = self._m()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(10, 10),
+                          lost=False, bbox_w=76, bbox_h=76))
+        out = tmp_path / "c.csv"
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert len(rows[0]) == len(CSV_HEADER), "header và dòng dữ liệu lệch số cột"
+        assert rows[0]["bbox_area_ratio"] == "1.000"
+        assert rows[0]["bbox_w"] == "76"          # cột cũ vẫn đúng chỗ
+
+    def test_o_rong_thi_cot_trong_khong_phai_0(self, tmp_path):
+        import csv
+
+        from src.metrics_logger import FrameRecord
+
+        m = self._m()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=0.0, center=None, lost=True,
+                          bbox_w=0, bbox_h=0))
+        out = tmp_path / "d.csv"
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert rows[0]["bbox_area_ratio"] == "", "mất dấu phải TRỐNG (chưa đo), không phải 0"

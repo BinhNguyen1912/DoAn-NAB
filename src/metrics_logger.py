@@ -53,7 +53,11 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # 23-11-2026 (P1 review): số ô BỘ SINH đưa ra (trước bán kính + trước cổng NCC) và số
               # bị cổng NCC loại — thiếu 2 số này thì `cand_n = 0` không phân biệt được
               # "bộ sinh rỗng" với "cổng chặn".
-              "cand_sinh_n", "cand_ncc_loai"]
+              "cand_sinh_n", "cand_ncc_loai",
+              # 24-11-2026 (plan "chống tràn nền cùng tông", việc 4): `diện tích ô / EMA(diện tích ô)`
+              # — CHỈ ĐỂ CHẨN ĐOÁN, KHÔNG phải cổng (xem `src/bbox_area_watch.py`). Đặt ở CUỐI để
+              # CSV cũ vẫn đọc được bằng `DictReader` và thứ tự cột không lệch với dòng dữ liệu.
+              "bbox_area_ratio"]
 
 
 @dataclass
@@ -81,6 +85,9 @@ class FrameRecord:
     # `cos` giữa mask đang bám và 3–5 NEO danh tính (`src/track_identity.py`). `None` = CHƯA ĐO
     # (không bật / chưa đủ neo) — không được ghi thành 0.
     track_cos: Optional[float] = None
+    # `dien_tich ô / EMA(diện tích ô)` (24-11, plan chống tràn — CHỈ chẩn đoán, KHÔNG phải cổng).
+    # None = chưa đo (ô rỗng/không hợp lệ hoặc phiên cũ) — khác `1.0` = ô đúng cỡ bình thường.
+    bbox_area_ratio: Optional[float] = None
     # `True` = cổng nhảy đã báo nghi đổi đối tượng và CHƯA được xoá (overlay bị ẩn).
     nghi_doi_tuong: Optional[bool] = None
     # `cos` mask-vs-mask của lần XÁC MINH. CẨN THẬN: cổng xác minh chạy ở các frame **SAU** frame
@@ -128,10 +135,20 @@ class MetricsLogger:
 
     def __init__(self, sampler=None):
         self.records = []
+        # EMA diện tích ô cho cột chẩn đoán `bbox_area_ratio` (24-11). Một instance / một phiên.
+        from src.bbox_area_watch import BboxAreaWatch
+
+        self._area_watch = BboxAreaWatch()
         self.sampler = sampler
 
     def log(self, record: FrameRecord) -> None:
-        """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame)."""
+        """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame).
+
+        `bbox_area_ratio` được tính Ở ĐÂY (không trong từng pipeline) để mọi đường — CLI tuần tự,
+        `--smooth`, worker web — có cùng cột, và luật EMA chỉ tồn tại ở MỘT chỗ.
+        """
+        if record.bbox_area_ratio is None:
+            record.bbox_area_ratio = self._area_watch.update(record.bbox_w, record.bbox_h)
         self.records.append(record)
         if self.sampler is not None:
             self.sampler.sample()
@@ -253,6 +270,8 @@ class MetricsLogger:
                     "" if r.cand_n is None else str(int(r.cand_n)),
                     "" if r.cand_sinh_n is None else str(int(r.cand_sinh_n)),
                     "" if r.cand_ncc_loai is None else str(int(r.cand_ncc_loai)),
+                    # TRỐNG = chưa đo, không phải 0 (ô rỗng hoặc ô < 8×8 px).
+                    f"{float(r.bbox_area_ratio):.3f}" if r.bbox_area_ratio is not None else "",
                 ])
         return str(path)
 
