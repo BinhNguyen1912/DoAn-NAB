@@ -336,6 +336,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     try:
         if preselect_bbox is not None:
             worker.set_bbox(preselect_bbox)
+            # 23-11: đường `--bbox` (không kéo chuột) cũng phải để lại ô chọn trong summary.
+            summary.prompt_bbox = tuple(int(v) for v in preselect_bbox)
             mode = "track"
         while True:
             frame, _ = frames.latest()
@@ -449,6 +451,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 watch.reset()          # phiên bám MỚI ⇒ xoá nghi (nếu không, ô vừa chọn vẫn bị ẩn)
                 switch = False
                 _bbox_moi = selector.take_bbox()
+                # 23-11: ô chọn ĐẦU TIÊN + đếm lần chọn lại (replay + giải thích phiên)
+                if summary.prompt_bbox is None:
+                    summary.prompt_bbox = tuple(int(v) for v in _bbox_moi)
+                else:
+                    summary.reselect_n += 1
                 # Cảnh báo nếu ô chọn phủ KHUÔN MẶT (đo 21-11: ô chọn trùng mặt IoU 0,768, và đặc trưng
                 # tông da làm re-ID "nhận lại" vào mặt). Chỉ cảnh báo, KHÔNG sửa ô.
                 try:

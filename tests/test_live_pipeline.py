@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from src.synthetic_video import generate_tracking_sequence
-from src.live_pipeline import run_tracking
+from src.live_pipeline import InteractiveSummary, run_tracking
 
 
 @pytest.mark.slow
@@ -390,3 +390,59 @@ class TestCoNghiEpTimLaiThatSu:
         assert B in session.start_calls, (
             "`c` phải neo lại engine ở ô LÚC NGHI (ô B của cú nhảy), không phải ô cũ"
         )
+
+
+class TestPromptBboxTrongSummary:
+    """23-11-2026 (review 3 ý kiến): `./run demoip` KHÔNG truyền `--bbox` — người dùng kéo chuột.
+
+    Trước đây ô chọn không được lưu ở ĐÂU CẢ ⇒ `run_info` không có bbox ⇒ **không replay được
+    phiên nào** (video `--record` lại đã cháy HUD nên không dùng làm nguồn thô). Nay summary mang
+    `prompt_bbox` (ô ĐẦU TIÊN) + `reselect_n`.
+    """
+
+    def test_summary_ghi_o_chon_dau_tien_va_dem_lan_chon_lai(self):
+        summary = InteractiveSummary()
+        assert summary.prompt_bbox is None and summary.reselect_n == 0
+        # mô phỏng luật trong vòng lặp: lần đầu lưu, các lần sau đếm
+        for bbox in [(10, 10, 50, 50), (20, 20, 60, 60)]:
+            if summary.prompt_bbox is None:
+                summary.prompt_bbox = tuple(bbox)
+            else:
+                summary.reselect_n += 1
+        assert summary.prompt_bbox == (10, 10, 50, 50)
+        assert summary.reselect_n == 1
+
+    def test_run_smooth_display_ghi_prompt_bbox(self, tmp_path, write_video):
+        """Đường `--smooth` (đường demo CHÍNH): ô chọn phải tới được summary."""
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.smooth_display import run_smooth_display
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        class Eng:
+            def start(self, frame, bbox):
+                m = np.zeros((120, 200), bool)
+                m[10:50, 10:50] = True
+                return TrackingResult(frame_idx=0, mask=m, bbox=(10, 10, 50, 50), score=5.0,
+                                      elapsed_ms=1.0)
+
+            def process(self, frame):
+                return self.start(frame, None)
+
+            def reset(self):
+                pass
+
+        fx = generate_tracking_sequence(num_frames=20, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        st = {"n": 0}
+
+        def display(img, mode):
+            st["n"] += 1
+            return list(QUIT_KEYS)[0] if st["n"] >= 10 else -1
+
+        summary = run_smooth_display(source=str(path), engine=Eng(),
+                                     selector=PromptSelector(frame_shape=(120, 200, 3)),
+                                     display=display, preselect_bbox=(10, 10, 50, 50))
+        assert summary.prompt_bbox == (10, 10, 50, 50)

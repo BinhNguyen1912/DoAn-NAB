@@ -12,6 +12,7 @@ Lưu ý  : số FPS/latency là THỰC ĐO trên phần cứng chạy (ADR-0002:
          không claim real-time). Chức năng vẽ HUD đầy đủ/quỹ đạo là ticket 06.
 """
 from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -238,6 +239,12 @@ class InteractiveSummary:
     """Số liệu 1 phiên tương tác (frame chọn không đếm, chỉ đếm frame đã track)."""
 
     processed: int = 0
+    # 23-11-2026 (review 3 ý kiến): ô chọn ĐẦU TIÊN của người dùng, hệ `(x1, y1, x2, y2)`.
+    # Vì sao phải lưu: `./run demoip` KHÔNG truyền `--bbox` (người dùng kéo chuột) ⇒ trước đây
+    # `run_info` không có bbox nào ⇒ **không replay được phiên nào** (mà video `--record` lại đã
+    # cháy HUD nên cũng không dùng làm nguồn thô được).
+    prompt_bbox: Optional[Tuple[int, int, int, int]] = None
+    reselect_n: int = 0        # số lần người dùng bấm `r` chọn lại giữa phiên
 
 
 def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
@@ -333,6 +340,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
+                    # 23-11: lưu ô chọn ĐẦU TIÊN + đếm số lần chọn lại (để replay/giải thích phiên)
+                    if summary.prompt_bbox is None:
+                        summary.prompt_bbox = tuple(int(v) for v in bbox)
+                    else:
+                        summary.reselect_n += 1
                     _canh_bao_neu_chon_mat(frame, bbox, visualizer)
                     last_result = (reid_session.start(frame, bbox) if reid_session is not None
                                    else engine.start(frame, bbox))
