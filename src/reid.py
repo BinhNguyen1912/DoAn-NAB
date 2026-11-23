@@ -493,14 +493,15 @@ class ReIdSession:
         self._frame_idx += 1
 
         if self._state == STATE_TRACKING:
-            result = self.engine.process(frame)
-            self._stamp_frame_idx(result)
             # Cổng hiển thị đã kết luận "vùng này KHÔNG phải vật" ⇒ bỏ track NGAY (không chờ
-            # `lost_after_frames`): đồng thời KHÔNG nạp mẫu của vùng sai vào `_obj_refs`/neo
-            # (nhiễm bộ nhớ là đường dẫn tới "nhận lại" đúng vùng sai — đo 23-11: ô tường be được
-            # nhận lại với cosine 0,92). `_auto_recover()` đã giữ mẫu tham chiếu + mốc tìm cũ.
+            # `lost_after_frames`), và KHÔNG gọi `engine.process()` cho frame này (P3 review 23-11:
+            # gọi rồi vứt là phí ~90–160 ms CPU). Đồng thời KHÔNG nạp mẫu của vùng sai vào
+            # `_obj_refs`/neo — nhiễm bộ nhớ là đường dẫn tới "nhận lại" đúng vùng sai (đo 23-11: ô
+            # tường be được nhận lại với cosine 0,92). `_auto_recover()` giữ mẫu tham chiếu.
             if self._suspicious:
                 return self._auto_recover()
+            result = self.engine.process(frame)
+            self._stamp_frame_idx(result)
             # "Còn thấy vật" = mask không rỗng **VÀ** score > ngưỡng. SAM 2 hay "tưởng tượng" ra
             # mask khi vật đã rời khung (đo thật 27-10: mask 782 px nhưng score = -4,98) — nếu chỉ
             # dựa vào mask rỗng thì hệ thống không bao giờ vào LOST và sẽ bám rác mãi mãi.
@@ -723,8 +724,13 @@ class ReIdSession:
     def _auto_recover(self) -> Step:
         """Tự bỏ track hiện tại (nghi sai) + về trạng thái TÌM LẠI, GIỮ mẫu tham chiếu.
 
-        Không xoá `_obj_refs`/`_obj_template` — đó là ký ức để tự nhận diện lại. Không cập nhật
-        `_last_center` theo ô sai (giữ mốc cũ để vùng tìm không bị lệch theo vật bám nhầm).
+        Không xoá `_obj_refs`/`_obj_template` — đó là ký ức để tự nhận diện lại.
+
+        ⚠ MỐC TÌM (`_last_center`) **KHÔNG** phải "ô tốt gần nhất": `_collect_reference()` cập nhật
+        nó ở MỌI frame tracking (kể cả những frame đang trôi), nên khi cổng báo nghi thì mốc đã là
+        vùng đang bị nghi. Vùng tìm vì thế bắt đầu quanh chỗ sai rồi **nở dần** (`search_grow_step`,
+        mặc định 12 frame mới mở toàn khung) — đó là giá phải trả để không nhảy sang vật khác ngay
+        frame đầu; đừng đọc dòng này thành "mốc tìm luôn đúng chỗ vật".
         """
         try:
             self.engine.reset()

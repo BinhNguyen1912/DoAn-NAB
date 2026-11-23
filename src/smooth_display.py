@@ -297,7 +297,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     watch = IdentityWatch()
     switch = False
     last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)
-    bbox_truoc_nghi = None  # ô đang bị nghi (dùng cho phím `c` = "vẫn đúng, tiếp tục")
+    # Ô của CHÍNH frame bật cờ nghi (tức ô model vừa đưa ra ở cú nhảy), dùng cho phím `c`.
+    # KHÔNG phải "ô trước cú nhảy": `c` nghĩa là "vùng đang hiện là đúng", nên neo vào ô đó mới khớp
+    # ý người dùng; neo về ô trước cú nhảy là neo về chỗ đã trôi đi (P1 review 23-11).
+    bbox_luc_nghi = None
 
     def _bao_nghi(co):
         """Đồng bộ cờ nghi xuống luồng suy luận — CHỈ khi giá trị đổi.
@@ -306,14 +309,14 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
         nghi trong `ReIdSession`, nếu không bước tracking kế tiếp lại bị bỏ track ngay và hệ quay
         vòng: bỏ → tìm lại → người dùng xác nhận → bỏ tiếp.
         """
-        nonlocal last_nghi, bbox_truoc_nghi
+        nonlocal last_nghi, bbox_luc_nghi
         if co and not last_nghi and reid_session is None:
             print("[WARN] cổng NGHI ĐỔI ĐỐI TƯỢNG bật nhưng KHÔNG có Re-ID (thiếu --reid) ⇒ hệ "
                   "không tự tìm lại được; bấm r rồi kéo chọn lại ô quanh vật.")
         if co and not last_nghi:
-            # Nhớ ô đang bị nghi: nếu người dùng bấm `c` ("vẫn đúng") thì cần ô ĐÓ để neo lại —
-            # sau bước bỏ track, kết quả mới là mask rỗng nên `last_bbox` không còn dùng được.
-            bbox_truoc_nghi = tuple(last_bbox) if last_bbox and tuple(last_bbox) != (0, 0, 0, 0) else None
+            # Nhớ ô LÚC NGHI (ô của chính frame này): nếu người dùng bấm `c` ("vẫn đúng") thì cần ô
+            # đó để neo lại — sau bước bỏ track, kết quả mới là mask rỗng nên `last_bbox` không dùng được.
+            bbox_luc_nghi = tuple(last_bbox) if last_bbox and tuple(last_bbox) != (0, 0, 0, 0) else None
         if co != last_nghi:
             worker.request_suspicious(co)
             last_nghi = co
@@ -414,10 +417,12 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 # Từ 23-11: cờ nghi khiến session BỎ track (để đi tìm lại) ⇒ "tiếp tục" phải NEO
                 # LẠI engine ở ô vừa bị nghi, không chỉ xoá cờ (nếu không, hệ vẫn đang ở trạng thái
                 # tìm lại và người dùng tưởng đã xác nhận xong).
-                if bbox_truoc_nghi is not None:
-                    worker.reanchor(bbox_truoc_nghi)
+                # Chỉ neo lại khi CÓ Re-ID: không có Re-ID thì `c` giữ nguyên hành vi cũ (chỉ xoá cờ),
+                # tránh reset ký ức SAM 2 + nháy HUD "kéo chuột chọn" vô ích (P2 review 23-11).
+                if bbox_luc_nghi is not None and reid_session is not None:
+                    worker.reanchor(bbox_luc_nghi)
                     consumed_seq = 0
-                    last_bbox = bbox_truoc_nghi
+                    last_bbox = bbox_luc_nghi
                 print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                 continue
             if key == RESET_KEY:

@@ -296,4 +296,97 @@ class TestCoNghiEpTimLaiInline:
 
         src = inspect.getsource(lp.run_interactive)
         pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
-        assert src.index("reid_session.start(frame, bbox_truoc_nghi)", pos_c) > pos_c
+        assert src.index("reid_session.start(frame, bbox_luc_nghi)", pos_c) > pos_c
+
+
+class TestCoNghiEpTimLaiThatSu:
+    """P2 review 23-11: đường `run_interactive` (KHÔNG `--smooth`) trước đây chỉ có test đọc source.
+
+    Một regression thật — không gọi `set_suspicious`, gọi sai giá trị, hay `c` neo sai ô — vẫn xanh.
+    Test này chạy vòng lặp thật với session giả GHI LẠI lời gọi.
+    """
+
+    def test_cong_nghi_goi_set_suspicious_va_c_neo_lai(self, tmp_path, write_video):
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        A, B = (10, 10, 50, 50), (80, 10, 120, 50)     # nhảy 70 px
+
+        def _res(bbox):
+            m = np.zeros((120, 200), bool)
+            m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+            return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+        class Engine:
+            def __init__(self):
+                self.jump = False
+
+            def start(self, frame, bbox):
+                return _res(A)
+
+            def process(self, frame):
+                return _res(B if self.jump else A)
+
+            def reset(self):
+                pass
+
+        class Session:
+            """Session giả: đủ API mà `run_interactive` dùng, ghi lại mọi lời gọi."""
+
+            state = "tracking"
+
+            def __init__(self):
+                self.suspicious_calls = []
+                self.start_calls = []
+                self.n = 0
+
+            def step(self, frame):
+                self.n += 1
+                bbox = B if self.jump else A
+                return Step(result=_res(bbox), state="tracking")
+
+            jump = False
+
+            def start(self, frame, bbox):
+                self.start_calls.append(tuple(bbox))
+                return _res(tuple(bbox))
+
+            def reset(self):
+                pass
+
+            def set_suspicious(self, co):
+                self.suspicious_calls.append(bool(co))
+
+        from src.reid import Step
+
+        fx = generate_tracking_sequence(num_frames=30, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = Engine()
+        session = Session()
+        session.jump = engine.jump
+        selector = PromptSelector(frame_shape=(120, 200, 3))
+        state = {"n": 0, "da_bam_c": False}
+
+        def display(img, mode):
+            state["n"] += 1
+            if state["n"] >= 5 and not engine.jump:
+                engine.jump = True          # bật cú nhảy SAU khi đã có mốc cũ
+                session.jump = True
+            if True in session.suspicious_calls and not state["da_bam_c"]:
+                state["da_bam_c"] = True     # cổng đã báo nghi ⇒ bấm `c` = "vẫn đúng"
+                return CONTINUE_KEY
+            return list(QUIT_KEYS)[0] if state["n"] >= 40 else -1
+
+        run_interactive(source=str(path), engine=engine, selector=selector, display=display,
+                        preselect_bbox=A, reid_session=session)
+
+        assert session.suspicious_calls[:1] == [True], (
+            "cổng nghi phải báo xuống Re-ID (nếu không, session vẫn 'tracking' vùng sai)"
+        )
+        assert session.suspicious_calls[-1] is False, "bấm `c` phải xoá cờ nghi"
+        assert B in session.start_calls, (
+            "`c` phải neo lại engine ở ô LÚC NGHI (ô B của cú nhảy), không phải ô cũ"
+        )

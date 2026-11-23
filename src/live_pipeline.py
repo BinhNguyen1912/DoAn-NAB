@@ -300,16 +300,18 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         watch = IdentityWatch()
         switch = False
         last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
-        bbox_truoc_nghi = None     # ô đang bị nghi (phím `c` cần nó để neo lại engine)
+        # Ô của CHÍNH frame bật cờ nghi (ô model vừa đưa ra ở cú nhảy) — KHÔNG phải ô trước cú nhảy;
+        # `c` = "vùng đang hiện là đúng" nên neo vào ô đó mới khớp ý người dùng (P1 review 23-11).
+        bbox_luc_nghi = None
 
         def _bao_nghi(co):
             """Báo cờ nghi cho `ReIdSession` — CHỈ khi đổi (xem `smooth_display` cùng luật)."""
-            nonlocal last_nghi, bbox_truoc_nghi
+            nonlocal last_nghi, bbox_luc_nghi
             if co and not last_nghi and reid_session is None:
                 print("[WARN] cổng NGHI ĐỔI ĐỐI TƯỢNG bật nhưng KHÔNG có Re-ID (thiếu --reid) ⇒ hệ "
                       "không tự tìm lại được; bấm r rồi kéo chọn lại ô quanh vật.")
             if co and not last_nghi:
-                bbox_truoc_nghi = (tuple(last_result.bbox)
+                bbox_luc_nghi = (tuple(last_result.bbox)
                                    if (last_result is not None and last_result.mask.any()) else None)
             if co != last_nghi:
                 last_nghi = co
@@ -365,10 +367,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     switch = False
                     # Từ 23-11: cờ nghi khiến session BỎ track (đi tìm lại) ⇒ "tiếp tục" phải NEO LẠI
                     # engine ở ô vừa bị nghi, không chỉ xoá cờ.
-                    if reid_session is not None and bbox_truoc_nghi is not None:
-                        last_result = reid_session.start(frame, bbox_truoc_nghi)
+                    if reid_session is not None and bbox_luc_nghi is not None:
+                        last_result = reid_session.start(frame, bbox_luc_nghi)
                         state = reid_session.state
-                    last_bbox = bbox_truoc_nghi
+                    last_bbox = bbox_luc_nghi
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:

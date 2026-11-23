@@ -127,5 +127,29 @@
 - **Chưa** chạy được phép đo "48 bước cuối thành tìm lại" trên chính phiên cũ: video `demoip_1123-092343.mp4` **có overlay cháy vào ảnh** ⇒ replay sẽ đưa ô đỏ vào cảnh, không phải dữ liệu sạch. Tiêu chí đó phải nghiệm thu bằng **phiên webcam mới** (`./run demoip`).
 
 ### Rủi ro còn lại (ghi để không tuyên bố quá)
-- **Nhận lại SAI vẫn có thể xảy ra** (mẫu `_obj_refs` đã bị nhiễm trong giai đoạn trôi f229–f263, trước khi cổng báo): mỗi chu kỳ "bỏ track → nhận lại vùng sai → cổng báo lại" tốn ≥ 3 bước. Chưa đo tần suất; muốn chặn gốc phải **ngừng học mẫu khi track đang trôi** (cổng hình học/Kalman — P1, cần plan 3 ý kiến).
+- **Nhận lại SAI vẫn có thể xảy ra** (mẫu `_obj_refs` đã bị nhiễm trong giai đoạn trôi f229–f263, trước khi cổng báo). Và sau một lần nhận lại SAI, `watch.reset()` + `last_bbox = <ô vừa nhận lại>` làm bước kế tiếp **không còn cú nhảy lớn** ⇒ **cổng KHÔNG chắc báo lại**: hệ có thể lặng lẽ ngồi trên vùng sai với latch đã mở (đúng lớp lỗi mà mục 21-11 của AGENTS §6 cảnh báo — "cổng chỉ báo MỘT lần"). Muốn chặn gốc phải **ngừng học mẫu khi track đang trôi** + có mô hình chuyển động (cổng hình học/Kalman — P1, cần plan 3 ý kiến).
 - Đường **web** (`src/live_tracking.py`) **không có Re-ID** ⇒ chỉ ẩn overlay + banner như cũ; muốn có tự phục hồi phải port re-ID sang worker (việc riêng).
+
+---
+
+## 🔍 Review độc lập (AGENTS §9.1) — agent `reviewer`, task `mwso13pd-38aa`
+
+**Kết luận: MERGEABLE, P0 = 0.** Reviewer **không có shell** nên chưa tự chạy `git show`/`lint`/`test`
+(đã ghi rõ trong báo cáo); phần "1810 passed / lint xanh" do phiên chính chạy.
+
+| Mức | Phát hiện | Đã xử lý |
+|---|---|---|
+| **P1** | `bbox_truoc_nghi` thực chất là ô **LÚC NGHI** (ô của chính frame bật cờ), không phải ô trước cú nhảy ⇒ tên gọi mâu thuẫn tiêu chí, dễ bị "sửa" thành ô đã trôi | ✅ đổi tên `bbox_luc_nghi`, ghi rõ ngữ nghĩa + lý do chọn ô-lúc-nghi ở cả 2 đường |
+| P2 | Đường `run_interactive` chỉ có test ĐỌC SOURCE ⇒ regression thật vẫn xanh | ✅ thêm `TestCoNghiEpTimLaiThatSu` (vòng lặp thật + session ghi lời gọi). **Đã diễn tập giết mutant** (tắt `_bao_nghi` ⇒ test đỏ) |
+| P2 | `assert engine.reset_calls >= 1` xanh cả khi xoá nhánh sửa (worker reset cho MỌI `set_bbox`) | ✅ bỏ; thay bằng đếm `session._auto_recover` (đo trực tiếp) |
+| P2 | Test e2e phụ thuộc kết quả LOST thoáng qua (~40 ms) ⇒ flaky trên CI tải nặng | ✅ bỏ assert transient, dùng bộ đếm `_auto_recover` |
+| P2 | Khi **không** bật `--reid`, phím `c` lại reset ký ức SAM 2 + nháy HUD "kéo chọn" | ✅ chỉ `reanchor` khi `reid_session is not None` (như đường inline) |
+| P3 | Gọi `engine.process()` rồi vứt (~90–160 ms) ở frame bị nghi | ✅ đưa cổng **lên trước** `process()` |
+| P3 | Docstring `_auto_recover` nói "giữ mốc tìm cũ" — sai vì `_collect_reference` cập nhật mốc MỌI frame tracking | ✅ sửa docstring + nói rõ vùng tìm nở dần (12 frame) |
+| P3 | Câu "cổng báo lại" ở mục rủi ro là SAI (sau nhận lại sai không còn cú nhảy lớn) | ✅ sửa thành "cổng KHÔNG chắc báo lại" |
+| P3 | Docstring test cũ còn ghi `set_bbox` (code dùng `reanchor`) | ✅ sửa |
+| P3 | Frame bỏ track ghi `elapsed_ms = 0` trong CSV | ⏳ ghi nhận: `LostResult` mặc định 0 ⇒ trung bình latency bị lạc quan 1 dòng/lần cổng báo (0,71 % số frame) |
+
+**Nợ chưa trả (reviewer nêu, đồng ý):** (1) tiêu chí "48 bước cuối thành `reacquiring`" **vẫn chưa đo
+được trên phiên thật** — video cũ có overlay cháy vào ảnh, phải làm phiên webcam mới; (2) nhận lại
+sai vẫn có thể do bộ nhớ mẫu bị nhiễm trước khi cổng báo; (3) đường web vẫn chưa có Re-ID.

@@ -526,7 +526,7 @@ class TestCongNhayCoNhoTrenDuongMuot:
         ĐÍNH CHÍNH 23-11: từ khi cờ nghi khiến `ReIdSession` **bỏ track** (đi tìm lại), `last_bbox`
         của kết quả mới là `(0,0,0,0)` ⇒ chỉ cập nhật `last_bbox = stamped.result.bbox` như bản 22-11
         là **không đủ**: hệ vẫn ở trạng thái tìm lại và người dùng tưởng đã xác nhận xong. Nay phím
-        `c` gọi `worker.set_bbox(bbox_truoc_nghi)` — ô đã lưu TRƯỚC khi bỏ track.
+        `c` gọi `worker.set_bbox(bbox_luc_nghi)` — ô đã lưu TRƯỚC khi bỏ track.
         """
         import inspect
 
@@ -534,10 +534,10 @@ class TestCongNhayCoNhoTrenDuongMuot:
 
         src = inspect.getsource(sd.run_smooth_display)
         pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
-        pos_neo = src.index("worker.reanchor(bbox_truoc_nghi)", pos_c)
+        pos_neo = src.index("worker.reanchor(bbox_luc_nghi)", pos_c)
         assert pos_c < pos_neo, "phím `c` phải neo lại engine ở ô vừa bị nghi"
         # và phải có biến lưu ô đó tại THỜI ĐIỂM cổng bật nghi (lúc `last_bbox` còn giá trị thật)
-        assert "bbox_truoc_nghi = tuple(last_bbox)" in src
+        assert "bbox_luc_nghi = tuple(last_bbox)" in src
 
     def test_mat_dau_dat_moc_last_bbox_rong(self):
         """Khi mask rỗng (mất dấu), `last_bbox` phải được đặt `(0, 0, 0, 0)` để khi vật xuất hiện
@@ -684,6 +684,17 @@ class TestCongNghiEpBoTrackThatSu:
         selector = PromptSelector(frame_shape=(120, 200, 3))
         bboxes = []
         state = {"n": 0}
+        # Đếm lần session TỰ BỎ track — đo trực tiếp trên session, không phụ thuộc việc vòng vẽ có
+        # kịp "nhìn thấy" kết quả LOST thoáng qua (~40 ms) hay không (P2 review 23-11: assert vào
+        # transient đó là test flaky trên CI tải nặng).
+        auto_recover = {"n": 0}
+        _goc = session._auto_recover
+
+        def _dem(*a, **kw):
+            auto_recover["n"] += 1
+            return _goc(*a, **kw)
+
+        session._auto_recover = _dem
 
         def display(img, mode):
             state["n"] += 1
@@ -699,10 +710,11 @@ class TestCongNghiEpBoTrackThatSu:
                            on_result=on_result)
 
         assert B in bboxes, "giả lập phải thực sự tạo cú nhảy (nếu không test vô nghĩa)"
-        assert engine.reset_calls >= 1, "cổng nghi phải làm session BỎ track (reset engine)"
-        assert any(b == (0, 0, 0, 0) for b in bboxes[bboxes.index(B):]), (
-            "sau cú nhảy, session phải vào trạng thái tìm lại (mask rỗng) chứ không tiếp tục "
-            "'tracking' vùng sai — đúng lỗi 48 bước trên áo người của phiên demoip_1123-092343"
+        # KHÔNG assert `engine.reset_calls >= 1`: worker reset engine cho MỌI yêu cầu `set_bbox`
+        # (kể cả lúc preselect) nên con số đó xanh dù xoá nhánh sửa (P2 review 23-11).
+        assert auto_recover["n"] >= 1, (
+            "cổng nghi phải làm session BỎ track + đi tìm lại (gọi `_auto_recover`), nếu không hệ "
+            "lại 'tracking' vùng sai — đúng lỗi 48 bước trên áo người của phiên demoip_1123-092343"
         )
 
 
