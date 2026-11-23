@@ -666,3 +666,26 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   đọc kèm `cand_sinh_n`/`cand_ncc_loai`; (b) muốn nói "cổng xác minh chặn được vùng sai" thì phải có
   ca vùng sai mà cổng trả cos **thấp** — repo **chưa có** ca đó, các ca đã đo đều 0,75–0,99.
   Và `verify_cos` nằm ở các frame **SAU** frame nhận lại (`verify_frames = 2`), không phải frame nhận.
+- **ĐÍNH CHÍNH 23-11 (sau khi đọc artifact bằng CSV, không bằng mắt) — 4 câu tự viết trước đó đều sai:**
+  (a) **"SAM 2 gần như không bao giờ trả rỗng" CHỈ đúng cho `rawrakhung`** (0/652 — cảnh tĩnh có điều
+  hoà trắng + poster nên lúc nào cũng có thứ để bám). Trên `binh1` **113/333** frame rỗng (`--no-reid`)
+  và `be2` **81/444** ⇒ đừng khái quát từ một clip. Đáng chú ý: binh1 **có re-ID chỉ còn 5/333 frame
+  rỗng** — re-ID **lấp** chỗ rỗng bằng mask bịa, nên "ít mất dấu" trên HUD là dấu hiệu **xấu**, không
+  phải tốt.
+  (b) **"re-ID chậm ~8 frame khi vật vào lại" SAI**: độ trễ **cấu trúc 1 frame** (`reid_reacquire_confirm=2`:
+  f344 `state=reacquiring`, `reid_score 0,842` > ngưỡng 0,75, `cand_n=7`; f345 mới `reacquired=1`).
+  Cái đo được chỉ là **4 frame GT sau khi vật về đều thấp hơn** (chênh 0,003–0,058).
+  (c) **"cổng xác minh LOẠI đúng vật vừa vào" SAI** — không có `vetoed`, không phải veto; nguyên nhân là
+  `confirm=2` ở (b). Ngược lại cổng đó **PASS một phantom**: f338 `reacquired=1` (28 181 px) → f340
+  `verify_cos = 0,856` → f343 `lost`. ⇒ cổng mask-vs-mask vừa **bỏ sót** vùng sai vừa **chấp nhận** nó.
+  (d) **"nhận bừa 1 lần ở f280" thiếu mức độ**: trên `be2` có **25 lần `reacquired=1`**, trong đó **23
+  lần nằm trong cửa sổ vắng (253–337) và mỗi lần sống đúng 1 frame**, `mask_area` 257 → **22 202 px**,
+  `score` **17,0–18,1** (cao nhất phiên — tức điểm tin cậy *khen* đúng cái sai), `track_cos = None`
+  **25/25**. Đây là **mẫu hình**, không phải sự cố lẻ.
+  (e) **`track_cos` KHÔNG có mẫu nào trên nhánh `--no-reid`** (`src/live_pipeline.py:237,454` gán cứng
+  `None`) và **`None` ở 25/25 frame `_reacquire`** ⇒ mọi kết luận "cos tách được" đo trên nhánh re-ID
+  (nhánh đã bị A/B bác), và cos **mù đúng chỗ** re-ID bịa mask. Muốn dùng cos làm cổng thì phải bịt
+  hai lỗ này trước rồi **đo lại**.
+  (f) **`score` không cùng thang giữa hai chế độ**: frame `engine.start()` cho **17–22**, frame
+  `process()` cho **4–10** ⇒ **cấm** dùng một ngưỡng tuyệt đối chung (θ=4,0 cho FP 0,7 % trên clip này
+  và **52,8 %** trên clip khác).
