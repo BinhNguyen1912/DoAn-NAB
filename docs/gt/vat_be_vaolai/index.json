@@ -40,7 +40,11 @@
     480,
     640
   ],
-  "gt_rong": [],
+  "gt_rong": [
+    258,
+    270,
+    300
+  ],
   "nguoi_gan": "Binh",
   "gt_do_model_goi_y": false,
   "dang_gt": "silhouette",
