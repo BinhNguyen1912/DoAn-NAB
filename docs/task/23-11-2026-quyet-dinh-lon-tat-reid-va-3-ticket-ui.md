@@ -133,3 +133,14 @@ Mask tràn nền be cùng tông: **63/194 frame (32 %)** có `mask_area` > 2,5×
 - `docs/plan/23-11-2026-chon-co-che-tu-tim-lai.md` (vì sao tắt re-ID).
 - `docs/thuoc-do-bam-dung.md` (quy tắc chấm mIoU: GT rỗng ⇒ không chấm; model rỗng mà GT có vật ⇒ 0,0).
 - `AGENTS.md` §6 (các kết luận đã đo) và §9.1/§9.2.
+
+## 🖼️ Ảnh minh hoạ (chèn được vào báo cáo)
+
+`docs/img/ba-trang-thai-o-bao-23-11.jpg` — ba trạng thái của overlay trên cùng một frame thật
+(`data/binh1.mp4`), để chứng minh luật vẽ mới:
+
+| | trạng thái | overlay |
+|---|---|---|
+| **A** | đang bám | ô đặc đỏ + tô mask cam |
+| **B** | **nghi đổi đối tượng** (ticket #45) | **ô NÉT ĐỨT vàng + nhãn "NGHI"**, KHÔNG tô mask, banner `NGHI DOI TUONG — r: chon lai \| c: van dung, tiep tuc` |
+| **C** | mất dấu, **không** re-ID (ticket #43) | banner `MẤT DẤU — bấm r chọn lại` (trước 23-11 in sai: "TỰ TÌM LẠI") |
