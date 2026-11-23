@@ -725,8 +725,11 @@ def _run_display(engine, args):
         metrics = _make_metrics(args)
         reid_session = _make_reid_session(engine, args)
         if args.smooth:
-            print("[pipeline] chế độ MƯỢT: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
-                  "(HUD hiện tuổi overlay)")
+            # ĐÍNH CHÍNH 23-11: câu cũ hứa "video ~30 FPS" — SAI. Vòng hiển thị ngủ
+            # `1/30 s` SAU khi đã làm việc (`smooth_display.py:528`) ⇒ nhịp thật ≈ 1/(0,016+0,033)
+            # ≈ 20 fps; đo trên phiên `demoip_1123-144505`: 625 frame / 30,76 s = **20,3 fps**.
+            print("[pipeline] chế độ MƯỢT: overlay cập nhật mỗi lần suy luận xong "
+                  "(HUD hiện tuổi overlay); FPS thật in ở cuối phiên")
             summary = run_smooth_display(
                 source=args.source,
                 engine=engine,
