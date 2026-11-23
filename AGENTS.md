@@ -656,3 +656,13 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   đóng băng ("chống SAM 2 tưởng tượng mask khi vật đã rời khung") **không đúng trên clip này**: thứ
   tưởng tượng mask là re-ID chứ không phải model. Muốn nói "re-ID có ích" thì phải có clip mà vật
   **thật sự rời khung rồi vào lại** + mIoU chứng minh, repo **chưa có** clip đó.
+- **Cổng xác minh mask-vs-mask PASS trên vùng SAI — đo trực tiếp, đừng chỉnh ngưỡng cos.** Telemetry
+  sau khi sửa (23-11, `data/ab_binh1_reid_lan1_2026-11-23_metrics.csv`, `git_rev 2fb1455`): pipeline
+  nhận lại ở f116 (`reid_score` 0,841 · ncc 0,614), rồi `verify_cos` = **0,8707** (f117) và **0,8746**
+  (f118) — **PASS** cả hai frame xác minh — mà lần nhận đó vẫn **SAI** (IoU mask vs GT tại f181 =
+  **0,0016**). Trước đó f113/f114 có `cand_sinh_n = 14` (bộ sinh đưa ra 14 ô) mà `cand_n = 0` và
+  `cand_ncc_loai = 0` ⇒ thủ phạm là **`_filter_by_radius`** (vùng tìm nở dần), **không** phải bộ sinh
+  và **không** phải cổng NCC. Hai hệ quả: (a) `cand_n = 0` một mình KHÔNG nói "bộ sinh rỗng" — phải
+  đọc kèm `cand_sinh_n`/`cand_ncc_loai`; (b) muốn nói "cổng xác minh chặn được vùng sai" thì phải có
+  ca vùng sai mà cổng trả cos **thấp** — repo **chưa có** ca đó, các ca đã đo đều 0,75–0,99.
+  Và `verify_cos` nằm ở các frame **SAU** frame nhận lại (`verify_frames = 2`), không phải frame nhận.
