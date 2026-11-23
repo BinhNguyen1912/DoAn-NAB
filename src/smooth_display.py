@@ -112,6 +112,7 @@ class InferenceWorker:
         self._reid_ncc = None
         self._reid_vetoed = False
         self._track_cos = None
+        self._verify_cos = None
         self._reacquired = False
         self._pending_suspicious = None   # yêu cầu đổi cờ "nghi" từ main thread (None = không có)
 
@@ -184,6 +185,11 @@ class InferenceWorker:
         with self._lock:
             return self._track_cos
 
+    def verify_cos(self):
+        """`cos` của cổng XÁC MINH mask-vs-mask ở frame gần nhất (`None` = chưa chấm)."""
+        with self._lock:
+            return self._verify_cos
+
     def reid_vetoed(self) -> bool:
         """Frame gần nhất có ứng viên bị BỎ vì trùng khuôn mặt/đầu (HUD phải nói rõ lý do)."""
         with self._lock:
@@ -245,6 +251,7 @@ class InferenceWorker:
                         self._reacquired = step.reacquired
                         self._reid_ncc = step.ncc
                         self._track_cos = getattr(step, "track_cos", None)
+                        self._verify_cos = getattr(step, "verify_cos", None)
                 else:
                     result = self._engine.process(frame)
             except Exception as exc:
@@ -379,7 +386,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                                              reacquired, reid_ncc,
                                              vetoed=worker.reid_vetoed(),
                                              track_cos=worker.track_cos(),
-                                             nghi_doi_tuong=True if watch.nghi else None))
+                                             nghi_doi_tuong=True if watch.nghi else None,
+                                             verify_cos=worker.verify_cos()))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:

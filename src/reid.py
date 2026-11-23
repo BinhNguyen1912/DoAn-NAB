@@ -168,6 +168,11 @@ class Step:
     # `cos` giữa MASK đang bám và NEO danh tính (`src/track_identity.py`); `None` = chưa đo được
     # (chưa đủ neo / mask rỗng) — KHÔNG phải 0. Plan 21-11-2026: chỉ GHI, chưa hành động.
     track_cos: Optional[float] = None
+    # `cos` của phép XÁC MINH mask-vs-mask (`_verify_ok`) ở frame này — `None` = frame không nằm
+    # trong giai đoạn kiểm chứng. 23-11-2026: phải GHI được con số này, vì câu "cổng xác minh có
+    # tách được vùng sai không" trước đây chỉ suy luận được (phiên `demoip_1123-101110` nhận lại
+    # vào TƯỜNG rồi tracking tới hết phiên ⇒ `_verify_ok` pass 2/2 nhưng không có số nào để soi).
+    verify_cos: Optional[float] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -405,6 +410,7 @@ class ReIdSession:
         # không vào nhánh tìm lại ⇒ **Re-ID không được gọi lần nào** dù vật ở giữa khung (48 bước =
         # 15,4 % phiên, `mask_area` med 43 512 px).
         self._suspicious = False
+        self._last_verify_cos = None    # cos của lần XÁC MINH gần nhất (`None` = chưa chấm)
 
     # -- trạng thái --
     @property
@@ -518,6 +524,7 @@ class ReIdSession:
                 return self._auto_recover()
             if result.mask is not None and result.mask.any():
                 self._last_bbox = tuple(result.bbox)
+            verify_cos = None      # chỉ khác None ở frame thuộc giai đoạn KIỂM CHỨNG sau nhận lại
             seen = (result.mask is not None and result.mask.any()
                     and float(result.score) > self.lost_score_threshold)
             if not seen:
@@ -531,8 +538,10 @@ class ReIdSession:
                 if self._verify_left > 0:
                     # Đang kiểm chứng một lần "nhận lại" → nếu không giống vật thì bỏ ngay,
                     # nếu không sẽ kẹt vĩnh viễn trên vùng bám nhầm (bug thật 27-10).
+                    self._last_verify_cos = None
                     if self._verify_ok(frame, result):
                         self._verify_left -= 1
+                        verify_cos = self._last_verify_cos
                     else:
                         return self._abandon_reacquire()
                 if self.enabled and self._verify_left == 0:
@@ -545,7 +554,8 @@ class ReIdSession:
                 # thổi lên 1,0 và phân bố bị lệch về phía "đúng".
                 track_cos = cos_voi_neo(self.neo, frame, mask)
                 self.neo.thu(frame, mask, getattr(result, "bbox", None))
-            return Step(result=result, state=self._state, track_cos=track_cos)
+            return Step(result=result, state=self._state, track_cos=track_cos,
+                        verify_cos=verify_cos)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
         self._recover_cooldown = max(0, self._recover_cooldown - 1)
@@ -862,7 +872,10 @@ class ReIdSession:
         sig = object_signature(frame, result.mask)
         if sig is None:
             return False
-        return best_match(self._obj_refs, sig) >= self.obj_threshold
+        cos = best_match(self._obj_refs, sig)
+        # GHI LẠI để CSV/HUD có số thật của cổng xác minh (xem `Step.verify_cos`).
+        self._last_verify_cos = float(cos)
+        return cos >= self.obj_threshold
 
     def _abandon_reacquire(self) -> Step:
         """Bỏ lần nhận lại sai: reset engine + về LOST để tìm tiếp (không kẹt trên vùng nhầm)."""

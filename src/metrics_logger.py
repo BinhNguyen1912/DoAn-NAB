@@ -37,7 +37,13 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # 21-11: `1` = frame này hệ NGHI đã bám sang đối tượng khác (cổng nhảy có NHỚ) ⇒ overlay
               # bị ẩn. Có cột này mới đo được "ẩn bao nhiêu frame" và soi lại xem ẩn có đúng không —
               # không có thì thay đổi hành vi là không kiểm chứng được. Trống = không nghi.
-              "nghi_doi_tuong"]
+              "nghi_doi_tuong",
+              # 23-11-2026 (review độc lập 3 ý kiến): `cos` của phép xác minh mask-vs-mask
+              # (`ReIdSession._verify_ok`) Ở FRAME VỪA NHẬN LẠI. Thiếu cột này thì câu "tường có qua
+              # được cổng xác minh không" chỉ là SUY LUẬN (phiên `demoip_1123-101110` nhận lại vào
+              # tường: cos 0,976/ncc 0,484 mà không có một con số verify nào được ghi).
+              # Trống = chưa chấm / không phải frame nhận lại.
+              "verify_cos"]
 
 
 @dataclass
@@ -67,6 +73,9 @@ class FrameRecord:
     track_cos: Optional[float] = None
     # `True` = cổng nhảy đã báo nghi đổi đối tượng và CHƯA được xoá (overlay bị ẩn).
     nghi_doi_tuong: Optional[bool] = None
+    # `cos` mask-vs-mask của lần xác minh sau khi NHẬN LẠI (`None` = chưa chấm / không phải frame
+    # nhận lại). Đo được thì mới trả lời được "cổng xác minh có tách được vùng sai không".
+    verify_cos: Optional[float] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -141,6 +150,14 @@ class MetricsLogger:
                 "frozen_frames": 0,
                 "reacquiring_frames": 0,
                 "reacquired_count": 0,
+                # 23-11-2026 (review độc lập, F2): frame ĐÓNG BĂNG bị loại khỏi `mean_latency_ms`
+                # (`FROZEN_STATES`) ⇒ chi phí TÌM LẠI không nằm trong con số nào. Phiên
+                # `demoip_1123-095901` in `mean 161,8 ms (n=93)` trong khi 160 bước tìm lại
+                # (66 ms/bước) không được đếm ⇒ mọi tuyên bố "thêm probe có chậm không" KHÔNG kiểm được.
+                # `None` = chưa có frame đóng băng nào (KHÁC `0` = đo được 0 ms).
+                "search_mean_ms": None,
+                "search_p95_ms": None,
+                "search_n": 0,
             }
         lost_count = sum(1 for r in self.records if is_lost(r))
         # Frame đóng băng (mất dấu → không gọi model) có latency 0. Tính latency trên
@@ -148,11 +165,19 @@ class MetricsLogger:
         frozen = [r for r in self.records if is_frozen(r)]
         measured = [r for r in self.records if not is_frozen(r)]
         latencies = np.array([r.latency_ms for r in measured], dtype=float)
+        # Chi phí TÌM LẠI: latency của chính các frame bị loại khỏi `mean` — tách riêng để
+        # "thêm bước thử ứng viên có làm chậm phiên không" trả lời được bằng artifact.
+        search_lat = np.array([r.latency_ms for r in frozen], dtype=float)
         if latencies.size == 0:
             mean_ms, p95_ms = 0.0, None
         else:
             mean_ms = float(np.mean(latencies))
             p95_ms = float(np.percentile(latencies, 95))
+        if search_lat.size == 0:
+            search_mean, search_p95 = None, None
+        else:
+            search_mean = float(np.mean(search_lat))
+            search_p95 = float(np.percentile(search_lat, 95))
         return {
             "total_frames": len(self.records),
             "mean_latency_ms": mean_ms,
@@ -166,6 +191,9 @@ class MetricsLogger:
             "frozen_frames": len(frozen),
             "reacquiring_frames": sum(1 for r in self.records if r.state == "reacquiring"),
             "reacquired_count": sum(1 for r in self.records if r.reacquired),
+            "search_mean_ms": search_mean,
+            "search_p95_ms": search_p95,
+            "search_n": int(search_lat.size),
         }
 
     def write_csv(self, path: str) -> str:
@@ -188,6 +216,8 @@ class MetricsLogger:
                     r.mask_area if r.mask_area is not None else "",
                     f"{float(r.track_cos):.6g}" if r.track_cos is not None else "",
                     "" if r.nghi_doi_tuong is None else (1 if r.nghi_doi_tuong else 0),
+                    # `verify_cos`: TRỐNG = chưa chấm (không phải 0) — cùng luật với `track_cos`.
+                    f"{float(r.verify_cos):.6g}" if r.verify_cos is not None else "",
                 ])
         return str(path)
 

@@ -1440,3 +1440,41 @@ class TestVetoChiChanVatGiongHinhMat:
         assert _bm(s._obj_refs, sig_vat) > _bm(s._obj_refs, sig_nen) + 0.3, (
             "vật thật phải khớp CAO HƠN HẲN vùng nền"
         )
+
+
+class TestGhiCosXacMinh:
+    """23-11-2026: cổng XÁC MINH mask-vs-mask (`_verify_ok`) đã tồn tại và ĐÃ PASS vùng tường ở
+
+    phiên `demoip_1123-101110` (nhận lại f118 rồi tracking tới hết phiên) — nhưng **không có con số
+    nào được ghi** ⇒ câu "cổng xác minh có tách được vùng sai không" chỉ suy luận được. Nay `Step`
+    mang `verify_cos` để artifact trả lời trực tiếp.
+    """
+
+    BOX = (20, 20, 60, 60)
+
+    def test_verify_cos_co_so_o_frame_kiem_chung(self):
+        empty = np.zeros((96, 96), bool)
+        engine = FakeEngineMasks([empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=0.5,
+                              reacquire_confirm=1, verify_frames=2)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)                      # mất dấu
+        step = session.step(frame)               # nhận lại
+        assert step.reacquired is True
+
+        sau = session.step(frame)                # frame KIỂM CHỨNG #1
+        assert isinstance(sau.verify_cos, float) and sau.verify_cos >= 0.0, (
+            "frame kiểm chứng phải ghi được cos của mask-vs-mask; nếu None thì artifact lại mù"
+        )
+
+    def test_frame_thuong_khong_co_verify_cos(self):
+        """Chỉ frame trong giai đoạn kiểm chứng mới có số — frame tracking thường phải `None`."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=99, verify_frames=0)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        step = session.step(frame)
+        assert step.verify_cos is None

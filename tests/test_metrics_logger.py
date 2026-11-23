@@ -43,12 +43,13 @@ class TestCsv:
                            "center_x", "center_y", "lost",
                            "state", "reid_score", "reacquired", "ncc", "vetoed",
                            "bbox_w", "bbox_h", "mask_area", "track_cos",
-                           "nghi_doi_tuong"]   # 21-11: cổng nhảy có NHỚ (0/1/trống)
+                           "nghi_doi_tuong",    # 21-11: cổng nhảy có NHỚ (0/1/trống)
+                           "verify_cos"]        # 23-11: cos mask-vs-mask ở frame NHẬN LẠI
         assert len(rows) == 6  # header + 5 dòng
         assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "",
-                           "", "", "", "", ""]
+                           "", "", "", "", "", ""]
         assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "",
-                           "", "", "", "", ""]
+                           "", "", "", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -62,7 +63,7 @@ class TestCsv:
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
         assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "",
-                           "", "", "", "", ""]
+                           "", "", "", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -293,8 +294,9 @@ class TestTrangThaiTaiNhanDien:
         # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
         # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
         # 21-11 (cổng nhảy CÓ NHỚ): thêm cột `nghi_doi_tuong` ở CUỐI ⇒ 10 cột cuối.
-        assert header[-10:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
-                                "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong"]
+        assert header[-11:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
+                                "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong",
+                                "verify_cos"]
         assert rows[3][header.index("state")] == "reacquiring"
         assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
         assert rows[4][header.index("reacquired")] == "1"
@@ -389,3 +391,49 @@ class TestMeanVaP95CoMauKemTheo:
                                    lost=True, state="lost"))
         s = logger.summary()
         assert s["mean_latency_ms_n"] == 0 and s["mean_latency_ms"] == 0.0
+
+
+class TestChiPhiTimLai:
+    """23-11-2026 (review độc lập 3 ý kiến, F2): frame ĐÓNG BĂNG bị loại khỏi `mean_latency_ms`.
+
+    Hệ quả đo được: phiên `demoip_1123-095901` in `mean 161,8 ms (n=93)` trong khi nó có **160** bước
+    tìm lại (66 ms/bước) không nằm trong con số nào ⇒ mọi tuyên bố "thêm bước thử ứng viên có làm
+    chậm phiên không" trước đây KHÔNG kiểm được.
+    """
+
+    def _rec(self, idx, ms, state):
+        return FrameRecord(frame_idx=idx, latency_ms=ms, score=1.0, center=(1, 1),
+                           lost=(state != "tracking"), state=state)
+
+    def test_search_latency_tach_khoi_mean_va_co_n(self):
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 100.0, "tracking"))
+        lg.log(self._rec(1, 200.0, "lost"))
+        lg.log(self._rec(2, 500.0, "reacquiring"))
+        s = lg.summary()
+        # mean cũ KHÔNG đổi (chỉ tracking) — giữ hợp đồng
+        assert s["mean_latency_ms"] == 100.0 and s["mean_latency_ms_n"] == 1
+        assert s["search_n"] == 2
+        assert s["search_mean_ms"] == 350.0
+        assert s["search_p95_ms"] >= 350.0
+
+    def test_khong_co_frame_dong_bang_thi_search_la_None_khong_phai_0(self):
+        """`None` = chưa đo; `0` = đo được 0 ms — hai thứ khác nhau (bẫy đã gặp nhiều lần)."""
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 120.0, "tracking"))
+        s = lg.summary()
+        assert s["search_mean_ms"] is None and s["search_p95_ms"] is None and s["search_n"] == 0
+
+    def test_csv_co_cot_verify_cos_va_de_trong_khi_chua_cham(self, tmp_path):
+        lg = MetricsLogger()
+        lg.log(FrameRecord(frame_idx=0, latency_ms=10.0, score=1.0, center=(5, 5), lost=False,
+                           state="tracking", verify_cos=0.83))
+        lg.log(FrameRecord(frame_idx=1, latency_ms=10.0, score=1.0, center=(5, 5), lost=False,
+                           state="tracking"))
+        out = tmp_path / "m.csv"
+        lg.write_csv(str(out))
+        import csv as _csv
+        rows = list(_csv.reader(open(out, newline="")))
+        i = rows[0].index("verify_cos")
+        assert rows[1][i] == "0.83"
+        assert rows[2][i] == "", "chưa chấm phải để TRỐNG (không ghi 0)"
