@@ -166,10 +166,18 @@ def _dump_mask_callback(out_dir, frames, info, base=None):
                 print(f"[canh-bao] frame {n}: model không trả mask ⇒ không ghi file "
                       "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)")
             else:
+                arr = np.asarray(mask)
+                if arr.size == 0:
+                    # P0 tự bắt (23-11): `_lost_result()` trả mask **0×0** (không phải `None`) ⇒
+                    # `cv2.imwrite` NÉM `!_img.empty()` và **giết cả phiên đo** (lần chạy re-ID trên
+                    # `clip_be2` dừng ở frame 259/444 mà không ai báo). Mask 0×0 = "model trả RỖNG"
+                    # ⇒ ghi file TOÀN 0 đúng kích thước frame (mới chấm được 0,0) thay vì bỏ qua.
+                    shape = img.shape[:2] if img is not None else (1, 1)
+                    arr = np.zeros(shape, bool)
                 d = target / f"mask_{n:06d}.png"
                 if d.exists():
                     ghi_de.append(n)
-                ok = cv2.imwrite(str(d), (np.asarray(mask) > 0).astype(np.uint8) * 255)
+                ok = cv2.imwrite(str(d), (arr > 0).astype(np.uint8) * 255)
                 if not ok:
                     print(f"[canh-bao] frame {n}: ghi mask thất bại ({d})")
                 else:

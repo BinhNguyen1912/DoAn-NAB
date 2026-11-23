@@ -877,3 +877,17 @@ def test_no_reid_tat_duoc_reid_ma_run_demoip_luon_chen():
     assert ap.parse_args(["--reid"]).reid is True
     # thứ tự: cờ SAU thắng (./run demoip đặt `--reid` trước "$@")
     assert ap.parse_args(["--no-reid", "--reid"]).reid is True
+
+def test_mask_0x0_ghi_file_toan_0_khong_giet_phien(tmp_path):
+    """P0 tự bắt (23-11): `_lost_result()` trả mask **0×0** ⇒ `cv2.imwrite` NÉM và giết cả phiên đo.
+
+    Lần chạy re-ID trên `data/clip_be2.mp4` dừng ở frame 259/444 mà không có thông báo nào — mất
+    nửa sau của clip (đúng đoạn "vật vào lại") mà người đọc artifact không thể biết.
+    """
+    cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+    res = TrackingResult(frame_idx=0, mask=np.zeros((0, 0), bool), bbox=(0, 0, 0, 0),
+                         score=0.0, elapsed_ms=1.0)
+    anh = np.zeros((48, 64, 3), np.uint8)
+    assert cb(anh, res) is True                      # KHÔNG được ném
+    img = cv2.imread(str(tmp_path / "mask_000000.png"), cv2.IMREAD_GRAYSCALE)
+    assert img is not None and img.shape == (48, 64) and img.max() == 0
