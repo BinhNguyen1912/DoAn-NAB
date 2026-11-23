@@ -390,6 +390,13 @@ class ReIdSession:
         self._state = STATE_TRACKING
         self._lost_streak = 0
         self._frame_idx = 0
+        # Cổng "NGHI ĐỔI ĐỐI TƯỢNG" của tầng hiển thị (`src/identity_guard.IdentityWatch`) bật cờ ⇒
+        # coi lần track hiện tại là KHÔNG TIN: bỏ ngay track + vào nhánh TÌM LẠI, và NGỪNG học mẫu.
+        # Vì sao (đo 23-11-2026, phiên `demoip_1123-092343`, remote be trơn): cổng báo nghi ở f264 rồi
+        # tầng hiển thị chỉ **ẩn** overlay, còn engine vẫn `tracking` **48 bước** trên ÁO NGƯỜI ⇒
+        # không vào nhánh tìm lại ⇒ **Re-ID không được gọi lần nào** dù vật ở giữa khung (48 bước =
+        # 15,4 % phiên, `mask_area` med 43 512 px).
+        self._suspicious = False
 
     # -- trạng thái --
     @property
@@ -404,6 +411,23 @@ class ReIdSession:
     def object_ref_count(self) -> int:
         """Số mẫu đặc trưng VẬT THỂ đang giữ (tách khỏi `ref_count` của khuôn mặt)."""
         return len(self._obj_refs)
+
+    def set_suspicious(self, suspicious: bool) -> None:
+        """Tầng hiển thị báo "đang bám vùng SAI" ⇒ lần `step()` kế tiếp BỎ track và TÌM LẠI.
+
+        Khác `_auto_recover()` (tự phát hiện theo cú nhảy, `jump_ratio × đường chéo ô` = 1,5×): cổng
+        hiển thị dùng bán kính hẹp hơn (trần 200 px) nên nó **bắt được ca mà cổng nội bộ bỏ lọt** —
+        phiên 23-11: cổng hiển thị báo ở cú nhảy 204 px trong khi `_is_suspicious_jump` cần 1,5 × 297
+        = 446 px. Hai cổng là hai thước đo khác nhau, KHÔNG thay thế nhau.
+
+        Chỉ đặt cờ — mọi thao tác trên engine vẫn do luồng suy luận thực hiện.
+        """
+        self._suspicious = bool(suspicious)
+
+    @property
+    def suspicious(self) -> bool:
+        """Đang bị tầng hiển thị đánh dấu nghi (cờ do bên ngoài đặt, tự xoá khi nhận lại được)."""
+        return self._suspicious
 
     def reset(self) -> None:
         """Xoá mẫu + về trạng thái ban đầu. Bộ đếm `frame_idx` **KHÔNG** reset.
@@ -436,6 +460,7 @@ class ReIdSession:
         self.frames_vetoed_since_print = 0
         self._hint_veto_da_in = False
         self._faces_frame = None
+        self._suspicious = False         # chọn lại đối tượng ⇒ phiên mới, không còn "nghi" cũ
         self.neo.xoa()                  # chọn lại đối tượng ⇒ neo cũ vô nghĩa
         self.geo_profile.reset()
 
@@ -456,6 +481,7 @@ class ReIdSession:
         # (mặt quay đi/mờ) là veto bật cho CẢ phiên, dù người dùng chọn đúng mặt. Vì vậy giữ ô chọn
         # và ĐÁNH GIÁ LẠI (sticky, chỉ bật thêm, không tắt) khi đang tìm lại.
         self._ref_bbox = tuple(float(v) for v in bbox[:4]) if bbox is not None else None
+        self._suspicious = False          # phiên bám MỚI ⇒ không kế thừa cờ nghi của phiên trước
         self._ref_phu_mat = self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT
         self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         if self.object_on and not self._obj_refs and not self._obj_templates:
@@ -469,6 +495,12 @@ class ReIdSession:
         if self._state == STATE_TRACKING:
             result = self.engine.process(frame)
             self._stamp_frame_idx(result)
+            # Cổng hiển thị đã kết luận "vùng này KHÔNG phải vật" ⇒ bỏ track NGAY (không chờ
+            # `lost_after_frames`): đồng thời KHÔNG nạp mẫu của vùng sai vào `_obj_refs`/neo
+            # (nhiễm bộ nhớ là đường dẫn tới "nhận lại" đúng vùng sai — đo 23-11: ô tường be được
+            # nhận lại với cosine 0,92). `_auto_recover()` đã giữ mẫu tham chiếu + mốc tìm cũ.
+            if self._suspicious:
+                return self._auto_recover()
             # "Còn thấy vật" = mask không rỗng **VÀ** score > ngưỡng. SAM 2 hay "tưởng tượng" ra
             # mask khi vật đã rời khung (đo thật 27-10: mask 782 px nhưng score = -4,98) — nếu chỉ
             # dựa vào mask rỗng thì hệ thống không bao giờ vào LOST và sẽ bám rác mãi mãi.
@@ -719,6 +751,9 @@ class ReIdSession:
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
         self._lost_streak = 0
+        # Nhận lại THÀNH CÔNG ⇒ hết nghi (nếu giữ cờ, bước tracking kế tiếp sẽ bỏ track ngay và
+        # hệ quay vòng vô hạn: nhận lại → bỏ → nhận lại). Tầng hiển thị cũng `watch.reset()` cùng lúc.
+        self._suspicious = False
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = self.verify_frames      # chưa tin ngay: kiểm chứng mấy frame đầu

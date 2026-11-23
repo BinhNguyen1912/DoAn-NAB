@@ -299,6 +299,22 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
         watch = IdentityWatch()
         switch = False
+        last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
+        bbox_truoc_nghi = None     # ô đang bị nghi (phím `c` cần nó để neo lại engine)
+
+        def _bao_nghi(co):
+            """Báo cờ nghi cho `ReIdSession` — CHỈ khi đổi (xem `smooth_display` cùng luật)."""
+            nonlocal last_nghi, bbox_truoc_nghi
+            if co and not last_nghi and reid_session is None:
+                print("[WARN] cổng NGHI ĐỔI ĐỐI TƯỢNG bật nhưng KHÔNG có Re-ID (thiếu --reid) ⇒ hệ "
+                      "không tự tìm lại được; bấm r rồi kéo chọn lại ô quanh vật.")
+            if co and not last_nghi:
+                bbox_truoc_nghi = (tuple(last_result.bbox)
+                                   if (last_result is not None and last_result.mask.any()) else None)
+            if co != last_nghi:
+                last_nghi = co
+                if reid_session is not None:
+                    reid_session.set_suspicious(co)
         state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
         reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
         track_cos = None                    # cos với neo danh tính (plan 21-11, log-only)
@@ -345,12 +361,19 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if key == CONTINUE_KEY and watch.nghi:
                     # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
                     watch.reset()
+                    _bao_nghi(False)
                     switch = False
-                    last_bbox = tuple(last_result.bbox) if last_result.mask.any() else None
+                    # Từ 23-11: cờ nghi khiến session BỎ track (đi tìm lại) ⇒ "tiếp tục" phải NEO LẠI
+                    # engine ở ô vừa bị nghi, không chỉ xoá cờ.
+                    if reid_session is not None and bbox_truoc_nghi is not None:
+                        last_result = reid_session.start(frame, bbox_truoc_nghi)
+                        state = reid_session.state
+                    last_bbox = bbox_truoc_nghi
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:
                     watch.reset()
+                    _bao_nghi(False)
                     engine.reset()
                     if reid_session is not None:
                         reid_session.reset()
@@ -392,6 +415,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         last_bbox = last_result.bbox
                     else:
                         last_bbox = (0, 0, 0, 0)
+                # Cổng hiển thị vừa đổi trạng thái ⇒ báo xuống Re-ID (chỉ khi ĐỔI): `True` = ngừng
+                # tin track hiện tại (session bỏ track + đi tìm lại), `False` = hết nghi.
+                if watch.nghi != last_nghi:
+                    _bao_nghi(watch.nghi)
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)

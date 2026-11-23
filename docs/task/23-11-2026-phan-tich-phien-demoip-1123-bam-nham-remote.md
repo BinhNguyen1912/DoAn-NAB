@@ -101,3 +101,31 @@
 - `AGENTS.md` §6: "cổng nghi đổi đối tượng phải CÓ NHỚ", "`track_cos` KHÔNG phân biệt được vùng sai"
 - `src/identity_guard.py:26-70` (`search_window_radius`), `src/smooth_display.py:290-326`
 - Ảnh phân tích: `data/tmp_analyze_1123/` (2 lưới + 20 frame lẻ) — **không commit** (`data/` bị chặn)
+
+---
+
+## 🔧 BỔ SUNG (cùng ngày) — SỬA P0: "cổng nghi ⇒ ÉP TÌM LẠI"
+
+### Thay đổi
+| File | Nội dung |
+|---|---|
+| `src/reid.py` | `ReIdSession.set_suspicious(bool)` + `suspicious` (property). Bước `step()` kế tiếp khi cờ bật: **bỏ track NGAY** (không chờ `lost_after_frames`) qua `_auto_recover()` — tức là reset engine, về `LOST`, **giữ** mẫu tham chiếu để tìm lại. Cờ tự xoá trong `start()`, `reset()`, và `_reacquire()` (nếu giữ, hệ quay vòng: nhận lại → bỏ → nhận lại). |
+| `src/smooth_display.py` | `InferenceWorker.request_suspicious()` (main thread → luồng suy luận, chỉ khi giá trị **đổi**); `InferenceWorker.reanchor(bbox)` (neo lại engine nhưng **giữ** mẫu Re-ID — dùng cho phím `c`); vòng hiển thị: `_bao_nghi(watch.nghi)` sau mỗi bước; phím `c`/`r` đều `_bao_nghi(False)`; `c` gọi `reanchor(bbox_truoc_nghi)` (ô **đã lưu trước khi bỏ track**, vì sau đó `last_bbox` = rỗng). |
+| `src/live_pipeline.py` | Cùng luật cho đường `run_interactive` (không `--smooth`): `reid_session.set_suspicious(...)`, `c` → `reid_session.start(frame, bbox_truoc_nghi)`. |
+| Cả hai đường | In **một lần** khi cổng nghi bật mà **không** có Re-ID: "không tự tìm lại được; bấm r chọn lại" (trước đây im lặng). |
+
+### Test (mới)
+- `tests/test_reid.py::TestCoNghiTuTangHienThi` (5): bỏ track ngay trong bước kế tiếp · **không học thêm mẫu** (chống nhiễm `_obj_refs`) · bước sau vào nhánh tìm lại · nhận lại thì tự xoá cờ · `reset`/`start` xoá cờ.
+- `tests/test_smooth_display.py::TestCongNghiEpBoTrackThatSu` — **end-to-end thật**: vòng hiển thị + `ReIdSession` thật + engine giả, cú nhảy **70 px** nằm trong cửa sổ **chỉ cổng hiển thị** bắt được (cổng nội bộ cần ≥ 85 px) ⇒ test chỉ xanh nhờ đường mới. **Đã diễn tập giết mutant**: tắt nhánh `if self._suspicious` trong `reid.py` ⇒ test đỏ đúng chỗ.
+- `tests/test_smooth_display.py`: cổng nghi chuyển xuống session (worker → `set_suspicious`), `reanchor` **không** reset Re-ID, `c`/`r` xoá cờ.
+- `tests/test_live_pipeline.py::TestCoNghiEpTimLaiInline` (2).
+- Cập nhật test cũ `test_phim_c_giai_phong_deadlock_last_bbox` (đổi sang `worker.reanchor(bbox_truoc_nghi)`).
+
+### Kết quả kiểm tra
+- `./run lint`: **All checks passed**.
+- `./run test`: **1810 passed**, 5 deselected (trước: 1799).
+- **Chưa** chạy được phép đo "48 bước cuối thành tìm lại" trên chính phiên cũ: video `demoip_1123-092343.mp4` **có overlay cháy vào ảnh** ⇒ replay sẽ đưa ô đỏ vào cảnh, không phải dữ liệu sạch. Tiêu chí đó phải nghiệm thu bằng **phiên webcam mới** (`./run demoip`).
+
+### Rủi ro còn lại (ghi để không tuyên bố quá)
+- **Nhận lại SAI vẫn có thể xảy ra** (mẫu `_obj_refs` đã bị nhiễm trong giai đoạn trôi f229–f263, trước khi cổng báo): mỗi chu kỳ "bỏ track → nhận lại vùng sai → cổng báo lại" tốn ≥ 3 bước. Chưa đo tần suất; muốn chặn gốc phải **ngừng học mẫu khi track đang trôi** (cổng hình học/Kalman — P1, cần plan 3 ý kiến).
+- Đường **web** (`src/live_tracking.py`) **không có Re-ID** ⇒ chỉ ẩn overlay + banner như cũ; muốn có tự phục hồi phải port re-ID sang worker (việc riêng).

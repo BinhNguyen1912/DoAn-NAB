@@ -267,3 +267,33 @@ class TestLivePipelineIdentityLatchFix:
         pos_reset = src.index("watch.reset()", pos_reacq)
         assert pos_reacq < pos_reset
 
+
+
+class TestCoNghiEpTimLaiInline:
+    """23-11-2026: cùng luật với đường MƯỢT — cổng nghi phải báo xuống `ReIdSession` (đường
+
+    `run_interactive`, tức `./run view`/`--reid` không `--smooth`), không chỉ ẩn overlay.
+    """
+
+    def test_cong_nghi_bao_xuong_reid_session(self):
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        assert "_bao_nghi(watch.nghi)" in src
+        assert "reid_session.set_suspicious(co)" in src
+        # `c` và `r` phải xoá cờ (nếu không bước track kế tiếp lại bị bỏ ⇒ quay vòng)
+        for khoa in ('if key == CONTINUE_KEY and watch.nghi:', 'if key == RESET_KEY:'):
+            pos = src.index(khoa)
+            assert "_bao_nghi(False)" in src[pos:pos + 400], khoa
+
+    def test_phim_c_neo_lai_engine(self):
+        """`c` = "vẫn đúng" nhưng session đã bị bỏ track ⇒ phải `start()` lại ở ô vừa bị nghi."""
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        assert src.index("reid_session.start(frame, bbox_truoc_nghi)", pos_c) > pos_c

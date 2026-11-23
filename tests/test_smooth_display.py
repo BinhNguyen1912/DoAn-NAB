@@ -521,9 +521,12 @@ class TestCongNhayCoNhoTrenDuongMuot:
         assert pos_reacq < pos_reset < pos_switch_false
 
     def test_phim_c_giai_phong_deadlock_last_bbox(self):
-        """Khi bấm 'c' xác nhận, `last_bbox` phải được cập nhật sang ô hiện tại (không giữ ô cũ
+        """Bấm 'c' = "vẫn đúng, tiếp tục" phải NEO LẠI engine ở ô vừa bị nghi.
 
-        từ trước cú nhảy). Nếu giữ ô cũ, frame kế tiếp lại so với ô cũ > 200px ⇒ latch lại ngay.
+        ĐÍNH CHÍNH 23-11: từ khi cờ nghi khiến `ReIdSession` **bỏ track** (đi tìm lại), `last_bbox`
+        của kết quả mới là `(0,0,0,0)` ⇒ chỉ cập nhật `last_bbox = stamped.result.bbox` như bản 22-11
+        là **không đủ**: hệ vẫn ở trạng thái tìm lại và người dùng tưởng đã xác nhận xong. Nay phím
+        `c` gọi `worker.set_bbox(bbox_truoc_nghi)` — ô đã lưu TRƯỚC khi bỏ track.
         """
         import inspect
 
@@ -531,8 +534,10 @@ class TestCongNhayCoNhoTrenDuongMuot:
 
         src = inspect.getsource(sd.run_smooth_display)
         pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
-        pos_gan_c = src.index("last_bbox = tuple(stamped.result.bbox)", pos_c)
-        assert pos_c < pos_gan_c
+        pos_neo = src.index("worker.reanchor(bbox_truoc_nghi)", pos_c)
+        assert pos_c < pos_neo, "phím `c` phải neo lại engine ở ô vừa bị nghi"
+        # và phải có biến lưu ô đó tại THỜI ĐIỂM cổng bật nghi (lúc `last_bbox` còn giá trị thật)
+        assert "bbox_truoc_nghi = tuple(last_bbox)" in src
 
     def test_mat_dau_dat_moc_last_bbox_rong(self):
         """Khi mask rỗng (mất dấu), `last_bbox` phải được đặt `(0, 0, 0, 0)` để khi vật xuất hiện
@@ -545,3 +550,212 @@ class TestCongNhayCoNhoTrenDuongMuot:
 
         src = inspect.getsource(sd.run_smooth_display)
         assert "last_bbox = (0, 0, 0, 0)" in src
+
+
+class TestCongNghiEpTimLai:
+    """23-11-2026 (phiên `demoip_1123-092343`): cổng nghi chỉ ẨN overlay, `ReIdSession` vẫn
+
+    `tracking` 48/312 bước trên ÁO NGƯỜI ⇒ Re-ID không được gọi lần nào. Nay cổng nghi phải được
+    BÁO XUỐNG luồng suy luận (đổi thành "bỏ track + tìm lại").
+    """
+
+    def test_cong_nghi_bao_xuong_session(self):
+        import inspect
+
+        from src import smooth_display as sd
+
+        src = inspect.getsource(sd.run_smooth_display)
+        assert "_bao_nghi(watch.nghi)" in src, "cổng nghi phải chuyển xuống luồng suy luận"
+        # phải gọi TRƯỚC khi log/`continue` để cờ kịp tới worker ở vòng sau
+        assert src.index("_bao_nghi(watch.nghi)") < src.index("if on_result is not None:")
+        # `c` và `r` phải XOÁ cờ, nếu không bước tracking kế tiếp lại bị bỏ ⇒ quay vòng
+        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        assert "_bao_nghi(False)" in src[pos_c:pos_c + 400]
+        pos_r = src.index("if key == RESET_KEY:")
+        assert "_bao_nghi(False)" in src[pos_r:pos_r + 400]
+
+    def test_worker_chuyen_co_nghi_vao_session(self):
+        """Khoá đường worker → session (main thread không được chạm engine/session)."""
+        from src.reid import Step
+
+        calls = []
+
+        class FakeSession:
+            state = "tracking"
+
+            def start(self, frame, bbox):
+                return TrackingResult(frame_idx=0, mask=np.ones((20, 20), bool),
+                                      bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0)
+
+            def step(self, frame):
+                return Step(result=TrackingResult(frame_idx=1, mask=np.ones((20, 20), bool),
+                                                  bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0),
+                            state="tracking")
+
+            def reset(self):
+                pass
+
+            def set_suspicious(self, co):
+                calls.append(bool(co))
+
+        src = LatestFrameSource(FakeSource(delay=0.005))
+        src.start()
+        engine = FakeEngine(delay=0.01)
+        worker = InferenceWorker(engine, src, reid_session=FakeSession())
+        worker.start()
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            deadline = time.time() + 2.0
+            while time.time() < deadline and not worker.latest_result():
+                time.sleep(0.02)
+            worker.request_suspicious(True)
+            deadline = time.time() + 2.0
+            while time.time() < deadline and True not in calls:
+                time.sleep(0.02)
+            worker.request_suspicious(False)
+            deadline = time.time() + 2.0
+            while time.time() < deadline and False not in calls:
+                time.sleep(0.02)
+        finally:
+            worker.stop()
+            src.stop()
+
+        assert True in calls, "cờ nghi phải tới được ReIdSession"
+        assert False in calls, "hết nghi phải xoá cờ trong ReIdSession"
+
+
+class TestCongNghiEpBoTrackThatSu:
+    """Chứng minh END-TO-END (không chỉ đọc source): cổng nghi của vòng hiển thị làm
+
+    `ReIdSession` **bỏ track** trong phiên thật.
+
+    Cú nhảy chọn trong cửa sổ mà **chỉ cổng hiển thị** bắt được: 70 px, trong khi ngưỡng nội bộ
+    `_is_suspicious_jump` là `1,5 × đường chéo ô` = 1,5 × 56,6 ≈ 85 px (đúng ca phiên 23-11: cổng
+    hiển thị báo ở 204 px còn cổng nội bộ cần 446 px). Nhờ vậy test này KHÔNG thể xanh nhờ cổng
+    nội bộ.
+    """
+
+    def test_cong_nghi_lam_session_bo_track(self, tmp_path, write_video):
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.reid import ReIdSession
+        from src.smooth_display import run_smooth_display
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        A, B = (10, 10, 50, 50), (80, 10, 120, 50)     # nhảy 70 px (ngưỡng hiển thị ≈ 58 px)
+
+        class NhayEngine:
+            """Trả ô A; cú nhảy sang B được bật từ ngoài (sau khi đã tiêu thụ vài kết quả).
+
+            Điều khiển bằng cờ chứ không bằng bộ đếm `process()`: luồng suy luận chạy NHANH hơn
+            vòng vẽ rất nhiều, nên "nhảy sau N lần process" sẽ nhảy TRƯỚC khi vòng vẽ kịp thấy ô A
+            ⇒ cổng không có mốc cũ để so và test thành vô nghĩa (đã gặp khi viết test này).
+            """
+
+            def __init__(self):
+                self.jump = False
+                self.calls = 0
+                self.reset_calls = 0
+
+            def _res(self, bbox):
+                m = np.zeros((120, 200), bool)
+                m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+                return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=5.0)
+
+            def start(self, frame, bbox):
+                self.calls += 1
+                return self._res(A)
+
+            def process(self, frame):
+                self.calls += 1
+                return self._res(B if self.jump else A)
+
+            def reset(self):
+                self.reset_calls += 1
+
+        fx = generate_tracking_sequence(num_frames=40, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = NhayEngine()
+        # `lost_after_frames` lớn ⇒ session KHÔNG tự mất dấu; nếu bỏ track thì là do CỔNG HIỂN THỊ
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=99, reacquire_confirm=1, verify_frames=0)
+        selector = PromptSelector(frame_shape=(120, 200, 3))
+        bboxes = []
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            return list(QUIT_KEYS)[0] if state["n"] >= 90 else -1
+
+        def on_result(r):
+            bboxes.append(tuple(r.bbox))
+            if len(bboxes) >= 5:            # đã thấy ô A vài lần ⇒ bật cú nhảy sang B
+                engine.jump = True
+
+        run_smooth_display(source=str(path), engine=engine, selector=selector,
+                           display=display, preselect_bbox=A, reid_session=session,
+                           on_result=on_result)
+
+        assert B in bboxes, "giả lập phải thực sự tạo cú nhảy (nếu không test vô nghĩa)"
+        assert engine.reset_calls >= 1, "cổng nghi phải làm session BỎ track (reset engine)"
+        assert any(b == (0, 0, 0, 0) for b in bboxes[bboxes.index(B):]), (
+            "sau cú nhảy, session phải vào trạng thái tìm lại (mask rỗng) chứ không tiếp tục "
+            "'tracking' vùng sai — đúng lỗi 48 bước trên áo người của phiên demoip_1123-092343"
+        )
+
+
+def test_reanchor_giu_mau_tham_chieu_reid():
+    """`c` = "vẫn đúng": neo lại engine nhưng KHÔNG được xoá ký ức đặc trưng của Re-ID.
+
+    `set_bbox()` (chọn lại vật khác) thì phải xoá; `reanchor()` (xác nhận vùng hiện tại) thì không —
+    nếu xoá, người dùng vừa xác nhận xong đã mất luôn khả năng nhận lại khi vật bị che.
+    """
+    calls = []
+
+    class FakeSession:
+        state = "tracking"
+
+        def start(self, frame, bbox):
+            calls.append(("start", tuple(bbox)))
+            return TrackingResult(frame_idx=0, mask=np.ones((20, 20), bool),
+                                  bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0)
+
+        def step(self, frame):
+            time.sleep(0.01)
+            return Step(result=TrackingResult(frame_idx=1, mask=np.ones((20, 20), bool),
+                                              bbox=(10, 10, 50, 50), score=5.0, elapsed_ms=1.0),
+                        state="tracking")
+
+        def reset(self):
+            calls.append(("reset", None))
+
+        def set_suspicious(self, co):
+            pass
+
+    from src.reid import Step
+
+    src = LatestFrameSource(FakeSource(delay=0.005))
+    src.start()
+    engine = FakeEngine(delay=0.01)
+    worker = InferenceWorker(engine, src, reid_session=FakeSession())
+    worker.start()
+    try:
+        worker.set_bbox((10, 10, 50, 50))
+        deadline = time.time() + 2.0
+        while time.time() < deadline and not worker.latest_result():
+            time.sleep(0.02)
+        n_reset = sum(1 for c in calls if c[0] == "reset")
+        worker.reanchor((12, 12, 52, 52))
+        deadline = time.time() + 2.0
+        while time.time() < deadline and ("start", (12, 12, 52, 52)) not in calls:
+            time.sleep(0.02)
+    finally:
+        worker.stop()
+        src.stop()
+
+    assert ("start", (12, 12, 52, 52)) in calls, "phải bám lại từ ô vừa xác nhận"
+    assert sum(1 for c in calls if c[0] == "reset") == n_reset, (
+        "`reanchor` KHÔNG được reset Re-ID (xoá mẫu tham chiếu)"
+    )

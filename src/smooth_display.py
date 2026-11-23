@@ -113,6 +113,7 @@ class InferenceWorker:
         self._reid_vetoed = False
         self._track_cos = None
         self._reacquired = False
+        self._pending_suspicious = None   # yêu cầu đổi cờ "nghi" từ main thread (None = không có)
 
     def start(self):
         self._thread = threading.Thread(target=self._loop, name="inference", daemon=True)
@@ -151,6 +152,28 @@ class InferenceWorker:
         with self._lock:
             return self._stamped
 
+    def reanchor(self, bbox):
+        """Neo lại engine ở `bbox` nhưng **GIỮ** mẫu tham chiếu của Re-ID.
+
+        Dùng cho phím `c` ("vẫn đúng, tiếp tục"): người dùng xác nhận vùng đang bị nghi LÀ vật, nên
+        chỉ cần bám lại từ đó — xoá ký ức đặc trưng (`reset()` như `set_bbox`) là mất luôn khả năng
+        nhận lại về sau mà không có lý do.
+        """
+        with self._lock:
+            self._pending = ("reanchor", tuple(bbox))
+            self._stamped = None
+
+    def request_suspicious(self, suspicious: bool):
+        """Báo tầng suy luận rằng cổng hiển thị đang/không còn NGHI đổi đối tượng.
+
+        Gọi từ main thread (an toàn); việc đặt cờ lên `ReIdSession` diễn ra trong luồng suy luận —
+        cùng lý do `set_bbox()` không được chạm engine từ main thread (bug thật 18-10).
+
+        Chỉ chuyển TIẾP mỗi lần giá trị ĐỔI (`cờ nghi` giữ nguyên nhiều frame).
+        """
+        with self._lock:
+            self._pending_suspicious = bool(suspicious)
+
     def reid_status(self):
         """(state, reid_score, reacquired, ncc) gần nhất — None khi không bật re-ID."""
         with self._lock:
@@ -177,13 +200,18 @@ class InferenceWorker:
                     self._engine.reset()
                 except Exception as exc:
                     print(f"[LOI] reset engine thất bại: {type(exc).__name__}: {exc}")
-                if self._reid is not None:
+                if self._reid is not None and action != "reanchor":
                     self._reid.reset()
                 with self._lock:
                     self._started = False
-                    self._bbox = bbox_req if action == "start" else None
-                    if action != "start":
+                    self._bbox = bbox_req if action in ("start", "reanchor") else None
+                    if action not in ("start", "reanchor"):
                         self._stamped = None
+            # 1b) Cờ "nghi đổi đối tượng" từ main thread — đặt SAU reset (reset() xoá cờ)
+            with self._lock:
+                suspicious_req, self._pending_suspicious = self._pending_suspicious, None
+            if suspicious_req is not None and self._reid is not None:
+                self._reid.set_suspicious(suspicious_req)
 
             # 2) Suy luận trên frame MỚI NHẤT
             with self._lock:
@@ -268,6 +296,27 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — xem `src/identity_guard.IdentityWatch`.
     watch = IdentityWatch()
     switch = False
+    last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)
+    bbox_truoc_nghi = None  # ô đang bị nghi (dùng cho phím `c` = "vẫn đúng, tiếp tục")
+
+    def _bao_nghi(co):
+        """Đồng bộ cờ nghi xuống luồng suy luận — CHỈ khi giá trị đổi.
+
+        Quan trọng ở chiều `False`: `c` ("vẫn đúng, tiếp tục") và `r` (chọn lại) đều phải XOÁ cờ
+        nghi trong `ReIdSession`, nếu không bước tracking kế tiếp lại bị bỏ track ngay và hệ quay
+        vòng: bỏ → tìm lại → người dùng xác nhận → bỏ tiếp.
+        """
+        nonlocal last_nghi, bbox_truoc_nghi
+        if co and not last_nghi and reid_session is None:
+            print("[WARN] cổng NGHI ĐỔI ĐỐI TƯỢNG bật nhưng KHÔNG có Re-ID (thiếu --reid) ⇒ hệ "
+                  "không tự tìm lại được; bấm r rồi kéo chọn lại ô quanh vật.")
+        if co and not last_nghi:
+            # Nhớ ô đang bị nghi: nếu người dùng bấm `c` ("vẫn đúng") thì cần ô ĐÓ để neo lại —
+            # sau bước bỏ track, kết quả mới là mask rỗng nên `last_bbox` không còn dùng được.
+            bbox_truoc_nghi = tuple(last_bbox) if last_bbox and tuple(last_bbox) != (0, 0, 0, 0) else None
+        if co != last_nghi:
+            worker.request_suspicious(co)
+            last_nghi = co
     reid_state = reid_score = reacquired = reid_ncc = None
     reid_vetoed = False
     mode = "select"
@@ -315,6 +364,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                         # Mất dấu ⇒ đặt mốc rỗng để khi vật xuất hiện lại không bị so với ô cũ
                         # từ nhiều giây trước (luật của is_suspect_switch).
                         last_bbox = (0, 0, 0, 0)
+                # Cổng hiển thị vừa đổi trạng thái ⇒ báo xuống luồng suy luận (chỉ khi ĐỔI).
+                # `True` = ngừng tin track hiện tại ⇒ session bỏ track + vào nhánh TÌM LẠI; `False`
+                # = đã hết nghi (nhận lại được / người dùng bấm `r`/`c`) ⇒ được học mẫu lại.
+                if watch.nghi != last_nghi:
+                    _bao_nghi(watch.nghi)
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
                 if metrics is not None:
@@ -355,12 +409,20 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if key == CONTINUE_KEY and watch.nghi:
                 # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô.
                 watch.reset()
+                _bao_nghi(False)
                 switch = False
-                last_bbox = tuple(stamped.result.bbox) if (stamped and stamped.result.mask.any()) else None
+                # Từ 23-11: cờ nghi khiến session BỎ track (để đi tìm lại) ⇒ "tiếp tục" phải NEO
+                # LẠI engine ở ô vừa bị nghi, không chỉ xoá cờ (nếu không, hệ vẫn đang ở trạng thái
+                # tìm lại và người dùng tưởng đã xác nhận xong).
+                if bbox_truoc_nghi is not None:
+                    worker.reanchor(bbox_truoc_nghi)
+                    consumed_seq = 0
+                    last_bbox = bbox_truoc_nghi
                 print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                 continue
             if key == RESET_KEY:
                 watch.reset()          # chọn lại ⇒ xoá nghi của phiên trước
+                _bao_nghi(False)
                 switch = False
                 last_bbox = None
                 selector.bind(frame)

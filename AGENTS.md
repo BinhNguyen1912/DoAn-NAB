@@ -578,3 +578,23 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   điểm cân bằng); muốn hình >16 fps thì phải **đổi nguồn** (điện thoại 30 fps qua `./run phone`, hoặc
   clip). **Đừng hứa GPU free làm mượt live** — Colab/Kaggle không thấy webcam laptop và không có URL
   công khai để relay đẩy ảnh vào; tunnel thêm 50–150 ms/frame.
+
+- **Cổng "nghi đổi đối tượng" báo nghi thì phải kéo theo TÌM LẠI, không chỉ ẩn overlay.**
+  Đo 23-11 (phiên `demoip_1123-092343`, remote máy lạnh be trơn): cổng báo đúng ở f264, tầng hiển thị
+  ẩn ô/mask, **nhưng** `ReIdSession` vẫn `state = tracking` **48/312 bước (15,4 %)** trên **áo người**
+  (score 1,2–4,5; `mask_area` med 43 512 px) ⇒ không vào nhánh mất-dấu ⇒ **Re-ID không được gọi lần
+  nào** dù remote ở giữa khung; 47 bước cuối người dùng thấy "không có gì". Nay `IdentityWatch` →
+  `ReIdSession.set_suspicious(True)` ⇒ bước kế tiếp **bỏ track + đi tìm lại** (giữ mẫu tham chiếu),
+  cờ tự xoá khi nhận lại/`c`/`r`; phím `c` dùng `InferenceWorker.reanchor()` (GIỮ mẫu Re-ID).
+  **Cấm** quay lại kiểu "ẩn là đủ". Cờ này cũng là đường **chống nhiễm bộ nhớ**: bước bị nghi không
+  nạp mẫu vào `_obj_refs`/neo.
+- **Hai cổng nhảy KHÔNG cùng thước đo — đừng thay cái này bằng cái kia.** Cổng hiển thị
+  (`identity_guard.search_window_radius`) bị chặn trần **200 px** (0,25×đường chéo khung 640×480);
+  cổng nội bộ `reid._is_suspicious_jump` cần **1,5 × đường chéo ô** (ô 127×269 ⇒ **446 px**). Cùng
+  phiên 23-11: cổng hiển thị báo ở **204 px**, cổng nội bộ **không bao giờ** báo. Và cả hai đều **mù
+  với trôi dần** (ô bò 60–150 px/bước sang máy lạnh/poster/áo) — muốn bắt phải có mô hình chuyển động
+  (Kalman/LK), việc > 4 h ⇒ plan 3 ý kiến trước.
+- **Phiên 23-11 chốt thêm 3 bằng chứng ÂM TÍNH cho "cổng tự phán quyết":** `ncc` nhận lại ĐÚNG
+  0,686/0,687/**0,468** vs ứng viên SAI bị veto 0,472/0,528 (⇒ **cấm** nâng `ncc_min` 0,40→0,55);
+  `mask_area` lớn nhất chỉ **2,0×** trung vị (⇒ cổng diện tích không cứu được) và `fill` med 0,77
+  (bình thường); `track_cos` vùng sai 0,45–0,79 nằm trong dải ca đúng.

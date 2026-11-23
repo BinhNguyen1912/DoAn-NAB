@@ -1269,3 +1269,92 @@ class TestTimLaiBangMoTaVanBan:
             s._state = "lost"
             s.step(np.zeros((240, 320, 3), np.uint8))
         assert det.calls == 2, "6 frame / every=3 ⇒ đúng 2 lần hỏi detector"
+
+
+class TestCoNghiTuTangHienThi:
+    """23-11-2026, phiên webcam thật `demoip_1123-092343` (remote máy lạnh be trơn).
+
+    Bug đo được: cổng "nghi đổi đối tượng" của **tầng hiển thị** báo đúng ở f264, nhưng nó chỉ
+    **ẩn overlay** — `ReIdSession` vẫn `tracking` **48/312 bước** trên ÁO NGƯỜI (score 1,2–4,5,
+    `mask_area` med 43 512 px) ⇒ không vào nhánh tìm lại ⇒ **Re-ID không được gọi lần nào** dù
+    vật ở giữa khung, và mỗi bước lại nạp thêm mẫu của vùng SAI vào bộ nhớ.
+
+    `set_suspicious(True)` phải: (a) bỏ track NGAY trong bước kế tiếp, (b) KHÔNG học mẫu mới,
+    (c) tự xoá cờ khi nhận lại được (nếu không: bỏ → nhận lại → bỏ … vô hạn).
+    """
+
+    BOX = (20, 20, 60, 60)
+
+    def _session(self, engine, **kw):
+        kw.setdefault("lost_after_frames", 1)
+        kw.setdefault("reacquire_confirm", 1)
+        kw.setdefault("verify_frames", 0)
+        kw.setdefault("obj_threshold", 0.5)
+        return ReIdSession(engine=engine, embedder=None, cue="object", **kw)
+
+    def test_nghi_thi_bo_track_ngay_trong_buoc_ke_tiep(self):
+        """KHÔNG chờ `lost_after_frames`: cổng đã kết luận vùng này không phải vật."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = self._session(engine)
+        session.start(_obj_frame(self.BOX), self.BOX)
+        assert session.step(_obj_frame(self.BOX)).state == STATE_TRACKING
+        reset_truoc = engine.reset_calls
+
+        session.set_suspicious(True)
+        step = session.step(_obj_frame(self.BOX))
+
+        assert step.state != STATE_TRACKING, "còn 'tracking' nghĩa là Re-ID vẫn không được gọi"
+        assert not step.result.mask.any(), "không được trả mask của vùng đang bị nghi"
+        assert engine.reset_calls > reset_truoc, "phải bỏ state của track cũ"
+        assert session.state in (STATE_LOST, STATE_REACQUIRING)
+
+    def test_nghi_thi_khong_hoc_them_mau(self):
+        """Nhiễm bộ nhớ (`_obj_refs`) là đường dẫn tới 'nhận lại' đúng vùng SAI (cos 0,92 ở f249)."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = self._session(engine)
+        session.start(_obj_frame(self.BOX), self.BOX)
+        session.step(_obj_frame(self.BOX))
+        n_truoc = session.object_ref_count
+
+        session.set_suspicious(True)
+        session.step(_obj_frame((10, 10, 90, 90)))     # khung khác hẳn — nếu học sẽ thấy ref tăng
+
+        assert session.object_ref_count == n_truoc
+
+    def test_buoc_sau_nghi_di_tim_lai(self):
+        """Bước kế tiếp phải ở nhánh TÌM LẠI (mask rỗng + state reacquiring), không phải track."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = self._session(engine, obj_ncc_min=1.01)   # không ứng viên nào qua cổng
+        session.start(_obj_frame(self.BOX), self.BOX)
+        session.step(_obj_frame(self.BOX))
+        session.set_suspicious(True)
+        session.step(_obj_frame(self.BOX))
+        step = session.step(_obj_frame(self.BOX))
+        assert step.state in (STATE_LOST, STATE_REACQUIRING)
+        assert step.reacquired is False
+
+    def test_nhan_lai_duoc_thi_tu_xoa_co_nghi(self):
+        """Giữ cờ sau khi nhận lại ⇒ bước tracking kế tiếp lại bỏ track: quay vòng vô hạn."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = self._session(engine, obj_ncc_min=0.0)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)
+        session.set_suspicious(True)
+        session.step(frame)                       # bị bỏ ⇒ LOST
+        assert session.suspicious is True
+        step = session.step(frame)                # quét lại chính frame còn vật ⇒ nhận lại
+        assert step.reacquired is True
+        assert session.suspicious is False, "cờ nghi phải tự xoá khi Re-ID đã nhận lại"
+
+    def test_reset_va_start_xoa_co_nghi(self):
+        """Phiên mới không được kế thừa cờ nghi của phiên trước (chọn lại vật khác)."""
+        engine = FakeEngineMasks([], shape=(96, 96))
+        session = self._session(engine)
+        session.start(_obj_frame(self.BOX), self.BOX)
+        session.set_suspicious(True)
+        session.start(_obj_frame(self.BOX), self.BOX)
+        assert session.suspicious is False
+        session.set_suspicious(True)
+        session.reset()
+        assert session.suspicious is False
