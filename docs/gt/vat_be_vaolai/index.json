@@ -9,6 +9,21 @@
       "frame_idx": 100
     },
     {
+      "frame_idx": 258
+    },
+    {
+      "frame_idx": 270
+    },
+    {
+      "frame_idx": 300
+    },
+    {
+      "frame_idx": 344
+    },
+    {
+      "frame_idx": 348
+    },
+    {
       "frame_idx": 352
     },
     {
@@ -34,15 +49,14 @@
   "sai_so_bo_goi_y": null,
   "chon_frame": {
     "frames": [
-      0,
-      100,
-      352,
-      380,
-      400,
-      440
+      258,
+      270,
+      300,
+      344,
+      348
     ]
   },
   "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
-  "tao_luc": "2026-11-23T12:35:20",
+  "tao_luc": "2026-11-23T13:00:07",
   "huong_dan": "Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được ghi thẳng vào thư mục này."
 }
