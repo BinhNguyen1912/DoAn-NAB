@@ -179,6 +179,7 @@ class MetricsLogger:
                 "search_mean_ms": None,
                 "search_p95_ms": None,
                 "search_n": 0,
+            "search_khong_do_n": 0,
             }
         lost_count = sum(1 for r in self.records if is_lost(r))
         # Frame đóng băng (mất dấu → không gọi model) có latency 0. Tính latency trên
@@ -188,7 +189,15 @@ class MetricsLogger:
         latencies = np.array([r.latency_ms for r in measured], dtype=float)
         # Chi phí TÌM LẠI: latency của chính các frame bị loại khỏi `mean` — tách riêng để
         # "thêm bước thử ứng viên có làm chậm phiên không" trả lời được bằng artifact.
-        search_lat = np.array([r.latency_ms for r in frozen], dtype=float)
+        #
+        # P1 review độc lập 23-11: CHỈ lấy frame có `latency_ms > 0` (tức bước tìm THẬT SỰ chạy).
+        # Frame `lost`/bail-out (`_auto_recover`, `_abandon_reacquire`) trả `LostResult.elapsed_ms =
+        # 0.0` vì KHÔNG gọi model — gộp 0,0 vào đây làm `search_mean_ms` bị PHA LOÃNG: càng thêm cờ
+        # nghi (⇒ càng nhiều frame bail-out) thì "chi phí tìm lại" càng **giảm** — đúng chiều ngược
+        # của sự thật. Số frame đóng băng mà KHÔNG đo được đếm riêng ở `search_khong_do_n` (bẫy
+        # "0/None ≠ đã đo").
+        frozen_do = [r for r in frozen if r.latency_ms and r.latency_ms > 0.0]
+        search_lat = np.array([r.latency_ms for r in frozen_do], dtype=float)
         if latencies.size == 0:
             mean_ms, p95_ms = 0.0, None
         else:
@@ -212,6 +221,7 @@ class MetricsLogger:
             "frozen_frames": len(frozen),
             "reacquiring_frames": sum(1 for r in self.records if r.state == "reacquiring"),
             "reacquired_count": sum(1 for r in self.records if r.reacquired),
+            "search_khong_do_n": len(frozen) - int(search_lat.size),
             "search_mean_ms": search_mean,
             "search_p95_ms": search_p95,
             "search_n": int(search_lat.size),

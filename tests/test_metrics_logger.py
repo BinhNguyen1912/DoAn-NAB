@@ -439,3 +439,20 @@ class TestChiPhiTimLai:
         i = rows[0].index("verify_cos")
         assert rows[1][i] == "0.83"
         assert rows[2][i] == "", "chưa chấm phải để TRỐNG (không ghi 0)"
+
+    def test_frame_bail_out_0ms_khong_pha_loang_search_mean(self):
+        """P1 review độc lập 23-11: frame KHÔNG gọi model (`latency_ms = 0.0`) không được vào mean.
+
+        Trước khi sửa: `_auto_recover`/`_abandon_reacquire` trả `LostResult.elapsed_ms = 0.0`, và
+        `search_lat` gom cả 0,0 ⇒ **càng thêm cờ nghi (càng nhiều frame bail-out) thì "chi phí tìm
+        lại" càng GIẢM** — ngược chiều sự thật, đúng loại bẫy "số đẹp lên sau khi thêm tính năng".
+        """
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 100.0, "tracking"))
+        lg.log(self._rec(1, 0.0, "lost"))          # bail-out: KHÔNG gọi model ⇒ 0 ms
+        lg.log(self._rec(2, 0.0, "lost"))
+        lg.log(self._rec(3, 400.0, "reacquiring"))  # bước tìm THẬT SỰ chạy
+        s = lg.summary()
+        assert s["search_n"] == 1, "chỉ frame ĐO ĐƯỢC mới vào mẫu"
+        assert s["search_mean_ms"] == 400.0, "0,0 không được kéo mean xuống"
+        assert s["search_khong_do_n"] == 2, "phải khai riêng số frame đóng băng KHÔNG đo được"
