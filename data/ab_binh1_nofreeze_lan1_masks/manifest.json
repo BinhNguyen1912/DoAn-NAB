@@ -1,0 +1,43 @@
+{
+ "nguon": "data/binh1.mp4",
+ "image_size": 192,
+ "vos_every": 1,
+ "mask_smoothing": 1.0,
+ "bbox_xywh": [
+  300,
+  275,
+  150,
+  410
+ ],
+ "lenh": "tools/run_live.py --source data/binh1.mp4 --image-size 192 --bbox 300,275,150,410 --max-frames 333 --lost-after-frames 999 --lost-score-threshold -99 --dump-mask-frames 0,30,60,91,121,151,181,211,241,272,302,332 --dump-mask-dir data/ab_binh1_nofreeze_lan1_masks --metrics-csv data/ab_binh1_nofreeze_lan1_2026-11-23_metrics.csv",
+ "frames_yeu_cau": [
+  0,
+  30,
+  60,
+  91,
+  121,
+  151,
+  181,
+  211,
+  241,
+  272,
+  302,
+  332
+ ],
+ "frames_da_ghi": [
+  0,
+  30,
+  60,
+  91,
+  121,
+  151,
+  181,
+  211,
+  241,
+  272,
+  302,
+  332
+ ],
+ "so_file_ghi_de": 0,
+ "frame_goc_cua_phien": 0
+}
