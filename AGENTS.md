@@ -598,3 +598,14 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   0,686/0,687/**0,468** vs ứng viên SAI bị veto 0,472/0,528 (⇒ **cấm** nâng `ncc_min` 0,40→0,55);
   `mask_area` lớn nhất chỉ **2,0×** trung vị (⇒ cổng diện tích không cứu được) và `fill` med 0,77
   (bình thường); `track_cos` vùng sai 0,45–0,79 nằm trong dải ca đúng.
+
+- **Veto mặt phải kiểm HÌNH HỌC, không chỉ "chồng lên ô mặt".** Đo 23-11 (phiên `demoip_1123-095901`):
+  remote 103×267 (tỉ lệ w/h **0,39**) giữ ngay cạnh mặt (tỉ lệ 0,78) ⇒ **322 ứng viên bị veto** dù ncc
+  0,56–0,71, hệ ngồi "TỰ TÌM LẠI" **160/254 bước (64 %)** trong khi remote **to rõ giữa khung** ở
+  t≈16 s (`data/tmp_analyze_1123/b400.jpg`). Nay `_trung_mat` chỉ coi ứng viên là mặt khi **tỉ lệ w/h**
+  0,6–1,7× và diện tích 0,4–6,0× của chính mặt đó — dây phân biệt là TỈ LỆ KHUNG, không phải diện tích.
+- **Đừng so cosine giữa hai LOẠI mặt nạ khác nhau.** Khi tìm lại, `_match_object` chấm đặc trưng trên
+  **ô chữ nhật** (không có mask thật) còn `_obj_refs` là đặc trưng của **mask SAM** ⇒ cosine bị hạ hệ
+  thống (đo: đúng vật chỉ 0,68–0,73 < ngưỡng 0,75). Nay có thêm `_obj_refs_box` (mẫu chấm cùng cách) và
+  `raw = max(mẫu-mask, mẫu-ô)`. **Chưa chốt** là đủ để vượt 0,75 — phải đo phiên mới; HUD in
+  `khop X / can 0.75` là chỗ lấy số để chốt ngưỡng, đừng hạ ngưỡng bằng cảm tính.

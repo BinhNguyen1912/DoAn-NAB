@@ -153,3 +153,44 @@
 **Nợ chưa trả (reviewer nêu, đồng ý):** (1) tiêu chí "48 bước cuối thành `reacquiring`" **vẫn chưa đo
 được trên phiên thật** — video cũ có overlay cháy vào ảnh, phải làm phiên webcam mới; (2) nhận lại
 sai vẫn có thể do bộ nhớ mẫu bị nhiễm trước khi cổng báo; (3) đường web vẫn chưa có Re-ID.
+
+---
+
+## 🔧 BỔ SUNG 2 (cùng ngày) — phiên `demoip_1123-095901`: "Không nhận diện lại được"
+
+### Bằng chứng (đọc CSV + trích frame)
+- 254 bước: `tracking` 93 · `reacquiring` **160** · `lost` 1. `nghi_doi_tuong` = **0 dòng** ⇒ **không
+  phải** đường "cổng nghi" vừa sửa: vật mất dấu **tự nhiên** ở f92 (score 1,58 → 0,78 → **−1,54**,
+  mask sụp còn 460 px ở ô 51×9).
+- Từ f94 trở đi: **160 bước tìm lại, 0 lần nhận lại**; ~**322 ứng viên bị veto "trùng khuôn mặt/đầu"**
+  (78 frame có `vetoed=1`, ncc 0,56–**0,71**, cosine 0,68–**0,73**).
+- **Frame video 400 (t≈16 s): remote to rõ giữa khung** (ảnh `data/tmp_analyze_1123/b400.jpg`) nhưng HUD
+  vẫn `MẤT DẤU — TỰ TÌM LẠI`. ⇒ Vật CÓ trong khung, hệ KHÔNG nhận lại ⇒ lỗi thật, không phải "vật đi mất".
+
+### Nguyên nhân (2 cái, cùng lúc)
+1. **Veto mặt chặn oan vật cao–hẹp cầm cạnh mặt.** `_trung_mat` chỉ hỏi "ô ứng viên có chồng lên ô mặt
+   không" ⇒ remote 103×267 (tỉ lệ w/h **0,39**) giữ ngay cạnh mặt bị coi là "mặt". Veto sinh ra để chặn
+   ca *nhận lại vào MẶT/TRÁN/ĐẦU* (20–21/11) — các ca đó đều **có hình học của mặt**.
+2. **So khớp KHÁC LOẠI.** Khi tìm lại, ứng viên được chấm cosine trên mặt nạ **hình chữ nhật**
+   (`_match_object` tự dựng mask = ô), còn `_obj_refs` là đặc trưng của **mask SAM** (không có tay/nền)
+   ⇒ cosine bị hạ **hệ thống**: đúng vật mà chỉ 0,68–0,73 < ngưỡng 0,75.
+
+### Đã sửa
+| File | Nội dung |
+|---|---|
+| `src/reid.py` | `_trung_mat`: thêm **điều kiện hình học** — ứng viên chỉ bị coi là mặt nếu `diện tích` 0,4–6,0× và **tỉ lệ w/h** 0,6–1,7× tỉ lệ của chính mặt đó (mặt 0,78 vs remote 0,39 ⇒ loại). Dây phân biệt là **tỉ lệ khung**, không phải diện tích. |
+| `src/reid.py` | `_obj_refs_box` (deque riêng): lưu thêm mẫu đặc trưng **tính trên ô chữ nhật** ⇒ khi tìm lại, ứng viên được so với mẫu CÙNG LOẠI (`raw = max(mask-mẫu, ô-mẫu)`). |
+
+### Test mới (4)
+`TestVetoChiChanVatGiongHinhMat`: remote cao–hẹp cạnh mặt **không** bị veto · ô giống hình mặt **vẫn** bị
+veto (giữ tác dụng chống bám mặt) · vật nhỏ–cao cũng không bị veto · mẫu-ô làm cosine của ứng viên-ô cao
+hơn hẳn mẫu-mask (chứng minh đúng cái lỗi "so khác loại").
+
+### Kết quả kiểm tra
+`./run lint` xanh · `./run test` **1815 passed**, 5 deselected.
+
+### Điều CHƯA chốt (phải đo tiếp)
+- Sửa này **chưa chứng minh** là đủ: chưa biết mẫu-ô có đẩy cosine của remote vượt 0,75 hay không
+  (`0,73` là số của mẫu-mask). Nếu phiên sau vẫn không nhận lại, HUD giờ in `khop 0.7x / can 0.75`
+  — đó chính là **số cần để chốt ngưỡng**, thay vì đoán.
+- Phiên này **không** dùng để kết luận về đường "cổng nghi ⇒ ép tìm lại" (nghi_doi_tuong = 0).

@@ -1358,3 +1358,69 @@ class TestCoNghiTuTangHienThi:
         session.set_suspicious(True)
         session.reset()
         assert session.suspicious is False
+
+
+class TestVetoChiChanVatGiongHinhMat:
+    """23-11-2026, phiên `demoip_1123-095901`: remote giữ **ngay cạnh mặt** (ô 103×267, tỉ lệ w/h
+
+    0,39) bị veto **322 ứng viên** ⇒ hệ "TỰ TÌM LẠI" 160 bước (64 % phiên) dù vật ở giữa khung
+    (ảnh chứng: remote to rõ ở t=16 s). Veto phải chỉ chặn ứng viên **giống hình học mặt**.
+    """
+
+    MAT = (100, 10, 70, 90)         # mặt: 70×90, tỉ lệ w/h ≈ 0,78
+    MAT_XYXY = (100, 10, 170, 100)
+
+    def _s(self):
+        empty = np.zeros((120, 260), bool)
+        engine = FakeEngineMasks([empty], shape=(120, 260))
+        return ReIdSession(engine=engine, embedder=None, cue="object",
+                           lost_after_frames=1, obj_threshold=0.5, reacquire_confirm=1,
+                           verify_frames=0, face_veto=FakeMat([self.MAT]))
+
+    def _frame(self):
+        return _obj_frame(shape=(120, 260))
+
+    def test_vat_cao_narrow_nam_canh_mat_KHONG_bi_veto(self):
+        """Remote 103×267 chồng lên ô mặt ⇒ KHÔNG phải mặt (tỉ lệ 0,39 vs 0,78) ⇒ không veto."""
+        s = self._s()
+        remote_xyxy = (120, 60, 223, 327)        # 103×267, tỉ lệ 0,386
+        assert s._trung_mat(self._frame(), remote_xyxy) is False
+
+    def test_ung_vien_giong_hinh_mat_VAN_bi_veto(self):
+        """Ô vuông/vừa như mặt chồng lên mặt ⇒ vẫn veto (giữ nguyên tác dụng chống bám mặt)."""
+        s = self._s()
+        assert s._trung_mat(self._frame(), (105, 15, 165, 95)) is True     # 60×80, tỉ lệ 0,75
+        assert s._trung_mat(self._frame(), (100, 0, 180, 110)) is True     # 80×110, tỉ lệ 0,73
+
+    def test_vat_nho_hon_mat_nhung_cao_narrow_khong_bi_veto(self):
+        """Vật nhỏ, cao (như bút/remote ở xa) vẫn không phải mặt ⇒ không veto."""
+        s = self._s()
+        assert s._trung_mat(self._frame(), (120, 30, 150, 110)) is False   # 30×80, tỉ lệ 0,375
+
+    def test_mau_o_chu_nhat_lam_cosine_cao_hon_cho_ung_vien_o(self):
+        """Ứng viên khi tìm lại được chấm trên Ô CHỮ NHẬT; mẫu tham chiếu thì lấy từ MASK.
+
+        Hai thống kê khác nhau ⇒ cosine bị hạ hệ thống (đo phiên 23-11: 0,68–0,73 < ngưỡng 0,75 dù
+        đúng vật). Deque `_obj_refs_box` giữ mẫu chấm CÙNG CÁCH ⇒ phải cho điểm cao hơn hẳn.
+        """
+        from src.appearance import object_signature
+
+        frame = _obj_frame(box=(20, 20, 60, 60), shape=(96, 96))
+        s = ReIdSession(engine=FakeEngineMasks([], shape=(96, 96)), embedder=None, cue="object",
+                        obj_threshold=0.5, reacquire_confirm=1, verify_frames=0)
+        # mẫu MASK = đúng phần vật (không có nền); mẫu Ô = cả ô vuông quanh vật
+        mask_vat = _obj_mask((20, 20, 60, 60), shape=(96, 96))
+        s._collect_reference(frame, (20, 20, 60, 60), mask_vat)
+        assert len(s._obj_refs) == 1 and len(s._obj_refs_box) == 1
+
+        # ứng viên khi tìm lại: một Ô (không có mask) quanh đúng vật đó
+        hop = np.zeros((96, 96), bool)
+        hop[20:60, 20:60] = True
+        sig_ung_vien = object_signature(frame, hop)
+
+        from src.reid import best_match as _bm
+
+        chi_mask = _bm(s._obj_refs, sig_ung_vien)
+        co_hai = max(_bm(s._obj_refs, sig_ung_vien), _bm(s._obj_refs_box, sig_ung_vien))
+        assert co_hai >= chi_mask
+        assert co_hai > 0.99, "cùng một ô thì mẫu ô phải khớp gần như tuyệt đối"

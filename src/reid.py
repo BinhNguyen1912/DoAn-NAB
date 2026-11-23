@@ -103,6 +103,14 @@ HINT_CHAM_MEP = (
 # (0,35) vì ở đây không cần IoU mà chỉ cần "ô này là mặt/đầu". CHƯA hiệu chuẩn trên clip có nhãn
 # (CSV cũ không ghi w/h của ô ứng viên) — nếu thấy chặn oan thì tắt bằng `--no-reid-face-veto`.
 NGUONG_PHU_MAT = 0.30
+# ĐIỀU KIỆN 0 (23-11-2026): ứng viên chỉ bị coi là "mặt" nếu HÌNH HỌC của nó giống hình học mặt.
+# Đo phiên `demoip_1123-095901`: remote 103×267 (tỉ lệ w/h **0,39**) giữ cạnh mặt (~0,76) bị veto
+# **322 ứng viên** ⇒ hệ "TỰ TÌM LẠI" 160 bước dù vật ở giữa khung. Vật cao 2,5× rộng không thể là
+# mặt ⇒ các ngưỡng này chỉ cần đủ rộng để không chặn oan mặt/đầu thật (đầu có tóc: tỉ lệ ~0,8–1,0).
+NGUONG_TI_LE_MAT = (0.60, 1.70)        # tỉ lệ (w/h ứng viên) / (w/h mặt)
+NGUONG_DIEN_TICH_MAT = (0.40, 6.00)    # diện tích ứng viên / diện tích mặt
+# (rộng: ô "cả đầu + mặt" có thể tới ~2× mặt, ô to hơn nữa là thân/người — dây phân biệt thật nằm ở
+#  TỈ LỆ KHUNG, không phải diện tích: vật cao 2,5× rộng có tỉ lệ 0,39 so với mặt 0,78 ⇒ bị loại)
 HINT_VETO_MAT = (
     "[re-ID] BỎ ứng viên nhận lại vì TRÙNG KHUÔN MẶT/ĐẦU — ô chọn ban đầu không phải mặt người "
     "nên đây là bám nhầm (đo 20–21/11: 3/3 lần nhận lại sai đều vào mặt/trán/đầu).\n"
@@ -385,6 +393,12 @@ class ReIdSession:
         self.enabled = self.face_on or self.object_on
         self._refs = deque(maxlen=int(ref_max))
         self._obj_refs = deque(maxlen=int(obj_ref_max))
+        # MẪU "Ô CHỮ NHẬT" (23-11-2026): khi TÌM LẠI, `_match_object` chấm cosine trên mặt nạ
+        # **hình chữ nhật** (không có mask thật), còn `_obj_refs` là đặc trưng của MASK SAM ⇒ hai
+        # loại thống kê khác nhau (mẫu ô có thêm tay/nền) ⇒ cosine bị hạ một cách HỆ THỐNG. Đo phiên
+        # `demoip_1123-095901`: remote rõ ràng trong khung mà ứng viên chỉ đạt 0,68–0,73 < ngưỡng
+        # 0,75 ⇒ không bao giờ nhận lại. Deque này giữ mẫu CHẤM CÙNG CÁCH với ứng viên.
+        self._obj_refs_box = deque(maxlen=int(obj_ref_max))
         self._obj_template = None      # ảnh cắt của vật ở lần thấy cuối (cho prefilter NCC)
         self._last_obj_size = None     # (rộng, cao) của vật — dùng khi chưa có template
         self._state = STATE_TRACKING
@@ -439,6 +453,7 @@ class ReIdSession:
         """
         self._refs.clear()
         self._obj_refs.clear()
+        self._obj_refs_box.clear()
         self._obj_template = None
         self._obj_templates.clear()
         self._last_template_frame = -1
@@ -681,8 +696,14 @@ class ReIdSession:
     def _trung_mat(self, frame, bbox, faces=None) -> bool:
         """Ứng viên nhận lại có phải MẶT/ĐẦU không (chỉ khi ô chọn ban đầu KHÔNG phủ mặt).
 
-        Hai điều kiện, OR: (a) TÂM ô nằm trong một mặt — không có ngưỡng nào để hiệu chỉnh;
-        (b) ≥ `NGUONG_PHU_MAT` diện tích ô bị một mặt phủ — bắt ca ô to trùm cả đầu + mặt.
+        Ba điều kiện: (0) ứng viên phải **GIỐNG HÌNH MẶT** so với chính mặt đó (diện tích
+        0,5–2,0× và tỉ lệ w/h trong 0,6–1,7×), rồi mới xét (a) TÂM ô nằm trong mặt, (b) ≥
+        `NGUONG_PHU_MAT` diện tích ô bị mặt phủ (bắt ca ô to trùm cả đầu + mặt).
+
+        Vì sao phải có (0): đo 23-11-2026, phiên `demoip_1123-095901` — remote giữ **ngay cạnh mặt**
+        (ô 103×267, tỉ lệ w/h **0,39**) bị veto **322 ứng viên** chỉ vì chồng lên ô mặt, hệ ngồi
+        "TỰ TÌM LẠI" 160 bước dù vật ở giữa khung. Veto sinh ra để chặn "nhận lại vào MẶT/TRÁN/ĐẦU"
+        (đo 20–21/11) — các ca đó đều có hình học của mặt/đầu.
         """
         if self.face_veto is None or self._ref_phu_mat or bbox is None:
             return False
@@ -690,14 +711,28 @@ class ReIdSession:
             x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
         except (TypeError, ValueError):
             return False
+        cw, ch = abs(x2 - x1), abs(y2 - y1)
+        if cw <= 0 or ch <= 0:
+            return False
         if faces is None:
             faces = self._mat_trong(frame)      # MỘT lần detect cho cả hai điều kiện
         if not faces:
             return False
-        if self._phu_mat(frame, bbox, faces=faces) >= NGUONG_PHU_MAT:
+        giong_mat = []
+        for fx, fy, fw, fh in faces:
+            if fw <= 0 or fh <= 0:
+                continue
+            ti_le_dien_tich = (cw * ch) / (fw * fh)
+            ti_le_khung = (cw / ch) / (fw / fh)
+            if (NGUONG_DIEN_TICH_MAT[0] <= ti_le_dien_tich <= NGUONG_DIEN_TICH_MAT[1]
+                    and NGUONG_TI_LE_MAT[0] <= ti_le_khung <= NGUONG_TI_LE_MAT[1]):
+                giong_mat.append((fx, fy, fw, fh))
+        if not giong_mat:
+            return False
+        if self._phu_mat(frame, bbox, faces=giong_mat) >= NGUONG_PHU_MAT:
             return True
         cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-        for fx, fy, fw, fh in faces:
+        for fx, fy, fw, fh in giong_mat:
             if fx <= cx <= fx + fw and fy <= cy <= fy + fh:
                 return True
         return False
@@ -927,7 +962,8 @@ class ReIdSession:
             sig = object_signature(frame, mask)
             if sig is None:
                 continue
-            raw = best_match(self._obj_refs, sig)
+            raw = max(best_match(self._obj_refs, sig),
+                      best_match(self._obj_refs_box, sig))
             if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
                 # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
                 # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần
@@ -1018,6 +1054,13 @@ class ReIdSession:
             if sig is None:
                 return
             self._obj_refs.append(sig)
+            # Mẫu Ô CHỮ NHẬT — xem chú thích `_obj_refs_box` ở `__init__`. Cùng mask/box đã qua cổng
+            # chất lượng nên không nới lỏng tiêu chuẩn; nó chỉ làm phép so khớp CÙNG LOẠI.
+            box_mask = np.zeros(mask.shape[:2], bool)
+            box_mask[y1:y2, x1:x2] = True
+            sig_box = object_signature(frame, box_mask)
+            if sig_box is not None:
+                self._obj_refs_box.append(sig_box)
             # Nạp template NCC ĐỊNH KỲ (không mỗi frame — bug 29-10; không chỉ lần đầu — bug 04-11):
             # nạp khi (1) chưa có template nào, HOẶC (2) ≥ DEFAULT_TEMPLATE_EVERY frame kể từ lần
             # nạp trước. Bbox ở đây ĐÃ sạch mép (đã cắt dải mép ở trên) nên template không chứa
