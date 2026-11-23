@@ -194,3 +194,43 @@ hơn hẳn mẫu-mask (chứng minh đúng cái lỗi "so khác loại").
   (`0,73` là số của mẫu-mask). Nếu phiên sau vẫn không nhận lại, HUD giờ in `khop 0.7x / can 0.75`
   — đó chính là **số cần để chốt ngưỡng**, thay vì đoán.
 - Phiên này **không** dùng để kết luận về đường "cổng nghi ⇒ ép tìm lại" (nghi_doi_tuong = 0).
+
+---
+
+## ⛔ BỔ SUNG 3 (cùng ngày) — TÔI ĐÃ LÀM SAI, ĐÃ REVERT: phiên `demoip_1123-101110`
+
+### Người dùng nói đúng: "càng làm càng sai". Số liệu chỉ ra chính xác cái sai của tôi.
+
+`summary`: 221 frame · mean 159 ms · **mất dấu 2/221 (1 %)** · score tb 3,53 · **`vetoed` = 0** —
+**chỉ số ĐẸP NHẤT** trong mọi phiên, và chính vì thế nó **đánh lừa**: xem ảnh lưới thì từ ~f465 trở đi
+ô đỏ + mask nằm trên **TƯỜNG/CỬA** cạnh remote, không phải remote (`data/tmp_analyze_1123/sheetE.jpg`).
+
+Chuỗi nhân quả lấy từ CSV:
+
+| bước | dữ kiện |
+|---|---|
+| f114–115 | remote mất thật (score −0,24 / −0,29) |
+| f116–117 | `reacquiring`, ứng viên đầu tiên cos **0,894 / 0,972**, ncc 0,557 / 0,486 |
+| **f118** | **NHẬN LẠI: cos 0,976 · ncc 0,484** → ô `(375,290) 93×176` = **vùng TƯỜNG** |
+| f119–220 | bám vùng tường/cửa đó; `nghi_doi_tuong` = **0 dòng** (cổng nhảy mù vì sau mất dấu mốc bị xoá) |
+
+### Nguyên nhân = đúng thay đổi tôi thêm 2 giờ trước
+`_obj_refs_box` (mẫu đặc trưng tính trên **Ô chữ nhật**) — ý định là "so cùng loại" với ứng viên khi
+tìm lại. Nhưng ô mẫu **gồm cả tường nền**, nên đặc trưng bị nền chi phối:
+
+- Đo lại bằng script nhỏ trên ảnh tổng hợp: `cos(tường, mẫu-MASK)` = **0,457** nhưng
+  `cos(tường, mẫu-Ô to hơn vật)` = **0,779** > ngưỡng 0,75 ⇒ **tường được nhận là vật**.
+- Đúng khớp dữ kiện phiên thật: cos 0,976 (rất cao) nhưng ncc chỉ 0,484 (thấp) — dấu hiệu "đặc trưng
+  khớp mà pixel không khớp".
+
+### Đã làm
+- **REVERT** `_obj_refs_box` (xoá deque + chỗ nạp + chỗ chấm). `raw` quay lại `best_match(_obj_refs, sig)`.
+- Giữ lại **veto theo HÌNH HỌC** (không liên quan tới lỗi này): ca sai đã đo 20–21/11 (vào MẶT cos
+  0,974 / TRÁN 0,734 / ĐẦU 0,663) đều là ô **giống hình mặt** nên vẫn bị chặn — có test khoá.
+- Thay test cũ bằng test **chống tái phạm**: mẫu phải là MASK của vật (đúng 1 mẫu/lần thu), và vùng
+  nền phẳng **không** được khớp vật.
+
+### Bài học (đã ghi vào AGENTS §6)
+Đừng "sửa" phép so khớp bằng cách đổi **loại mặt nạ** của mẫu. Muốn cứu ca "vật có trong khung mà
+không nhận lại" thì phải **xác minh bằng mask thật** (re-prompt SAM vào ứng viên rồi chấm mask-vs-mask)
+— việc này đổi vòng lặp tìm kiếm + chi phí, phải lập plan 3 ý kiến (AGENTS §9.2) trước khi code.

@@ -393,12 +393,6 @@ class ReIdSession:
         self.enabled = self.face_on or self.object_on
         self._refs = deque(maxlen=int(ref_max))
         self._obj_refs = deque(maxlen=int(obj_ref_max))
-        # MẪU "Ô CHỮ NHẬT" (23-11-2026): khi TÌM LẠI, `_match_object` chấm cosine trên mặt nạ
-        # **hình chữ nhật** (không có mask thật), còn `_obj_refs` là đặc trưng của MASK SAM ⇒ hai
-        # loại thống kê khác nhau (mẫu ô có thêm tay/nền) ⇒ cosine bị hạ một cách HỆ THỐNG. Đo phiên
-        # `demoip_1123-095901`: remote rõ ràng trong khung mà ứng viên chỉ đạt 0,68–0,73 < ngưỡng
-        # 0,75 ⇒ không bao giờ nhận lại. Deque này giữ mẫu CHẤM CÙNG CÁCH với ứng viên.
-        self._obj_refs_box = deque(maxlen=int(obj_ref_max))
         self._obj_template = None      # ảnh cắt của vật ở lần thấy cuối (cho prefilter NCC)
         self._last_obj_size = None     # (rộng, cao) của vật — dùng khi chưa có template
         self._state = STATE_TRACKING
@@ -453,7 +447,6 @@ class ReIdSession:
         """
         self._refs.clear()
         self._obj_refs.clear()
-        self._obj_refs_box.clear()
         self._obj_template = None
         self._obj_templates.clear()
         self._last_template_frame = -1
@@ -962,8 +955,7 @@ class ReIdSession:
             sig = object_signature(frame, mask)
             if sig is None:
                 continue
-            raw = max(best_match(self._obj_refs, sig),
-                      best_match(self._obj_refs_box, sig))
+            raw = best_match(self._obj_refs, sig)
             if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
                 # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
                 # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần
@@ -1054,13 +1046,6 @@ class ReIdSession:
             if sig is None:
                 return
             self._obj_refs.append(sig)
-            # Mẫu Ô CHỮ NHẬT — xem chú thích `_obj_refs_box` ở `__init__`. Cùng mask/box đã qua cổng
-            # chất lượng nên không nới lỏng tiêu chuẩn; nó chỉ làm phép so khớp CÙNG LOẠI.
-            box_mask = np.zeros(mask.shape[:2], bool)
-            box_mask[y1:y2, x1:x2] = True
-            sig_box = object_signature(frame, box_mask)
-            if sig_box is not None:
-                self._obj_refs_box.append(sig_box)
             # Nạp template NCC ĐỊNH KỲ (không mỗi frame — bug 29-10; không chỉ lần đầu — bug 04-11):
             # nạp khi (1) chưa có template nào, HOẶC (2) ≥ DEFAULT_TEMPLATE_EVERY frame kể từ lần
             # nạp trước. Bbox ở đây ĐÃ sạch mép (đã cắt dải mép ở trên) nên template không chứa

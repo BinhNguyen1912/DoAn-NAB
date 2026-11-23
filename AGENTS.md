@@ -609,3 +609,14 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   thống (đo: đúng vật chỉ 0,68–0,73 < ngưỡng 0,75). Nay có thêm `_obj_refs_box` (mẫu chấm cùng cách) và
   `raw = max(mẫu-mask, mẫu-ô)`. **Chưa chốt** là đủ để vượt 0,75 — phải đo phiên mới; HUD in
   `khop X / can 0.75` là chỗ lấy số để chốt ngưỡng, đừng hạ ngưỡng bằng cảm tính.
+
+- **ĐỪNG lưu "mẫu đặc trưng trên ô chữ nhật" để so với ứng viên khi tìm lại.** Thử 23-11 rồi phải
+  REVERT: mẫu-ô gồm cả nền ⇒ `cos(tường, mẫu-ô)` = **0,779** (mẫu-MASK chỉ 0,457) ⇒ vượt ngưỡng 0,75
+  và **nhận lại SAI vào tường/cửa** (phiên `demoip_1123-101110`: reacquired f118 cos **0,976** / ncc
+  **0,484**, rồi bám tường ~100 bước; `mất dấu 1 %` — chỉ số ĐẸP mà bám sai, `nghi_doi_tuong` 0 dòng).
+  Quy luật đọc số: **cos cao + ncc thấp = khớp đặc trưng nhưng không khớp pixel**. Muốn cứu ca "vật
+  trong khung mà không nhận lại" thì phải **xác minh bằng mask thật** (re-prompt SAM rồi chấm
+  mask-vs-mask), không phải đổi loại mặt nạ của mẫu.
+- **Veto mặt: chặn theo HÌNH HỌC là đúng, nhưng nó KHÔNG phải thứ chữa "không nhận lại được".** Sau khi
+  nới veto (chỉ chặn ô giống hình mặt), phiên `demoip_1123-101110` có `vetoed = 0` và vẫn bám sai —
+  vì cổng chính là cosine. Đừng quy lỗi "không nhận lại" cho veto mà không nhìn `reid_score`/`ncc`.

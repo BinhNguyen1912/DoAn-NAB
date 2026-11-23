@@ -1397,30 +1397,46 @@ class TestVetoChiChanVatGiongHinhMat:
         s = self._s()
         assert s._trung_mat(self._frame(), (120, 30, 150, 110)) is False   # 30×80, tỉ lệ 0,375
 
-    def test_mau_o_chu_nhat_lam_cosine_cao_hon_cho_ung_vien_o(self):
-        """Ứng viên khi tìm lại được chấm trên Ô CHỮ NHẬT; mẫu tham chiếu thì lấy từ MASK.
+    def test_vung_NEN_khong_duoc_khop_chi_vi_o_chua_nen(self):
+        """BÀI HỌC 23-11 (phiên `demoip_1123-101110`): đừng lưu mẫu đặc trưng trên Ô CHỮ NHẬT.
 
-        Hai thống kê khác nhau ⇒ cosine bị hạ hệ thống (đo phiên 23-11: 0,68–0,73 < ngưỡng 0,75 dù
-        đúng vật). Deque `_obj_refs_box` giữ mẫu chấm CÙNG CÁCH ⇒ phải cho điểm cao hơn hẳn.
+        Bản đầu tôi thêm `_obj_refs_box` (mẫu chấm trên ô, để "so cùng loại" với ứng viên khi tìm
+        lại). Hệ quả ĐO ĐƯỢC: ô mẫu gồm cả TƯỜNG nên vùng TƯỜNG khớp cosine **0,976** (ncc chỉ
+        0,484) ⇒ nhận lại SAI vào tường/cửa ngay sau 2 frame mất dấu, rồi bám tường ~100 bước
+        (mất dấu chỉ 1 % — chỉ số ĐẸP mà bám sai). Test này khoá lại: mẫu phải là MASK (vật), và
+        vùng nền thuần không được vượt ngưỡng cosine của vật.
         """
         from src.appearance import object_signature
 
-        frame = _obj_frame(box=(20, 20, 60, 60), shape=(96, 96))
-        s = ReIdSession(engine=FakeEngineMasks([], shape=(96, 96)), embedder=None, cue="object",
-                        obj_threshold=0.5, reacquire_confirm=1, verify_frames=0)
-        # mẫu MASK = đúng phần vật (không có nền); mẫu Ô = cả ô vuông quanh vật
-        mask_vat = _obj_mask((20, 20, 60, 60), shape=(96, 96))
-        s._collect_reference(frame, (20, 20, 60, 60), mask_vat)
-        assert len(s._obj_refs) == 1 and len(s._obj_refs_box) == 1
+        # vật: ô vuông có sọc trắng ở góc trên-trái; nền: tường xám phẳng
+        tuong = (205, 208, 212)
+        frame = np.full((120, 200, 3), tuong, np.uint8)
+        obj_box = (20, 20, 60, 60)
+        frame[20:60, 20:60] = (0, 140, 255)
+        for x in range(20, 60, 8):
+            frame[20:60, x:min(x + 3, 60)] = (255, 255, 255)
 
-        # ứng viên khi tìm lại: một Ô (không có mask) quanh đúng vật đó
-        hop = np.zeros((96, 96), bool)
-        hop[20:60, 20:60] = True
-        sig_ung_vien = object_signature(frame, hop)
+        s = ReIdSession(engine=FakeEngineMasks([], shape=(120, 200)), embedder=None, cue="object",
+                        obj_threshold=0.75, reacquire_confirm=1, verify_frames=0)
+        s._collect_reference(frame, obj_box, _obj_mask(obj_box, shape=(120, 200)))
+        # ĐÚNG 1 mẫu cho 1 lần thu: nếu ai đó lại thêm mẫu "trên ô" (lẫn nền) thì thành 2 ⇒ đỏ.
+        assert len(s._obj_refs) == 1, (
+            "mỗi lần thu mẫu chỉ được thêm MẪU MASK của vật; mẫu chấm trên ô (lẫn tường) đã bị bỏ "
+            "vì làm vùng nền khớp 0,78 (đo phiên demoip_1123-101110: nhận lại SAI vào tường)"
+        )
+
+        # ứng viên = vùng TƯỜNG phẳng (đúng loại "ô nền" mà bản lỗi đã nhận)
+        nen = np.zeros((120, 200), bool)
+        nen[30:110, 110:180] = True
+        sig_nen = object_signature(frame, nen)
+        # ứng viên = đúng vật (mask thật)
+        sig_vat = object_signature(frame, _obj_mask(obj_box, shape=(120, 200)))
 
         from src.reid import best_match as _bm
 
-        chi_mask = _bm(s._obj_refs, sig_ung_vien)
-        co_hai = max(_bm(s._obj_refs, sig_ung_vien), _bm(s._obj_refs_box, sig_ung_vien))
-        assert co_hai >= chi_mask
-        assert co_hai > 0.99, "cùng một ô thì mẫu ô phải khớp gần như tuyệt đối"
+        assert _bm(s._obj_refs, sig_nen) < 0.75, (
+            "vùng nền phẳng KHÔNG được khớp với vật — nếu khớp thì đã lưu mẫu trên ô (lẫn nền)"
+        )
+        assert _bm(s._obj_refs, sig_vat) > _bm(s._obj_refs, sig_nen) + 0.3, (
+            "vật thật phải khớp CAO HƠN HẲN vùng nền"
+        )
