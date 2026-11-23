@@ -198,3 +198,38 @@ mục nào** của preflight từng đọc ⇒ sống nhiều tuần, chỉ lộ
   vùng sai 0,752–0,989 nằm trong dải ca đúng 0,905 ⇒ không có θ tách được).
 - **Sửa tại chỗ `docs/gt/b1`** (12 frame, 7 chấm được): tạo bộ GT mới, giữ `b1` nguyên để **0,7794 vẫn
   tái lập được**.
+
+## ✅ Review độc lập (AGENTS §9.1) — 23-11 15:10, agent `reviewer`
+
+**Verdict của reviewer:** *"CHƯA merge được — 3 lỗi nhỏ (≤1 h tổng) rồi merge được. Không có P0."*
+(Reviewer không có shell trong phiên của nó ⇒ verify bằng đọc code + grep, không chạy test — tôi đã
+tự chạy lại toàn bộ cổng ở dưới.)
+
+| Mức | Phát hiện | Đã sửa |
+|---|---|---|
+| **P1** | `_recorder_fps` **chỉ được khai báo, không bao giờ gán** ⇒ pacing luôn 30 fps kể cả khi `--record-fps 15` ⇒ file **dài gấp 2 lần** thực, im lặng | Gán trong `_open_writer`. Test `fps=15` — **đã chứng minh test bắt được lỗi**: sau sửa 14 frame, giả lập bản cũ (=30) cho **28** frame cho cùng 0,9 s |
+| **P1** | **Lỗi tôi gây ra ở đường web**: banner vẫn nói "ô đã được ẩn khỏi ảnh" trong khi #45 đổi worker sang **vẽ ô nét đứt**; tệ hơn, `live.test.ts` và `scripts/e2e_web.js` **khoá câu chữ sai** nên e2e vẫn PASS | Sửa 4 chỗ (`live.ts`, `live.test.ts` + test mới "KHÔNG được nói 'đã ẩn'", `e2e_web.js`, `schemas.py`). e2e PASS với câu mới |
+| **P1** | `--no-reid` bị `configs/default.yaml` (`reid_enabled: true`) **đè ngược** ⇒ re-ID vẫn bật khi chạy `--config … --no-reid` | `--reid/--no-reid` thành **tri-state** (`default=None`): CLI nói rõ thì thắng, không nói mới lấy YAML. Kiểm bằng bảng 4 tổ hợp |
+| P2 | `_rec_t0` rò khi `close_recorder` ⇒ file mới mở trong cùng phiên bắt đầu bằng hàng chục frame lặp | Xoá mốc khi đóng + test |
+| P2 | `max(1, so_lan)` **che** ca "nhịp vẽ nhanh hơn fps khai báo" (file **dài** hơn thực) và ca đồng hồ lùi | `max(0, …)` + rebase + 2 test |
+| P2 | "TỰ TÌM LẠI" là **lời hứa**; `--reid --reid-cue face` bám vật ⇒ kho mẫu rỗng, không bao giờ nhận lại (đo: 201 frame, `reid_score = -1` cả phiên) | Đổi thành "ĐANG TÌM LẠI" (việc đang làm, không phải kết quả) + test |
+| P3 | `ve_o_net_dut`: `dai=0` ném `ValueError`, không clamp `x2/y2` | Guard + clamp + test biên (biên ảnh, ô 1×1, `dai=0`, bbox 10 000) |
+| P3 | Màu vàng chép tay ở `live_tracking` | Dùng `_COLOR_NGHI` |
+| P3 | `run_info` không ghi `record_fps`/`record_pace_realtime` ⇒ artifact không tự giải thích thời lượng | Đã ghi |
+| P3 | `./run demoip` in 2 dòng re-ID **trước** dòng "re-ID TẮT" | Chỉ in khi `--reid` thật sự bật |
+| P3 | `docs/demo-ngay-mai.md` Cảnh 3 vẫn dạy "HUD hiện ĐANG TÌM LẠI…" | Viết lại theo cơ chế **mới** (lan truyền liên tục), bản cũ giữ để đối chiếu |
+
+**Reviewer cũng chỉ ra 5 test còn thiếu — đã thêm đủ** (`fps=15`, nhãn fps thấp hơn nhịp vẽ, đồng hồ
+lùi, mở lại recorder, `ve_o_net_dut` ở biên/1px/`dai=0`).
+
+**Còn nợ (ghi vào Next steps):**
+- (a) Reviewer: "`run_tracking` (headless) **không có** `IdentityWatch`" ⇒ **artifact headless
+  không bao giờ có `nghi_doi_tuong`**; đừng trích cổng nghi từ artifact headless.
+- (b) Cần **một phiên `./run demoip` thật** sau commit này: so thời lượng mp4 với đồng hồ treo tường
+  (≤ 5 %) và trích 1 frame `nghi_doi_tuong=1` để thấy viền vàng — hiện chỉ có unit test + diễn tập
+  model giả. **Người dùng làm khi chạy demo thử.**
+- (c) Test đang vá `src.visualizer.time.monotonic` **toàn cục** (đóng băng đồng hồ mọi thread). Hiện
+  vô hại vì không có thread nào chạy; nếu sau này có, phải tiêm đồng hồ qua tham số.
+
+**Cổng sau khi sửa:** `./run lint` sạch · `./run test` **1896 passed** (5 deselected) ·
+`./run webtest` **99 passed** · `./run e2e` **PASS** · `./run democheck` 7 OK / 0 LỖI.
