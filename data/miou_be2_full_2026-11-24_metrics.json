@@ -1,12 +1,12 @@
 {
-  "git_rev": "701ae40ee409b27449f0eb788da1be473e327b1f",
+  "git_rev": "6198c4f554462c27eb8df4d90800aaaece58333e",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-23T15:52:25",
+    "do_luc": "2026-11-23T16:09:29",
     "lenh": "scripts/score_miou.py score --gt docs/gt/vat_be_vaolai --pred-dir data/be2_full_masks --out data/miou_be2_full_2026-11-24_metrics.json",
-    "git_rev": "701ae40ee409b27449f0eb788da1be473e327b1f",
+    "git_rev": "6198c4f554462c27eb8df4d90800aaaece58333e",
     "git_dirty": true,
     "git_dirty_code": false,
     "git_loi": null,
@@ -30,11 +30,11 @@
         125,
         260
       ],
-      "lenh": "tools/run_live.py --source data/clip_be2.mp4 --image-size 192 --bbox 205,130,125,260 --max-frames 444 --dump-mask-frames 0,100,258,270,300,344,348,352,380,400,440 --dump-mask-dir data/be2_full_masks --metrics-csv /tmp/be2f.csv --metrics-summary /tmp/be2f_s.json",
-      "git_rev": "125b743",
+      "lenh": "tools/run_live.py --source data/clip_be2.mp4 --image-size 192 --bbox 205,130,125,260 --max-frames 444 --dump-mask-frames 0,100,258,270,300,344,348,352,380,400,440 --dump-mask-dir data/be2_full_masks --metrics-csv /tmp/be2e.csv",
+      "git_rev": "6198c4f",
       "git_dirty": true,
-      "git_dirty_code": true,
-      "do_luc": "2026-11-23T15:51:01",
+      "git_dirty_code": false,
+      "do_luc": "2026-11-23T16:08:40",
       "frames_yeu_cau": [
         0,
         100,
