@@ -17,6 +17,7 @@ Lưu ý  : `reset()` xoá quỹ đạo + số liệu trượt khi người dùng
          (phím r — ticket 05); recorder giữ nguyên để ghi liền mạch cả 2 phiên.
 """
 import os
+import time
 from collections import deque
 from functools import lru_cache
 
@@ -30,6 +31,7 @@ _COLOR_BOX = (0, 0, 255)         # BGR đỏ
 _COLOR_TRAJECTORY = (255, 0, 255)  # BGR tím
 _COLOR_TEXT = (255, 255, 255)    # BGR trắng
 _COLOR_LOST = (0, 0, 255)        # BGR đỏ — banner mất dấu
+_COLOR_NGHI = (0, 215, 255)      # BGR vàng — ô NÉT ĐỨT khi "nghi đổi đối tượng" (ticket #45)
 _MASK_ALPHA = 0.35
 _LINE_THICKNESS = 2
 _LATENCY_WINDOW = 30             # cửa sổ trượt để tính FPS/độ trễ trên HUD
@@ -60,6 +62,50 @@ def find_vietnamese_font():
     return None
 
 
+def ve_o_net_dut(img, x1, y1, x2, y2, color=_COLOR_NGHI, do_day=_LINE_THICKNESS, dai=8):
+    """Vẽ ô bao NÉT ĐỨT — dấu hiệu "ô này là SUY DIỄN, chưa phải bằng chứng" (ticket #45).
+
+    Vì sao cần kiểu vẽ riêng thay vì ẩn sạch: đo phiên `demoip_1123-144505`, cổng "nghi đổi đối
+    tượng" bật ở f144 rồi KHÔNG tự xoá (không có re-ID để reset) ⇒ **50/194 frame = 25,8 % phiên
+    trắng hoàn toàn**, dù vật vẫn rõ trong khung (giây 20,5 của `_web.mp4`). Ẩn sạch không phải là
+    "an toàn" — nó là "mất hết thông tin". Nét đứt giữ được cả hai: người xem THẤY hệ đang ở đâu,
+    và BIẾT hệ không dám khẳng định mask đó đúng.
+    """
+    x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+    for x in range(x1, x2, dai * 2):            # cạnh trên + dưới
+        cv2.line(img, (x, y1), (min(x + dai, x2), y1), color, do_day)
+        cv2.line(img, (x, y2), (min(x + dai, x2), y2), color, do_day)
+    for y in range(y1, y2, dai * 2):            # cạnh trái + phải
+        cv2.line(img, (x1, y), (x1, min(y + dai, y2)), color, do_day)
+        cv2.line(img, (x2, y), (x2, min(y + dai, y2)), color, do_day)
+
+
+# Số frame LẶP TỐI ĐA cho một lần ghi (ticket #44). 60 frame @30 fps = 2 s.
+# Vì sao cần trần: nhịp hiển thị có thể đứng (model nặng, cửa sổ bị kéo, máy treo) — nếu không
+# chặn, một lần treo 10 s sẽ đẩy 300 frame lặp vào file và (tệ hơn) mọi lần ghi sau đều dính trần,
+# biến file demo thành slideshow. Vượt trần thì REBASE đồng hồ theo số frame đã ghi.
+_MAX_LAP_FRAMES = 60
+
+_LOST_KHONG_REID = "MẤT DẤU — bấm r chọn lại"
+_LOST_CO_REID = "MẤT DẤU — TỰ TÌM LẠI"
+
+
+def lost_banner_text(tu_tim_lai, co_font=True):
+    """Câu banner khi mất dấu — CÙNG một luật cho mọi đường vẽ (ticket #43).
+
+    Vì sao phải phụ thuộc re-ID: đo phiên `demoip_1123-144505` (re-ID TẮT, `git_rev 42efc56`)
+    banner in "MẤT DẤU — TỰ TÌM LẠI" trong khi hệ **không có re-ID** ⇒ người xem (và video nộp bài)
+    được hứa một việc hệ không làm được. Không re-ID thì chỉ nói việc người dùng phải làm: bấm `r`.
+
+    `co_font=False` → bản ASCII (cv2.putText/Hershey không vẽ được dấu tiếng Việt).
+    """
+    if tu_tim_lai:
+        return _LOST_CO_REID if co_font else "MAT DAU - TU TIM LAI"
+    return _LOST_KHONG_REID if co_font else "MAT DAU - BAM R CHON LAI"
+
+
 class Visualizer:
     """Lớp vẽ HUD mỗi frame + quản lý quỹ đạo (deque) + ghi video mp4."""
 
@@ -82,8 +128,16 @@ class Visualizer:
         self._writer = None      # cv2.VideoWriter khi ghi video
         self._frames_written = 0 # số frame ĐÃ ghi thật (để `recording` không nói dối khi 0 frame)
         self._pending_recorder = None  # (path, fps) chờ frame đầu để biết kích thước
+        self._recorder_fps = 30.0    # fps khai báo của file đang ghi
+        self._rec_t0 = None          # mốc thời gian của frame ĐẦU trong file (pacing, #44)
+        self._pace_realtime = False  # giữ nhịp thời gian thực (chỉ nguồn LIVE)
         self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
         self.consecutive_lost = 0  # số frame mất dấu liền tiếp (hiện tại)
+        # Có bật re-ID hay không — CHỈ dùng để chọn CÂU ở banner mất dấu (ticket #43).
+        # Vì sao phải biết: đo phiên `demoip_1123-144505` (re-ID TẮT, `git_rev 42efc56`) banner in
+        # "MẤT DẤU — TỰ TÌM LẠI" trong khi hệ KHÔNG có re-ID ⇒ không tự tìm lại được gì, mà câu đó
+        # đi thẳng vào video nộp bài. Mặc định `False`: không biết thì KHÔNG được hứa.
+        self.reid_enabled = False
 
     # ---------- API công khai ----------
 
@@ -165,6 +219,9 @@ class Visualizer:
         # vùng mà hệ không có bằng chứng.
         dang_mat_dau = (self.consecutive_lost >= _BAM_NO_EVIDENCE_FRAMES
                         or switch_warning)
+        # "NGHI ĐỔI ĐỐI TƯỢNG" KHÁC "mất dấu": mất dấu thì không có gì để vẽ, còn nghi thì VẪN có ô
+        # (chỉ là ô đáng ngờ) ⇒ vẽ NÉT ĐỨT thay vì ẩn sạch (ticket #45, xem `ve_o_net_dut`).
+        dang_nghi = bool(switch_warning) and self.consecutive_lost < _BAM_NO_EVIDENCE_FRAMES
 
         # 1) tô mask bán trong suốt
         if not dang_mat_dau and result.mask is not None and result.mask.any():
@@ -172,10 +229,14 @@ class Visualizer:
             tint[result.mask] = _COLOR_MASK
             img = cv2.addWeighted(img, 1.0 - _MASK_ALPHA, tint, _MASK_ALPHA, 0)
 
-        # 2) ô bao — CHỈ khi còn bằng chứng (xem mục 0)
+        # 2) ô bao — CHỈ khi còn bằng chứng (xem mục 0); đang NGHI thì nét đứt để không ai đọc
+        #    nhầm đây là kết quả đã kiểm.
         x1, y1, x2, y2 = [int(v) for v in result.bbox]
-        if not dang_mat_dau and x2 > x1 and y2 > y1:
+        if not dang_mat_dau and not dang_nghi and x2 > x1 and y2 > y1:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
+        elif dang_nghi and x2 > x1 and y2 > y1:
+            ve_o_net_dut(img, x1, y1, x2, y2)
+            self._put_text(img, "NGHI", (x1, max(18, y1 - 6)))
 
         # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần)
         if not dang_mat_dau and self.show_trajectory and len(self._trajectory) >= 2:
@@ -191,7 +252,7 @@ class Visualizer:
             self._put_text(img, f"Overlay: {overlay_age_ms:.0f} ms truoc",
                            (8, 80))
         if self.consecutive_lost > 0:
-            self._draw_lost_banner(img)
+            self._draw_lost_banner(img, self.reid_enabled)
         if switch_warning:
             # Không còn vẽ ô/mask (xem mục 0) ⇒ câu này phải nói ĐÚNG việc người dùng cần làm.
             self._put_text(img, "NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc", (8, 104))
@@ -246,14 +307,25 @@ class Visualizer:
 
     # ---------- ghi video ----------
 
-    def open_recorder(self, path, fps=30.0, frame_size=None):
+    def open_recorder(self, path, fps=30.0, frame_size=None, pace_realtime=False):
         """Bật ghi mp4.
 
         frame_size=(W, H): mở ngay, trả True/False theo VideoWriter mở được.
         frame_size=None  : trả True và trì hoãn mở tận update() đầu tiên (khi mới biết
                            kích thước frame) — hợp hữu dụng với live/cam lạ.
+        pace_realtime    : giữ nhịp theo ĐỒNG HỒ THỰC (lặp frame cho đủ) — CHỈ dùng cho nguồn LIVE.
+
+        Vì sao phải là cờ riêng thay vì luôn bật (ticket #44): nguồn LIVE chạy chậm hơn fps khai báo
+        (model ~6–11 bước/s, hiển thị ~20 fps) nên ghi 1:1 làm video NGẮN hơn thực 1,5 lần — đo trên
+        phiên `demoip_1123-144505`: 30,76 s thực → file 20,83 s. Nhưng khi render một CLIP có sẵn thì
+        điều ngược lại mới đúng: video phải chạy đúng fps của clip (30 fps), KHÔNG được kéo dài theo
+        tốc độ model (một clip 333 frame sẽ thành 29 s thay vì 11 s). ⇒ mặc định TẮT, chỉ bật cho
+        nguồn live ở `tools/run_live.py`.
         """
         self.close_recorder()
+        # Đặt TRƯỚC nhánh `frame_size is not None`: nhánh đó `return` sớm, đặt sau là cờ bị bỏ rơi
+        # mà `_write` vẫn chạy theo giá trị cũ (bug thật, test `...pace30frame` bắt được).
+        self._pace_realtime = bool(pace_realtime)
         if frame_size is not None:
             return self._open_writer(path, fps, frame_size)
         self._pending_recorder = (str(path), float(fps))
@@ -288,22 +360,58 @@ class Visualizer:
         return True
 
     def _write(self, img):
+        """Ghi 1 frame hiển thị, giữ NHỊP THEO ĐỒNG HỒ THỰC (ticket #44).
+
+        Vì sao: đo phiên `demoip_1123-144505` — thời gian suy luận thật **30,76 s** nhưng file chỉ
+        **625 frame @30 fps = 20,83 s** ⇒ video *chạy nhanh 1,48×*. Nguyên nhân: ghi 1 frame cho
+        mỗi frame hiển thị, mà nhịp hiển thị thật chỉ ~20 fps, còn nhãn fps khai báo là 30. Hệ quả
+        là hỏng đúng yêu cầu "quỹ đạo theo thời gian thực" của video nộp bài.
+
+        Cách sửa: mỗi lần ghi, tính số frame mà file PHẢI có tại thời điểm này
+        (`(now - t0) * fps`) rồi lặp frame ĐANG hiển thị cho đủ. Frame lặp là frame thật vừa vẽ —
+        không bịa nội dung, chỉ giữ đúng thời lượng.
+        """
         if self._writer is None and self._pending_recorder is not None:
             path, fps = self._pending_recorder
             self._pending_recorder = None
             self._open_writer(path, fps, (img.shape[1], img.shape[0]))
-        if self._writer is not None:
+        if self._writer is None:
+            return
+        if not self._pace_realtime:      # nguồn file: 1 lần vẽ = 1 frame, đúng fps khai báo
+            self._writer.write(img)
+            self._frames_written += 1
+            return
+        now = time.monotonic()
+        if self._rec_t0 is None:
+            self._rec_t0 = now
+        fps = self._recorder_fps if self._recorder_fps > 0 else 30.0
+        # +1: frame hiện tại tính là frame thứ `dich` (không phải "đã trễ 1 frame" ngay từ đầu).
+        dich = int((now - self._rec_t0) * fps) + 1
+        so_lan = dich - self._frames_written
+        if so_lan > _MAX_LAP_FRAMES:
+            # Treo/đứng nhịp: ghi phần tối đa rồi REBASE mốc để không tích nợ cho các lần sau.
+            self._writer.write(img)
+            self._frames_written += 1
+            self._rec_t0 = now - ((self._frames_written - 1) / fps)
+            return
+        for _ in range(max(1, so_lan)):
             self._writer.write(img)
             self._frames_written += 1
 
     # ---------- HUD text ----------
 
-    def _draw_lost_banner(self, img):
+    def _draw_lost_banner(self, img, tu_tim_lai=None):
         """Banner giữa khung khi mất dấu — để người xem biết hệ thống ĐANG mất dấu,
-        không phải đang bám đúng (mask rỗng mà im lặng là phản hồi gây hiểu nhầm)."""
+        không phải đang bám đúng (mask rỗng mà im lặng là phản hồi gây hiểu nhầm).
+
+        `tu_tim_lai` = có re-ID hay không (None ⇒ đọc `self.reid_enabled`).
+        """
         h, w = img.shape[:2]
-        text = ("MẤT DẤU — TỰ TÌM LẠI" if self._font_path is not None
-                else "MAT DAU - TU TIM LAI")
+        if tu_tim_lai is None:
+            tu_tim_lai = bool(getattr(self, "reid_enabled", False))
+        # Câu phải KHỚP khả năng thật (ticket #43): không có re-ID thì đừng hứa "tự tìm lại",
+        # chỉ nói việc người dùng phải làm.
+        text = lost_banner_text(tu_tim_lai, co_font=self._font_path is not None)
         if self._font_path is not None:
             _pil_put_text(img, text, _centered_org(img, text, self._font_path,
                                                     self._font_size + 6),

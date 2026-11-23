@@ -189,6 +189,9 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                     memory dài hạn — xem `_maybe_reanchor`). None = tắt (mặc định).
     """
     summary = SessionSummary(total_frames=0)
+    if visualizer is not None:
+        # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43).
+        visualizer.reid_enabled = reid_session is not None
     src = open_video_source(source).open()
     try:
         frame = src.read()
@@ -310,6 +313,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
     reanchor_every: N > 0 → reset + chọn lại bbox mỗi N frame (nhanh hơn, đánh đổi memory).
     Output   : InteractiveSummary(processed = số frame đã track).
     """
+    if visualizer is not None:
+        # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43).
+        visualizer.reid_enabled = reid_session is not None
     summary = InteractiveSummary()
     src = open_video_source(source).open()
     try:

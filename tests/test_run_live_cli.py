@@ -891,3 +891,33 @@ def test_mask_0x0_ghi_file_toan_0_khong_giet_phien(tmp_path):
     assert cb(anh, res) is True                      # KHÔNG được ném
     img = cv2.imread(str(tmp_path / "mask_000000.png"), cv2.IMREAD_GRAYSCALE)
     assert img is not None and img.shape == (48, 64) and img.max() == 0
+
+
+class TestRecordPacingTheoNguon:
+    """Ticket #44 — dây nối: `--record` phải bật pacing khi nguồn LIVE, tắt khi nguồn FILE.
+
+    Vì sao cần: unit test trong `test_visualizer` chỉ chốt `_write()` khi cờ đã bật. Nếu
+    `_make_visualizer` quên truyền cờ thì phiên live lại ghi 1:1 và video lại ngắn hơn thực 1,5×
+    (đúng lỗi đã đo 23-11: 30,76 s thực → 20,83 s file).
+    """
+
+    @staticmethod
+    def _args(tmp_path, source):
+        return type("A", (), {"record": str(tmp_path / "x.mp4"), "max_trajectory": 10,
+                              "show_trajectory": True, "source": source})()
+
+    def test_nguon_webcam_bat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(self._args(tmp_path, "0"))
+        assert viz._pace_realtime is True
+        viz.close_recorder()
+
+    def test_nguon_relay_bat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(
+            self._args(tmp_path, "http://172.19.176.1:8090/snapshot.jpg"))
+        assert viz._pace_realtime is True
+        viz.close_recorder()
+
+    def test_nguon_file_tat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(self._args(tmp_path, "data/binh1.mp4"))
+        assert viz._pace_realtime is False
+        viz.close_recorder()

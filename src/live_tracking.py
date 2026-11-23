@@ -2048,6 +2048,10 @@ class LiveTrackingSession:
             tint[mask] = _OVERLAY_COLOR_MASK
             img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
 
+        # Ticket #45: "nghi đổi đối tượng" KHÁC "không có bằng chứng" — nghi thì VẪN có ô (chỉ là ô
+        # đáng ngờ), nên vẽ NÉT ĐỨT để người xem thấy hệ đang ở đâu mà không tưởng đó là kết quả đã
+        # kiểm. Ẩn sạch cả hai (luật 21-11) đã đo hậu quả 23-11: 50/194 frame = 25,8 % phiên trắng.
+        dang_nghi = self._stats.bam == "nghi_doi_tuong"
         if not khong_bang_chung:
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             if x2 > x1 and y2 > y1:
@@ -2056,6 +2060,14 @@ class LiveTrackingSession:
             points = list(self._trail)
             for index in range(1, len(points)):
                 cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
+        elif dang_nghi:
+            from src.visualizer import ve_o_net_dut   # import trong hàm: tránh vòng import nặng
+
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            if x2 > x1 and y2 > y1:
+                ve_o_net_dut(img, x1, y1, x2, y2)
+                cv2.putText(img, "NGHI", (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, (0, 215, 255), 2)
 
         hud = (f"LIVE {self._stats.measured_fps:.1f}fps | VOS {self._stats.vos_fps:.1f}fps "
                f"{self._stats.vos_ms:.0f}ms | LK {self._stats.lk_ms:.1f}ms")

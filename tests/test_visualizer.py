@@ -137,8 +137,11 @@ class TestNhanTiengViet:
 
 
 class TestGhiVideo:
-    def test_ghi_mp4_doc_lai_du_frame_dung_kich_thuoc(self, tmp_path):
+    def test_ghi_mp4_doc_lai_du_frame_dung_kich_thuoc(self, tmp_path, monkeypatch):
         out = tmp_path / "hud.mp4"
+        # Đóng băng đồng hồ: từ ticket #44 nhịp ghi theo thời gian THỰC, nên test "1 lần update =
+        # 1 frame" phải cố định thời gian, nếu không nó phụ thuộc tốc độ máy.
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: 0.0)
         viz = Visualizer()
         assert viz.open_recorder(str(out)) is True
         for i in range(3):
@@ -464,3 +467,166 @@ class TestHudNoiDungKhiVeto:
         hud = " | ".join(texts)
         assert "khop 0.62" in hud and "can 0.75" in hud
         assert "KHUON MAT" not in hud
+
+
+class TestBannerNoiDungTheoReId:
+    """Ticket #43 — banner mất dấu phải nói ĐÚNG khả năng của hệ.
+
+    Bối cảnh đo: phiên `demoip_1123-144505` (re-ID TẮT, `git_rev 42efc56`) có 13 frame mất dấu và
+    banner in "MẤT DẤU — TỰ TÌM LẠI"; hệ **không có re-ID** nên không tự tìm lại được gì. Câu đó
+    nằm trong `_web.mp4` nộp bài ⇒ người xem được hứa một việc hệ không làm được.
+    """
+
+    def test_khong_reid_thi_bao_bam_r(self):
+        from src.visualizer import lost_banner_text
+        assert "bấm r" in lost_banner_text(False)
+        assert "TỰ TÌM LẠI" not in lost_banner_text(False)
+
+    def test_co_reid_thi_giu_cau_cu(self):
+        from src.visualizer import lost_banner_text
+        assert lost_banner_text(True) == "MẤT DẤU — TỰ TÌM LẠI"
+
+    def test_ban_ascii_khi_khong_co_font(self):
+        from src.visualizer import lost_banner_text
+        assert lost_banner_text(False, co_font=False) == "MAT DAU - BAM R CHON LAI"
+        assert lost_banner_text(True, co_font=False) == "MAT DAU - TU TIM LAI"
+
+    def test_mac_dinh_visualizer_la_khong_reid(self):
+        """Không ai nói gì ⇒ KHÔNG được hứa 'tự tìm lại' (mặc định an toàn)."""
+        assert Visualizer().reid_enabled is False
+
+    def test_render_truyen_dung_co_reid_xuong_banner(self, monkeypatch):
+        viz = Visualizer()
+        da_nhan = []
+        monkeypatch.setattr(viz, "_draw_lost_banner", lambda img, tu_tim_lai=None:
+                            da_nhan.append(tu_tim_lai))
+        for co_reid in (False, True):
+            viz.reid_enabled = co_reid
+            # `update()` (không phải `render()`) để `consume()` đếm `consecutive_lost` trước.
+            viz.update(_frame(), _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None))
+        assert da_nhan[-2:] == [False, True]
+
+
+class TestGhiVideoDungThoiGianThuc:
+    """Ticket #44 — file video phải DÀI ĐÚNG bằng thời gian phiên chạy.
+
+    Bối cảnh đo (phiên `demoip_1123-144505`): thời gian suy luận thật **30,76 s** nhưng `_web.mp4`
+    chỉ **20,83 s** (625 frame @30 fps) ⇒ video chạy nhanh **1,48×**. Nguyên nhân: ghi 1 frame cho
+    mỗi frame HIỂN THỊ, mà nhịp hiển thị thật của live chỉ ~20 fps trong khi nhãn fps là 30.
+
+    Hệ quả nếu không sửa: mọi tuyên bố "quỹ đạo theo thời gian thực" trong video nộp bài đều sai
+    thời lượng, và mọi phân tích chuyển động (nhanh/chậm, độ trễ) trên video bị lệch 1,5×.
+    """
+
+    @staticmethod
+    def _clock(monkeypatch, start=0.0):
+        """Đồng hồ giả: trả giá trị do test đặt vào."""
+        hop = {"t": start}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        return hop
+
+    def test_muoi_frame_hien_thi_trong_mot_giay_voi_fps30_ra_30_frame(self, tmp_path, monkeypatch):
+        hop = self._clock(monkeypatch)
+        viz = Visualizer()
+        out = tmp_path / "nhip.mp4"
+        assert viz.open_recorder(str(out), fps=30.0, frame_size=(160, 120),
+                                 pace_realtime=True) is True
+        for i in range(10):
+            hop["t"] = i * 0.1                 # 10 frame hiển thị trong đúng 1,0 s
+            viz.update(np.full((120, 160, 3), 50, np.uint8),
+                       TrackingResult(frame_idx=i, mask=None, bbox=(0, 0, 0, 0),
+                                      score=0.0, elapsed_ms=1.0))
+        viz.close_recorder()
+        n = viz._frames_written
+        # Mốc so là frame CUỐI ĐƯỢC HIỂN THỊ (t = 0,9 s), không phải 1,0 s: file chỉ dài tới frame
+        # cuối đó. Dung sai 2 frame (làm tròn `int(...) + 1` + 1 frame giữ cuối).
+        dai = n / 30.0
+        assert abs(dai - 0.9) <= 2 / 30.0, \
+            f"file dài {dai:.2f} s cho phiên hiển thị 0,90 s ({n} frame @30 fps)"
+
+    def test_nhip_hien_thi_cham_hon_khong_lam_video_ngan_lai(self, tmp_path, monkeypatch):
+        """Đúng ca đã đo: hiển thị 20 fps (thực tế live) với nhãn 30 fps → file vẫn đủ 30 frame/s."""
+        hop = self._clock(monkeypatch)
+        viz = Visualizer()
+        assert viz.open_recorder(str(tmp_path / "c.mp4"), fps=30.0, frame_size=(160, 120),
+                                 pace_realtime=True) is True
+        for i in range(20):                    # 20 frame trong 1,0 s = 20 fps thật
+            hop["t"] = i * 0.05
+            viz.update(np.full((120, 160, 3), 50, np.uint8),
+                       TrackingResult(frame_idx=i, mask=None, bbox=(0, 0, 0, 0),
+                                      score=0.0, elapsed_ms=1.0))
+        viz.close_recorder()
+        assert 29 <= viz._frames_written <= 31, \
+            f"{viz._frames_written} frame — 1,0 s @30 fps phải là ~30, không phải 20"
+
+    def test_treo_dai_khong_bom_frame_va_khong_tich_no(self, tmp_path, monkeypatch):
+        """Treo 10 s không được đẩy 300 frame lặp, và các lần ghi SAU không bị dính trần."""
+        from src.visualizer import _MAX_LAP_FRAMES
+        hop = self._clock(monkeypatch)
+        viz = Visualizer()
+        assert viz.open_recorder(str(tmp_path / "treo.mp4"), fps=30.0,
+                                 frame_size=(160, 120), pace_realtime=True) is True
+        img = np.full((120, 160, 3), 50, np.uint8)
+        res = TrackingResult(frame_idx=0, mask=None, bbox=(0, 0, 0, 0), score=0.0, elapsed_ms=1.0)
+        viz.update(img, res)
+        truoc = viz._frames_written
+        hop["t"] = 10.0                       # máy treo 10 s
+        viz.update(img, res)
+        assert viz._frames_written - truoc <= _MAX_LAP_FRAMES
+        # Sau khi rebase, nhịp lại đúng: thêm 1 s ⇒ thêm ~30 frame (không phải 60/lần nữa)
+        trước2 = viz._frames_written
+        hop["t"] = 11.0
+        viz.update(img, res)
+        assert 25 <= viz._frames_written - trước2 <= 35, "rebase hỏng ⇒ mọi lần ghi sau dính trần"
+        viz.close_recorder()
+
+
+class TestNghiDoiTuongVeONetDut:
+    """Ticket #45 (đường CLI) — khi `switch_warning` thì vẽ ô NÉT ĐỨT, không tô mask.
+
+    Số đo: phiên `demoip_1123-144505`, cổng nghi bật ở f144 và không tự xoá ⇒ 25,8 % phiên trắng;
+    đường worker đã đổi theo cùng luật (`live_tracking._annotate`), CLI phải giống để buổi demo
+    không nói hai chuyện.
+    """
+
+    def test_co_o_net_dut_va_khong_to_mask(self):
+        viz = Visualizer()
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=0, bbox=(100, 100, 200, 180)),
+                         switch_warning=True)
+        # viền trên của ô: màu vàng cảnh báo (0,215,255) → G cao
+        vien = img[100, 100:200]
+        assert (vien[:, 1] > 180).any(), "thiếu ô nét đứt khi nghi"
+        # bên trong ô: không được có mask cam (G≈140) trộn với nền (40) — phải là nền thuần
+        trong = img[120:160, 120:180]
+        assert np.allclose(trong, frame[120:160, 120:180]), "mask bị tô khi đang nghi"
+
+    def test_mat_dau_that_thi_khong_ve_gi(self):
+        """Mất dấu thật (mask rỗng) KHÁC nghi: không có gì để vẽ ⇒ giữ nguyên như cũ."""
+        viz = Visualizer()
+        frame = _frame()
+        img = viz.render(frame, _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None),
+                         switch_warning=False)
+        assert np.array_equal(img[100:180, 100:200], frame[100:180, 100:200])
+
+
+class TestNguonFileKhongBiKeoDai:
+    """Ticket #44, chiều NGƯỢC LẠI — nguồn FILE phải ghi 1:1, không bị kéo dài theo tốc độ model.
+
+    Vì sao cần test: `pace_realtime` bật cho MỌI nguồn sẽ làm clip 333 frame @30 fps (11 s) thành
+    ~29 s vì model chạy 11,5 bước/s — video demo hoá slideshow. Cờ này chỉ được bật cho nguồn live.
+    """
+
+    def test_mac_dinh_khong_pace_thi_moi_lan_ve_la_mot_frame(self, tmp_path, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer()
+        assert viz.open_recorder(str(tmp_path / "f.mp4"), fps=30.0,
+                                 frame_size=(160, 120)) is True     # pace_realtime mặc định TẮT
+        for i in range(10):
+            hop["t"] = i * 0.1          # chậm hơn fps khai báo — nhưng KHÔNG được lặp frame
+            viz.update(np.full((120, 160, 3), 50, np.uint8),
+                       TrackingResult(frame_idx=i, mask=None, bbox=(0, 0, 0, 0),
+                                      score=0.0, elapsed_ms=1.0))
+        viz.close_recorder()
+        assert viz._frames_written == 10

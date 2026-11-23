@@ -805,3 +805,75 @@ def test_reanchor_giu_mau_tham_chieu_reid():
     assert sum(1 for c in calls if c[0] == "reset") == n_reset, (
         "`reanchor` KHÔNG được reset Re-ID (xoá mẫu tham chiếu)"
     )
+
+
+class TestBannerMatDauNoiDungTheoReId:
+    """Ticket #43, phần DÂY NỐI: vòng hiển thị phải báo cho Visualizer biết có re-ID hay không.
+
+    Vì sao cần test riêng: unit test `lost_banner_text` chỉ chốt CÂU CHỮ. Nếu `run_smooth_display`
+    quên gán `visualizer.reid_enabled`, mặc định `False` sẽ khiến phiên CÓ re-ID in sai câu
+    ("bấm r chọn lại" trong khi hệ tự tìm lại được) — sai chiều ngược, cũng là nói dối.
+    """
+
+    class _Reid:
+        """re-ID giả tối thiểu: đúng các thuộc tính `InferenceWorker` đọc."""
+
+        state = "tracking"
+
+        def start(self, frame, bbox):
+            mask = np.zeros(frame.shape[:2], bool)
+            mask[10:50, 10:50] = True
+            return TrackingResult(frame_idx=0, mask=mask, bbox=(10, 10, 50, 50),
+                                  score=1.0, elapsed_ms=20.0)
+
+        def step(self, frame):
+            raise AssertionError("test chỉ cần `start`")
+
+        def reset(self):
+            pass
+
+        def set_suspicious(self, co):
+            pass
+
+    def _chay(self, tmp_path, write_video, reid_session):
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.smooth_display import run_smooth_display
+        from src.synthetic_video import generate_tracking_sequence
+        from src.visualizer import Visualizer
+
+        fx = generate_tracking_sequence(num_frames=10, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        viz = Visualizer()
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            return list(QUIT_KEYS)[0] if state["n"] >= 6 else -1
+
+        class Eng:
+            def start(self, frame, bbox):     # dùng khi KHÔNG có re-ID
+                mask = np.zeros(frame.shape[:2], bool)
+                mask[10:50, 10:50] = True
+                return TrackingResult(frame_idx=0, mask=mask, bbox=(10, 10, 50, 50),
+                                      score=1.0, elapsed_ms=5.0)
+
+            def process(self, frame):
+                return self.start(frame, None)
+
+            def reset(self):
+                pass
+
+        run_smooth_display(source=str(path), engine=Eng(), selector=PromptSelector(
+            frame_shape=(120, 200, 3)), display=display, max_frames=1,
+            visualizer=viz, preselect_bbox=(10, 10, 50, 50), reid_session=reid_session)
+        return viz
+
+    def test_co_reid_thi_banner_duoc_phep_noi_tu_tim_lai(self, tmp_path, write_video):
+        viz = self._chay(tmp_path, write_video, self._Reid())
+        assert viz.reid_enabled is True
+
+    def test_khong_reid_thi_banner_bao_bam_r(self, tmp_path, write_video):
+        viz = self._chay(tmp_path, write_video, None)
+        assert viz.reid_enabled is False

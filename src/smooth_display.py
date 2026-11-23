@@ -341,6 +341,9 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     Trả InteractiveSummary(processed = số lần suy luận).
     """
     summary = InteractiveSummary()
+    if visualizer is not None:
+        # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43): không re-ID thì in "bấm r chọn lại".
+        visualizer.reid_enabled = reid_session is not None
     frames = LatestFrameSource(open_video_source(source).open()).start()
     worker = InferenceWorker(engine, frames, reid_session=reid_session).start()
     consumed_seq = 0

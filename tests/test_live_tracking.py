@@ -3274,3 +3274,60 @@ class TestTuDongChonMucTieu:
         # (không kẹt `waiting_selection`) và ô dùng đúng box của detector.
         assert stats.frames > 0, "phiên phải phát được frame trong trạng thái bám"
         assert sess._chon_bbox == (5, 5, 40, 40)   # xyxy -> xywh, ghi vào manifest
+
+
+class TestNghiDoiTuongVeONetDut:
+    """Ticket #45 — "nghi đổi đối tượng" phải VẼ ô nét đứt, không ẩn sạch cả khung.
+
+    Số đo dẫn tới: phiên `demoip_1123-144505` (re-ID tắt) — cổng bật ở f144 rồi không tự xoá
+    (`reacquired_count=0`, `reselect_n=0`) ⇒ **50/194 frame = 25,8 %** phiên không có gì trên ảnh,
+    trong khi vật vẫn rõ trong khung. Ẩn sạch không phải "an toàn"; nét đứt + nhãn "NGHI" mới đúng:
+    người xem thấy hệ đang ở đâu và biết hệ KHÔNG khẳng định vùng đó là vật.
+    """
+
+    def _session(self, tmp_path):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        out = tmp_path / "live45"
+        _pre_select(out)
+        return LiveTrackingSession(FakeEngine(), LiveTrackConfig(
+            source="x.mp4", out_dir=out, display_fps=100, vos_every=3))
+
+    @staticmethod
+    def _frame_va_mask():
+        frame = np.zeros((120, 160, 3), np.uint8)
+        mask = np.zeros((120, 160), bool)
+        mask[30:80, 30:90] = True
+        return frame, _Result(0, (30, 30, 90, 80), mask)
+
+    def test_nghi_ve_o_net_dut_va_khong_to_mask(self, tmp_path):
+        sess = self._session(tmp_path)
+        sess._stats.bam = "nghi_doi_tuong"
+        frame, res = self._frame_va_mask()
+        img = sess._annotate(frame, res)
+
+        # 1) CÓ nét đứt màu vàng ở VIỀN ô (hàng y=30, cột 30..90)
+        vien = img[30, 30:90, 1]           # kênh G của màu vàng (0,215,255)
+        assert (vien > 180).any(), "không thấy ô nét đứt ở viền trên khi bam=nghi_doi_tuong"
+        # 2) KHÔNG tô mask BÊN TRONG ô (mask màu cam (0,140,255) sẽ làm G≈90..160)
+        trong = img[40:70, 40:80]
+        assert trong.sum() == 0, "trong ô phải là nền (không tô mask) khi đang nghi"
+
+    def test_het_nghi_thi_ve_o_dac_lai(self, tmp_path):
+        sess = self._session(tmp_path)
+        sess._stats.bam = None
+        frame, res = self._frame_va_mask()
+        img = sess._annotate(frame, res)
+        # ô ĐẶC màu đỏ của `_OVERLAY_COLOR_BOX`: (0,0,255) → kênh R = 255, G = 0
+        canh = img[30, 30:90]
+        assert (canh[:, 2] > 200).any() and (canh[:, 1] < 60).all(), \
+            "khi không nghi phải là ô đặc (đỏ), không phải nét đứt vàng"
+
+    def test_khong_bang_chung_van_an_sach(self, tmp_path):
+        """`no_evidence` (ô do LK suy diễn, không có bằng chứng model) vẫn ẩn — KHÔNG đổi luật 21-11."""
+        sess = self._session(tmp_path)
+        sess._stats.bam = "no_evidence"
+        frame, res = self._frame_va_mask()
+        img = sess._annotate(frame, res)
+        # chỉ còn HUD (chữ đỏ ở góc trên-trái); vùng ô phải nguyên nền
+        assert img[40:70, 40:80].sum() == 0

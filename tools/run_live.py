@@ -373,6 +373,22 @@ def _device_note(device):
     return "máy CPU (không GPU NVIDIA)"
 
 
+def _la_nguon_live(source):
+    """Nguồn có phải LIVE (webcam / RTSP / HTTP relay) — tức nhịp frame không do mình quyết?
+
+    Dùng để bật `pace_realtime` cho bản ghi video (ticket #44): chỉ nguồn live mới cần giữ
+    nhịp theo đồng hồ thực; nguồn file phải ghi đúng fps của clip.
+    """
+    from src.video_source import is_camera_source
+
+    if source is None:            # stub/test không khai `source` ⇒ coi như KHÔNG live (an toàn)
+        return False
+    text = str(source).strip().lower()
+    if is_camera_source(source):
+        return True
+    return text.startswith(("rtsp://", "rtspt://", "http://", "https://"))
+
+
 def _make_visualizer(args, record_size=None, record_fps=30.0):
     """Tạo Visualizer (HUD luôn bật); nếu --record chỉ định thì bật ghi mp4.
 
@@ -382,7 +398,10 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     viz = Visualizer(max_trajectory=args.max_trajectory,
                      show_trajectory=getattr(args, "show_trajectory", True))
     if args.record:
-        if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size):
+        # Nguồn LIVE: giữ nhịp thời gian THỰC trong file (ticket #44 — đo 23-11: phiên 30,76 s
+        # nhưng video chỉ 20,83 s ⇒ nhanh 1,48×). Nguồn FILE: ghi 1:1 đúng fps khai báo.
+        if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size,
+                             pace_realtime=_la_nguon_live(getattr(args, "source", None))):
             print(f"[pipeline] ghi video: {args.record} ({record_fps:.0f} fps)")
         else:
             print(f"[LOI] không ghi được video tới {args.record} — chạy không ghi")
