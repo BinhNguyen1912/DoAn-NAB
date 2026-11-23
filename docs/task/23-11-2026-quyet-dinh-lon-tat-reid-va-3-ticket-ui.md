@@ -144,3 +144,57 @@ Mask tràn nền be cùng tông: **63/194 frame (32 %)** có `mask_area` > 2,5×
 | **A** | đang bám | ô đặc đỏ + tô mask cam |
 | **B** | **nghi đổi đối tượng** (ticket #45) | **ô NÉT ĐỨT vàng + nhãn "NGHI"**, KHÔNG tô mask, banner `NGHI DOI TUONG — r: chon lai \| c: van dung, tiep tuc` |
 | **C** | mất dấu, **không** re-ID (ticket #43) | banner `MẤT DẤU — bấm r chọn lại` (trước 23-11 in sai: "TỰ TÌM LẠI") |
+
+## ➕ Bổ sung 15:20 — sau khi một agent độc lập (góc "sản phẩm & bằng chứng") phản biện
+
+### Đính chính 1: `bbox_h` KHÔNG phải 479
+
+Tôi từng viết "ô chạm mép khung vì `bbox_h` = 479 = hết chiều cao khung". **Sai**: 479 là **toạ độ
+`y2`** in trong log `run_live` (`bbox=(x1,y1,x2,y2)`), còn cột CSV `bbox_h` có **max = 376** (78 %
+chiều cao 480). Con số tổng **63,5 % tái lập được** (115/181 frame, đã kiểm chéo 4 frame: `f0`
+CSV→`(171,319,247,395)` khớp đúng log), nhưng **lý do** phải viết lại theo phân rã mép:
+
+| mép | số frame (n=181) |
+|---|---|
+| **dưới** `y2 ≥ 478` | **104 (57,5 %)** |
+| phải `x2 ≥ 638` | 13 (7,2 %) |
+| trái `x1 ≤ 2` | 5 (2,8 %) |
+| trên `y1 ≤ 2` | **0 (0,0 %)** |
+
+⇒ Bản chất là "mask ăn **xuống mặt bàn**", không phải "lan mọi phía". Một agent khác đo cùng câu
+hỏi ra 28,7 % ⇒ **lên slide phải ghi rõ công thức + n**, tốt nhất là dùng dòng phân rã này.
+
+### Đính chính 2: phiên live **KHÔNG replay được** (tôi đã nói ngược trong một tin nhắn)
+
+`data/demoip_1123-144505.mp4` **không phải nguồn thô** — nó là bản **đã cháy HUD**, giống `_web.mp4`
+(so frame 300 hai file: trùng khít). `prompt_bbox` + CSV đầy đủ cột nghĩa là **chẩn đoán được**, không
+phải **chạy lại được**. Muốn có bằng chứng tái lập: **ghi raw trước** (`./run raw 20 --source …`),
+rồi chạy pipeline trên chính clip đó.
+
+### Đính chính 3: tiêu chí "worker in cùng câu" của #43 là tiêu chí SAI
+
+`_annotate` **cố ý** không có banner chữ; lời giải thích cho người xem web nằm ở panel
+(`web/src/components/LivePanel.tsx:408` + nút "Vẫn đúng, tiếp tục"). `grep` toàn repo: **0 chỗ** in
+"TỰ TÌM LẠI" ngoài `visualizer.lost_banner_text` ⇒ chỉ CLI (đường ghi video nộp bài) cần sửa, và đã
+sửa. Ghi chú đã đóng vào ticket `#43`.
+
+### Thêm mục 10 cho `./run democheck` — cổng hồi quy cho #44
+
+Đây là lỗi **kiểm được bằng máy tính bỏ túi** (194 × 158,5 ms = 30,76 s vs file 20,83 s) mà **không
+mục nào** của preflight từng đọc ⇒ sống nhiều tuần, chỉ lộ khi chiếu.
+
+- `check_video_duration()`: đọc `total_frames × mean_latency_ms` từ `<phiên>_summary.json`, so với
+  `frame/fps` của `<phiên>_web.mp4` / `<phiên>.mp4`; lệch **> 5 %** ⇒ **LỖI** với phiên ghi sau mốc
+  `23-11-2026 15:00`, còn phiên cũ (mắc lỗi 1:1 đã biết) chỉ **CẢNH BÁO** (không chặn buổi demo).
+- Chạy thật trên repo: `7 OK · 3 cảnh báo · 0 LỖI`, in đúng
+  `demoip_1123-144505_web.mp4: 20.8 s vs thực 30.8 s (+32 %)`.
+- 5 test mới trong `tests/test_demo_preflight.py`; 2 test cũ đổi số mục (9 → 10, 10 → 11).
+
+### Việc bị bác (kèm lý do) — không làm trong phiên này
+
+- **Sửa thuật toán tràn nền (#46) ngay**: đổi thuật toán ⇒ AGENTS §9.2 bắt buộc plan 3 ý kiến
+  (> 4 h chỉ để quyết), và ngưỡng diện tích đo trên **1 phiên** là over-fit. Đang chạy plan.
+- **Bật lại re-ID / hạ ngưỡng re-ID / thêm "cổng cos"**: đã bị số đo bác (bảng 2×2 + `track_cos`
+  vùng sai 0,752–0,989 nằm trong dải ca đúng 0,905 ⇒ không có θ tách được).
+- **Sửa tại chỗ `docs/gt/b1`** (12 frame, 7 chấm được): tạo bộ GT mới, giữ `b1` nguyên để **0,7794 vẫn
+  tái lập được**.
