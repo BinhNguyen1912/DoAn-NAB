@@ -63,6 +63,7 @@ def doc_cot(path):
                 "frame_idx": int(float(r.get("frame_idx") or 0)),
                 "score": so("score"),
                 "mask_area": so("mask_area"),
+                "reacquired": so("reacquired"),
             })
     return out
 
@@ -95,12 +96,16 @@ def baseline_truot(scores, win, lag):
 
 
 def co_latch(flags, run):
-    """Đánh dấu `run` frame LIÊN TIẾP thoả ⇒ trả `[True]` tại frame BẮT ĐẦU mỗi chuỗi."""
+    """`run` frame LIÊN TIẾP thoả ⇒ trả **frame BÁO ĐỘNG** (frame thứ `run` của chuỗi).
+
+    P1 review vòng 2 (23-11): bản đầu trả frame ĐẦU chuỗi ⇒ `frame_bi_an` sớm hơn thực tế tới
+    `run-1` frame mỗi lần báo (cận trên, không phải số đo). Cổng chỉ *hành động* ở frame thứ `run`.
+    """
     fires, dem = [], 0
     for i, ok in enumerate(flags):
         dem = dem + 1 if ok else 0
         if dem == run:
-            fires.append(i - run + 1)
+            fires.append(i)
     return fires
 
 
@@ -129,11 +134,14 @@ def frame_bi_an(fires, n):
     return 0 if not fires else n - fires[0]
 
 
-def fp_khi_mask_to(rows, fires, ti_le=0.7):
+def mask_to_khi_bat(rows, fires, ti_le=0.7):
     """Số lần bật mà ở frame đó mask VẪN TO (≥ `ti_le` × trung vị `mask_area` của phiên).
 
-    Đây là "báo oan" theo nghĩa hẹp nhất (mask còn to mà cổng nói mask sai) — cần thiết vì
-    `mIoU` không đo được frame nào là "ẩn oan". `None` khi CSV thiếu cột `mask_area`.
+    TÊN CŨ `fp_khi_mask_to` ĐÃ BỎ (P1 review vòng 2, 23-11): gọi đây là "báo oan" (false positive) là
+    **sai** — mask to + `track_cos` cao **không** chứng minh mask đúng, vì ca trôi sang vùng cùng tông
+    có mask rất to và cos 0,75–0,99 (phiên `demoip_1121-121732`: mask 21k px, cos 0,916, mà **là** báo
+    oan thật). Đại lượng này chỉ trả lời "mask còn to không", không trả lời "đúng/sai".
+    `None` khi CSV thiếu cột `mask_area` (0/None ≠ đã đo).
     """
     dien_tich = [r["mask_area"] for r in rows if r["mask_area"] is not None]
     if not dien_tich:
@@ -188,10 +196,45 @@ def tong_hop(paths, args):
             "fire_rel": len(f_rel),
             "frame_an_abs": frame_bi_an(f_abs, n),
             "frame_an_rel": frame_bi_an(f_rel, n),
-            "fp_khi_mask_to_rel": fp_khi_mask_to(rows, f_rel),
+            "frame_an_rel_reset": frame_bi_an_reset(rows, f_rel, n),
+            "mask_to_khi_bat_rel": mask_to_khi_bat(rows, f_rel),
             "fire_rel_dau": f_rel[:3],
         })
     return phien
+
+
+def _tong_nhom(phien):
+    """Tổng của MỘT nhóm CSV (có/không có `mask_area`) — không trộn mẫu số."""
+    n = sum(p["n"] for p in phien)
+    an = sum(p["frame_an_rel"] for p in phien)
+    an_reset = sum(p["frame_an_rel_reset"] for p in phien)
+    return {
+        "so_phien": len(phien), "so_frame": n,
+        "phien_bao_rel": sum(1 for p in phien if p["fire_rel"]),
+        "fire_rel": sum(p["fire_rel"] for p in phien),
+        "pct_frame_an_rel": round(100.0 * an / n, 2) if n else None,
+        "pct_frame_an_rel_reset": round(100.0 * an_reset / n, 2) if n else None,
+    }
+
+
+def frame_bi_an_reset(rows, fires, n):
+    """Số frame bị ẩn nếu latch được XOÁ mỗi khi `reacquired == 1` (vật được nhận lại).
+
+    Cần thiết vì chi phí latch phụ thuộc mạnh vào việc có đường xoá: đo trên 15 phiên, cùng một luật
+    cho 62,7 % (không xoá) vs 47,8 % (xoá khi nhận lại).
+    """
+    if not fires:
+        return 0
+    an, dang_an = 0, False
+    for i in range(n):
+        if dang_an:
+            an += 1
+        if fires and i == fires[0]:
+            fires = fires[1:]
+            dang_an = True
+        if dang_an and i < len(rows) and rows[i].get("reacquired") == 1.0:
+            dang_an = False
+    return an
 
 
 def tao_payload(phien, args, paths):
@@ -200,7 +243,7 @@ def tao_payload(phien, args, paths):
     fire_abs = sum(p["fire_abs"] for p in phien)
     fire_rel = sum(p["fire_rel"] for p in phien)
     an_rel = sum(p["frame_an_rel"] for p in phien)
-    fp_rel = sum(p["fp_khi_mask_to_rel"] or 0 for p in phien)
+    fp_rel = sum(p["mask_to_khi_bat_rel"] or 0 for p in phien)
     return {
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code,
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S"),
@@ -208,7 +251,13 @@ def tao_payload(phien, args, paths):
         "nguon": [Path(p).name for p in paths],
         "luat": {"score_abs": args.score_abs, "score_rel": args.score_rel,
                  "run": args.run, "win": args.win, "lag": args.lag,
-                 "fp_mask_to_ti_le": 0.7},
+                 "mask_to_khi_bat_ti_le": 0.7},
+        # P1 review vòng 2: phải TÁCH tổng theo `co_mask_area`. Gộp 17 CSV 11 cột (không có
+        # `mask_area`) với 15 CSV mới là "cùng luật, khác mẫu số" — đúng bẫy đã làm 3 người ra 3 số.
+        "tong_theo_mask_area": {
+            "co": _tong_nhom([p for p in phien if p["co_mask_area"]]),
+            "khong": _tong_nhom([p for p in phien if not p["co_mask_area"]]),
+        },
         "tong": {
             "so_phien": len(phien), "so_frame": n_tong,
             "so_phien_co_mask_area": sum(1 for p in phien if p["co_mask_area"]),
@@ -218,7 +267,7 @@ def tao_payload(phien, args, paths):
             "phien_bao_rel": sum(1 for p in phien if p["fire_rel"]),
             # `an_rel`/`n_tong` = tỉ lệ frame bị ảnh hưởng NẾU cổng có NHỚ (xem docstring)
             "pct_frame_an_rel": round(100.0 * an_rel / n_tong, 2) if n_tong else None,
-            "fp_khi_mask_to_rel": fp_rel,
+            "mask_to_khi_bat_rel": fp_rel,
             "pct_fp_tren_frame": round(100.0 * fp_rel / n_tong, 2) if n_tong else None,
         },
         "phien": phien,
@@ -264,7 +313,7 @@ def main(argv=None) -> int:
           f"{t['fire_rel']} lần bật · {t['phien_bao_rel']}/{t['so_phien']} phiên · "
           f"ẨN {t['pct_frame_an_rel']}% frame NẾU LATCH")
     if t["pct_fp_tren_frame"] is not None:
-        print(f"[replay] báo oan (mask còn ≥0,7×trung vị) ở lần bật: {t['fp_khi_mask_to_rel']} "
+        print(f"[replay] mask còn TO (≥0,7×trung vị) ở lần bật: {t['mask_to_khi_bat_rel']} "
               f"({t['pct_fp_tren_frame']}% tổng frame)")
     print("[replay] GIỚI HẠN: cửa sổ baseline "
           f"{args.win}+{args.lag} frame ⇒ nửa đầu phiên NGẮN là mù; CSV cũ thiếu "

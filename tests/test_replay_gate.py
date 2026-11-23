@@ -47,10 +47,14 @@ def test_latch_an_tu_lan_bao_dau_tien_toi_het_phien():
     assert rg.frame_bi_an([], 10) == 0
 
 
-def test_co_latch_can_dung_run_frame_lien_tiep():
+def test_co_latch_tra_frame_bao_dong_khong_phai_dau_chuoi():
+    """P1 vòng 2: cổng chỉ HÀNH ĐỘNG ở frame thứ `run` ⇒ trả frame đó, không phải đầu chuỗi.
+
+    Trả đầu chuỗi làm `frame_bi_an` sớm hơn thực tế `run-1` frame mỗi lần báo (cận trên).
+    """
     flags = [False, True, True, False, True, True, True]
-    assert rg.co_latch(flags, run=3) == [4], "chỉ chuỗi 3 frame liên tiếp mới tính 1 lần bật"
-    assert rg.co_latch(flags, run=2) == [1, 4]
+    assert rg.co_latch(flags, run=3) == [6], "chuỗi 3 frame bắt đầu ở 4 ⇒ BÁO ĐỘNG ở frame 6"
+    assert rg.co_latch(flags, run=2) == [2, 5]
     assert rg.co_latch(flags, run=4) == []
 
 
@@ -68,12 +72,12 @@ def test_co_rel_dung_baseline_truoc_va_bo_frame_mask_rong():
     assert flags[12] is True and flags[13] is False
 
 
-def test_fp_khi_mask_to_dem_dung_va_tra_None_khi_thieu_cot():
+def test_mask_to_khi_bat_dem_dung_va_tra_None_khi_thieu_cot():
     rows = [{"score": 1.0, "mask_area": 1000.0} for _ in range(5)]
     rows[2] = {"score": 1.0, "mask_area": 100.0}          # mask nhỏ ⇒ không phải báo oan
-    assert rg.fp_khi_mask_to(rows, [0, 2], ti_le=0.5) == 1
+    assert rg.mask_to_khi_bat(rows, [0, 2], ti_le=0.5) == 1
     thieu = [{"score": 1.0, "mask_area": None} for _ in range(5)]
-    assert rg.fp_khi_mask_to(thieu, [0]) is None, "thiếu `mask_area` ⇒ CHƯA ĐO, không phải 0"
+    assert rg.mask_to_khi_bat(thieu, [0]) is None, "thiếu `mask_area` ⇒ CHƯA ĐO, không phải 0"
 
 
 # ── đọc CSV + bẫy "0/None ≠ đã đo" ─────────────────────────────────────────────────────────
@@ -123,3 +127,35 @@ def test_main_ghi_payload_co_provenance(tmp_path, monkeypatch):
     assert d["tong"]["so_phien"] == 1 and d["tong"]["so_frame"] == 13
     assert d["phien"][0]["co_mask_area"] is True
     assert d["tong"]["pct_frame_an_rel"] is not None
+
+
+# ── chi phí latch phụ thuộc đường XOÁ ───────────────────────────────────────────────────────
+
+
+def test_frame_bi_an_reset_xoa_khi_nhan_lai():
+    """Cùng luật, chi phí latch khác nhau tuỳ có xoá khi `reacquired=1` hay không."""
+    rows = [{"reacquired": 0.0} for _ in range(20)]
+    rows[8] = {"reacquired": 1.0}
+    fires = [2]
+    assert rg.frame_bi_an(fires, 20) == 18, "không xoá: ẩn từ frame 2 tới hết"
+    assert rg.frame_bi_an_reset(rows, fires, 20) == 6, "xoá ở frame 8 ⇒ chỉ ẩn 2..7"
+
+
+def test_frame_bi_an_reset_khong_co_lan_bao_thi_bang_0():
+    assert rg.frame_bi_an_reset([{"reacquired": 1.0}] * 5, [], 5) == 0
+
+
+def test_tong_tach_theo_co_mask_area(tmp_path, monkeypatch):
+    """Cấm trộn mẫu số: CSV 11 cột (không `mask_area`) tổng riêng với CSV mới."""
+    monkeypatch.chdir(tmp_path)
+    cot_moi = ["frame_idx", "score", "mask_area"]
+    cot_cu = ["frame_idx", "score"]
+    _ghi_csv(tmp_path / "moi_metrics.csv",
+             [{"frame_idx": i, "score": 10.0, "mask_area": 100} for i in range(12)], cot_moi)
+    _ghi_csv(tmp_path / "cu_metrics.csv",
+             [{"frame_idx": i, "score": 10.0} for i in range(4)], cot_cu)
+    out = tmp_path / "rg.json"
+    assert rg.main(["--glob", "*_metrics.csv", "--out", str(out)]) == 0
+    t = json.loads(out.read_text())["tong_theo_mask_area"]
+    assert t["co"]["so_frame"] == 12 and t["co"]["so_phien"] == 1
+    assert t["khong"]["so_frame"] == 4 and t["khong"]["so_phien"] == 1
