@@ -396,7 +396,8 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     kích thước frame — headless truyền thẳng từ peek).
     """
     viz = Visualizer(max_trajectory=args.max_trajectory,
-                     show_trajectory=getattr(args, "show_trajectory", True))
+                     show_trajectory=getattr(args, "show_trajectory", True),
+                     trajectory_seconds=getattr(args, "trajectory_seconds", None))
     if args.record:
         # Nguồn LIVE: giữ nhịp thời gian THỰC trong file (ticket #44 — đo 23-11: phiên 30,76 s
         # nhưng video chỉ 20,83 s ⇒ nhanh 1,48×). Nguồn FILE: ghi 1:1 đúng fps khai báo.
@@ -920,6 +921,9 @@ def build_parser():
     ap.add_argument("--record", default=None, help="ghi video mp4 HUD ra file này (đè config)")
     ap.add_argument("--record-fps", type=float, default=None,
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
+    ap.add_argument("--trajectory-seconds", type=float, default=None,
+                    help="giữ quỹ đạo theo THỜI GIAN (giây) thay vì số điểm — cùng 5 s cho cùng "
+                         "độ dài quỹ đạo dù máy chạy 6,3 hay 3,1 bước/s (mặc định: theo số điểm)")
     ap.add_argument("--max-trajectory", type=int, default=None,
                     help="số điểm quỹ đạo tối đa (đè config)")
     ap.add_argument("--smooth", action="store_true",

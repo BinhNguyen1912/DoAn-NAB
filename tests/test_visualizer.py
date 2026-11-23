@@ -772,3 +772,57 @@ class TestPacingBien_Review2311:
         img3 = np.zeros((30, 40, 3), np.uint8)
         ve_o_net_dut(img3, 5, 5, 10_000, 10_000)     # bbox hỏng: phải clamp, không treo
         assert img3.shape == (30, 40, 3)
+
+
+class TestQuyDaoTheoThoiGian:
+    """Plan 24-11 việc 5 — quỹ đạo phải dài theo THỜI GIAN, không theo SỐ ĐIỂM.
+
+    Cùng deque 100 điểm mang nghĩa khác nhau theo tốc độ máy: **16 s** ở 6,3 bước/s nhưng **32 s** ở
+    3,1 bước/s. Yêu cầu 5 của đề cương là "quỹ đạo theo thời gian thực" ⇒ đổi nghĩa theo máy là
+    không bảo vệ được.
+    """
+
+    def test_cua_so_5_giay_cat_diem_cu(self, monkeypatch):
+        hop = {"t": 100.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer(max_trajectory=100, trajectory_seconds=5.0)
+        for i in range(40):                    # 40 bước, mỗi bước 0,16 s = 6,4 s
+            hop["t"] = 100.0 + i * 0.16
+            viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
+                                       bbox=(10 + i, 10, 20 + i, 20), score=1.0, elapsed_ms=100.0))
+        # 5 s / 0,16 s ≈ 31 điểm, phải ÍT hơn 40 và nhiều hơn 20
+        assert 20 <= len(viz.trajectory_points) <= 34, len(viz.trajectory_points)
+
+    def test_cung_5_giay_nhung_nhip_khac_nhau_ra_cung_do_dai_thoi_gian(self, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        dem = {}
+        for nhip in (0.16, 0.32):             # 6,3 bước/s và 3,1 bước/s
+            viz = Visualizer(max_trajectory=200, trajectory_seconds=5.0)
+            for i in range(40):
+                hop["t"] = i * nhip
+                viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
+                                           bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=100.0))
+            dem[nhip] = len(viz.trajectory_points)
+        # cùng 5 giây ⇒ số điểm tỉ lệ nghịch với nhịp (≈31 và ≈16)
+        assert dem[0.16] > dem[0.32], dem
+        assert abs(dem[0.16] / dem[0.32] - 2.0) < 0.4, dem
+
+    def test_mac_dinh_van_theo_so_diem(self, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer(max_trajectory=10)
+        for i in range(50):
+            hop["t"] = i * 0.01
+            viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
+                                       bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=100.0))
+        assert len(viz.trajectory_points) == 10
+
+    def test_reset_xoa_ca_moc_thoi_gian(self, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer(trajectory_seconds=5.0)
+        viz.consume(TrackingResult(frame_idx=0, mask=np.ones((10, 10), bool),
+                                   bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=100.0))
+        viz.reset()
+        assert len(viz.trajectory_points) == 0 and len(viz._traj_ts) == 0

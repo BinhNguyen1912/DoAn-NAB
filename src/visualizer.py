@@ -122,15 +122,23 @@ class Visualizer:
     """Lớp vẽ HUD mỗi frame + quản lý quỹ đạo (deque) + ghi video mp4."""
 
     def __init__(self, max_trajectory=100, font_path=None, font_size=16,
-                 show_trajectory=True):
+                 show_trajectory=True, trajectory_seconds=None):
         """
         max_trajectory: số điểm quỹ đạo tối đa giữ trong deque (điểm cũ tự rơi ra).
+        trajectory_seconds: nếu đặt, quỹ đạo giữ theo **THỜI GIAN** chứ không theo SỐ ĐIỂM.
+
+            Vì sao cần (plan 24-11, việc 5): cùng deque 100 điểm mang nghĩa KHÁC NHAU theo tốc độ
+            máy — **16 s** ở 6,3 bước/s nhưng **32 s** ở 3,1 bước/s. "Quỹ đạo theo thời gian thực"
+            (yêu cầu 5 của đề cương) mà đổi nghĩa theo tốc độ máy là không bảo vệ được.
         font_path      : đè font tìm tự động (None → find_vietnamese_font()).
         font_size      : cỡ chữ HUD (px).
         show_trajectory: có vẽ đường quỹ đạo (màu tím) hay không (mặc định có).
         """
         self.max_trajectory = int(max_trajectory)
+        self.trajectory_seconds = (float(trajectory_seconds)
+                                  if trajectory_seconds and float(trajectory_seconds) > 0 else None)
         self._trajectory = deque(maxlen=self.max_trajectory)  # (cx, cy) tâm đối tượng
+        self._traj_ts = deque(maxlen=self.max_trajectory)     # mốc thời gian của từng điểm
         self._latencies = deque(maxlen=_LATENCY_WINDOW)       # ms, cửa sổ trượt
         self._font_path = font_path or find_vietnamese_font()
         self._font_size = int(font_size)
@@ -176,12 +184,24 @@ class Visualizer:
         if result.bbox != (0, 0, 0, 0):
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             self._trajectory.append((int((x1 + x2) / 2), int((y1 + y2) / 2)))
+            self._traj_ts.append(time.monotonic())
+            self._cat_qua_khu()
         self._latencies.append(result.elapsed_ms)
         if result.mask is None or not result.mask.any():
             self.lost_frames += 1
             self.consecutive_lost += 1
         else:
             self.consecutive_lost = 0
+
+    def _cat_qua_khu(self):
+        """Bỏ điểm cũ hơn `trajectory_seconds` (chỉ khi cửa sổ thời gian được bật)."""
+        if not self.trajectory_seconds or not self._traj_ts:
+            return
+        moc = time.monotonic() - self.trajectory_seconds
+        while self._traj_ts and self._traj_ts[0] < moc:
+            self._traj_ts.popleft()
+            if self._trajectory:
+                self._trajectory.popleft()
 
     def canh_bao_o_chon_phu_mat(self, face_xywh, giay: float = 4.0) -> None:
         """Khoanh đỏ ô KHUÔN MẶT mà ô chọn đang phủ, giữ trên màn hình `giay` giây.
@@ -302,6 +322,7 @@ class Visualizer:
     def reset(self):
         """Xoá quỹ đạo + số liệu trượt + bộ đếm mất dấu (khi chọn lại đối tượng — phím r)."""
         self._trajectory.clear()
+        self._traj_ts.clear()
         self._latencies.clear()
         self.lost_frames = 0
         self.consecutive_lost = 0

@@ -320,8 +320,10 @@ EOF
     # không có vật. Tắt mặc định; bật lại bằng `--reid` (cờ của người dùng đứng SAU nên đè được).
     # Đường lui: `git switch backup/demo-ok-23-11` (tag `demo-ok-23-11`) = bản bật re-ID như trước.
     echo "[demoip] chế độ: LAN TRUYỀN LIÊN TỤC (re-ID TẮT) — bật lại bằng --reid. Lý do: mIoU 0,7794 vs 0,4236"
+    # Quỹ đạo 5 GIÂY (không phải 100 điểm): cùng 100 điểm là 16 s ở 6,3 bước/s nhưng 32 s ở 3,1
+    # bước/s ⇒ "quỹ đạo theo thời gian" đổi nghĩa theo tốc độ máy. 5 s = khớp yêu cầu 5 của đề cương.
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --no-reid \
-      --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
+      --trajectory-seconds 5 --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"
