@@ -115,6 +115,48 @@ Ba điều đọc được, không phải suy đoán:
 3. `verify_cos` nằm ở **2 frame SAU** frame nhận lại (`verify_frames = 2`), không phải frame nhận lại
    — đã sửa comment cột trong `src/metrics_logger.py` để lần sau không đọc nhầm.
 
+### 5. Clip THẬT thứ hai: "vật rời hẳn khung rồi vào lại" (`data/clip_be2.mp4`, 444 frame)
+
+Người dùng quay bằng `./run raw 20 --source "$(bash scripts/cam_relay.sh url)"` (không HUD), cắt
+phần dùng được: **f0–248 có vật · f256–340 vắng hẳn (84 frame) · f344 vào lại**. GT: **6 frame
+silhouette tô tay** (`docs/gt/vat_be_vaolai`, người gán: Binh; đã kiểm khớp bằng ảnh chồng).
+
+| frame | C — lan truyền | A — re-ID | chênh |
+|---|---|---|---|
+| 0 | 0,8237 | 0,8237 | 0 |
+| 100 | 0,9143 | 0,9143 | 0 |
+| **352** (vào lại) | **0,8828** | 0,8602 | **+0,0226** |
+| **380** | **0,8606** | 0,8381 | **+0,0225** |
+| **400** | **0,8823** | 0,8248 | **+0,0575** |
+| **440** | **0,8888** | 0,8854 | **+0,0034** |
+| **mIoU (n=6)** | **0,8754** | **0,8577** | **+0,0177** |
+
+Diễn biến từng frame (đọc từ CSV, `mask_area`):
+
+| | C — lan truyền | A — re-ID |
+|---|---|---|
+| mask khi vật vắng (f258–336) | **0 px** cả 84 frame | 0 px… **trừ f280: `reacquired=1`, 8 971 px, `score` 17,33** ⇒ **nhận bừa trên vùng không có vật** |
+| vật vào lại ở f344 | **bám ngay** (83 660 px) | **0 px** — cổng xác minh **loại đúng vật vừa vào** |
+| nhận lại muộn nhất | – | f348 (73 506 px) ⇒ chậm **~8 frame (~0,3 s)** |
+| chi phí tìm lại | 0 | 64 bước × 26 ms |
+
+**Mức được phép tuyên bố:** "trên clip này, cả 4 frame sau khi vật vào lại đều nghiêng về lan truyền
+(4/4, chênh trung bình **+0,027**)"; **CẤM** nói "lan truyền tốt hơn re-ID" như kết luận thống kê —
+**n = 4** ⇒ sign test p = 0,0625, chưa đạt ngưỡng. Muốn chốt phải lặp ≥ 2 lần nữa (mỗi lần là một
+lần quay + 6 frame GT mới).
+
+### 6. Clip thứ nhất lộ ra bệnh thật: mask KHÔNG BAO GIỜ RỖNG
+
+`data/raw_vat_be_rakhung.mp4` (652 frame): vật ra khỏi khung ở **f594**, nhưng pipeline báo
+`mất dấu **0/652**` và mask **trôi sang tấm POSTER** (13 412 px ở f648). `score` sụp
+**4,34 (f593) → 0,38 (f597)** — tín hiệu duy nhất đúng, và **không ai dùng** (`lost_score_threshold`
+mặc định `0`, còn score sau khi trôi vẫn 0,4–3,6). Hai cơ chế cho **kết quả giống hệt nhau** vì
+re-ID chỉ chạy khi mask **rỗng**.
+
+⇒ Đây là lời giải cho 3 ngày sửa ngưỡng re-ID không có kết quả: **cơ chế tìm lại chưa bao giờ được
+kích hoạt**. Muốn sửa thì phải thêm **tín hiệu "mask này không còn là vật đó"** (score sụp / danh
+tính neo / diện tích nhảy), không phải chỉnh ngưỡng cosine.
+
 ### Kết luận
 
 1. **Re-ID đang làm HỎNG kết quả trên clip này** (mIoU 0,4236 vs 0,7794; mask tràn ra ngoài 43 % vs
