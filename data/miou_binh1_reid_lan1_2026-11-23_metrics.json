@@ -1,12 +1,12 @@
 {
-  "git_rev": "2fb1455c46ae33e7e3c503583b8e20d83b65ee9f",
+  "git_rev": "e7f63cebd690a67af547975b943f1de8a80ce659",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-23T11:53:29",
+    "do_luc": "2026-11-23T12:54:00",
     "lenh": "scripts/score_miou.py score --gt docs/gt/b1 --pred-dir data/ab_binh1_reid_lan1_masks --out data/miou_binh1_reid_lan1_2026-11-23_metrics.json",
-    "git_rev": "2fb1455c46ae33e7e3c503583b8e20d83b65ee9f",
+    "git_rev": "e7f63cebd690a67af547975b943f1de8a80ce659",
     "git_dirty": true,
     "git_dirty_code": false,
     "git_loi": null,
@@ -81,6 +81,35 @@
     "mask_ngoai_gt_max_frame": 211,
     "n_cham": 7,
     "so_frame_gt_rong": 5,
+    "mask_px_gt_rong": {
+      "n": 5,
+      "mean": 32782.0,
+      "max": 52056,
+      "max_frame": 332,
+      "so_frame_bia": 5,
+      "frames": [
+        {
+          "frame_idx": 121,
+          "dien_tich_pred": 33199
+        },
+        {
+          "frame_idx": 151,
+          "dien_tich_pred": 37574
+        },
+        {
+          "frame_idx": 272,
+          "dien_tich_pred": 6385
+        },
+        {
+          "frame_idx": 302,
+          "dien_tich_pred": 34696
+        },
+        {
+          "frame_idx": 332,
+          "dien_tich_pred": 52056
+        }
+      ]
+    },
     "so_frame_thieu_mask": 0,
     "so_frame_mask_hong": 0,
     "so_frame_tong": 12,
@@ -117,12 +146,14 @@
       {
         "frame_idx": 121,
         "iou": null,
-        "ly_do": "GT rỗng (không chấm)"
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 33199
       },
       {
         "frame_idx": 151,
         "iou": null,
-        "ly_do": "GT rỗng (không chấm)"
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 37574
       },
       {
         "frame_idx": 181,
@@ -148,17 +179,20 @@
       {
         "frame_idx": 272,
         "iou": null,
-        "ly_do": "GT rỗng (không chấm)"
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 6385
       },
       {
         "frame_idx": 302,
         "iou": null,
-        "ly_do": "GT rỗng (không chấm)"
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 34696
       },
       {
         "frame_idx": 332,
         "iou": null,
-        "ly_do": "GT rỗng (không chấm)"
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 52056
       }
     ]
   },
