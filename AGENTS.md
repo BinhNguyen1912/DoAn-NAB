@@ -689,3 +689,29 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   (f) **`score` không cùng thang giữa hai chế độ**: frame `engine.start()` cho **17–22**, frame
   `process()` cho **4–10** ⇒ **cấm** dùng một ngưỡng tuyệt đối chung (θ=4,0 cho FP 0,7 % trên clip này
   và **52,8 %** trên clip khác).
+- **`--lost-after-frames` (cổng "đóng băng") KHÔNG có tác dụng gì khi KHÔNG bật re-ID** — cơ chế đóng băng
+  nằm trong `ReIdSession`, không phải vòng lặp pipeline. Đo 23-11 (cùng clip/GT, @192, `git_dirty_code=false`):
+  `binh1` không re-ID **0,7794** ở cả cổng đóng lẫn cổng mở. Bảng 2×2 đầy đủ: `binh1` — không re-ID **0,7794**,
+  có re-ID **0,4236**, re-ID + cổng mở 0,7794; `clip_be2` — không re-ID **0,8754**, có re-ID 0,8577,
+  re-ID + cổng mở **0,5668** (mask tràn ngoài GT 19,6 %). ⇒ **re-ID không thắng ô nào trong 4 ô**, và "muốn để
+  model tự bám lại" = **tắt re-ID**, không phải chỉnh cờ. Từ 23-11 `./run demoip` mặc định `--no-reid`
+  (bật lại bằng `--reid`); mặc định của `tools/run_live.py` KHÔNG đổi để artifact cũ tái lập được.
+  Đường lui: tag `demo-ok-23-11` + nhánh `backup/demo-ok-23-11`.
+- **Cổng "nghi đổi đối tượng" từng là CÔNG TẮC TẮT VĨNH VIỄN khi không có re-ID.** Đo phiên thật
+  `demoip_1123-144505`: latch bật ở f144 rồi không có gì xoá (`reacquired_count=0`, `reselect_n=0`) ⇒
+  **50/194 frame = 25,8 % phiên TRẮNG hoàn toàn** dù vật vẫn rõ trong khung (ảnh giây 20,5). Trước đó re-ID
+  nhận lại thành công sẽ reset latch; tắt re-ID là mất luôn cơ chế đó. Nay "nghi" vẽ **ô NÉT ĐỨT vàng + nhãn
+  NGHI** (`visualizer.ve_o_net_dut`), **không** tô mask/quỹ đạo, ở CẢ hai đường (`visualizer.render`,
+  `live_tracking._annotate`); `no_evidence` (ô do LK suy diễn) vẫn ẩn sạch theo luật 21-11. Cấm quay lại
+  "ẩn sạch khi nghi" mà không có cơ chế reset.
+- **`--record` ghi 1 frame cho mỗi frame HIỂN THỊ ⇒ video NGẮN hơn thực gian**. Đo phiên `demoip_1123-144505`:
+  suy luận thật **30,76 s** nhưng `_web.mp4` = **625 frame @30 fps = 20,83 s** (nhanh **1,48×**); diễn tập live
+  (model 100 ms, hiển thị 20 fps, 6,08 s) cho **2,27 s** = thiếu **62,7 %**. Nay `Visualizer._write()` giữ nhịp
+  theo đồng hồ thực (`int((now-t0)*fps)+1`, lặp frame đang vẽ, trần `_MAX_LAP_FRAMES=60` + **REBASE** khi vượt
+  trần), và cờ `pace_realtime` **chỉ bật cho nguồn LIVE** (`tools/run_live._la_nguon_live`): nguồn file phải ghi
+  1:1 đúng fps clip (clip 333 frame = 11 s, không phải 29 s). Đo lại sau khi sửa: **4,6 %** sai lệch.
+  Cấm trích "quỹ đạo theo thời gian thực" từ một video ghi trước 23-11 mà không kiểm thời lượng.
+- **HUD từng in "MẤT DẤU — TỰ TÌM LẠI" khi `--no-reid`** — hứa một việc hệ không làm được, và câu đó đi vào
+  video nộp bài. Nay `visualizer.lost_banner_text(tu_tim_lai)` chọn câu theo khả năng THẬT, `reid_enabled` được
+  set ở cả `smooth_display` và `live_pipeline`; mặc định `False` (không biết thì không hứa). Khi thêm đường
+  vẽ mới: phải đi qua `lost_banner_text`, đừng viết chuỗi mới.
