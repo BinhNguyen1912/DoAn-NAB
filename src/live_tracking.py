@@ -2061,13 +2061,14 @@ class LiveTrackingSession:
             for index in range(1, len(points)):
                 cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
         elif dang_nghi:
-            from src.visualizer import ve_o_net_dut   # import trong hàm: tránh vòng import nặng
+            # import trong hàm: tránh vòng import nặng (visualizer cũng import ngược live_tracking)
+            from src.visualizer import _COLOR_NGHI, ve_o_net_dut
 
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             if x2 > x1 and y2 > y1:
                 ve_o_net_dut(img, x1, y1, x2, y2)
                 cv2.putText(img, "NGHI", (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX,
-                            0.55, (0, 215, 255), 2)
+                            0.55, _COLOR_NGHI, 2)
 
         hud = (f"LIVE {self._stats.measured_fps:.1f}fps | VOS {self._stats.vos_fps:.1f}fps "
                f"{self._stats.vos_ms:.0f}ms | LK {self._stats.lk_ms:.1f}ms")

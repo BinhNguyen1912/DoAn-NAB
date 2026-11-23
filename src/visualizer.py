@@ -71,7 +71,15 @@ def ve_o_net_dut(img, x1, y1, x2, y2, color=_COLOR_NGHI, do_day=_LINE_THICKNESS,
     "an toàn" — nó là "mất hết thông tin". Nét đứt giữ được cả hai: người xem THẤY hệ đang ở đâu,
     và BIẾT hệ không dám khẳng định mask đó đúng.
     """
+    if dai <= 0:                      # `range(..., dai*2)` với dai=0 ném ValueError
+        return
     x1, y1, x2, y2 = int(x1), int(y1), int(x2), int(y2)
+    if x2 <= x1 or y2 <= y1:
+        return
+    h, w = img.shape[:2]
+    # Clamp: một bbox hỏng (`x2` cực lớn) làm số vòng lặp = width/16 ⇒ treo nhịp phát.
+    x1, x2 = max(0, min(x1, w - 1)), max(0, min(x2, w - 1))
+    y1, y2 = max(0, min(y1, h - 1)), max(0, min(y2, h - 1))
     if x2 <= x1 or y2 <= y1:
         return
     for x in range(x1, x2, dai * 2):            # cạnh trên + dưới
@@ -89,7 +97,11 @@ def ve_o_net_dut(img, x1, y1, x2, y2, color=_COLOR_NGHI, do_day=_LINE_THICKNESS,
 _MAX_LAP_FRAMES = 60
 
 _LOST_KHONG_REID = "MẤT DẤU — bấm r chọn lại"
-_LOST_CO_REID = "MẤT DẤU — TỰ TÌM LẠI"
+# "ĐANG TÌM LẠI" chứ không "TỰ TÌM LẠI": đó là việc hệ ĐANG LÀM, không phải lời hứa về KẾT QUẢ.
+# Vì sao (P2 review 23-11): `--reid --reid-cue face` khi đang bám VẬT ⇒ kho mẫu rỗng ⇒
+# `best_match` luôn -1 ⇒ KHÔNG BAO GIỜ nhận lại (đo: 201 frame, 180 mất dấu, reid_score -1
+# suốt phiên). Câu "tự tìm lại" trong ca đó là hứa suông.
+_LOST_CO_REID = "MẤT DẤU — ĐANG TÌM LẠI"
 
 
 def lost_banner_text(tu_tim_lai, co_font=True):
@@ -102,7 +114,7 @@ def lost_banner_text(tu_tim_lai, co_font=True):
     `co_font=False` → bản ASCII (cv2.putText/Hershey không vẽ được dấu tiếng Việt).
     """
     if tu_tim_lai:
-        return _LOST_CO_REID if co_font else "MAT DAU - TU TIM LAI"
+        return _LOST_CO_REID if co_font else "MAT DAU - DANG TIM LAI"
     return _LOST_KHONG_REID if co_font else "MAT DAU - BAM R CHON LAI"
 
 
@@ -352,8 +364,15 @@ class Visualizer:
             self._writer.release()
             self._writer = None
         self._pending_recorder = None
+        # Xoá mốc thời gian: để lại thì file MỚI mở trong cùng phiên bị coi là "đang nợ frame" của
+        # file trước ⇒ bắt đầu bằng hàng chục frame lặp (P2 review 23-11).
+        self._rec_t0 = None
 
     def _open_writer(self, path, fps, frame_size):
+        # P1 review 23-11: TRƯỚC ĐÂY `_recorder_fps` chỉ được KHAI BÁO (30.0) mà không bao giờ gán
+        # ⇒ pacing luôn dùng 30 fps kể cả khi file mở bằng `--record-fps 15` ⇒ file 15 fps bị nhồi
+        # 30 frame/s = DÀI GẤP 2 LẦN thực, im lặng. Nay gán đúng fps của writer.
+        self._recorder_fps = float(fps) if fps and fps > 0 else 30.0
         w, h = int(frame_size[0]), int(frame_size[1])
         writer = cv2.VideoWriter(str(path), cv2.VideoWriter_fourcc(*"mp4v"), fps, (w, h))
         if not writer.isOpened():
@@ -393,13 +412,19 @@ class Visualizer:
         # +1: frame hiện tại tính là frame thứ `dich` (không phải "đã trễ 1 frame" ngay từ đầu).
         dich = int((now - self._rec_t0) * fps) + 1
         so_lan = dich - self._frames_written
+        if so_lan < 0:
+            # Nhịp hiển thị NHANH hơn fps khai báo (vd. `--record-fps 15` mà vẽ 30 lần/s) hoặc đồng
+            # hồ nhảy lùi. `max(1, ...)` cũ sẽ VẪN ghi 1 frame ⇒ file dài hơn thực, im lặng.
+            # Đúng ra: không ghi gì, và rebase để không tích nợ.
+            self._rec_t0 = now - ((self._frames_written - 1) / fps)
+            return
         if so_lan > _MAX_LAP_FRAMES:
             # Treo/đứng nhịp: ghi phần tối đa rồi REBASE mốc để không tích nợ cho các lần sau.
             self._writer.write(img)
             self._frames_written += 1
             self._rec_t0 = now - ((self._frames_written - 1) / fps)
             return
-        for _ in range(max(1, so_lan)):
+        for _ in range(max(0, so_lan)):
             self._writer.write(img)
             self._frames_written += 1
 

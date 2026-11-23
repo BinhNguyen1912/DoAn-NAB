@@ -204,9 +204,10 @@ class LiveStatusResponse(BaseModel):
     )
     nghi_doi_tuong: bool = Field(
         default=False,
-        description="Cổng nhảy CÓ NHỚ: `true` = worker đang NGHI đã bám sang đối tượng khác và đã ẩn "
-                    "mask/ô. UI phải hiện banner + nút 'vẫn đúng' (`POST /api/live/confirm`) — im "
-                    "lặng thì người xem tưởng hệ hỏng",
+        description="Cổng nhảy CÓ NHỚ: `true` = worker đang NGHI đã bám sang đối tượng khác ⇒ từ 23-11 "
+                    "worker VẼ Ô NÉT ĐỨT màu vàng + nhãn 'NGHI' (không tô mask, không vẽ quỹ đạo) "
+                    "chứ KHÔNG ẩn ô nữa. UI phải hiện banner + nút 'vẫn đúng' "
+                    "(`POST /api/live/confirm`) — im lặng thì người xem tưởng hệ hỏng",
     )
     nghi_doi_tuong_n: int = Field(
         default=0, ge=0,

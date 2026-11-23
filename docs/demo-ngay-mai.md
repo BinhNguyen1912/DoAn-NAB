@@ -26,10 +26,25 @@
 ### Cảnh 2 — Che khuất một phần (Motion Memory — trụ cột 2)
 - Lấy tay che **một nửa** vật rồi bỏ ra. Nói: *"Mask vẫn giữ nhờ memory bank + Kalman của SAMURAI; đo trên fixture: IoU 0,97 → 0,53 khi che 50% → hồi 0,967 ngay khung sau khi hết che."*
 
-### Cảnh 3 — Mất dấu & tìm lại (phần **tự làm**)
-- **Đưa vật ra khỏi khung hẳn** 2–3 giây → HUD hiện `MẤT DẤU / ĐANG TÌM LẠI`.
-- Đưa vật vào lại **chỗ khác**.
-- Nói: *"Hệ thống đóng băng thay vì bám sang vật khác. Khi vật trở lại, nó so khớp 'dấu vân tay' 89 số (covariance + histogram màu) với tập mẫu và bám lại khi đủ tin cậy. Cổng chính là cosine 0,60; cổng phụ NCC em để TẮT vì đo trên video thật: ca sai có ncc 0,39–0,69 nhưng ca ĐÚNG cũng có lúc chỉ 0,42 — bật 0,70 sẽ chặn 6/17 ca đúng. Chống bám nhầm nhờ vùng tìm nở dần + xác nhận 2 frame + kiểm chứng 2 frame, nên thà ở trạng thái ĐANG TÌM còn hơn bám nhầm."*
+### Cảnh 3 — Mất dấu & bám lại (phần **tự làm**) — kịch bản mặc định 23-11
+
+> ⚠️ Từ 23-11 `./run demoip` **mặc định TẮT re-ID** (`--no-reid`): đo bảng 2×2 cho thấy re-ID
+> **không thắng ô nào** (binh1 0,4236 vs 0,7794; be2 0,5668–0,8577 vs 0,8754). Cơ chế đang chạy là
+> **lan truyền liên tục của SAM 2** (memory của model), không phải so khớp "vân tay" ở trên.
+> Đoạn dưới đây là **bản cũ** — giữ lại để đối chiếu, **đừng đọc** khi demo.
+
+- **Đưa vật ra khỏi khung hẳn** 2–3 giây → HUD hiện `MẤT DẤU — bấm r chọn lại`, **không vẽ mask nào**
+  (13/13 frame mất dấu có mask = 0 px — đo phiên `demoip_1123-144505`). Nói: *"Hệ không vẽ bừa khi
+  không thấy vật; em đo trên phiên thật: 0 pixel mask ở mọi frame mất dấu."*
+- Đưa vật vào lại **chỗ khác** → memory của SAM 2 tự bám lại **ngay frame đầu** (đo: 83 660 px ở
+  frame đầu tiên vật xuất hiện lại).
+- Nếu ô **nhảy vô lý** (bám sang tường/cửa cùng tông) → HUD hiện **ô NÉT ĐỨT vàng + nhãn `NGHI`** và
+  banner `NGHI DOI TUONG — r: chon lai | c: van dung`. Nói: *"Hệ tự phát hiện nghi ngờ nên KHÔNG tô
+  mask, chỉ vẽ ô nét đứt; em bấm `c` nếu vẫn đúng, `r` nếu phải chọn lại."* (Bấm `c` để cổng tự xoá.)
+- **Chưa có** cơ chế tự nhận lại đáng tin: đo trên 2 clip GT, re-ID cho 0,4236/0,8577 so với 0,7794/0,8754
+  của lan truyền liên tục ⇒ **đừng nói câu "tự nhận lại"**.
+
+### (Bản cũ — chỉ để đối chiếu, không dùng khi demo)
 
 > Nếu cảnh 3 **không bám lại**: nói luôn *"với vật này nó chưa đủ tin cậy nên vẫn ở trạng thái đang tìm — đây là hành vi em chọn có chủ đích, em đã đo và ghi trong tài liệu"* → rồi chuyển sang cảnh 4 (video dự phòng có cảnh bám lại thành công).
 

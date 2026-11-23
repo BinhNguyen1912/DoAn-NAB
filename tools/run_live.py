@@ -400,8 +400,10 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     if args.record:
         # Nguồn LIVE: giữ nhịp thời gian THỰC trong file (ticket #44 — đo 23-11: phiên 30,76 s
         # nhưng video chỉ 20,83 s ⇒ nhanh 1,48×). Nguồn FILE: ghi 1:1 đúng fps khai báo.
+        args._record_fps = float(record_fps)
+        args._record_pace = _la_nguon_live(getattr(args, "source", None))
         if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size,
-                             pace_realtime=_la_nguon_live(getattr(args, "source", None))):
+                             pace_realtime=args._record_pace):
             print(f"[pipeline] ghi video: {args.record} ({record_fps:.0f} fps)")
         else:
             print(f"[LOI] không ghi được video tới {args.record} — chạy không ghi")
@@ -619,6 +621,10 @@ def _write_run_info(args):
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
         reid=bool(getattr(args, "reid", False)),
+        # Độ dài file video phụ thuộc 2 thứ này (ticket #44) — thiếu chúng thì artifact KHÔNG tự
+        # giải thích được thời lượng (P3 review 23-11).
+        record_fps=getattr(args, "_record_fps", None),
+        record_pace_realtime=getattr(args, "_record_pace", None),
         reid_cue=getattr(args, "reid_cue", None),
         reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
         reid_obj_ncc_min=getattr(args, "reid_obj_ncc_min", None),
@@ -934,7 +940,10 @@ def build_parser():
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
-    ap.add_argument("--reid", action="store_true",
+    # `default=None` = TRI-STATE: "không nói gì" KHÁC "nói không". Thiếu điều này thì
+    # `--config configs/default.yaml --no-reid` bị YAML (`reid_enabled: true`) đè ngược và
+    # re-ID vẫn BẬT — im lặng, đúng loại lỗi mà cờ này sinh ra để chống (P1 review 23-11).
+    ap.add_argument("--reid", dest="reid", action="store_true", default=None,
                     help="bật tái nhận diện khuôn mặt: mất dấu thì ĐÓNG BĂNG, quay lại thì "
                          "tự bám lại đúng người (ADR-0003; cần model trong models/face/)")
     # Cần cờ TẮT được vì `./run demoip` luôn chèn `--reid`: người dùng không có cách nào chạy demo
@@ -1039,7 +1048,8 @@ def main():
     args.record = args.record or (cfg["record_path"] if cfg["record_enabled"] else None)
     args.metrics_csv = args.metrics_csv or cfg["metrics_csv"]
     args.metrics_summary = args.metrics_summary or cfg["metrics_summary"]
-    args.reid = bool(args.reid or cfg["reid_enabled"])
+    # Tri-state: CLI nói rõ (True/False) thì THẮNG; không nói (None) mới lấy từ YAML.
+    args.reid = bool(cfg["reid_enabled"]) if args.reid is None else bool(args.reid)
     args.reid_threshold = cfg["reid_threshold"]
     args.lost_after_frames = cfg["lost_after_frames"]
     args.reid_min_face_px = cfg["reid_min_face_px"]

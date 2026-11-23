@@ -470,7 +470,7 @@ async function waitJobState(page, wanted, timeout = 240000) {
     const chu = ((await liveCard.getByTestId('bam-no-evidence').textContent().catch(() => '')) || '')
       .replace(/\s+/g, ' ')
     check('HUD báo NGHI ĐỔI ĐỐI TƯỢNG + nói rõ 2 lựa chọn khi bam=nghi_doi_tuong',
-      /ĐỐI TƯỢNG KHÁC/.test(chu) && /12 frame đã ẩn/.test(chu), chu || '(không thấy dòng nào)')
+      /ĐỐI TƯỢNG KHÁC/.test(chu) && /12 frame vẽ ô nét đứt/.test(chu) && !/đã ẩn/.test(chu), chu || '(không thấy dòng nào)')
     const nut = liveCard.getByTestId('live-confirm-object')
     check('có nút "Vẫn đúng, tiếp tục" để tiếp tục mà không phải chọn lại ô',
       await nut.count() === 1)

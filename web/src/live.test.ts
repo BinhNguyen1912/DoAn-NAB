@@ -377,7 +377,16 @@ describe('bamLine — cổng nhảy CÓ NHỚ "nghi đổi đối tượng" (21-
     const line = bamLine({ bam: 'nghi_doi_tuong', bam_ly_do: 'o_nhay', nghi_doi_tuong_n: 12 })
     expect(line).toContain('Nghi đã bám sang ĐỐI TƯỢNG KHÁC')
     expect(line).toContain('Vẫn đúng, tiếp tục')
-    expect(line).toContain('12 frame đã ẩn')
+    expect(line).toContain('12 frame vẽ ô nét đứt')
+  })
+
+  // Ticket #45 (P1 review 23-11): worker VẼ ô nét đứt, KHÔNG ẩn ô ⇒ câu "đã ẩn khỏi ảnh" là nói sai
+  // về chính ảnh bên cạnh. Test này khoá chiều đó lại.
+  it('KHÔNG được nói "đã ẩn" khi nghi — worker đang vẽ ô nét đứt', () => {
+    const line = bamLine({ bam: 'nghi_doi_tuong', bam_ly_do: 'o_nhay', nghi_doi_tuong_n: 12 }) || ''
+    expect(line).not.toContain('đã ẩn')
+    expect(line).not.toContain('được ẩn')
+    expect(line).toContain('NÉT ĐỨT')
   })
 
   it('cờ nghi_doi_tuong một mình cũng đủ (bam có thể là no_evidence do mask rỗng)', () => {
