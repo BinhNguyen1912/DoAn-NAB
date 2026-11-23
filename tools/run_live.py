@@ -481,7 +481,7 @@ def _finish_outputs(viz, metrics, args, reid_session=None):
         args._reid_veto_n = int(getattr(reid_session, "veto_mat_n", 0) or 0)
     try:
         if metrics is not None:
-            _finish_metrics(metrics, args)
+            _finish_metrics(metrics, args, viz)
     finally:
         _finish_recording(viz, args)
 
@@ -503,7 +503,7 @@ def _make_metrics(args):
     return MetricsLogger(sampler=sampler)
 
 
-def _finish_metrics(metrics, args):
+def _finish_metrics(metrics, args, viz=None):
     """Xuất CSV + (tuỳ chọn) summary JSON — gọi trong finally để Ctrl+C không mất số liệu.
 
     Nếu phiên KHÔNG có frame nào (mở camera lỗi, Ctrl+C quá sớm) thì **không ghi**, để không
@@ -515,8 +515,20 @@ def _finish_metrics(metrics, args):
         print("[metrics] chưa có frame nào — không ghi file (giữ nguyên kết quả lần chạy trước)")
         return
     metrics.write_csv(args.metrics_csv)
+    # Nhịp phát / độ dài video (ticket #44): không có mấy field này thì bug "video nhanh 1,48×"
+    # chỉ phát hiện được bằng ffprobe trên file mp4 — đúng chỗ artifact KHÔNG có số nào.
+    extra = {}
+    if viz is not None:
+        try:
+            extra = viz.phat_stats() or {}
+        except Exception as exc:            # không được chặn việc ghi số chính
+            print(f"[canh bao] không lấy được nhịp phát: {type(exc).__name__}: {exc}")
     if args.metrics_summary:
-        metrics.write_summary_json(args.metrics_summary)
+        metrics.write_summary_json(args.metrics_summary, extra=extra)
+    if extra.get("ti_le_thoi_luong") is not None:
+        print(f"[metrics] nhịp phát: {extra['frames_rendered']} lần vẽ / {extra['wall_s']:.1f} s "
+              f"= {extra['display_fps_mean']:.1f} FPS | video {extra.get('video_s', 0):.1f} s "
+              f"⇒ tỉ lệ thời lượng {extra['ti_le_thoi_luong']:.2f} (1,00 là đúng)")
     try:
         _write_run_info(args)
     except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
@@ -559,6 +571,27 @@ def _p95_txt(s: dict) -> str:
     return f"{s['p95_latency_ms']:.0f} ms (n={'?' if n is None else n})"
 
 
+def _loadavg_1m():
+    """Tải trung bình 1 phút của máy (`None` nếu nền tảng không có — Windows không có getloadavg)."""
+    try:
+        return round(os.getloadavg()[0], 2)
+    except (AttributeError, OSError):
+        return None
+
+
+def _dem_worker_mo_coi():
+    """Số `live_worker.py` KHÁC đang sống — chúng ăn CPU và có thể giữ luôn nguồn.
+
+    Đo 21-11: một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra 1484 ms thay vì 158 ms.
+    """
+    try:
+        from src.proc_pid import find_live_workers
+
+        return len(find_live_workers())
+    except Exception:
+        return None
+
+
 def _write_run_info(args):
     """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
 
@@ -592,6 +625,11 @@ def _write_run_info(args):
         # Thiết bị ĐÃ DÙNG (cpu|cuda): `resources.gpu` trong summary chỉ nói "MÁY có GPU hay không" ⇒
         # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
         device=getattr(args, "device", None) or "cpu",
+        # Tải của MÁY lúc đo (23-11): cùng một code cho 201–393 ms chỉ vì agent khác chạy pytest/npm.
+        # Thiếu số này thì "model chậm 4×" là kết luận không kiểm được (review độc lập 23-11).
+        loadavg_1m=_loadavg_1m(),
+        cpu_count=os.cpu_count(),
+        live_workers_khac=_dem_worker_mo_coi(),
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
         # P3 review vòng 3: đọc SAI tên — `main()` gán `args.reid_confirm`/`args.reid_verify`
         # (`:759-760`) nên MỌI `data/*_run_info.json` tới nay ghi `null` cho 2 trường này.

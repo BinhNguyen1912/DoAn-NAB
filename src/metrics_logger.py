@@ -256,10 +256,20 @@ class MetricsLogger:
                 ])
         return str(path)
 
-    def write_summary_json(self, path: str) -> str:
-        """Đổ summary ra JSON (báo cáo đọc lại/pandas)."""
+    def write_summary_json(self, path: str, extra: Optional[dict] = None) -> str:
+        """Đổ summary ra JSON (báo cáo đọc lại/pandas).
+
+        `extra`: field của **nhịp phát / độ dài video** (ticket #44 — `wall_s`, `display_fps_mean`,
+        `frames_written`, `video_s`, `ti_le_thoi_luong`). Vì sao phải nằm TRONG summary: bug "video
+        ngắn hơn thực 1,48×" sống nhiều tuần vì **không file artifact nào** chứa số về nhịp phát —
+        phải mở mp4 bằng ffprobe mới biết. Chỉ THÊM key, không đổi key cũ (summary là hợp đồng của
+        `web/` + notebook Colab).
+        """
+        data = self.summary()
+        if extra:
+            data.update({k: v for k, v in extra.items() if k not in data})
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.summary(), f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
         return str(path)
 
 

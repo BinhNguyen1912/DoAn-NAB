@@ -429,12 +429,28 @@ def check_video_duration(moi_nhat: Path | None = None) -> Check:
         du_lieu = json.loads(moi_nhat.read_text(encoding="utf-8"))
     except (OSError, ValueError):
         return Check("thời lượng video", False, f"không đọc được {moi_nhat.name}")
+    # Phiên tự khai nhịp phát (từ 23-11, `Visualizer.phat_stats`) ⇒ dùng luôn, không suy lại.
+    tu_khai = du_lieu.get("ti_le_thoi_luong")
     so_frame = du_lieu.get("total_frames") or du_lieu.get("frames")
     do_tre = du_lieu.get("mean_latency_ms")
     if not so_frame or not do_tre:
         return Check("thời lượng video", True,
                      f"{moi_nhat.name}: thiếu total_frames/mean_latency_ms — bỏ qua", bat_buoc=False)
     thuc_s = float(so_frame) * float(do_tre) / 1000.0
+
+    # Nguồn FILE: ghi 1:1 đúng fps của clip là ĐÚNG (clip 15 frame @30 fps phải dài 0,5 s dù chạy
+    # mất 3 s) ⇒ bỏ qua. Chỉ nguồn LIVE mới kỳ vọng `ti_le_thoi_luong ≈ 1`.
+    run_info = moi_nhat.with_name(moi_nhat.name.replace("_summary.json", "_run_info.json"))
+    if run_info.is_file():
+        try:
+            from tools.run_live import _la_nguon_live
+
+            nguon = json.loads(run_info.read_text(encoding="utf-8")).get("source")
+            if nguon and not _la_nguon_live(nguon):
+                return Check("thời lượng video", True,
+                             f"nguồn file ({nguon}) — ghi 1:1 đúng fps clip, bỏ qua")
+        except (OSError, ValueError, ImportError):
+            pass
 
     # Video cùng tên: `X.mp4` hoặc bản H.264 `X_web.mp4`
     goc = moi_nhat.with_name(moi_nhat.name.replace("_summary.json", ""))
@@ -457,6 +473,10 @@ def check_video_duration(moi_nhat: Path | None = None) -> Check:
         return Check("thời lượng video", False, f"{video.name}: không đọc được frame/fps")
     video_s = n / fps
     lech = abs(video_s - thuc_s) / thuc_s if thuc_s > 0 else 0.0
+    if tu_khai is not None:
+        # Số phiên tự khai `ti_le_thoi_luong = video_s / wall_s` — chính xác hơn ước lượng
+        # `total_frames × mean_latency` (không tính thời gian chờ chọn ô, nạp model, xuất H.264).
+        lech = abs(float(tu_khai) - 1.0)
     chi_tiet = (f"{video.name}: {video_s:.1f} s vs thực {thuc_s:.1f} s "
                 f"({100 * lech:+.0f} %)")
     if lech <= 0.05:

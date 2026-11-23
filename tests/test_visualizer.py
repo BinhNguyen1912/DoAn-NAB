@@ -630,3 +630,49 @@ class TestNguonFileKhongBiKeoDai:
                                       score=0.0, elapsed_ms=1.0))
         viz.close_recorder()
         assert viz._frames_written == 10
+
+
+class TestPhatStats:
+    """Ticket #44, phần ARTIFACT: phiên phải TỰ KHAI nhịp phát.
+
+    Vì sao: bug "video ngắn hơn thực 1,48×" sống nhiều tuần **chỉ vì** không file nào trong repo có
+    số về nhịp phát — phải mở mp4 bằng ffprobe mới biết. `ti_le_thoi_luong ≈ 1,0` là điều kiện
+    kiểm được (và `democheck` mục 10 đọc chính field này).
+    """
+
+    def test_chua_ve_gi_thi_khong_khai(self):
+        assert Visualizer().phat_stats() == {}
+
+    def test_ti_le_bang_1_khi_ghi_dung_thoi_gian_thuc(self, tmp_path, monkeypatch):
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer()
+        assert viz.open_recorder(str(tmp_path / "ok.mp4"), fps=30.0,
+                                 frame_size=(160, 120), pace_realtime=True) is True
+        for i in range(10):                 # 10 lần vẽ trong 1,0 s, pace bật
+            hop["t"] = i * 0.1
+            viz.update(np.full((120, 160, 3), 50, np.uint8),
+                       TrackingResult(frame_idx=i, mask=None, bbox=(0, 0, 0, 0),
+                                      score=0.0, elapsed_ms=1.0))
+        st = viz.phat_stats()
+        viz.close_recorder()
+        assert st["frames_rendered"] == 10
+        assert st["frames_written"] >= 28
+        assert 0.9 <= st["ti_le_thoi_luong"] <= 1.1, st
+
+    def test_ti_le_0_68_dung_ca_phien_144505(self, tmp_path, monkeypatch):
+        """Ca thật: 625 frame @30 fps = 20,83 s trong phiên 30,76 s ⇒ 0,677."""
+        hop = {"t": 0.0}
+        monkeypatch.setattr("src.visualizer.time.monotonic", lambda: hop["t"])
+        viz = Visualizer()
+        assert viz.open_recorder(str(tmp_path / "x.mp4"), fps=30.0,
+                                 frame_size=(160, 120)) is True   # KHÔNG pace: ghi 1:1
+        for i in range(10):
+            hop["t"] = i * 0.1
+            viz.update(np.full((120, 160, 3), 50, np.uint8),
+                       TrackingResult(frame_idx=i, mask=None, bbox=(0, 0, 0, 0),
+                                      score=0.0, elapsed_ms=1.0))
+        st = viz.phat_stats()
+        viz.close_recorder()
+        # 10 frame ghi / 0,9 s ⇒ 0,37 — cùng bản chất với 0,677 (video ngắn hơn thực)
+        assert st["ti_le_thoi_luong"] < 0.95

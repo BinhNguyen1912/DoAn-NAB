@@ -921,3 +921,60 @@ class TestRecordPacingTheoNguon:
         viz = run_live._make_visualizer(self._args(tmp_path, "data/binh1.mp4"))
         assert viz._pace_realtime is False
         viz.close_recorder()
+
+
+class TestProvenanceHieuNang:
+    """Ticket #44 — `run_info` phải khai TẢI MÁY lúc đo.
+
+    Vì sao: đo 23-11, cùng một code cho 201–393 ms (±95 %) chỉ vì agent khác chạy `pytest`/`npm`
+    (`loadavg` 6,2–8,2). Thiếu `loadavg_1m` thì "model chậm 4×" là kết luận không kiểm được —
+    đúng loại lỗi đã xảy ra với tuyên bố "live chậm 1,8× so với file".
+    """
+
+    def test_loadavg_va_cpu_count_vao_run_info(self, tmp_path, monkeypatch):
+        import json
+
+        monkeypatch.setattr(run_live.os, "getloadavg", lambda: (7.25, 6.0, 5.0), raising=False)
+        monkeypatch.setattr(run_live, "_dem_worker_mo_coi", lambda: 2)
+        args = type("A", (), {"metrics_csv": str(tmp_path / "t_metrics.csv"),
+                              "metrics_summary": str(tmp_path / "t_summary.json"),
+                              "source": "data/binh1.mp4"})()
+        run_live._write_run_info(args)
+        d = json.loads((tmp_path / "t_run_info.json").read_text(encoding="utf-8"))
+        assert d["loadavg_1m"] == 7.25
+        assert d["cpu_count"] == run_live.os.cpu_count()
+        assert d["live_workers_khac"] == 2
+
+    def test_khong_co_getloadavg_thi_ghi_none(self, tmp_path, monkeypatch):
+        """Windows không có `os.getloadavg` ⇒ ghi None, KHÔNG được ném (provenance không chặn số)."""
+        import json
+
+        def nem():
+            raise AttributeError("getloadavg")
+
+        monkeypatch.setattr(run_live.os, "getloadavg", nem, raising=False)
+        args = type("A", (), {"metrics_csv": str(tmp_path / "u_metrics.csv"),
+                              "metrics_summary": str(tmp_path / "u_summary.json"),
+                              "source": "0"})()
+        run_live._write_run_info(args)
+        d = json.loads((tmp_path / "u_run_info.json").read_text(encoding="utf-8"))
+        assert d["loadavg_1m"] is None
+
+
+class TestSummaryCoNhipPhat:
+    def test_summary_co_du_field_va_khong_doi_field_cu(self, tmp_path):
+        """`extra` chỉ THÊM key: summary là hợp đồng của `web/` + notebook Colab."""
+        import json
+        from src.metrics_logger import MetricsLogger, write_run_info  # noqa: F401
+
+        m = MetricsLogger()
+        from src.metrics_logger import FrameRecord
+
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(5, 5), lost=False))
+        out = tmp_path / "s.json"
+        m.write_summary_json(str(out), extra={"wall_s": 30.76, "video_s": 20.83,
+                                               "ti_le_thoi_luong": 0.677,
+                                               "total_frames": 999})   # key cũ KHÔNG bị ghi đè
+        d = json.loads(out.read_text(encoding="utf-8"))
+        assert d["wall_s"] == 30.76 and d["ti_le_thoi_luong"] == 0.677
+        assert d["total_frames"] == 1, "extra không được ghi đè số của MetricsLogger"

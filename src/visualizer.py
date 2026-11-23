@@ -131,6 +131,8 @@ class Visualizer:
         self._recorder_fps = 30.0    # fps khai báo của file đang ghi
         self._rec_t0 = None          # mốc thời gian của frame ĐẦU trong file (pacing, #44)
         self._pace_realtime = False  # giữ nhịp thời gian thực (chỉ nguồn LIVE)
+        self._t_ve_dau = None        # mốc frame ĐẦU ĐƯỢC VẼ (đo nhịp phát, ticket #44)
+        self._so_lan_ve = 0          # số lần gọi render() (frame hiển thị)
         self.lost_frames = 0     # tổng số frame mask rỗng (độ ổn định bám bắt)
         self.consecutive_lost = 0  # số frame mất dấu liền tiếp (hiện tại)
         # Có bật re-ID hay không — CHỈ dùng để chọn CÂU ở banner mất dấu (ticket #43).
@@ -201,6 +203,9 @@ class Visualizer:
                switch_warning=False, reid_state=None, reid_score=None, reid_vetoed=False):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
+        if self._t_ve_dau is None:
+            self._t_ve_dau = time.monotonic()
+        self._so_lan_ve += 1
 
         # 0) KHÔNG vẽ gì của vật khi đang MẤT DẤU (21-11, cùng luật với `bam` của worker live).
         # Lý do: banner "MAT DAU - TU TIM LAI" ở dưới mâu thuẫn trực tiếp với một ô bao còn trên ảnh —
@@ -397,6 +402,29 @@ class Visualizer:
         for _ in range(max(1, so_lan)):
             self._writer.write(img)
             self._frames_written += 1
+
+    def phat_stats(self):
+        """Số của NHỊP PHÁT để ghi vào `summary.json` (ticket #44) — dict rỗng nếu chưa vẽ gì.
+
+        Vì sao cần: bug "video ngắn hơn thực 1,48×" phát hiện được **chỉ** bằng cách mở file mp4
+        (ffprobe) vì artifact không có số nào về nhịp phát. Nay chính phiên tự khai:
+        `wall_s` (thời gian chạy), `display_fps_mean`, `frames_written`, `video_s`,
+        `ti_le_thoi_luong` (= video_s / wall_s; **1,0 là đúng**, 0,68 = video nhanh 1,48×).
+        """
+        if self._t_ve_dau is None:
+            return {}
+        wall = max(time.monotonic() - self._t_ve_dau, 1e-9)
+        stats = {
+            "wall_s": round(wall, 3),
+            "display_fps_mean": round(self._so_lan_ve / wall, 2),
+            "frames_rendered": self._so_lan_ve,
+            "frames_written": self._frames_written,
+        }
+        if self._frames_written and self._recorder_fps:
+            video_s = self._frames_written / self._recorder_fps
+            stats["video_s"] = round(video_s, 3)
+            stats["ti_le_thoi_luong"] = round(video_s / wall, 3)
+        return stats
 
     # ---------- HUD text ----------
 
