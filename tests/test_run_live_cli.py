@@ -848,3 +848,17 @@ class TestDumpMask:
         # gọi lại: KHÔNG được ghi đè manifest (mask có thể của lần chạy khác)
         cb.write_manifest()
         assert json.loads((tmp_path / "manifest.json").read_text())["frames_da_ghi"] == [0, 1]
+
+
+def test_no_reid_tat_duoc_reid_ma_run_demoip_luon_chen():
+    """`--no-reid` phải THẮNG `--reid` (./run demoip luôn chèn `--reid` trước "$@").
+
+    Không có cờ này thì người dùng không có cách nào chạy demo theo cơ chế "lan truyền liên tục"
+    để tự kiểm chứng kết luận 23-11 (re-ID mIoU 0,4236 vs lan truyền 0,7794 trên cùng clip).
+    """
+    ap = run_live.build_parser()          # parser THẬT của CLI, không phải bản dựng lại trong test
+    assert ap.parse_args(["--reid", "--no-reid"]).reid is False
+    assert ap.parse_args(["--no-reid"]).reid is False
+    assert ap.parse_args(["--reid"]).reid is True
+    # thứ tự: cờ SAU thắng (./run demoip đặt `--reid` trước "$@")
+    assert ap.parse_args(["--no-reid", "--reid"]).reid is True

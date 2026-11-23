@@ -800,7 +800,8 @@ def _canh_bao_worker_mo_coi() -> None:
         print("[WARN] (hoặc trên web bấm 'Dừng' — đóng tab KHÔNG dừng worker)")
 
 
-def main():
+def build_parser():
+    """Dựng `argparse` đầy đủ — tách khỏi `main()` để test được cờ mà không cần model/nguồn."""
     ap = argparse.ArgumentParser(
         description="Live/headless pipeline: nguồn video → SAMURAI → HUD + metrics",
         epilog=("Cấu hình: --config configs/default.yaml (checkpoint, nguồn, ghi mp4, "
@@ -843,6 +844,13 @@ def main():
     ap.add_argument("--reid", action="store_true",
                     help="bật tái nhận diện khuôn mặt: mất dấu thì ĐÓNG BĂNG, quay lại thì "
                          "tự bám lại đúng người (ADR-0003; cần model trong models/face/)")
+    # Cần cờ TẮT được vì `./run demoip` luôn chèn `--reid`: người dùng không có cách nào chạy demo
+    # theo cơ chế "lan truyền liên tục" để so. Đo 23-11 (`data/ab_binh1_*`, 3+3 lần, git_dirty_code
+    # false): re-ID cho mIoU 0,4236 còn lan truyền liên tục cho 0,7794 trên CÙNG clip/ô chọn ⇒ tắt
+    # được re-ID là điều kiện để chính người dùng kiểm chứng kết luận đó trên demo của mình.
+    ap.add_argument("--no-reid", dest="reid", action="store_false",
+                    help="TẮT tái nhận diện (giữ lan truyền liên tục của SAM 2 — cơ chế đo được là "
+                         "tốt hơn trên clip binh1: mIoU 0,7794 vs 0,4236)")
     ap.add_argument("--reid-threshold", type=float, default=None,
                     help="ngưỡng cosine SFace để coi là cùng người (mặc định 0.363)")
     ap.add_argument("--lost-after-frames", type=int, default=None,
@@ -882,7 +890,11 @@ def main():
                     help="ghi tiến trình từng frame ra JSON ({\"frames\",\"total\"}) — backend "
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
-    args = ap.parse_args()
+    return ap
+
+
+def main():
+    args = build_parser().parse_args()
     _canh_bao_worker_mo_coi()
 
     # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
