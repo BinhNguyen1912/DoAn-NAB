@@ -402,7 +402,14 @@ def _finish_metrics(metrics, args):
     if _veto_n:
         print(f"[re-ID] bỏ {_veto_n} ứng viên vì TRÙNG KHUÔN MẶT/ĐẦU (veto) — "
               f"xem cột `vetoed` (=1) trong CSV để biết các frame đó")
-    print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
+    # Chi phí TÌM LẠI phải in ra, không chỉ nằm trong JSON (review vòng 2, 23-11): phiên `095901`
+    # in "mean 161,8 ms (n=93)" trong khi **160 bước tìm lại (66,8 ms/bước)** không nằm trong con
+    # số nào ⇒ mọi tuyên bố "không chậm hơn" trước đó là không kiểm được.
+    _search_txt = ""
+    if s.get("search_n"):
+        _search_txt = (f" | tìm lại {s['search_mean_ms']:.1f} ms/bước "
+                       f"(p95 {s.get('search_p95_ms') or 0:.1f}, n={s['search_n']})")
+    print(f"[metrics] {s['total_frames']} frame | mean={mean_txt}{_search_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
     res = s.get("resources") or {}
@@ -471,6 +478,12 @@ def _write_run_info(args):
         # của commit sau ⇒ sinh trên cây BẨN).
         git_dirty=_git_dirty()[0],
         git_dirty_code=_git_dirty()[1],
+        # 23-11-2026: ô chọn ĐẦU TIÊN (hệ x1,y1,x2,y2) + số lần chọn lại giữa phiên.
+        # `./run demoip` không truyền `--bbox` (người dùng kéo chuột) nên TRƯỚC ĐÂY không file nào
+        # lưu bbox ⇒ không replay được phiên nào, và video `--record` đã cháy HUD nên cũng không
+        # dùng làm nguồn thô. `None` = không chọn (hoặc phiên headless dùng ô mặc định).
+        prompt_bbox=list(getattr(args, "_prompt_bbox", None) or []) or None,
+        reselect_n=getattr(args, "_reselect_n", None),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -562,6 +575,8 @@ def _run_display(engine, args):
                 metrics=metrics,
                 reid_session=reid_session,
             )
+            args._prompt_bbox = summary.prompt_bbox
+            args._reselect_n = summary.reselect_n
         else:
             summary = run_interactive(
                 source=args.source,

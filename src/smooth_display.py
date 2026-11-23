@@ -32,6 +32,8 @@ from src.live_pipeline import (
 from src.video_source import open_video_source
 
 _DISPLAY_SLEEP = 1.0 / 30  # nhịp vẽ ~30 FPS
+# Số lần thử lại một ngoại lệ suy luận TRƯỚC khi bỏ ô và về chế độ chờ chọn (review vòng 2, 23-11).
+_LOI_THU_LAI = 3
 
 
 class LatestFrameSource:
@@ -114,6 +116,8 @@ class InferenceWorker:
         self._track_cos = None
         self._verify_cos = None
         self._cos_truoc_cong = None
+        self._cand_n = None
+        self._loi_lien_tiep = 0      # số lần `step()`/`process()` ném LIÊN TIẾP (0 = đang khoẻ)
         self._reacquired = False
         self._pending_suspicious = None   # yêu cầu đổi cờ "nghi" từ main thread (None = không có)
 
@@ -196,6 +200,11 @@ class InferenceWorker:
         with self._lock:
             return self._cos_truoc_cong
 
+    def cand_n(self):
+        """Số ứng viên đã được chấm điểm ở frame gần nhất (`None` = không ở chế độ tìm lại)."""
+        with self._lock:
+            return self._cand_n
+
     def reid_vetoed(self) -> bool:
         """Frame gần nhất có ứng viên bị BỎ vì trùng khuôn mặt/đầu (HUD phải nói rõ lý do)."""
         with self._lock:
@@ -242,6 +251,12 @@ class InferenceWorker:
                             self._reid_score, self._reacquired = None, False
                             self._reid_vetoed = False
                             self._track_cos = None
+                            # RÒ SỐ (review vòng 2, 23-11): không reset 2 ô này thì sau khi bấm
+                            # `r` chọn lại, frame đầu của lần chọn MỚI vẫn mang `verify_cos` của
+                            # lần chọn CŨ ⇒ CSV gán số của vật trước cho vật sau.
+                            self._verify_cos = None
+                            self._cos_truoc_cong = None
+                            self._cand_n = None
                     else:
                         result = self._engine.start(frame, bbox)
                     warn_if_bad_selection(result)
@@ -259,12 +274,25 @@ class InferenceWorker:
                         self._track_cos = getattr(step, "track_cos", None)
                         self._verify_cos = getattr(step, "verify_cos", None)
                         self._cos_truoc_cong = getattr(step, "cos_truoc_cong", None)
+                        self._cand_n = getattr(step, "cand_n", None)
                 else:
                     result = self._engine.process(frame)
             except Exception as exc:
-                # State có thể đã hỏng → về chế độ chờ chọn, KHÔNG lặp lỗi vô hạn
-                print(f"[LOI] suy luận thất bại: {type(exc).__name__}: {exc} — "
-                      f"bấm r để chọn lại đối tượng")
+                with self._lock:
+                    self._loi_lien_tiep += 1
+                    so_lan = self._loi_lien_tiep
+                if so_lan < _LOI_THU_LAI:
+                    # MỘT ngoại lệ không được giết cả phiên (review vòng 2, 23-11): nhánh cũ đặt
+                    # `_bbox = None` ngay từ lần đầu, mà vòng hiển thị vẫn dán `stamped.result` cũ
+                    # lên frame live ⇒ demo "trông như đang chạy" với mask ĐÓNG BĂNG. Nay giữ ô và
+                    # thử lại; chỉ lỗi LIÊN TIẾP mới về chế độ chờ chọn.
+                    print(f"[LOI] suy luận thất bại ({so_lan}/{_LOI_THU_LAI}) "
+                          f"{type(exc).__name__}: {exc} — thử lại")
+                    time.sleep(0.1)
+                    continue
+                # Lỗi liên tiếp ⇒ state có thể đã hỏng: về chế độ chờ chọn, KHÔNG lặp vô hạn
+                print(f"[LOI] suy luận thất bại {so_lan} lần liên tiếp: {type(exc).__name__}: "
+                      f"{exc} — bấm r để chọn lại đối tượng")
                 try:
                     self._engine.reset()
                 except Exception:
@@ -274,9 +302,11 @@ class InferenceWorker:
                     self._started = False
                     self._stamped = None
                     self._reid_state = None
+                    self._loi_lien_tiep = 0
                 time.sleep(0.1)
                 continue
             with self._lock:
+                self._loi_lien_tiep = 0      # có kết quả ⇒ chuỗi lỗi đã đứt
                 self._seq += 1
                 self.inference_count += 1
                 self._stamped = StampedResult(self._seq, result, time.monotonic())
@@ -397,7 +427,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                                              track_cos=worker.track_cos(),
                                              nghi_doi_tuong=True if watch.nghi else None,
                                              verify_cos=worker.verify_cos(),
-                                             cos_truoc_cong=worker.cos_truoc_cong()))
+                                             cos_truoc_cong=worker.cos_truoc_cong(),
+                                             cand_n=worker.cand_n()))
                 if on_result is not None:
                     on_result(stamped.result)
             if stamped is not None:

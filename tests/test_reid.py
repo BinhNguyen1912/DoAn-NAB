@@ -1529,3 +1529,24 @@ class TestCosTruocCong:
         assert isinstance(sau.verify_cos, float), (
             "verify thất bại phải ghi được cos — đây là ca cần soi nhất"
         )
+
+    def test_cand_n_la_0_khi_bo_sinh_rong(self):
+        """`cand_n` tách được "bộ sinh rỗng" (0) khỏi "cổng chặn" (>0 mà `reid_score=-1`).
+
+        Reviewer vòng 2 chỉ đúng: `reid_score = -1` một mình KHÔNG nói được cái nào — 170/175 dòng
+        `-1` của phiên `095901` có `ncc = -1` (bộ sinh rỗng) nhưng 5 dòng có ncc 0,33–0,40 (bị cổng
+        NCC loại), và phiên `101110` có 2/3 frame LOST **có** điểm 0,894/0,972.
+        """
+        empty = np.zeros((96, 96), bool)
+        engine = FakeEngineMasks([empty], shape=(96, 96))
+        session = ReIdSession(engine=engine, embedder=None, cue="object",
+                              lost_after_frames=1, obj_threshold=1.01,
+                              obj_ncc_min=0.0, reacquire_confirm=1)
+        frame = _obj_frame(self.BOX)
+        session.start(frame, self.BOX)
+        session.step(frame)                     # mất dấu
+        step = session.step(_obj_frame((40, 40, 80, 80)))   # vùng lạ, tìm lại
+        assert step.reacquired is False
+        assert isinstance(step.cand_n, int) and step.cand_n >= 1, (
+            "prefilter NCC vẫn sinh ứng viên ⇒ cand_n > 0 (bị chặn ở CỔNG, không phải bộ sinh)"
+        )

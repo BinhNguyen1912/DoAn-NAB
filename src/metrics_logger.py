@@ -47,7 +47,9 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # 23-11-2026 (review vòng 2): cosine CAO NHẤT của frame, chấm TRƯỚC mọi cổng.
               # `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng ⇒ không tách được "bộ sinh không
               # đưa vật vào danh sách" với "cổng chặn". Cột này tách được. Trống = chưa chấm.
-              "cos_truoc_cong"]
+              "cos_truoc_cong",
+              # 23-11-2026: số ứng viên đã chấm (0 = bộ sinh rỗng; >0 mà reid_score=-1 = cổng chặn)
+              "cand_n"]
 
 
 @dataclass
@@ -82,6 +84,8 @@ class FrameRecord:
     verify_cos: Optional[float] = None
     # Cosine cao nhất của frame chấm TRƯỚC mọi cổng (`None` = chưa chấm).
     cos_truoc_cong: Optional[float] = None
+    # Số ứng viên đã chấm điểm ở frame này (`None` = không ở chế độ tìm lại).
+    cand_n: Optional[int] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -225,6 +229,7 @@ class MetricsLogger:
                     # `verify_cos`: TRỐNG = chưa chấm (không phải 0) — cùng luật với `track_cos`.
                     f"{float(r.verify_cos):.6g}" if r.verify_cos is not None else "",
                     f"{float(r.cos_truoc_cong):.6g}" if r.cos_truoc_cong is not None else "",
+                    "" if r.cand_n is None else str(int(r.cand_n)),
                 ])
         return str(path)
 

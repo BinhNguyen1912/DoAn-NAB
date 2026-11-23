@@ -289,7 +289,7 @@ class TestThreadSafety:
             src.stop()
 
     def test_loi_suy_luan_quay_ve_che_do_chon_khong_loop(self, capsys):
-        """Engine lỗi (state hỏng) → worker về chế độ chờ chọn, KHÔNG lặp lỗi vô hạn."""
+        """Engine lỗi LIÊN TIẾP (state hỏng) → về chế độ chờ chọn, KHÔNG lặp lỗi vô hạn."""
 
         class LoiEngine(FakeEngine):
             def process(self, frame):
@@ -300,11 +300,45 @@ class TestThreadSafety:
         src, engine, worker = self._setup(LoiEngine)
         try:
             worker.set_bbox((10, 10, 50, 50))
-            time.sleep(0.3)
+            time.sleep(1.0)          # đủ cho 3 lần thử lại (0,1 s/lần) + lần bỏ cuộc
             assert worker.is_tracking() is False      # về chế độ chọn
             assert worker.latest_result() is None
+            # ĐẾM CÓ TRẦN: 3 lần thử lại + 1 lần bỏ cuộc = 4 dòng, không phải vòng lặp spam
             n_err = capsys.readouterr().out.count("[LOI]")
-            assert n_err == 1, "chỉ báo lỗi 1 lần, không spam"
+            assert n_err == 3, f"in {n_err} dòng [LOI] — phải có trần (2 thử lại + 1 bỏ cuộc)"
+        finally:
+            worker.stop()
+            src.stop()
+
+    def test_mot_loi_khong_giet_ca_phien(self):
+        """23-11-2026 (review vòng 2): MỘT ngoại lệ `step()` không được bỏ ô của cả phiên.
+
+        Nhánh cũ đặt `_bbox = None` ngay lần lỗi đầu ⇒ về chế độ chờ chọn, mà vòng hiển thị còn
+        dán `stamped.result` cũ lên frame live ⇒ demo "trông như đang chạy" với mask ĐÓNG BĂNG.
+        """
+
+        class ChopEngine(FakeEngine):
+            """Ném đúng MỘT lần ở `process` thứ 2, sau đó chạy bình thường."""
+
+            def __init__(self, *a, **kw):
+                super().__init__(*a, **kw)
+                self.n_process = 0
+
+            def process(self, frame):
+                with self.lock:
+                    self.n_process += 1
+                    n = self.n_process
+                if n == 2:
+                    raise TypeError("chập một lần")
+                return super().process(frame)
+
+        src, engine, worker = self._setup(ChopEngine)
+        try:
+            worker.set_bbox((10, 10, 50, 50))
+            time.sleep(0.6)                       # > 3 vòng (delay 0,05 s) sau cú chập
+            assert worker.is_tracking() is True, "một lần chập không được bỏ ô"
+            assert worker.latest_result() is not None
+            assert engine.n_process >= 4, "phải thử lại và tiếp tục suy luận"
         finally:
             worker.stop()
             src.stop()

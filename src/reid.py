@@ -178,6 +178,10 @@ class Step:
     # phân biệt được "bộ sinh không đưa vật vào danh sách" với "cổng chặn" — đúng thứ phải tách
     # trước khi quyết có nên xác minh ứng viên bằng mask hay không.
     cos_truoc_cong: Optional[float] = None
+    # Số ứng viên ĐÃ CHẤM điểm ở frame này (sau prefilter NCC, trước mọi cổng). `0` = bộ sinh rỗng
+    # ⇒ mọi kỹ thuật xác minh/xếp hạng đều vô ích; `>0` mà `reid_score = -1` = CỔNG chặn.
+    # (23-11-2026, review vòng 2: `reid_score = -1` một mình không phân biệt được hai ca đó.)
+    cand_n: Optional[int] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -417,6 +421,7 @@ class ReIdSession:
         self._suspicious = False
         self._last_verify_cos = None    # cos của lần XÁC MINH gần nhất (`None` = chưa chấm)
         self._cos_truoc_cong = -1.0     # cosine CAO NHẤT của frame, chấm trước mọi cổng
+        self._cand_n = 0                # số ứng viên đã chấm ở frame này
 
     # -- trạng thái --
     @property
@@ -611,6 +616,7 @@ class ReIdSession:
             # ⇒ ở đây chỉ còn câu hỏi "frame này có bị veto không" để HUD nói ĐÚNG lý do.
             so_veto_truoc = self.veto_mat_n
             self._cos_truoc_cong = -1.0        # mỗi frame một giá trị (không rò sang frame sau)
+            self._cand_n = 0
             score, bbox, ncc = self._match_object(frame)
             vetoed = self.veto_mat_n > so_veto_truoc
             if vetoed and self.frames_vetoed_since_print >= 20:
@@ -655,7 +661,8 @@ class ReIdSession:
         return Step(result=lost, state=self._state,
                     reid_score=best_score, ncc=best_ncc, vetoed=vetoed,
                     cos_truoc_cong=(self._cos_truoc_cong
-                                    if self._cos_truoc_cong >= 0.0 else None))
+                                    if self._cos_truoc_cong >= 0.0 else None),
+                    cand_n=self._cand_n)
 
     # -- veto "nhận lại vào mặt/đầu" --
     def _mat_trong(self, frame) -> tuple:
@@ -983,6 +990,7 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
+            self._cand_n += 1
             if raw > self._cos_truoc_cong:
                 self._cos_truoc_cong = float(raw)   # TRƯỚC mọi cổng (để tách "bộ sinh" vs "cổng")
             if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
