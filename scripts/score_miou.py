@@ -85,6 +85,11 @@ def doc_mask(path) -> np.ndarray:
 def cham(ds_frame, gt_dir: Path) -> dict:
     """Chấm danh sách frame. `ds_frame`: [{"frame_idx": int}] từ `index.json`."""
     rows, miou, gt_rong, thieu, hong = [], [], 0, 0, 0
+    # Diện tích mask của model ở các frame **GT RỖNG**. Trước 23-11-2026 những frame này bị bỏ qua
+    # hoàn toàn (`"GT rỗng (không chấm)"`) ⇒ câu "hệ vẽ bừa khi vật vắng" chỉ nói được bằng **đếm tay
+    # file PNG**, không có số trong artifact. Nay đếm thành metric: GT rỗng + model trả mask lớn =
+    # model BỊA (không phải "chưa đo"). Ngược lại `px = 0` là bằng chứng TRUNG THỰC.
+    px_gt_rong = []
     for item in ds_frame:
         idx = int(item["frame_idx"])
         gt_path = Path(gt_dir) / f"gt_{idx:06d}.png"
@@ -105,7 +110,12 @@ def cham(ds_frame, gt_dir: Path) -> dict:
             continue
         if gia_tri is None:
             gt_rong += 1
-            rows.append({"frame_idx": idx, "iou": None, "ly_do": "GT rỗng (không chấm)"})
+            px = int(pred.sum())
+            px_gt_rong.append({"frame_idx": idx, "dien_tich_pred": px})
+            # `iou` vẫn None (GT rỗng thì KHÔNG chấm — luật cũ, giữ nguyên), nhưng frame này mang
+            # thêm `dien_tich_pred` để đọc được "bịa bao nhiêu px".
+            rows.append({"frame_idx": idx, "iou": None, "ly_do": "GT rỗng (không chấm)",
+                         "dien_tich_pred": px})
             continue
         miou.append(gia_tri)
         # Phần mask NẰM NGOÀI GT ("tràn"): với GT là HỘP BAO, `mIoU` bị chặn trên ~0,75-0,85 nên
@@ -142,6 +152,18 @@ def cham(ds_frame, gt_dir: Path) -> dict:
             key=lambda r: (r["mask_ngoai_gt"], -r["frame_idx"]))["frame_idx"],
         "n_cham": len(miou),
         "so_frame_gt_rong": gt_rong,
+        # Mask của model ở các frame GT RỖNG (vật KHÔNG có mặt): `mean`/`max` px + số frame bịa.
+        # `n` = số frame đo được; `so_frame_bia` = số frame có px > 0 (đếm cả frame 1 px để không
+        # giấu ca "bám rác"). `None` khi không có frame GT rỗng nào (KHÁC 0 = đo được 0 px).
+        "mask_px_gt_rong": ({
+            "n": len(px_gt_rong),
+            "mean": round(float(np.mean([r["dien_tich_pred"] for r in px_gt_rong])), 1),
+            "max": int(max(r["dien_tich_pred"] for r in px_gt_rong)),
+            "max_frame": max(px_gt_rong, key=lambda r: (r["dien_tich_pred"],
+                                                         -r["frame_idx"]))["frame_idx"],
+            "so_frame_bia": sum(1 for r in px_gt_rong if r["dien_tich_pred"] > 0),
+            "frames": px_gt_rong,
+        } if px_gt_rong else None),
         "so_frame_thieu_mask": thieu,
         "so_frame_mask_hong": hong,
         # Coverage vào artifact, KHÔNG chỉ in ra màn hình: 5/10 frame thiếu mask từng được in mIoU mà
@@ -708,6 +730,14 @@ def main(argv=None) -> int:
         print(f"[miou] mask NGOÀI GT: trung bình {kq['mask_ngoai_gt_mean']:.1%} · tệ nhất "
               f"{kq['mask_ngoai_gt_max']:.1%} (frame {kq['mask_ngoai_gt_max_frame']}) — "
               "thấp = không tràn ra ngoài; KHÔNG nói mask phủ đủ, và KHÔNG phải mIoU")
+    _px = kq.get("mask_px_gt_rong")
+    if _px:
+        print(f"[miou] BỊA MASK ở frame GT RỖNG: {_px['so_frame_bia']}/{_px['n']} frame có mask "
+              f"(trung bình {_px['mean']:.0f} px · tệ nhất {_px['max']} px @ frame "
+              f"{_px['max_frame']}) — GT rỗng nghĩa là VẬT KHÔNG CÓ MẶT")
+    elif _px is None:
+        print("[miou] BỊA MASK ở frame GT RỖNG: chưa đo (bộ GT không có frame rỗng nào)")
+
         if kq.get("mask_ngoai_gt_n") != kq.get("n_cham"):
             print(f"[miou] CẢNH BÁO: 'tràn' tính trên {kq.get('mask_ngoai_gt_n')}/"
                   f"{kq.get('n_cham')} frame — frame model trả mask RỖNG không có gì để tràn nên bị "

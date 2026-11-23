@@ -150,6 +150,45 @@ class TestCham:
         kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
         assert kq["so_frame_gt_rong"] == 1 and kq["n_cham"] == 0 and kq["mIoU"] is None
 
+    def test_gt_rong_van_do_dien_tich_mask_bia(self, tmp_path):
+        """GT rỗng ⇒ KHÔNG chấm IoU, nhưng PHẢI đếm mask của model to bao nhiêu (bịa mask).
+
+        23-11-2026: câu "hệ vẽ bừa khi vật vắng" từng chỉ nói được bằng **đếm tay file PNG**; bằng
+        chứng thật (re-ID bịa 5/5 frame, 33 199–52 056 px) không nằm trong artifact nào.
+        """
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))          # model "vẽ" kín 4x4 = 16 px
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["so_frame_gt_rong"] == 1 and kq["n_cham"] == 0 and kq["mIoU"] is None
+        px = kq["mask_px_gt_rong"]
+        assert px["n"] == 1 and px["so_frame_bia"] == 1
+        assert px["mean"] == 16.0 and px["max"] == 16 and px["max_frame"] == 0
+        assert kq["frames"][0]["dien_tich_pred"] == 16   # đọc được ngay ở dòng frame
+
+    def test_mask_rong_o_frame_gt_rong_la_trung_thuc_khong_phai_bia(self, tmp_path):
+        """Mask rỗng ở frame GT rỗng = hệ TRUNG THỰC ⇒ `so_frame_bia == 0` (khác "chưa đo")."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.zeros((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        px = kq["mask_px_gt_rong"]
+        assert px["n"] == 1 and px["so_frame_bia"] == 0 and px["max"] == 0
+
+    def test_khong_co_frame_gt_rong_thi_metric_la_None_khong_phai_0(self, tmp_path):
+        """Bẫy `0/None ≠ đã đo`: không có frame GT rỗng ⇒ `None`, KHÔNG phải "0 px bịa"."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["mask_px_gt_rong"] is None
+
     # ── `mask_ngoai_gt`: đo phần mask TRÀN RA NGOÀI GT (15-11) ────────────────────────────────
     def test_mask_nam_hoan_toan_trong_gt_thi_tran_bang_0(self, tmp_path):
         """Mask nằm gọn trong GT (GT hộp bao) ⇒ `mIoU` bị chặn dưới 1, nhưng `tran` = 0."""
