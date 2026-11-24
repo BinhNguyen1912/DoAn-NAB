@@ -13,7 +13,7 @@ Tiêu chí nghiệm thu: artifact live có `chua_xac_minh_n > 0` và `nghi_doi_t
 
 **Status:** ready-for-agent
 
-- [ ] `InteractiveSummary` (đường CLI) có `chua_xac_minh_n` và ghi vào `run_info.json`/`summary.json`
+- [x] `InteractiveSummary` (đường CLI) có `chua_xac_minh_n` và ghi vào `run_info.json`/`summary.json`
 - [ ] ≥3 phiên live thật, artifact có `git_rev` + `git_dirty_code=false` + `loadavg`
 - [ ] Số live của `nghi_doi_tuong` giảm so với 109/246 = 44,3 % (phiên `demoip_1124-125109`)
 - [ ] Ghi rõ `settle_steps` và nhịp VOS đo được của phiên
