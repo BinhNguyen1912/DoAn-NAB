@@ -104,6 +104,12 @@ Reviewer (agent `reviewer`, chỉ đọc) kết luận **chưa merge được**.
 | **P3** | Docstring ghi "140/404 = 34,7 % chưa xác minh" sai nhãn | sửa: **132 = 32,7 %** chưa xác minh + **8** frame `nghi` = 34,7 % *không tin cậy* |
 | **P3** | Câu "ca 21-11 không bị ảnh hưởng vì vật **không** rời khung" **SAI**: phiên `1121-121732` có **2 frame rỗng liền** (f176–177) ngay trước cú báo f178 | sửa lại; **biên mỏng tới đâu**: ngưỡng **2** sẽ MẤT ca đúng đó, ngưỡng **3** giữ 7/7 — đã khoá bằng `TestBienCuaNguongVang` dùng đúng chuỗi f176–178 |
 
+**Hệ quả phụ PHẢI nói kèm (đường web):** `settle_steps = 8` giờ đếm theo **bước VOS**, đúng như
+AGENTS mô tả ("8 bước ≈ 1,3–1,8 s ở 4,5–6,3 bước/s"). Trước khi sửa, web đếm theo **frame phát** ⇒ 8
+"bước" chỉ ≈ **0,27 s** (8/29,8). Nay một lần báo ẩn ≈ **0,94 s** (8/8,5) — dài hơn ~3,5 lần nhưng
+**đúng ngữ nghĩa**, và đổi lại các lần báo OAN do tái bám biến mất. Đừng so số `frame_an` của phiên web
+trước/sau mốc này mà không nói định nghĩa "bước" đã đổi.
+
 Đã kiểm, **không** phải lỗi (reviewer xác nhận): thứ tự `_lost`/`_grace`/`reset()` trong `update()`;
 `vua_bao` không làm mất cảnh báo ở cấu hình mặc định; mẫu số replay (26 phiên đo được / 17 phiên bị loại);
 hai script lấy mặc định từ hằng số chung.
