@@ -504,10 +504,13 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     verify_cos = cos_truoc = cand_n = None
                     cand_sinh = cand_ncc_loai = None
                 if not reacquired:
-                    switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
                     co_mask = bool(last_result.mask is not None and last_result.mask.any())
-                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2],
-                                          co_mask=co_mask) or switch
+                    watch.update(last_bbox, last_result.bbox, frame.shape[:2], co_mask=co_mask)
+                    # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy (bước đầu của phiên bám mới
+                    # sau khi vật rời khung được MIỄN chấm) — 24-11.
+                    if watch.vua_bao:
+                        _switch_warning(last_bbox, last_result, frame.shape[:2])
+                    switch = watch.nghi or switch
                     if co_mask:
                         last_bbox = last_result.bbox
                     else:

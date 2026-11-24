@@ -124,3 +124,15 @@ không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều*
 - Ảnh nhãn: `data/tmp_an/v2_*`, `data/tmp_an/v3_*`, `data/tmp_an/l9.6.jpg`, `data/tmp_an/l12.6.jpg`
 - Log: `docs/task/23-11-2026-*.md`, `docs/task/24-11-2026-*.md`; AGENTS §6 (cổng nghi, `chua_xac_minh`)
 - Ticket: `.scratch/camera-ai-realtime/issues/47-*.md`, `48-*.md`
+
+## Bổ sung 24-11 (tối) — luật thứ 8 KHÔNG phải "nới ngưỡng": điều kiện CHẤM, không phải bán kính
+
+Người dùng báo phiên `demoip_1124-193026`: vật rời khung rồi vào lại ⇒ bị nghi ⇒ kẹt tới hết phiên.
+Nguyên nhân **không** nằm trong danh sách luật ở trên: cổng lấy **mẩu rác 559 px** (`bbox_area_ratio
+0,346`) của lần dò lại đầu tiên làm **mốc so sánh**, rồi chấm cú nhảy sang vật thật 24 100 px.
+
+⇒ Kết luận ở trên vẫn nguyên: **không nới ngưỡng px, không thêm luật hình học** (bảng `eval_gate_rules`
+xác nhận lại 3/7 · 6/7 · 2/7 · 1–5/7). Thứ được thêm là **điều kiện chấm**: `lost_reset_streak = 3`
+(vắng ≥ 3 bước = vật rời khung ⇒ phiên bám mới, `reset()` + miễn chấm 2 bước) — đo trên 10 phiên đóng
+băng giữ **7/7** ca đúng và giảm chưa-xác-minh **11,33 % → 4,24 %**. Chi tiết:
+`docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md`. Nợ V0 (người thứ 2 dán nhãn) **vẫn còn**.

@@ -96,6 +96,23 @@ TRANG_THAI_CHUA_XAC_MINH = "chua_xac_minh"
 # kiểu vẽ (ấn/hiện), không biến vùng đáng ngờ thành "đã kiểm" — muốn tin cậy thì phải `c`/`r`.
 DEFAULT_SETTLE_STEPS = 8
 
+# "VẬT RỜI KHUNG RỒI VÀO LẠI" KHÔNG PHẢI "ĐỔI ĐỐI TƯỢNG" (đo 24-11, phiên `demoip_1124-193026`).
+# Người dùng báo: *"ra khung khoảng 10 s, đưa vào lại thì bị nghi, từ đó không nhận diện lại nữa"*.
+# Đọc CSV phiên đó: `mask_area = 0` **15 frame liền** (f248–262) ⇒ f263 model trả lại mask đầu tiên
+# nhưng chỉ **559 px** (0,346× `bbox_area_ref` — một mẩu rác, không phải vật) ⇒ f264 trả mask thật
+# 24 100 px ở chỗ khác ⇒ cổng chấm "nhảy" giữa MẨU RÁC và VẬT, báo nghi, rồi latch giữ tới hết phiên:
+# **140/404 frame = 34,7 %** phiên chỉ còn ô nét đứt "chưa xác minh" ⇒ người dùng thấy "không nhận
+# diện lại nữa". Trước đó cùng phiên còn 5 đoạn mất dấu dài 8–22 frame.
+# Vì sao 3: 1–2 frame rỗng là **nhấp nháy** (mask rơi 1 bước rồi có lại — 6/7 ca báo ĐÚNG của repo
+# không có đoạn rỗng nào trước đó, ca thứ 7 (`125109#137`) chỉ rỗng **1** frame): đặt ngưỡng 3 giữ
+# nguyên 7/7 ca đúng. Đây KHÔNG phải "ngưỡng an toàn", chỉ là ranh giới giữa "nhấp nháy" và "vắng".
+DEFAULT_LOST_RESET_STREAK = 3
+
+# Số bước ĐẦU của phiên bám mới mà cổng KHÔNG chấm nhảy. Vì sao > 1: bước đầu sau khi vắng (**f263**)
+# đã tự khỏi bị chấm (mốc = ô rỗng), nhưng bước THỨ HAI (**f264**) lại lấy mẩu rác f263 làm mốc ⇒ cần
+# 2 bước. Sau đó mốc là một ô thật (mask 24k px) nên chấm lại là đúng.
+DEFAULT_REACQ_GRACE_STEPS = 2
+
 
 class IdentityWatch:
     """Cổng "nghi đổi đối tượng" **CÓ NHỚ** (latch) — báo một lần thì giữ trạng thái nghi.
@@ -115,14 +132,29 @@ class IdentityWatch:
     """
 
     def __init__(self, max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
-                 settle_steps=DEFAULT_SETTLE_STEPS):
+                 settle_steps=DEFAULT_SETTLE_STEPS,
+                 lost_reset_streak=DEFAULT_LOST_RESET_STREAK,
+                 reacq_grace_steps=DEFAULT_REACQ_GRACE_STEPS):
         """`settle_steps`: số bước ổn định để hạ `nghi` → `chua_xac_minh`. 0 = TẮT (hành vi cũ:
         ẩn tới hết phiên, chỉ `r`/`c` mới xoá) — dùng để tái lập số của các phiên trước 24-11.
+
+        `lost_reset_streak`: số bước LIÊN TIẾP không có mask để coi là **vật đã rời khung** ⇒ lần có
+        mask kế tiếp là **phiên bám mới** (xoá nghi + không chấm nhảy `reacq_grace_steps` bước đầu).
+        0 = TẮT (hành vi trước 24-11 tối: mẩu rác sau khi vắng bị dùng làm mốc).
         """
         self.max_jump_ratio = float(max_jump_ratio)
         self.settle_steps = max(0, int(settle_steps))
+        self.lost_reset_streak = max(0, int(lost_reset_streak))
+        self.reacq_grace_steps = max(0, int(reacq_grace_steps))
         self._trang_thai = TRANG_THAI_OK
         self._settle = 0
+        self._lost = 0          # số bước liên tiếp KHÔNG có mask
+        self._grace = 0         # số bước đầu phiên bám mới còn miễn chấm nhảy
+
+    @property
+    def tai_bam(self) -> bool:
+        """Đang trong `reacq_grace_steps` bước đầu của phiên bám mới (cổng MIỄN chấm nhảy)."""
+        return self._grace > 0
 
     @property
     def trang_thai(self) -> str:
@@ -138,6 +170,16 @@ class IdentityWatch:
         """Đã bám ổn định lại nhưng CHƯA ai xác nhận ⇒ vẽ kiểu "chưa xác minh"."""
         return self._trang_thai == TRANG_THAI_CHUA_XAC_MINH
 
+    @property
+    def vua_bao(self) -> bool:
+        """Bước vừa rồi cổng **thật sự** kết luận "đổi đối tượng" (không bị miễn chấm).
+
+        Đường in cảnh báo/banner phải đọc cờ này thay vì tự gọi `is_suspect_switch` lần nữa:
+        nếu không, sửa state machine mà người dùng vẫn thấy WARN + banner (đo 24-11, phiên
+        `demoip_1124-193026`: cổng miễn chấm nhưng `_switch_warning` tự chấm lại ⇒ vẫn báo).
+        """
+        return self._vua_bao
+
     def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None,
                co_mask=True, nhay=None) -> bool:
         """Cập nhật bằng một bước VOS; trả True nếu ĐANG CHẶN vẽ mask (trạng thái `nghi`).
@@ -150,14 +192,32 @@ class IdentityWatch:
         máy trạng thái — nếu script tự chép lại state machine thì hai bản sẽ trôi khỏi nhau (bài học
         "test chép lại logic" trong repo).
         """
+        self._vua_bao = False          # cờ của BƯỚC NÀY (reset đầu mỗi `update`)
+        # --- "Vật rời khung rồi vào lại" ≠ "đổi đối tượng" (24-11) ---------------------------
+        # Đếm bước vắng; khi mask trở lại sau `lost_reset_streak` bước vắng thì đó là PHIÊN BÁM MỚI:
+        # xoá nghi (đường lui duy nhất khi re-ID tắt) và miễn chấm nhảy vài bước đầu, vì mốc so sánh
+        # lúc đó là **mẩu rác của lần dò lại** chứ không phải vật (đo: f263 = 559 px = 0,346× tham chiếu).
+        if not co_mask:
+            self._lost += 1
+        else:
+            if self.lost_reset_streak > 0 and self._lost >= self.lost_reset_streak:
+                self.reset()                       # về `ok` + xoá `_lost`/`_grace`
+                self._grace = self.reacq_grace_steps
+            self._lost = 0
+
         if nhay is None:
             nhay = is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
                                     max_jump_ratio=self.max_jump_ratio,
                                     lk_velocity=lk_velocity)
+        if self._grace > 0:
+            # Mốc chưa đáng tin ⇒ KHÔNG chấm (và KHÔNG in cảnh báo — xem `vua_bao`).
+            self._grace -= 1
+            return self.nghi
         if nhay:
             # Cú nhảy MỚI luôn đưa về `nghi` (kể cả đang `chua_xac_minh`) và đếm lại từ 0.
             self._trang_thai = TRANG_THAI_NGHI
             self._settle = 0
+            self._vua_bao = True
             return self.nghi
         if self._trang_thai == TRANG_THAI_NGHI:
             if not co_mask:
@@ -173,3 +233,6 @@ class IdentityWatch:
         """Xoá trạng thái nghi (về `ok`) — người dùng chọn lại (`r`) / xác nhận (`c`) / reacquire."""
         self._trang_thai = TRANG_THAI_OK
         self._settle = 0
+        self._lost = 0
+        self._grace = 0
+        self._vua_bao = False

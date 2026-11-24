@@ -829,3 +829,24 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   máy bận (loadavg 1,41) mà chính pipeline (`--smooth`) ăn 4,4 lõi; headless cùng clip ra 98 ms ⇒
   đừng so hai đường. Còn thiếu: `chua_xac_minh_n` cho đường CLI (ticket #47) — hiện chỉ đếm được qua
   `nghi_doi_tuong` + replay.
+- **"VẬT RỜI KHUNG RỒI VÀO LẠI" KHÔNG PHẢI "ĐỔI ĐỐI TƯỢNG" — cổng nghi từng tự khoá phiên tới hết buổi.**
+  Người dùng báo 24-11 (phiên `demoip_1124-193026`, 404 frame, `git_rev 14140ca`): *"ra khung ~10 s, đưa
+  vào lại thì bị nghi, từ đó không nhận diện lại nữa"*. Đọc CSV: **15 frame `mask_area=0` liền**
+  (f248–262) → f263 mask đầu tiên chỉ **559 px** (`bbox_area_ratio 0,346` × tham chiếu = **mẩu rác**) →
+  f264 mask thật 24 100 px ⇒ cổng chấm "tâm nhảy 209 px" **giữa mẩu rác và vật** ⇒ báo nghi ⇒ latch
+  (re-ID TẮT nên **không có đường xoá**) ⇒ **132/404 = 32,7 %** phiên chỉ còn ô nét đứt "chưa xác minh".
+  Nay `IdentityWatch` có `lost_reset_streak` (**3** bước vắng liền = vật đã rời khung ⇒ lần có mask kế
+  tiếp là **phiên bám mới**: `reset()` về `ok` + `reacq_grace_steps` (**2**) bước đầu **miễn chấm nhảy**),
+  và cờ `vua_bao` để đường in cảnh báo **không tự chấm lại** (`_switch_warning` từng gọi
+  `is_suspect_switch` lần 2 ⇒ sửa state machine mà console vẫn in WARN + banner). Ngưỡng 3 vì 1–2 frame
+  rỗng là **nhấp nháy** (ca đúng `125109#137` chỉ vắng **1** frame) ⇒ **giữ nguyên 7/7 ca báo đúng**.
+  Đo (`data/eval_gate_rules_2026-11-24_metrics.json`, 10 phiên đóng băng/1 509 frame): chưa-xác-minh
+  **11,33 % → 4,24 %**, không-tin-cậy **15,04 % → 7,95 %**, ca đúng **7/7**; `--lost-reset 0` là cờ tái
+  lập hành vi cũ. Toàn pool (`data/replay_latch_tai_bam_2026-11-24_metrics.json`, 26 phiên đo được/5 180
+  frame, `settle 8`): chưa-xác-minh **29,77 % → 16,20 %**, và hành vi `settle 0` **34,54 % → 20,50 %**.
+  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **Đánh đổi phải nói kèm:** sau khi
+  vật rời khung rồi vào lại, hệ **TIN** vùng mới — "một vật khác đi vào" thì không phân biệt được nếu
+  không có re-ID (ca 21-11 không bị ảnh hưởng: vật **không** rời khung). **CÒN HỞ:** cùng phiên đó ô bám
+  sang **tường trống** ~130 frame mà cổng **không** báo (trôi dần — đúng kết luận 23-11) ⇒ cần cơ chế
+  khác (verified re-anchor / Cutie), **đừng** nới ngưỡng. Log:
+  `docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md`.

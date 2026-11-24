@@ -209,3 +209,79 @@ class TestIdentityWatchTuHaMuc:
         for i in range(20):
             w.update((600 + i, 400, 620, 480), (601 + i, 401, 621, 479), (480, 640))
         assert w.chua_xac_minh is False
+
+
+class TestTaiBamSauKhiVatRoiKhung:
+    """24-11 (người dùng báo, phiên `demoip_1124-193026`): *"ra khung khoảng 10 s, đưa vào khung lại
+
+    thì bị nghi, từ đó không nhận diện lại nữa"*. Đọc CSV phiên đó: 15 frame `mask_area = 0` liền
+    (f248–262), rồi f263 model trả một **mẩu rác 559 px** (0,346× tham chiếu), rồi f264 trả mask thật
+    24 100 px ở chỗ khác ⇒ cổng chấm "nhảy" giữa MẨU RÁC và VẬT ⇒ báo nghi ⇒ latch giữ tới hết phiên
+    (**132/404 frame = 32,7 %** chỉ còn ô nét đứt "chưa xác minh").
+    Luật: vật rời khung rồi vào lại là **phiên bám mới** — không có cú nhảy nào để chấm.
+    """
+
+    A = (100, 100, 200, 200)       # vật lúc đầu
+    B = (500, 300, 600, 480)       # chỗ khác hẳn (> 200 px) — nếu chấm sẽ bị coi là "nhảy"
+    M = (300, 200, 380, 260)       # mẩu rác của lần dò lại (như f263)
+
+    def test_vang_dai_roi_vao_lai_khong_bao(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        w.update(self.A, self.A, (480, 640))
+        for _ in range(5):                                   # 5 bước vắng (như f248–262)
+            w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False)
+        assert w.nghi is False
+        assert w.update((0, 0, 0, 0), self.M, (480, 640)) is False     # mẩu rác: miễn chấm
+        assert w.vua_bao is False
+        assert w.update(self.M, self.B, (480, 640)) is False           # bước 2 của phiên mới: miễn
+        assert w.vua_bao is False
+        assert w.nghi is False      # KHÔNG được bật latch — đây là điều người dùng thấy
+
+    def test_het_grace_thi_cham_lai_nhu_cu(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        for _ in range(4):
+            w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False)
+        w.update((0, 0, 0, 0), self.B, (480, 640))           # bước 1 (miễn)
+        w.update(self.B, (502, 302, 602, 478), (480, 640))   # bước 2 (miễn)
+        # Sau grace: cú nhảy THẬT vẫn phải bị bắt (đừng "sửa" bằng cách tắt cổng)
+        assert w.update((502, 302, 602, 478), self.A, (480, 640)) is True
+        assert w.vua_bao is True
+
+    def test_nhap_nhay_1_2_frame_van_cham(self):
+        """Ngưỡng 3 frame vắng là ranh giới với NHẤP NHÁY: ca báo đúng `125109#137` chỉ vắng **1** frame."""
+        from src.identity_guard import IdentityWatch
+
+        for so_vang in (1, 2):
+            w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+            w.update(self.A, self.A, (480, 640))
+            for _ in range(so_vang):
+                w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False)
+            w.update((0, 0, 0, 0), self.M, (480, 640))       # mask trở lại
+            assert w.update(self.M, self.B, (480, 640)) is True, \
+                f"vắng {so_vang} frame là nhấp nháy ⇒ cú nhảy sau đó vẫn phải bị chấm"
+
+    def test_tai_bam_xoa_latch_nghi(self):
+        """Đường lui duy nhất khi re-ID TẮT: vật rời khung rồi vào lại ⇒ hết nghi (không kẹt vĩnh viễn)."""
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        w.update(self.A, self.B, (480, 640))
+        assert w.nghi is True
+        for _ in range(6):
+            w.update(self.B, (0, 0, 0, 0), (480, 640), co_mask=False)
+        w.update((0, 0, 0, 0), self.A, (480, 640))
+        assert w.nghi is False and w.trang_thai == "ok"
+
+    def test_tat_bang_0_la_hanh_vi_truoc_24_11(self):
+        """`lost_reset_streak=0` phải tái lập được số cũ (báo oan ngay sau khi vắng)."""
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=0)
+        for _ in range(5):
+            w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False)
+        w.update((0, 0, 0, 0), self.M, (480, 640))
+        assert w.update(self.M, self.B, (480, 640)) is True

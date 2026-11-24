@@ -533,10 +533,25 @@ class TestCongNhayCoNhoTrenDuongMuot:
         from src import smooth_display as sd
 
         src = inspect.getsource(sd.run_smooth_display)
-        cap_nhat = src.index("switch = watch.update(")
-        gan_lai = src.index("last_bbox = stamped.result.bbox")
+        cap_nhat = src.index("watch.update(last_bbox, stamped.result.bbox")
+        gan_lai = src.index("last_bbox = stamped.result.bbox", cap_nhat)
         assert cap_nhat < gan_lai, ("cổng nhảy phải được cập nhật TRƯỚC khi gán `last_bbox` = ô hiện "
                                     "tại, nếu không nó so ô với chính nó và không bao giờ bật")
+
+    def test_canh_bao_chi_in_khi_cong_that_su_cham(self):
+        """24-11 (phiên `demoip_1124-193026`): cổng MIỄN chấm bước đầu của phiên bám mới (vật rời
+
+        khung rồi vào lại) nhưng `_switch_warning` tự gọi `is_suspect_switch` LẦN NỮA ⇒ vẫn in WARN
+        và bật banner. Đường in cảnh báo phải đọc `watch.vua_bao` (phán quyết của cổng), không tự chấm.
+        """
+        import inspect
+
+        from src import live_pipeline as lp
+        from src import smooth_display as sd
+
+        for mod in (sd, lp):
+            src = inspect.getsource(mod)
+            assert "watch.vua_bao" in src, f"{mod.__name__} chưa đọc `watch.vua_bao` để in cảnh báo"
 
     def test_reacquired_giai_phong_latch_nghi_doi_tuong(self):
         """22-11 (bug thật, phiên `demoip_1122-195623`): vật chạm mép nhảy ô ⇒ `IdentityWatch`

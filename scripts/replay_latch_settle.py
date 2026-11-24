@@ -73,7 +73,7 @@ def doc_cot(path):
     return out
 
 
-def replay(rows, settle_steps, frame_shape):
+def replay(rows, settle_steps, frame_shape, lost_reset_streak=None):
     """Chạy `IdentityWatch` trên chuỗi ô của CSV ⇒ số frame ở từng trạng thái + số lần bật.
 
     Luật nối ô y như `smooth_display`/`live_pipeline`: `prev` = ô TỐT gần nhất, mất dấu ⇒ `ZERO`
@@ -83,7 +83,8 @@ def replay(rows, settle_steps, frame_shape):
     vốn đã rỗng (vật ngoài khung) — những frame đó **vốn đã** trắng, nên "chi phí ẩn" tính theo
     `frame_an` là CẬN TRÊN.
     """
-    watch = IdentityWatch(settle_steps=settle_steps)
+    kwargs = {} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}
+    watch = IdentityWatch(settle_steps=settle_steps, **kwargs)
     dem = {TRANG_THAI_NGHI: 0, TRANG_THAI_CHUA_XAC_MINH: 0}
     an_co_mask = 0
     fires, prev = 0, None
@@ -123,6 +124,7 @@ def _provenance():
 
 
 def tao_payload(phien, settle_list, frame_shape, args):
+    from src.identity_guard import DEFAULT_LOST_RESET_STREAK
     rev, dirty, dirty_code = _provenance()
     tong = {}
     for s in settle_list:
@@ -156,6 +158,8 @@ def tao_payload(phien, settle_list, frame_shape, args):
         "nguon": [p["ten"] for p in phien],
         "frame_shape": list(frame_shape),
         "settle_list": settle_list,
+        "lost_reset_streak": (DEFAULT_LOST_RESET_STREAK if args.lost_reset is None
+                              else max(0, args.lost_reset)),
         "tong": tong,
         "phien": phien,
     }
@@ -167,6 +171,9 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", default="0,8,12", help="danh sách settle_steps (0 = hành vi cũ)")
     ap.add_argument("--frame-shape", default="480,640", help="H,W của khung (CSV không lưu)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--lost-reset", type=int, default=None,
+                    help="số frame vắng để coi là 'vật rời khung' (mặc định = DEFAULT_LOST_RESET_STREAK);"
+                         " 0 = TÁI LẬP hành vi trước 24-11 tối (mẩu rác sau khi vắng được dùng làm mốc)")
     args = ap.parse_args(argv)
 
     try:
@@ -178,6 +185,13 @@ def main(argv=None) -> int:
     if not settle_list or min(settle_list) < 0:
         print("[LOI] --settle phải là danh sách số >= 0", file=sys.stderr)
         return 2
+
+    from src.identity_guard import DEFAULT_LOST_RESET_STREAK
+
+    lost_reset = DEFAULT_LOST_RESET_STREAK if args.lost_reset is None else max(0, args.lost_reset)
+    if lost_reset != DEFAULT_LOST_RESET_STREAK:
+        print(f"[latch] CẢNH BÁO: --lost-reset {lost_reset} ≠ mặc định {DEFAULT_LOST_RESET_STREAK} "
+              f"⇒ số dưới đây KHÔNG phải hành vi đang ship")
 
     paths = sorted(Path(REPO_ROOT).glob(args.glob))
     if not paths:
@@ -194,7 +208,7 @@ def main(argv=None) -> int:
             "ten": p.name,
             "n": len(rows),
             "co_mask_area": any(r["co_mask_area"] for r in rows),
-            "lan_chay": {str(s): replay(rows, s, (h, w)) for s in settle_list},
+            "lan_chay": {str(s): replay(rows, s, (h, w), lost_reset) for s in settle_list},
         })
     if not phien:
         print("[LOI] CSV khớp mẫu nhưng KHÔNG có dòng dữ liệu — KHÔNG đo được", file=sys.stderr)

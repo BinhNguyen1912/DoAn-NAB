@@ -46,6 +46,8 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(REPO_ROOT))
 
 from src.identity_guard import (  # noqa: E402
+    DEFAULT_LOST_RESET_STREAK,
+    DEFAULT_REACQ_GRACE_STEPS,
     DEFAULT_SETTLE_STEPS,
     TRANG_THAI_CHUA_XAC_MINH,
     TRANG_THAI_NGHI,
@@ -166,9 +168,17 @@ def _dien_tich_bat_thuong(areas, i):
     return not (AREA_BAND_THAP <= ti_le <= AREA_BAND_CAO)
 
 
-def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
-    """Phát lại chuỗi ô ⇒ số lần báo / frame ẩn / frame "chưa xác minh" / frame báo của luật."""
-    watch = IdentityWatch(settle_steps=settle_steps)
+def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS,
+         lost_reset_streak=DEFAULT_LOST_RESET_STREAK,
+         reacq_grace_steps=DEFAULT_REACQ_GRACE_STEPS):
+    """Phát lại chuỗi ô ⇒ số lần báo / frame ẩn / frame "chưa xác minh" / frame báo của luật.
+
+    `lost_reset_streak=0` = hành vi TRƯỚC 24-11 tối (mẩu rác sau khi vắng bị dùng làm mốc) — dùng
+    để đo xem luật "vật rời khung rồi vào lại ≠ đổi đối tượng" bỏ được bao nhiêu lần báo.
+    """
+    watch = IdentityWatch(settle_steps=settle_steps,
+                          lost_reset_streak=lost_reset_streak,
+                          reacq_grace_steps=reacq_grace_steps)
     areas = [r["mask_area"] for r in rows]
     dem = {TRANG_THAI_NGHI: 0, TRANG_THAI_CHUA_XAC_MINH: 0}
     fires, prev = [], None
@@ -288,6 +298,9 @@ def main(argv=None) -> int:
 
     luat_list = ["hien_tai", "theo_dt", "van_toc_lich_su", "theo_dt_va_dien_tich",
                  "chi_khi_cham_600", "chi_khi_cham_900", "chi_khi_cham_1200", "chi_khi_cham_1500"]
+    # Hành vi TRƯỚC 24-11 tối: `lost_reset_streak=0` ⇒ sau khi vật vắng, mẩu rác của lần dò lại
+    # được dùng làm mốc so sánh ⇒ báo "nhảy" oan. Có mặt để bảng dưới là A/B, không phải lời khai.
+    luat_truoc = "hien_tai_truoc_khi_tai_bam"
     phien, bo_qua = [], 0
     for p in paths:
         rows = doc_cot(p)
@@ -298,11 +311,13 @@ def main(argv=None) -> int:
             bo_qua += 1
             continue                    # thiếu cột ⇒ ô rỗng ⇒ cổng không thể bật
         khop, _ = khop_nhan(rows, args.settle, rows_path=p)
+        luat = {k: chay(rows, k, args.settle) for k in luat_list}
+        luat[luat_truoc] = chay(rows, "hien_tai", args.settle, lost_reset_streak=0)
         phien.append({
             "ten": p.name,
             "n": len(rows),
             "khop_pct": khop,
-            "luat": {k: chay(rows, k, args.settle) for k in luat_list},
+            "luat": luat,
         })
     if not phien:
         print("[LOI] không phiên nào ĐO ĐƯỢC (thiếu cột mask_area)", file=sys.stderr)
@@ -326,7 +341,7 @@ def main(argv=None) -> int:
     nhom = dung_config or phien
     n_nhom = sum(p["n"] for p in nhom)
     tong = {}
-    for k in luat_list:
+    for k in [*luat_list, luat_truoc]:
         an = sum(p["luat"][k]["frame_an"] for p in nhom)
         cxm = sum(p["luat"][k]["frame_chua_xac_minh"] for p in nhom)
         tong[k] = {
@@ -353,7 +368,7 @@ def main(argv=None) -> int:
                     return any(0 < f - g <= args.settle for g in p["luat"][k]["fire_frames"])
         return None                      # None = không có dữ liệu để chấm
 
-    for k in luat_list:
+    for k in [*luat_list, luat_truoc]:
         tong[k]["bat_ca_dung"] = {
             f"{t}#{f}": _bat(k, [(t, f)]) for t, f in CA_DUNG}
         tong[k]["bat_ca_sai"] = {
@@ -368,6 +383,9 @@ def main(argv=None) -> int:
         "tham_so": {"toc_do_toi_da_px_s": TOC_DO_TOI_DA,
                     "area_band": [AREA_BAND_THAP, AREA_BAND_CAO]},
         "ca_dung": CA_DUNG, "ca_sai": CA_SAI,
+        "luat_truoc_khi_tai_bam": luat_truoc,
+        "lost_reset_streak": DEFAULT_LOST_RESET_STREAK,
+        "reacq_grace_steps": DEFAULT_REACQ_GRACE_STEPS,
         "so_phien_doc_duoc": len(phien), "so_phien_bo_qua": bo_qua,
         "so_phien_khop_100pct": len(dung_config),
         "ghi_chu_nhan": "NHÃN TẠM: ca 'SAI' (144057#48) có phép thử SUY BIẾN (ô phủ 18% khung) — "
@@ -384,8 +402,8 @@ def main(argv=None) -> int:
         print(f"[cong] {len(lech)} phiên LỆCH (config khác: trước 24-11 / re-ID bật-tắt / settle khác) "
               f"— chỉ dùng làm NHÃN, KHÔNG dùng làm chi phí. Khớp thấp nhất: "
               f"{min(lech, key=lambda t: t[1])[0]} {min(t[1] for t in lech)}%")
-    for k in luat_list:
-        t = tong[k]
+    for k in [*luat_list, luat_truoc]:
+        t = tong[k] if k != luat_truoc else tong[luat_truoc]
         print(f"  {k:22s} | báo {t['fire']:3d} lần | ẨN {t['frame_an']:4d} "
               f"({t['pct_frame_an']:5.2f}%) | chưa xác minh {t['frame_chua_xac_minh']:4d} "
               f"({t['pct_frame_chua_xac_minh']:5.2f}%) | KHÔNG tin cậy "

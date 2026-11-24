@@ -443,7 +443,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 else:
                     # Cổng CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi bấm `r`/`c`. Không nhớ thì
                     # đúng ca `demoip_1121-121732` (báo ở f178 rồi vẽ mask SAI 65 frame) không được xử lý.
-                    switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                    switch = watch.nghi
                     # ⚠ PHẢI cập nhật cổng TRƯỚC khi gán `last_bbox = ô hiện tại`: bản đầu đặt SAU nên
                     # `watch.update(last_bbox, bbox)` so **ô với chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
                     # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
@@ -452,8 +452,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     # `co_mask`: chỉ đếm bước ổn định khi model THẬT SỰ trả mask (24-11).
                     co_mask = bool(stamped.result.mask is not None
                                    and stamped.result.mask.any())
-                    switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2],
-                                          co_mask=co_mask) or switch
+                    watch.update(last_bbox, stamped.result.bbox, frame.shape[:2],
+                                 co_mask=co_mask)
+                    # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy: bước đầu của phiên bám mới
+                    # sau khi vật rời khung được MIỄN chấm (`watch.vua_bao`), nên không in.
+                    if watch.vua_bao:
+                        _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                    switch = watch.nghi or switch
                     if co_mask:
                         last_bbox = stamped.result.bbox
                     else:
