@@ -319,7 +319,7 @@ def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
                     visualizer=None, metrics=None, reanchor_every=None,
-                    reid_session=None, *, settle_steps=None,
+                    reid_session=None, *, settle_steps=None, lost_reset_streak=None,
                     max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
@@ -367,6 +367,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
 
         watch = IdentityWatch(
             settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
+            **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
             **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
         )
         switch = False

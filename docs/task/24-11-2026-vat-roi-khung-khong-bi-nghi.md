@@ -52,12 +52,25 @@ nhoè) ⇒ vấn đề thứ hai (trôi dần) là **mù có từ trước**, kh
 Vì sao ngưỡng **3**: 1–2 frame rỗng là **nhấp nháy** — 6/7 ca báo ĐÚNG của repo không có đoạn rỗng nào
 trước đó, ca thứ 7 (`125109#137`) chỉ rỗng **1** frame ⇒ ngưỡng 3 **giữ nguyên 7/7** (đo ở §4).
 
-### 3.3. Test (11 case mới, khoá đúng hành vi)
+### 3.3. Provenance: cờ THẬT + ghi vào `run_info`
+
+Bài học P1 của review 24-11 (`run_info` ghi `settle_steps=8` trong khi **không** cờ nào đổi được nó)
+được áp ngay, không lặp lại:
+
+- `--lost-reset-streak N` (mặc định `3`, `0` = tái lập hành vi trước 24-11) trong `tools/run_live.py`.
+- `_lost_reset_streak(args)`: `None` khi đường headless (không dựng cổng), `0` **không** bị nuốt thành
+  mặc định, kẹp âm về 0.
+- `run_info.json` có trường `lost_reset_streak` ⇒ phiên sau replay được, biết vì sao số khác.
+- `src/smooth_display.run_smooth_display` + `src/live_pipeline.run_interactive` nhận và chuyển vào
+  `IdentityWatch`.
+
+### 3.4. Test (15 case mới, khoá đúng hành vi)
 
 `tests/test_identity_guard.py::TestTaiBamSauKhiVatRoiKhung` — vắng dài rồi vào lại **không báo**; hết
 grace thì **chấm lại như cũ** (chống "sửa" bằng cách tắt cổng); vắng 1–2 frame **vẫn chấm**; tái bám
 **xoá latch**; `lost_reset_streak=0` tái lập được hành vi trước 24-11.
-`tests/test_smooth_display.py::test_canh_bao_chi_in_khi_cong_that_su_cham`.
+`tests/test_smooth_display.py::test_canh_bao_chi_in_khi_cong_that_su_cham`;
+`tests/test_run_live_helpers.py::TestLostResetStreak` (3 case: mặc định/cờ, `0` không bị nuốt, headless `None`).
 
 ## 4. Output / Kết quả
 
@@ -88,7 +101,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 013 passed** (5 deselected).
+- `./run lint` xanh · `./run test` **2 016 passed** (5 deselected).
 - Artifact: `data/eval_gate_rules_2026-11-24_metrics.json`,
   `data/replay_latch_tai_bam_2026-11-24_metrics.json` (có `git_rev`, `git_dirty_code`, `lenh`, `do_luc`,
   `lost_reset_streak`).

@@ -44,6 +44,7 @@ try:
 except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn progress bar khi chạy thật
     pass
 
+from src.identity_guard import DEFAULT_LOST_RESET_STREAK       # noqa: E402
 from src.identity_guard import DEFAULT_SETTLE_STEPS          # noqa: E402
 from src.tracker_engine import MODEL_OVERRIDE_CHO_PHEP        # noqa: E402
 from src.tracker_engine import TrackerEngine                 # noqa: E402
@@ -646,6 +647,20 @@ def _settle_steps(args):
     return DEFAULT_SETTLE_STEPS if v is None else max(0, int(v))
 
 
+def _lost_reset_streak(args):
+    """Số bước vắng để coi là "vật rời khung" ĐÃ DÙNG; `None` = đường này KHÔNG có cổng.
+
+    Song song `_settle_steps`: ghi giá trị vào `run_info` để phiên sau replay được. `0` là giá trị
+    HỢP LỆ (tái lập hành vi trước 24-11) nên KHÔNG được nuốt thành mặc định.
+    """
+    from src.identity_guard import DEFAULT_LOST_RESET_STREAK
+
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
+    v = getattr(args, "lost_reset_streak", None)
+    return DEFAULT_LOST_RESET_STREAK if v is None else max(0, int(v))
+
+
 def _max_jump_ratio(args):
     """Ngưỡng cổng nghi ĐÃ DÙNG; `None` = đường này KHÔNG có cổng (headless `run_tracking`).
 
@@ -735,6 +750,9 @@ def _write_run_info(args, metrics=None):
         # VOS (8 bước = 1,3 s ở 6,3 bước/s nhưng 1,94 s ở 4,12 bước/s). Thiếu trường này thì phiên
         # sau không so được với phiên trước (ticket #47).
         settle_steps=_settle_steps(args),
+        # 24-11: "vắng >= N bước = vật rời khung" — đổi cờ này ĐỔI số lần báo oan sau khi vật vào lại
+        # ⇒ phải ghi, nếu không phiên sau replay ra số khác mà không biết vì sao.
+        lost_reset_streak=_lost_reset_streak(args),
         # Trần cổng nghi = `0,25 × đường chéo` ⇒ 640×480 = 200 px nhưng 1280×720 = 367 px. Scorer
         # replay GIẢ ĐỊNH 640×480 và CSV không có cột nào nói khác ⇒ phiên khung khác bị chấm sai
         # trong im lặng (review độc lập 24-11). Thiếu `frame_shape` (None) = CHƯA ĐO ĐƯỢC.
@@ -842,6 +860,7 @@ def _run_display(engine, args):
                 # Nguồn live: đọc tối đa 30 lần/s (đo 293/s trên relay 16 fps ⇒ 18 lần giải mã vô ích
                 # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
                 settle_steps=_settle_steps(args),
+                lost_reset_streak=_lost_reset_streak(args),
                 max_jump_ratio=args.max_jump_ratio,
                 source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
@@ -864,6 +883,7 @@ def _run_display(engine, args):
                 reanchor_every=args.reanchor_every,
                 reid_session=reid_session,
                 settle_steps=_settle_steps(args),
+                lost_reset_streak=_lost_reset_streak(args),
                 max_jump_ratio=args.max_jump_ratio,
             )
     except KeyboardInterrupt:
@@ -1056,6 +1076,12 @@ def build_parser():
                          "cũ không so được với số mới. `0` = TẮT: ẩn tới khi bấm r/c (không bao giờ tự "
                          "hạ mức). Đường headless (`./run video|ab|miou`) không dựng cổng ⇒ cờ bị bỏ "
                          "qua và run_info ghi null.")
+    ap.add_argument("--lost-reset-streak", type=int, default=None,
+                    help="số frame LIÊN TIẾP không có mask để coi là 'vật đã RỜI KHUNG' ⇒ lần có mask "
+                         "kế tiếp là PHIÊN BÁM MỚI (xoá nghi + miễn chấm nhảy 2 bước đầu). Mặc định "
+                         f"{DEFAULT_LOST_RESET_STREAK}. `0` = tái lập hành vi trước 24-11 (mẩu rác "
+                         "sau khi vắng được dùng làm mốc so sánh ⇒ báo nghi oan). Đường headless "
+                         "không dựng cổng ⇒ cờ bị bỏ qua và run_info ghi null.")
     ap.add_argument("--max-jump-ratio", type=float, default=None,
                     help="NGƯỠNG CHẨN ĐOÁN: tỉ lệ đường chéo khung mà tâm ô được phép nhảy trong một "
                          "bước VOS (mặc định 0.25 ⇒ 200 px ở 640x480). CẢNH BÁO: đổi cờ này KHÔNG "

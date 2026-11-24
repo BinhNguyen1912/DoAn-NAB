@@ -352,7 +352,8 @@ class InferenceWorker:
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
                        on_result=None, reid_session=None, source_max_fps=None, *,
-                       settle_steps=None, max_jump_ratio=None) -> InteractiveSummary:
+                       settle_steps=None, max_jump_ratio=None,
+                       lost_reset_streak=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -378,6 +379,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     watch = IdentityWatch(
         settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
         **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+        **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
     )
     switch = False
     last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)

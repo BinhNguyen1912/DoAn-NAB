@@ -171,3 +171,37 @@ class TestCoModelOverride:
         a = build_parser().parse_args(["--source", "x", "--model-override", "kf_score_weight"])
         with pytest.raises(SystemExit, match="KEY=VALUE"):
             _model_overrides(a)
+
+
+class TestLostResetStreak:
+    """24-11: `--lost-reset-streak` (vắng >= N bước = vật rời khung) phải đi đủ đường như
+
+    `--settle-steps` — có cờ THẬT (không ghi `run_info` một giá trị không cờ nào đổi được, đúng lỗi
+    P1 review 24-11), `0` là giá trị hợp lệ (tái lập hành vi trước 24-11), headless ghi `None`.
+    """
+
+    def test_mac_dinh_va_co_cli(self):
+        from tools.run_live import build_parser, _lost_reset_streak
+
+        mac_dinh = build_parser().parse_args(["--source", "0"])
+        assert mac_dinh.lost_reset_streak is None
+        from src.identity_guard import DEFAULT_LOST_RESET_STREAK
+
+        assert _lost_reset_streak(mac_dinh) == DEFAULT_LOST_RESET_STREAK
+        a = build_parser().parse_args(["--source", "0", "--lost-reset-streak", "5"])
+        assert _lost_reset_streak(a) == 5
+
+    def test_0_va_am_khong_bi_nuot(self):
+        from types import SimpleNamespace
+
+        from tools.run_live import _lost_reset_streak
+
+        assert _lost_reset_streak(SimpleNamespace(lost_reset_streak=0)) == 0
+        assert _lost_reset_streak(SimpleNamespace(lost_reset_streak=-2)) == 0
+
+    def test_headless_ghi_none(self):
+        from types import SimpleNamespace
+
+        from tools.run_live import _lost_reset_streak
+
+        assert _lost_reset_streak(SimpleNamespace(lost_reset_streak=3, _co_cong_nghi=False)) is None
