@@ -163,7 +163,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 | **`hien_tai` (nay)** | 6 | 3,71 % | **4,24 %** | **7,95 %** | **7/7** |
 
 ### 4.3. Toàn bộ pool — `scripts/replay_latch_settle.py` (26 phiên ĐO ĐƯỢC / 5 180 frame, `settle=8`)
-`data/replay_latch_tai_bam_2026-11-24_metrics.json` (`git_rev 0490300`, `git_dirty_code=false`)
+`data/replay_latch_tai_bam_2026-11-24_metrics.json` (`git_rev 05880ad`, `git_dirty_code=false`)
 
 | | báo | ẩn | chưa xác minh |
 |---|---|---|---|
@@ -174,8 +174,8 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 026 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
-- Artifact (sinh trên **cây sạch ở `0490300`** = commit code cuối cùng, `git_dirty_code = false`;
+- `./run lint` xanh · `./run test` **2 027 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
+- Artifact (sinh trên **cây sạch ở `05880ad`** = commit code cuối cùng, `git_dirty_code = false`;
   commit chứa artifact là commit **sau** đó và delta chỉ là `data/` ⇒ đúng tiêu chí tái lập của repo):
   `data/eval_gate_rules_2026-11-24_metrics.json` — chứa **cả hai cột** luật đang ship (`hien_tai`) và
   luật trước 24-11 (`hien_tai_truoc_khi_tai_bam`) trong cùng một `git_rev`;
