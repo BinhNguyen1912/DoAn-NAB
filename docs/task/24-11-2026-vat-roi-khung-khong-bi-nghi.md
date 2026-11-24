@@ -64,7 +64,13 @@ Bài học P1 của review 24-11 (`run_info` ghi `settle_steps=8` trong khi **kh
 - `src/smooth_display.run_smooth_display` + `src/live_pipeline.run_interactive` nhận và chuyển vào
   `IdentityWatch`.
 
-### 3.4. Test (15 case mới, khoá đúng hành vi)
+### 3.4. Sửa kèm: banner phải TẮT khi latch tự xoá
+
+`switch` (cờ banner "đổi đối tượng") trước đây gán `switch = watch.nghi or switch` — **sticky**. Latch
+nay có thể được xoá **từ bên trong** `watch.update` (tái bám) mà không ai gán `switch = False` ⇒ banner
+treo trên màn hình trong khi mask đã vẽ lại bình thường. Nay `switch = watch.nghi` (banner ⇔ latch).
+
+### 3.5. Test (16 case mới, khoá đúng hành vi)
 
 `tests/test_identity_guard.py::TestTaiBamSauKhiVatRoiKhung` — vắng dài rồi vào lại **không báo**; hết
 grace thì **chấm lại như cũ** (chống "sửa" bằng cách tắt cổng); vắng 1–2 frame **vẫn chấm**; tái bám
@@ -101,7 +107,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 016 passed** (5 deselected).
+- `./run lint` xanh · `./run test` **2 017 passed** (5 deselected).
 - Artifact: `data/eval_gate_rules_2026-11-24_metrics.json`,
   `data/replay_latch_tai_bam_2026-11-24_metrics.json` (có `git_rev`, `git_dirty_code`, `lenh`, `do_luc`,
   `lost_reset_streak`).
