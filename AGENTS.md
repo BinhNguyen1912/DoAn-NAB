@@ -524,6 +524,18 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
   0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
   mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Cổng "có vật" của SAM 2: `min_obj_score_logits: -1` là TỐT NHẤT — đừng "sửa" cho khớp ngưỡng bộ nhớ.**
+  Trong SAM 2 có **hai ngưỡng lệch nhau** cho cùng quyết định: config `min_obj_score_logits: -1`
+  (`samurai/.../sam2.1_hiera_t.yaml:126` → zero-hoá mask, `sam2_base.py:398`) nhưng `sam2_base.py:867`
+  lại dùng `> 0` để gắn `no_obj_embed_spatial`. Đo 24-11 trên `binh1` (GT `docs/gt/b1`, 12 frame, 5 frame
+  GT rỗng, @192, `git_dirty_code=false`) bằng override hydra `++model.min_obj_score_logits`:
+  **−1 (mặc định): mIoU 0,7794 · bịa mask 0/5** · **0: 0,7794 · bịa 1/5 (3 408 px)** · **−100 (tắt cổng):
+  0,7206 · bịa 2/5**. ⇒ (a) làm hai ngưỡng "khớp nhau" **tạo phantom**, không xoá; (b) cổng **không** che
+  một model tốt hơn — nó đang giúp; (c) **cấm** kết luận "model to hơn mất vật là do cổng" (đã thử: base_plus
+  vẫn 0,2716–0,2741 khi tắt cổng). Artifact `data/miou_gate_{_‑1,0,-100}_2026-11-24_metrics.json`.
+  Cờ `--min-obj-score-logits` giữ lại **chỉ để chẩn đoán**. Và: **mọi A/B đổi cấu hình model phải qua
+  `build_overrides()`** — copy file config đã đo được là làm **đổi hành vi** (nội dung y nguyên:
+  mIoU 0,6987 → 0,2486).
 - **Điểm prompt ÂM không phải "liều thuốc chung": trên clip mà lỗi là mask HỤT, nó làm HỤT THÊM.**
   Đo 22-11 (`scripts/ab_diem_am.py`, so cặp từng frame, điểm âm sinh từ HÌNH HỌC chứ không từ GT):
   trên `binh2` (lỗi đang là **hụt diện tích**) — điểm âm quanh ô ĐÚNG: 192 **+0,0016** (5/8 frame, CI95
