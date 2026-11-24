@@ -1,0 +1,117 @@
+# Plan 24-11-2026 — Cổng "nghi đổi đối tượng" báo oan khi vật đi nhanh
+
+## 🎯 Câu hỏi cần quyết
+Người dùng báo: **"vật trắng trơn (remote) di chuyển nhanh quá thì bị nghi đổi đối tượng"**.
+Hỏi: trong ~2 tuần trước bảo vệ, **có nên sửa thuật toán cổng** `src/identity_guard.is_suspect_switch`
+(ngưỡng nhảy = `min(max(0,10·đường_chéo, 1,5·max(w,h)), 0,25·đường_chéo)` = **200 px** ở 640×480),
+hay chỉ **giảm thiệt hại**? Ràng buộc: máy không GPU, `./run demoip` là đường demo chính, mọi số phải
+đo được trên artifact đã commit, **không được bỏ ca báo đúng nào**.
+
+## 🧭 Ba góc nhìn (vòng 1 — độc lập, không biết nhau)
+
+### A. Chất lượng & số đo
+Đo lại từ đầu: **17 lần cổng báo / 14 phiên**, `IoU(ô trước, ô sau) = 0` ở **26/27** cú nhảy ⇒ hình học
+không tách được. Phát hiện **trần 200 px bị chạm 80,2 % số bước** ⇒ "ngưỡng theo kích thước vật" thoái
+hoá thành **hằng 200 px**. Đề xuất: (1) **mua nhãn 23 lần báo** với luật viết trước (`SAI ⇔ vật trong
+ô mới ∧ fill ≥ 0,5`); (2) lọc phiên theo config + ghi `frame_shape`; (3) đo `σ_jump`; (4) **đổi biến
+quyết định sang trọng tâm mask**; (5) đổi chữ banner; (6) **bác cả A/B/C/D kỹ thuật**.
+
+### B. Sản phẩm & bằng chứng bảo vệ
+Chi phí thật lớn hơn "8 frame ẩn": phiên `144057` chỉ **22,4 %** frame bình thường, **60,3 %** ở
+`chua_xac_minh` (**không tô mask, không quỹ đạo** ⇒ mất **yêu cầu 5 của đề cương**). **Take sạch là
+khả thi**: `110536` = 200 frame, `nghi = 0`. Đề xuất: (1) **diễn tập + khoá kịch bản + video dự
+phòng** (2,5 h, 0 code); (2) **vẽ quỹ đạo mảnh ở `chua_xac_minh`**; (3) bảng nhãn + ảnh; (4) cờ
+`--max-jump-ratio`/`--settle-steps` làm **van xả demo**; (5) Caps Lock; (6) **không port LK**.
+
+### C. Độ bền & hiệu năng
+Dựng lại `IdentityWatch` từ CSV khớp **tuyệt đối** cột `nghi_doi_tuong` ⇒ replay là dụng cụ tin được.
+Phát hiện **`chua_xac_minh` không có đường tự xoá** ⇒ **đuôi** (frame sau lần báo cuối) là chi phí
+thật: `144057` = **77,6 %** phiên. Bác LK vì: trần nuốt số hạng LK ở **79,7 %** frame; `residual =
+jump·(1 − P/dt)` làm phán quyết **thành hàm của fps hiển thị** (biên ca đúng chỉ 11,7 px); LK từ chối
+**6/7** frame đúng lúc cần (bão hoà chuyển động lớn); và **race** `(dx, None)` giết phiên. Đề xuất:
+(1) **đóng băng replay thành test**; (2) `max_jump_ratio` vào `run_info`; (3) chỉ số **đuôi**; (4) kiểm
+ảnh vài cú nhảy; (5) tuỳ chọn nâng trần 0,25→0,30.
+
+## 🔬 Đo trong lúc tranh luận (do agent chính thực hiện, đã commit)
+| luật | báo | ẩn | chưa xác minh | **không tin cậy** | **đuôi** | ca ĐÚNG |
+|---|---|---|---|---|---|---|
+| **hiện tại** | 6 | 3,13 % | 9,57 % | **12,70 %** | 8,17 % | 1/1 |
+| `theo_dt` (nhân bán kính theo dt) | 4 | 2,13 % | 10,41 % | 12,53 % | 8,90 % | ❌ **0/1** |
+| `van_toc_lich_su` (dự đoán `prev + v`) | 9 | 4,48 % | 17,96 % | **22,44 %** | 15,67 % | 1/1 (tệ hơn) |
+| `theo_dt_va_dien_tich` (thêm mask_area) | 3 | 1,68 % | 10,86 % | 12,53 % | 9,46 % | ❌ **0/1** |
+| `chi_khi_cham_900` (chỉ báo khi ≤ 900 px/s) | 2 | 0,62 % | 2,80 % | **3,41 %** | 2,80 % | 1/1 |
+| `chi_khi_cham_1200` | 3 | 1,06 % | 2,35 % | **3,41 %** | 2,07 % | 1/1 |
+| `chi_khi_cham_600` | 1 | 0,17 % | 0 % | 0,17 % | 0 % | ❌ **0/1** |
+
+Nguồn: `data/eval_gate_rules_2026-11-24_metrics.json` (`git_rev e54c5c2`, `git_dirty_code=false`),
+nhóm **11 phiên ĐÓNG BĂNG / 1 787 frame** (`data/eval_gate_config_list.json` — chọn theo "replay khớp
+100 % cột `nghi_doi_tuong`", đóng băng để đổi luật không làm rẻ mẫu số).
+
+**Nhãn (kiểm bằng ô vẽ từ CSV lên frame, ảnh `data/tmp_an/v2_*`, `v3_*`)**:
+`125109#137` = ô trên **tóc người** ⇒ **đổi danh tính THẬT**; `141352#29` và `144057#97` = ô **về đúng
+cái thìa** ⇒ **bám lại**; `144057#48` = ô **ở nền**, mask tràn 2,9× ⇒ **không phải đổi danh tính**.
+⇒ **1 ĐÚNG + 3 SAI**.
+
+## ⚔️ Tranh chấp (vòng 2 — phản biện chéo)
+
+| Điểm | Chất lượng & đo | Sản phẩm | Độ bền | **Chốt** |
+|---|---|---|---|---|
+| **D1** tự phục hồi `chua_xac_minh → ok` sau N bước | **KHÔNG** (không có bộ kiểm nào hoạt động: `track_cos` vùng sai 0,752–0,989 vs 0,905 đúng) | **KHÔNG**; điều kiện để mở lại: tiêu chí phải là **bằng chứng** (IoU mask vs mask đã xác nhận, τ đo trước) + đếm `auto_ok_n` + mặc định TẮT | **KHÔNG**: N=16 đổi **119 frame (6,66 %)** sang "tin cậy" mà không có bằng chứng, **97/119 nằm trong 144057** | **KHÔNG** — nhưng **ghi nhận** đuôi 8,17 % là chi phí thiết kế, không phải bug |
+| **D2** vẽ quỹ đạo ở `chua_xac_minh` | (không đề xuất) | **RÚT LẠI đề xuất vòng 1**: ảnh `l9.6` cho thấy `chua_xac_minh` **có lúc chỉ vào tường**. Vẽ là "nói dối có timestamp". Trả yêu cầu 5 bằng `ok` + kịch bản bấm `c` | **KHÔNG**: đảo `visualizer.py:318-319` + xoá `test_visualizer.py:886`; `c` lại xoá quỹ đạo | **KHÔNG** |
+| **D3** nâng trần 0,25→0,30 | **KHÔNG** (cửa sổ 231–255 px = 3,1 % đường chéo = 1 ca mỗi loại) | **KHÔNG**: **90,3 %** "cải thiện" đến từ 2 phiên **ngoài** nhóm đóng băng; **xoá `092343#264`** (ca AGENTS ghi là báo ĐÚNG); đuôi **146→159 (tệ hơn)** | **KHÔNG**: kwarg hiện tại đổi **4 thứ** cùng lúc (`ratio_factor` nhân luôn `1,5·size`); số 174/1152 chỉ tái lập với biến thể "cap-only" | **KHÔNG** |
+| **D4** 1 việc trong 3 h | mua nhãn | **diễn tập + video dự phòng** | **diễn tập** | **diễn tập** (nhưng 3 h đủ cho *cả* test đóng băng + nhãn) |
+| **LK (port sang `--smooth`)** | bác (2 lý do độc lập: sai thang thời gian; ngoài tầm LK) | bác | bác (5 lý do, có số) | **KHÔNG làm trước bảo vệ** |
+| **Luật `chi_khi_cham`** | — | **không ship** (n=4 nhãn trên 2 phiên, cơ chế "đổi vật chỉ xảy ra khi tay chậm" sai về nguyên tắc) nhưng **phải vào báo cáo** như đối chứng | — | **KHÔNG ship**, ghi vào báo cáo + ticket |
+
+## ✅ Quyết định
+
+**Chọn: KHÔNG sửa thuật toán cổng trước bảo vệ. Làm 4 việc đo được + 1 việc sửa lỗi thật.**
+
+- **Vì sao:** cả 7 luật đã đo đều **thất bại** (bỏ ca báo đúng) hoặc **tệ hơn** (tăng chi phí). Luật duy
+  nhất thắng (`chi_khi_cham_900/1200`: không-tin-cậy **12,70 % → 3,41 %**, giữ 1/1 ca đúng) dựa trên
+  **4 nhãn / 2 phiên khác tải máy** ⇒ chưa đủ để ship; nó thành **giả thuyết có artifact**, cần xác
+  nhận trên phiên live mới.
+- **Bác:**
+  - `theo_dt` — bỏ ca báo đúng (0/1), vì ca OAN nhanh **hơn** ca ĐÚNG (1 763 vs 870 px/s).
+  - `van_toc_lich_su` — **nhiều lần báo hơn** (9 vs 6) và chi phí 22,44 % (vs 12,70 %).
+  - `theo_dt_va_dien_tich` — bỏ ca báo đúng (0/1).
+  - port LK — xem bảng trên.
+  - nâng trần 0,30 — đuôi tệ hơn + xoá 1 ca ĐÚNG đã ghi trong AGENTS.
+  - vẽ quỹ đạo ở `chua_xac_minh` — ảnh chứng minh vùng đó có lúc SAI.
+  - tự phục hồi `→ ok` — không có bằng chứng nào phân biệt được "đúng lại" với "vẫn sai".
+
+- **Tiêu chí nghiệm thu (có SỐ):**
+  - [x] `scripts/eval_gate_rules.py` chấm được ≥ 6 luật trên **cùng** `IdentityWatch`, mọi số cùng
+        một mẫu số **11 phiên / 1 787 frame** đóng băng trong `data/eval_gate_config_list.json`.
+  - [x] Artifact `data/eval_gate_rules_2026-11-24_metrics.json` có `git_rev`, `git_dirty_code=false`,
+        `lenh`, `do_luc`, chỉ số **đuôi** và `phien_co_bao`.
+  - [x] Nhãn 4 ca kiểm bằng **ô vẽ từ CSV lên frame** (ảnh tên theo `frame_idx`) ⇒ 1 ĐÚNG + 3 SAI.
+  - [x] `--settle-steps` / `--max-jump-ratio` là cờ **THẬT** (đi tới `IdentityWatch`), `run_info` có
+        `frame_shape` + `max_jump_ratio`; Caps Lock không còn làm `c/r/q` im lặng (7 test mới).
+  - [ ] **Đóng băng replay thành test**: 11 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)`; đổi
+        `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.
+  - [ ] **Diễn tập 3 lần**: `nghi ≤ 5 %` frame, đuôi `chua_xac_minh ≤ 20` frame, `ti_le_thoi_luong ≥
+        0,95` (baseline `110536` = 0,994, `nghi = 0/200`); 1 video dự phòng cùng kịch bản.
+  - [ ] Báo cáo chỉ trích: **"6 lần báo / 1 787 frame (0,34 %), 3/11 phiên, đuôi 8,17 %"** + câu
+        "cổng cảnh báo để người vận hành quyết, hệ **không tự sửa**". **Cấm** trích "0,71 %",
+        "bắt 2/2", "17/17", "cổng bắt đúng ca 21-11".
+
+## 📌 Việc tách ra ticket
+- [ ] **Đóng băng replay thành test** (1,5 h) — `tests/test_eval_gate_frozen.py`, dùng danh sách
+      đóng băng, `pytest.skip` khi thiếu `data/`.
+- [ ] **Mua nhãn cho 11 lần báo lệch** (0,75 h) — luật viết trước: ô tại frame báo chứa ≥ 50 % pixel
+      vật đã chọn; ô > 30 % khung ⇒ `khong_ket_luan`.
+- [ ] **Giữ `prev` qua ≤ 2 frame mất dấu** — làm ca `121732#178` báo lại được (lỗ cấu trúc, không phải
+      ngưỡng); giá đo được: ẩn 56→104, chưa xác minh 171→326, đuôi 146→266 (≈ gấp đôi chi phí) ⇒ cần
+      quyết riêng.
+- [ ] **Xác nhận `chi_khi_cham_1200` trên phiên live mới** (nếu giữ 1/1 ca đúng và không-tin-cậy
+      ≤ 4 % ⇒ mới được ship). Điều kiện bác bỏ: bỏ bất kỳ ca ĐÚNG nào ⇒ dừng.
+- [ ] **Sửa gốc: giảm mask tràn khi vật đi nhanh** (mask nở 2–4× ⇒ ô trôi ⇒ cổng báo). Đây là nguyên
+      nhân thật; việc > 4 h ⇒ plan riêng.
+
+## 📚 Tham chiếu
+- Artifact: `data/eval_gate_rules_2026-11-24_metrics.json`, `data/eval_gate_config_list.json`
+- Script: `scripts/eval_gate_rules.py`, `scripts/replay_latch_settle.py`
+- Ảnh nhãn: `data/tmp_an/v2_*`, `data/tmp_an/v3_*`, `data/tmp_an/l9.6.jpg`, `data/tmp_an/l12.6.jpg`
+- Log: `docs/task/23-11-2026-*.md`, `docs/task/24-11-2026-*.md`; AGENTS §6 (cổng nghi, `chua_xac_minh`)
+- Ticket: `.scratch/camera-ai-realtime/issues/47-*.md`, `48-*.md`
