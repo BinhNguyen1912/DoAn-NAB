@@ -957,11 +957,19 @@ class LiveTrackingSession:
             self._vos_state = (0, self._interp_base_result, gray, time.perf_counter(),
                                float(getattr(self._interp_base_result, "elapsed_ms", 0.0)),
                                None, None, None)
-            # seq=0 là **kết quả `engine.start()`** — cùng MỘT frame video với frame đang phát. Nếu để
-            # `_watch_seq = None` thì bước kế (`_result_threaded` thấy seq 0) lại được tính là "bước VOS
-            # mới" ⇒ cùng một frame bị đếm 2 lần vào `_lost`, và `lost_reset_streak=3` có thể reset sớm
-            # một bước (review vòng 3, P3). Đánh dấu đã ăn seq 0 ngay tại đây.
-            self._watch_seq = 0
+        # seq=0 là **kết quả `engine.start()`**. Nếu để `_watch_seq = None` thì bước kế
+        # (`_result_threaded` thấy seq 0) lại được tính là "bước VOS mới" ⇒ frame start bị đếm hai lần
+        # (review vòng 3, P3). Đánh dấu đã ăn seq 0. KHÔNG đặt trong `with self._lock` (review vòng 4,
+        # P3): `_watch_seq` không thuộc bất biến của `_vos_state` và chỉ luồng chính đọc/ghi nó —
+        # để trong lock là mẫu dễ copy sai.
+        #
+        # CÒN DƯ (ghi nhận, chưa sửa): `_start_worker` **submit lại chính frame** đó với `seq = 1`, nên
+        # nếu `engine.start()` trả mask RỖNG thì frame start vẫn cho **2 bước cổng** (1 = kết quả start,
+        # 1 = bản worker xử lý lại) ⇒ `_lost` có thể = 2 sau MỘT frame video ⇒ `lost_reset_streak = 3`
+        # hiệu dụng ~2 frame ở đầu phiên. Chỉ xảy ra khi ô chọn ban đầu không có mask (phiên đã hỏng);
+        # muốn sửa thì phải dedupe cổng theo `frame_idx` (như `_cap_nhat_danh_tinh`) và **đo lại** 7/7 +
+        # 4,24 % ⇒ để thành ticket, không sửa lúc này.
+        self._watch_seq = 0
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1

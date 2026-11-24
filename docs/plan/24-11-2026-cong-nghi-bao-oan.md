@@ -113,9 +113,11 @@ không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều*
 - [ ] **Đóng băng replay thành test** (1,5 h) — `tests/test_eval_gate_frozen.py`, dùng danh sách
       đóng băng, `pytest.skip` khi thiếu `data/`.
 - [ ] **Người thứ 2 dán nhãn 6 ca** (0,5 h) — điều kiện để TRÍCH số "7/7" trong báo cáo (hiện 1 người).
-- [ ] **Giữ `prev` qua ≤ 2 frame mất dấu** — làm ca `121732#178` báo lại được (lỗ cấu trúc, không phải
-      ngưỡng); giá đo được: ẩn 56→104, chưa xác minh 171→326, đuôi 146→266 (≈ gấp đôi chi phí) ⇒ cần
-      quyết riêng.
+- [ ] **Giữ `prev` qua ≤ 2 frame mất dấu** — **kỳ vọng** làm ca `121732#178` báo lại được, nhưng
+      **CHƯA ĐO ĐƯỢC trên ca đó**: `data/eval_gate_rules_*` cho phiên `121732` `fire = 0` với **mọi**
+      luật (CSV không có cột `nghi_doi_tuong`, f178 là `reacquired=1` ⇒ replay đi nhánh `watch.reset()`)
+      ⇒ muốn công bố phải dựng lại ca đó bằng replay có re-ID trước. Giá đã đo trên **nhóm phiên**:
+      ẩn 56→104, chưa xác minh 171→326, đuôi 146→266 (≈ gấp đôi chi phí) ⇒ cần quyết riêng.
 - [ ] **Log-only: đếm "hiện lại sau mất dấu cách > 200 px"** (0,25 h) — đo được **8/38** lần, gồm
       **248,9 px** (21-11 #178) và **303,8 px** (`110536#142`). Không đổi hành vi.
 - [ ] **Sửa gốc: giảm mask tràn khi vật đi nhanh** (mask nở 2–4× ⇒ ô trôi ⇒ cổng báo). Đây là nguyên

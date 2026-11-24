@@ -319,6 +319,15 @@ class TestBienCuaNguongVang:
     MOC = (566, 130, 656, 383)     # ô của ô-chai trước khi vắng (tâm ~611,256)
     NHay = (376, 42, 476, 121)     # f178: ô nhảy sang vùng khác hẳn
 
+    def test_vua_bao_doc_duoc_truoc_lan_update_dau(self):
+        """Property công khai ⇒ phải đọc được trên instance MỚI (không `AttributeError`).
+
+        Review vòng 4: xoá `self._vua_bao = False` trong `__init__` thì không test nào đỏ.
+        """
+        from src.identity_guard import IdentityWatch
+
+        assert IdentityWatch().vua_bao is False
+
     def test_vang_dung_2_frame_van_bi_cham(self):
         from src.identity_guard import IdentityWatch
 
@@ -327,8 +336,9 @@ class TestBienCuaNguongVang:
         for _ in range(2):                                    # f176–177: 2 frame rỗng
             w.update(self.MOC, (0, 0, 0, 0), (480, 640), co_mask=False)
         w.update((0, 0, 0, 0), self.NHay, (480, 640))          # f178
-        assert w.update(self.NHay, self.MOC, (480, 640)) is True, \
-            "vắng 2 frame < ngưỡng 3 ⇒ cú nhảy vẫn phải bị chấm (ca đúng 121732#178)"
+        assert w.update(self.NHay, self.MOC, (480, 640)) is True, (
+            "vắng 2 frame < ngưỡng 3 ⇒ cú nhảy vẫn phải bị chấm "
+            "(VÍ DỤ BIÊN — test tổng hợp; ca thật 121732 KHÔNG tái lập được bằng replay)")
 
     def test_bien_dung_3_frame_la_tai_bam(self):
         """`>= 3` (không phải `> 3`): đúng 3 frame vắng đã là phiên bám mới."""

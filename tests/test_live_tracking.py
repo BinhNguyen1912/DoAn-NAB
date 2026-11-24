@@ -3654,7 +3654,11 @@ class TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat:
 
 
 class TestCongNghiKhiMaskNone:
-    """24-11 (vòng 3, tự kiểm): `result.mask is None` ⇒ không có `mask.shape`.
+    """24-11 (vòng 3, tự kiểm) — **NHÁNH PHÒNG THỦ**, không phải ca web thật.
+
+    Engine SAM 2 **không** sinh `result.mask = None` (`_mask_to_bbox` luôn trả mảng, kể cả rỗng); chỉ có
+    sentinel `_interp_base_result` trước `start()` mang `mask=None`. Test này khoá nhánh phòng thủ đó
+    (nếu `mask` là None thì KHÔNG được bỏ qua bước, phải coi là mất dấu).
 
     Bản trước bỏ qua cả bước (`elif obs_bbox is not None: _last_good_bbox = obs_bbox`) ⇒ `_lost` không
     tăng ⇒ ca "model trả None rồi vật hiện lại chỗ khác" vẫn bị báo nghi. Nay lấy khung của bước VOS

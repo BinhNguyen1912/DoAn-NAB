@@ -76,7 +76,7 @@ treo trên màn hình trong khi mask đã vẽ lại bình thường. Nay `switc
 |---|---|---|
 | `tests/test_identity_guard.py` | `TestTaiBamSauKhiVatRoiKhung` | 5 |
 | | `TestBannerDiTheoTrangThaiLatch` | 1 |
-| | `TestBienCuaNguongVang` (biên đúng 3; chuỗi thật `121732` f176–178) | 2 |
+| | `TestBienCuaNguongVang` (biên đúng 3; **tổng hợp** — ô của ca thật, chuỗi dựng) | 2 |
 | | `TestBuocVosKhongPhaiFrameHienThi` | 3 |
 | `tests/test_live_tracking.py` | `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (`_update_stats_locked` + `_result_threaded` với stub worker/interp — **không** phải engine SAM 2 thật) | 2 |
 | `tests/test_run_live_helpers.py` | `TestLostResetStreak` | 3 |
@@ -102,7 +102,7 @@ Reviewer (agent `reviewer`, chỉ đọc) kết luận **chưa merge được**.
 | **P2** | Thiếu `reacq_grace_steps` trong provenance; `eval_gate_rules` thiếu `git_dirty` | đã thêm cả hai vào artifact |
 | **P2** | Lỗ test: không test **biên đúng 3**, không test cờ đi tới `IdentityWatch` trên worker, test WARN chỉ so chuỗi source | thêm `TestBienCuaNguongVang`, `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (qua `_update_stats_locked`, stub worker), `TestLostResetStreak` |
 | **P3** | Docstring ghi "140/404 = 34,7 % chưa xác minh" sai nhãn | sửa: **132 = 32,7 %** chưa xác minh + **8** frame `nghi` = 34,7 % *không tin cậy* |
-| **P3** | Câu "ca 21-11 không bị ảnh hưởng vì vật **không** rời khung" **SAI**: phiên `1121-121732` có **2 frame rỗng liền** (f176–177) ngay trước cú báo f178 | sửa lại; **biên mỏng tới đâu**: ngưỡng **2** sẽ MẤT ca đúng đó, ngưỡng **3** giữ 7/7 — đã khoá bằng `TestBienCuaNguongVang` dùng đúng chuỗi f176–178 |
+| **P3** | Câu "ca 21-11 không bị ảnh hưởng vì vật **không** rời khung" **SAI**: phiên `1121-121732` có **2 frame rỗng liền** (f176–177) ngay trước cú báo f178 | sửa: ca đó chỉ là **ví dụ biên** (2 frame rỗng < ngưỡng 3) và **KHÔNG tái lập được** bằng replay (`fire: 0` mọi luật — xem §5.2); biên `>= 3` khoá bằng `TestBienCuaNguongVang`, một test **TỔNG HỢP** (ô của ca thật, chuỗi dựng) |
 
 **Hệ quả phụ PHẢI nói kèm (đường web):** `settle_steps = 8` giờ đếm theo **bước VOS**, đúng như
 AGENTS mô tả ("8 bước ≈ 1,3–1,8 s ở 4,5–6,3 bước/s"). Trước khi sửa, web đếm theo **frame phát** ⇒ 8
@@ -142,7 +142,7 @@ Các mục còn lại của vòng 2 đã đóng:
 | **P3** | log §5.2 vẫn ghi "ca 21-11 vật không rời khung" (**SAI**: f176–177 có 2 frame rỗng) | sửa; và **vòng 3 bắt tiếp**: câu "ngưỡng 2 sẽ mất ca `121732#178`" là **overclaim** (replay cho `fire: 0` mọi luật, f178 là `reacquired=1`) ⇒ đã hạ xuống "ví dụ biên", test ghi rõ là **tổng hợp** |
 | **P3** | log ghi `2 017 passed`, "worker thật" (thực tế là stub) | cập nhật `2 026 passed` + nói rõ test dùng `_update_stats_locked` + stub, **không** phải engine SAM 2 |
 | **P3** | `eval_gate_rules` docstring còn "1 ca đúng / 1 ca sai"; `replay` docstring ghi sai tên artifact; thiếu `lost_reset_streak_truoc: 0`; comment cũ "nghi ẩn y như no_evidence" | sửa hết |
-| **P3** | Artifact ghi `git_rev` của commit **trước** HEAD | sinh lại ở commit code cuối; delta tới commit chứa artifact **chỉ là `data/`** ⇒ tiêu chí `git_dirty_code = false` |
+| **P3** | Artifact ghi `git_rev` của commit **trước** HEAD | sinh lại ở commit code cuối; delta tới commit chứa artifact là **`data/` + `docs/`** (không phải `src/`) ⇒ tiêu chí `git_dirty_code = false` |
 
 ### 3.8. REVIEW VÒNG 3 — **MERGE ĐƯỢC** (0 P0, 0 P1)
 
@@ -165,6 +165,21 @@ Còn lại đã sửa trong phiên này:
 **Residual risk reviewer nêu (đã ghi nhận, không sửa code):** `7/7` và "settle 8 ≈ 0,94 s" là số của
 đường **CLI/display-row**, **không** chuyển sang web (web nay đếm theo bước VOS); chuỗi "1–2 bước vắng
 rồi vật hiện lại chỗ khác" không bị chấm (đối xứng CLI, đã ghi §5.3); trôi dần vẫn mù.
+
+### 3.9. REVIEW VÒNG 4 (delta `47328a5`) — **MERGE ĐƯỢC**, còn 1 câu docs P2
+
+Reviewer vòng 4 xác nhận 3 sửa code đúng (sentinel seq 0 không đụng `seq` thật ≥ 1; `_vua_bao` init
+không đổi nhánh nào; comment `visualizer` khớp code) và 2 test `_watch_seq` **giết được mutant**. Còn
+lại đã sửa trong phiên này:
+
+| mức | phát hiện | xử lý |
+|---|---|---|
+| **P2** | §3.6 **vẫn** còn câu overclaim "ngưỡng 2 sẽ MẤT ca đúng đó… dùng đúng chuỗi f176–178", mâu thuẫn §5.2 cùng file | sửa thành "**ví dụ biên**, không tái lập được; test biên là **tổng hợp**" |
+| **P3** | log ghi "chuỗi thật `121732` f176–178"; message assert gắn "ca đúng 121732#178" vào test tổng hợp; `docs/plan` khẳng định "làm ca `121732#178` báo lại được" | sửa cả 3: **tổng hợp / chưa đo được** |
+| **P3** | `_watch_seq` ghi trong `with self._lock` (không thuộc bất biến `_vos_state`) | đưa ra ngoài lock + comment "chỉ luồng chính" |
+| **P3** | Không test nào khoá `watch.vua_bao` trên instance MỚI | thêm `test_vua_bao_doc_duoc_truoc_lan_update_dau` |
+| **P3** | Docstring `TestCongNghiKhiMaskNone` không nói là **nhánh phòng thủ** | đã ghi rõ (engine không sinh `mask=None`) |
+| **P3** | **CÒN DƯ đã ghi nhận, chưa sửa**: `_start_worker` submit lại chính frame `start()` với `seq=1` ⇒ nếu mask start RỖNG thì frame đó cho **2 bước cổng** ⇒ `lost_reset_streak=3` hiệu dụng ~2 frame ở đầu phiên. Chỉ xảy ra khi ô chọn ban đầu rỗng (phiên đã hỏng). Sửa = dedupe cổng theo `frame_idx` + **đo lại** 7/7 và 4,24 % ⇒ **ticket**, không sửa lúc này | ghi chú ngay tại `_start_worker` + Next steps |
 
 ## 4. Output / Kết quả
 
@@ -197,7 +212,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 028 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
+- `./run lint` xanh · `./run test` **2 030 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
 - Artifact (sinh trên **cây sạch ở `47328a5`** = commit code cuối cùng, `git_dirty_code = false`;
   commit chứa artifact là commit **sau** đó, delta là `data/` + `docs/` (không phải `src/`) ⇒ đúng tiêu
   chí tái lập của repo, nhưng **phải nói đúng là có cả docs** — review vòng 3 bắt câu "chỉ `data/`"):
@@ -241,6 +256,9 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
       cần cơ chế mới, không phải ngưỡng. Trước khi tuyên bố "tốt hơn" phải đo **ngưỡng nhiễu mIoU**
       cho clip dùng để chấm.
 - [ ] Người thứ 2 dán nhãn 7 ca để được TRÍCH "7/7" trong báo cáo (nợ từ plan 24-11).
+- [ ] **Ticket: dedupe cổng nghi theo `frame_idx`** — hiện frame `engine.start()` bị đếm 2 lần nếu mask
+      start rỗng (`_start_worker` submit lại chính frame đó với `seq=1`) ⇒ `lost_reset_streak` hiệu dụng
+      ~2 frame ở đầu phiên. Sửa xong phải **đo lại** 7/7 + 4,24 % (review vòng 4, P3).
 
 ## 7. Tài liệu tham khảo
 
