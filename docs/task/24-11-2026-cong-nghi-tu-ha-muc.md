@@ -156,10 +156,12 @@ chứng mask đúng cỡ; thay 2 docstring còn trích con số **đã rút** (2
       nếu có thì cân nhắc nhắc lại phím trên HUD mỗi ~10 s.
 - [ ] Chọn ô chọn **ôm sát vật**: `f0` của phiên này = 95×356 px từ y=123 **xuống đáy khung** ⇒ gồm cả
       tay + nền, là lý do gốc khiến model trôi sang tóc ở t≈30 s (chưa sửa được bằng code).
-- [ ] **Review vòng 2** trên phần vừa vá (P0/P1/P2) — AGENTS §9.1 yêu cầu review lại phần sửa.
-- [ ] `IdentityWatch.update()` trả **bool** trong khi có 3 trạng thái: caller quên đọc
-      `watch.chua_xac_minh` sẽ lặng lẽ vẽ như "đã kiểm". Đề xuất (P3) thêm `che_do_ve` để điểm nối
-      không thể nửa vời.
+- [x] Review vòng 2 trên phần vừa vá: xác nhận mã đúng, chỉ thiếu bằng chứng test → đã bổ sung
+      (mục 7) và **kiểm bằng đột biến** (4/4 đột biến làm test đỏ).
+- [ ] **Ticket #47** — đo `chua_xac_minh` trên phiên **live thật** (+ thêm `chua_xac_minh_n` cho
+      đường CLI): số hiện có là replay, chưa có phiên live nào chứng minh `settle_steps = 8`.
+- [ ] **Ticket #48** — gom 2 cờ rời (`switch_warning` + `chua_xac_minh`) thành một `che_do_ve` để
+      điểm nối không thể nửa vời (P3).
 - [ ] `frame_shape` của replay dùng một hằng cho mọi phiên (`run_info.json` không lưu kích thước khung)
       ⇒ các phiên 1104/1105 (nhóm thiếu `mask_area`) chưa đối chứng được.
 
