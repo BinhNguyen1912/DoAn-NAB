@@ -70,15 +70,24 @@ Bài học P1 của review 24-11 (`run_info` ghi `settle_steps=8` trong khi **kh
 nay có thể được xoá **từ bên trong** `watch.update` (tái bám) mà không ai gán `switch = False` ⇒ banner
 treo trên màn hình trong khi mask đã vẽ lại bình thường. Nay `switch = watch.nghi` (banner ⇔ latch).
 
-### 3.5. Test (16 case mới, khoá đúng hành vi — đếm: 7 `TestTaiBamSauKhiVatRoiKhung` +
-3 `TestBienCuaNguongVang` + 3 `TestBuocVosKhongPhaiFrameHienThi` + 1 source-level WARN +
-2 `TestLostResetStreak` → thực tế **16** ở 3 file, xem danh sách dưới)
+### 3.5. Test (17 case mới, khoá đúng hành vi)
 
-`tests/test_identity_guard.py::TestTaiBamSauKhiVatRoiKhung` — vắng dài rồi vào lại **không báo**; hết
-grace thì **chấm lại như cũ** (chống "sửa" bằng cách tắt cổng); vắng 1–2 frame **vẫn chấm**; tái bám
-**xoá latch**; `lost_reset_streak=0` tái lập được hành vi trước 24-11.
-`tests/test_smooth_display.py::test_canh_bao_chi_in_khi_cong_that_su_cham`;
-`tests/test_run_live_helpers.py::TestLostResetStreak` (3 case: mặc định/cờ, `0` không bị nuốt, headless `None`).
+| file | class / case | số |
+|---|---|---|
+| `tests/test_identity_guard.py` | `TestTaiBamSauKhiVatRoiKhung` | 5 |
+| | `TestBannerDiTheoTrangThaiLatch` | 1 |
+| | `TestBienCuaNguongVang` (biên đúng 3; chuỗi thật `121732` f176–178) | 2 |
+| | `TestBuocVosKhongPhaiFrameHienThi` | 3 |
+| `tests/test_live_tracking.py` | `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (worker thật) | 2 |
+| `tests/test_run_live_helpers.py` | `TestLostResetStreak` | 3 |
+| `tests/test_smooth_display.py` | `test_canh_bao_chi_in_khi_cong_that_su_cham` | 1 |
+| **tổng** | | **17** |
+
+(Đã kiểm **mutant**: bỏ `and self._buoc_vos_moi` ⇒ `test_khong_phai_buoc_moi_thi_cong_khong_doi` ĐỎ.)
+
+`TestTaiBamSauKhiVatRoiKhung` — vắng dài rồi vào lại **không báo**; hết grace thì **chấm lại như cũ**
+(chống "sửa" bằng cách tắt cổng); vắng 1–2 frame **vẫn chấm**; tái bám **xoá latch**;
+`lost_reset_streak=0` tái lập được hành vi trước 24-11.
 
 ### 3.6. REVIEW ĐỘC LẬP (mục 9.1) — bắt 1 P0 + 2 P1 + 3 P2, đã sửa
 
