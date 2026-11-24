@@ -1,9 +1,9 @@
 {
- "git_rev": "05880ad",
- "git_dirty": true,
+ "git_rev": "47328a5",
+ "git_dirty": false,
  "git_dirty_code": false,
  "lenh": "scripts/eval_gate_rules.py --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T20:31:03",
+ "do_luc": "2026-11-24T20:38:29",
  "frame_shape": [
   480,
   640

@@ -1,9 +1,9 @@
 {
- "git_rev": "05880ad",
+ "git_rev": "47328a5",
  "git_dirty": true,
  "git_dirty_code": false,
  "git_loi": null,
- "do_luc": "2026-11-24T20:31:05",
+ "do_luc": "2026-11-24T20:38:31",
  "lenh": "scripts/replay_latch_settle.py --settle 0,8 --lost-reset 0,3 --out data/replay_latch_tai_bam_2026-11-24_metrics.json",
  "nguon": [
   "demoip_1104-212328_metrics.csv",
