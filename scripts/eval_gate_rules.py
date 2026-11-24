@@ -59,17 +59,19 @@ TOC_DO_TOI_DA = 1500.0            # px/s — tay cầm vật lia ngang khung 640
 AREA_BAND_THAP = 0.55             # mask nhỏ hơn 0,55× trung vị trước ⇒ co bất thường
 AREA_BAND_CAO = 2.20              # mask lớn hơn 2,20× ⇒ tràn nền (đo f48 ×2,9 · f82 ×4,0)
 
-# Ca ĐÃ KIỂM BẰNG ẢNH. NHÃN LÀ TẠM — review độc lập 24-11 chỉ ra phép thử của ca "SAI" là SUY BIẾN
-# (ô f48 = 139×397 = 18 % khung, cao 83 % chiều cao khung ⇒ "vật vẫn trong ô" không nói được gì; và
-# `fill = mask/box` = 0,735 ở f48 vs 0,312 ở f47 ⇒ mask đã đổi từ "vật mảnh" sang "khối đặc").
-# Vì vậy ca "SAI" chỉ được coi là GIẢ THUYẾT cho tới khi có nhãn theo luật viết trước (`fill ≥ 0,5`).
-# Đừng trích "đã có 1 ca báo oan được kiểm bằng ảnh".
-CA_DUNG = [
-    ("demoip_1124-125109_metrics.csv", 137),   # ô nhảy sang TÓC NGƯỜI (kiểm ảnh 24-11)
-    ("demoip_1124-141352_metrics.csv", 29),    # ô trên VÙNG SAI, t≈9,6 s (bằng chứng ảnh trong AGENTS §6)
-]
+# Ca ĐÃ KIỂM BẰNG **Ô VẼ TỪ CSV LÊN FRAME** (không đọc ô vàng trên HUD — HUD vẽ kết quả của bước
+# KHÁC, đã làm tôi kết luận sai 1 lần). Ảnh: `data/tmp_an/v2_*/v3_*.png`, tên theo `frame_idx`.
+#
+# NGỮ NGHĨA NHÃN = "danh tính vật bị bám có ĐỔI không" (đúng tên cổng "nghi đổi đối tượng"):
+#   DUNG     = ô đi sang VẬT KHÁC           -> cổng báo là ĐÚNG
+#   BAM_LAI  = ô đi TỪ nền VỀ ĐÚNG vật      -> danh tính không đổi, cổng báo là SAI (nhưng lỗi thật
+#              là cổng báo MUỘN: nó không báo lúc ô trôi khỏi vật)
+#   TROI     = ô đi TỪ vật SANG NỀN         -> danh tính không "đổi", nhưng hệ đang bám vùng vô nghĩa
+CA_DUNG = [("demoip_1124-125109_metrics.csv", 137)]     # ô trên TÓC, thìa ở x≈310 (ảnh v3_125109_f137)
 CA_SAI = [
-    ("demoip_1124-144057_metrics.csv", 48),    # GIẢ THUYẾT: thìa vung nhanh (nhãn suy biến — xem trên)
+    ("demoip_1124-141352_metrics.csv", 29),             # ô VỀ ĐÚNG thìa, trước ở nền (v2_/v3_ f29)
+    ("demoip_1124-144057_metrics.csv", 48),             # ô ở NỀN 139x397, mask tràn 2,9x (v2_f48)
+    ("demoip_1124-144057_metrics.csv", 97),             # ô VỀ ĐÚNG thìa, trước ở nền (v3_f97)
 ]
 
 
