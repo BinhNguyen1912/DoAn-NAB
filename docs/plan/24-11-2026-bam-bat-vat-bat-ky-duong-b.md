@@ -49,7 +49,7 @@ thể vượt recall) — **không phải** "+0,128 cải thiện đạt đượ
 ## 🧭 Ba góc nhìn (vòng 1)
 
 ### A. Chất lượng & số đo
-Lỗi chính là **frame 0 + tràn nền**, không phải bộ nhớ ⇒ đề xuất: GT+số cho ca cùng tông (cắt từ
+Lỗi chính là **frame 0 + tràn nền** *(đính chính ở mục dưới: chỉ đúng ở f0; 4/5 frame còn lại là **hụt**)*, không phải bộ nhớ ⇒ đề xuất: GT+số cho ca cùng tông (cắt từ
 `clip_dung`/`clip_sai` đã có), phân rã lỗi mask, **băng thử refiner biên offline** (chọn làm "1 việc"),
 ma trận INIT (điểm âm/dương, seed mask @320), proxy "sắp sụp" chỉ bàn cổng nếu AUC ≥ 0,8.
 
