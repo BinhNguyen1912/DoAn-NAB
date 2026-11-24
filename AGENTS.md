@@ -784,7 +784,7 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   `settle_steps = 8` bước bám ổn định **có mask** → `chua_xac_minh` (VẪN vẽ nhưng **viền nét đứt,
   không tô, không quỹ đạo** + câu xin xác nhận); cú nhảy mới ⇒ về `nghi`; `r`/`c`/reacquire ⇒ `ok`.
   Replay trên **39 phiên / 7 041 frame đã ghi** (`scripts/replay_latch_settle.py`, artifact
-  `data/replay_latch_settle_2026-11-24.json`, `settle_steps = 0` = hành vi cũ): ẩn **20,17 % → 2,57 %**
+  `data/replay_latch_settle_2026-11-24_metrics.json`, `settle_steps = 0` = hành vi cũ): ẩn **20,17 % → 2,57 %**
   frame, **17,6 %** frame chuyển sang "chưa xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn +
   33,7 % chưa xác minh. **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG:
   chuyển động sau cú nhảy lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định

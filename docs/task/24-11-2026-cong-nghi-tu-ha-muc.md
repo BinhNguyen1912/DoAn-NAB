@@ -73,7 +73,7 @@ settle 8 bước  | bật 18 lần | ẨN  181 frame ( 2,57 %) | CHƯA XÁC MINH
 settle 12 bước | bật 18 lần | ẨN  243 frame ( 3,45 %) | CHƯA XÁC MINH 1177 (16,72 %)
 ```
 Riêng phiên của người dùng (`demoip_1124-125109`, n = 246): **ẩn 44,3 % → 10,6 %**, thêm **33,7 %**
-frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24.json`.
+frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24_metrics.json`.
 
 Ảnh so 3 kiểu vẽ (`data/tmp_an/so_sanh_3_kieu.jpg`): tin cậy = mask **tô cam** + ô liền; chưa xác minh
 = **viền mảnh** + ô nét đứt + nhãn; nghi = ô nét đứt, **không mask**.
@@ -99,7 +99,7 @@ frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24.json`.
     `tests/test_live_tracking.py`, `tests/test_replay_latch_settle.py`, `web/src/live.test.ts`,
     `scripts/e2e_web.js` — test/bằng chứng
   - `AGENTS.md` §6 — bullet kết luận (cấm hạ mức thành "tin cậy", cấm đếm bước khi mask rỗng)
-  - `data/replay_latch_settle_2026-11-24.json` — artifact số
+  - `data/replay_latch_settle_2026-11-24_metrics.json` — artifact số
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy
