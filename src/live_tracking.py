@@ -267,6 +267,12 @@ class LiveTrackStats:
     # `nghi_doi_tuong_n` = số frame ĐÃ PHÁT trong trạng thái đó (0 ⇒ chưa từng nghi).
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0
+    # 24-11: trạng thái THỨ BA của cổng nhảy — "đã bám ổn định lại nhưng CHƯA ai xác nhận".
+    # `True` ⇒ VẪN vẽ (khác `nghi_doi_tuong`) nhưng ở kiểu chưa xác minh: viền mask nét đứt,
+    # KHÔNG tô, KHÔNG quỹ đạo. Vì sao cần: phiên `demoip_1124-125109` hệ **tự bám lại đúng vật** mà
+    # latch không có đường xoá (re-ID tắt) ⇒ 109/246 = 44,3 % phiên trắng overlay.
+    chua_xac_minh: bool = False
+    chua_xac_minh_n: int = 0
     bbox: list = field(default_factory=list)
     message: str = ""
 
@@ -540,6 +546,10 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         # Cổng nhảy có NHỚ (21-11): `true` ⇒ worker ĐÃ ẨN mask/ô. `nghi_doi_tuong_n == 0` = chưa từng.
         "nghi_doi_tuong": bool(stats.nghi_doi_tuong),
         "nghi_doi_tuong_n": int(stats.nghi_doi_tuong_n),
+        # 24-11: vẫn VẼ nhưng chưa xác minh (xem `_Stats.chua_xac_minh`). Tách khoá riêng để UI
+        # không phải suy từ `bam` (bam = "tracking" trong cả hai ca).
+        "chua_xac_minh": bool(stats.chua_xac_minh),
+        "chua_xac_minh_n": int(stats.chua_xac_minh_n),
         "bbox": stats.bbox,
         "message": stats.message,
     }
@@ -1910,6 +1920,7 @@ class LiveTrackingSession:
                     self._last_good_bbox, obs_bbox,
                     (int(_shape[0]), int(_shape[1])),
                     lk_velocity=lk_vel,
+                    co_mask=not raw_lost,
                 )
                 if not is_nghi:
                     self._last_good_bbox = obs_bbox
@@ -1927,6 +1938,8 @@ class LiveTrackingSession:
         an_o = self._stats.bam == "no_evidence"
         if self._stats.bam == "nghi_doi_tuong":
             self._stats.nghi_doi_tuong_n = int(self._stats.nghi_doi_tuong_n or 0) + 1
+        elif self._stats.chua_xac_minh:
+            self._stats.chua_xac_minh_n = int(self._stats.chua_xac_minh_n or 0) + 1
         shown = None if an_o else obs_bbox
         # Drift chấm trên ô QUAN SÁT (không phải ô đã vẽ) — xem giải thích ở trên.
         self._shown_by_frame.append((self._frame_index, obs_bbox))
@@ -2008,10 +2021,14 @@ class LiveTrackingSession:
                 self._stats.bam = "nghi_doi_tuong"
                 self._stats.bam_ly_do = "o_nhay"
                 self._stats.nghi_doi_tuong = True
+                self._stats.chua_xac_minh = False
                 return
             self._stats.bam = "tracking"
             self._stats.bam_ly_do = ""
             self._stats.nghi_doi_tuong = False
+            # 24-11: đã bám ổn định lại nhưng chưa ai xác nhận ⇒ `bam` vẫn "tracking" (ô được vẽ)
+            # nhưng KHÁC kiểu (xem `_annotate` + `_Stats.chua_xac_minh`).
+            self._stats.chua_xac_minh = self._watch.chua_xac_minh
             return
         if self._stats.bam is None:
             # FRAME ĐẦU TIÊN đã mất bằng chứng: dung sai 2 frame để chống NHẤP NHÁY giữa phiên, không
@@ -2034,6 +2051,18 @@ class LiveTrackingSession:
             # vì chưa có gì chứng minh ngược lại.
             self._stats.bam = self._stats.bam or "tracking"
 
+    def _ve_vien_mask(self, img, mask) -> None:
+        """Viền mask (KHÔNG tô) — kiểu "CHƯA XÁC MINH" (24-11, cùng luật `visualizer._ve_vien_mask`)."""
+        from src.visualizer import _COLOR_NGHI
+
+        try:
+            found = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL,
+                                     cv2.CHAIN_APPROX_SIMPLE)
+            contours = found[0] if len(found) == 2 else found[1]
+            cv2.drawContours(img, contours, -1, _COLOR_NGHI, 1)
+        except cv2.error:
+            return                        # mask lạ (rỗng/kích thước sai) ⇒ bỏ qua, không giết phiên
+
     def _annotate(self, frame, result):
         """Tô mask + ô bao + quỹ đạo + HUD. Chữ HUD dùng ASCII vì font Hershey không có dấu.
 
@@ -2049,16 +2078,22 @@ class LiveTrackingSession:
             mask = None
         # 21-11: `nghi_doi_tuong` ẩn y như `no_evidence` (xem `IdentityWatch`) — cùng luật với CLI.
         khong_bang_chung = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
+        # 24-11: "chưa xác minh" — VẪN vẽ, nhưng khác kiểu (cùng luật với `visualizer.render`).
+        chua_xac_minh = (bool(self._stats.chua_xac_minh) and not khong_bang_chung
+                         and mask is not None and bool(mask.any()))
         if mask is not None and mask.any() and not khong_bang_chung:
-            tint = img.copy()
-            tint[mask] = _OVERLAY_COLOR_MASK
-            img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
+            if chua_xac_minh:
+                self._ve_vien_mask(img, mask)
+            else:
+                tint = img.copy()
+                tint[mask] = _OVERLAY_COLOR_MASK
+                img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
 
         # Ticket #45: "nghi đổi đối tượng" KHÁC "không có bằng chứng" — nghi thì VẪN có ô (chỉ là ô
         # đáng ngờ), nên vẽ NÉT ĐỨT để người xem thấy hệ đang ở đâu mà không tưởng đó là kết quả đã
         # kiểm. Ẩn sạch cả hai (luật 21-11) đã đo hậu quả 23-11: 50/194 frame = 25,8 % phiên trắng.
         dang_nghi = self._stats.bam == "nghi_doi_tuong"
-        if not khong_bang_chung:
+        if not khong_bang_chung and not chua_xac_minh:
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             if x2 > x1 and y2 > y1:
                 cv2.rectangle(img, (x1, y1), (x2, y2), _OVERLAY_COLOR_BOX, 2)
@@ -2066,6 +2101,15 @@ class LiveTrackingSession:
             points = list(self._trail)
             for index in range(1, len(points)):
                 cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
+        elif chua_xac_minh:
+            # Ô nét đứt + nhãn, KHÔNG quỹ đạo (quỹ đạo = dấu vết của vật ĐANG được kiểm).
+            from src.visualizer import _COLOR_NGHI, ve_o_net_dut
+
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            if x2 > x1 and y2 > y1:
+                ve_o_net_dut(img, x1, y1, x2, y2)
+                cv2.putText(img, "CHUA XAC MINH", (x1, max(18, y1 - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, _COLOR_NGHI, 2)
         elif dang_nghi:
             # import trong hàm: tránh vòng import nặng (visualizer cũng import ngược live_tracking)
             from src.visualizer import _COLOR_NGHI, ve_o_net_dut
@@ -2084,6 +2128,8 @@ class LiveTrackingSession:
                 hud += " | NGHI DOI TUONG (o nhay) — chon lai hoac XAC NHAN"
             else:
                 hud += f" | KHONG CO BANG CHUNG ({self._stats.bam_ly_do})"
+        elif chua_xac_minh:
+            hud += " | CHUA XAC MINH — bam XAC NHAN neu dung vat"
         if self._stats.lost_streak:
             hud += f" | LOST {self._stats.lost_streak}"
         # ASCII (không dấu) là BẮT BUỘC: cv2.putText/Hershey không render được dấu tiếng Việt

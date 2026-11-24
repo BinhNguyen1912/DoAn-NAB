@@ -217,6 +217,14 @@ export interface LiveStatus {
   nghi_doi_tuong?: boolean
   /** số frame ĐÃ PHÁT trong trạng thái nghi (`0` = chưa từng nghi) */
   nghi_doi_tuong_n?: number
+  /**
+   * 24-11 — trạng thái THỨ BA: đã bám ổn định lại sau cảnh báo nhưng CHƯA ai xác nhận.
+   * `bam` vẫn là `'tracking'` (vẫn VẼ) ⇒ UI không suy ra được từ `bam`; worker vẽ VIỀN nét đứt,
+   * KHÔNG tô mask, KHÔNG quỹ đạo. `null`/thiếu = không có (đã xác nhận hoặc chưa từng nghi).
+   */
+  chua_xac_minh?: boolean
+  /** số frame ĐÃ PHÁT ở trạng thái "chưa xác minh" (`0` = chưa từng) */
+  chua_xac_minh_n?: number
 }
 
 export interface LiveStartOptions {

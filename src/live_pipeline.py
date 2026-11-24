@@ -394,6 +394,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             else:  # track
                 if visualizer is not None:
                     img = visualizer.update(frame, last_result, switch_warning=switch,
+                                            chua_xac_minh=watch.chua_xac_minh,
                                             reid_state=state, reid_score=reid_score,
                                             reid_vetoed=reid_vetoed)
                 else:
@@ -462,8 +463,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     cand_sinh = cand_ncc_loai = None
                 if not reacquired:
                     switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
-                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
-                    if last_result.mask.any():
+                    co_mask = bool(last_result.mask is not None and last_result.mask.any())
+                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2],
+                                          co_mask=co_mask) or switch
+                    if co_mask:
                         last_bbox = last_result.bbox
                     else:
                         last_bbox = (0, 0, 0, 0)

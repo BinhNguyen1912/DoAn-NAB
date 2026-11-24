@@ -78,6 +78,24 @@ def is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
 
 DEFAULT_CLEAR_KEY = "c"
 
+# Ba trạng thái của cổng nghi (24-11). Vì sao phải có trạng thái THỨ BA:
+#   `ok`            — bám bình thường, vẽ mask đầy đủ (tin cậy).
+#   `nghi`          — vừa có cú nhảy vô lý: KHÔNG vẽ mask, chỉ vẽ ô nét đứt (luật 21-11).
+#   `chua_xac_minh` — sau `settle_steps` bước bám ổn định (không nhảy, mask còn) mà KHÔNG ai xác
+#                     nhận: VẪN vẽ nhưng ở kiểu "chưa xác minh" (viền mask nét đứt, không tô,
+#                     không quỹ đạo) — không phải kiểu tin cậy.
+# Đo 24-11 (phiên `demoip_1124-125109`, 246 frame): cổng báo ĐÚNG ở f137 (ô nhảy sang tóc) rồi
+# **tự bám lại đúng cái thìa ở t≈40 s**, nhưng latch không có đường xoá nào (chỉ `r`/`c`/reacquire —
+# re-ID đang TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô nét đứt, người dùng nói "nó chỉ nghi thôi".
+TRANG_THAI_OK = "ok"
+TRANG_THAI_NGHI = "nghi"
+TRANG_THAI_CHUA_XAC_MINH = "chua_xac_minh"
+
+# 8 bước VOS ≈ 1,3 s (4,5 bước/s) … 1,8 s (6,3 bước/s). Đủ để KHÔNG hạ ngay ở cú nhảy thứ hai
+# (nhấp nháy) và đủ ngắn để phiên demo không chết. Số này KHÔNG phải ngưỡng an toàn: nó chỉ đổi
+# kiểu vẽ (ấn/hiện), không biến vùng đáng ngờ thành "đã kiểm" — muốn tin cậy thì phải `c`/`r`.
+DEFAULT_SETTLE_STEPS = 8
+
 
 class IdentityWatch:
     """Cổng "nghi đổi đối tượng" **CÓ NHỚ** (latch) — báo một lần thì giữ trạng thái nghi.
@@ -90,28 +108,61 @@ class IdentityWatch:
     Đo chi phí báo (replay 18 phiên, 2 973 frame, `data/jump_gate_replay_2026-11-21_metrics.json`):
     cổng chỉ báo **21 lần = 0,71 %** số frame ⇒ ẩn ô khi nghi là rẻ.
 
-    Đây KHÔNG phải "tự sửa": hệ chỉ **ngừng vẽ** vùng đang bám (không bịa chỗ bám) và xin người dùng
-    quyết định (`r` chọn lại, `c` = "vẫn đúng, tiếp tục"). Đã đo: `track_cos` KHÔNG phân biệt được
-    vùng sai cùng tông (dải 0,752–0,989 nằm trong dải ca đúng) nên không thể tự phán quyết.
+    Đây KHÔNG phải "tự sửa": hệ không bao giờ tự tuyên bố vùng đáng ngờ là "đã kiểm". Đã đo:
+    `track_cos` KHÔNG phân biệt được vùng sai cùng tông (dải 0,752–0,989 nằm trong dải ca đúng) nên
+    không thể tự phán quyết; thứ duy nhất tự làm được là **hạ mức hiển thị** từ "ẩn sạch" xuống
+    "vẽ kiểu chưa xác minh" khi đường bám đã ổn định lại (xem `TRANG_THAI_CHUA_XAC_MINH`).
     """
 
-    def __init__(self, max_jump_ratio=DEFAULT_MAX_JUMP_RATIO):
+    def __init__(self, max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
+                 settle_steps=DEFAULT_SETTLE_STEPS):
+        """`settle_steps`: số bước ổn định để hạ `nghi` → `chua_xac_minh`. 0 = TẮT (hành vi cũ:
+        ẩn tới hết phiên, chỉ `r`/`c` mới xoá) — dùng để tái lập số của các phiên trước 24-11.
+        """
         self.max_jump_ratio = float(max_jump_ratio)
-        self._nghi = False
+        self.settle_steps = max(0, int(settle_steps))
+        self._trang_thai = TRANG_THAI_OK
+        self._settle = 0
+
+    @property
+    def trang_thai(self) -> str:
+        return self._trang_thai
 
     @property
     def nghi(self) -> bool:
-        """Đang ở trạng thái nghi đổi đối tượng (đã báo và CHƯA được xoá)."""
-        return self._nghi
+        """Đang CHẶN vẽ mask (chỉ ở trạng thái `nghi`; `chua_xac_minh` thì vẫn vẽ, kiểu khác)."""
+        return self._trang_thai == TRANG_THAI_NGHI
 
-    def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None) -> bool:
-        """Cập nhật bằng một bước VOS; trả True nếu ĐANG nghi (kể cả các frame sau cú nhảy)."""
+    @property
+    def chua_xac_minh(self) -> bool:
+        """Đã bám ổn định lại nhưng CHƯA ai xác nhận ⇒ vẽ kiểu "chưa xác minh"."""
+        return self._trang_thai == TRANG_THAI_CHUA_XAC_MINH
+
+    def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None,
+               co_mask=True) -> bool:
+        """Cập nhật bằng một bước VOS; trả True nếu ĐANG CHẶN vẽ mask (trạng thái `nghi`).
+
+        `co_mask` = bước này model THẬT SỰ trả mask (không rỗng). Chỉ đếm bước ổn định khi có mask:
+        mask rỗng nghĩa là hệ không có gì để tin, hạ mức lúc đó là vẽ một vùng không tồn tại.
+        """
         if is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
                              max_jump_ratio=self.max_jump_ratio,
                              lk_velocity=lk_velocity):
-            self._nghi = True
-        return self._nghi
+            # Cú nhảy MỚI luôn đưa về `nghi` (kể cả đang `chua_xac_minh`) và đếm lại từ 0.
+            self._trang_thai = TRANG_THAI_NGHI
+            self._settle = 0
+            return self.nghi
+        if self._trang_thai == TRANG_THAI_NGHI:
+            if not co_mask:
+                self._settle = 0          # mất dấu: chưa có gì ổn định để nói
+            elif self.settle_steps > 0:
+                self._settle += 1
+                if self._settle >= self.settle_steps:
+                    self._trang_thai = TRANG_THAI_CHUA_XAC_MINH
+                    self._settle = 0
+        return self.nghi
 
     def reset(self) -> None:
-        """Xoá trạng thái nghi — gọi khi người dùng chọn lại (`r`) hoặc xác nhận (`c`)."""
-        self._nghi = False
+        """Xoá trạng thái nghi (về `ok`) — người dùng chọn lại (`r`) / xác nhận (`c`) / reacquire."""
+        self._trang_thai = TRANG_THAI_OK
+        self._settle = 0

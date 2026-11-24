@@ -945,3 +945,85 @@ class TestTranDocNguon:
         assert nhip >= 0.60 * 30.0, (
             f"{nhip:.0f} lần/s (n={n}, {elapsed:.2f} s) ⇒ quá xa trần 30: đang CỘNG DỒN thời gian ngủ")
         assert nhip <= 1.2 * 30.0, f"{nhip:.0f} lần/s — VƯỢT trần 30/s"
+
+
+class TestTuHaMucTrenDuongMuot:
+    """24-11: cổng nghi phải TỰ HẠ MỨC (`nghi` → `chua_xac_minh`) trên đúng đường `./run demoip`.
+
+    Vì sao: phiên `demoip_1124-125109` — cổng báo đúng ở f137, hệ tự bám lại đúng cái thìa ở t≈40 s,
+    nhưng latch chỉ xoá được bằng `r`/`c`/reacquire (re-ID TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô
+    nét đứt. Replay 39 phiên: ẩn 20,17 % → 2,57 % frame; 17,6 % frame chuyển sang "chưa xác minh".
+    """
+
+    def test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh(self, tmp_path, write_video, monkeypatch):
+        from src import smooth_display as sd
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        # Ô: 60 px/bước (hợp lệ: bán kính = max(0,10×800, 1,5×40) = 80 px) → 1 cú NHẢY 420 px
+        # → rồi yên 40 bước (đúng ca phiên 1124: báo đúng rồi tự bám lại)
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 8):
+            o_list.append((10 + i * 60, 10, 50 + i * 60, 50))
+        o_list.append((20, 150, 60, 190))              # nhảy vô lý (~420 px)
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                # PHẢI chậm hơn nhịp vẽ: engine tức thời sẽ chạy trước và mọi lần render chỉ thấy
+                # kết quả CUỐI (bỏ qua cú nhảy) ⇒ test đo nhầm chỗ.
+                time.sleep(0.05)
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 640), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        da_goi = []
+        goc = Visualizer.render
+
+        def ghi_render(self, frame, result, **kw):
+            da_goi.append({"switch": kw.get("switch_warning"),
+                           "chua_xac_minh": kw.get("chua_xac_minh")})
+            return goc(self, frame, result, **kw)
+
+        monkeypatch.setattr(Visualizer, "render", ghi_render)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 640),
+                                       square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"hien": 0}
+
+        def display(img, mode):
+            state["hien"] += 1
+            return list(QUIT_KEYS)[0] if state["hien"] >= 70 else -1
+
+        # `run_smooth_display` KHÔNG tự tạo Visualizer (caller `tools/run_live.py` làm) ⇒ phải truyền
+        sd.run_smooth_display(source=str(path), engine=Eng(),
+                              selector=PromptSelector(frame_shape=(240, 640, 3)),
+                              display=display, preselect_bbox=(10, 10, 50, 50),
+                              visualizer=Visualizer())
+
+        assert any(d["switch"] for d in da_goi), "cổng nhảy KHÔNG bật ⇒ test vô nghĩa"
+        assert any(d["chua_xac_minh"] for d in da_goi), (
+            "không lần render nào nhận `chua_xac_minh` ⇒ hệ vẫn ẩn tới hết phiên (bug 44,3 %)")
+        # Thứ tự phải đúng: nghi TRƯỚC, chưa xác minh SAU (không được hạ mức ngay ở cú nhảy)
+        chi_so_nghi = [i for i, d in enumerate(da_goi) if d["switch"]]
+        chi_so_ha = [i for i, d in enumerate(da_goi) if d["chua_xac_minh"]]
+        assert min(chi_so_ha) > min(chi_so_nghi)

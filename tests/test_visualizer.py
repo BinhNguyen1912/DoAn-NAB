@@ -851,3 +851,77 @@ class TestBienP2_Review2411:
             viz.consume(TrackingResult(frame_idx=i, mask=np.ones((10, 10), bool),
                                        bbox=(10, 10, 20, 20), score=1.0, elapsed_ms=1.0))
             assert len(viz.trajectory_points) >= 1
+
+
+class TestChuaXacMinh:
+    """24-11: trạng thái THỨ BA — vẫn VẼ nhưng KHÁC kiểu (`chua_xac_minh`).
+
+    Vì sao: phiên `demoip_1124-125109` — cổng báo đúng ở f137 rồi hệ tự bám lại đúng vật ở t≈40 s,
+    nhưng latch chỉ xoá được bằng `r`/`c`/reacquire (re-ID tắt) ⇒ 109/246 = 44,3 % phiên trắng.
+    Không thể ẩn tiếp (mất buổi demo) và KHÔNG thể vẽ y như đã kiểm (ca 21-11 bám sang cửa/tường
+    cùng tông, 65 frame) ⇒ vẽ viền nét đứt, không tô, không quỹ đạo.
+    """
+
+    def test_mask_chi_ve_vien_khong_to(self):
+        viz = Visualizer()
+        frame = _frame()
+        r = _result(frame_idx=0, bbox=(100, 150, 140, 190), mask_box=(100, 150, 140, 190))
+        img = viz.render(frame, r, chua_xac_minh=True)
+        # giữa mask: KHÔNG được tô cam (mask tin cậy tô 0,35 × (0,140,255) ⇒ G≈110)
+        giua = img[165:180, 110:130]
+        assert np.allclose(giua, frame[165:180, 110:130]), "mask bị TÔ như đã kiểm"
+        # nhưng phải CÓ nét vẽ (viền mask màu cảnh báo) trên biên của mask
+        vien = img[150:152, 100:140]
+        assert (vien[:, 1] > 180).any(), "không vẽ viền mask ⇒ không thấy vùng đang bám"
+
+    def test_mask_tin_cay_van_to_day(self):
+        """Đối chứng: cùng kết quả, KHÔNG chua_xac_minh ⇒ phải tô (nếu không, test trên vô nghĩa)."""
+        viz = Visualizer()
+        frame = _frame()
+        r = _result(frame_idx=0, bbox=(100, 150, 140, 190), mask_box=(100, 150, 140, 190))
+        img = viz.render(frame, r)
+        giua = img[165:180, 110:130]
+        assert not np.allclose(giua, frame[165:180, 110:130]), "mask tin cậy phải được tô"
+
+    def test_khong_ve_quy_dao_khi_chua_xac_minh(self):
+        from src.visualizer import _COLOR_TRAJECTORY
+
+        viz = Visualizer()
+        for i in range(4):
+            viz.consume(_result(frame_idx=i, bbox=(100 + i * 30, 150, 140 + i * 30, 190),
+                                mask_box=(100 + i * 30, 150, 140 + i * 30, 190)))
+        frame = _frame()
+        r = _result(frame_idx=9, bbox=(200, 150, 240, 190), mask_box=(200, 150, 240, 190))
+        img = viz.render(frame, r, chua_xac_minh=True)
+        tim = (np.abs(img.astype(int) - np.array(_COLOR_TRAJECTORY)).sum(axis=2) < 30)
+        assert not tim.any(), "quỹ đạo là dấu vết của vật ĐANG được kiểm ⇒ không vẽ khi chưa xác minh"
+
+    def test_mo_ta_hien_chu_chua_xac_minh(self, monkeypatch):
+        """HUD phải NÓI ra (nếu không, người xem tưởng mask đã kiểm)."""
+        viz = Visualizer()
+        da_ve = []
+        monkeypatch.setattr(viz, "_put_text", lambda img, chu, pos: da_ve.append((chu, pos)))
+        viz.render(_frame(), _result(frame_idx=0, bbox=(100, 150, 140, 190),
+                                     mask_box=(100, 150, 140, 190)), chua_xac_minh=True)
+        chu = " ".join(c for c, _ in da_ve)
+        assert "CHUA XAC MINH" in chu
+        assert "c:" in chu and "r:" in chu, "phải nói phím nào để xác nhận / chọn lại"
+
+    def test_nghi_thi_khong_in_chong_banner_mat_dau(self, monkeypatch):
+        """24-11: phiên thật t≈47 s có 2 banner cùng lúc (NGHI + MẤT DẤU) — hai câu nói hai chuyện."""
+        viz = Visualizer()
+        viz.consecutive_lost = 0
+        goi = []
+        monkeypatch.setattr(viz, "_draw_lost_banner", lambda img, tu_tim: goi.append(tu_tim))
+        viz.render(_frame(), _result(frame_idx=0, bbox=(100, 150, 140, 190),
+                                     mask_box=(100, 150, 140, 190)), switch_warning=True)
+        assert goi == [], "đang NGHI thì không vẽ banner MẤT DẤU"
+
+    def test_mat_dau_that_van_in_banner(self, monkeypatch):
+        """Đối chứng: mất dấu thật (không nghi) thì banner PHẢI hiện — đừng chặn quá tay."""
+        viz = Visualizer()
+        viz.consecutive_lost = 3
+        goi = []
+        monkeypatch.setattr(viz, "_draw_lost_banner", lambda img, tu_tim: goi.append(tu_tim))
+        viz.render(_frame(), _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None))
+        assert len(goi) == 1

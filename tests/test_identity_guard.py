@@ -124,3 +124,74 @@ class TestSearchWindowMotionGate:
 
         assert is_suspect_switch(prev, cur, frame_shape, lk_velocity=lk_vel) is False
 
+
+
+class TestIdentityWatchTuHaMuc:
+    """Trạng thái THỨ BA (24-11): `nghi` → `chua_xac_minh` sau `settle_steps` bước ổn định.
+
+    Vì sao phải có (đo phiên `demoip_1124-125109`, 246 frame): cổng báo đúng ở f137 (ô nhảy sang
+    tóc), rồi hệ **tự bám lại đúng vật** ở t≈40 s, nhưng latch chỉ xoá được bằng `r`/`c`/reacquire
+    (re-ID đang TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô nét đứt. Replay 39 phiên (7 041 frame):
+    ẩn 20,17 % → 2,57 %; 17,6 % frame chuyển sang kiểu "chưa xác minh".
+    """
+
+    A = (100, 100, 200, 200)
+    B = (600, 400, 620, 480)      # nhảy vô lý
+
+    def _nghi(self, settle=8):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(settle_steps=settle)
+        w.update(self.A, (105, 102, 205, 202), (480, 640))
+        assert w.update((105, 102, 205, 202), self.B, (480, 640)) is True
+        return w
+
+    def test_du_so_buoc_on_dinh_thi_ha_muc(self):
+        from src.identity_guard import TRANG_THAI_CHUA_XAC_MINH, TRANG_THAI_NGHI
+
+        w = self._nghi(settle=3)
+        assert w.trang_thai == TRANG_THAI_NGHI
+        b2 = (601, 401, 621, 479)
+        assert w.update(self.B, b2, (480, 640)) is True          # bước 1
+        assert w.update(b2, (602, 402, 620, 478), (480, 640)) is True   # bước 2
+        assert w.update((602, 402, 620, 478), (603, 403, 619, 477), (480, 640)) is False
+        assert w.trang_thai == TRANG_THAI_CHUA_XAC_MINH
+        assert w.nghi is False and w.chua_xac_minh is True
+
+    def test_mask_rong_khong_tinh_la_on_dinh(self):
+        from src.identity_guard import TRANG_THAI_NGHI
+
+        w = self._nghi(settle=2)
+        # Không có mask = không có gì để tin ⇒ KHÔNG được hạ mức (nếu hạ, hệ vẽ một vùng không tồn tại)
+        for _ in range(10):
+            assert w.update(self.B, (0, 0, 0, 0), (480, 640), co_mask=False) is True
+        assert w.trang_thai == TRANG_THAI_NGHI
+
+    def test_nhay_lai_trong_luc_chua_xac_minh_quay_ve_nghi(self):
+        from src.identity_guard import TRANG_THAI_NGHI
+
+        w = self._nghi(settle=1)
+        assert w.update(self.B, (601, 401, 621, 479), (480, 640)) is False   # hạ mức
+        assert w.chua_xac_minh is True
+        assert w.update((601, 401, 621, 479), (100, 60, 140, 200), (480, 640)) is True
+        assert w.trang_thai == TRANG_THAI_NGHI
+
+    def test_settle_0_la_hanh_vi_cu_an_toi_het_phien(self):
+        from src.identity_guard import TRANG_THAI_NGHI
+
+        w = self._nghi(settle=0)
+        for i in range(20):
+            w.update((600 + i, 400, 620, 480), (601 + i, 401, 621, 479), (480, 640))
+        assert w.trang_thai == TRANG_THAI_NGHI     # tái lập được số của phiên trước 24-11
+        assert w.chua_xac_minh is False
+
+    def test_reset_ve_ok_tu_ca_hai_trang_thai(self):
+        from src.identity_guard import TRANG_THAI_OK
+
+        for buoc in (0, 1):
+            w = self._nghi(settle=1)
+            for i in range(buoc):
+                w.update((600, 400, 620, 480), (601, 401, 621, 479), (480, 640))
+            w.reset()
+            assert w.trang_thai == TRANG_THAI_OK
+            assert w.nghi is False and w.chua_xac_minh is False

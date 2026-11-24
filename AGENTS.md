@@ -773,3 +773,23 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - **"Quỹ đạo 100 điểm" KHÔNG phải "quỹ đạo theo thời gian".** Cùng 100 điểm = **16 s** ở 6,3 bước/s nhưng
   **32 s** ở 3,1 bước/s ⇒ đại lượng đổi nghĩa theo tốc độ máy. Từ 24-11 có `--trajectory-seconds` (cắt theo
   mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.
+
+- **Cổng "nghi đổi đối tượng" PHẢI TỰ HẠ MỨC — ẩn tới hết phiên là bug, không phải an toàn.**
+  Đo 24-11 (phiên `data/demoip_1124-125109`, 246 frame, @192, re-ID TẮT, `git_rev 4c8c074`): cổng báo
+  **ĐÚNG** ở f137 (ô nhảy sang **tóc người**, vật là cái thìa trắng — kiểm bằng ảnh), rồi hệ **tự bám
+  lại đúng cái thìa** ở t≈40 s… mà màn hình vẫn in "NGHI ĐỔI ĐỐI TƯỢNG" suốt tới cuối ⇒
+  **109/246 = 44,3 % phiên** không có mask. Nguyên nhân đọc từ code, không phải cảm tính:
+  `watch.reset()` chỉ có 3 chỗ gọi (`reacquired` · phím `r` · phím `c`) ⇒ **re-ID tắt thì latch là
+  công tắc tắt vĩnh viễn**. Nay `IdentityWatch` có **3 trạng thái**: `nghi` (KHÔNG vẽ mask) → sau
+  `settle_steps = 8` bước bám ổn định **có mask** → `chua_xac_minh` (VẪN vẽ nhưng **viền nét đứt,
+  không tô, không quỹ đạo** + câu xin xác nhận); cú nhảy mới ⇒ về `nghi`; `r`/`c`/reacquire ⇒ `ok`.
+  Replay trên **39 phiên / 7 041 frame đã ghi** (`scripts/replay_latch_settle.py`, artifact
+  `data/replay_latch_settle_2026-11-24.json`, `settle_steps = 0` = hành vi cũ): ẩn **20,17 % → 2,57 %**
+  frame, **17,6 %** frame chuyển sang "chưa xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn +
+  33,7 % chưa xác minh. **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG:
+  chuyển động sau cú nhảy lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định
+  khi mask rỗng (mask rỗng = không có gì để tin). Cột CSV `nghi_doi_tuong` vẫn nghĩa **"frame này ĐANG
+  ẨN mask"**; `chua_xac_minh` là đại lượng KHÁC (nay có trong `status.json`: `chua_xac_minh`,
+  `chua_xac_minh_n`) — đừng cộng gộp hai cột rồi gọi là "tỉ lệ nghi". Số replay là **xấp xỉ** (ô dựng
+  lại từ `center/bbox_w/bbox_h`, `frame_shape` theo tham số) ⇒ chỉ dùng để SO SÁNH hai luật, không
+  phải số live. Log: `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md`.

@@ -1,0 +1,127 @@
+# Ngày 24-11-2026 — Cổng "nghi đổi đối tượng" tự hạ mức (hết cảnh "chỉ nghi thôi")
+
+## 🎯 Mục tiêu
+Sửa đúng khiếu nại của người dùng sau phiên `data/demoip_1124-125109_web.mp4`:
+> "nếu sau 5–10 s tôi mới đưa vật vào lại khung hình, nó chỉ nghi → nghi đúng → nhưng **không focus
+> lại**, chỉ nghi thôi"
+
+Cụ thể: (A) cổng nghi phải **tự hạ mức** khi đường bám đã ổn định lại (không ẩn tới hết phiên),
+(B) bỏ banner "MẤT DẤU" in chồng lên banner "NGHI", và **tag backup** phiên bản demo này.
+
+## 📥 Input
+- Phiên live của người dùng: `data/demoip_1124-125109_web.mp4` + `_metrics.csv` + `_run_info.json`
+  (`git_rev 4c8c074`, 246 frame, 57,4 s, `image_size 192`, re-ID TẮT).
+- `AGENTS.md` §6 (bullet 21-11 về `IdentityWatch` latch, bullet 23-11 "cổng từng là công tắc tắt
+  vĩnh viễn khi không có re-ID").
+- `src/identity_guard.py`, `src/visualizer.py`, `src/smooth_display.py`, `src/live_pipeline.py`,
+  `src/live_tracking.py`.
+
+## 🔨 Công việc đã thực hiện
+
+### 1. Phân tích phiên bằng SỐ + ẢNH (không bằng cảm giác)
+
+Đo từ `_metrics.csv` + `_run_info.json`:
+
+| chỉ số | giá trị | đọc thế nào |
+|---|---|---|
+| 246 frame / 57,4 s wall | video 57,2 s ⇒ tỉ lệ **0,997** | bản ghi đúng thời gian |
+| mean **223 ms** / p95 **353 ms** | 4,49 lần model/giây | **loadavg 4,74**, CPU 439 % ⇒ máy đang bận; cùng code lúc rảnh (loadavg 1,89) đo 142 ms ⇒ **không trích 223 ms làm số công bố** |
+| hiển thị **18,9 FPS** | LK lấp phần giữa | đúng thiết kế (mask ~4,5 Hz) |
+| mất dấu **43/246 = 17,5 %**, 8 đoạn (dài nhất 11 frame) | — | phần lớn là lúc người dùng **cất vật khỏi khung** ⇒ không phải "model mất dấu" |
+| **`nghi_doi_tuong` = 109/246 = 44,3 %** | liên tục **f137 → f245** | nửa sau video không có mask |
+
+Ba mốc kiểm bằng ảnh (`data/tmp_an/s33|s40|s47|s54.jpg`):
+
+| thời điểm | ô nét đứt ở đâu | kết luận |
+|---|---|---|
+| t≈**33 s** (f137) | **tóc/đầu người**, cái thìa trắng ở bên trái | cổng báo **ĐÚNG** |
+| t≈**40 s** | **đã về đúng cái thìa** nhưng vẫn in "NGHI ĐỔI ĐỐI TƯỢNG" | **đúng ca người dùng nói** |
+| t≈**47 s** | vật ngoài khung ⇒ **2 banner chồng nhau** (NGHI + MẤT DẤU) | lỗi UI |
+| t≈**54 s** | ô trên **trần trống** (mask bịa) | may là không vẽ |
+
+### 2. Nguyên nhân (đọc từ code, không suy đoán)
+`watch.reset()` chỉ có **3 chỗ gọi**: nhánh `reacquired` (cần re-ID → đang TẮT), phím `r`, phím `c`
+(`src/smooth_display.py:428,494,509`; `src/live_pipeline.py:382,408,421,451`). Không có đường tự xoá
+⇒ **một lần nghi = tắt overlay tới hết phiên**. Phiên này là bằng chứng mạnh nhất: model **đã tự bám
+lại đúng vật** mà người xem vẫn thấy "NGHI".
+
+### 3. Sửa: `IdentityWatch` thành máy trạng thái 3 mức
+`src/identity_guard.py`:
+- `nghi` — vừa có cú nhảy vô lý ⇒ **KHÔNG vẽ mask**, chỉ ô nét đứt (giữ nguyên luật 21-11).
+- `chua_xac_minh` — sau **`settle_steps = 8`** bước bám ổn định **và có mask** ⇒ **VẪN vẽ** nhưng kiểu
+  chưa xác minh (viền nét đứt, không tô, không quỹ đạo) + câu xin xác nhận.
+- `ok` — `r` / `c` / reacquire.
+- Cú nhảy mới trong `chua_xac_minh` ⇒ về `nghi`; mask rỗng ⇒ **không** đếm bước ổn định.
+- `update()` vẫn trả **bool** (`watch.nghi`) để không phá `switch = watch.update(...) or switch`.
+- `settle_steps=0` tái lập **đúng hành vi cũ** (dùng để đo lại số của phiên trước 24-11).
+
+Vẽ (`src/visualizer.py`): thêm `chua_xac_minh=` — mask chỉ **viền contour** (`_ve_vien_mask`),
+ô **nét đứt** + nhãn "CHUA XAC MINH", **không quỹ đạo**, câu "CHUA XAC MINH — c: van dung, tin cay |
+r: chon lai"; và **không in banner MẤT DẤU khi đang NGHI**.
+
+Đường web giữ **cùng luật**: `src/live_tracking.py` (`_Stats.chua_xac_minh/_n`, `_annotate` vẽ viền
+nét đứt, HUD nói rõ), `src/live_pipeline.py` (truyền `co_mask`), `web/src/{api.ts,live.ts}` +
+`LivePanel.tsx` (banner "CHƯA XÁC MINH" + nút "Vẫn đúng, tiếp tục").
+
+### 4. Đo lại trên chính các phiên đã ghi
+`scripts/replay_latch_settle.py` (mới) — replay `IdentityWatch` trên CSV, **không model**:
+
+```
+39 phiên · 7 041 frame
+hành vi CŨ     | bật 14 lần | ẨN 1420 frame (20,17 %) | CHƯA XÁC MINH    0 (0,0 %)
+settle 8 bước  | bật 18 lần | ẨN  181 frame ( 2,57 %) | CHƯA XÁC MINH 1239 (17,6 %)
+settle 12 bước | bật 18 lần | ẨN  243 frame ( 3,45 %) | CHƯA XÁC MINH 1177 (16,72 %)
+```
+Riêng phiên của người dùng (`demoip_1124-125109`, n = 246): **ẩn 44,3 % → 10,6 %**, thêm **33,7 %**
+frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24.json`.
+
+Ảnh so 3 kiểu vẽ (`data/tmp_an/so_sanh_3_kieu.jpg`): tin cậy = mask **tô cam** + ô liền; chưa xác minh
+= **viền mảnh** + ô nét đứt + nhãn; nghi = ô nét đứt, **không mask**.
+
+### 5. Backup
+`git tag -a demo-ok-24-11` trên `4c8c074` (đúng rev của phiên demo, trước khi sửa).
+
+## 📤 Output / Kết quả
+- Cổng nghi **không còn là công tắc tắt vĩnh viễn**: sau ~1,3–1,8 s bám ổn định, hệ vẫn hiện vùng
+  đang bám (kiểu chưa xác minh) thay vì im lặng 44 % phiên.
+- Có script **tái lập được** chi phí ẩn overlay trên CSV (`scripts/replay_latch_settle.py`), có
+  provenance (`git_rev`, `git_dirty_code`, `lenh`, `do_luc`, `frame_shape`).
+- Kiểm tra: `./run lint` sạch · **1 963 test** · `./run webtest` **102** · `npm run build` OK ·
+  `./run e2e` **PASS** (thêm 4 check cho trạng thái "chưa xác minh").
+- File thay đổi:
+  - `src/identity_guard.py` — máy trạng thái 3 mức (`TRANG_THAI_*`, `settle_steps`, `chua_xac_minh`)
+  - `src/visualizer.py` — `chua_xac_minh=` trong `render`/`update`, `_ve_vien_mask`, bỏ banner chồng
+  - `src/smooth_display.py` — truyền `co_mask` + `chua_xac_minh` (đường `./run demoip`)
+  - `src/live_pipeline.py` — truyền `co_mask`; `src/live_tracking.py` — trạng thái + kiểu vẽ web
+  - `web/src/api.ts`, `web/src/live.ts`, `web/src/components/LivePanel.tsx` — khoá + banner web
+  - `scripts/replay_latch_settle.py` — đo chi phí ẩn overlay (mới)
+  - `tests/test_identity_guard.py`, `tests/test_visualizer.py`, `tests/test_smooth_display.py`,
+    `tests/test_live_tracking.py`, `tests/test_replay_latch_settle.py`, `web/src/live.test.ts`,
+    `scripts/e2e_web.js` — test/bằng chứng
+  - `AGENTS.md` §6 — bullet kết luận (cấm hạ mức thành "tin cậy", cấm đếm bước khi mask rỗng)
+  - `data/replay_latch_settle_2026-11-24.json` — artifact số
+
+## 🐞 Vấn đề gặp phải & cách xử lý
+- **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy
+  trước hàng trăm nghìn bước, mỗi lần render chỉ thấy **kết quả CUỐI** (bỏ qua cú nhảy) ⇒ test báo
+  "cổng nhảy KHÔNG bật". Sửa bằng `time.sleep(0.05)` trong `process()` cho chậm hơn nhịp vẽ — đúng
+  bài học "engine tức thời làm test đo nhầm chỗ".
+- Ảnh so sánh lấy từ `_web.mp4` (đã cháy HUD) ⇒ HUD bị vẽ đè. Đã cắt phần HUD khi xuất ảnh; ghi rõ
+  để không ai đọc nhầm chữ nhoè là lỗi mới.
+- `status.json` thêm 2 khoá ⇒ test allowlist `test_status_duoc_ghi_moi_frame` đỏ (đúng thiết kế):
+  đã khai báo `chua_xac_minh`, `chua_xac_minh_n` vào `bat_buoc`.
+
+## 📌 Việc cần làm tiếp (Next steps)
+- [ ] Chạy lại **một phiên live thật** (`./run demoip`) để xác nhận trên webcam: kỳ vọng ô/mask
+      quay lại sau ~1,5 s thay vì mất tới hết phiên (số hiện có là **replay**, không phải live).
+- [ ] Đo trên phiên live xem `chua_xac_minh` có bị "đứng" vĩnh viễn (không ai bấm `c`/`r`) không —
+      nếu có thì cân nhắc nhắc lại phím trên HUD mỗi ~10 s.
+- [ ] Chọn ô chọn **ôm sát vật**: `f0` của phiên này = 95×356 px từ y=123 **xuống đáy khung** ⇒ gồm cả
+      tay + nền, là lý do gốc khiến model trôi sang tóc ở t≈30 s (chưa sửa được bằng code).
+- [ ] Số test/lint/e2e đã xanh nhưng **review độc lập chưa chạy** tại thời điểm ghi log này.
+
+## 📚 Tài liệu tham khảo
+- `AGENTS.md` §6 — bullet 21-11 (latch), 23-11 (latch = công tắc tắt khi không re-ID), 24-11 (mới).
+- `docs/task/21-11-2026-cong-nghi-doi-tuong-latch.md` (lý do phải có latch), `docs/task/23-11-2026-*`
+  (A/B bác re-ID).
+- Code: `src/identity_guard.py`, `src/visualizer.py`, `src/live_tracking.py`.

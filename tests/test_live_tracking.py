@@ -163,7 +163,11 @@ class TestLiveTrackingSession:
         bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n",
                                # 21-11: cổng nhảy CÓ NHỚ. BẮT BUỘC — web cần `bam`/cờ này để hiện
                                # banner + nút "vẫn đúng"; xoá khỏi `status_payload` thì test phải đỏ.
-                               "nghi_doi_tuong", "nghi_doi_tuong_n"}
+                               "nghi_doi_tuong", "nghi_doi_tuong_n",
+                               # 24-11: trạng thái thứ ba "đã bám ổn định lại nhưng CHƯA xác nhận"
+                               # (`_Stats.chua_xac_minh`). `bam` = "tracking" ở CẢ hai ca (vẫn vẽ)
+                               # ⇒ UI KHÔNG suy ra được từ `bam`, phải có khoá riêng.
+                               "chua_xac_minh", "chua_xac_minh_n"}
         cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
@@ -3339,3 +3343,84 @@ class TestNghiDoiTuongVeONetDut:
         img = sess._annotate(frame, res)
         # chỉ còn HUD (chữ đỏ ở góc trên-trái); vùng ô phải nguyên nền
         assert img[40:70, 40:80].sum() == 0
+
+
+class TestChuaXacMinhDuongWeb:
+    """24-11: trạng thái thứ ba của cổng nghi trên ĐƯỜNG WEB — phải giống CLI.
+
+    Nếu web vẫn ẩn sạch thì hai đường demo nói hai chuyện (bài học review 21-11): phiên
+    `demoip_1124-125109` hệ **tự bám lại đúng vật** mà vẫn ẩn ⇒ 44,3 % phiên trắng.
+    """
+
+    @staticmethod
+    def _session():
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    @staticmethod
+    def _mask():
+        m = np.zeros((48, 64), bool)
+        m[10:30, 10:30] = True
+        return m
+
+    def _day_sang_chua_xac_minh(self, s):
+        from src.identity_guard import TRANG_THAI_CHUA_XAC_MINH
+
+        s._watch._trang_thai = TRANG_THAI_CHUA_XAC_MINH
+
+    def test_bam_van_la_tracking_nhung_co_co_chua_xac_minh(self):
+        s = self._session()
+        s._lk_ok_frame = True
+        self._day_sang_chua_xac_minh(s)
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking", "chưa xác minh thì VẪN vẽ (khác `nghi_doi_tuong`)"
+        assert s._stats.chua_xac_minh is True
+        assert s._stats.nghi_doi_tuong is False
+
+    def test_nghi_van_an_va_xoa_co_chua_xac_minh(self):
+        from src.identity_guard import TRANG_THAI_NGHI
+
+        s = self._session()
+        s._lk_ok_frame = True
+        s._stats.chua_xac_minh = True
+        s._watch._trang_thai = TRANG_THAI_NGHI
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "nghi_doi_tuong"
+        assert s._stats.chua_xac_minh is False, "đang ẩn thì không được nói 'chưa xác minh'"
+
+    def test_annotate_chua_xac_minh_khong_to_mask(self):
+        from src.live_tracking import _FrameResult
+
+        s = self._session()
+        frame = np.zeros((200, 320, 3), np.uint8)
+        mask = np.zeros((200, 320), bool)
+        mask[100:160, 100:160] = True
+        res = _FrameResult(1, (100, 100, 160, 160), mask, 1.0)
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = True
+        img = s._annotate(frame, res)
+        # vùng GIỮA mask, tránh dòng HUD ở y≈28 và nhãn "CHUA XAC MINH" trên đỉnh ô
+        giua = img[120:145, 120:145]
+        assert not giua.any(), "mask bị TÔ như đã kiểm — phải chỉ vẽ viền"
+        vien = img[100:102, 105:155]
+        assert vien.any(), "không vẽ gì ⇒ người xem không biết hệ đang bám ở đâu"
+
+    def test_annotate_da_xac_minh_thi_to_mask(self):
+        """Đối chứng: `chua_xac_minh = False` ⇒ tô như cũ (nếu không, test trên vô nghĩa)."""
+        from src.live_tracking import _FrameResult
+
+        s = self._session()
+        frame = np.zeros((200, 320, 3), np.uint8)
+        mask = np.zeros((200, 320), bool)
+        mask[100:160, 100:160] = True
+        res = _FrameResult(1, (100, 100, 160, 160), mask, 1.0)
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = False
+        img = s._annotate(frame, res)
+        assert img[120:145, 120:145].any(), "mask tin cậy phải được tô"

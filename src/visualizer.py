@@ -169,7 +169,7 @@ class Visualizer:
     # ---------- API công khai ----------
 
     def update(self, frame, result, switch_warning=False, reid_state=None, reid_score=None,
-               reid_vetoed=False):
+               reid_vetoed=False, chua_xac_minh=False):
         """Vẽ HUD lên bản sao frame; trả ảnh (H, W, 3) uint8; ghi ra mp4 nếu recorder mở.
 
         Dùng cho vòng lặp tuần tự (1 lần suy luận = 1 lần hiển thị). Chế độ hiển thị tách
@@ -178,7 +178,7 @@ class Visualizer:
         self.consume(result)
         return self.render(frame, result, switch_warning=switch_warning,
                            reid_state=reid_state, reid_score=reid_score,
-                           reid_vetoed=reid_vetoed)
+                           reid_vetoed=reid_vetoed, chua_xac_minh=chua_xac_minh)
 
     def consume(self, result):
         """Cập nhật trạng thái tích luỹ theo 1 KẾT QUẢ suy luận: quỹ đạo, latency, mất dấu.
@@ -223,6 +223,20 @@ class Visualizer:
             return
         self._face_warning = (tuple(float(v) for v in face_xywh[:4]), _time.monotonic() + float(giay))
 
+    def _ve_vien_mask(self, img, mask) -> None:
+        """Vẽ VIỀN mask (không tô) — kiểu "CHƯA XÁC MINH" (24-11).
+
+        Dùng contour của chính mask SAM 2 (không phải ô chữ nhật): người xem vẫn thấy hình dạng
+        vùng hệ đang bám, nhưng màu/độ đặc khác hẳn mask tin cậy (cam tô mờ) và không có quỹ đạo.
+        """
+        try:
+            found = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL,
+                                     cv2.CHAIN_APPROX_SIMPLE)
+            contours = found[0] if len(found) == 2 else found[1]
+            cv2.drawContours(img, contours, -1, _COLOR_NGHI, 1)
+        except cv2.error:
+            return                        # mask lạ (rỗng/kích thước sai) ⇒ bỏ qua, không giết phiên
+
     def _draw_face_warning(self, img) -> None:
         canh = getattr(self, "_face_warning", None)
         if not canh:
@@ -239,7 +253,8 @@ class Visualizer:
             self._put_text(img, chu, (max(6, x), max(20, y - 12 + i * 24)))
 
     def render(self, frame, result, overlay_age_ms=None, display_fps=None,
-               switch_warning=False, reid_state=None, reid_score=None, reid_vetoed=False):
+               switch_warning=False, reid_state=None, reid_score=None, reid_vetoed=False,
+               chua_xac_minh=False):
         """Vẽ mask + ô bao + quỹ đạo + HUD lên bản sao frame (KHÔNG đổi trạng thái tích luỹ)."""
         img = frame.copy()
         if self._t_ve_dau is None:
@@ -266,24 +281,38 @@ class Visualizer:
         # "NGHI ĐỔI ĐỐI TƯỢNG" KHÁC "mất dấu": mất dấu thì không có gì để vẽ, còn nghi thì VẪN có ô
         # (chỉ là ô đáng ngờ) ⇒ vẽ NÉT ĐỨT thay vì ẩn sạch (ticket #45, xem `ve_o_net_dut`).
         dang_nghi = bool(switch_warning) and self.consecutive_lost < _BAM_NO_EVIDENCE_FRAMES
+        # 24-11: trạng thái THỨ BA — "đã bám ổn định lại nhưng CHƯA ai xác nhận" (xem
+        # `IdentityWatch.chua_xac_minh`). Phiên `demoip_1124-125109`: hệ **tự bám lại đúng vật** ở
+        # t≈40 s mà vẫn bị ẩn ⇒ 109/246 = 44,3 % phiên chỉ có ô nét đứt. Ẩn tiếp là SAI (mất cả
+        # buổi demo), vẽ y như đã kiểm cũng SAI (ca 21-11 bám sang cửa/tường cùng tông, 65 frame) ⇒
+        # vẽ được nhưng KHÁC kiểu: viền nét đứt, KHÔNG tô, KHÔNG quỹ đạo, kèm câu xin xác nhận.
+        dang_chua_xac_minh = (bool(chua_xac_minh) and not dang_mat_dau and not dang_nghi)
 
         # 1) tô mask bán trong suốt
-        if not dang_mat_dau and result.mask is not None and result.mask.any():
-            tint = img.copy()
-            tint[result.mask] = _COLOR_MASK
-            img = cv2.addWeighted(img, 1.0 - _MASK_ALPHA, tint, _MASK_ALPHA, 0)
+        if not dang_mat_dau and not dang_nghi and result.mask is not None and result.mask.any():
+            if dang_chua_xac_minh:
+                self._ve_vien_mask(img, result.mask)
+            else:
+                tint = img.copy()
+                tint[result.mask] = _COLOR_MASK
+                img = cv2.addWeighted(img, 1.0 - _MASK_ALPHA, tint, _MASK_ALPHA, 0)
 
         # 2) ô bao — CHỈ khi còn bằng chứng (xem mục 0); đang NGHI thì nét đứt để không ai đọc
         #    nhầm đây là kết quả đã kiểm.
         x1, y1, x2, y2 = [int(v) for v in result.bbox]
-        if not dang_mat_dau and not dang_nghi and x2 > x1 and y2 > y1:
+        if not dang_mat_dau and not dang_nghi and dang_chua_xac_minh and x2 > x1 and y2 > y1:
+            ve_o_net_dut(img, x1, y1, x2, y2)
+            self._put_text(img, "CHUA XAC MINH", (x1, max(18, y1 - 6)))
+        elif not dang_mat_dau and not dang_nghi and x2 > x1 and y2 > y1:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
         elif dang_nghi and x2 > x1 and y2 > y1:
             ve_o_net_dut(img, x1, y1, x2, y2)
             self._put_text(img, "NGHI", (x1, max(18, y1 - 6)))
 
-        # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần)
-        if not dang_mat_dau and self.show_trajectory and len(self._trajectory) >= 2:
+        # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần).
+        #    `chua_xac_minh` cũng KHÔNG vẽ: quỹ đạo là "dấu vết của vật ĐANG được quan sát".
+        if (not dang_mat_dau and not dang_chua_xac_minh and self.show_trajectory
+                and len(self._trajectory) >= 2):
             pts = np.array(self._trajectory, dtype=np.int32).reshape(-1, 1, 2)
             cv2.polylines(img, [pts], isClosed=False, color=_COLOR_TRAJECTORY,
                           thickness=_LINE_THICKNESS)
@@ -295,11 +324,15 @@ class Visualizer:
         if overlay_age_ms is not None:
             self._put_text(img, f"Overlay: {overlay_age_ms:.0f} ms truoc",
                            (8, 80))
-        if self.consecutive_lost > 0:
+        if self.consecutive_lost > 0 and not switch_warning:
+            # 24-11: khi đang NGHI thì KHÔNG in chồng banner "MẤT DẤU" (phiên `demoip_1124-125109`
+            # t≈47 s có 2 banner cùng lúc, hai câu nói hai chuyện) — "NGHI" đã là câu cần đọc.
             self._draw_lost_banner(img, self.reid_enabled)
         if switch_warning:
             # Không còn vẽ ô/mask (xem mục 0) ⇒ câu này phải nói ĐÚNG việc người dùng cần làm.
             self._put_text(img, "NGHI DOI TUONG — r: chon lai | c: van dung, tiep tuc", (8, 104))
+        elif dang_chua_xac_minh:
+            self._put_text(img, "CHUA XAC MINH — c: van dung, tin cay | r: chon lai", (8, 104))
         if reid_state == "reacquiring":
             # Hiện cả ngưỡng để người xem (thầy) hiểu đây là quyết định có ngưỡng, không phải bám bừa:
             # "khop 0.59 / can >= 0.70" = có ứng viên nhưng chưa đủ tin → vẫn đang tìm.

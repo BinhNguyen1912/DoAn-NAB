@@ -437,8 +437,12 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
                     # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
                     # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
-                    switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
-                    if stamped.result.mask.any():
+                    # `co_mask`: chỉ đếm bước ổn định khi model THẬT SỰ trả mask (24-11).
+                    co_mask = bool(stamped.result.mask is not None
+                                   and stamped.result.mask.any())
+                    switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2],
+                                          co_mask=co_mask) or switch
+                    if co_mask:
                         last_bbox = stamped.result.bbox
                     else:
                         # Mất dấu ⇒ đặt mốc rỗng để khi vật xuất hiện lại không bị so với ô cũ
@@ -471,6 +475,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                                             overlay_age_ms=stamped.age_ms,
                                             display_fps=display_fps,
                                             switch_warning=switch,
+                                            chua_xac_minh=watch.chua_xac_minh,
                                             reid_state=reid_state, reid_score=reid_score,
                                             reid_vetoed=reid_vetoed)
                 else:                       # không có HUD: vẫn phải giữ chế độ track
