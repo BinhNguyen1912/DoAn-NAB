@@ -139,15 +139,22 @@ class IdentityWatch:
         return self._trang_thai == TRANG_THAI_CHUA_XAC_MINH
 
     def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None,
-               co_mask=True) -> bool:
+               co_mask=True, nhay=None) -> bool:
         """Cập nhật bằng một bước VOS; trả True nếu ĐANG CHẶN vẽ mask (trạng thái `nghi`).
 
         `co_mask` = bước này model THẬT SỰ trả mask (không rỗng). Chỉ đếm bước ổn định khi có mask:
         mask rỗng nghĩa là hệ không có gì để tin, hạ mức lúc đó là vẽ một vùng không tồn tại.
+
+        `nhay` = quyết định "bước này có phải cú nhảy" do BÊN NGOÀI tính (mặc định `None` = dùng
+        `is_suspect_switch`). Có mặt để `scripts/eval_gate_rules.py` chấm các LUẬT khác nhau trên CÙNG
+        máy trạng thái — nếu script tự chép lại state machine thì hai bản sẽ trôi khỏi nhau (bài học
+        "test chép lại logic" trong repo).
         """
-        if is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
-                             max_jump_ratio=self.max_jump_ratio,
-                             lk_velocity=lk_velocity):
+        if nhay is None:
+            nhay = is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
+                                    max_jump_ratio=self.max_jump_ratio,
+                                    lk_velocity=lk_velocity)
+        if nhay:
             # Cú nhảy MỚI luôn đưa về `nghi` (kể cả đang `chua_xac_minh`) và đếm lại từ 0.
             self._trang_thai = TRANG_THAI_NGHI
             self._settle = 0
