@@ -123,3 +123,51 @@ cột `bam` (thứ 12 của CSV) đã đủ để lọc "ô đặc" vs "ô nét 
 - `docs/thuoc-do-bam-dung.md` — quy tắc chấm mIoU (GT rỗng ⇒ không chấm; model rỗng mà GT có vật ⇒ 0,0).
 - `docs/demo-clip-va-o-chon.md` — ô chọn đúng theo clip (bài học 14-11: ô sai làm toàn bộ số Phase 4c sai).
 - AGENTS §6: ngưỡng nhiễu, "0,0 là cạm bẫy", `mIoU_p05` chỉ công bố khi n ≥ 30.
+
+---
+
+## 8. Bổ sung cuối phiên — clip "vật TRẮNG MỜ trên tường TRẮNG" và 4 thí nghiệm bị BÁC
+
+Người dùng quay `data/raw_tran_nen.mp4` (ở nhà, 25 fps), cắt thành `data/clip_tran_nen.mp4` (401 frame,
+bắt đầu ở frame vật đã trong khung) và **tô GT 6 frame**: f0/f45/f222/f266/f400 có vật, **f133 GT RỖNG**
+(vật đã hạ khỏi khung). Đây là clip **đầu tiên** trong repo tái hiện ca "vật sáng trên nền sáng" bằng
+hình sạch (không HUD).
+
+### Bảng đo (cùng 5 frame có vật, cùng ô chọn `405,65,90,365`, `git_dirty_code = false` cả 2 tầng)
+
+| cấu hình | mIoU | mask NGOÀI GT | BỊA MASK @f133 (GT rỗng) | ms/frame |
+|---|---|---|---|---|
+| **@192 (mặc định)** | **0,6987** | 17,4 % | **3 713 px** | 283 |
+| **@320** | **0,7268** | **11,7 %** | **0 px** | 534 |
+| ngưỡng mask 1,0 | 0,6450 | 13,2 % | 536 px | — |
+| ngưỡng mask 2,0 | 0,5321 | 9,7 % | 11 px | — |
+| `--reanchor-every 30` | **0,3965** | **53,9 %** | 10 077 px | — |
+
+### Bốn kết luận ÂM TÍNH (ghi để KHÔNG ai làm lại)
+
+1. **Nâng `--mask-threshold` không cứu được**: 1,0 và 2,0 làm mIoU **giảm** (0,6987 → 0,6450 → 0,5321)
+   vì vật mờ nên **logit ở giữa vật cũng thấp**; nó chỉ làm mask co lại dưới GT. Chỉ dùng ngưỡng khi
+   mục tiêu là "bớt ăn viền", **không** phải "bám đúng hơn".
+2. **`--reanchor-every` làm TỆ HƠN HẲN** (0,3965, mask ngoài GT 53,9 %): neo lại bằng **ô đã trôi** ⇒
+   khoá cái sai vào bộ nhớ. Muốn re-anchor có ích thì phải có ô ĐÚNG (cần người bấm `r` hoặc oracle).
+3. **Luật "mảnh mask phải tiếp nối" (đã viết `src/mask_continuity.py`, đã đo, đã REVERT)**: mIoU **y hệt**
+   0,6987 — luật **không kích hoạt**, vì model **trôi DẦN** (ô co từ 18 174 px xuống ~3 000 px từ f100)
+   chứ không "nhảy"; trượt dần thì mỗi bước vẫn giao mảnh trước ⇒ không có gì để cắt. Đúng cảnh báo
+   AGENTS §6: "cả hai cổng đều mù với trôi dần".
+4. **So cặp 192 vs 320 CHƯA đủ để tuyên bố "320 tốt hơn"** theo luật repo: 5 frame chung,
+   mean **+0,0282**, **CI95 [−0,0416, +0,1126] chứa 0**, 3/5 dương, sign test **p = 1,000** ⇒
+   **"không phân biệt được"**. Cái **đo được chắc chắn** ở 320 là **hành vi**: `BỊA MASK` ở frame vật
+   vắng **3 713 → 0 px** và mask ngoài GT 17,4 → 11,7 %.
+
+### Hệ quả cho báo cáo (được trích / cấm trích)
+
+- **Được**: "vật càng khó (trắng mờ trên nền trắng) thì mIoU càng giảm: **0,6987** (túi trắng mờ) vs
+  **0,7794** (chai binh1) vs **0,8625** (clip_be2)" — cả ba đo trên GT người tô, cùng máy.
+- **Cấm**: "320 tốt hơn 192" (chưa đủ mẫu) và "đã sửa được trôi dần bằng luật tiếp nối" (đã revert).
+
+### Việc còn lại (cần người dùng quyết)
+
+- Muốn ca trắng-trên-trắng **bám đúng tự động** thì phải đổi **cơ chế bộ nhớ** của model (Cutie/XMem)
+  — việc > 4 h ⇒ phải lập plan 3 ý kiến (AGENTS §9.2) và **cần GPU để còn real-time**.
+- Đường rẻ nhất cho buổi bảo vệ: chọn vật **đặc, có màu** (số đo đã có: 0,78–0,86) và ghi ca trắng-trên-trắng
+  vào mục **"hạn chế"** kèm đúng các số ở bảng trên.
