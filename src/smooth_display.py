@@ -27,7 +27,7 @@ import cv2
 
 from src.live_pipeline import (
     InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
-    CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection,
+    CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection, chuan_hoa_phim,
 )
 from src.video_source import open_video_source
 
@@ -351,7 +351,8 @@ class InferenceWorker:
 
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
-                       on_result=None, reid_session=None, source_max_fps=None) -> InteractiveSummary:
+                       on_result=None, reid_session=None, source_max_fps=None,
+                       settle_steps=None, max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -369,7 +370,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     consumed_seq = 0
     last_bbox = None
     # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — xem `src/identity_guard.IdentityWatch`.
-    watch = IdentityWatch()
+    # `settle_steps=None` ⇒ giữ mặc định của `IdentityWatch`. Có mặt để `--settle-steps` THẬT SỰ
+    # đổi được hành vi: trước 24-11 `run_info` ghi `settle_steps=8` như một biến điều khiển trong khi
+    # không tồn tại cờ nào (provenance giả — review độc lập 24-11, P1).
+    watch = IdentityWatch(
+        settle_steps=settle_steps if settle_steps is not None else 8,
+        **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+    )
     switch = False
     last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)
     # Ô của CHÍNH frame bật cờ nghi (tức ô model vừa đưa ra ở cú nhảy), dùng cho phím `c`.
@@ -415,6 +422,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if not selector_bound:
                 selector.bind(frame)          # lần đầu: biết kích thước frame
                 selector_bound = True
+                if metrics is not None:
+                    metrics.note_frame_shape(frame.shape)   # ngưỡng cổng phụ thuộc khung
 
             stamped = worker.latest_result() if worker.is_tracking() else None
             img = None
@@ -495,7 +504,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
-            key = display(img, mode)
+            key = chuan_hoa_phim(display(img, mode))
             disp_count += 1
             if time.monotonic() - disp_t0 > 2.0:      # cửa sổ trượt 2 giây
                 disp_count, disp_t0 = 0, time.monotonic()

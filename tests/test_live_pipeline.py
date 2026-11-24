@@ -588,3 +588,26 @@ class TestDemChuaXacMinhDuongCli:
         assert summary.chua_xac_minh_n > 0, "không đếm được frame 'chưa xác minh' trên đường CLI"
         # và không được đếm lẫn với "đang nghi" (2 trạng thái khác nhau)
         assert summary.chua_xac_minh_n < summary.processed
+
+
+class TestPhimHoaThuong:
+    """Caps Lock làm `c`/`r`/`q` im lặng không ăn — bug thật gặp lúc diễn tập 24-11.
+
+    `cv2.waitKey` trả mã chữ HOA khi Caps Lock bật, mà các hằng số là `ord("c")`/`ord("r")`/`ord("q")`.
+    Đây là đường thoát DUY NHẤT khỏi trạng thái `chua_xac_minh` khi re-ID tắt (mặc định `./run demoip`)
+    ⇒ người diễn bấm mà không thấy gì rồi tưởng hệ treo.
+    """
+
+    def test_chu_hoa_duoc_doi_ve_thuong(self):
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS, RESET_KEY, chuan_hoa_phim
+
+        assert chuan_hoa_phim(ord("C")) == CONTINUE_KEY
+        assert chuan_hoa_phim(ord("R")) == RESET_KEY
+        assert chuan_hoa_phim(ord("Q")) == QUIT_KEYS[0]
+
+    def test_khong_doi_phim_da_thuong_va_ESC(self):
+        from src.live_pipeline import CONTINUE_KEY, chuan_hoa_phim
+
+        assert chuan_hoa_phim(CONTINUE_KEY) == CONTINUE_KEY
+        assert chuan_hoa_phim(27) == 27          # ESC
+        assert chuan_hoa_phim(-1) == -1          # waitKey không có phím

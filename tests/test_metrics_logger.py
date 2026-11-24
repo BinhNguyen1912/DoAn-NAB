@@ -515,3 +515,24 @@ class TestCotChanDoanTran:
         m.write_csv(str(out))
         rows = list(csv.DictReader(open(out, encoding="utf-8")))
         assert rows[0]["bbox_area_ratio"] == "", "mất dấu phải TRỐNG (chưa đo), không phải 0"
+
+
+class TestFrameShape:
+    """`frame_shape` phải tới được `run_info` — ngưỡng cổng = 0,25×đường chéo khung (24-11)."""
+
+    def test_ghi_lan_dau_va_khong_ghi_de(self):
+        from src.metrics_logger import MetricsLogger
+
+        m = MetricsLogger()
+        assert m.frame_shape is None             # None = CHƯA ĐO ĐƯỢC, không phải 480x640
+        m.note_frame_shape((480, 640, 3))
+        m.note_frame_shape((720, 1280, 3))       # frame sau khác khung: KHÔNG ghi đè
+        assert m.frame_shape == [480, 640]
+
+    def test_bo_qua_dau_vao_khong_dung(self):
+        from src.metrics_logger import MetricsLogger
+
+        m = MetricsLogger()
+        m.note_frame_shape(None)
+        m.note_frame_shape((480,))
+        assert m.frame_shape is None

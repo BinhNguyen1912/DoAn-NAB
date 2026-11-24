@@ -602,6 +602,14 @@ def _settle_steps(args) -> int:
     return int(getattr(args, "settle_steps", None) or DEFAULT_SETTLE_STEPS)
 
 
+def _max_jump_ratio(args) -> float | None:
+    """Ngưỡng cổng nghi ĐÃ DÙNG (mặc định = `IdentityWatch.max_jump_ratio`), ghi vào run_info."""
+    from src.identity_guard import IdentityWatch
+
+    v = getattr(args, "max_jump_ratio", None)
+    return float(v) if v is not None else float(IdentityWatch().max_jump_ratio)
+
+
 def _write_run_info(args):
     """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
 
@@ -674,6 +682,11 @@ def _write_run_info(args):
         # VOS (8 bước = 1,3 s ở 6,3 bước/s nhưng 1,94 s ở 4,12 bước/s). Thiếu trường này thì phiên
         # sau không so được với phiên trước (ticket #47).
         settle_steps=_settle_steps(args),
+        # Trần cổng nghi = `0,25 × đường chéo` ⇒ 640×480 = 200 px nhưng 1280×720 = 367 px. Scorer
+        # replay GIẢ ĐỊNH 640×480 và CSV không có cột nào nói khác ⇒ phiên khung khác bị chấm sai
+        # trong im lặng (review độc lập 24-11). Thiếu `frame_shape` (None) = CHƯA ĐO ĐƯỢC.
+        frame_shape=getattr(getattr(args, "_metrics", None), "frame_shape", None),
+        max_jump_ratio=_max_jump_ratio(args),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -749,6 +762,7 @@ def _run_display(engine, args):
             viz.reid_threshold = (getattr(args, "reid_obj_threshold", None)
                                   if getattr(args, "reid_cue", "face") != "face" else None)
         metrics = _make_metrics(args)
+        args._metrics = metrics          # `_write_run_info` đọc `frame_shape` từ đây
         reid_session = _make_reid_session(engine, args)
         if args.smooth:
             # ĐÍNH CHÍNH 23-11: câu cũ hứa "video ~30 FPS" — SAI. Vòng hiển thị ngủ
@@ -769,6 +783,8 @@ def _run_display(engine, args):
                 reid_session=reid_session,
                 # Nguồn live: đọc tối đa 30 lần/s (đo 293/s trên relay 16 fps ⇒ 18 lần giải mã vô ích
                 # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
+                settle_steps=_settle_steps(args),
+                max_jump_ratio=args.max_jump_ratio,
                 source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
             args._prompt_bbox = summary.prompt_bbox
@@ -789,6 +805,8 @@ def _run_display(engine, args):
                 metrics=metrics,
                 reanchor_every=args.reanchor_every,
                 reid_session=reid_session,
+                settle_steps=_settle_steps(args),
+                max_jump_ratio=args.max_jump_ratio,
             )
     except KeyboardInterrupt:
         interrupted = True
@@ -835,6 +853,7 @@ def _run_headless(engine, args):
                                record_fps=record_fps)
         print("[pipeline] bắt đầu tracking... (headless)")
         metrics = _make_metrics(args)
+        args._metrics = metrics          # `_write_run_info` đọc `frame_shape` từ đây
         reid_session = _make_reid_session(engine, args)
         # Tổng frame dự kiến để backend vẽ progress bar (biết chắc khi nguồn là FILE)
         progress_total = args.max_frames or _total_frames_hint(args.source)
@@ -966,6 +985,17 @@ def build_parser():
     ap.add_argument("--image-size", type=int, default=None,
                     help="độ phân giải đầu vào của model (512 = nhanh ~5-6x trên CPU; "
                          "mặc định giữ 1024 của config SAM 2)")
+    ap.add_argument("--settle-steps", type=int, default=None,
+                    help="số bước ỔN ĐỊNH trước khi hạ 'nghi đổi đối tượng' xuống 'chưa xác minh' "
+                         f"(mặc định {8}). Đổi cờ này ĐỔI số frame bị ẩn ⇒ số đo cũ không so được "
+                         "với số mới. Ghi vào run_info để lần sau tái lập được.")
+    ap.add_argument("--max-jump-ratio", type=float, default=None,
+                    help="NGƯỠNG CHẨN ĐOÁN: tỉ lệ đường chéo khung mà tâm ô được phép nhảy trong một "
+                         "bước VOS (mặc định 0.25 ⇒ 200 px ở 640x480). CẢNH BÁO: đổi cờ này KHÔNG "
+                         "phải 'cải thiện độ chính xác' — bằng chứng 24-11 cho thấy mọi ngưỡng hình "
+                         "học đều hoặc bỏ ca báo đúng, hoặc chỉ dời chỗ báo (xem "
+                         "docs/plan/24-11-2026-cong-nghi-bao-oan.md). Dùng để DIỄN TẬP có ghi số, "
+                         "không dùng để tuyên bố 'đã sửa'.")
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")

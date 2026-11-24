@@ -31,6 +31,19 @@ RESET_KEY = ord("r")
 # `c` = "vẫn đúng đối tượng, tiếp tục": xoá trạng thái NGHI ĐỔI ĐỐI TƯỢNG mà không chọn lại ô.
 CONTINUE_KEY = ord("c")
 
+
+def chuan_hoa_phim(key: int) -> int:
+    """Đưa mã phím về CHỮ THƯỜNG cho `c`/`r`/`q` — bật Caps Lock vẫn bấm được.
+
+    Bug thật (demo 24-11): `cv2.waitKey` trả **mã chữ HOA** khi Caps Lock bật, mà `CONTINUE_KEY =
+    ord("c")` ⇒ `c` và `r` **im lặng không ăn** đúng lúc HUD mời bấm. Đây là đường thoát DUY NHẤT
+    khỏi trạng thái `chua_xac_minh` khi re-ID tắt (mặc định `./run demoip --no-reid`) ⇒ người diễn
+    bấm mà không thấy gì rồi tưởng hệ treo.
+    """
+    if not isinstance(key, int):        # stub trong test trả chuỗi; `waitKey` thật trả int
+        return key
+    return key + 32 if 65 <= key <= 90 else key          # 'A'..'Z' → 'a'..'z' (ASCII)
+
 # Ngưỡng cảnh báo chọn sai: SAM 2 luôn trả mask cho BẤT KỲ ô nào (kể cả nền trống) —
 # đo thật 18-10: chọn nền nhỏ vẫn được mask 1.2% khung (không phân biệt được với đối tượng),
 # nhưng chọn ô phủ cả khung → mask 97.6% khung → phát hiện được.
@@ -298,7 +311,8 @@ def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
                     visualizer=None, metrics=None, reanchor_every=None,
-                    reid_session=None) -> InteractiveSummary:
+                    reid_session=None, *, settle_steps=None,
+                    max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -328,6 +342,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         selector.bind(frame)
+        if metrics is not None:
+            metrics.note_frame_shape(frame.shape)   # trần cổng = 0,25×đường chéo ⇒ phụ thuộc khung
         if preselect_bbox is not None:
             # arm bbox chỉ định sẵn qua đúng đường sự kiện chuột (chuẩn hoá + min-size)
             selector.on_mouse(cv2.EVENT_LBUTTONDOWN, preselect_bbox[0], preselect_bbox[1], 0, None)
@@ -337,7 +353,12 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi người dùng bấm
         # `r` (chọn lại) hoặc `c` (xác nhận vẫn đúng). Không nhớ thì cảnh báo vô dụng: đo trên
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
-        watch = IdentityWatch()
+        # `settle_steps=None` ⇒ mặc định của `IdentityWatch`; có mặt để `--settle-steps` đổi được
+        # hành vi thật (review độc lập 24-11: `run_info` ghi `settle_steps=8` mà không có cờ nào).
+        watch = IdentityWatch(
+            settle_steps=settle_steps if settle_steps is not None else 8,
+            **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+        )
         switch = False
         last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
         # Ô của CHÍNH frame bật cờ nghi (ô model vừa đưa ra ở cú nhảy) — KHÔNG phải ô trước cú nhảy;
@@ -369,7 +390,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 img = selector.draw(frame)
                 cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                key = display(img, "select")
+                key = chuan_hoa_phim(display(img, "select"))
                 if key in QUIT_KEYS:
                     break
                 if selector.has_bbox():
@@ -406,7 +427,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     img = draw_overlay_minimal(frame, last_result)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                key = display(img, "track")
+                key = chuan_hoa_phim(display(img, "track"))
                 if key in QUIT_KEYS:
                     break
                 if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):

@@ -142,7 +142,17 @@ class MetricsLogger:
         from src.bbox_area_watch import BboxAreaWatch
 
         self._area_watch = BboxAreaWatch()
+        # Kích thước khung THẬT của phiên (`(h, w)`). Vì sao phải ghi: các ngưỡng cổng nghi tính
+        # theo `0,25 × đường chéo` ⇒ 640×480 cho trần 200 px, còn 1280×720 cho 367 px. Scorer replay
+        # đang GIẢ ĐỊNH 640×480 mà CSV không có cột nào nói khác ⇒ một phiên điện thoại sẽ được chấm
+        # bằng ngưỡng 200 px trong im lặng (review độc lập 24-11, P1).
+        self.frame_shape = None
         self.sampler = sampler
+
+    def note_frame_shape(self, shape) -> None:
+        """Ghi kích thước khung (idempotent — chỉ giữ lần đầu, mọi frame sau phải giống)."""
+        if self.frame_shape is None and shape is not None and len(tuple(shape)) >= 2:
+            self.frame_shape = [int(tuple(shape)[0]), int(tuple(shape)[1])]
 
     def log(self, record: FrameRecord) -> None:
         """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame).
