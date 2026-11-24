@@ -1,0 +1,36 @@
+{
+  "clip": "data/clip_tran_nen.mp4",
+  "ten": "tran_nen_lan2",
+  "frames": [
+    {
+      "frame_idx": 0
+    },
+    {
+      "frame_idx": 222
+    },
+    {
+      "frame_idx": 400
+    }
+  ],
+  "frame_hw": [
+    480,
+    640
+  ],
+  "gt_rong": [],
+  "nguoi_gan": "Binh",
+  "gt_do_model_goi_y": false,
+  "dang_gt": "silhouette",
+  "nguon_gt": "ngưỡng màu HSV (script `gt_gan_nhanh.py`) + người sửa tay",
+  "phuong_phap_gt": "GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ hoàn toàn",
+  "sai_so_bo_goi_y": "CHƯA ĐO — mIoU này là của mask SAU khi người sửa, không phải của gợi ý",
+  "chon_frame": {
+    "frames": [
+      0,
+      222,
+      400
+    ]
+  },
+  "cong_cu": "scripts/gt_gan_nhanh.py + scripts/gt_painter.html",
+  "tao_luc": "2026-11-24T12:23:58",
+  "huong_dan": "Mở trang do script in ra, tô/eraser bằng chuột, bấm 'Lưu & tiếp'. File GT được ghi thẳng vào thư mục này."
+}
