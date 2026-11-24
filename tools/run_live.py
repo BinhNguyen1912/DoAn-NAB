@@ -533,7 +533,7 @@ def _finish_metrics(metrics, args, viz=None):
               f"= {extra['display_fps_mean']:.1f} FPS | video {extra.get('video_s', 0):.1f} s "
               f"⇒ tỉ lệ thời lượng {extra['ti_le_thoi_luong']:.2f} (1,00 là đúng)")
     try:
-        _write_run_info(args)
+        _write_run_info(args, metrics)
     except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
         print(f"[canh bao] không ghi được run_info: {type(exc).__name__}: {exc}")
     s = metrics.summary()
@@ -595,22 +595,39 @@ def _dem_worker_mo_coi():
         return None
 
 
-def _settle_steps(args) -> int:
-    """Số bước ổn định trước khi hạ `nghi` → `chua_xac_minh` (mặc định 8; xem `identity_guard`)."""
+def _settle_steps(args):
+    """Số bước ổn định trước khi hạ `nghi` → `chua_xac_minh`; `None` = KHÔNG dùng cổng.
+
+    `None` nghĩa là "đường này không dựng `IdentityWatch`" (headless: `run_tracking` không có cổng)
+    ⇒ `run_info` phải ghi `None`, KHÔNG được ghi 8 — ghi 8 là mô tả một cổng chưa từng chạy
+    (review độc lập 24-11, P1).
+
+    `0` là giá trị HỢP LỆ (`IdentityWatch` hiểu là "tắt, hạ mức ngay"): biểu thức `x or default` cũ
+    nuốt `0` thành 8 ⇒ người dùng bấm `--settle-steps 0` mà vẫn thấy hạ mức sau 8 bước, im lặng.
+    Kẹp âm về 0 ở ĐÂY (cùng chỗ `IdentityWatch` kẹp) để `run_info` ghi đúng giá trị đã dùng.
+    """
     from src.identity_guard import DEFAULT_SETTLE_STEPS
 
-    return int(getattr(args, "settle_steps", None) or DEFAULT_SETTLE_STEPS)
+    v = getattr(args, "settle_steps", None)
+    if v is None:
+        return DEFAULT_SETTLE_STEPS if getattr(args, "_co_cong_nghi", True) else None
+    return max(0, int(v))
 
 
-def _max_jump_ratio(args) -> float | None:
-    """Ngưỡng cổng nghi ĐÃ DÙNG (mặc định = `IdentityWatch.max_jump_ratio`), ghi vào run_info."""
+def _max_jump_ratio(args):
+    """Ngưỡng cổng nghi ĐÃ DÙNG; `None` = đường này KHÔNG có cổng (headless `run_tracking`).
+
+    Ghi 0.25 cho một phiên headless là mô tả một cổng chưa từng chạy (review độc lập 24-11, P1).
+    """
     from src.identity_guard import IdentityWatch
 
     v = getattr(args, "max_jump_ratio", None)
-    return float(v) if v is not None else float(IdentityWatch().max_jump_ratio)
+    if v is not None:
+        return float(v)
+    return float(IdentityWatch().max_jump_ratio) if getattr(args, "_co_cong_nghi", True) else None
 
 
-def _write_run_info(args):
+def _write_run_info(args, metrics=None):
     """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
 
     Bug thật 29-10: lần đo `fast_1029-212010` (234f, mất dấu từ f58 đến hết) không phân biệt
@@ -620,6 +637,7 @@ def _write_run_info(args):
                              getattr(args, "metrics_summary", None))
     if not path:
         return None
+    _m = metrics if metrics is not None else getattr(args, "_metrics", None)
     rev = _git_rev()
     write_run_info(
         path,
@@ -685,7 +703,9 @@ def _write_run_info(args):
         # Trần cổng nghi = `0,25 × đường chéo` ⇒ 640×480 = 200 px nhưng 1280×720 = 367 px. Scorer
         # replay GIẢ ĐỊNH 640×480 và CSV không có cột nào nói khác ⇒ phiên khung khác bị chấm sai
         # trong im lặng (review độc lập 24-11). Thiếu `frame_shape` (None) = CHƯA ĐO ĐƯỢC.
-        frame_shape=getattr(getattr(args, "_metrics", None), "frame_shape", None),
+        frame_shape=getattr(_m, "frame_shape", None),
+        # >0 ⇒ khung ĐỔI giữa phiên ⇒ `frame_shape` chỉ đúng cho phần đầu; scorer phải biết.
+        frame_shape_doi=getattr(_m, "frame_shape_doi", None),
         max_jump_ratio=_max_jump_ratio(args),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
@@ -876,6 +896,9 @@ def _run_headless(engine, args):
                     "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
                     "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}
             on_frame = _dump_mask_callback(dump_dir, dump_frames, info, base=on_frame)
+        # Đường HEADLESS: `run_tracking` KHÔNG dựng `IdentityWatch` (cổng nghi chỉ tồn tại trên 3
+        # đường tương tác) ⇒ `run_info` phải ghi `settle_steps/max_jump_ratio = None` thay vì 8/0.25.
+        args._co_cong_nghi = False
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -1097,6 +1120,10 @@ def _cfg_tu_cli(args) -> dict:
 
 def main():
     args = build_parser().parse_args()
+    # P3-3 (review 24-11): `--max-jump-ratio 0` ⇒ `search_window_radius` = 0 ⇒ MỌI bước bị nghi;
+    # `>1` ⇒ trần > đường chéo. Cờ này dùng được trên sân khấu nên phải chặn từ đầu.
+    if args.max_jump_ratio is not None and not 0.0 < args.max_jump_ratio <= 1.0:
+        raise SystemExit("--max-jump-ratio phải trong (0, 1]: 0 ⇒ mọi bước bị nghi; >1 ⇒ trần vô lý")
     _canh_bao_worker_mo_coi()
 
     # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---

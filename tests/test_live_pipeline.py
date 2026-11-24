@@ -611,3 +611,127 @@ class TestPhimHoaThuong:
         assert chuan_hoa_phim(CONTINUE_KEY) == CONTINUE_KEY
         assert chuan_hoa_phim(27) == 27          # ESC
         assert chuan_hoa_phim(-1) == -1          # waitKey không có phím
+
+
+class TestCoCongNghiDiToiCong:
+    """Khoá DÂY NỐI: `settle_steps`/`max_jump_ratio` phải tới `IdentityWatch` THẬT.
+
+    Review độc lập 24-11 (P1): 8 test mới của tôi chỉ kiểm hàm thuần/argparse ⇒ đột biến "xoá dòng
+    truyền `settle_steps=_settle_steps(args)`" vẫn xanh. Test dưới bắt đột biến đó: cùng engine nhảy,
+    `settle_steps=1` phải cho SỐ FRAME ẨN KHÁC `settle_steps=8`.
+    """
+
+    @staticmethod
+    def _res(bbox):
+        from src.tracker_engine import TrackingResult
+
+        m = np.zeros((120, 240), bool)
+        m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+        return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+    def _chay(self, tmp_path, write_video, **kw):
+        from src.live_pipeline import QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+
+        A, B = (20, 20, 60, 60), (150, 60, 190, 100)
+        res = self._res
+
+        class Engine:
+            jump = True
+
+            def start(self, frame, bbox):
+                return res(A)
+
+            def process(self, frame):
+                return res(B)
+
+            def reset(self):
+                pass
+
+        fx = generate_tracking_sequence(num_frames=40, frame_size=(120, 240),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            return list(QUIT_KEYS)[0] if state["n"] >= 30 else -1
+
+        return run_interactive(source=str(path), engine=Engine(),
+                               selector=PromptSelector(frame_shape=(120, 240, 3)),
+                               display=display, preselect_bbox=A, **kw)
+
+    def test_settle_1_it_frame_an_hon_settle_8(self, tmp_path, write_video):
+        it = self._chay(tmp_path, write_video, settle_steps=1)
+        nhieu = self._chay(tmp_path, write_video, settle_steps=8)
+        # `settle_steps` nhỏ ⇒ hạ mức SỚM hơn ⇒ nhiều frame "chưa xác minh" hơn. Nếu cờ KHÔNG tới
+        # cổng (đột biến xoá dòng `settle_steps=_settle_steps(args)`) thì hai lần chạy BẰNG NHAU.
+        assert nhieu.chua_xac_minh_n > 0, "engine nhảy phải làm cổng bật rồi hạ mức"
+        assert it.chua_xac_minh_n > nhieu.chua_xac_minh_n, (
+            "settle_steps=1 phải hạ mức SỚM hơn settle_steps=8 ⇒ nhiều frame chưa xác minh hơn")
+
+    def test_max_jump_ratio_that_su_doi_hanh_vi(self, tmp_path, write_video):
+        # Trần 0.9 (gần đường chéo) ⇒ engine nhảy 130 px không còn bị coi là nhảy.
+        rong = self._chay(tmp_path, write_video, max_jump_ratio=0.9)
+        chat = self._chay(tmp_path, write_video, max_jump_ratio=0.05)
+        assert chat.chua_xac_minh_n > 0
+        assert rong.chua_xac_minh_n < chat.chua_xac_minh_n, (
+            "trần 0.9 (rộng) ⇒ không coi cú nhảy 130 px là nhảy ⇒ ít frame chưa xác minh hơn trần 0.05")
+
+
+class TestPhimCHoaDiToiVongLap:
+    """`chuan_hoa_phim` phải được ÁP trong vòng lặp — test hàm thuần không bắt được đột biến bỏ nó."""
+
+    @staticmethod
+    def _chay(tmp_path, write_video, bam_C):
+        from src.live_pipeline import QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+
+        A, B = (20, 20, 60, 60), (150, 60, 190, 100)
+
+        def res(bbox):
+            m = np.zeros((120, 240), bool)
+            m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+            return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+        class Engine:
+            jump = True
+
+            def start(self, frame, bbox):
+                return res(A)
+
+            def process(self, frame):
+                return res(B)
+
+            def reset(self):
+                pass
+
+        fx = generate_tracking_sequence(num_frames=40, frame_size=(120, 240),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0, "bam": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            if state["n"] >= 34:
+                return list(QUIT_KEYS)[0]
+            if bam_C and state["n"] >= 14:
+                state["bam"] += 1
+                return ord("C")           # Caps Lock bật ⇒ mã CHỮ HOA
+            return -1
+
+        summary = run_interactive(source=str(path), engine=Engine(),
+                                  selector=PromptSelector(frame_shape=(120, 240, 3)),
+                                  display=display, preselect_bbox=A)
+        return summary, state
+
+    def test_bam_C_hoa_lam_GIAM_frame_chua_xac_minh(self, tmp_path, write_video):
+        co_bam, st = self._chay(tmp_path, write_video, bam_C=True)
+        khong_bam, _ = self._chay(tmp_path, write_video, bam_C=False)
+        assert st["bam"] > 0, "test phải thực sự bấm phím"
+        # `c` (kể cả mã HOA) xoá cổng ⇒ phần còn lại của phiên KHÔNG bị "chưa xác minh".
+        # Nếu `chuan_hoa_phim` bị bỏ (đột biến ở call-site), `c` không khớp ⇒ hai lần chạy BẰNG NHAU.
+        assert co_bam.chua_xac_minh_n < khong_bam.chua_xac_minh_n, (
+            f"bấm `C` hoa phải giảm frame chưa xác minh: {co_bam.chua_xac_minh_n} vs "
+            f"{khong_bam.chua_xac_minh_n}")

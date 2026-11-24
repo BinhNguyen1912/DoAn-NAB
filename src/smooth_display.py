@@ -351,7 +351,7 @@ class InferenceWorker:
 
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
-                       on_result=None, reid_session=None, source_max_fps=None,
+                       on_result=None, reid_session=None, source_max_fps=None, *,
                        settle_steps=None, max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
@@ -373,8 +373,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     # `settle_steps=None` ⇒ giữ mặc định của `IdentityWatch`. Có mặt để `--settle-steps` THẬT SỰ
     # đổi được hành vi: trước 24-11 `run_info` ghi `settle_steps=8` như một biến điều khiển trong khi
     # không tồn tại cờ nào (provenance giả — review độc lập 24-11, P1).
+    from src.identity_guard import DEFAULT_SETTLE_STEPS
+
     watch = IdentityWatch(
-        settle_steps=settle_steps if settle_steps is not None else 8,
+        settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
         **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
     )
     switch = False

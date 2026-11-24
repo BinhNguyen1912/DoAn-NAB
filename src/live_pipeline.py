@@ -210,6 +210,11 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         frame = src.read()
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
+        if metrics is not None:
+            # Đường HEADLESS (`./run video|ab|miou` + mọi job web) cũng phải ghi khung: ngưỡng cổng
+            # nghi = 0,25×đường chéo nên 1280×720 khác 640×480. Thiếu dòng này thì `run_info` của
+            # mọi phiên headless ghi `frame_shape: null` dù khung đã biết (review 24-11, P1).
+            metrics.note_frame_shape(frame.shape)
         result = reid_session.start(frame, bbox) if reid_session is not None else engine.start(frame, bbox)
         state = reid_session.state if reid_session is not None else None
         last_bbox = result.bbox if result.mask.any() else tuple(bbox)
@@ -355,8 +360,10 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
         # `settle_steps=None` ⇒ mặc định của `IdentityWatch`; có mặt để `--settle-steps` đổi được
         # hành vi thật (review độc lập 24-11: `run_info` ghi `settle_steps=8` mà không có cờ nào).
+        from src.identity_guard import DEFAULT_SETTLE_STEPS
+
         watch = IdentityWatch(
-            settle_steps=settle_steps if settle_steps is not None else 8,
+            settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
             **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
         )
         switch = False

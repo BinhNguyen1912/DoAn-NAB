@@ -536,3 +536,17 @@ class TestFrameShape:
         m.note_frame_shape(None)
         m.note_frame_shape((480,))
         assert m.frame_shape is None
+
+
+class TestFrameShapeDoi:
+    """Khung đổi giữa phiên: `frame_shape` chỉ còn đúng cho phần đầu ⇒ phải ĐẾM, không im lặng."""
+
+    def test_dem_so_lan_doi_khung(self):
+        from src.metrics_logger import MetricsLogger
+
+        m = MetricsLogger()
+        m.note_frame_shape((480, 640, 3))
+        m.note_frame_shape((480, 640, 3))
+        assert m.frame_shape_doi == 0
+        m.note_frame_shape((720, 1280, 3))
+        assert (m.frame_shape, m.frame_shape_doi) == ([480, 640], 1)

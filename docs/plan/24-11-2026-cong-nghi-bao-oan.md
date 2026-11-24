@@ -93,8 +93,10 @@ không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều*
   - [x] Artifact `data/eval_gate_rules_2026-11-24_metrics.json` có `git_rev`, `git_dirty_code=false`,
         `lenh`, `do_luc`, chỉ số **đuôi** và `phien_co_bao`.
   - [x] Nhãn **7 ca ĐÚNG / 0 SAI** (đọc video HUD; **1 người dán** ⇒ phải có người thứ 2 mới trích).
-  - [x] `--settle-steps` / `--max-jump-ratio` là cờ **THẬT** (đi tới `IdentityWatch`), `run_info` có
-        `frame_shape` + `max_jump_ratio`; Caps Lock không còn làm `c/r/q` im lặng (7 test mới).
+  - [x] `--settle-steps` / `--max-jump-ratio` là cờ **THẬT** trên **2 đường CLI** (interactive +
+        smooth; đường web vẫn mặc định — ticket P2-1), `run_info` có `frame_shape` (**None ở đường
+        headless** vì headless không dựng `IdentityWatch`) + `max_jump_ratio` + `frame_shape_doi`;
+        Caps Lock không còn làm `c/r/q` im lặng. **11 test mới**, và 5 đột biến (m1–m6) đều bị bắt.
   - [ ] **Đóng băng replay thành test**: 10 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)` + assert
         **"KHÔNG báo"** cho 4 ca mù (f7 169,1 · f12 172,0 · f16 127,1 · f17 149,2 px) để hành vi hiện
         tại không trôi; đổi `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.

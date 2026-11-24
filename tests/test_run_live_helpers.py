@@ -1,5 +1,4 @@
-
-
+import pytest
 class TestLaNguonLive:
     """Ticket #44 — `--record` chỉ giữ nhịp THỜI GIAN THỰC cho nguồn LIVE, không cho file."""
 
@@ -71,3 +70,52 @@ class TestCuaCongNghiDaGhiThat:
         w = IdentityWatch(settle_steps=2, max_jump_ratio=0.3)
         assert w.settle_steps == 2
         assert w.max_jump_ratio == 0.3
+
+
+class TestCoCongNghiDuocTruyenTuRunLive:
+    """Khoá dây nối CUỐI: `run_live._run_display` phải truyền 2 cờ xuống runner.
+
+    Review độc lập 24-11 (P1-3): đột biến "xoá dòng `settle_steps=_settle_steps(args)` /
+    `max_jump_ratio=args.max_jump_ratio` trong `run_live.py`" vẫn xanh vì mọi test chỉ chạm hàm thuần.
+    Cách bắt: gọi `_run_display` với runner bị stub và kiểm kwargs nhận được.
+    """
+
+    @pytest.mark.parametrize("smooth", [True, False])
+    def test_hai_co_toi_runner(self, monkeypatch, smooth):
+        import types
+
+        import cv2
+
+        from tools import run_live
+
+        nhan = {}
+
+        from src.live_pipeline import InteractiveSummary
+
+        def fake_smooth(**kw):
+            nhan.update(kw)
+            return InteractiveSummary()
+
+        def fake_interactive(**kw):
+            nhan.update(kw)
+            return InteractiveSummary()
+
+        monkeypatch.setattr(run_live, "run_smooth_display", fake_smooth)
+        monkeypatch.setattr(run_live, "run_interactive", fake_interactive)
+        monkeypatch.setattr(cv2, "namedWindow", lambda *a, **k: None)
+        monkeypatch.setattr(cv2, "setMouseCallback", lambda *a, **k: None)
+        monkeypatch.setattr(run_live, "_window_closed", lambda *a, **k: False)
+        monkeypatch.setattr(run_live, "_make_visualizer", lambda args: None)
+        monkeypatch.setattr(run_live, "_make_metrics", lambda args: None)
+        monkeypatch.setattr(run_live, "_make_reid_session", lambda engine, args: None)
+        monkeypatch.setattr(run_live, "_load_bbox", lambda args, first_frame=None: None)
+
+        args = run_live.build_parser().parse_args(
+            ["--source", "x", "--settle-steps", "3", "--max-jump-ratio", "0.4"])
+        args.smooth = smooth
+        args.metrics_csv = args.metrics_summary = None
+        args._metrics = None
+        run_live._run_display(engine=types.SimpleNamespace(), args=args)
+
+        assert nhan.get("settle_steps") == 3
+        assert nhan.get("max_jump_ratio") == 0.4
