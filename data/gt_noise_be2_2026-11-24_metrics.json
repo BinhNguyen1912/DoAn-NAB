@@ -1,0 +1,51 @@
+{
+  "schema": 1,
+  "do_luc": "2026-11-24T12:33:00",
+  "git_rev": "2a4118be1b66f5f4036bb1407c0d11ce4fdc5e96",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "lenh": "--a docs/gt/vat_be_vaolai --b docs/gt/be2_lan2",
+  "gt_a": "docs/gt/vat_be_vaolai",
+  "gt_b": "docs/gt/be2_lan2",
+  "n_frame_chung": 2,
+  "frame_chi_co_a": [
+    100,
+    258,
+    270,
+    300,
+    348,
+    352,
+    380,
+    400,
+    440
+  ],
+  "frame_chi_co_b": [],
+  "dao_gt": "intra_labeler",
+  "ket_qua": {
+    "ioU_GT_mean": 0.8772,
+    "ioU_GT_min": 0.8697,
+    "ioU_GT_max": 0.8847,
+    "nguong_khong_ket_luan": 0.1228,
+    "n": 2,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.8697,
+        "px_a": 28057,
+        "px_b": 25507,
+        "px_chi_a": 3142,
+        "px_chi_b": 592,
+        "gt_rong_ca_hai": false
+      },
+      {
+        "frame_idx": 344,
+        "iou": 0.8847,
+        "px_a": 82439,
+        "px_b": 90467,
+        "px_chi_a": 1277,
+        "px_chi_b": 9305,
+        "gt_rong_ca_hai": false
+      }
+    ]
+  }
+}
