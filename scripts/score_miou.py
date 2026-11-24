@@ -430,6 +430,13 @@ def kiem_index(index: dict, gt_dir: Path):
     độc lập 14-11). Lỗi chặn ⇒ exit 2, KHÔNG ghi artifact; cảnh báo mềm ⇒ vẫn chấm nhưng exit 1.
     """
     chan, mem = [], []
+    # 24-11 (plan `bam-bat-vat-bat-ky` P1): bộ GT từng khai frame nhưng **chưa ai tô** —
+    # `docs/gt/binh1_silhouette` + `binh1_tay` khai 12 frame, `gt_*.png` = 0, và `frames/` chỉ là ẢNH GỐC.
+    # Không có cờ này thì người/agent đọc `index.json` tưởng có 24 frame GT, và tệ hơn: có thể "sửa" bằng
+    # cách đổi tên `frames/frame_*.png` → `gt_*.png` = TẠO GT GIẢ. Chặn bằng thông điệp nói thẳng.
+    if index.get("dung_duoc") is False:
+        ly_do = index.get("ly_do_khong_dung_duoc") or "index.json khai dung_duoc: false"
+        chan.append(f"BỘ GT NÀY CHƯA TÔ (dung_duoc: false) — {ly_do}")
     # `dang_gt` = HÌNH DẠNG của GT: `silhouette` (mask vật) | `hop_bao` (hộp chữ nhật bao vật).
     # Đọc TRƯỚC vòng lặp vì cổng "hộp bao ↔ mask" bên dưới cần biết dạng GT.
     dang = index.get("dang_gt")

@@ -49,5 +49,8 @@
     1280,
     720
   ],
-  "frame_hw_ghi_chu": "shape ảnh = (H, W); clip quay dọc 720 rộng x 1280 cao"
+  "frame_hw_ghi_chu": "shape ảnh = (H, W); clip quay dọc 720 rộng x 1280 cao",
+  "dung_duoc": false,
+  "ly_do_khong_dung_duoc": "CHƯA TÔ: index khai 12 frame nhưng có 0 file `gt_*.png`. `frames/` chỉ là ẢNH GỐC để người nhìn mà tô — TUYỆT ĐỐI không đổi tên chúng thành `gt_*.png` (làm vậy = tạo GT giả rồi chấm mIoU trên đó). Muốn dùng: tô theo README trong thư mục.",
+  "kiem_luc": "2026-11-24"
 }

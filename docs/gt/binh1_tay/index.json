@@ -47,5 +47,7 @@
   "phuong_phap_gt": "người vẽ tay (khung chữ nhật) — CHƯA dùng được: khung lệch ~80 px lên trên và cắt mất phần nhãn; agent đổ đặc để kiểm. Dùng docs/gt/binh1_hopbao cho số 15-11.",
   "canh_bao": "KHÔNG chấm điểm bằng bộ này: khung vẽ bị lệch so với chai (đo 15-11). Giữ lại làm bản nháp của người gán; bộ dùng để chấm là docs/gt/binh1_hopbao (dạng hộp bao).",
   "dung_duoc": false,
-  "ly_do_khong_dung": "khung người vẽ lệch ~80 px lên trên và cắt mất phần nhãn (đo 15-11) ⇒ chấm ra 0,03–0,08 là đo sai vùng. Các file gt_*.png đã xoá để `kiem_index` CHẶN (thiếu file GT). Bộ dùng để trích số: docs/gt/binh1_hopbao (dạng hộp bao)."
+  "ly_do_khong_dung": "khung người vẽ lệch ~80 px lên trên và cắt mất phần nhãn (đo 15-11) ⇒ chấm ra 0,03–0,08 là đo sai vùng. Các file gt_*.png đã xoá để `kiem_index` CHẶN (thiếu file GT). Bộ dùng để trích số: docs/gt/binh1_hopbao (dạng hộp bao).",
+  "ly_do_khong_dung_duoc": "CHƯA TÔ: index khai 12 frame nhưng có 0 file `gt_*.png`. `frames/` chỉ là ẢNH GỐC để người nhìn mà tô — TUYỆT ĐỐI không đổi tên chúng thành `gt_*.png` (làm vậy = tạo GT giả rồi chấm mIoU trên đó). Muốn dùng: tô theo README trong thư mục.",
+  "kiem_luc": "2026-11-24"
 }

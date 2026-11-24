@@ -1158,3 +1158,27 @@ class TestTranRecallVaPhuThieu:
         assert kq["tran_recall_dung_gt"] is None
         assert kq["phu_thieu_mean"] is None
         assert kq["tran_recall_n"] == 0
+
+
+class TestBoGtChuaTo:
+    """P1 plan 24-11: bộ GT khai frame nhưng chưa ai tô phải BỊ CHẶN kèm câu nói thẳng.
+
+    Ca thật: `docs/gt/binh1_silhouette` + `binh1_tay` — `index.json` khai 12 frame, `gt_*.png` = 0 file,
+    `frames/` là ẢNH GỐC. Không có cờ này, cách "sửa" hấp dẫn nhất là đổi tên ảnh gốc thành `gt_*.png`
+    ⇒ **tạo GT giả** rồi chấm mIoU trên đó.
+    """
+
+    def test_dung_duoc_false_thi_chan_va_noi_ro(self):
+        import scripts.score_miou as sm
+        chan, mem = sm.kiem_index(
+            {"clip": "x.mp4", "dung_duoc": False,
+             "ly_do_khong_dung_duoc": "CHƯA TÔ: 0 file gt_*.png",
+             "frames": [{"frame_idx": 0}]}, __import__("pathlib").Path("."))
+        assert any("CHƯA TÔ" in c for c in chan), chan
+
+    def test_thieu_co_khong_bi_chan(self):
+        import pathlib
+
+        import scripts.score_miou as sm
+        chan, _ = sm.kiem_index({"clip": "x.mp4", "frames": []}, pathlib.Path("."))
+        assert not any("CHƯA TÔ" in c for c in chan)
