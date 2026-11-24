@@ -685,6 +685,9 @@ def _write_run_info(args, metrics=None):
         reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
         min_obj_score_logits=getattr(args, "min_obj_score_logits", None),
+        # 24-11 (sweep mask_threshold): ngưỡng logit quyết định mask phủ rộng/co. Thiếu trường này thì
+        # hai phiên khác ngưỡng TRÔNG Y HỆT NHAU trong run_info ⇒ không tái lập được A/B.
+        mask_threshold=getattr(args, "mask_threshold", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
         reid=bool(getattr(args, "reid", False)),
@@ -930,6 +933,7 @@ def _run_headless(engine, args):
                     # 24-11 (Tầng 1): siêu tham số motion-memory ĐÃ ĐÈ — thiếu thì mask dump của hai
                     # cấu hình khác nhau TRÔNG Y HỆT NHAU ⇒ không tái lập được thí nghiệm.
                     "model_overrides": _model_overrides(args) or None,
+                    "mask_threshold": getattr(args, "mask_threshold", None),
                     "lenh": " ".join(sys.argv),
                     "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
                     "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}

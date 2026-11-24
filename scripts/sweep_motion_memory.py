@@ -38,13 +38,26 @@ from pathlib import Path
 REPO_ROOT = Path(__file__).resolve().parent.parent
 PYTHON = sys.executable
 
-# Cấu hình mặc định: baseline + 4 giả thuyết, đều qua hydra override.
+# Hai bộ cấu hình. Lý do có bộ thứ hai: đo trên `b1`/`binh2_tay` cho thấy lỗi chính là mask **HỤT**
+# (`phu_thieu_mean` 0,20–0,22) chứ không phải tràn (`mask_ngoai_gt_mean` 0,006–0,046) ⇒ điểm âm là SAI
+# thuốc (AGENTS §6 đã đo: điểm âm trên clip hụt diện tích làm hụt thêm). Đòn đúng cho "hụt" là nới
+# ngưỡng logit để mask phủ rộng hơn: `--mask-threshold` **ÂM** (0.0 = mặc định; AGENTS chỉ từng đo
+# giá trị DƯƠNG 1,0/2,0 = làm mask co lại ⇒ chưa ai thử phía âm).
 CAU_HINH = [
     ("A_hien_tai", {}),
     ("B_kf_weight_0.5", {"kf_score_weight": 0.5}),
     ("C_kf_nguong_0.2", {"memory_bank_kf_score_threshold": 0.2}),
     ("D_stable_8", {"stable_frames_threshold": 8}),
     ("E_samurai_off", {"samurai_mode": False}),
+]
+# (tên, cờ CLI thêm) — cùng khuôn: baseline + 3 mức âm
+CAU_HINH_MASK = [
+    ("A_mask_threshold_0", []),
+    ("B_mask_threshold_-0.5", ["--mask-threshold", "-0.5"]),
+    ("C_mask_threshold_-1.0", ["--mask-threshold", "-1.0"]),
+    ("D_mask_threshold_-2.0", ["--mask-threshold", "-2.0"]),
+    ("E_mask_threshold_-3.0", ["--mask-threshold", "-3.0"]),
+    ("F_mask_threshold_-4.0", ["--mask-threshold", "-4.0"]),
 ]
 
 
@@ -68,7 +81,8 @@ def frames_gt(gt_dir: Path) -> list[int]:
     return ra
 
 
-def chay_mot(clip, bbox, image_size, frames, pred_dir: Path, overrides: dict, max_frames: int):
+def chay_mot(clip, bbox, image_size, frames, pred_dir: Path, overrides, max_frames: int,
+             them_co: list | None = None):
     """Chạy `tools/run_live.py` headless để xuất mask tại các frame GT. Trả (ok, log cuối)."""
     pred_dir.mkdir(parents=True, exist_ok=True)
     for f in pred_dir.glob("mask_*.png"):
@@ -78,8 +92,10 @@ def chay_mot(clip, bbox, image_size, frames, pred_dir: Path, overrides: dict, ma
             "--no-reid", "--max-frames", str(max_frames),
             "--dump-mask-frames", ",".join(str(f) for f in frames),
             "--dump-mask-dir", str(pred_dir)]
-    for k, v in overrides.items():
-        lenh += ["--model-override", f"{k}={v}"]
+    if isinstance(overrides, dict):
+        for k, v in overrides.items():
+            lenh += ["--model-override", f"{k}={v}"]
+    lenh += list(them_co or [])
     r = subprocess.run(lenh, cwd=REPO_ROOT, capture_output=True, text=True)
     if r.returncode != 0:
         return False, (r.stderr or r.stdout).strip().splitlines()[-3:]
@@ -130,6 +146,8 @@ def main(argv=None) -> int:
     ap.add_argument("--nguong-nhieu", type=float, default=0.12,
                     help="ngưỡng nhiễu mIoU của CHÍNH clip (đo bằng scripts/gt_noise.py)")
     ap.add_argument("--out", default=None)
+    ap.add_argument("--preset", choices=["motion", "mask_threshold"], default="motion",
+                    help="motion = 7 siêu tham số SAMURAI; mask_threshold = ngưỡng logit (âm = phủ rộng)")
     ap.add_argument("--dung-lai-mask", action="store_true",
                     help="chỉ CHẤM LẠI từ mask đã có trong thư mục tạm (không nạp model)")
     args = ap.parse_args(argv)
@@ -147,16 +165,18 @@ def main(argv=None) -> int:
     print(f"[sweep] clip={args.clip} gt={args.gt} frames={frames} "
           f"rounds={args.rounds} image_size={args.image_size} max_frames={max_frames}")
 
-    ket_qua = {ten: {"overrides": ov, "mIoU": [], "per_frame": []} for ten, ov in CAU_HINH}
+    cau_hinh = CAU_HINH if args.preset == "motion" else CAU_HINH_MASK
+    ket_qua = {ten: {"overrides": ov, "mIoU": [], "per_frame": []} for ten, ov in cau_hinh}
     for lan in range(1, args.rounds + 1):
-        for ten, ov in CAU_HINH:
+        for ten, ov in cau_hinh:
             pd = tmp / f"{ten}_lan{lan}"
             t0 = time.time()
             co_mask = len(list(pd.glob("mask_*.png"))) >= len(frames)
             if args.dung_lai_mask and co_mask:
                 ok, loi = True, []
             else:
-                ok, loi = chay_mot(args.clip, args.bbox, args.image_size, frames, pd, ov, max_frames)
+                ok, loi = chay_mot(args.clip, args.bbox, args.image_size, frames, pd, ov, max_frames,
+                                   them_co=ov if isinstance(ov, list) else None)
             if not ok:
                 print(f"[sweep] lan{lan} {ten}: LỖI chạy — {loi}")
                 ket_qua[ten]["mIoU"].append(None)
@@ -168,8 +188,8 @@ def main(argv=None) -> int:
             print(f"[sweep] lan{lan} {ten:20s} mIoU={m if m is None else round(m, 4)} "
                   f"n={len(per)} ({time.time() - t0:.0f} s){' | ' + ' '.join(loi_cham) if loi_cham else ''}")
 
-    base = "A_hien_tai"
-    for ten, _ in CAU_HINH:
+    base = cau_hinh[0][0]
+    for ten, _ in cau_hinh:
         hop_le = [m for m in ket_qua[ten]["mIoU"] if m is not None]
         ket_qua[ten]["mIoU_tb"] = round(statistics.mean(hop_le), 4) if hop_le else None
         ket_qua[ten]["mIoU_std"] = round(statistics.stdev(hop_le), 4) if len(hop_le) > 1 else None
@@ -200,13 +220,13 @@ def main(argv=None) -> int:
         "git_dirty_code": bool(_git("status", "--porcelain", "--", ".", ":!data")),
         "lenh": " ".join(sys.argv), "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "clip": args.clip, "gt": str(gt_dir.relative_to(REPO_ROOT)), "bbox_xywh": args.bbox,
-        "image_size": args.image_size, "rounds": args.rounds,
+        "image_size": args.image_size, "rounds": args.rounds, "preset": args.preset,
         "frames_gt": frames, "nguong_nhieu_miou": args.nguong_nhieu,
         "cau_hinh": {k: v for k, v in ket_qua.items()},
     }
 
     print(f"\n[sweep] {'cấu hình':22s} {'mIoU tb':>8} {'±std':>7} {'Δ cặp':>8} {'CI95':>22} n_cặp")
-    for ten, _ in CAU_HINH:
+    for ten, _ in cau_hinh:
         d = ket_qua[ten]
         tb = "—" if d["mIoU_tb"] is None else f"{d['mIoU_tb']:.4f}"
         sd = "—" if d["mIoU_std"] is None else f"±{d['mIoU_std']:.4f}"
