@@ -1,12 +1,12 @@
 {
-  "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
+  "git_rev": "e3b3a71d4d2dce1cd9588e228399fd292c851802",
   "git_dirty": true,
   "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-24T12:14:42",
+    "do_luc": "2026-11-24T12:15:01",
     "lenh": "scripts/score_miou.py score --gt docs/gt/vat_be_vaolai --pred-dir data/be2_full_masks --out data/miou_be2_full_2026-11-24_metrics.json",
-    "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
+    "git_rev": "e3b3a71d4d2dce1cd9588e228399fd292c851802",
     "git_dirty": true,
     "git_dirty_code": true,
     "git_loi": null,

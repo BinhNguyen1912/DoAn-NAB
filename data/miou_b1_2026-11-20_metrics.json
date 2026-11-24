@@ -1,12 +1,12 @@
 {
-  "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
+  "git_rev": "e3b3a71d4d2dce1cd9588e228399fd292c851802",
   "git_dirty": true,
   "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-24T12:14:44",
+    "do_luc": "2026-11-24T12:15:03",
     "lenh": "scripts/score_miou.py score --gt docs/gt/b1 --pred-dir data/fac_K_masks --out data/miou_b1_2026-11-20_metrics.json",
-    "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
+    "git_rev": "e3b3a71d4d2dce1cd9588e228399fd292c851802",
     "git_dirty": true,
     "git_dirty_code": true,
     "git_loi": null,
