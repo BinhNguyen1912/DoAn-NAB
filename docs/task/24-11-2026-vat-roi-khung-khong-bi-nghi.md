@@ -196,7 +196,11 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
    `lost=1`, `mask_area=0`) ngay trước cú báo đúng `f178`. Nó sống sót vì **2 < 3**, tức **ngưỡng 2 sẽ
    MẤT ca đúng đó** ⇒ đây là ca đúng **sát ngưỡng**, đã khoá bằng `TestBienCuaNguongVang`. Cùng nhóm
    với `125109#137` (vắng **1** frame).
-3. **CÒN HỞ (không sửa trong phiên này): trôi dần.** Ảnh `m330` của chính phiên này cho thấy ô bám sang
+3. **Mốc bị xoá khi mất dấu ⇒ "đổi vật ngay sau 1 bước vắng" không bị chấm.** Đây là luật **đã có ở
+   CLI từ trước** (`last_bbox = (0,0,0,0)`), phiên này chỉ làm web **đối xứng**. Kiểm: ca đúng
+   `125109#137` **vẫn báo** vì giữa f135 (rỗng) và f137 (nhảy) có **f136 có mask** ⇒ mốc được đặt lại.
+   Đo trên artifact: `bắt ca ĐÚNG 7/7` không đổi.
+4. **CÒN HỞ (không sửa trong phiên này): trôi dần.** Ảnh `m330` của chính phiên này cho thấy ô bám sang
    **tường** ~130 frame mà cổng **không** báo (đúng kết luận 23-11: cả hai cổng đều mù với trôi dần,
    biên quyết định chỉ 0,937→1,019 = 8 % ngưỡng). Muốn bắt phải có mô hình chuyển động/kiểm mask thật
    ⇒ việc > 4 h ⇒ **plan 3 ý kiến trước** (xem Tầng 2).
