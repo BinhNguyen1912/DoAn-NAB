@@ -1,8 +1,8 @@
 {
- "git_rev": "b16c758",
+ "git_rev": "e54c5c2",
  "git_dirty_code": false,
  "lenh": "scripts/eval_gate_rules.py --glob data/demoip_*_metrics.csv --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T15:02:37",
+ "do_luc": "2026-11-24T15:10:41",
  "frame_shape": [
   480,
   640
@@ -19,16 +19,20 @@
   [
    "demoip_1124-125109_metrics.csv",
    137
-  ],
-  [
-   "demoip_1124-141352_metrics.csv",
-   29
   ]
  ],
  "ca_sai": [
   [
+   "demoip_1124-141352_metrics.csv",
+   29
+  ],
+  [
    "demoip_1124-144057_metrics.csv",
    48
+  ],
+  [
+   "demoip_1124-144057_metrics.csv",
+   97
   ]
  ],
  "so_phien_doc_duoc": 24,
@@ -49,11 +53,12 @@
    "pct_duoi": 8.17,
    "phien_co_bao": 3,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": true
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": true
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": true,
+    "demoip_1124-144057_metrics.csv#97": true
    }
   },
   "theo_dt": {
@@ -69,11 +74,12 @@
    "pct_duoi": 8.9,
    "phien_co_bao": 2,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": false,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": false
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": true
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": true,
+    "demoip_1124-144057_metrics.csv#97": true
    }
   },
   "van_toc_lich_su": {
@@ -89,11 +95,12 @@
    "pct_duoi": 15.67,
    "phien_co_bao": 3,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": true
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": true
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": true,
+    "demoip_1124-144057_metrics.csv#97": true
    }
   },
   "theo_dt_va_dien_tich": {
@@ -109,11 +116,12 @@
    "pct_duoi": 9.46,
    "phien_co_bao": 2,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": false,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": false
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": true
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": true,
+    "demoip_1124-144057_metrics.csv#97": false
    }
   },
   "chi_khi_cham_600": {
@@ -129,11 +137,12 @@
    "pct_duoi": 0.0,
    "phien_co_bao": 1,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": false,
-    "demoip_1124-141352_metrics.csv#29": false
+    "demoip_1124-125109_metrics.csv#137": false
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": false
+    "demoip_1124-141352_metrics.csv#29": false,
+    "demoip_1124-144057_metrics.csv#48": false,
+    "demoip_1124-144057_metrics.csv#97": false
    }
   },
   "chi_khi_cham_900": {
@@ -149,11 +158,12 @@
    "pct_duoi": 2.8,
    "phien_co_bao": 2,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": true
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": false
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": false,
+    "demoip_1124-144057_metrics.csv#97": false
    }
   },
   "chi_khi_cham_1200": {
@@ -169,11 +179,12 @@
    "pct_duoi": 2.07,
    "phien_co_bao": 2,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": true
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": false
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": false,
+    "demoip_1124-144057_metrics.csv#97": false
    }
   },
   "chi_khi_cham_1500": {
@@ -189,11 +200,12 @@
    "pct_duoi": 9.46,
    "phien_co_bao": 3,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true,
-    "demoip_1124-141352_metrics.csv#29": true
+    "demoip_1124-125109_metrics.csv#137": true
    },
    "bat_ca_sai": {
-    "demoip_1124-144057_metrics.csv#48": false
+    "demoip_1124-141352_metrics.csv#29": true,
+    "demoip_1124-144057_metrics.csv#48": false,
+    "demoip_1124-144057_metrics.csv#97": false
    }
   }
  },
