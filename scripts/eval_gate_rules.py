@@ -155,6 +155,7 @@ def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
     areas = [r["mask_area"] for r in rows]
     dem = {TRANG_THAI_NGHI: 0, TRANG_THAI_CHUA_XAC_MINH: 0}
     fires, prev = [], None
+    watch_frames = []
     tam_hist = []                      # tâm của các bước CÓ mask, mới nhất ở cuối
     for i, r in enumerate(rows):
         co_mask = r["mask_area"] is not None and r["mask_area"] > 0
@@ -172,6 +173,7 @@ def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
         watch.update(prev if prev else ZERO, r["bbox"], FRAME_SHAPE, co_mask=co_mask, nhay=nhay)
         if watch.nghi and not dang_nghi_truoc:
             fires.append(r["frame_idx"])
+        watch_frames.append(watch.trang_thai)
         if watch.trang_thai in dem:
             dem[watch.trang_thai] += 1
         prev = r["bbox"] if co_mask else ZERO
@@ -179,7 +181,21 @@ def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
             tam_hist.append(_tam(r["bbox"]))
         else:
             tam_hist.clear()           # mất dấu ⇒ vận tốc cũ vô nghĩa
-    return {"fire": len(fires), "fire_frames": fires,
+    # `duoi` = frame `chua_xac_minh` SAU lần báo CUỐI. Đây mới là chi phí người xem thấy: `chua_xac_minh`
+    # không có đường tự xoá (chỉ `r`/`c`/reacquire) nên một cú nhảy ở nửa sau là cả phần còn lại của
+    # phiên mất mask tô + mất quỹ đạo. Đo 24-11 (`144057`): 77,6 % phiên không có mask tin cậy
+    # trong khi chỉ 17,3 % frame "ẩn" — nếu chỉ đọc `frame_an` thì đánh giá thấp chi phí 4,5 lần.
+    duoi = 0
+    if fires:
+        # lần báo cuối ⇒ đếm từ frame đó tới hết phiên những frame đang `chua_xac_minh`
+        # (`nghi` tự hết sau `settle` bước nên đuôi thật nằm ở `chua_xac_minh`)
+        i_cuoi = max(i for i, f in enumerate(watch_frames)
+                     if watch_frames[max(0, i - 1)] != TRANG_THAI_CHUA_XAC_MINH
+                     and watch_frames[i] == TRANG_THAI_CHUA_XAC_MINH) if any(
+            f == TRANG_THAI_CHUA_XAC_MINH for f in watch_frames) else None
+        if i_cuoi is not None:
+            duoi = sum(1 for f in watch_frames[i_cuoi:] if f == TRANG_THAI_CHUA_XAC_MINH)
+    return {"fire": len(fires), "fire_frames": fires, "duoi": duoi,
             "frame_an": dem[TRANG_THAI_NGHI],
             "frame_chua_xac_minh": dem[TRANG_THAI_CHUA_XAC_MINH]}
 
@@ -206,6 +222,20 @@ def khop_nhan(rows, settle_steps=DEFAULT_SETTLE_STEPS):
     return round(100.0 * n / len(rows), 1), len(rows)
 
 
+def doc_danh_sach_dong_bang(path):
+    """Danh sách tên phiên được phép dùng để SO SÁNH CHI PHÍ, đọc từ file đã commit.
+
+    Vì sao phải đóng băng: nếu lọc "phiên khớp 100 %" bằng CHÍNH luật đang chấm thì đổi luật ⇒ nhiều
+    phiên rớt khỏi mẫu số ⇒ chi phí **tự rẻ đi** mà không ai sửa gì (review độc lập 24-11, P1).
+    """
+    if not path.exists():
+        return None
+    try:
+        return set(json.loads(path.read_text(encoding="utf-8")).get("phien", []))
+    except (OSError, ValueError):
+        return None
+
+
 def _git(*args):
     try:
         return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True,
@@ -219,6 +249,8 @@ def main(argv=None) -> int:
     ap.add_argument("--glob", default="data/demoip_*_metrics.csv")
     ap.add_argument("--settle", type=int, default=DEFAULT_SETTLE_STEPS)
     ap.add_argument("--out", default=None)
+    ap.add_argument("--config-list", default="data/eval_gate_config_list.json",
+                    help="danh sách phiên ĐÓNG BĂNG dùng để so sánh chi phí")
     args = ap.parse_args(argv)
 
     paths = sorted(Path(REPO_ROOT).glob(args.glob))
@@ -247,17 +279,38 @@ def main(argv=None) -> int:
         print("[LOI] không phiên nào ĐO ĐƯỢC (thiếu cột mask_area)", file=sys.stderr)
         return 1
 
-    # SO SÁNH CHI PHÍ chỉ trên phiên khớp 100 % (cùng một hành vi cổng)
-    dung_config = [p for p in phien if p.get("khop_pct") == 100.0]
+    # SO SÁNH CHI PHÍ chỉ trên nhóm phiên ĐÓNG BĂNG (cùng một hành vi cổng)
+    dong_bang = doc_danh_sach_dong_bang(Path(REPO_ROOT) / args.config_list)
+    if dong_bang is None:
+        dung_config = [p for p in phien if p.get("khop_pct") == 100.0]
+        Path(REPO_ROOT, args.config_list).write_text(
+            json.dumps({"phien": sorted(p["ten"] for p in dung_config),
+                        "ghi_chu": "sinh tự động từ các phiên khớp 100 % với cột nghi_doi_tuong",
+                        "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")},
+                       ensure_ascii=False, indent=1), encoding="utf-8")
+        print(f"[cong] ĐÓNG BĂNG danh sách {len(dung_config)} phiên vào {args.config_list} "
+              f"— từ lần sau danh sách này KHÔNG phụ thuộc luật đang chấm")
+    else:
+        dung_config = [p for p in phien if p["ten"] in dong_bang]
+        print(f"[cong] dùng danh sách ĐÓNG BĂNG {args.config_list}: {len(dung_config)}/"
+              f"{len(dong_bang)} phiên có mặt")
+    nhom = dung_config or phien
+    n_nhom = sum(p["n"] for p in nhom)
     tong = {}
     for k in luat_list:
-        n = sum(p["n"] for p in (dung_config or phien))
+        an = sum(p["luat"][k]["frame_an"] for p in nhom)
+        cxm = sum(p["luat"][k]["frame_chua_xac_minh"] for p in nhom)
         tong[k] = {
-            "so_phien": len(dung_config or phien), "so_frame": n,
-            "fire": sum(p["luat"][k]["fire"] for p in phien),
-            "frame_an": sum(p["luat"][k]["frame_an"] for p in phien),
-            "pct_frame_an": round(100.0 * sum(p["luat"][k]["frame_an"] for p in (dung_config or phien)) / n, 2),
-            "frame_chua_xac_minh": sum(p["luat"][k]["frame_chua_xac_minh"] for p in (dung_config or phien)),
+            "so_phien": len(nhom), "so_frame": n_nhom,
+            "fire": sum(p["luat"][k]["fire"] for p in nhom),
+            "frame_an": an,
+            "pct_frame_an": round(100.0 * an / n_nhom, 2),
+            "frame_chua_xac_minh": cxm,
+            "pct_frame_chua_xac_minh": round(100.0 * cxm / n_nhom, 2),
+            "pct_frame_khong_tin_cay": round(100.0 * (an + cxm) / n_nhom, 2),
+            "duoi": sum(p["luat"][k]["duoi"] for p in nhom),
+            "pct_duoi": round(100.0 * sum(p["luat"][k]["duoi"] for p in nhom) / n_nhom, 2),
+            "phien_co_bao": sum(1 for p in nhom if p["luat"][k]["fire"]),
         }
 
     def _bat(k, ca):
@@ -294,8 +347,8 @@ def main(argv=None) -> int:
     }
 
     print(f"[cong] {len(phien)} phiên ĐỌC ĐƯỢC (bỏ {bo_qua} phiên thiếu cột `mask_area`); "
-          f"**{len(dung_config)}** phiên khớp 100 % với cột `nghi_doi_tuong` đã ghi "
-          f"({tong['hien_tai']['so_frame']} frame) ⇒ chỉ nhóm này được dùng SO SÁNH CHI PHÍ")
+          f"nhóm SO SÁNH CHI PHÍ = **{len(nhom)} phiên / {n_nhom} frame** "
+          f"(mọi số dưới đây cùng mẫu số này)")
     lech = [(p["ten"], p["khop_pct"]) for p in phien if p.get("khop_pct") is not None
             and p["khop_pct"] != 100.0]
     if lech:
@@ -304,11 +357,12 @@ def main(argv=None) -> int:
               f"{min(lech, key=lambda t: t[1])[0]} {min(t[1] for t in lech)}%")
     for k in luat_list:
         t = tong[k]
-        print(f"  {k:22s} | báo {t['fire']:3d} lần | ẨN {t['frame_an']:4d} frame "
-              f"({t['pct_frame_an']:5.2f}%) | chưa xác minh {t['frame_chua_xac_minh']:4d} | "
-              f"bắt ca ĐÚNG {sum(1 for v in t['bat_ca_dung'].values() if v)}"
-              f"/{len(CA_DUNG)} · bắt ca SAI {sum(1 for v in t['bat_ca_sai'].values() if v)}"
-              f"/{len(CA_SAI)}")
+        print(f"  {k:22s} | báo {t['fire']:3d} lần | ẨN {t['frame_an']:4d} "
+              f"({t['pct_frame_an']:5.2f}%) | chưa xác minh {t['frame_chua_xac_minh']:4d} "
+              f"({t['pct_frame_chua_xac_minh']:5.2f}%) | KHÔNG tin cậy "
+              f"{t['pct_frame_khong_tin_cay']:5.2f}% | ĐUÔI {t['duoi']:4d} ({t['pct_duoi']:5.2f}%) | "
+              f"phiên có báo {t['phien_co_bao']:2d}/{t['so_phien']} | bắt ca ĐÚNG "
+              f"{sum(1 for v in t['bat_ca_dung'].values() if v)}/{len(CA_DUNG)}")
     print(f"[cong] GIỚI HẠN: {len(CA_DUNG)} ca ĐÚNG + {len(CA_SAI)} ca SAI (nhãn SAI là GIẢ THUYẾT — "
           "phép thử ảnh của nó suy biến) ⇒ CHỈ kết luận được 'luật này có BỎ ca đúng nào không', KHÔNG "
           "kết luận được 'ít báo oan hơn' (CI95 của tỉ lệ FP với n=23 lần báo là ±19 pp). "

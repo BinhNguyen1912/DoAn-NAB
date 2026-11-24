@@ -1,8 +1,8 @@
 {
- "git_rev": "3a1eb02",
+ "git_rev": "d962a60",
  "git_dirty_code": true,
  "lenh": "scripts/eval_gate_rules.py --glob data/demoip_*_metrics.csv --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T14:57:58",
+ "do_luc": "2026-11-24T14:59:35",
  "frame_shape": [
   480,
   640
@@ -39,10 +39,15 @@
   "hien_tai": {
    "so_phien": 11,
    "so_frame": 1787,
-   "fire": 23,
-   "frame_an": 234,
+   "fire": 6,
+   "frame_an": 56,
    "pct_frame_an": 3.13,
    "frame_chua_xac_minh": 171,
+   "pct_frame_chua_xac_minh": 9.57,
+   "pct_frame_khong_tin_cay": 12.7,
+   "duoi": 146,
+   "pct_duoi": 8.17,
+   "phien_co_bao": 3,
    "bat_ca_dung": {
     "demoip_1124-125109_metrics.csv#137": true,
     "demoip_1124-141352_metrics.csv#29": true
@@ -54,10 +59,15 @@
   "theo_dt": {
    "so_phien": 11,
    "so_frame": 1787,
-   "fire": 13,
-   "frame_an": 125,
+   "fire": 4,
+   "frame_an": 38,
    "pct_frame_an": 2.13,
    "frame_chua_xac_minh": 186,
+   "pct_frame_chua_xac_minh": 10.41,
+   "pct_frame_khong_tin_cay": 12.53,
+   "duoi": 159,
+   "pct_duoi": 8.9,
+   "phien_co_bao": 2,
    "bat_ca_dung": {
     "demoip_1124-125109_metrics.csv#137": false,
     "demoip_1124-141352_metrics.csv#29": true
@@ -69,10 +79,15 @@
   "van_toc_lich_su": {
    "so_phien": 11,
    "so_frame": 1787,
-   "fire": 27,
-   "frame_an": 271,
+   "fire": 9,
+   "frame_an": 80,
    "pct_frame_an": 4.48,
    "frame_chua_xac_minh": 321,
+   "pct_frame_chua_xac_minh": 17.96,
+   "pct_frame_khong_tin_cay": 22.44,
+   "duoi": 280,
+   "pct_duoi": 15.67,
+   "phien_co_bao": 3,
    "bat_ca_dung": {
     "demoip_1124-125109_metrics.csv#137": true,
     "demoip_1124-141352_metrics.csv#29": true
@@ -84,10 +99,15 @@
   "theo_dt_va_dien_tich": {
    "so_phien": 11,
    "so_frame": 1787,
-   "fire": 8,
-   "frame_an": 75,
+   "fire": 3,
+   "frame_an": 30,
    "pct_frame_an": 1.68,
    "frame_chua_xac_minh": 194,
+   "pct_frame_chua_xac_minh": 10.86,
+   "pct_frame_khong_tin_cay": 12.53,
+   "duoi": 169,
+   "pct_duoi": 9.46,
+   "phien_co_bao": 2,
    "bat_ca_dung": {
     "demoip_1124-125109_metrics.csv#137": false,
     "demoip_1124-141352_metrics.csv#29": true
@@ -106,24 +126,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -137,24 +161,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -170,12 +198,14 @@
      "fire_frames": [
       5
      ],
+     "duoi": 0,
      "frame_an": 6,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
@@ -184,12 +214,14 @@
      "fire_frames": [
       5
      ],
+     "duoi": 0,
      "frame_an": 6,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -206,6 +238,7 @@
       206,
       221
      ],
+     "duoi": 100,
      "frame_an": 21,
      "frame_chua_xac_minh": 107
     },
@@ -215,6 +248,7 @@
       206,
       221
      ],
+     "duoi": 100,
      "frame_an": 21,
      "frame_chua_xac_minh": 107
     },
@@ -223,6 +257,7 @@
      "fire_frames": [
       221
      ],
+     "duoi": 100,
      "frame_an": 13,
      "frame_chua_xac_minh": 100
     },
@@ -232,6 +267,7 @@
       206,
       221
      ],
+     "duoi": 100,
      "frame_an": 21,
      "frame_chua_xac_minh": 107
     }
@@ -245,24 +281,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -278,6 +318,7 @@
      "fire_frames": [
       18
      ],
+     "duoi": 37,
      "frame_an": 8,
      "frame_chua_xac_minh": 37
     },
@@ -286,6 +327,7 @@
      "fire_frames": [
       18
      ],
+     "duoi": 37,
      "frame_an": 8,
      "frame_chua_xac_minh": 37
     },
@@ -294,12 +336,14 @@
      "fire_frames": [
       18
      ],
+     "duoi": 37,
      "frame_an": 8,
      "frame_chua_xac_minh": 37
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -315,12 +359,14 @@
      "fire_frames": [
       95
      ],
+     "duoi": 0,
      "frame_an": 4,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
@@ -329,12 +375,14 @@
      "fire_frames": [
       95
      ],
+     "duoi": 0,
      "frame_an": 4,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -348,24 +396,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -381,6 +433,7 @@
      "fire_frames": [
       31
      ],
+     "duoi": 10,
      "frame_an": 8,
      "frame_chua_xac_minh": 10
     },
@@ -389,6 +442,7 @@
      "fire_frames": [
       31
      ],
+     "duoi": 10,
      "frame_an": 8,
      "frame_chua_xac_minh": 10
     },
@@ -397,6 +451,7 @@
      "fire_frames": [
       31
      ],
+     "duoi": 10,
      "frame_an": 8,
      "frame_chua_xac_minh": 10
     },
@@ -405,6 +460,7 @@
      "fire_frames": [
       31
      ],
+     "duoi": 10,
      "frame_an": 8,
      "frame_chua_xac_minh": 10
     }
@@ -420,6 +476,7 @@
      "fire_frames": [
       209
      ],
+     "duoi": 388,
      "frame_an": 8,
      "frame_chua_xac_minh": 388
     },
@@ -428,6 +485,7 @@
      "fire_frames": [
       209
      ],
+     "duoi": 388,
      "frame_an": 8,
      "frame_chua_xac_minh": 388
     },
@@ -436,6 +494,7 @@
      "fire_frames": [
       209
      ],
+     "duoi": 388,
      "frame_an": 8,
      "frame_chua_xac_minh": 388
     },
@@ -444,6 +503,7 @@
      "fire_frames": [
       209
      ],
+     "duoi": 388,
      "frame_an": 8,
      "frame_chua_xac_minh": 388
     }
@@ -459,12 +519,14 @@
      "fire_frames": [
       16
      ],
+     "duoi": 67,
      "frame_an": 28,
      "frame_chua_xac_minh": 67
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
@@ -473,12 +535,14 @@
      "fire_frames": [
       16
      ],
+     "duoi": 67,
      "frame_an": 28,
      "frame_chua_xac_minh": 67
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -494,24 +558,28 @@
      "fire_frames": [
       264
      ],
+     "duoi": 40,
      "frame_an": 8,
      "frame_chua_xac_minh": 40
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -525,24 +593,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -556,24 +628,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -589,6 +665,7 @@
      "fire_frames": [
       91
      ],
+     "duoi": 41,
      "frame_an": 10,
      "frame_chua_xac_minh": 41
     },
@@ -597,6 +674,7 @@
      "fire_frames": [
       91
      ],
+     "duoi": 41,
      "frame_an": 10,
      "frame_chua_xac_minh": 41
     },
@@ -605,12 +683,14 @@
      "fire_frames": [
       91
      ],
+     "duoi": 41,
      "frame_an": 10,
      "frame_chua_xac_minh": 41
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -624,24 +704,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -657,12 +741,14 @@
      "fire_frames": [
       196
      ],
+     "duoi": 0,
      "frame_an": 3,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
@@ -672,12 +758,14 @@
       32,
       198
      ],
+     "duoi": 157,
      "frame_an": 10,
      "frame_chua_xac_minh": 157
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -694,12 +782,14 @@
       75,
       102
      ],
+     "duoi": 6,
      "frame_an": 19,
      "frame_chua_xac_minh": 25
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
@@ -710,12 +800,14 @@
       75,
       105
      ],
+     "duoi": 22,
      "frame_an": 30,
      "frame_chua_xac_minh": 40
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -731,6 +823,7 @@
      "fire_frames": [
       144
      ],
+     "duoi": 34,
      "frame_an": 16,
      "frame_chua_xac_minh": 34
     },
@@ -739,6 +832,7 @@
      "fire_frames": [
       144
      ],
+     "duoi": 34,
      "frame_an": 16,
      "frame_chua_xac_minh": 34
     },
@@ -748,12 +842,14 @@
       144,
       161
      ],
+     "duoi": 25,
      "frame_an": 24,
      "frame_chua_xac_minh": 26
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -770,6 +866,7 @@
       152,
       398
      ],
+     "duoi": 169,
      "frame_an": 16,
      "frame_chua_xac_minh": 407
     },
@@ -778,6 +875,7 @@
      "fire_frames": [
       398
      ],
+     "duoi": 169,
      "frame_an": 8,
      "frame_chua_xac_minh": 169
     },
@@ -788,12 +886,14 @@
       398,
       417
      ],
+     "duoi": 150,
      "frame_an": 24,
      "frame_chua_xac_minh": 399
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -807,24 +907,28 @@
     "hien_tai": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "van_toc_lich_su": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     },
     "theo_dt_va_dien_tich": {
      "fire": 0,
      "fire_frames": [],
+     "duoi": 0,
      "frame_an": 0,
      "frame_chua_xac_minh": 0
     }
@@ -841,6 +945,7 @@
       137,
       194
      ],
+     "duoi": 34,
      "frame_an": 26,
      "frame_chua_xac_minh": 83
     },
@@ -849,6 +954,7 @@
      "fire_frames": [
       204
      ],
+     "duoi": 34,
      "frame_an": 8,
      "frame_chua_xac_minh": 34
     },
@@ -858,6 +964,7 @@
       137,
       194
      ],
+     "duoi": 33,
      "frame_an": 28,
      "frame_chua_xac_minh": 81
     },
@@ -866,6 +973,7 @@
      "fire_frames": [
       204
      ],
+     "duoi": 34,
      "frame_an": 8,
      "frame_chua_xac_minh": 34
     }
@@ -882,6 +990,7 @@
       29,
       42
      ],
+     "duoi": 37,
      "frame_an": 16,
      "frame_chua_xac_minh": 42
     },
@@ -890,6 +999,7 @@
      "fire_frames": [
       29
      ],
+     "duoi": 50,
      "frame_an": 8,
      "frame_chua_xac_minh": 50
     },
@@ -901,6 +1011,7 @@
       42,
       65
      ],
+     "duoi": 14,
      "frame_an": 32,
      "frame_chua_xac_minh": 36
     },
@@ -909,6 +1020,7 @@
      "fire_frames": [
       29
      ],
+     "duoi": 50,
      "frame_an": 8,
      "frame_chua_xac_minh": 50
     }
@@ -926,6 +1038,7 @@
       74,
       97
      ],
+     "duoi": 109,
      "frame_an": 37,
      "frame_chua_xac_minh": 129
     },
@@ -936,6 +1049,7 @@
       81,
       97
      ],
+     "duoi": 109,
      "frame_an": 30,
      "frame_chua_xac_minh": 136
     },
@@ -946,6 +1060,7 @@
       74,
       96
      ],
+     "duoi": 109,
      "frame_an": 38,
      "frame_chua_xac_minh": 128
     },
@@ -955,6 +1070,7 @@
       48,
       81
      ],
+     "duoi": 119,
      "frame_an": 22,
      "frame_chua_xac_minh": 144
     }
