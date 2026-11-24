@@ -3651,3 +3651,37 @@ class TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat:
             session._update_stats_locked(self._ket_qua(mask_rong=False, bbox=(40, 30, 60, 46)))
         assert session._watch.nghi is False and session._watch.chua_xac_minh is False, \
             "vật rời khung rồi vào lại KHÔNG phải đổi đối tượng (ca demoip_1124-193026)"
+
+
+class TestCongNghiKhiMaskNone:
+    """24-11 (vòng 3, tự kiểm): `result.mask is None` ⇒ không có `mask.shape`.
+
+    Bản trước bỏ qua cả bước (`elif obs_bbox is not None: _last_good_bbox = obs_bbox`) ⇒ `_lost` không
+    tăng ⇒ ca "model trả None rồi vật hiện lại chỗ khác" vẫn bị báo nghi. Nay lấy khung của bước VOS
+    gần nhất (`_watch_shape`) nên cổng vẫn ăn bước đó với `co_mask=False`.
+    """
+
+    def test_mask_none_van_la_mot_buoc_vang(self):
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        session._ghi_khung_cho_cong(np.zeros((48, 64, 3), np.uint8))
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+
+        class _R:
+            frame_idx, mask, bbox, score, elapsed_ms, raw_lost = 1, None, (0, 0, 0, 0), 1.0, 40.0, True
+
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(_R())
+        assert session._watch._lost == 1, "mask None = mất dấu ⇒ phải là MỘT bước vắng"
+
+        # và mốc phải bị xoá để vật hiện lại chỗ khác không bị so với ô cũ
+        assert session._last_good_bbox == (0, 0, 0, 0)

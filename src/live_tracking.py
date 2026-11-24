@@ -804,6 +804,9 @@ class LiveTrackingSession:
         # `IdentityWatch.update(..., buoc_moi=)`).
         self._watch_seq = None
         self._buoc_vos_moi = True
+        # Kích thước khung của bước VOS gần nhất — dùng khi `result.mask is None` (không có mask thì
+        # không có `mask.shape`, nhưng cổng vẫn cần khung để tính bán kính nhảy).
+        self._watch_shape = None
         self._last_good_bbox = None
         self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
@@ -1085,6 +1088,7 @@ class LiveTrackingSession:
         # Bước VOS MỚI hay chỉ là frame hiển thị lặp lại cùng kết quả (24-11, review P1).
         self._buoc_vos_moi = seq != self._watch_seq
         self._watch_seq = seq
+        self._ghi_khung_cho_cong(frame)
         # Truyền ĐỦ các khoản của ĐÚNG lần VOS này (lấy từ snapshot, không đọc `_stats` — tránh lệch
         # thế hệ khi một VOS mới vừa xong).
         self._note_mask_age(time.perf_counter() - produced_at, vos_ms,
@@ -1168,6 +1172,12 @@ class LiveTrackingSession:
 
     # ------------------------------------------------------------------ đường đơn luồng
 
+    def _ghi_khung_cho_cong(self, frame) -> None:
+        """Ghi `frame.shape[:2]` để cổng nghi còn khung khi `result.mask is None`."""
+        shape = getattr(frame, "shape", None)
+        if shape is not None and len(shape) >= 2:
+            self._watch_shape = (int(shape[0]), int(shape[1]))
+
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
         # Không có nội suy ⇒ `lk_ok = None` ⇒ cột CSV ra **Ô TRỐNG** = "chưa đo" (từ 21-11; TRƯỚC đó
@@ -1176,6 +1186,7 @@ class LiveTrackingSession:
         self._lk_ok_frame = None
         self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
         self._buoc_vos_moi = True         # đường đơn luồng: mỗi frame là một bước VOS
+        self._ghi_khung_cho_cong(frame)
         self._frame_index += 1
         result = self._engine.process(frame)
         self._after_vos(frame, result)
@@ -1930,6 +1941,8 @@ class LiveTrackingSession:
         # và nếu vẫn đẩy vào thì mọi ngưỡng đếm-theo-bước bị co ~3,5 lần.
         if self._buoc_vos_moi:
             _shape = getattr(mask, "shape", None)
+            if _shape is None:
+                _shape = self._watch_shape          # mask None ⇒ lấy khung của bước VOS gần nhất
             if _shape is not None and len(_shape) >= 2:
                 lk_vel = None
                 if getattr(self._interp, "last_dx", None) is not None:
