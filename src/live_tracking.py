@@ -1074,6 +1074,9 @@ class LiveTrackingSession:
             # Hiện KHÔNG reachable (review PR #66, Q1), nhưng nếu reachable thì `chan_doan_lk` sẽ mang
             # chẩn đoán của frame TRƯỚC với `frame_idx` của frame này ⇒ bịt bằng 1 dòng.
             self._chan_doan_frame = None
+            # Không có kết quả VOS ⇒ KHÔNG có bước mới để cổng nghi ăn (24-11): để `True` sót lại từ
+            # bước trước sẽ đẩy một kết quả CŨ vào cổng như thể là bước mới.
+            self._buoc_vos_moi = False
             return self._interp_base_result
 
         seq, base_result, base_gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms = state
