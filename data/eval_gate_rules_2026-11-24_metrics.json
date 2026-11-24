@@ -1,8 +1,8 @@
 {
- "git_rev": "6394f11",
+ "git_rev": "92bed9e",
  "git_dirty_code": true,
  "lenh": "scripts/eval_gate_rules.py --glob data/demoip_*_metrics.csv --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T14:49:23",
+ "do_luc": "2026-11-24T14:49:35",
  "frame_shape": [
   480,
   640
