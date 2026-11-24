@@ -404,8 +404,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 key = display(img, "track")
                 if key in QUIT_KEYS:
                     break
-                if key == CONTINUE_KEY and watch.nghi:
+                if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):
                     # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
+                    # 24-11 (review P1-a): thêm `chua_xac_minh` — nếu không, HUD mời bấm `c` mà `c`
+                    # không có tác dụng ⇒ kẹt trạng thái tới hết phiên.
+                    da_chua_xac_minh = watch.chua_xac_minh
                     watch.reset()
                     _bao_nghi(False)
                     switch = False
@@ -415,6 +418,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         last_result = reid_session.start(frame, bbox_luc_nghi)
                         state = reid_session.state
                     last_bbox = bbox_luc_nghi
+                    # 24-11: đừng nối quỹ đạo qua cú nhảy (xem `Visualizer.clear_trajectory`).
+                    if visualizer is not None and da_chua_xac_minh:
+                        visualizer.clear_trajectory()
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:
@@ -487,6 +493,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                                              cos_truoc_cong=cos_truoc, cand_n=cand_n,
                                              cand_sinh_n=cand_sinh,
                                              cand_ncc_loai=cand_ncc_loai))
+                # 24-11: quỹ đạo KHÔNG được nối qua cú nhảy (cùng luật `smooth_display`).
+                if watch.nghi and visualizer is not None:
+                    visualizer.clear_trajectory()
     finally:
         src.close()
     return summary

@@ -194,6 +194,10 @@ class WorkerFrameSource(FrameSource):
             # cũ) ⇒ `False` — an toàn vì khi đó worker cũng không ẩn gì.
             nghi_doi_tuong=bool(status.get("nghi_doi_tuong")),
             nghi_doi_tuong_n=int(status.get("nghi_doi_tuong_n") or 0),
+            # 24-11 (review P0): khoá VẮNG MẶT ⇒ `False`/`0` — an toàn vì worker bản cũ cũng không
+            # hạ mức (nó ẩn sạch khi nghi, và `nghi_doi_tuong` đã nói điều đó).
+            chua_xac_minh=bool(status.get("chua_xac_minh")),
+            chua_xac_minh_n=int(status.get("chua_xac_minh_n") or 0),
         )
 
     # ------------------------------------------------------------------ HealthReportingSource

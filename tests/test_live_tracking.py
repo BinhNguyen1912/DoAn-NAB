@@ -3424,3 +3424,65 @@ class TestChuaXacMinhDuongWeb:
         s._stats.chua_xac_minh = False
         img = s._annotate(frame, res)
         assert img[120:145, 120:145].any(), "mask tin cậy phải được tô"
+
+
+class TestChuaXacMinhKhongKet:
+    """24-11 (review độc lập P2/P3) — 3 lỗi của trạng thái mới trên đường WEB.
+
+    (a) `chua_xac_minh` KHÔNG bị xoá khi mất bằng chứng ⇒ `status.json` nói "chưa xác minh" cho
+        frame KHÔNG VẼ GÌ và `chua_xac_minh_n` bị thổi;
+    (b) `_check_confirm` (nút "Vẫn đúng") chỉ xoá `nghi_doi_tuong_n`, không xoá `chua_xac_minh*`;
+    (c) quỹ đạo (`_trail`) không được nối qua cú nhảy.
+    """
+
+    @staticmethod
+    def _session(out_dir):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir=str(out_dir),
+                                                            vos_every=2))
+
+    def test_mat_bang_chung_thi_tat_co_chua_xac_minh(self, tmp_path):
+        s = self._session(tmp_path)
+        s._stats.chua_xac_minh = True
+        s._stats.bam = "tracking"
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(True, raw_lost=True)     # frame trượt đầu
+        s._cap_nhat_bang_chung(True, raw_lost=True)     # đủ 2 frame ⇒ no_evidence
+        assert s._stats.bam == "no_evidence"
+        assert s._stats.chua_xac_minh is False, "'chưa xác minh' nghĩa là VẪN VẼ"
+        truoc = s._stats.chua_xac_minh_n
+        s._cap_nhat_bang_chung(True, raw_lost=True)
+        assert s._stats.chua_xac_minh_n == truoc, "frame KHÔNG vẽ không được đếm là 'chưa xác minh'"
+
+    def test_nut_van_dung_xoa_ca_hai_trang_thai(self, tmp_path):
+        import json
+
+        from src.live_tracking import CONFIRM_NAME
+
+        s = self._session(tmp_path)
+        s._stats.nghi_doi_tuong = True
+        s._stats.nghi_doi_tuong_n = 12
+        s._stats.chua_xac_minh = True
+        s._stats.chua_xac_minh_n = 83
+        s._watch._trang_thai = "chua_xac_minh"
+        s._trail.append((10, 10))
+        (tmp_path / CONFIRM_NAME).write_text(json.dumps({"x": 1}), encoding="utf-8")
+        s._check_confirm(tmp_path)
+        assert (s._stats.chua_xac_minh, s._stats.chua_xac_minh_n) == (False, 0)
+        assert (s._stats.nghi_doi_tuong, s._stats.nghi_doi_tuong_n) == (False, 0)
+        assert s._watch.nghi is False and s._watch.chua_xac_minh is False
+        assert list(s._trail) == [], "quỹ đạo không được nối qua cú nhảy sau khi xác nhận"
+
+    def test_dang_nghi_thi_quy_dao_bi_xoa(self, tmp_path):
+        s = self._session(tmp_path)
+        s._trail.append((1, 1))
+        s._watch._trang_thai = "nghi"
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "nghi_doi_tuong"
+        assert list(s._trail) == []

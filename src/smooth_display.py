@@ -455,6 +455,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     _bao_nghi(watch.nghi)
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
+                    # 24-11: quỹ đạo KHÔNG được nối qua cú nhảy. `consume()` gắn điểm vô điều kiện,
+                    # nên trong lúc `nghi` phải xóa mỗi bước (khi chuyển sang `chua_xac_minh` thì
+                    # đường mới bắt đầu từ vùng mới — không có đoạn thẳng xuyên khung).
+                    if watch.nghi:
+                        visualizer.clear_trajectory()
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,
@@ -494,8 +499,12 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 disp_count, disp_t0 = 0, time.monotonic()
             if key in QUIT_KEYS:
                 break
-            if key == CONTINUE_KEY and watch.nghi:
+            if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):
                 # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô.
+                # 24-11 (review P1-a): điều kiện cũ chỉ `watch.nghi` ⇒ ở trạng thái `chua_xac_minh`
+                # HUD MỜI bấm `c` mà `c` KHÔNG CÓ TÁC DỤNG ⇒ kẹt "chưa xác minh" tới hết phiên
+                # (đúng cái người dùng phàn nàn, chỉ khác là còn thấy viền).
+                da_chua_xac_minh = watch.chua_xac_minh
                 watch.reset()
                 _bao_nghi(False)
                 switch = False
@@ -508,6 +517,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     worker.reanchor(bbox_luc_nghi)
                     consumed_seq = 0
                     last_bbox = bbox_luc_nghi
+                # 24-11: quỹ đạo là dấu vết của vật ĐANG được quan sát; sau khi xác nhận, nối điểm
+                # trước cú nhảy với vùng mới sẽ vẽ một đường xuyên khung (P2 review 24-11) ⇒ xoá.
+                if visualizer is not None and da_chua_xac_minh:
+                    visualizer.clear_trajectory()
                 print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                 continue
             if key == RESET_KEY:

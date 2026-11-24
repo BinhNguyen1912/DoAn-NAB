@@ -78,9 +78,14 @@ def replay(rows, settle_steps, frame_shape):
 
     Luật nối ô y như `smooth_display`/`live_pipeline`: `prev` = ô TỐT gần nhất, mất dấu ⇒ `ZERO`
     (để khi vật xuất hiện lại không bị so với ô của nhiều giây trước).
+
+    `frame_an_co_mask` (review 24-11, P3) = frame VỪA ẩn VỪA còn mask. `frame_an` đếm cả frame mà mask
+    vốn đã rỗng (vật ngoài khung) — những frame đó **vốn đã** trắng, nên "chi phí ẩn" tính theo
+    `frame_an` là CẬN TRÊN.
     """
     watch = IdentityWatch(settle_steps=settle_steps)
     dem = {TRANG_THAI_NGHI: 0, TRANG_THAI_CHUA_XAC_MINH: 0}
+    an_co_mask = 0
     fires, prev = 0, None
     for r in rows:
         dang_nghi_truoc = watch.nghi
@@ -90,11 +95,14 @@ def replay(rows, settle_steps, frame_shape):
         trang_thai = watch.trang_thai
         if trang_thai in dem:
             dem[trang_thai] += 1
+        if trang_thai == TRANG_THAI_NGHI and r["co_mask"]:
+            an_co_mask += 1
         prev = r["bbox"] if r["co_mask"] else ZERO
     return {
         "n": len(rows),
         "fire": fires,
         "frame_an": dem[TRANG_THAI_NGHI],
+        "frame_an_co_mask": an_co_mask,
         "frame_chua_xac_minh": dem[TRANG_THAI_CHUA_XAC_MINH],
     }
 
@@ -118,19 +126,31 @@ def tao_payload(phien, settle_list, frame_shape, args):
     rev, dirty, dirty_code = _provenance()
     tong = {}
     for s in settle_list:
-        n = sum(p["n"] for p in phien)
-        an = sum(p["lan_chay"][str(s)]["frame_an"] for p in phien)
-        chua = sum(p["lan_chay"][str(s)]["frame_chua_xac_minh"] for p in phien)
+        # REVIEW 24-11 (P1-b): mẫu số PHẢI chỉ gồm phiên ĐO ĐƯỢC. 17/39 phiên CSV cũ không có cột
+        # `bbox_w/bbox_h/mask_area` ⇒ `doc_cot` trả ô rỗng ⇒ cổng KHÔNG THỂ bật ⇒ chúng chỉ làm
+        # loãng mẫu số (2 695/7 041 = 38,3 % frame). Trước khi sửa, "20,17 % → 2,57 %" trộn cả phần
+        # không đo được — đúng bẫy "0/None ≠ đã đo".
+        do_duoc = [p for p in phien if p["co_mask_area"]]
+        n = sum(p["n"] for p in do_duoc)
+        an = sum(p["lan_chay"][str(s)]["frame_an"] for p in do_duoc)
+        an_co_mask = sum(p["lan_chay"][str(s)]["frame_an_co_mask"] for p in do_duoc)
+        chua = sum(p["lan_chay"][str(s)]["frame_chua_xac_minh"] for p in do_duoc)
         tong[str(s)] = {
-            "so_phien": len(phien), "so_frame": n,
-            "fire": sum(p["lan_chay"][str(s)]["fire"] for p in phien),
+            "so_phien_do_duoc": len(do_duoc),
+            "so_frame_do_duoc": n,
+            "so_phien_bo_qua": len(phien) - len(do_duoc),
+            "so_frame_bo_qua": sum(p["n"] for p in phien) - n,
+            "fire": sum(p["lan_chay"][str(s)]["fire"] for p in do_duoc),
             "frame_an": an,
             "pct_frame_an": round(100.0 * an / n, 2) if n else None,
+            "frame_an_co_mask": an_co_mask,
+            "pct_frame_an_co_mask": round(100.0 * an_co_mask / n, 2) if n else None,
             "frame_chua_xac_minh": chua,
             "pct_frame_chua_xac_minh": round(100.0 * chua / n, 2) if n else None,
         }
     return {
         "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code,
+        "git_loi": None if rev else "không đọc được git (rev-parse thất bại)",
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "lenh": " ".join(sys.argv),
         "nguon": [p["ten"] for p in phien],
@@ -181,14 +201,19 @@ def main(argv=None) -> int:
         return 1
 
     payload = tao_payload(phien, settle_list, (h, w), args)
-    print(f"[latch] {len(phien)} phiên · {payload['tong'][str(settle_list[0])]['so_frame']} frame "
-          f"(có cột mask_area: {sum(1 for p in phien if p['co_mask_area'])}/{len(phien)})")
+    tong0 = payload["tong"][str(settle_list[0])]
+    print(f"[latch] {len(phien)} phiên · ĐO ĐƯỢC {tong0['so_phien_do_duoc']} phiên / "
+          f"{tong0['so_frame_do_duoc']} frame (bỏ qua {tong0['so_phien_bo_qua']} phiên / "
+          f"{tong0['so_frame_bo_qua']} frame thiếu cột `mask_area`)")
     for s in settle_list:
         t = payload["tong"][str(s)]
         nhan = "hành vi CŨ" if s == 0 else f"settle {s} bước"
         print(f"[latch] {nhan:16s} | bật {t['fire']:3d} lần | ẨN {t['frame_an']:4d} frame "
-              f"({t['pct_frame_an']}%) | CHƯA XÁC MINH {t['frame_chua_xac_minh']:4d} "
+              f"({t['pct_frame_an']}%) — trong đó ẩn khi CÒN mask {t['frame_an_co_mask']} "
+              f"({t['pct_frame_an_co_mask']}%) | CHƯA XÁC MINH {t['frame_chua_xac_minh']:4d} "
               f"({t['pct_frame_chua_xac_minh']}%)")
+    print("[latch] MẪU SỐ: chỉ phiên CÓ cột `mask_area` — phiên thiếu cột thì cổng KHÔNG THỂ bật "
+          "(ô dựng lại = rỗng), đếm vào là làm loãng tỉ lệ.")
     print("[latch] GIỚI HẠN: ô DỰNG LẠI từ center/bbox_w/bbox_h; frame_shape theo tham số ⇒ "
           "bán kính cổng xấp xỉ. Dùng để SO SÁNH hai luật trên cùng dữ liệu, không phải số live.")
     if args.out:
@@ -196,6 +221,14 @@ def main(argv=None) -> int:
                                   encoding="utf-8")
         print(f"[latch] {args.out} (git_rev={payload['git_rev']}, "
               f"git_dirty_code={payload['git_dirty_code']})")
+    if payload["git_loi"]:
+        print(f"[LOI] {payload['git_loi']} ⇒ artifact KHÔNG tái lập được (git_rev=None)",
+              file=sys.stderr)
+        return 1
+    if tong0["so_phien_do_duoc"] == 0:
+        print("[LOI] KHÔNG phiên nào ĐO ĐƯỢC (thiếu cột mask_area) ⇒ 0 kết quả không phải '0 lần báo'",
+              file=sys.stderr)
+        return 1
     return 0
 
 

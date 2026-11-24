@@ -2014,14 +2014,16 @@ class LiveTrackingSession:
         # không thấy gì. Mặc định làm mượt TẮT nên hai giá trị bằng nhau.
         ly_do = "mask_rong" if (lost or (raw_lost if raw_lost is not None else False)) else ""
         if not ly_do:
-            self._bam_khong_bang_chung = 0
-            # 21-11: cổng nhảy CÓ NHỚ. `mask rỗng` là bằng chứng CHẮC hơn nên xét ở trên; ở đây chỉ
+            self._bam_khong_bang_chung = 0            # 21-11: cổng nhảy CÓ NHỚ. `mask rỗng` là bằng chứng CHẮC hơn nên xét ở trên; ở đây chỉ
             # còn ca "mask có nhưng ô nhảy vô lý" — đúng ca bám sang cửa/tường cùng tông.
             if self._watch.nghi:
                 self._stats.bam = "nghi_doi_tuong"
                 self._stats.bam_ly_do = "o_nhay"
                 self._stats.nghi_doi_tuong = True
                 self._stats.chua_xac_minh = False
+                # 24-11 (review P2): quỹ đạo không được nối qua cú nhảy — khi đang nghi thì xoá
+                # mỗi bước để đường mới (nếu có) bắt đầu từ vùng mới, không cắt ngang khung.
+                self._trail.clear()
                 return
             self._stats.bam = "tracking"
             self._stats.bam_ly_do = ""
@@ -2037,6 +2039,10 @@ class LiveTrackingSession:
             self._stats.bam_ly_do = ly_do
             self._stats.bam_no_evidence_n += 1
             self._bam_khong_bang_chung = 1
+            # 24-11 (review P2): "chưa xác minh" nghĩa là **VẪN VẼ** ⇒ mất bằng chứng thì phải tắt
+            # cờ, nếu không `status.json` nói "chưa xác minh" cho frame không vẽ gì và
+            # `chua_xac_minh_n` bị thổi lên.
+            self._stats.chua_xac_minh = False
             return
         self._bam_khong_bang_chung += 1
         if self._bam_khong_bang_chung >= _BAM_NO_EVIDENCE_FRAMES:
@@ -2046,6 +2052,7 @@ class LiveTrackingSession:
             # Đang nghi đổi đối tượng VẪN phải hiện cờ cho web (nếu không, web mất nút "vẫn đúng"
             # đúng lúc người dùng cần bấm nhất) — nhưng lý do ưu tiên vẫn là `mask_rong`.
             self._stats.nghi_doi_tuong = self._stats.nghi_doi_tuong or self._watch.nghi
+            self._stats.chua_xac_minh = False        # xem giải thích ở nhánh `bam is None`
         else:
             # Chưa đủ số frame ⇒ giữ nguyên trạng thái trước (không nhấp nháy); frame đầu = "tracking"
             # vì chưa có gì chứng minh ngược lại.
@@ -2165,9 +2172,17 @@ class LiveTrackingSession:
             self._last_good_bbox = None
             self._stats.nghi_doi_tuong = False
             self._stats.nghi_doi_tuong_n = 0
+            # 24-11 (review P2/P3): xác nhận xong thì hết cả hai trạng thái — nếu không, `status.json`
+            # ngay sau khi bấm nút vẫn nói "chưa xác minh" và bộ đếm không đối xứng với
+            # `nghi_doi_tuong_n`.
+            self._stats.chua_xac_minh = False
+            self._stats.chua_xac_minh_n = 0
             if self._stats.bam == "nghi_doi_tuong":
                 self._stats.bam = "tracking"
                 self._stats.bam_ly_do = ""
+            # Quỹ đạo KHÔNG được nối qua cú nhảy/vùng chưa xác minh (P2 review 24-11): đường tím
+            # xuyên khung là thứ đi thẳng vào video demo với nhãn "quỹ đạo theo thời gian thực".
+            self._trail.clear()
         self._stats.message = "da xac nhan: tiep tuc bam doi tuong hien tai"
 
     def _publish_status(self, out_dir: Path) -> None:

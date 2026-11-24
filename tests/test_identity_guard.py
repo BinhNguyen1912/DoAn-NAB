@@ -195,3 +195,15 @@ class TestIdentityWatchTuHaMuc:
             w.reset()
             assert w.trang_thai == TRANG_THAI_OK
             assert w.nghi is False and w.chua_xac_minh is False
+
+    def test_settle_am_bi_kep_ve_0_khong_crash(self):
+        """`settle_steps` âm ⇒ kẹp về 0 (= hành vi cũ), KHÔNG ném và KHÔNG hạ mức ngầm."""
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(settle_steps=-5)
+        assert w.settle_steps == 0
+        w.update(self.A, (105, 102, 205, 202), (480, 640))
+        assert w.update((105, 102, 205, 202), self.B, (480, 640)) is True
+        for i in range(20):
+            w.update((600 + i, 400, 620, 480), (601 + i, 401, 621, 479), (480, 640))
+        assert w.chua_xac_minh is False

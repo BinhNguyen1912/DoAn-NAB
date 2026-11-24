@@ -104,16 +104,67 @@ class TestMain:
         assert rls.main(["--glob", "khong_co_*.csv"]) == 1
         assert "KHÔNG đo được" in capsys.readouterr().err
 
+    def test_mau_so_chi_gom_phien_DO_DUOC(self, tmp_path, monkeypatch, capsys):
+        """REVIEW 24-11 (P1-b): CSV cũ thiếu cột `mask_area` thì cổng KHÔNG THỂ bật (ô dựng lại rỗng).
+
+        Đếm chúng vào mẫu số làm loãng tỉ lệ (38,3 % frame trong bộ 39 phiên) — đúng bẫy
+        "0/None ≠ đã đo". Test: 1 phiên đo được (31 frame, ẩn 31) + 1 phiên KHÔNG đo được
+        (1000 frame) ⇒ `pct_frame_an` phải là 100 %, KHÔNG phải 3 %.
+        """
+        _ghi_csv(tmp_path / "demoip_moi_metrics.csv",
+                 _phien([100] * 10 + [400] + [400] * 30))
+        with open(tmp_path / "demoip_cu_metrics.csv", "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["frame_idx", "center_x", "center_y", "bbox_w", "bbox_h"])
+            for i in range(1000):
+                w.writerow([i, 10, 10, 0, 0])
+        out = tmp_path / "kq.json"
+        monkeypatch.setattr(rls, "REPO_ROOT", tmp_path)
+        # tmp_path không phải repo git ⇒ phải giả `_git`, nếu không `git_loi` làm exit 1
+        monkeypatch.setattr(rls, "_git", lambda *a: "abc1234" if a[:1] == ("rev-parse",) else "")
+        assert rls.main(["--glob", "demoip_*_metrics.csv", "--settle", "0,8",
+                         "--out", str(out)]) == 0
+        t = json.loads(out.read_text(encoding="utf-8"))["tong"]["0"]
+        assert t["so_phien_do_duoc"] == 1 and t["so_frame_do_duoc"] == 41
+        assert t["so_phien_bo_qua"] == 1 and t["so_frame_bo_qua"] == 1000
+        assert t["pct_frame_an"] == round(100.0 * 31 / 41, 2), \
+            "mẫu số phải chỉ gồm phiên ĐO ĐƯỢC (không trộn 1000 frame không đo được)"
+
+    def test_khong_phien_nao_do_duoc_la_loi(self, tmp_path, monkeypatch, capsys):
+        """0 phiên đo được KHÔNG phải "0 lần báo" — phải exit 1."""
+        with open(tmp_path / "demoip_cu_metrics.csv", "w", encoding="utf-8", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(["frame_idx", "center_x", "center_y", "bbox_w", "bbox_h"])
+            w.writerow([0, 10, 10, 0, 0])
+        monkeypatch.setattr(rls, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(rls, "_git", lambda *a: "abc1234" if a[:1] == ("rev-parse",) else "")
+        assert rls.main(["--glob", "demoip_*_metrics.csv"]) == 1
+        assert "KHÔNG phiên nào ĐO ĐƯỢC" in capsys.readouterr().err
+
+    def test_git_hong_thi_exit_1_va_co_git_loi(self, tmp_path, monkeypatch, capsys):
+        """REVIEW 24-11 (P2): git lỗi mà vẫn exit 0 ⇒ artifact trông "tái lập được" với rev None."""
+        _ghi_csv(tmp_path / "demoip_x_metrics.csv",
+                 _phien([100] * 10 + [400] + [400] * 30))
+        out = tmp_path / "kq.json"
+        monkeypatch.setattr(rls, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(rls, "_git", lambda *a: None)
+        assert rls.main(["--glob", "demoip_*_metrics.csv", "--out", str(out)]) == 1
+        payload = json.loads(out.read_text(encoding="utf-8"))
+        assert payload["git_rev"] is None and payload["git_loi"]
+        assert "KHÔNG tái lập được" in capsys.readouterr().err
+
     def test_ghi_artifact_co_provenance(self, tmp_path, monkeypatch):
         _ghi_csv(tmp_path / "demoip_x_metrics.csv",
                  _phien([100] * 10 + [400] + [400] * 30))
         out = tmp_path / "kq.json"
         monkeypatch.setattr(rls, "REPO_ROOT", tmp_path)
+        monkeypatch.setattr(rls, "_git", lambda *a: "abc1234" if a[:1] == ("rev-parse",) else "")
         assert rls.main(["--glob", "demoip_*_metrics.csv", "--settle", "0,8",
                          "--out", str(out)]) == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["settle_list"] == [0, 8]
         assert payload["tong"]["0"]["frame_an"] == 31
+        assert payload["git_rev"] == "abc1234" and payload["git_loi"] is None
         assert payload["tong"]["8"]["frame_chua_xac_minh"] > 0
         for k in ("git_rev", "git_dirty_code", "lenh", "do_luc", "nguon", "frame_shape"):
             assert k in payload, f"thiếu provenance `{k}` (AGENTS §6)"

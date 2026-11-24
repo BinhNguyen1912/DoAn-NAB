@@ -775,21 +775,27 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.
 
 - **Cổng "nghi đổi đối tượng" PHẢI TỰ HẠ MỨC — ẩn tới hết phiên là bug, không phải an toàn.**
-  Đo 24-11 (phiên `data/demoip_1124-125109`, 246 frame, @192, re-ID TẮT, `git_rev 4c8c074`): cổng báo
-  **ĐÚNG** ở f137 (ô nhảy sang **tóc người**, vật là cái thìa trắng — kiểm bằng ảnh), rồi hệ **tự bám
-  lại đúng cái thìa** ở t≈40 s… mà màn hình vẫn in "NGHI ĐỔI ĐỐI TƯỢNG" suốt tới cuối ⇒
-  **109/246 = 44,3 % phiên** không có mask. Nguyên nhân đọc từ code, không phải cảm tính:
-  `watch.reset()` chỉ có 3 chỗ gọi (`reacquired` · phím `r` · phím `c`) ⇒ **re-ID tắt thì latch là
-  công tắc tắt vĩnh viễn**. Nay `IdentityWatch` có **3 trạng thái**: `nghi` (KHÔNG vẽ mask) → sau
-  `settle_steps = 8` bước bám ổn định **có mask** → `chua_xac_minh` (VẪN vẽ nhưng **viền nét đứt,
-  không tô, không quỹ đạo** + câu xin xác nhận); cú nhảy mới ⇒ về `nghi`; `r`/`c`/reacquire ⇒ `ok`.
-  Replay trên **39 phiên / 7 041 frame đã ghi** (`scripts/replay_latch_settle.py`, artifact
-  `data/replay_latch_settle_2026-11-24_metrics.json`, `settle_steps = 0` = hành vi cũ): ẩn **20,17 % → 2,57 %**
-  frame, **17,6 %** frame chuyển sang "chưa xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn +
-  33,7 % chưa xác minh. **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG:
-  chuyển động sau cú nhảy lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định
-  khi mask rỗng (mask rỗng = không có gì để tin). Cột CSV `nghi_doi_tuong` vẫn nghĩa **"frame này ĐANG
-  ẨN mask"**; `chua_xac_minh` là đại lượng KHÁC (nay có trong `status.json`: `chua_xac_minh`,
-  `chua_xac_minh_n`) — đừng cộng gộp hai cột rồi gọi là "tỉ lệ nghi". Số replay là **xấp xỉ** (ô dựng
-  lại từ `center/bbox_w/bbox_h`, `frame_shape` theo tham số) ⇒ chỉ dùng để SO SÁNH hai luật, không
-  phải số live. Log: `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md`.
+  Đo 24-11 (phiên `data/demoip_1124-125109`, 246 frame, @192, re-ID TẮT): cổng báo **ĐÚNG** ở f137 (ô
+  nhảy sang **tóc người**, vật là cái thìa trắng — kiểm bằng ảnh), rồi hệ **tự bám lại đúng cái thìa**
+  ở t≈40 s… mà màn hình vẫn in "NGHI ĐỔI ĐỐI TƯỢNG" suốt tới cuối ⇒ **109/246 = 44,3 % phiên** không
+  có mask (94 frame trong đó mask VẪN CÒN ⇒ "chi phí ẩn" đúng nghĩa 38 %). Nguyên nhân đọc từ code:
+  latch chỉ được xoá bằng `r`/`c`/`reacquired` ⇒ **re-ID tắt thì nó là công tắc tắt vĩnh viễn**. Nay
+  `IdentityWatch` có **3 trạng thái**: `nghi` (KHÔNG vẽ mask) → sau `settle_steps = 8` bước bám ổn định
+  **có mask** → `chua_xac_minh` (VẪN vẽ nhưng **viền nét đứt, không tô, không quỹ đạo** + câu xin xác
+  nhận, `c` xoá được) → `r`/`c`/reacquire ⇒ `ok`; cú nhảy mới ⇒ về `nghi`.
+  Replay `scripts/replay_latch_settle.py` trên **22 phiên ĐO ĐƯỢC / 4 346 frame** (artifact
+  `data/replay_latch_settle_2026-11-24_metrics.json`, `settle_steps = 0` = hành vi cũ): ẩn
+  **32,67 % → 4,16 %** frame (khi còn mask: **29,71 % → 3,38 %**), **28,51 %** frame chuyển sang "chưa
+  xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn + 33,7 % chưa xác minh. **ĐỪNG trích 20,17 % →
+  2,57 %** (số cũ): mẫu số đó trộn 17 phiên thiếu cột `mask_area` (2 695 frame) mà ở đó cổng **không
+  thể** bật — đúng bẫy "0/None ≠ đã đo"; script nay in `so_phien_do_duoc`/`pct_*_do_duoc` và thoát 1
+  nếu không có phiên nào đo được hoặc `git_rev` không đọc được.
+  **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG: chuyển động sau cú nhảy
+  lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định khi mask rỗng. Cột CSV
+  `nghi_doi_tuong` vẫn nghĩa **"frame này ĐANG ẨN mask"**; `chua_xac_minh` là đại lượng KHÁC (có trong
+  `status.json` **và** `GET /api/live/status`: `chua_xac_minh`, `chua_xac_minh_n`) — đừng cộng gộp hai
+  cột rồi gọi là "tỉ lệ nghi". Thêm field mới vào `status.json` thì phải đi đủ **6 chỗ**: `LiveTelemetry`
+  + `LiveStatus` + `telemetry()` + `live.status()` + `LiveStatusResponse` + `routes._live_status` —
+  ngày 24-11 `chua_xac_minh` (và cả `nghi_doi_tuong` từ 21-11!) **chết ở `routes._live_status`** mà
+  e2e (mock route) lẫn allowlist (chỉ so TÊN khoá của schema) vẫn xanh. Log:
+  `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md`.

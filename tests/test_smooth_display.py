@@ -10,6 +10,8 @@ giật đúng bằng tốc độ model (0.3–2 FPS). Giải pháp: 3 luồng �
 import threading
 import time
 
+import pytest
+
 import numpy as np
 
 from src.smooth_display import InferenceWorker, LatestFrameSource
@@ -567,7 +569,7 @@ class TestCongNhayCoNhoTrenDuongMuot:
         from src import smooth_display as sd
 
         src = inspect.getsource(sd.run_smooth_display)
-        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        pos_c = src.index("if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):")
         pos_neo = src.index("worker.reanchor(bbox_luc_nghi)", pos_c)
         assert pos_c < pos_neo, "phím `c` phải neo lại engine ở ô vừa bị nghi"
         # và phải có biến lưu ô đó tại THỜI ĐIỂM cổng bật nghi (lúc `last_bbox` còn giá trị thật)
@@ -603,10 +605,13 @@ class TestCongNghiEpTimLai:
         # phải gọi TRƯỚC khi log/`continue` để cờ kịp tới worker ở vòng sau
         assert src.index("_bao_nghi(watch.nghi)") < src.index("if on_result is not None:")
         # `c` và `r` phải XOÁ cờ, nếu không bước tracking kế tiếp lại bị bỏ ⇒ quay vòng
-        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
-        assert "_bao_nghi(False)" in src[pos_c:pos_c + 400]
+        # Cắt theo `continue` của CHÍNH nhánh đó (không dùng cửa sổ ký tự: thêm chú thích là trượt)
+        pos_c = src.index("if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):")
+        nhanh_c = src[pos_c:src.index("continue", pos_c)]
+        assert "_bao_nghi(False)" in nhanh_c
         pos_r = src.index("if key == RESET_KEY:")
-        assert "_bao_nghi(False)" in src[pos_r:pos_r + 400]
+        nhanh_r = src[pos_r:src.index("continue", pos_r)]
+        assert "_bao_nghi(False)" in nhanh_r
 
     def test_worker_chuyen_co_nghi_vao_session(self):
         """Khoá đường worker → session (main thread không được chạm engine/session)."""
@@ -1027,3 +1032,38 @@ class TestTuHaMucTrenDuongMuot:
         chi_so_nghi = [i for i, d in enumerate(da_goi) if d["switch"]]
         chi_so_ha = [i for i, d in enumerate(da_goi) if d["chua_xac_minh"]]
         assert min(chi_so_ha) > min(chi_so_nghi)
+
+
+class TestPhimCTaiChuaXacMinh:
+    """24-11 (review độc lập P1-a): HUD MỜI bấm `c` nhưng `c` chỉ có tác dụng ở trạng thái `nghi`.
+
+    Hậu quả: ở `chua_xac_minh` (mask chỉ còn viền) bấm `c` không có gì xảy ra ⇒ kẹt tới hết phiên —
+    đúng cái người dùng phàn nàn ("không focus lại"), chỉ khác là còn thấy viền.
+    """
+
+    def test_c_xoa_ca_chua_xac_minh(self):
+        import inspect
+
+        from src import smooth_display as sd
+        from src import live_pipeline as lp
+
+        for mod in (sd, lp):
+            src = inspect.getsource(mod.run_smooth_display if mod is sd else mod.run_interactive)
+            assert "key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh)" in src, \
+                f"{mod.__name__}: phím `c` phải có tác dụng ở CẢ trạng thái chưa xác minh"
+
+    def test_c_xoa_quy_dao_khong_noi_qua_cu_nhay(self):
+        """Đối chứng P2: xác nhận xong mà giữ quỹ đạo ⇒ đường tím nối điểm trước cú nhảy với vùng
+        mới (một đoạn thẳng xuyên khung) đi thẳng vào video demo."""
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        for i in range(5):
+            viz._trajectory.append((10 * i, 10 * i))
+            viz._traj_ts.append(0.0)
+        viz.clear_trajectory()
+        assert viz.trajectory_points == ()
+        # `clear_trajectory` KHÔNG được xoá số liệu FPS (khác `reset()`) — nếu không HUD nhảy về 0
+        viz._latencies.append(100.0)
+        viz.clear_trajectory()
+        assert viz.effective_fps == pytest.approx(10.0)

@@ -67,13 +67,19 @@ nét đứt, HUD nói rõ), `src/live_pipeline.py` (truyền `co_mask`), `web/sr
 `scripts/replay_latch_settle.py` (mới) — replay `IdentityWatch` trên CSV, **không model**:
 
 ```
-39 phiên · 7 041 frame
-hành vi CŨ     | bật 14 lần | ẨN 1420 frame (20,17 %) | CHƯA XÁC MINH    0 (0,0 %)
-settle 8 bước  | bật 18 lần | ẨN  181 frame ( 2,57 %) | CHƯA XÁC MINH 1239 (17,6 %)
-settle 12 bước | bật 18 lần | ẨN  243 frame ( 3,45 %) | CHƯA XÁC MINH 1177 (16,72 %)
+22 phiên ĐO ĐƯỢC / 4 346 frame  (bỏ qua 17 phiên / 2 695 frame thiếu cột `mask_area`)
+hành vi CŨ     | bật 14 lần | ẨN 1420 frame (32,67 %) — còn mask 1291 (29,71 %) | CHƯA XÁC MINH    0
+settle 8 bước  | bật 18 lần | ẨN  181 frame ( 4,16 %) — còn mask  147 ( 3,38 %) | CHƯA XÁC MINH 1239 (28,51 %)
+settle 12 bước | bật 18 lần | ẨN  243 frame ( 5,59 %) — còn mask  205 ( 4,72 %) | CHƯA XÁC MINH 1177 (27,08 %)
 ```
-Riêng phiên của người dùng (`demoip_1124-125109`, n = 246): **ẩn 44,3 % → 10,6 %**, thêm **33,7 %**
-frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24_metrics.json`.
+Riêng phiên của người dùng (`demoip_1124-125109`, n = 246): **ẩn 44,3 % → 10,6 %** (frame còn mask:
+38,2 % → 8,5 %), thêm **33,7 %** frame "chưa xác minh". Artifact:
+`data/replay_latch_settle_2026-11-24_metrics.json`.
+
+**ĐÍNH CHÍNH (review độc lập 24-11, P1-b)**: bản đầu tôi công bố **20,17 % → 2,57 %** — SAI mẫu số: nó
+cộng cả **17 phiên thiếu cột `mask_area`**, ở đó ô dựng lại là rỗng nên cổng **không thể** bật. Số
+đúng là **32,67 % → 4,16 %** trên 22 phiên đo được. Script nay in `so_phien_do_duoc` và thoát 1 khi
+không có phiên nào đo được hoặc `git_rev` không đọc được.
 
 Ảnh so 3 kiểu vẽ (`data/tmp_an/so_sanh_3_kieu.jpg`): tin cậy = mask **tô cam** + ô liền; chưa xác minh
 = **viền mảnh** + ô nét đứt + nhãn; nghi = ô nét đứt, **không mask**.
@@ -86,7 +92,7 @@ frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24_metrics.
   đang bám (kiểu chưa xác minh) thay vì im lặng 44 % phiên.
 - Có script **tái lập được** chi phí ẩn overlay trên CSV (`scripts/replay_latch_settle.py`), có
   provenance (`git_rev`, `git_dirty_code`, `lenh`, `do_luc`, `frame_shape`).
-- Kiểm tra: `./run lint` sạch · **1 963 test** · `./run webtest` **102** · `npm run build` OK ·
+- Kiểm tra: `./run lint` sạch · **1 974 test** · `./run webtest` **102** · `npm run build` OK ·
   `./run e2e` **PASS** (thêm 4 check cho trạng thái "chưa xác minh").
 - File thay đổi:
   - `src/identity_guard.py` — máy trạng thái 3 mức (`TRANG_THAI_*`, `settle_steps`, `chua_xac_minh`)
@@ -100,6 +106,19 @@ frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24_metrics.
     `scripts/e2e_web.js` — test/bằng chứng
   - `AGENTS.md` §6 — bullet kết luận (cấm hạ mức thành "tin cậy", cấm đếm bước khi mask rỗng)
   - `data/replay_latch_settle_2026-11-24_metrics.json` — artifact số
+
+### 6. Review độc lập (AGENTS §9.1) — và 3 lỗi THẬT nó bắt được
+
+Reviewer độc lập verdict **"chưa mergeable"**. Đã xác nhận + vá:
+
+| mức | lỗi | bằng chứng | đã sửa |
+|---|---|---|---|
+| **P0** | `chua_xac_minh` **chết trong adapter API** — worker ghi `status.json` nhưng `GET /api/live/status` không mang ra ⇒ banner + nút trên web **không bao giờ hiện**; e2e vẫn xanh vì nó mock route | `grep chua_xac_minh src/api` = **0 dòng** | vá đủ **6 chỗ** (`LiveTelemetry`, `LiveStatus`, `telemetry()`, `live.status()`, `LiveStatusResponse`, `routes._live_status`) + test khẳng định **GIÁ TRỊ** qua HTTP |
+| **P0-b** | cùng lớp: `nghi_doi_tuong` (+`_n`) **cũng chết** ở `routes._live_status` từ **21-11** — allowlist xanh vì nó chỉ so **TÊN** khoá của schema | `routes.py` không map 2 field đó | map lại + test `nghi_doi_tuong is True` |
+| **P1-a** | HUD **mời bấm `c`** nhưng `c` chỉ có tác dụng ở `nghi` ⇒ ở `chua_xac_minh` bấm **không có gì xảy ra** = kẹt tới hết phiên | `if key == CONTINUE_KEY and watch.nghi:` (2 file) | `(watch.nghi or watch.chua_xac_minh)` + test hành vi + sửa 2 test cũ index theo chuỗi |
+| **P1-b** | số replay **trộn mẫu số** (P1-b ở trên) | 17 phiên thiếu cột | đo lại, đính chính AGENTS + log |
+| **P2** | `chua_xac_minh` không bị xoá khi mất bằng chứng (metric bị thổi); `_check_confirm` không xoá `chua_xac_minh*`; **quỹ đạo nối qua cú nhảy** (đường tím xuyên khung trong video demo) | code + test | vá cả 3 + `Visualizer.clear_trajectory()` |
+| **P3** | `_ve_vien_mask` vẽ mask khác cỡ frame ở toạ độ sai (im lặng); `settle_steps` âm không cảnh báo; git hỏng ⇒ artifact trông "tái lập được" | code | guard shape + kẹp 0 + `git_loi` ⇒ exit 1 |
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy
@@ -118,7 +137,12 @@ frame "chưa xác minh". Artifact: `data/replay_latch_settle_2026-11-24_metrics.
       nếu có thì cân nhắc nhắc lại phím trên HUD mỗi ~10 s.
 - [ ] Chọn ô chọn **ôm sát vật**: `f0` của phiên này = 95×356 px từ y=123 **xuống đáy khung** ⇒ gồm cả
       tay + nền, là lý do gốc khiến model trôi sang tóc ở t≈30 s (chưa sửa được bằng code).
-- [ ] Số test/lint/e2e đã xanh nhưng **review độc lập chưa chạy** tại thời điểm ghi log này.
+- [ ] **Review vòng 2** trên phần vừa vá (P0/P1/P2) — AGENTS §9.1 yêu cầu review lại phần sửa.
+- [ ] `IdentityWatch.update()` trả **bool** trong khi có 3 trạng thái: caller quên đọc
+      `watch.chua_xac_minh` sẽ lặng lẽ vẽ như "đã kiểm". Đề xuất (P3) thêm `che_do_ve` để điểm nối
+      không thể nửa vời.
+- [ ] `frame_shape` của replay dùng một hằng cho mọi phiên (`run_info.json` không lưu kích thước khung)
+      ⇒ các phiên 1104/1105 (nhóm thiếu `mask_area`) chưa đối chứng được.
 
 ## 📚 Tài liệu tham khảo
 - `AGENTS.md` §6 — bullet 21-11 (latch), 23-11 (latch = công tắc tắt khi không re-ID), 24-11 (mới).

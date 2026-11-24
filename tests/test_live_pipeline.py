@@ -284,9 +284,11 @@ class TestCoNghiEpTimLaiInline:
         assert "_bao_nghi(watch.nghi)" in src
         assert "reid_session.set_suspicious(co)" in src
         # `c` và `r` phải xoá cờ (nếu không bước track kế tiếp lại bị bỏ ⇒ quay vòng)
-        for khoa in ('if key == CONTINUE_KEY and watch.nghi:', 'if key == RESET_KEY:'):
+        for khoa in ('if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):',
+                     'if key == RESET_KEY:'):
             pos = src.index(khoa)
-            assert "_bao_nghi(False)" in src[pos:pos + 400], khoa
+            nhanh = src[pos:src.index("continue", pos)]     # cắt theo `continue` của chính nhánh
+            assert "_bao_nghi(False)" in nhanh, khoa
 
     def test_phim_c_neo_lai_engine(self):
         """`c` = "vẫn đúng" nhưng session đã bị bỏ track ⇒ phải `start()` lại ở ô vừa bị nghi."""
@@ -295,7 +297,7 @@ class TestCoNghiEpTimLaiInline:
         from src import live_pipeline as lp
 
         src = inspect.getsource(lp.run_interactive)
-        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        pos_c = src.index("if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):")
         assert src.index("reid_session.start(frame, bbox_luc_nghi)", pos_c) > pos_c
 
 

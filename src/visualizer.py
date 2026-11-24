@@ -229,6 +229,11 @@ class Visualizer:
         Dùng contour của chính mask SAM 2 (không phải ô chữ nhật): người xem vẫn thấy hình dạng
         vùng hệ đang bám, nhưng màu/độ đặc khác hẳn mask tin cậy (cam tô mờ) và không có quỹ đạo.
         """
+        if mask is None or getattr(mask, "shape", None) != img.shape[:2]:
+            # REVIEW 24-11 (P3): mask khác kích thước frame (nguồn đổi độ phân giải giữa phiên) thì vẽ
+            # ra là vẽ SAI TOẠ ĐỘ mà không báo gì. `live_tracking._annotate` đã bỏ hẳn mask đó ⇒ hai
+            # đường vẽ phải cùng luật.
+            return
         try:
             found = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL,
                                      cv2.CHAIN_APPROX_SIMPLE)
@@ -358,6 +363,17 @@ class Visualizer:
         # 5) ghi nếu recorder đang mở
         self._write(img)
         return img
+
+    def clear_trajectory(self) -> None:
+        """Chỉ xoá QUỸ ĐẠO (giữ số liệu FPS/mất dấu).
+
+        Vì sao cần riêng (24-11, review P2): sau khi người dùng xác nhận (`c`) một vùng "chưa xác
+        minh", nối điểm TRƯỚC cú nhảy với vùng mới sẽ vẽ một **đường thẳng xuyên khung** — mà đây là
+        thứ đi thẳng vào video demo với nhãn "quỹ đạo theo thời gian thực". `reset()` thì xoá cả
+        `_latencies` (làm HUD FPS nhảy về 0) nên không dùng lại được.
+        """
+        self._trajectory.clear()
+        self._traj_ts.clear()
 
     def reset(self):
         """Xoá quỹ đạo + số liệu trượt + bộ đếm mất dấu (khi chọn lại đối tượng — phím r)."""

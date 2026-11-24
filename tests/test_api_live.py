@@ -236,6 +236,11 @@ class TestLiveRoutes:
                              # 21-11: cổng nhảy CÓ NHỚ — `bam == "nghi_doi_tuong"` + 2 khoá này
                              # cho UI biết phải hiện banner + nút "vẫn đúng" (`/api/live/confirm`).
                              "nghi_doi_tuong", "nghi_doi_tuong_n",
+                             # 24-11: trạng thái thứ ba (vẫn VẼ, kiểu chưa xác minh). Phải nằm
+                             # trong allowlist để khoá TÊN khoá; đường GIÁ TRỊ được khoá riêng ở
+                             # `TestChuaXacMinhXuyenTang` (allowlist một mình từng bỏ lọt field chết
+                             # trong `routes._live_status`).
+                             "chua_xac_minh", "chua_xac_minh_n",
                              "message"}
 
         assert _wait(lambda: live_client.get("/api/live/status").json()["frames"] >= 2)
@@ -1407,3 +1412,71 @@ class TestLiveSelectPoints:
         assert called["points"] == [(15.0, 25.0), (5.0, 5.0)]
         assert called["labels"] == [1, 0]
 
+
+
+class TestChuaXacMinhXuyenTang:
+    """24-11 (review độc lập P0): cờ `chua_xac_minh` từng **chết trong adapter API**.
+
+    Vì sao phải có test này: worker ghi `status.json` có `chua_xac_minh`, frontend đọc được (khai
+    optional trong `api.ts`), e2e lại **route giả** `/api/live/status` rồi tự bơm cờ vào ⇒ cả 3 lớp
+    đều "xanh" trong khi đường thật **không bao giờ** mang cờ ra HTTP (`grep chua_xac_minh src/api` =
+    0 dòng) ⇒ banner + nút "Vẫn đúng, tiếp tục" trên web không bao giờ hiện. Đúng bẫy repo đã ghi:
+    "trường số liệu mới chết trong adapter mà test vẫn xanh" (08-11).
+
+    Cùng lớp lỗi với `nghi_doi_tuong` (21-11): có trong `domain`/`schemas`/`telemetry` nhưng **thiếu
+    ở `routes._live_status`** ⇒ pydantic trả mặc định `False`; test allowlist vẫn xanh vì nó so TÊN
+    khoá của schema, không so GIÁ TRỊ.
+    """
+
+    def _status(self, tmp_path, data):
+        import json
+
+        from src.api.adapters.worker_source import WorkerFrameSource
+
+        (tmp_path / "status.json").write_text(json.dumps(data), encoding="utf-8")
+        src = WorkerFrameSource.__new__(WorkerFrameSource)
+        src._out = tmp_path
+        return src.telemetry()
+
+    def test_status_json_di_qua_telemetry(self, tmp_path):
+        t = self._status(tmp_path, {"bam": "tracking", "chua_xac_minh": True,
+                                    "chua_xac_minh_n": 83})
+        assert (t.chua_xac_minh, t.chua_xac_minh_n) == (True, 83)
+        assert t.nghi_doi_tuong is False
+
+    def test_khoa_vang_mat_la_false_khong_sap(self, tmp_path):
+        t = self._status(tmp_path, {"bam": "tracking"})
+        assert (t.chua_xac_minh, t.chua_xac_minh_n) == (False, 0)
+
+    def test_nghi_doi_tuong_cung_di_qua_telemetry(self, tmp_path):
+        """Cùng lỗi, lớp cũ: `nghi_doi_tuong` phải sống sót từ `status.json` tới `LiveTelemetry`."""
+        t = self._status(tmp_path, {"bam": "nghi_doi_tuong", "nghi_doi_tuong": True,
+                                    "nghi_doi_tuong_n": 12})
+        assert (t.nghi_doi_tuong, t.nghi_doi_tuong_n) == (True, 12)
+
+    def test_hai_co_di_qua_service_va_http(self, live_client, live_service, monkeypatch):
+        """Đường ĐẦY ĐỦ `telemetry → live.status() → /api/live/status`.
+
+        Khẳng định GIÁ TRỊ, không chỉ tên khoá — đó chính là chỗ `nghi_doi_tuong` bị bỏ quên ở
+        `routes._live_status` suốt từ 21-11 mà không test nào bắt (allowlist chỉ so TÊN khoá của
+        schema, mà schema thì luôn có đủ khoá với giá trị mặc định `False`).
+        """
+        from src.api.domain import LiveTelemetry
+
+        from tests.conftest import FakeFrameSource
+
+        class _TelemetrySource(FakeFrameSource):
+            def telemetry(self):
+                return LiveTelemetry(display_fps=19.0, mask_fps=8.0, bam="tracking",
+                                     chua_xac_minh=True, chua_xac_minh_n=83,
+                                     nghi_doi_tuong=True, nghi_doi_tuong_n=12)
+
+        monkeypatch.setattr(live_service, "_make_source", lambda *a, **k: _TelemetrySource("0"))
+        live_client.post("/api/live/start", json={"source": "0"})
+        body = live_client.get("/api/live/status").json()
+        assert body["nghi_doi_tuong"] is True, "cờ 21-11 chết ở `routes._live_status`"
+        assert body["nghi_doi_tuong_n"] == 12
+        assert body["chua_xac_minh"] is True, "cờ sống ở worker nhưng chết trước khi tới HTTP"
+        assert body["chua_xac_minh_n"] == 83
+        assert body["bam"] == "tracking", "chưa xác minh thì `bam` vẫn là tracking (vẫn vẽ)"
+        live_service.stop()

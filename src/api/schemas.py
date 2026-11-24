@@ -214,6 +214,16 @@ class LiveStatusResponse(BaseModel):
         default=0, ge=0,
         description="Số frame ĐÃ PHÁT trong trạng thái nghi đổi đối tượng (`0` = chưa từng nghi)",
     )
+    chua_xac_minh: bool = Field(
+        default=False,
+        description="24-11 — trạng thái THỨ BA: đã bám ổn định lại sau cảnh báo nhưng CHƯA ai xác nhận. "
+                    "`bam` vẫn là `'tracking'` (vẫn VẼ) ở cả hai ca ⇒ phải có cờ riêng. Worker vẽ "
+                    "VIỀN NÉT ĐỨT (không tô mask, không quỹ đạo) ⇒ UI phải hiện banner + nút 'vẫn đúng'",
+    )
+    chua_xac_minh_n: int = Field(
+        default=0, ge=0,
+        description="Số frame ĐÃ PHÁT ở trạng thái 'chưa xác minh' (`0` = chưa từng)",
+    )
     bam_no_evidence_n: int = Field(
         default=0, ge=0,
         description="Số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra) — "

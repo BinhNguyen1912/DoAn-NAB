@@ -518,6 +518,10 @@ async function waitJobState(page, wanted, timeout = 240000) {
       await nut3.count() === 1)
     await nut3.click()
     await page.waitForTimeout(400)
+    // LƯU Ý (review 24-11): khối này mock `**/api/live/status` nên nó chỉ chứng minh FRONTEND. Đường
+    // GIÁ TRỊ thật (`status.json → telemetry → live.status() → HTTP`) được khoá bằng pytest
+    // `tests/test_api_live.py::TestChuaXacMinhXuyenTang` — vì cờ này từng CHẾT trong adapter API mà
+    // cả e2e lẫn allowlist vẫn xanh (allowlist chỉ so TÊN khoá của schema).
     check('bấm nút chưa xác minh gọi ĐÚNG /api/live/confirm', goiConfirm2 === true,
       `goiConfirm=${goiConfirm2}`)
     await page.unroute('**/api/live/confirm')
