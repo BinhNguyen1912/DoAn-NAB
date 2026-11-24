@@ -1,8 +1,8 @@
 {
- "git_rev": "4e15cc2",
- "git_dirty_code": false,
+ "git_rev": "3a1eb02",
+ "git_dirty_code": true,
  "lenh": "scripts/eval_gate_rules.py --glob data/demoip_*_metrics.csv --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T14:50:04",
+ "do_luc": "2026-11-24T14:57:58",
  "frame_shape": [
   480,
   640
@@ -19,6 +19,10 @@
   [
    "demoip_1124-125109_metrics.csv",
    137
+  ],
+  [
+   "demoip_1124-141352_metrics.csv",
+   29
   ]
  ],
  "ca_sai": [
@@ -27,60 +31,66 @@
    48
   ]
  ],
- "so_phien_do_duoc": 24,
+ "so_phien_doc_duoc": 24,
  "so_phien_bo_qua": 17,
+ "so_phien_khop_100pct": 11,
+ "ghi_chu_nhan": "NHÃN TẠM: ca 'SAI' (144057#48) có phép thử SUY BIẾN (ô phủ 18% khung) — chưa có nhãn theo luật fill>=0.5 viết trước; xem docstring CA_SAI.",
  "tong": {
   "hien_tai": {
-   "so_phien": 24,
-   "so_frame": 4647,
+   "so_phien": 11,
+   "so_frame": 1787,
    "fire": 23,
    "frame_an": 234,
-   "pct_frame_an": 5.04,
-   "frame_chua_xac_minh": 1410,
+   "pct_frame_an": 3.13,
+   "frame_chua_xac_minh": 171,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true
+    "demoip_1124-125109_metrics.csv#137": true,
+    "demoip_1124-141352_metrics.csv#29": true
    },
    "bat_ca_sai": {
     "demoip_1124-144057_metrics.csv#48": true
    }
   },
   "theo_dt": {
-   "so_phien": 24,
-   "so_frame": 4647,
+   "so_phien": 11,
+   "so_frame": 1787,
    "fire": 13,
    "frame_an": 125,
-   "pct_frame_an": 2.69,
-   "frame_chua_xac_minh": 1006,
+   "pct_frame_an": 2.13,
+   "frame_chua_xac_minh": 186,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": false
+    "demoip_1124-125109_metrics.csv#137": false,
+    "demoip_1124-141352_metrics.csv#29": true
    },
    "bat_ca_sai": {
     "demoip_1124-144057_metrics.csv#48": true
    }
   },
   "van_toc_lich_su": {
-   "so_phien": 24,
-   "so_frame": 4647,
+   "so_phien": 11,
+   "so_frame": 1787,
    "fire": 27,
    "frame_an": 271,
-   "pct_frame_an": 5.83,
-   "frame_chua_xac_minh": 1510,
+   "pct_frame_an": 4.48,
+   "frame_chua_xac_minh": 321,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": true
+    "demoip_1124-125109_metrics.csv#137": true,
+    "demoip_1124-141352_metrics.csv#29": true
    },
    "bat_ca_sai": {
     "demoip_1124-144057_metrics.csv#48": true
    }
   },
   "theo_dt_va_dien_tich": {
-   "so_phien": 24,
-   "so_frame": 4647,
+   "so_phien": 11,
+   "so_frame": 1787,
    "fire": 8,
    "frame_an": 75,
-   "pct_frame_an": 1.61,
-   "frame_chua_xac_minh": 733,
+   "pct_frame_an": 1.68,
+   "frame_chua_xac_minh": 194,
    "bat_ca_dung": {
-    "demoip_1124-125109_metrics.csv#137": false
+    "demoip_1124-125109_metrics.csv#137": false,
+    "demoip_1124-141352_metrics.csv#29": true
    },
    "bat_ca_sai": {
     "demoip_1124-144057_metrics.csv#48": true
@@ -91,6 +101,7 @@
   {
    "ten": "demoip_1121-121732_metrics.csv",
    "n": 278,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -121,6 +132,7 @@
   {
    "ten": "demoip_1121-130447_metrics.csv",
    "n": 19,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -151,6 +163,7 @@
   {
    "ten": "demoip_1121-130701_metrics.csv",
    "n": 11,
+   "khop_pct": 45.5,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -185,6 +198,7 @@
   {
    "ten": "demoip_1121-131421_metrics.csv",
    "n": 334,
+   "khop_pct": 93.7,
    "luat": {
     "hien_tai": {
      "fire": 2,
@@ -226,6 +240,7 @@
   {
    "ten": "demoip_1121-141016_metrics.csv",
    "n": 96,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -256,6 +271,7 @@
   {
    "ten": "demoip_1121-150532_metrics.csv",
    "n": 63,
+   "khop_pct": 41.3,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -292,6 +308,7 @@
   {
    "ten": "demoip_1121-150623_metrics.csv",
    "n": 99,
+   "khop_pct": 40.4,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -326,6 +343,7 @@
   {
    "ten": "demoip_1121-150909_metrics.csv",
    "n": 9,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -356,6 +374,7 @@
   {
    "ten": "demoip_1121-151333_metrics.csv",
    "n": 49,
+   "khop_pct": 79.6,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -394,6 +413,7 @@
   {
    "ten": "demoip_1121-151429_metrics.csv",
    "n": 605,
+   "khop_pct": 62.6,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -432,6 +452,7 @@
   {
    "ten": "demoip_1122-195623_metrics.csv",
    "n": 111,
+   "khop_pct": 39.6,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -466,6 +487,7 @@
   {
    "ten": "demoip_1123-092343_metrics.csv",
    "n": 312,
+   "khop_pct": 87.2,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -498,6 +520,7 @@
   {
    "ten": "demoip_1123-095901_metrics.csv",
    "n": 254,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -528,6 +551,7 @@
   {
    "ten": "demoip_1123-101110_metrics.csv",
    "n": 221,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -558,6 +582,7 @@
   {
    "ten": "demoip_1123-110458_metrics.csv",
    "n": 142,
+   "khop_pct": 95.1,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -594,6 +619,7 @@
   {
    "ten": "demoip_1123-144130_metrics.csv",
    "n": 210,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -624,6 +650,7 @@
   {
    "ten": "demoip_1123-144226_metrics.csv",
    "n": 199,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -659,6 +686,7 @@
   {
    "ten": "demoip_1123-144414_metrics.csv",
    "n": 119,
+   "khop_pct": 79.0,
    "luat": {
     "hien_tai": {
      "fire": 2,
@@ -696,6 +724,7 @@
   {
    "ten": "demoip_1123-144505_metrics.csv",
    "n": 194,
+   "khop_pct": 82.5,
    "luat": {
     "hien_tai": {
      "fire": 1,
@@ -733,6 +762,7 @@
   {
    "ten": "demoip_1123-162154_metrics.csv",
    "n": 575,
+   "khop_pct": 29.2,
    "luat": {
     "hien_tai": {
      "fire": 2,
@@ -772,6 +802,7 @@
   {
    "ten": "demoip_1124-110536_metrics.csv",
    "n": 200,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 0,
@@ -802,6 +833,7 @@
   {
    "ten": "demoip_1124-125109_metrics.csv",
    "n": 246,
+   "khop_pct": 66.3,
    "luat": {
     "hien_tai": {
      "fire": 2,
@@ -842,6 +874,7 @@
   {
    "ten": "demoip_1124-141352_metrics.csv",
    "n": 87,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 2,
@@ -884,6 +917,7 @@
   {
    "ten": "demoip_1124-144057_metrics.csv",
    "n": 214,
+   "khop_pct": 100.0,
    "luat": {
     "hien_tai": {
      "fire": 3,

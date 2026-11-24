@@ -59,9 +59,18 @@ TOC_DO_TOI_DA = 1500.0            # px/s — tay cầm vật lia ngang khung 640
 AREA_BAND_THAP = 0.55             # mask nhỏ hơn 0,55× trung vị trước ⇒ co bất thường
 AREA_BAND_CAO = 2.20              # mask lớn hơn 2,20× ⇒ tràn nền (đo f48 ×2,9 · f82 ×4,0)
 
-# Ca ĐÃ KIỂM BẰNG ẢNH (không suy đoán). Chỉ ca có đủ cột bbox/mask_area mới chấm được.
-CA_DUNG = [("demoip_1124-125109_metrics.csv", 137)]   # ô nhảy sang TÓC NGƯỜI (24-11)
-CA_SAI = [("demoip_1124-144057_metrics.csv", 48)]     # thìa VẪN trong ô, chỉ chạy nhanh (24-11)
+# Ca ĐÃ KIỂM BẰNG ẢNH. NHÃN LÀ TẠM — review độc lập 24-11 chỉ ra phép thử của ca "SAI" là SUY BIẾN
+# (ô f48 = 139×397 = 18 % khung, cao 83 % chiều cao khung ⇒ "vật vẫn trong ô" không nói được gì; và
+# `fill = mask/box` = 0,735 ở f48 vs 0,312 ở f47 ⇒ mask đã đổi từ "vật mảnh" sang "khối đặc").
+# Vì vậy ca "SAI" chỉ được coi là GIẢ THUYẾT cho tới khi có nhãn theo luật viết trước (`fill ≥ 0,5`).
+# Đừng trích "đã có 1 ca báo oan được kiểm bằng ảnh".
+CA_DUNG = [
+    ("demoip_1124-125109_metrics.csv", 137),   # ô nhảy sang TÓC NGƯỜI (kiểm ảnh 24-11)
+    ("demoip_1124-141352_metrics.csv", 29),    # ô trên VÙNG SAI, t≈9,6 s (bằng chứng ảnh trong AGENTS §6)
+]
+CA_SAI = [
+    ("demoip_1124-144057_metrics.csv", 48),    # GIẢ THUYẾT: thìa vung nhanh (nhãn suy biến — xem trên)
+]
 
 
 def doc_cot(path):
@@ -84,6 +93,7 @@ def doc_cot(path):
                 bbox = (cx - w / 2, cy - h / 2, cx + w / 2, cy + h / 2)
             out.append({
                 "frame_idx": int(float(r.get("frame_idx") or 0)),
+                "ghi_nghi": (r.get("nghi_doi_tuong") or "").strip(),
                 "bbox": bbox,
                 "mask_area": so("mask_area"),
                 "dt": (so("latency_ms") or 0.0) / 1000.0,
@@ -174,6 +184,28 @@ def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
             "frame_chua_xac_minh": dem[TRANG_THAI_CHUA_XAC_MINH]}
 
 
+def khop_nhan(rows, settle_steps=DEFAULT_SETTLE_STEPS):
+    """% frame mà phát lại với LUẬT HIỆN TẠI khớp cột `nghi_doi_tuong` đã ghi của phiên.
+
+    Vì sao cần: pool CSV trộn ≥3 hành vi cổng (ẩn-vĩnh-viễn trước 24-11 · `settle_steps=8` · re-ID
+    bật/tắt). Gộp chúng lại rồi công bố "% frame ẩn" là đo một thứ không tồn tại — review độc lập
+    24-11 đo được chỉ **3/14** phiên khớp 100 % (nặng nhất 423 vs 16 frame ẩn). Chỉ phiên khớp 100 %
+    mới được dùng để SO SÁNH luật; phiên lệch vẫn dùng được làm NHÃN nhưng không dùng làm chi phí.
+    """
+    watch = IdentityWatch(settle_steps=settle_steps)
+    ghi = [r.get("ghi_nghi", "") in ("1", "True", "true") for r in rows]
+    if ghi is None:
+        return None, 0
+    lai, prev = [], None
+    for r in rows:
+        co_mask = r["mask_area"] is not None and r["mask_area"] > 0
+        watch.update(prev if prev else ZERO, r["bbox"], FRAME_SHAPE, co_mask=co_mask)
+        lai.append(watch.nghi)
+        prev = r["bbox"] if co_mask else ZERO
+    n = sum(1 for a, b in zip(ghi, lai) if a == b)
+    return round(100.0 * n / len(rows), 1), len(rows)
+
+
 def _git(*args):
     try:
         return subprocess.run(["git", *args], cwd=REPO_ROOT, capture_output=True, text=True,
@@ -204,24 +236,28 @@ def main(argv=None) -> int:
         if not any(r["mask_area"] is not None for r in rows):
             bo_qua += 1
             continue                    # thiếu cột ⇒ ô rỗng ⇒ cổng không thể bật
+        khop, _ = khop_nhan(rows, args.settle)
         phien.append({
             "ten": p.name,
             "n": len(rows),
+            "khop_pct": khop,
             "luat": {k: chay(rows, k, args.settle) for k in luat_list},
         })
     if not phien:
         print("[LOI] không phiên nào ĐO ĐƯỢC (thiếu cột mask_area)", file=sys.stderr)
         return 1
 
+    # SO SÁNH CHI PHÍ chỉ trên phiên khớp 100 % (cùng một hành vi cổng)
+    dung_config = [p for p in phien if p.get("khop_pct") == 100.0]
     tong = {}
     for k in luat_list:
-        n = sum(p["n"] for p in phien)
+        n = sum(p["n"] for p in (dung_config or phien))
         tong[k] = {
-            "so_phien": len(phien), "so_frame": n,
+            "so_phien": len(dung_config or phien), "so_frame": n,
             "fire": sum(p["luat"][k]["fire"] for p in phien),
             "frame_an": sum(p["luat"][k]["frame_an"] for p in phien),
-            "pct_frame_an": round(100.0 * sum(p["luat"][k]["frame_an"] for p in phien) / n, 2),
-            "frame_chua_xac_minh": sum(p["luat"][k]["frame_chua_xac_minh"] for p in phien),
+            "pct_frame_an": round(100.0 * sum(p["luat"][k]["frame_an"] for p in (dung_config or phien)) / n, 2),
+            "frame_chua_xac_minh": sum(p["luat"][k]["frame_chua_xac_minh"] for p in (dung_config or phien)),
         }
 
     def _bat(k, ca):
@@ -250,12 +286,22 @@ def main(argv=None) -> int:
         "tham_so": {"toc_do_toi_da_px_s": TOC_DO_TOI_DA,
                     "area_band": [AREA_BAND_THAP, AREA_BAND_CAO]},
         "ca_dung": CA_DUNG, "ca_sai": CA_SAI,
-        "so_phien_do_duoc": len(phien), "so_phien_bo_qua": bo_qua,
+        "so_phien_doc_duoc": len(phien), "so_phien_bo_qua": bo_qua,
+        "so_phien_khop_100pct": len(dung_config),
+        "ghi_chu_nhan": "NHÃN TẠM: ca 'SAI' (144057#48) có phép thử SUY BIẾN (ô phủ 18% khung) — "
+                        "chưa có nhãn theo luật fill>=0.5 viết trước; xem docstring CA_SAI.",
         "tong": tong, "phien": phien,
     }
 
-    print(f"[cong] {len(phien)} phiên ĐO ĐƯỢC (bỏ {bo_qua} phiên thiếu cột `mask_area`), "
-          f"{tong['hien_tai']['so_frame']} frame, settle {args.settle}")
+    print(f"[cong] {len(phien)} phiên ĐỌC ĐƯỢC (bỏ {bo_qua} phiên thiếu cột `mask_area`); "
+          f"**{len(dung_config)}** phiên khớp 100 % với cột `nghi_doi_tuong` đã ghi "
+          f"({tong['hien_tai']['so_frame']} frame) ⇒ chỉ nhóm này được dùng SO SÁNH CHI PHÍ")
+    lech = [(p["ten"], p["khop_pct"]) for p in phien if p.get("khop_pct") is not None
+            and p["khop_pct"] != 100.0]
+    if lech:
+        print(f"[cong] {len(lech)} phiên LỆCH (config khác: trước 24-11 / re-ID bật-tắt / settle khác) "
+              f"— chỉ dùng làm NHÃN, KHÔNG dùng làm chi phí. Khớp thấp nhất: "
+              f"{min(lech, key=lambda t: t[1])[0]} {min(t[1] for t in lech)}%")
     for k in luat_list:
         t = tong[k]
         print(f"  {k:22s} | báo {t['fire']:3d} lần | ẨN {t['frame_an']:4d} frame "
@@ -263,9 +309,11 @@ def main(argv=None) -> int:
               f"bắt ca ĐÚNG {sum(1 for v in t['bat_ca_dung'].values() if v)}"
               f"/{len(CA_DUNG)} · bắt ca SAI {sum(1 for v in t['bat_ca_sai'].values() if v)}"
               f"/{len(CA_SAI)}")
-    print("[cong] GIỚI HẠN: chỉ 1 ca ĐÚNG + 1 ca SAI kiểm bằng ảnh ⇒ KHÔNG kết luận được 'giảm báo oan "
-          "mà không bỏ sót' theo nghĩa thống kê; `dt` lấy từ `latency_ms` (xấp xỉ) ⇒ số `theo_dt` chỉ "
-          "dùng để SO SÁNH hai luật trên cùng dữ liệu.")
+    print(f"[cong] GIỚI HẠN: {len(CA_DUNG)} ca ĐÚNG + {len(CA_SAI)} ca SAI (nhãn SAI là GIẢ THUYẾT — "
+          "phép thử ảnh của nó suy biến) ⇒ CHỈ kết luận được 'luật này có BỎ ca đúng nào không', KHÔNG "
+          "kết luận được 'ít báo oan hơn' (CI95 của tỉ lệ FP với n=23 lần báo là ±19 pp). "
+          "`dt` lấy từ `latency_ms` (xấp xỉ) ⇒ số `theo_dt` chỉ để SO SÁNH hai luật trên cùng dữ liệu. "
+          "`FRAME_SHAPE` là GIẢ ĐỊNH 640×480: run_info.json chưa ghi width/height.")
     if args.out:
         Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"[cong] {args.out} (git_rev={rev}, git_dirty_code={dirty_code})")
