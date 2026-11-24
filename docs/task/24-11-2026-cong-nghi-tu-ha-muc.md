@@ -92,7 +92,7 @@ không có phiên nào đo được hoặc `git_rev` không đọc được.
   đang bám (kiểu chưa xác minh) thay vì im lặng 44 % phiên.
 - Có script **tái lập được** chi phí ẩn overlay trên CSV (`scripts/replay_latch_settle.py`), có
   provenance (`git_rev`, `git_dirty_code`, `lenh`, `do_luc`, `frame_shape`).
-- Kiểm tra: `./run lint` sạch · **1 980 test** · `./run webtest` **102** · `npm run build` OK ·
+- Kiểm tra: `./run lint` sạch · **1 982 test** · `./run webtest` **102** · `npm run build` OK ·
   `./run e2e` **PASS** (thêm 4 check cho trạng thái "chưa xác minh").
 - File thay đổi:
   - `src/identity_guard.py` — máy trạng thái 3 mức (`TRANG_THAI_*`, `settle_steps`, `chua_xac_minh`)
@@ -198,7 +198,10 @@ Bảng đột biến đầy đủ (6/6 bắt được):
       (mục 7) và **kiểm bằng đột biến** (4/4 đột biến làm test đỏ).
 - [x] **Bằng chứng live #1** (mục 8): 2 lần cổng báo, mỗi lần đúng 8 frame ẩn (16/87 = 18,4 % so với
       66,7 % của hành vi cũ); replay `--settle 8` trên chính CSV ra đúng 16 frame.
-- [ ] **Ticket #47** — còn: thêm `chua_xac_minh_n` cho đường CLI + **≥3 phiên** live (mới có 1).
+- [x] **Ticket #47 (a)** — `chua_xac_minh_n` cho **cả 2 đường CLI** (`InteractiveSummary` +
+      `run_tracking` không đếm/`None` ghi rõ) + `settle_steps` vào `run_info.json`: phiên live sau
+      **tự sinh số**, không phải suy từ replay. Đã kiểm bằng test hành vi trên 2 đường.
+- [ ] **Ticket #47 (b)** — **≥3 phiên** live (mới có 1).
 - [ ] **Ticket #48** — gom 2 cờ rời (`switch_warning` + `chua_xac_minh`) thành một `che_do_ve` để
       điểm nối không thể nửa vời (P3).
 - [ ] `frame_shape` của replay dùng một hằng cho mọi phiên (`run_info.json` không lưu kích thước khung)

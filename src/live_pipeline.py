@@ -269,6 +269,11 @@ class InteractiveSummary:
     # cháy HUD nên cũng không dùng làm nguồn thô được).
     prompt_bbox: Optional[Tuple[int, int, int, int]] = None
     reselect_n: int = 0        # số lần người dùng bấm `r` chọn lại giữa phiên
+    # 24-11 (ticket #47): số frame ĐÃ PHÁT ở trạng thái "chưa xác minh" của cổng nghi. Đường WEB đã
+    # có (`status.json: chua_xac_minh_n`); đường CLI (`./run demoip`) trước đây KHÔNG đếm ⇒ mọi tuyên
+    # bố "44,3 % → 10,6 % + 33,7 %" chỉ kiểm được bằng replay trên CSV. `0` = chưa từng (KHÔNG phải
+    # "chưa đo" — cổng không bật thì đúng là 0).
+    chua_xac_minh_n: int = 0
 
 
 def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
@@ -481,6 +486,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if watch.nghi != last_nghi:
                     _bao_nghi(watch.nghi)
                 summary.processed += 1
+                # ticket #47: đếm frame "chưa xác minh" (khác "đang nghi") cho CẢ hai đường CLI.
+                if watch.chua_xac_minh:
+                    summary.chua_xac_minh_n += 1
                 if on_result is not None:
                     on_result(last_result)
                 if metrics is not None:

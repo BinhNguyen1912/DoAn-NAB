@@ -534,3 +534,57 @@ class TestPhimCTaiChuaXacMinhHanhVi:
         assert (30, 30) not in snap, ("sentinel vùng CŨ còn trong quỹ đạo sau `c` ⇒ call-site "
                                       "`clear_trajectory` ở nhánh `c` không chạy")
         assert any(x > 150 for x, _ in snap), "quỹ đạo sau `c` phải có điểm của vùng MỚI"
+
+
+class TestDemChuaXacMinhDuongCli:
+    """24-11 (ticket #47): đường `./run demoip` phải TỰ ĐẾM "chưa xác minh".
+
+    Vì sao: mọi tuyên bố "44,3 % → 10,6 % + 33,7 %" trước đây chỉ kiểm được bằng **replay trên CSV**,
+    vì `InteractiveSummary` không có bộ đếm ⇒ phiên live không sinh ra số nào. Đường web đã có
+    (`status.json: chua_xac_minh_n`).
+    """
+
+    def test_summary_co_bo_dem_va_tang_trong_vong_lap(self, tmp_path, write_video):
+        from src.live_pipeline import QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        A, B = (10, 10, 50, 50), (180, 10, 220, 50)
+
+        def _res(bbox):
+            m = np.zeros((120, 240), bool)
+            m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+            return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+        class Engine:
+            def __init__(self):
+                self.jump = False
+
+            def start(self, frame, bbox):
+                return _res(A)
+
+            def process(self, frame):
+                return _res(B if self.jump else A)
+
+            def reset(self):
+                pass
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(120, 240),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = Engine()
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            if state["n"] >= 4 and not engine.jump:
+                engine.jump = True
+            return list(QUIT_KEYS)[0] if state["n"] >= 40 else -1
+
+        summary = run_interactive(source=str(path), engine=engine,
+                                  selector=PromptSelector(frame_shape=(120, 240, 3)),
+                                  display=display, preselect_bbox=A)
+        assert summary.chua_xac_minh_n > 0, "không đếm được frame 'chưa xác minh' trên đường CLI"
+        # và không được đếm lẫn với "đang nghi" (2 trạng thái khác nhau)
+        assert summary.chua_xac_minh_n < summary.processed

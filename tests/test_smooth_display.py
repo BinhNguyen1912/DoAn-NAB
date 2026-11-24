@@ -1160,3 +1160,63 @@ class TestPhimCTaiChuaXacMinhHanhVi:
                                       "`clear_trajectory` ở `smooth_display` không chạy")
         assert any(x > 150 for x, _ in snap) or any(x > 15 for x, _ in snap), \
             "quỹ đạo sau `c` phải có điểm của vùng MỚI"
+
+
+class TestDemChuaXacMinhDuongDemoip:
+    """24-11 (ticket #47): đường `./run demoip` (smooth_display) cũng phải đếm "chưa xác minh".
+
+    Trước đây chỉ đường web có (`status.json`), nên phiên live của `./run demoip` **không sinh ra số
+    nào** — mọi tuyên bố về `chua_xac_minh` phải suy từ replay CSV.
+    """
+
+    def test_summary_dem_duoc(self, tmp_path, write_video):
+        from src import smooth_display as sd
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 4):
+            o_list.append((10 + i * 45, 10, 50 + i * 45, 50))
+        o_list.append((20, 150, 60, 190))                 # nhảy vô lý ⇒ nghi
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                time.sleep(0.05)
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 320), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 320),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
+
+        summary = sd.run_smooth_display(source=str(path), engine=Eng(),
+                                        selector=PromptSelector(frame_shape=(240, 320, 3)),
+                                        display=display, preselect_bbox=(10, 10, 50, 50),
+                                        visualizer=Visualizer())
+        assert summary.chua_xac_minh_n > 0
+        assert summary.chua_xac_minh_n < summary.processed

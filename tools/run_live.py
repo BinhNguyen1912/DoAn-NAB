@@ -595,6 +595,13 @@ def _dem_worker_mo_coi():
         return None
 
 
+def _settle_steps(args) -> int:
+    """Số bước ổn định trước khi hạ `nghi` → `chua_xac_minh` (mặc định 8; xem `identity_guard`)."""
+    from src.identity_guard import DEFAULT_SETTLE_STEPS
+
+    return int(getattr(args, "settle_steps", None) or DEFAULT_SETTLE_STEPS)
+
+
 def _write_run_info(args):
     """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
 
@@ -660,6 +667,13 @@ def _write_run_info(args):
         # dùng làm nguồn thô. `None` = không chọn (hoặc phiên headless dùng ô mặc định).
         prompt_bbox=list(getattr(args, "_prompt_bbox", None) or []) or None,
         reselect_n=getattr(args, "_reselect_n", None),
+        # `None` = đường HEADLESS (`run_tracking`) không đếm trạng thái này (chỉ 2 đường tương tác
+        # đếm) — KHÔNG phải "đo được 0". Đường tương tác không hạ mức lần nào thì ghi `0` thật.
+        chua_xac_minh_n=getattr(args, "_chua_xac_minh_n", None),
+        # `settle_steps` của cổng nghi — số frame ẩn phụ thuộc TRỰC TIẾP vào nó, và nó đổi theo nhịp
+        # VOS (8 bước = 1,3 s ở 6,3 bước/s nhưng 1,94 s ở 4,12 bước/s). Thiếu trường này thì phiên
+        # sau không so được với phiên trước (ticket #47).
+        settle_steps=_settle_steps(args),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -759,6 +773,9 @@ def _run_display(engine, args):
             )
             args._prompt_bbox = summary.prompt_bbox
             args._reselect_n = summary.reselect_n
+            # ticket #47: đếm được "chưa xác minh" trên đường CLI ⇒ phiên live tự sinh số, không phải
+            # suy từ replay. `0` = cổng không hạ mức lần nào (đúng nghĩa 0, không phải "chưa đo").
+            args._chua_xac_minh_n = getattr(summary, "chua_xac_minh_n", 0)
         else:
             summary = run_interactive(
                 source=args.source,

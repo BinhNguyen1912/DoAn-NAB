@@ -460,6 +460,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     # đường mới bắt đầu từ vùng mới — không có đoạn thẳng xuyên khung).
                     if watch.nghi:
                         visualizer.clear_trajectory()
+                    if watch.chua_xac_minh:
+                        summary.chua_xac_minh_n += 1
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,
