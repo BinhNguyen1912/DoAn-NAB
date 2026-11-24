@@ -765,6 +765,23 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   hiển thị**: nhịp vẽ vẫn ~20 tick/s, xem bullet `--smooth` ngay trên). Trước đó (nguồn live 30, nguồn file `None`) và
   ngủ theo **mốc đầu vòng**; đo lại: **60 lần/2 s = 30/s**. Nguồn **file** còn đọc **715 lần/s** (giải mã clip
   20 lần, ffmpeg mở 8 luồng tranh torch) — chưa sửa, cần quyết "skip hay block".
+- **CỔNG "NGHI ĐỔI ĐỐI TƯỢNG" BÁO ĐÚNG 7/7 CA ĐÃ KIỂM — ĐỪNG NỚI NGƯỠNG, LỖI THẬT LÀ **BỎ SÓT** (24-11).**
+  Người dùng báo *"vật đi nhanh quá thì bị nghi"*, nhưng đọc video HUD (`_web.mp4`) của 3 phiên có sự kiện
+  cho thấy **6/6 lần báo là ĐÚNG**: `144057` chọn **thìa GỖ** (`prompt_bbox=[397,79,491,462]`), người dùng
+  rút thìa gỗ xuống rồi đưa **thìa NHỰA trắng** vào ⇒ SAM 2 bám thìa nhựa ⇒ **danh tính đã đổi**; `141352`
+  cùng kịch bản; `144226` báo khi **tay người khác** vào khung. Nên **mọi luật "giảm số lần báo" đều giảm
+  RECALL**, đo trên **10 phiên đóng băng / 1 509 frame** (`data/eval_gate_config_list.json`, artifact
+  `data/eval_gate_rules_2026-11-24_metrics.json`): bắt ca đúng — hiện tại **7/7**; `theo_dt` **3/7**;
+  `van_toc_lich_su` **6/7** + không-tin-cậy 26,57 %; `theo_dt_va_dien_tich` **2/7**; `chi_khi_cham_600`
+  **1/7**, `_900` **3/7**, `_1200` **4/7**, `_1500` **5/7**. ⇒ **cấm nới trần 0,25 / thêm luật hình học**
+  (biên quyết định chỉ **0,937 → 1,019** = 8 % ngưỡng, và cổng **mù** với dịch chuyển 127–172 px của
+  `141352` f7/f12/f16/f17 — mask tô đặc trên tóc/mặt mà không cảnh báo; **8/38** lần vật hiện lại sau mất
+  dấu cách **> 200 px**, gồm **248,9 px** ở ca 21-11 #178 và **303,8 px** ở `110536#142` — nhưng sửa chỗ
+  đó là tạo báo oan thật vì 2/8 ca là "vật ra khỏi khung rồi về"). Nhãn do **1 người** dán trên video HUD
+  (frame báo KHÔNG vẽ mask theo thiết bại) ⇒ muốn TRÍCH phải có người thứ 2.
+  Hệ quả thao tác: **demo phải khoá kịch bản KHÔNG đổi vật** (đừng đưa thìa thứ hai vào), và `c` là đường
+  thoát duy nhất khỏi `chua_xac_minh` khi `--no-reid` (nay Caps Lock không còn làm `c`/`r`/`q` im lặng nhờ
+  `live_pipeline.chuan_hoa_phim`). Plan + 2 vòng phản biện: `docs/plan/24-11-2026-cong-nghi-bao-oan.md`.
 - **`--trajectory-seconds` là WALL CLOCK — với nguồn FILE nó đổi nghĩa (đọc kèm khi trích số).** 5 s wall ở
   6,3 bước/s = 31 frame video = **1,05 s clip 30 fps**; ở 9 bước/s = 45 frame = 1,5 s clip. Với `./run demoip`
   (live) wall ≈ video nên đúng; với `./run video` thì "5 s quỹ đạo" **không** phải 5 s của clip ⇒ khi báo cáo
