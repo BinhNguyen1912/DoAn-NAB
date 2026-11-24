@@ -24,10 +24,25 @@ chất lượng phải là **mIoU mask-vs-GT người tô**; so sánh phải **t
 | `data/binh1.mp4` (`docs/gt/b1`, 12 frame) | chai có nhãn | **0,7794** (n=7) | ≤1,9 % | — |
 | `data/clip_tran_nen.mp4` (`docs/gt/tran_nen`, 6 frame) | **túi/tờ giấy TRẮNG MỜ trên tường TRẮNG** | **0,6987** (n=5) | **17,4 %** (tệ nhất 36,9 % @f0) | **1/1** frame **3 713 px lên mặt người** |
 
-**"Trần" của từng hướng (cận trên lý thuyết, parent tính lại từ mask đã dump):** nếu cắt *hoàn hảo*
-phần tràn thì `tran_nen@192` = **0,8254 (+0,128)**, `tran_nen@320` = 0,8167 (+0,088), `be2` = 0,9132
-(+0,048). ⇒ **phần lỗi lớn nhất là TRÀN RA NỀN**, không phải trôi; và trên `tran_nen` mIoU **tăng** theo
-frame (f0 0,5324 → f400 0,7882) ⇒ **không có trôi dần** trên clip có GT.
+### ⚠️ ĐÍNH CHÍNH (vòng 2 — agent B bắt đúng, parent đã kiểm lại từng frame)
+
+Bản nháp đầu của plan viết *"phần lỗi lớn nhất là TRÀN RA NỀN"*. **Sai.** Bảng thật của
+`data/miou_tran_nen_truoc_2026-11-24_metrics.json`:
+
+| frame | IoU | diện tích pred | diện tích GT | **pred/gt** | mask ngoài GT |
+|---|---|---|---|---|---|
+| 0 | 0,5324 | 18 174 | 14 833 | **1,225** (tràn) | **36,9 %** |
+| 45 | 0,7095 | 13 362 | 14 126 | 0,946 | 14,6 % |
+| 222 | 0,7057 | 15 865 | 17 774 | 0,893 | 12,3 % |
+| 266 | 0,7575 | 15 249 | 15 098 | 1,010 | 14,2 % |
+| 400 | 0,7882 | 14 090 | 15 013 | 0,939 | 9,0 % |
+
+⇒ **Tràn chỉ đúng ở f0**; **4/5 frame mask NHỎ hơn GT** ⇒ lỗi chính là **HỤT + KHỞI TẠO (f0)**, không
+phải "tràn nền", và **không phải trôi** (mIoU tăng 0,5324 → 0,7882).
+
+Con số "trần" phải đọc đúng: 0,8254 = `|mask ∩ GT| / |GT|` = **RECALL trần** (cắt sạch tràn thì IoU không
+thể vượt recall) — **không phải** "+0,128 cải thiện đạt được", và **bắt buộc** ghi nhãn
+`tran_ly_thuyet_dung_GT`. Cùng cách tính: `tran_nen@320` 0,8167 · `be2` 0,9132.
 
 ---
 
@@ -54,7 +69,7 @@ nhiễu 0,0903 — *đây là IoU hộp, không phải mIoU*) ⇒ model chậm h
 
 | Điểm tranh chấp | A nói | B nói | C nói | **Chốt của parent** |
 |---|---|---|---|---|
-| **"0,8460 → 0,5815" dùng làm gì** | nó là IoU **ô**, không phải mIoU | (không bàn) | nó là luật "nhịp là bậc một" | **C tự rút, A đúng**: đó là `IoU(ô hiển thị, hộp GT)`; `lk_ok_frac` chỉ 0,143 ⇒ phần lớn là **ô đóng băng**, không phải bộ nhớ kém. **Cấm** trích làm mIoU. |
+| **"0,8460 → 0,5815" dùng làm gì** | nó là IoU **ô**, không phải mIoU | **nó không áp cho buổi demo**: `./run demoip` chạy `--smooth`, mà `grep -c "vos_every\|light_tracker" src/smooth_display.py` = **0** (mỗi vòng chạy model, không LK) | nó là luật "nhịp là bậc một" | **C tự rút; A và B đúng**: (a) đó là `IoU(ô hiển thị, hộp GT)`, `lk_ok_frac` = 0,143 ⇒ phần lớn là **ô đóng băng**; (b) **đường demo không có LK** ⇒ không phải rủi ro của buổi bảo vệ. **Cấm** trích làm mIoU. |
 | **Cần bao nhiêu frame GT** | 90 frame rải 6 clip × 12–15 | 59 frame (19+24+7+6+3) | 90 frame rải (không cho p05) | **C đúng, A sai**: `MIN_SAMPLES = 30` **trên một artifact** ⇒ rải 12–15/clip thì **p05 = None ở cả 6**. Bộ ≥30 duy nhất (`docs/gt/remote_trang`) là `synthetic_exact` ⇒ **cấm** dùng làm p05 "người tô". |
 | **`docs/gt/binh1_silhouette` + `binh1_tay`** | (không bàn) | "khai 12 frame GT nhưng **không có** PNG" | "PNG **có** 12/12, chỉ sai tên ⇒ đổi `frames/frame_*` → `gt_*`" | **B đúng, C SAI — và đề xuất của C là NGUY HIỂM**: `frames/` là **ảnh gốc 720×1280** để người nhìn mà tô; `gt_*.png` = **0 file**; README của bộ GT ghi rõ "**Bạn cần tạo**". Đổi tên ảnh gốc thành GT = **tạo GT giả**. Việc đúng: đánh dấu `dung_duoc: false` + cảnh báo trong `./run miou`. |
 | **Có nên spike Cutie** | chưa (không có hiện tượng để sửa) | (không bàn) | có, kill > 150 ms | **Chưa spike.** Điều kiện mở lại ghi trước: chỉ khi có clip GT chứng minh **trôi/ra-vào khung**; dùng `be2` (mốc 0,8625, hai frame tái xuất 0,8358/0,8117), **kill nếu median > 100 ms/frame**. |
@@ -103,6 +118,7 @@ hành vi** (f0/f45 còn giống, từ f222 lệch) ⇒ **cấm** A/B bằng các
 | **P0-a** | **Đưa bằng chứng lên `main`**: tách 60 commit thành 3 PR nhỏ (code+tests+web · `data/miou_*`+`docs/gt/*` · docs+plan), PR có artifact **merge commit, không squash** | 2,5 | `git log --oneline origin/main..HEAD \| wc -l` = **0**; `git show origin/main:run \| grep -c -- "--no-reid"` ≥ 1; `origin/main` chứa `data/miou_be2_full_2026-11-24_metrics.json` + `docs/gt/tran_nen/index.json`; `./run provcheck` exit 0; CI xanh | không |
 | **P0-b** | **Sửa các câu đã KIỂM là sai** + đưa số mới vào bảng tự kiểm: `README.md:8` ("0,2–0,3 FPS" → số thật 142 ms ≈ 7 FPS), `README.md:140` (`--reid` → `--no-reid`), `README.md:618` ("đã bật sẵn re-ID, bám lại đúng"), `AGENTS.md:141` ("demo 256" → **192**), `docs/doi-chieu-yeu-cau-gvhd.md` req 9 (✅ tái nhận diện → 🟡 + caveat đã có ở req 6), req 10 (**0,6464 = IoU(mask, hộp bao)**, thay bằng dòng mIoU silhouette); `scripts/so_lieu_bao_cao.py::REGISTRY` (**20 dòng**) thêm dòng cho: 0,8625 (n=8) · 0,7794 (n=7) · 0,6987 (n=5) · 0/3 bịa mask · **5 kết quả âm tính** trên; mỗi dòng **có `n`** và câu "**cấm trích thành**" | 2,0 | `./run lint` xanh; `grep -c "0,2–0,3 FPS\|đã bật sẵn re-ID\|image_size 256" README.md AGENTS.md` = **0**; `python scripts/so_lieu_bao_cao.py --check` xanh với **≥ 28 dòng**; test tamper: sửa 1 số ⇒ exit ≠ 0 | không |
 | **P1** | **Chặn bẫy dữ liệu**: `docs/gt/binh1_silhouette` + `binh1_tay` khai 12 frame nhưng **0 file `gt_*.png`** ⇒ thêm `"dung_duoc": false` + lý do vào `index.json`, và `./run miou score` **cảnh báo rõ** thay vì chỉ "12 lỗi chặn"; **cấm** đổi tên `frames/*` thành `gt_*` | 0,5 | `./run miou score --gt docs/gt/binh1_silhouette --check-index` in **"bộ GT CHƯA TÔ"** + exit ≠ 0; 2 test mới; `git diff --stat` không có file `gt_*.png` mới nào ở 2 thư mục đó | không |
+| **P1-b** | **ĐO NHIỄU GT** (agent B — nay là điều kiện của MỌI tuyên bố mIoU): tô lại **3 frame ×2 lần** + **1 frame người thứ 2**, **bắt buộc có f0 `tran_nen`**. Repo **chưa có** ngưỡng nhiễu mIoU ⇒ 0,6987 vs 0,7268 hiện **không so được** | 2,5 (+20′ người) | `data/gt_noise_*_metrics.json` (`git_dirty_code=false`) có IoU **từng frame**; quy tắc đăng ký trước: chênh mIoU < **(1 − IoU_GT)** ⇒ **"không kết luận"**; nếu `1 − IoU_GT ≥ 0,10` thì **cấm tô thêm frame** cho tới khi biết | người tô 20′ |
 | **P2** | **Đo được cái đang mù**: (a) thêm cột tổng hợp `dien_tich_pred/gt` + `phu_thieu` vào `scripts/score_miou.py` (hiện chỉ có `mask_ngoai_gt`), (b) in bảng từng frame cho 3 clip GT, (c) **kiểm lại giả thuyết cổng vật-vắng** bằng **hydra override** (không copy config): `build_overrides()` thêm `++model.min_obj_score_logits=0` và `=−100` (chẩn đoán) | 2,0 | (a) artifact có 2 cột mới, 2 test; (b) mỗi frame có `mask_ngoai_gt` + `phu_thieu` + `iou`; (c) 3 run trên `binh1` (`fac_A` có 15 frame nghi): mục tiêu **bịa 15 → 0** *và* `zero_oan` (= frame GT có vật mà mask rỗng) **không tăng**; nếu `−100` cho thấy small/base+ thật sự phân đoạn tốt ⇒ **kết luận (1) phải sửa lại** (dung lượng *có* là nút thắt, chỉ bị cổng chặn) | (c) đụng model qua override, **không** copy config |
 | **P3** *(điều kiện)* | **INIT hardening**: box · box + 4 điểm âm vành · +điểm dương lõi · seed mask @320 qua `add_new_mask`; chạy `tran_nen` + `be2`, `vos_every 1`, **3 lần** | 3,0 | `tran_nen`: mIoU **≥ 0,7487** (+0,05) với **CI95 cặp không chứa 0** *và* `mask_ngoai_gt ≤ 0,12` *và* `phu_thieu` không tăng > 0,02; `be2` **≥ 0,8525**; nếu âm tính ⇒ **ghi thành kết quả âm tính**, không đưa vào live | model (+3 frame GT nếu muốn sign test 8/8) |
 | **P4** *(điều kiện)* | Spike **Cutie** trong worktree + env riêng, hệ sống ≤ 100 ms | 2,0 | **kill nếu median > 100 ms/frame** hoặc mIoU cặp không vượt tiny; clip `be2`, mốc 0,8625 + f344/f348 0,8358/0,8117 | model mới |
@@ -129,6 +145,8 @@ hành vi** (f0/f45 còn giống, từ f222 lệch) ⇒ **cấm** A/B bằng các
 | Cắt mask theo ô LK | no-op (`mask_area/bbox_area` max 0,841) |
 | Đổi tên `docs/gt/*/frames/*` thành `gt_*` | = **tạo GT giả** (12 ảnh gốc 720×1280) |
 | A/B bằng cách **copy file config** | copy y nguyên cũng cho 0,2486 thay vì 0,6987 |
+| Dùng `data/clip_dung.mp4` / `clip_sai.mp4` làm nguồn GT ngay | file **có thật** (4 453/4 401 frame, 0,0 % pixel HUD) nhưng `grep -rn "clip_dung\|clip_sai" docs/` = **0 dòng** ⇒ không ai khai cảnh/vật/khung; dùng ngay = lặp bẫy 14-11 "ô chọn sai" |
+| Dùng `data/demoip_1121-151429.mp4` làm video dự phòng | **hỏng**: `moov atom not found`, `cv2` không mở được |
 
 ### Tiêu chí nghiệm thu toàn plan (có số)
 - [ ] `origin/main` chứa code + artifact mà báo cáo trích (`git log origin/main..HEAD` = 0).
@@ -146,13 +164,15 @@ hành vi** (f0/f45 còn giống, từ f222 lệch) ⇒ **cấm** A/B bằng các
 > "Máy em không có GPU rời: model **142 ms/lần ở 192 px** ⇒ mask mới **7 lần/giây**; hình **20 FPS** là
 > nhờ luồng hiển thị riêng. Video nộp dài **29,33 s** so với **29,5 s** thật (tỉ lệ **0,994**).
 > Chất lượng em đo bằng **mask-vs-GT người tô**: **0,86** (vật be, n=8) · **0,78** (chai, n=7) ·
-> **0,6987** (túi trắng mờ trên tường trắng, n=5). Ở ca gần giống nền, mask **tràn** — em đo được: nếu
-> cắt hết tràn thì mIoU lên **0,8254**, nhưng phần còn lại là **giới hạn model**, không phải lỗi code.
-> Em cũng đã thử **model to hơn**: **0,2716** — tệ hơn hẳn, nên vấn đề **không phải** model nhỏ."
+> **0,6987** (túi trắng mờ trên tường trắng, n=5). Ca khó nhất **tăng dần 0,53 → 0,79** ⇒ **không trôi**;
+> lỗi là **khởi tạo ở frame đầu** + mask **hụt ~18 % diện tích vật** (trần recall **0,8254** — trần này
+> **tính bằng GT**, không phải kết quả đạt được). Em thử **model to hơn: 0,2716** (tệ 2,5×) ⇒ vấn đề
+> **không phải** model nhỏ."
 
 **Khi thầy đưa vật bất kỳ:**
-> "Nếu vật **cùng tông nền**, hệ sẽ trôi — em có số cho đúng ca đó (0,6987, tràn 17,4 %). Em bấm `r`
-> chọn lại: đó là **tính năng chọn đối tượng** của đề cương, không phải che lỗi."
+> "Ca gần giống nền thì mask **hụt và tràn ở frame đầu** — em có số (0,6987; hụt 17,5 %; tràn 36,9 % ở
+> f0) và em **không hứa sửa được** ca này trên CPU. Em bấm `r` chọn lại: đó là **tính năng chọn đối
+> tượng** của đề cương (yêu cầu 2), không phải che lỗi."
 
 **Cấm nói**: "tự nhận lại 17/17" · "tự tìm lại khi vật ra khỏi khung" · "mask 30 FPS" · "bám được mọi
 vật" · "320 tốt hơn 192" · "p05 = None nghĩa là 0".
