@@ -1,12 +1,12 @@
 {
-  "git_rev": "45b4caa95bd028791a0d3fc9a24b960179b5f4f3",
+  "git_rev": "258b92703dcd90636df98c8f9dd9c6f21a275448",
   "git_dirty": true,
   "git_dirty_code": false,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-24T11:28:30",
+    "do_luc": "2026-11-24T11:32:08",
     "lenh": "scripts/score_miou.py score --gt docs/gt/tran_nen --pred-dir data/tn_320 --out data/miou_tran_nen_320_2026-11-24_metrics.json",
-    "git_rev": "45b4caa95bd028791a0d3fc9a24b960179b5f4f3",
+    "git_rev": "258b92703dcd90636df98c8f9dd9c6f21a275448",
     "git_dirty": true,
     "git_dirty_code": false,
     "git_loi": null,
@@ -31,10 +31,10 @@
         365
       ],
       "lenh": "tools/run_live.py --source data/clip_tran_nen.mp4 --image-size 320 --bbox 405,65,90,365 --max-frames 401 --dump-mask-frames 0,45,133,222,266,400 --dump-mask-dir data/tn_320 --metrics-csv /tmp/tn_320.csv",
-      "git_rev": "62d8b5f",
+      "git_rev": "258b927",
       "git_dirty": true,
-      "git_dirty_code": true,
-      "do_luc": "2026-11-24T11:23:44",
+      "git_dirty_code": false,
+      "do_luc": "2026-11-24T11:28:44",
       "frames_yeu_cau": [
         0,
         45,
