@@ -375,9 +375,10 @@ def main(argv=None) -> int:
             f"{t}#{f}": _bat(k, [(t, f)]) for t, f in CA_SAI}
 
     rev = _git("rev-parse", "--short", "HEAD")
+    dirty = bool(_git("status", "--porcelain"))
     dirty_code = bool(_git("status", "--porcelain", "--", ".", ":!data"))
     payload = {
-        "git_rev": rev, "git_dirty_code": dirty_code,
+        "git_rev": rev, "git_dirty": dirty, "git_dirty_code": dirty_code,
         "lenh": " ".join(sys.argv), "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S"),
         "frame_shape": list(FRAME_SHAPE), "settle_steps": args.settle,
         "tham_so": {"toc_do_toi_da_px_s": TOC_DO_TOI_DA,

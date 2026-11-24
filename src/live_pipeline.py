@@ -19,7 +19,7 @@ import numpy as np
 
 from src.video_source import open_video_source
 from src.metrics_logger import FrameRecord
-from src.identity_guard import IdentityWatch, is_suspect_switch
+from src.identity_guard import IdentityWatch
 
 _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
@@ -124,13 +124,19 @@ def warn_if_bad_selection(result):
               f"chứa đối tượng; bấm r để chọn lại")
 
 
-def _switch_warning(prev_bbox, result, frame_shape):
-    """Cảnh báo khi ô bao nhảy quá xa trong 1 bước (nghi bám sang đối tượng khác)."""
-    if is_suspect_switch(prev_bbox, result.bbox, frame_shape):
-        print(f"[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ {tuple(prev_bbox)} "
-              f"sang {result.bbox}) — bấm r chọn lại")
-        return True
-    return False
+def _switch_warning(prev_bbox, cur_bbox):
+    """In cảnh báo "nghi đổi đối tượng". **KHÔNG tự chấm lại** cú nhảy.
+
+    Vì sao: bản trước gọi `is_suspect_switch(...)` lần thứ HAI, với `max_jump_ratio` MẶC ĐỊNH (0,25)
+    trong khi `IdentityWatch` được dựng theo `--max-jump-ratio` của người dùng. Hai hệ quả đo được:
+    (a) với `--max-jump-ratio < 0,25` thì cổng báo (`watch.vua_bao`) mà console **im lặng**;
+    (b) sau 24-11 cổng MIỄN chấm bước đầu của phiên bám mới (vật rời khung rồi vào lại) nhưng hàm
+    này vẫn chấm ⇒ vẫn in WARN + bật banner (ca thật: phiên `demoip_1124-193026`). Nay phán quyết
+    thuộc về MỘT chỗ (`IdentityWatch.vua_bao`) và hàm này chỉ in.
+    """
+    print(f"[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ {tuple(prev_bbox)} "
+          f"sang {tuple(cur_bbox)}) — bấm r chọn lại")
+    return True
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
@@ -510,7 +516,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy (bước đầu của phiên bám mới
                     # sau khi vật rời khung được MIỄN chấm) — 24-11.
                     if watch.vua_bao:
-                        _switch_warning(last_bbox, last_result, frame.shape[:2])
+                        _switch_warning(last_bbox, last_result.bbox)
                     switch = watch.nghi        # xem `smooth_display`: banner = trạng thái latch
                     if co_mask:
                         last_bbox = last_result.bbox

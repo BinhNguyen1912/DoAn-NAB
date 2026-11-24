@@ -796,6 +796,12 @@ class LiveTrackingSession:
         # worker vẫn vẽ mask của vùng SAI. Xoá khi: API ghi `confirm.json` (`xac_nhan_doi_tuong`),
         # hoặc người dùng chọn ô mới (`start()`).
         self._watch = IdentityWatch()
+        # 24-11 (review P1): cổng nghi chỉ được ăn **một BƯỚC VOS**, không phải mỗi frame phát.
+        # `vos_every=3` ⇒ cùng một kết quả VOS được phát ~3,5 lần ⇒ đếm theo frame phát làm
+        # `lost_reset_streak`/`reacq_grace_steps`/`settle_steps` co lại ~3,5 lần (xem docstring
+        # `IdentityWatch.update(..., buoc_moi=)`).
+        self._watch_seq = None
+        self._buoc_vos_moi = True
         self._last_good_bbox = None
         self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
@@ -1071,6 +1077,9 @@ class LiveTrackingSession:
             return self._interp_base_result
 
         seq, base_result, base_gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms = state
+        # Bước VOS MỚI hay chỉ là frame hiển thị lặp lại cùng kết quả (24-11, review P1).
+        self._buoc_vos_moi = seq != self._watch_seq
+        self._watch_seq = seq
         # Truyền ĐỦ các khoản của ĐÚNG lần VOS này (lấy từ snapshot, không đọc `_stats` — tránh lệch
         # thế hệ khi một VOS mới vừa xong).
         self._note_mask_age(time.perf_counter() - produced_at, vos_ms,
@@ -1161,6 +1170,7 @@ class LiveTrackingSession:
         # `n_lk_chua_do` trong artifact; cấm đọc ô trống thành "LK từ chối 100 %".
         self._lk_ok_frame = None
         self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
+        self._buoc_vos_moi = True         # đường đơn luồng: mỗi frame là một bước VOS
         self._frame_index += 1
         result = self._engine.process(frame)
         self._after_vos(frame, result)
@@ -1910,7 +1920,10 @@ class LiveTrackingSession:
         # đúng frame chuyển trạng thái, CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh trống.
         # 21-11: cập nhật cổng nhảy CÓ NHỚ bằng ô VOS của CHÍNH frame này (so với ô TỐT gần nhất).
         # Ở đây ĐANG giữ `_stats_lock`; `IdentityWatch.update` là hàm thuần, không I/O.
-        if obs_bbox is not None:
+        # CHỈ một bước VOS mới mới được đẩy vào cổng (24-11, review P1): frame hiển thị lặp lại cùng
+        # kết quả VOS thì `obs_bbox` chỉ là mask cũ DỊCH đi bằng LK ⇒ không có thông tin danh tính mới,
+        # và nếu vẫn đẩy vào thì mọi ngưỡng đếm-theo-bước bị co ~3,5 lần.
+        if obs_bbox is not None and self._buoc_vos_moi:
             _shape = getattr(getattr(result, "mask", None), "shape", None)
             if _shape is not None and len(_shape) >= 2:
                 lk_vel = None

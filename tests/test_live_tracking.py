@@ -3506,3 +3506,98 @@ class TestChuaXacMinhKhongKet:
         assert s._stats.chua_xac_minh_n == 0
         s._update_stats_locked(_FrameResult(1, (10, 10, 30, 30), mask, 1.0))
         assert s._stats.chua_xac_minh_n == 1, "bộ đếm 'chưa xác minh' chết im lặng"
+
+
+class TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat:
+    """24-11 (review độc lập P1): cổng nghi trên đường web ăn MỖI frame PHÁT.
+
+    `vos_every>1` ⇒ cùng một kết quả VOS được phát ~`display_fps/vos_fps` lần (AGENTS §6: 29,8 FPS
+    hiển thị / 8,5 VOS mỗi giây ≈ 3,5). Đếm theo frame phát làm `lost_reset_streak=3` co còn ~1 bước VOS
+    (một VOS rỗng là reset ⇒ mất ca nhấp nháy) và `reacq_grace_steps=2` hết hạn TRƯỚC bước VOS kế ⇒
+    đúng cú "mẩu rác 559 px → vật 24 100 px" của phiên `demoip_1124-193026` vẫn bị chấm và vẫn báo.
+    """
+
+    def _session(self, vos_every=3):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        class _WorkerStub:
+            def submit(self, seq, frame, gray): ...
+
+        class _InterpStub:
+            """LK "ok" dịch 0 px ⇒ `_result_threaded` đi nhánh dựng result từ mask VOS."""
+
+            last_dx = last_dy = None
+            last_ly_do = "ok"
+            last_ly_do_khop = None
+            last_scale = 1.0
+            last_angle_deg = 0.0
+            last_n_diem = 8
+            last_khop_similarity = False
+            last_matrix = None
+
+            def reset(self, gray, bbox):
+                self._bbox = tuple(bbox)
+
+            def update(self, gray):
+                return self._bbox, True
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=vos_every))
+        session._worker = _WorkerStub()
+        session._interp = _InterpStub()
+        return session
+
+    def _dat_ket_qua_vos(self, session, seq, bbox, co_mask=True):
+        import time
+
+        import numpy as np
+
+        frame = np.zeros((48, 64, 3), np.uint8)
+        mask = np.zeros((48, 64), bool)
+        if co_mask:
+            mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+        base = type("R", (), {"frame_idx": seq, "mask": mask, "bbox": bbox, "score": 1.0,
+                              "elapsed_ms": 40.0, "raw_lost": not co_mask})()
+        session._vos_state = (seq, base, session._gray(frame), time.perf_counter(),
+                              40.0, 1.0, 0.0, 0.0)
+        return base
+
+    def test_co_buoc_vos_moi_chi_bat_o_lan_dau(self):
+        session = self._session(vos_every=3)
+        self._dat_ket_qua_vos(session, 1, (10, 10, 30, 30))
+        session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+        assert session._buoc_vos_moi is True, "kết quả VOS seq=1 là bước mới ở lần phát đầu"
+        for _ in range(2):          # 2 frame phát lặp lại CÙNG kết quả VOS seq=1
+            session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+            assert session._buoc_vos_moi is False, "cùng seq ⇒ KHÔNG phải bước VOS mới"
+        self._dat_ket_qua_vos(session, 2, (12, 12, 32, 32))
+        session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+        assert session._buoc_vos_moi is True, "seq đổi ⇒ bước VOS mới"
+
+    def test_khong_phai_buoc_moi_thi_cong_khong_doi(self):
+        """Đáy nối: `_update_stats_locked` KHÔNG được đẩy frame lặp vào cổng."""
+        import numpy as np
+
+        session = self._session(vos_every=3)
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+        truoc = (session._watch._lost, session._watch._grace, session._watch.trang_thai)
+
+        class _R:
+            frame_idx, mask, bbox, score, elapsed_ms, raw_lost = 1, None, (10, 10, 30, 30), 1.0, 40.0, True
+
+        _R.mask = np.zeros((48, 64), bool)          # mask RỖNG (vật ngoài khung)
+        session._buoc_vos_moi = False
+        for _ in range(5):
+            with session._stats_lock:
+                session._update_stats_locked(_R())
+        assert (session._watch._lost, session._watch._grace, session._watch.trang_thai) == truoc, \
+            "5 frame phát lặp cùng kết quả VOS không được đếm thành 5 bước vắng (sẽ reset oan)"
+
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(_R())
+        assert session._watch._lost == 1, "một BƯỚC VOS rỗng = đúng 1 bước vắng"

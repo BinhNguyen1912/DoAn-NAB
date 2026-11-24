@@ -101,11 +101,13 @@ DEFAULT_SETTLE_STEPS = 8
 # Đọc CSV phiên đó: `mask_area = 0` **15 frame liền** (f248–262) ⇒ f263 model trả lại mask đầu tiên
 # nhưng chỉ **559 px** (0,346× `bbox_area_ref` — một mẩu rác, không phải vật) ⇒ f264 trả mask thật
 # 24 100 px ở chỗ khác ⇒ cổng chấm "nhảy" giữa MẨU RÁC và VẬT, báo nghi, rồi latch giữ tới hết phiên:
-# **140/404 frame = 34,7 %** phiên chỉ còn ô nét đứt "chưa xác minh" ⇒ người dùng thấy "không nhận
-# diện lại nữa". Trước đó cùng phiên còn 5 đoạn mất dấu dài 8–22 frame.
-# Vì sao 3: 1–2 frame rỗng là **nhấp nháy** (mask rơi 1 bước rồi có lại — 6/7 ca báo ĐÚNG của repo
-# không có đoạn rỗng nào trước đó, ca thứ 7 (`125109#137`) chỉ rỗng **1** frame): đặt ngưỡng 3 giữ
-# nguyên 7/7 ca đúng. Đây KHÔNG phải "ngưỡng an toàn", chỉ là ranh giới giữa "nhấp nháy" và "vắng".
+# **140/404 = 34,7 %** phiên KHÔNG TIN CẬY, trong đó **132 frame = 32,7 %** là `chua_xac_minh` (ô nét
+# đứt, không tô) và 8 frame đầu là `nghi` ⇒ người dùng thấy "không nhận diện lại nữa". Trước đó cùng
+# phiên còn 5 đoạn mất dấu dài 8–22 frame.
+# Vì sao 3 (và BIÊN MỎNG tới đâu): 1–2 frame rỗng là **nhấp nháy**. Hai ca báo ĐÚNG đã biết sát ngưỡng:
+# `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền (f176–177) ⇒ ngưỡng 2 sẽ MẤT ca
+# `121732#178`, ngưỡng 3 giữ 7/7. Đây KHÔNG phải "ngưỡng an toàn", chỉ là ranh giới giữa "nhấp nháy"
+# và "vắng" — muốn nói "3 là đúng" phải có thêm ca nhãn (nợ V0 của plan 24-11).
 DEFAULT_LOST_RESET_STREAK = 3
 
 # Số bước ĐẦU của phiên bám mới mà cổng KHÔNG chấm nhảy. Vì sao > 1: bước đầu sau khi vắng (**f263**)
@@ -181,7 +183,7 @@ class IdentityWatch:
         return self._vua_bao
 
     def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None,
-               co_mask=True, nhay=None) -> bool:
+               co_mask=True, nhay=None, buoc_moi=True) -> bool:
         """Cập nhật bằng một bước VOS; trả True nếu ĐANG CHẶN vẽ mask (trạng thái `nghi`).
 
         `co_mask` = bước này model THẬT SỰ trả mask (không rỗng). Chỉ đếm bước ổn định khi có mask:
@@ -191,8 +193,18 @@ class IdentityWatch:
         `is_suspect_switch`). Có mặt để `scripts/eval_gate_rules.py` chấm các LUẬT khác nhau trên CÙNG
         máy trạng thái — nếu script tự chép lại state machine thì hai bản sẽ trôi khỏi nhau (bài học
         "test chép lại logic" trong repo).
+
+        `buoc_moi` = **đây là một BƯỚC VOS mới**, không phải một frame hiển thị lặp lại cùng kết quả.
+        Bắt buộc phải phân biệt (review độc lập 24-11, P1): đường web (`live_tracking`) gọi hàm này
+        MỖI frame phát, mà `vos_every=3` ⇒ cùng một kết quả VOS được lặp ~3,5 lần (29,8 FPS hiển thị /
+        8,5 VOS mỗi giây). Khi đó `lost_reset_streak=3` co lại còn ~1 bước VOS (một VOS rỗng là reset ⇒
+        mất ca "nhấp nháy" `125109#137`) và `reacq_grace_steps=2` hết hạn TRƯỚC bước VOS kế (⇒ đúng cú
+        "mẩu rác 559 px → vật 24 100 px" vẫn bị chấm và vẫn báo). `buoc_moi=False` ⇒ hàm KHÔNG đổi
+        trạng thái gì: cùng một kết quả VOS không mang thêm thông tin về danh tính.
         """
         self._vua_bao = False          # cờ của BƯỚC NÀY (reset đầu mỗi `update`)
+        if not buoc_moi:
+            return self.nghi
         # --- "Vật rời khung rồi vào lại" ≠ "đổi đối tượng" (24-11) ---------------------------
         # Đếm bước vắng; khi mask trở lại sau `lost_reset_streak` bước vắng thì đó là PHIÊN BÁM MỚI:
         # xoá nghi (đường lui duy nhất khi re-ID tắt) và miễn chấm nhảy vài bước đầu, vì mốc so sánh

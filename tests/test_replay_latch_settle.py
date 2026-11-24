@@ -8,6 +8,10 @@ import csv
 import json
 
 import scripts.replay_latch_settle as rls
+from src.identity_guard import (  # noqa: E402
+    DEFAULT_LOST_RESET_STREAK,
+    DEFAULT_REACQ_GRACE_STEPS,
+)
 
 HEADER = ["frame_idx", "center_x", "center_y", "bbox_w", "bbox_h", "mask_area"]
 
@@ -124,7 +128,7 @@ class TestMain:
         monkeypatch.setattr(rls, "_git", lambda *a: "abc1234" if a[:1] == ("rev-parse",) else "")
         assert rls.main(["--glob", "demoip_*_metrics.csv", "--settle", "0,8",
                          "--out", str(out)]) == 0
-        t = json.loads(out.read_text(encoding="utf-8"))["tong"]["0"]
+        t = json.loads(out.read_text(encoding="utf-8"))["tong"][f"0|{DEFAULT_LOST_RESET_STREAK}"]
         assert t["so_phien_do_duoc"] == 1 and t["so_frame_do_duoc"] == 41
         assert t["so_phien_bo_qua"] == 1 and t["so_frame_bo_qua"] == 1000
         assert t["pct_frame_an"] == round(100.0 * 31 / 41, 2), \
@@ -163,10 +167,14 @@ class TestMain:
                          "--out", str(out)]) == 0
         payload = json.loads(out.read_text(encoding="utf-8"))
         assert payload["settle_list"] == [0, 8]
-        assert payload["tong"]["0"]["frame_an"] == 31
+        khoa = f"0|{DEFAULT_LOST_RESET_STREAK}"
+        assert payload["lost_reset_list"] == [DEFAULT_LOST_RESET_STREAK]
+        assert payload["reacq_grace_steps"] == DEFAULT_REACQ_GRACE_STEPS
+        assert payload["tong"][khoa]["frame_an"] == 31
         assert payload["git_rev"] == "abc1234" and payload["git_loi"] is None
-        assert payload["tong"]["8"]["frame_chua_xac_minh"] > 0
-        for k in ("git_rev", "git_dirty_code", "lenh", "do_luc", "nguon", "frame_shape"):
+        assert payload["tong"][f"8|{DEFAULT_LOST_RESET_STREAK}"]["frame_chua_xac_minh"] > 0
+        for k in ("git_rev", "git_dirty", "git_dirty_code", "lenh", "do_luc", "nguon", "frame_shape",
+                  "lost_reset_list", "lost_reset_mac_dinh", "reacq_grace_steps"):
             assert k in payload, f"thiếu provenance `{k}` (AGENTS §6)"
 
     def test_settle_am_bi_tu_choi(self, monkeypatch):

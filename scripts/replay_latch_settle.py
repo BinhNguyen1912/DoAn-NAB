@@ -123,26 +123,28 @@ def _provenance():
     return rev, bool(dirty_all), bool(dirty_code)
 
 
-def tao_payload(phien, settle_list, frame_shape, args):
-    from src.identity_guard import DEFAULT_LOST_RESET_STREAK
+def tao_payload(phien, settle_list, lost_list, frame_shape, args):
+    from src.identity_guard import DEFAULT_LOST_RESET_STREAK, DEFAULT_REACQ_GRACE_STEPS
     rev, dirty, dirty_code = _provenance()
     tong = {}
-    for s in settle_list:
+    for s, lr in [(s, lr) for s in settle_list for lr in lost_list]:
+        khoa = f"{s}|{lr}"
         # REVIEW 24-11 (P1-b): mẫu số PHẢI chỉ gồm phiên ĐO ĐƯỢC. 17/39 phiên CSV cũ không có cột
         # `bbox_w/bbox_h/mask_area` ⇒ `doc_cot` trả ô rỗng ⇒ cổng KHÔNG THỂ bật ⇒ chúng chỉ làm
         # loãng mẫu số (2 695/7 041 = 38,3 % frame). Trước khi sửa, "20,17 % → 2,57 %" trộn cả phần
         # không đo được — đúng bẫy "0/None ≠ đã đo".
         do_duoc = [p for p in phien if p["co_mask_area"]]
         n = sum(p["n"] for p in do_duoc)
-        an = sum(p["lan_chay"][str(s)]["frame_an"] for p in do_duoc)
-        an_co_mask = sum(p["lan_chay"][str(s)]["frame_an_co_mask"] for p in do_duoc)
-        chua = sum(p["lan_chay"][str(s)]["frame_chua_xac_minh"] for p in do_duoc)
-        tong[str(s)] = {
+        an = sum(p["lan_chay"][khoa]["frame_an"] for p in do_duoc)
+        an_co_mask = sum(p["lan_chay"][khoa]["frame_an_co_mask"] for p in do_duoc)
+        chua = sum(p["lan_chay"][khoa]["frame_chua_xac_minh"] for p in do_duoc)
+        tong[khoa] = {
+            "settle_steps": s, "lost_reset_streak": lr,
             "so_phien_do_duoc": len(do_duoc),
             "so_frame_do_duoc": n,
             "so_phien_bo_qua": len(phien) - len(do_duoc),
             "so_frame_bo_qua": sum(p["n"] for p in phien) - n,
-            "fire": sum(p["lan_chay"][str(s)]["fire"] for p in do_duoc),
+            "fire": sum(p["lan_chay"][khoa]["fire"] for p in do_duoc),
             "frame_an": an,
             "pct_frame_an": round(100.0 * an / n, 2) if n else None,
             "frame_an_co_mask": an_co_mask,
@@ -158,8 +160,9 @@ def tao_payload(phien, settle_list, frame_shape, args):
         "nguon": [p["ten"] for p in phien],
         "frame_shape": list(frame_shape),
         "settle_list": settle_list,
-        "lost_reset_streak": (DEFAULT_LOST_RESET_STREAK if args.lost_reset is None
-                              else max(0, args.lost_reset)),
+        "lost_reset_list": lost_list,
+        "lost_reset_mac_dinh": DEFAULT_LOST_RESET_STREAK,
+        "reacq_grace_steps": DEFAULT_REACQ_GRACE_STEPS,
         "tong": tong,
         "phien": phien,
     }
@@ -171,7 +174,7 @@ def main(argv=None) -> int:
     ap.add_argument("--settle", default="0,8,12", help="danh sách settle_steps (0 = hành vi cũ)")
     ap.add_argument("--frame-shape", default="480,640", help="H,W của khung (CSV không lưu)")
     ap.add_argument("--out", default=None)
-    ap.add_argument("--lost-reset", type=int, default=None,
+    ap.add_argument("--lost-reset", default=None,
                     help="số frame vắng để coi là 'vật rời khung' (mặc định = DEFAULT_LOST_RESET_STREAK);"
                          " 0 = TÁI LẬP hành vi trước 24-11 tối (mẩu rác sau khi vắng được dùng làm mốc)")
     args = ap.parse_args(argv)
@@ -188,10 +191,21 @@ def main(argv=None) -> int:
 
     from src.identity_guard import DEFAULT_LOST_RESET_STREAK
 
-    lost_reset = DEFAULT_LOST_RESET_STREAK if args.lost_reset is None else max(0, args.lost_reset)
-    if lost_reset != DEFAULT_LOST_RESET_STREAK:
-        print(f"[latch] CẢNH BÁO: --lost-reset {lost_reset} ≠ mặc định {DEFAULT_LOST_RESET_STREAK} "
-              f"⇒ số dưới đây KHÔNG phải hành vi đang ship")
+    if args.lost_reset is None:
+        lost_list = [DEFAULT_LOST_RESET_STREAK]
+    else:
+        try:
+            lost_list = sorted({max(0, int(v)) for v in str(args.lost_reset).split(",") if v.strip()})
+        except ValueError:
+            print("[LOI] --lost-reset phải là số hoặc danh sách số (vd 0,3)", file=sys.stderr)
+            return 2
+        if not lost_list:
+            print("[LOI] --lost-reset rỗng", file=sys.stderr)
+            return 2
+        if lost_list != [DEFAULT_LOST_RESET_STREAK]:
+            print(f"[latch] CẢNH BÁO: --lost-reset {lost_list} ≠ mặc định "
+                  f"[{DEFAULT_LOST_RESET_STREAK}] ⇒ chỉ cặp có {DEFAULT_LOST_RESET_STREAK} mới là hành "
+                  f"vi đang ship (cặp 0 = TÁI LẬP hành vi trước 24-11)")
 
     paths = sorted(Path(REPO_ROOT).glob(args.glob))
     if not paths:
@@ -208,21 +222,23 @@ def main(argv=None) -> int:
             "ten": p.name,
             "n": len(rows),
             "co_mask_area": any(r["co_mask_area"] for r in rows),
-            "lan_chay": {str(s): replay(rows, s, (h, w), lost_reset) for s in settle_list},
+            "lan_chay": {f"{s}|{lr}": replay(rows, s, (h, w), lr)
+                         for s in settle_list for lr in lost_list},
         })
     if not phien:
         print("[LOI] CSV khớp mẫu nhưng KHÔNG có dòng dữ liệu — KHÔNG đo được", file=sys.stderr)
         return 1
 
-    payload = tao_payload(phien, settle_list, (h, w), args)
-    tong0 = payload["tong"][str(settle_list[0])]
+    payload = tao_payload(phien, settle_list, lost_list, (h, w), args)
+    tong0 = payload["tong"][f"{settle_list[0]}|{lost_list[0]}"]
     print(f"[latch] {len(phien)} phiên · ĐO ĐƯỢC {tong0['so_phien_do_duoc']} phiên / "
           f"{tong0['so_frame_do_duoc']} frame (bỏ qua {tong0['so_phien_bo_qua']} phiên / "
           f"{tong0['so_frame_bo_qua']} frame thiếu cột `mask_area`)")
     for s in settle_list:
-        t = payload["tong"][str(s)]
-        nhan = "hành vi CŨ" if s == 0 else f"settle {s} bước"
-        print(f"[latch] {nhan:16s} | bật {t['fire']:3d} lần | ẨN {t['frame_an']:4d} frame "
+      for lr in lost_list:
+        t = payload["tong"][f"{s}|{lr}"]
+        nhan = ("hành vi CŨ" if s == 0 else f"settle {s}") + f" | vắng>={lr}"
+        print(f"[latch] {nhan:26s} | bật {t['fire']:3d} lần | ẨN {t['frame_an']:4d} frame "
               f"({t['pct_frame_an']}%) — trong đó ẩn khi CÒN mask {t['frame_an_co_mask']} "
               f"({t['pct_frame_an_co_mask']}%) | CHƯA XÁC MINH {t['frame_chua_xac_minh']:4d} "
               f"({t['pct_frame_chua_xac_minh']}%)")

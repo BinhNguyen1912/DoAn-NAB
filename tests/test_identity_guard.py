@@ -304,3 +304,90 @@ class TestBannerDiTheoTrangThaiLatch:
             src = inspect.getsource(mod)
             assert "switch = watch.nghi or switch" not in src, \
                 f"{mod.__name__}: `switch` còn dính sticky ⇒ banner không tắt khi latch tự xoá"
+
+
+class TestBienCuaNguongVang:
+    """Biên của `lost_reset_streak` — KHOÁ BẰNG CHUỖI THẬT của 2 ca báo đúng sát ngưỡng.
+
+    `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền (f176–177, đọc từ CSV) rồi ô nhảy
+    sang tóc/cửa. Ngưỡng 2 sẽ MẤT ca `121732#178`; ngưỡng 3 giữ 7/7. Test này đỏ nếu ai đổi `>=` thành
+    `>` hoặc hạ ngưỡng mặc định.
+    """
+
+    MOC = (566, 130, 656, 383)     # ô của ô-chai trước khi vắng (tâm ~611,256)
+    NHay = (376, 42, 476, 121)     # f178: ô nhảy sang vùng khác hẳn
+
+    def test_vang_dung_2_frame_van_bi_cham(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3)
+        w.update(self.MOC, self.MOC, (480, 640))
+        for _ in range(2):                                    # f176–177: 2 frame rỗng
+            w.update(self.MOC, (0, 0, 0, 0), (480, 640), co_mask=False)
+        w.update((0, 0, 0, 0), self.NHay, (480, 640))          # f178
+        assert w.update(self.NHay, self.MOC, (480, 640)) is True, \
+            "vắng 2 frame < ngưỡng 3 ⇒ cú nhảy vẫn phải bị chấm (ca đúng 121732#178)"
+
+    def test_bien_dung_3_frame_la_tai_bam(self):
+        """`>= 3` (không phải `> 3`): đúng 3 frame vắng đã là phiên bám mới."""
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        w.update(self.MOC, self.MOC, (480, 640))
+        for _ in range(3):
+            w.update(self.MOC, (0, 0, 0, 0), (480, 640), co_mask=False)
+        w.update((0, 0, 0, 0), self.NHay, (480, 640))
+        assert w.update(self.NHay, self.MOC, (480, 640)) is False
+        assert w.vua_bao is False
+
+
+class TestBuocVosKhongPhaiFrameHienThi:
+    """24-11 (review độc lập P1): đường web gọi `update()` mỗi frame PHÁT, mà `vos_every>1` ⇒ cùng một
+
+    kết quả VOS lặp ~3,5 lần ⇒ `lost_reset_streak`/`reacq_grace_steps`/`settle_steps` co lại 3,5 lần
+    (một VOS rỗng là reset; grace hết hạn trước bước VOS kế nên cú "mẩu rác → vật" vẫn bị chấm).
+    """
+
+    A = (100, 100, 200, 200)
+    M = (300, 200, 380, 260)
+    B = (500, 300, 600, 480)
+
+    def test_lap_lai_cung_ket_qua_VOS_khong_dem_buoc(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        w.update(self.A, self.A, (480, 640))
+        # MỘT kết quả VOS rỗng, phát 3 lần (vos_every=3): 1 bước + 2 frame hiển thị lặp lại
+        w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False, buoc_moi=True)
+        for _lap in range(2):
+            w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False, buoc_moi=False)
+        # `_lost` phải là 1, KHÔNG phải 3 ⇒ chưa đủ ngưỡng ⇒ không reset
+        assert w.update((0, 0, 0, 0), self.M, (480, 640), buoc_moi=False) is False
+        # bước VOS mới đầu tiên sau khi vắng: vẫn chưa đủ 3 bước ⇒ KHÔNG phải phiên bám mới
+        w.update((0, 0, 0, 0), self.M, (480, 640), buoc_moi=True)
+        assert w.update(self.M, self.B, (480, 640), buoc_moi=True) is True, \
+            "vắng 1 bước VOS (dù 3 frame hiển thị) là NHẤP NHÁY ⇒ cú nhảy vẫn phải bị chấm"
+
+    def test_grace_khong_het_han_truoc_buoc_vos_ke(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(lost_reset_streak=3, reacq_grace_steps=2)
+        for _ in range(4):
+            w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False, buoc_moi=True)
+        # bước VOS 1 của phiên mới = mẩu rác, phát 4 frame hiển thị
+        w.update((0, 0, 0, 0), self.M, (480, 640), buoc_moi=True)
+        for _lap in range(3):
+            w.update((0, 0, 0, 0), self.M, (480, 640), buoc_moi=False)
+        # bước VOS 2 = mask thật 24k px ⇒ phải vẫn được MIỄN (grace tính theo BƯỚC VOS)
+        assert w.update(self.M, self.B, (480, 640), buoc_moi=True) is False
+        assert w.vua_bao is False
+
+    def test_buoc_moi_false_khong_doi_trang_thai(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch()
+        w.update(self.A, self.B, (480, 640))
+        assert w.nghi is True
+        for _ in range(5):
+            assert w.update(self.B, self.A, (480, 640), buoc_moi=False) is True
+        assert w.trang_thai == "nghi"      # không xoá, không đếm settle
