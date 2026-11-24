@@ -1126,15 +1126,22 @@ class TestPhimCTaiChuaXacMinhHanhVi:
         fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 320),
                                         square_size=40, start=(10, 10))
         path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
-        state = {"n": 0, "da_bam_c": False}
+        state = {"n": 0, "da_bam_c": False, "quy_dao_sau_c": None}
         viz = Visualizer()
 
         def display(img, mode):
             state["n"] += 1
+            if (state["da_bam_c"] and state["quy_dao_sau_c"] is None
+                    and viz.trajectory_points):          # chờ frame ĐẦU của vùng mới
+                state["quy_dao_sau_c"] = viz.trajectory_points
             if nhan and nhan[-1]["chua"] and not state["da_bam_c"]:
                 state["da_bam_c"] = True
+                # SENTINEL (review vòng 3, P2): cắm điểm "vùng CŨ" ngay trước khi bấm `c`, nếu không
+                # test vẫn xanh khi xoá call-site `clear_trajectory` ở `smooth_display`.
+                viz._trajectory.append((30, 30))
+                viz._traj_ts.append(0.0)
                 return CONTINUE_KEY
-            return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
+            return list(QUIT_KEYS)[0] if state["n"] >= 90 else -1
 
         sd.run_smooth_display(source=str(path), engine=Eng(),
                               selector=PromptSelector(frame_shape=(240, 320, 3)),
@@ -1147,3 +1154,9 @@ class TestPhimCTaiChuaXacMinhHanhVi:
         assert sau, "phải có frame render SAU khi bấm `c`"
         assert not any(d["chua"] for d in sau), "bấm `c` mà vẫn 'chưa xác minh' ⇒ kẹt (bug P1-a)"
         assert not any(d["switch"] for d in sau), "bấm `c` mà vẫn còn cờ nghi"
+        snap = state["quy_dao_sau_c"]
+        assert snap, "quỹ đạo sau khi bấm `c` rỗng ⇒ không chứng minh được gì"
+        assert (30, 30) not in snap, ("sentinel vùng CŨ còn trong quỹ đạo ⇒ call-site "
+                                      "`clear_trajectory` ở `smooth_display` không chạy")
+        assert any(x > 150 for x, _ in snap) or any(x > 15 for x, _ in snap), \
+            "quỹ đạo sau `c` phải có điểm của vùng MỚI"

@@ -92,7 +92,7 @@ không có phiên nào đo được hoặc `git_rev` không đọc được.
   đang bám (kiểu chưa xác minh) thay vì im lặng 44 % phiên.
 - Có script **tái lập được** chi phí ẩn overlay trên CSV (`scripts/replay_latch_settle.py`), có
   provenance (`git_rev`, `git_dirty_code`, `lenh`, `do_luc`, `frame_shape`).
-- Kiểm tra: `./run lint` sạch · **1 979 test** · `./run webtest` **102** · `npm run build` OK ·
+- Kiểm tra: `./run lint` sạch · **1 980 test** · `./run webtest` **102** · `npm run build` OK ·
   `./run e2e` **PASS** (thêm 4 check cho trạng thái "chưa xác minh").
 - File thay đổi:
   - `src/identity_guard.py` — máy trạng thái 3 mức (`TRANG_THAI_*`, `settle_steps`, `chua_xac_minh`)
@@ -155,6 +155,27 @@ Kiểm bằng ảnh (4 mốc): t=9,6 s **"CHUA XAC MINH"** với ô trên vùng 
 nói thật là chưa xác minh); t=11,2 s **"NGHI"** (không mask); **t=12,6 s ô quay lại ĐÚNG cái thìa**;
 t=14,5 s chỉ còn **1 banner "MẤT DẤU"** (hết cảnh 2 banner chồng nhau). ⇒ Đúng khiếu nại ban đầu
 "chỉ nghi thôi, không focus lại": nay sau ~1,9 s hệ hiện lại vùng đang bám.
+
+### 9. Review vòng 3 — P1 là **lỗi bằng chứng thật** (tôi đã tự kiểm bằng đột biến)
+
+Reviewer vòng 3 chỉ ra `quy_dao_sau_c` **không** chứng minh call-site `clear_trajectory` ở nhánh `c`:
+giai đoạn `nghi` đã xoá quỹ đạo mỗi frame nên deque vốn đã sạch trước khi `c` được bấm. **Tôi đã thử
+đột biến và reviewer đúng**: xoá call-site ⇒ test vẫn XANH.
+
+Đã sửa bằng **SENTINEL**: cắm một điểm "vùng CŨ" `(30, 30)` vào `viz._trajectory` **ngay trước** khi
+bấm `c`, rồi assert điểm đó **biến mất** và snapshot **không rỗng** (có điểm của vùng mới). Làm cho cả
+2 đường CLI, và thêm **đối chứng dương** cho bộ đếm `chua_xac_minh_n`.
+
+Bảng đột biến đầy đủ (6/6 bắt được):
+
+| # | đột biến | test phải đỏ | kết quả |
+|---|---|---|---|
+| 1 | điều kiện `c` về `watch.nghi` | 2 test hành vi `c` | ✔ |
+| 2 | bỏ `watch.reset()` ở nhánh `c` | 2 test hành vi `c` | ✔ |
+| 3 | xoá 2 dòng map `routes._live_status` | test HTTP | ✔ |
+| 4 | bỏ `and not switch_warning` | test banner | ✔ |
+| 5 | xoá call-site `clear_trajectory` (`smooth_display`) | test quỹ đạo sentinel | ✔ |
+| 6 | xoá nhánh `+= 1` của `chua_xac_minh_n` | đối chứng dương bộ đếm | ✔ |
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy

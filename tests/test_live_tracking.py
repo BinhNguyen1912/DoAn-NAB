@@ -3490,3 +3490,19 @@ class TestChuaXacMinhKhongKet:
         s._cap_nhat_bang_chung(False)
         assert s._stats.bam == "nghi_doi_tuong"
         assert list(s._trail) == []
+
+    def test_bo_dem_tang_khi_that_su_chua_xac_minh(self, tmp_path):
+        """ĐỐI CHỨNG DƯƠNG (review vòng 3, P3): assert "không tăng" một mình không chứng minh bộ đếm
+        còn sống — xoá hẳn nhánh `elif self._stats.chua_xac_minh: ... += 1` thì mọi test cũ vẫn xanh
+        trong khi web/status báo 0 mãi."""
+        from src.live_tracking import _FrameResult
+
+        s = self._session(tmp_path)
+        mask = np.zeros((48, 64), bool)
+        mask[10:30, 10:30] = True
+        s._watch._trang_thai = "chua_xac_minh"
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = True
+        assert s._stats.chua_xac_minh_n == 0
+        s._update_stats_locked(_FrameResult(1, (10, 10, 30, 30), mask, 1.0))
+        assert s._stats.chua_xac_minh_n == 1, "bộ đếm 'chưa xác minh' chết im lặng"

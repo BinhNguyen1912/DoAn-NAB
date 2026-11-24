@@ -512,6 +512,11 @@ class TestPhimCTaiChuaXacMinhHanhVi:
                 state["quy_dao_sau_c"] = viz.trajectory_points
             if nhan and nhan[-1]["chua"] and not state["da_bam_c"]:
                 state["da_bam_c"] = True          # đã sang "chưa xác minh" ⇒ bấm `c`
+                # SENTINEL (review vòng 3, P1): cắm 1 điểm của "vùng CŨ" NGAY trước khi bấm `c`.
+                # Không có nó thì test vẫn xanh khi xoá hẳn call-site `clear_trajectory` ở nhánh `c`
+                # (vì giai đoạn `nghi` đã xoá quỹ đạo mỗi frame ⇒ deque vốn đã sạch).
+                viz._trajectory.append((30, 30))
+                viz._traj_ts.append(0.0)
                 return CONTINUE_KEY
             return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
 
@@ -524,6 +529,8 @@ class TestPhimCTaiChuaXacMinhHanhVi:
         assert sau, "phải có frame render SAU khi bấm `c`"
         assert not any(d["chua"] for d in sau), "bấm `c` rồi vẫn 'chưa xác minh' ⇒ kẹt (bug P1-a)"
         assert not any(d["switch"] for d in sau), "bấm `c` rồi vẫn còn cờ nghi"
-        assert state["quy_dao_sau_c"] is not None, "không chụp được quỹ đạo sau khi bấm `c`"
-        cu = [p for p in state["quy_dao_sau_c"] if p[0] < 150]
-        assert not cu, f"quỹ đạo còn điểm của vùng CŨ ({cu[:3]}) ⇒ đường tím nối qua cú nhảy"
+        snap = state["quy_dao_sau_c"]
+        assert snap, "quỹ đạo sau khi bấm `c` rỗng ⇒ không chứng minh được gì"
+        assert (30, 30) not in snap, ("sentinel vùng CŨ còn trong quỹ đạo sau `c` ⇒ call-site "
+                                      "`clear_trajectory` ở nhánh `c` không chạy")
+        assert any(x > 150 for x, _ in snap), "quỹ đạo sau `c` phải có điểm của vùng MỚI"
