@@ -1,0 +1,141 @@
+{
+  "git_rev": "62d8b5f17287d2f3f00739a51f440e3321dc09a0",
+  "git_dirty": true,
+  "git_dirty_code": true,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-24T11:27:49",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/tran_nen --pred-dir data/tran_nen_masks --out data/miou_tran_nen_truoc_2026-11-24_metrics.json",
+    "git_rev": "62d8b5f17287d2f3f00739a51f440e3321dc09a0",
+    "git_dirty": true,
+    "git_dirty_code": true,
+    "git_loi": null,
+    "clip": "data/clip_tran_nen.mp4",
+    "nguoi_gan": "Binh",
+    "gt": "docs/gt/tran_nen",
+    "pred_dir": "data/tran_nen_masks",
+    "gt_do_model_goi_y": false,
+    "dang_gt": "silhouette",
+    "nguon_gt": "ngưỡng màu HSV (script `gt_gan_nhanh.py`) + người sửa tay",
+    "phuong_phap_gt": "GT khởi tạo bằng ngưỡng màu HSV (bao lồi) rồi NGƯỜI sửa tay; sai số của bộ gợi ý CHƯA ĐO ⇒ không đọc mIoU này như GT người vẽ hoàn toàn",
+    "mask_manifest": {
+      "nguon": "data/clip_tran_nen.mp4",
+      "image_size_yeu_cau": 192,
+      "image_size_hieu_luc": 192,
+      "vos_every": 1,
+      "mask_smoothing": 1.0,
+      "bbox_xywh": [
+        405,
+        65,
+        90,
+        365
+      ],
+      "lenh": "tools/run_live.py --source data/clip_tran_nen.mp4 --image-size 192 --bbox 405,65,90,365 --max-frames 401 --dump-mask-frames 0,45,133,178,222,266,355,400 --dump-mask-dir data/tran_nen_masks --metrics-csv /tmp/tn.csv",
+      "git_rev": "62d8b5f",
+      "git_dirty": true,
+      "git_dirty_code": false,
+      "do_luc": "2026-11-24T11:10:48",
+      "frames_yeu_cau": [
+        0,
+        45,
+        133,
+        178,
+        222,
+        266,
+        355,
+        400
+      ],
+      "frames_da_ghi": [
+        0,
+        45,
+        133,
+        178,
+        222,
+        266,
+        355,
+        400
+      ],
+      "so_file_ghi_de": 0,
+      "frame_goc_cua_phien": 0
+    },
+    "mask_manifest_loi": null,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
+  },
+  "ket_qua": {
+    "gt_dang": "silhouette",
+    "mIoU": 0.6987,
+    "mIoU_p05": null,
+    "mIoU_p05_n": 5,
+    "mIoU_p05_nguong": 30,
+    "mask_ngoai_gt_mean": 0.174,
+    "mask_ngoai_gt_n": 5,
+    "mask_ngoai_gt_max": 0.369,
+    "mask_ngoai_gt_max_frame": 0,
+    "n_cham": 5,
+    "so_frame_gt_rong": 1,
+    "mask_px_gt_rong": {
+      "n": 1,
+      "mean": 3713.0,
+      "max": 3713,
+      "max_frame": 133,
+      "so_frame_bia": 1,
+      "frames": [
+        {
+          "frame_idx": 133,
+          "dien_tich_pred": 3713
+        }
+      ]
+    },
+    "so_frame_thieu_mask": 0,
+    "so_frame_mask_hong": 0,
+    "so_frame_tong": 6,
+    "coverage": 0.8333,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.5324,
+        "dien_tich_gt": 14833,
+        "dien_tich_pred": 18174,
+        "mask_ngoai_gt": 0.369
+      },
+      {
+        "frame_idx": 45,
+        "iou": 0.7095,
+        "dien_tich_gt": 14126,
+        "dien_tich_pred": 13362,
+        "mask_ngoai_gt": 0.1462
+      },
+      {
+        "frame_idx": 133,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 3713
+      },
+      {
+        "frame_idx": 222,
+        "iou": 0.7057,
+        "dien_tich_gt": 17774,
+        "dien_tich_pred": 15865,
+        "mask_ngoai_gt": 0.1228
+      },
+      {
+        "frame_idx": 266,
+        "iou": 0.7575,
+        "dien_tich_gt": 15098,
+        "dien_tich_pred": 15249,
+        "mask_ngoai_gt": 0.1422
+      },
+      {
+        "frame_idx": 400,
+        "iou": 0.7882,
+        "dien_tich_gt": 15013,
+        "dien_tich_pred": 14090,
+        "mask_ngoai_gt": 0.0896
+      }
+    ]
+  },
+  "canh_bao_gt": [
+    "GT frame 133 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')"
+  ],
+  "loi_chan": []
+}
