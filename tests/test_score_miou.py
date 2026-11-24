@@ -150,6 +150,45 @@ class TestCham:
         kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
         assert kq["so_frame_gt_rong"] == 1 and kq["n_cham"] == 0 and kq["mIoU"] is None
 
+    def test_gt_rong_van_do_dien_tich_mask_bia(self, tmp_path):
+        """GT rỗng ⇒ KHÔNG chấm IoU, nhưng PHẢI đếm mask của model to bao nhiêu (bịa mask).
+
+        23-11-2026: câu "hệ vẽ bừa khi vật vắng" từng chỉ nói được bằng **đếm tay file PNG**; bằng
+        chứng thật (re-ID bịa 5/5 frame, 33 199–52 056 px) không nằm trong artifact nào.
+        """
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))          # model "vẽ" kín 4x4 = 16 px
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["so_frame_gt_rong"] == 1 and kq["n_cham"] == 0 and kq["mIoU"] is None
+        px = kq["mask_px_gt_rong"]
+        assert px["n"] == 1 and px["so_frame_bia"] == 1
+        assert px["mean"] == 16.0 and px["max"] == 16 and px["max_frame"] == 0
+        assert kq["frames"][0]["dien_tich_pred"] == 16   # đọc được ngay ở dòng frame
+
+    def test_mask_rong_o_frame_gt_rong_la_trung_thuc_khong_phai_bia(self, tmp_path):
+        """Mask rỗng ở frame GT rỗng = hệ TRUNG THỰC ⇒ `so_frame_bia == 0` (khác "chưa đo")."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.zeros((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        px = kq["mask_px_gt_rong"]
+        assert px["n"] == 1 and px["so_frame_bia"] == 0 and px["max"] == 0
+
+    def test_khong_co_frame_gt_rong_thi_metric_la_None_khong_phai_0(self, tmp_path):
+        """Bẫy `0/None ≠ đã đo`: không có frame GT rỗng ⇒ `None`, KHÔNG phải "0 px bịa"."""
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt_dir.mkdir()
+        pred_dir.mkdir()
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["mask_px_gt_rong"] is None
+
     # ── `mask_ngoai_gt`: đo phần mask TRÀN RA NGOÀI GT (15-11) ────────────────────────────────
     def test_mask_nam_hoan_toan_trong_gt_thi_tran_bang_0(self, tmp_path):
         """Mask nằm gọn trong GT (GT hộp bao) ⇒ `mIoU` bị chặn dưới 1, nhưng `tran` = 0."""
@@ -1055,3 +1094,91 @@ class TestFramesYeuCauKhongDocDuoc:
         man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "frames_da_ghi": []}
         chan, _ = sm.kiem_khop_manifest(self._idx, man)
         assert chan, "pred_dir=None phải fail-closed, không được bỏ qua cổng"
+
+
+class TestTranRecallVaPhuThieu:
+    """Plan 24-11 `bam-bat-vat-bat-ky` P2 — tách "tràn" khỏi "hụt".
+
+    Đo 24-11 trên `docs/gt/tran_nen` (@192): 4/5 frame mask **NHỎ hơn** GT ⇒ lỗi chính là **HỤT**,
+    nhưng artifact trước đó chỉ có `mask_ngoai_gt` (tràn) ⇒ người đọc không thấy phần thiếu.
+    `tran_recall` = |mask ∩ GT| / |GT| là **TRẦN** (IoU không thể vượt recall khi cắt sạch tràn) ⇒
+    artifact phải tự ghim ý nghĩa bằng `tran_ly_thuyet_dung_gt`.
+    """
+
+    def _gt(self, d, idx, arr):
+        import cv2
+        d.mkdir(exist_ok=True)
+        cv2.imwrite(str(d / f"gt_{idx:06d}.png"), (arr * 255).astype("uint8"))
+
+    def _pred(self, d, idx, arr):
+        import cv2
+        d.mkdir(exist_ok=True)
+        cv2.imwrite(str(d / f"mask_{idx:06d}.png"), (arr * 255).astype("uint8"))
+
+    def test_hut_duoc_do_rieng_khong_bi_goi_la_tran(self, tmp_path):
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt = np.zeros((10, 10))
+        gt[0:5, 0:10] = 1                 # 50 px
+        pred = np.zeros((10, 10))
+        pred[0:5, 0:5] = 1                # 25 px, nằm gọn trong GT ⇒ TRÀN = 0 nhưng HỤT 50 %
+        self._gt(gt_dir, 0, gt)
+        self._pred(pred_dir, 0, pred)
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        f = kq["frames"][0]
+        assert f["mask_ngoai_gt"] == 0.0      # không tràn…
+        assert f["tran_recall"] == 0.5        # …nhưng chỉ phủ 50 % vật
+        assert f["phu_thieu"] == 0.5
+        assert kq["tran_recall_dung_gt"] == 0.5
+        assert kq["phu_thieu_mean"] == 0.5
+
+    def test_tran_ghi_nhan_la_tran_ly_thuyet(self, tmp_path):
+        """Artifact phải TỰ nói `tran_recall` là trần dùng GT — để không ai trích thành "đạt được"."""
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["tran_ly_thuyet_dung_gt"] is True
+        assert kq["tran_recall_n"] == 1
+
+    def test_gt_rong_khong_duoc_tinh_vao_recall(self, tmp_path):
+        """Frame GT rỗng ⇒ không chấm (recall không xác định), KHÔNG được ghi 0 (bẫy `IoU(rỗng,rỗng)=1`)."""
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.zeros((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["tran_recall_dung_gt"] is None
+        assert kq["phu_thieu_mean"] is None
+        assert kq["tran_recall_n"] == 0
+
+
+class TestBoGtChuaTo:
+    """P1 plan 24-11: bộ GT khai frame nhưng chưa ai tô phải BỊ CHẶN kèm câu nói thẳng.
+
+    Ca thật: `docs/gt/binh1_silhouette` + `binh1_tay` — `index.json` khai 12 frame, `gt_*.png` = 0 file,
+    `frames/` là ẢNH GỐC. Không có cờ này, cách "sửa" hấp dẫn nhất là đổi tên ảnh gốc thành `gt_*.png`
+    ⇒ **tạo GT giả** rồi chấm mIoU trên đó.
+    """
+
+    def test_dung_duoc_false_thi_chan_va_noi_ro(self):
+        import scripts.score_miou as sm
+        chan, mem = sm.kiem_index(
+            {"clip": "x.mp4", "dung_duoc": False,
+             "ly_do_khong_dung_duoc": "CHƯA TÔ: 0 file gt_*.png",
+             "frames": [{"frame_idx": 0}]}, __import__("pathlib").Path("."))
+        assert any("CHƯA TÔ" in c for c in chan), chan
+
+    def test_thieu_co_khong_bi_chan(self):
+        import pathlib
+
+        import scripts.score_miou as sm
+        chan, _ = sm.kiem_index({"clip": "x.mp4", "frames": []}, pathlib.Path("."))
+        assert not any("CHƯA TÔ" in c for c in chan)

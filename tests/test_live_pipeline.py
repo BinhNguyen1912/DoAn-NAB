@@ -7,7 +7,7 @@ import numpy as np
 import pytest
 
 from src.synthetic_video import generate_tracking_sequence
-from src.live_pipeline import run_tracking
+from src.live_pipeline import InteractiveSummary, run_tracking
 
 
 @pytest.mark.slow
@@ -249,3 +249,200 @@ class TestCoVetoToiHudOHaiDuong:
             visualizer=Viz(),
         )
         assert seen and any(v is True for v in seen)   # HUD PHẢI nhận được cờ veto
+
+
+class TestLivePipelineIdentityLatchFix:
+    """Test fix cho deadlock IdentityWatch trong run_interactive."""
+
+    def test_reacquired_va_mat_dau_pipeline(self):
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        assert "if reacquired:" in src
+        assert "watch.reset()" in src
+        assert "last_bbox = (0, 0, 0, 0)" in src
+        pos_reacq = src.index("if reacquired:")
+        pos_reset = src.index("watch.reset()", pos_reacq)
+        assert pos_reacq < pos_reset
+
+
+
+class TestCoNghiEpTimLaiInline:
+    """23-11-2026: cùng luật với đường MƯỢT — cổng nghi phải báo xuống `ReIdSession` (đường
+
+    `run_interactive`, tức `./run view`/`--reid` không `--smooth`), không chỉ ẩn overlay.
+    """
+
+    def test_cong_nghi_bao_xuong_reid_session(self):
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        assert "_bao_nghi(watch.nghi)" in src
+        assert "reid_session.set_suspicious(co)" in src
+        # `c` và `r` phải xoá cờ (nếu không bước track kế tiếp lại bị bỏ ⇒ quay vòng)
+        for khoa in ('if key == CONTINUE_KEY and watch.nghi:', 'if key == RESET_KEY:'):
+            pos = src.index(khoa)
+            assert "_bao_nghi(False)" in src[pos:pos + 400], khoa
+
+    def test_phim_c_neo_lai_engine(self):
+        """`c` = "vẫn đúng" nhưng session đã bị bỏ track ⇒ phải `start()` lại ở ô vừa bị nghi."""
+        import inspect
+
+        from src import live_pipeline as lp
+
+        src = inspect.getsource(lp.run_interactive)
+        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        assert src.index("reid_session.start(frame, bbox_luc_nghi)", pos_c) > pos_c
+
+
+class TestCoNghiEpTimLaiThatSu:
+    """P2 review 23-11: đường `run_interactive` (KHÔNG `--smooth`) trước đây chỉ có test đọc source.
+
+    Một regression thật — không gọi `set_suspicious`, gọi sai giá trị, hay `c` neo sai ô — vẫn xanh.
+    Test này chạy vòng lặp thật với session giả GHI LẠI lời gọi.
+    """
+
+    def test_cong_nghi_goi_set_suspicious_va_c_neo_lai(self, tmp_path, write_video):
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        A, B = (10, 10, 50, 50), (80, 10, 120, 50)     # nhảy 70 px
+
+        def _res(bbox):
+            m = np.zeros((120, 200), bool)
+            m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+            return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+        class Engine:
+            def __init__(self):
+                self.jump = False
+
+            def start(self, frame, bbox):
+                return _res(A)
+
+            def process(self, frame):
+                return _res(B if self.jump else A)
+
+            def reset(self):
+                pass
+
+        class Session:
+            """Session giả: đủ API mà `run_interactive` dùng, ghi lại mọi lời gọi."""
+
+            state = "tracking"
+
+            def __init__(self):
+                self.suspicious_calls = []
+                self.start_calls = []
+                self.n = 0
+
+            def step(self, frame):
+                self.n += 1
+                bbox = B if self.jump else A
+                return Step(result=_res(bbox), state="tracking")
+
+            jump = False
+
+            def start(self, frame, bbox):
+                self.start_calls.append(tuple(bbox))
+                return _res(tuple(bbox))
+
+            def reset(self):
+                pass
+
+            def set_suspicious(self, co):
+                self.suspicious_calls.append(bool(co))
+
+        from src.reid import Step
+
+        fx = generate_tracking_sequence(num_frames=30, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = Engine()
+        session = Session()
+        session.jump = engine.jump
+        selector = PromptSelector(frame_shape=(120, 200, 3))
+        state = {"n": 0, "da_bam_c": False}
+
+        def display(img, mode):
+            state["n"] += 1
+            if state["n"] >= 5 and not engine.jump:
+                engine.jump = True          # bật cú nhảy SAU khi đã có mốc cũ
+                session.jump = True
+            if True in session.suspicious_calls and not state["da_bam_c"]:
+                state["da_bam_c"] = True     # cổng đã báo nghi ⇒ bấm `c` = "vẫn đúng"
+                return CONTINUE_KEY
+            return list(QUIT_KEYS)[0] if state["n"] >= 40 else -1
+
+        run_interactive(source=str(path), engine=engine, selector=selector, display=display,
+                        preselect_bbox=A, reid_session=session)
+
+        assert session.suspicious_calls[:1] == [True], (
+            "cổng nghi phải báo xuống Re-ID (nếu không, session vẫn 'tracking' vùng sai)"
+        )
+        assert session.suspicious_calls[-1] is False, "bấm `c` phải xoá cờ nghi"
+        assert B in session.start_calls, (
+            "`c` phải neo lại engine ở ô LÚC NGHI (ô B của cú nhảy), không phải ô cũ"
+        )
+
+
+class TestPromptBboxTrongSummary:
+    """23-11-2026 (review 3 ý kiến): `./run demoip` KHÔNG truyền `--bbox` — người dùng kéo chuột.
+
+    Trước đây ô chọn không được lưu ở ĐÂU CẢ ⇒ `run_info` không có bbox ⇒ **không replay được
+    phiên nào** (video `--record` lại đã cháy HUD nên không dùng làm nguồn thô). Nay summary mang
+    `prompt_bbox` (ô ĐẦU TIÊN) + `reselect_n`.
+    """
+
+    def test_summary_ghi_o_chon_dau_tien_va_dem_lan_chon_lai(self):
+        summary = InteractiveSummary()
+        assert summary.prompt_bbox is None and summary.reselect_n == 0
+        # mô phỏng luật trong vòng lặp: lần đầu lưu, các lần sau đếm
+        for bbox in [(10, 10, 50, 50), (20, 20, 60, 60)]:
+            if summary.prompt_bbox is None:
+                summary.prompt_bbox = tuple(bbox)
+            else:
+                summary.reselect_n += 1
+        assert summary.prompt_bbox == (10, 10, 50, 50)
+        assert summary.reselect_n == 1
+
+    def test_run_smooth_display_ghi_prompt_bbox(self, tmp_path, write_video):
+        """Đường `--smooth` (đường demo CHÍNH): ô chọn phải tới được summary."""
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.smooth_display import run_smooth_display
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+
+        class Eng:
+            def start(self, frame, bbox):
+                m = np.zeros((120, 200), bool)
+                m[10:50, 10:50] = True
+                return TrackingResult(frame_idx=0, mask=m, bbox=(10, 10, 50, 50), score=5.0,
+                                      elapsed_ms=1.0)
+
+            def process(self, frame):
+                return self.start(frame, None)
+
+            def reset(self):
+                pass
+
+        fx = generate_tracking_sequence(num_frames=20, frame_size=(120, 200),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        st = {"n": 0}
+
+        def display(img, mode):
+            st["n"] += 1
+            return list(QUIT_KEYS)[0] if st["n"] >= 10 else -1
+
+        summary = run_smooth_display(source=str(path), engine=Eng(),
+                                     selector=PromptSelector(frame_shape=(120, 200, 3)),
+                                     display=display, preselect_bbox=(10, 10, 50, 50))
+        assert summary.prompt_bbox == (10, 10, 50, 50)

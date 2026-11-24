@@ -1,0 +1,52 @@
+{
+ "nguon": "data/clip_be2.mp4",
+ "image_size_yeu_cau": 192,
+ "image_size_hieu_luc": 192,
+ "vos_every": 1,
+ "mask_smoothing": 1.0,
+ "bbox_xywh": [
+  205,
+  130,
+  125,
+  260
+ ],
+ "lenh": "tools/run_live.py --source data/clip_be2.mp4 --image-size 192 --bbox 205,130,125,260 --max-frames 444 --reid --reid-cue object --reid-obj-threshold 0.75 --reid-obj-ncc-min 0.40 --dump-mask-frames 0,100,200,240,250,258,270,300,336,344,352,380,400,440 --dump-mask-dir data/be2_reid_masks --metrics-csv data/be2_reid_2026-11-23_metrics.csv",
+ "git_rev": "1b4fa3c",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "do_luc": "2026-11-23T12:33:53",
+ "frames_yeu_cau": [
+  0,
+  100,
+  200,
+  240,
+  250,
+  258,
+  270,
+  300,
+  336,
+  344,
+  352,
+  380,
+  400,
+  440
+ ],
+ "frames_da_ghi": [
+  0,
+  100,
+  200,
+  240,
+  250,
+  258,
+  270,
+  300,
+  336,
+  344,
+  352,
+  380,
+  400,
+  440
+ ],
+ "so_file_ghi_de": 0,
+ "frame_goc_cua_phien": 0
+}

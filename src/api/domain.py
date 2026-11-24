@@ -148,7 +148,8 @@ class LiveStatus:
     bam: str | None = None
     bam_ly_do: str | None = None
     bam_no_evidence_n: int = 0
-    # Cổng nhảy CÓ NHỚ (21-11): `True` = worker ĐANG nghi đã bám sang đối tượng khác và ĐÃ ẨN mask/ô.
+    # Cổng nhảy CÓ NHỚ (21-11): `True` = worker ĐANG nghi đã bám sang đối tượng khác. Từ 23-11 (ticket
+    # #45) worker không ẩn nữa mà VẼ ô NÉT ĐỨT + nhãn "NGHI" (không tô mask).
     # UI phải hiện banner + nút "vẫn đúng" (`POST /api/live/confirm`), KHÔNG được im lặng.
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0

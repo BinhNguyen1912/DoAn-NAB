@@ -1,0 +1,510 @@
+{
+  "git_rev": "ba2f060d6b9a6e68140a8b49e542105d9f977a65",
+  "git_dirty_code": true,
+  "do_luc": "2026-11-22T16:17:20",
+  "lenh": "python scripts/ab_diem_am.py --sizes 192 --device cpu",
+  "clip": "data/binh2.mp4",
+  "o_chon_xywh": [
+    334,
+    319,
+    158,
+    568
+  ],
+  "diem_am": [
+    [
+      413.0,
+      295.3
+    ],
+    [
+      413.0,
+      910.7
+    ],
+    [
+      310.3,
+      603.0
+    ],
+    [
+      515.7,
+      603.0
+    ]
+  ],
+  "frames_gt": [
+    0,
+    33,
+    65,
+    98,
+    131,
+    163,
+    170,
+    180,
+    190,
+    196,
+    200,
+    215,
+    228,
+    230,
+    250,
+    261,
+    294,
+    326,
+    359
+  ],
+  "ket_qua": [
+    {
+      "image_size": 192,
+      "o_chon": {
+        "o_dung": [
+          334,
+          319,
+          158,
+          568
+        ],
+        "o_rong": [
+          310,
+          234,
+          206,
+          738
+        ]
+      },
+      "o_dung": {
+        "image_size": 192,
+        "device": "cpu",
+        "image_size_hieu_luc": 192,
+        "frames_phat": 360,
+        "vos_fps": 5.8,
+        "mIoU": {
+          "binh2_tay": 0.7644,
+          "binh2_tay2": 0.7682
+        },
+        "n_cham": {
+          "binh2_tay": 8,
+          "binh2_tay2": 2
+        },
+        "chi_tiet": {
+          "binh2_tay": {
+            "mIoU": 0.7644,
+            "n_cham": 8,
+            "mask_ngoai_gt_mean": 0.0464,
+            "frames": [
+              {
+                "frame_idx": 0,
+                "iou": 0.6849,
+                "dien_tich_gt": 39706,
+                "dien_tich_pred": 27429,
+                "mask_ngoai_gt": 0.005
+              },
+              {
+                "frame_idx": 33,
+                "iou": 0.7934,
+                "dien_tich_gt": 37990,
+                "dien_tich_pred": 30673,
+                "mask_ngoai_gt": 0.0097
+              },
+              {
+                "frame_idx": 65,
+                "iou": 0.7821,
+                "dien_tich_gt": 38599,
+                "dien_tich_pred": 30343,
+                "mask_ngoai_gt": 0.0028
+              },
+              {
+                "frame_idx": 98,
+                "iou": 0.7575,
+                "dien_tich_gt": 39015,
+                "dien_tich_pred": 30485,
+                "mask_ngoai_gt": 0.0174
+              },
+              {
+                "frame_idx": 131,
+                "iou": 0.7576,
+                "dien_tich_gt": 45159,
+                "dien_tich_pred": 34388,
+                "mask_ngoai_gt": 0.0029
+              },
+              {
+                "frame_idx": 163,
+                "iou": 0.7502,
+                "dien_tich_gt": 33246,
+                "dien_tich_pred": 38752,
+                "mask_ngoai_gt": 0.2036
+              },
+              {
+                "frame_idx": 196,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 228,
+                "iou": 0.7758,
+                "dien_tich_gt": 32337,
+                "dien_tich_pred": 32226,
+                "mask_ngoai_gt": 0.1248
+              },
+              {
+                "frame_idx": 261,
+                "iou": 0.814,
+                "dien_tich_gt": 55938,
+                "dien_tich_pred": 45926,
+                "mask_ngoai_gt": 0.0047
+              },
+              {
+                "frame_idx": 294,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 326,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 359,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              }
+            ]
+          },
+          "binh2_tay2": {
+            "mIoU": 0.7682,
+            "n_cham": 2,
+            "mask_ngoai_gt_mean": 0.0293,
+            "frames": [
+              {
+                "frame_idx": 170,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 180,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 190,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 200,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 215,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 230,
+                "iou": 0.7127,
+                "dien_tich_gt": 50723,
+                "dien_tich_pred": 40018,
+                "mask_ngoai_gt": 0.0564
+              },
+              {
+                "frame_idx": 250,
+                "iou": 0.8238,
+                "dien_tich_gt": 58540,
+                "dien_tich_pred": 48416,
+                "mask_ngoai_gt": 0.0022
+              }
+            ]
+          }
+        }
+      },
+      "o_rong": {
+        "image_size": 192,
+        "device": "cpu",
+        "image_size_hieu_luc": 192,
+        "frames_phat": 360,
+        "vos_fps": 6.5,
+        "mIoU": {
+          "binh2_tay": 0.7482,
+          "binh2_tay2": 0.7816
+        },
+        "n_cham": {
+          "binh2_tay": 8,
+          "binh2_tay2": 2
+        },
+        "chi_tiet": {
+          "binh2_tay": {
+            "mIoU": 0.7482,
+            "n_cham": 8,
+            "mask_ngoai_gt_mean": 0.0909,
+            "frames": [
+              {
+                "frame_idx": 0,
+                "iou": 0.4913,
+                "dien_tich_gt": 39706,
+                "dien_tich_pred": 41700,
+                "mask_ngoai_gt": 0.3569
+              },
+              {
+                "frame_idx": 33,
+                "iou": 0.8072,
+                "dien_tich_gt": 37990,
+                "dien_tich_pred": 31323,
+                "mask_ngoai_gt": 0.0116
+              },
+              {
+                "frame_idx": 65,
+                "iou": 0.79,
+                "dien_tich_gt": 38599,
+                "dien_tich_pred": 30896,
+                "mask_ngoai_gt": 0.0073
+              },
+              {
+                "frame_idx": 98,
+                "iou": 0.7583,
+                "dien_tich_gt": 39015,
+                "dien_tich_pred": 30617,
+                "mask_ngoai_gt": 0.0192
+              },
+              {
+                "frame_idx": 131,
+                "iou": 0.7663,
+                "dien_tich_gt": 45159,
+                "dien_tich_pred": 34805,
+                "mask_ngoai_gt": 0.0032
+              },
+              {
+                "frame_idx": 163,
+                "iou": 0.7581,
+                "dien_tich_gt": 33246,
+                "dien_tich_pred": 38903,
+                "mask_ngoai_gt": 0.2003
+              },
+              {
+                "frame_idx": 196,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 228,
+                "iou": 0.7863,
+                "dien_tich_gt": 32337,
+                "dien_tich_pred": 32420,
+                "mask_ngoai_gt": 0.1208
+              },
+              {
+                "frame_idx": 261,
+                "iou": 0.8278,
+                "dien_tich_gt": 55938,
+                "dien_tich_pred": 46963,
+                "mask_ngoai_gt": 0.0077
+              },
+              {
+                "frame_idx": 294,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 326,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 359,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              }
+            ]
+          },
+          "binh2_tay2": {
+            "mIoU": 0.7816,
+            "n_cham": 2,
+            "mask_ngoai_gt_mean": 0.0318,
+            "frames": [
+              {
+                "frame_idx": 170,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 180,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 190,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 200,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 215,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 230,
+                "iou": 0.7165,
+                "dien_tich_gt": 50723,
+                "dien_tich_pred": 40536,
+                "mask_ngoai_gt": 0.0603
+              },
+              {
+                "frame_idx": 250,
+                "iou": 0.8467,
+                "dien_tich_gt": 58540,
+                "dien_tich_pred": 49868,
+                "mask_ngoai_gt": 0.0033
+              }
+            ]
+          }
+        }
+      },
+      "o_rong_co_am": {
+        "image_size": 192,
+        "device": "cpu",
+        "image_size_hieu_luc": 192,
+        "frames_phat": 360,
+        "vos_fps": 7.8,
+        "mIoU": {
+          "binh2_tay": 0.757,
+          "binh2_tay2": 0.7657
+        },
+        "n_cham": {
+          "binh2_tay": 8,
+          "binh2_tay2": 2
+        },
+        "chi_tiet": {
+          "binh2_tay": {
+            "mIoU": 0.757,
+            "n_cham": 8,
+            "mask_ngoai_gt_mean": 0.0518,
+            "frames": [
+              {
+                "frame_idx": 0,
+                "iou": 0.6145,
+                "dien_tich_gt": 39706,
+                "dien_tich_pred": 27145,
+                "mask_ngoai_gt": 0.0627
+              },
+              {
+                "frame_idx": 33,
+                "iou": 0.7938,
+                "dien_tich_gt": 37990,
+                "dien_tich_pred": 30777,
+                "mask_ngoai_gt": 0.0113
+              },
+              {
+                "frame_idx": 65,
+                "iou": 0.7767,
+                "dien_tich_gt": 38599,
+                "dien_tich_pred": 30121,
+                "mask_ngoai_gt": 0.0027
+              },
+              {
+                "frame_idx": 98,
+                "iou": 0.7549,
+                "dien_tich_gt": 39015,
+                "dien_tich_pred": 30493,
+                "mask_ngoai_gt": 0.0194
+              },
+              {
+                "frame_idx": 131,
+                "iou": 0.761,
+                "dien_tich_gt": 45159,
+                "dien_tich_pred": 34569,
+                "mask_ngoai_gt": 0.0033
+              },
+              {
+                "frame_idx": 163,
+                "iou": 0.7604,
+                "dien_tich_gt": 33246,
+                "dien_tich_pred": 38832,
+                "mask_ngoai_gt": 0.1982
+              },
+              {
+                "frame_idx": 196,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 228,
+                "iou": 0.7852,
+                "dien_tich_gt": 32337,
+                "dien_tich_pred": 31697,
+                "mask_ngoai_gt": 0.1114
+              },
+              {
+                "frame_idx": 261,
+                "iou": 0.8092,
+                "dien_tich_gt": 55938,
+                "dien_tich_pred": 45713,
+                "mask_ngoai_gt": 0.0054
+              },
+              {
+                "frame_idx": 294,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 326,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 359,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              }
+            ]
+          },
+          "binh2_tay2": {
+            "mIoU": 0.7657,
+            "n_cham": 2,
+            "mask_ngoai_gt_mean": 0.0353,
+            "frames": [
+              {
+                "frame_idx": 170,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 180,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 190,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 200,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 215,
+                "iou": null,
+                "ly_do": "GT rỗng (không chấm)"
+              },
+              {
+                "frame_idx": 230,
+                "iou": 0.7216,
+                "dien_tich_gt": 50723,
+                "dien_tich_pred": 41516,
+                "mask_ngoai_gt": 0.0687
+              },
+              {
+                "frame_idx": 250,
+                "iou": 0.8099,
+                "dien_tich_gt": 58540,
+                "dien_tich_pred": 47575,
+                "mask_ngoai_gt": 0.0019
+              }
+            ]
+          }
+        }
+      }
+    }
+  ],
+  "dinh_nghia": "mIoU = IoU(mask, GT silhouette) trên frame GT CÓ vật; điểm âm đặt NGOÀI 4 cạnh ô, sinh từ HÌNH HỌC (không dùng GT)."
+}

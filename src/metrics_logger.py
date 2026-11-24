@@ -37,7 +37,30 @@ CSV_HEADER = ["frame_idx", "latency_ms", "score", "center_x", "center_y", "lost"
               # 21-11: `1` = frame này hệ NGHI đã bám sang đối tượng khác (cổng nhảy có NHỚ) ⇒ overlay
               # bị ẩn. Có cột này mới đo được "ẩn bao nhiêu frame" và soi lại xem ẩn có đúng không —
               # không có thì thay đổi hành vi là không kiểm chứng được. Trống = không nghi.
-              "nghi_doi_tuong"]
+              "nghi_doi_tuong",
+              # 23-11-2026 (review độc lập 3 ý kiến): `cos` của phép xác minh mask-vs-mask
+              # (`ReIdSession._verify_ok`) Ở FRAME VỪA NHẬN LẠI. Thiếu cột này thì câu "tường có qua
+              # được cổng xác minh không" chỉ là SUY LUẬN (phiên `demoip_1123-101110` nhận lại vào
+              # tường: cos 0,976/ncc 0,484 mà không có một con số verify nào được ghi).
+              # Trống = chưa chấm / không phải frame nhận lại.
+              "verify_cos",
+              # 23-11-2026 (review vòng 2): cosine CAO NHẤT của frame, chấm TRƯỚC mọi cổng.
+              # `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng ⇒ không tách được "bộ sinh không
+              # đưa vật vào danh sách" với "cổng chặn". Cột này tách được. Trống = chưa chấm.
+              "cos_truoc_cong",
+              # 23-11-2026: số ứng viên ĐÃ CHẤM (sau prefilter NCC)
+              "cand_n",
+              # 23-11-2026 (P1 review): số ô BỘ SINH đưa ra (trước bán kính + trước cổng NCC) và số
+              # bị cổng NCC loại — thiếu 2 số này thì `cand_n = 0` không phân biệt được
+              # "bộ sinh rỗng" với "cổng chặn".
+              "cand_sinh_n", "cand_ncc_loai",
+              # 24-11-2026 (plan "chống tràn nền cùng tông", việc 4): `diện tích ô / EMA(diện tích ô)`
+              # — CHỈ ĐỂ CHẨN ĐOÁN, KHÔNG phải cổng (xem `src/bbox_area_watch.py`). Đặt ở CUỐI để
+              # CSV cũ vẫn đọc được bằng `DictReader` và thứ tự cột không lệch với dòng dữ liệu.
+              "bbox_area_ratio",
+              # Mốc (px) + số mẫu đã cập nhật: plan 24-11 đòi "công thức diện tích tham chiếu phải ghi
+              # trong cột" — thiếu 2 cột này thì không ai kiểm lại được tỉ lệ (review 24-11).
+              "bbox_area_ref", "bbox_area_n"]
 
 
 @dataclass
@@ -65,8 +88,25 @@ class FrameRecord:
     # `cos` giữa mask đang bám và 3–5 NEO danh tính (`src/track_identity.py`). `None` = CHƯA ĐO
     # (không bật / chưa đủ neo) — không được ghi thành 0.
     track_cos: Optional[float] = None
+    # `dien_tich ô / EMA(diện tích ô)` (24-11, plan chống tràn — CHỈ chẩn đoán, KHÔNG phải cổng).
+    # None = chưa đo (ô rỗng/không hợp lệ hoặc phiên cũ) — khác `1.0` = ô đúng cỡ bình thường.
+    bbox_area_ratio: Optional[float] = None
     # `True` = cổng nhảy đã báo nghi đổi đối tượng và CHƯA được xoá (overlay bị ẩn).
     nghi_doi_tuong: Optional[bool] = None
+    # `cos` mask-vs-mask của lần XÁC MINH. CẨN THẬN: cổng xác minh chạy ở các frame **SAU** frame
+    # nhận lại (`verify_frames = 2` ⇒ f119/f120 khi nhận lại ở f118), không phải ở chính frame nhận
+    # lại (review vòng 2, 23-11: comment cũ ghi "frame vừa nhận lại" nên phân tích phiên `101110` đã
+    # đọc nhầm f118 — f118 là frame NHẬN, số cos nằm ở f119/f120).
+    # `None` = chưa chấm / không phải frame xác minh.
+    verify_cos: Optional[float] = None
+    # Cosine cao nhất của frame chấm TRƯỚC mọi cổng (`None` = chưa chấm).
+    cos_truoc_cong: Optional[float] = None
+    # Số ứng viên đã chấm điểm ở frame này (`None` = không ở chế độ tìm lại).
+    cand_n: Optional[int] = None
+    # Số ô bộ sinh đưa ra (trước lọc bán kính + trước cổng NCC) — `0` mới là "bộ sinh rỗng".
+    cand_sinh_n: Optional[int] = None
+    # Số ứng viên bị cổng NCC (`obj_ncc_min`) loại.
+    cand_ncc_loai: Optional[int] = None
 
 
 def is_lost(record: FrameRecord, threshold: float = LOST_SCORE_THRESHOLD) -> bool:
@@ -98,10 +138,25 @@ class MetricsLogger:
 
     def __init__(self, sampler=None):
         self.records = []
+        # EMA diện tích ô cho cột chẩn đoán `bbox_area_ratio` (24-11). Một instance / một phiên.
+        from src.bbox_area_watch import BboxAreaWatch
+
+        self._area_watch = BboxAreaWatch()
         self.sampler = sampler
 
     def log(self, record: FrameRecord) -> None:
-        """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame)."""
+        """Nhận 1 bản ghi thêm vào phiên (thứ tự gọi = thứ tự frame).
+
+        `bbox_area_ratio` được tính Ở ĐÂY để đường CLI (tuần tự + `--smooth`) có cùng cột và luật EMA
+        chỉ tồn tại ở MỘT chỗ. **Worker web KHÔNG dựng `MetricsLogger`** (nó ghi `status.json` +
+        `drift_samples.csv`/`shown.csv`) ⇒ đừng đọc "không thấy cột" thành "chưa đo" trên artifact web
+        (P2 review 24-11).
+        """
+        # Luôn TIẾN EMA, kể cả khi record đã có sẵn ratio (nhánh replay) — nếu chỉ cập nhật khi `None`
+        # thì các frame sau lệch mốc (P3 review 24-11).
+        ti_le = self._area_watch.update(record.bbox_w, record.bbox_h)
+        if record.bbox_area_ratio is None:
+            record.bbox_area_ratio = ti_le
         self.records.append(record)
         if self.sampler is not None:
             self.sampler.sample()
@@ -141,6 +196,15 @@ class MetricsLogger:
                 "frozen_frames": 0,
                 "reacquiring_frames": 0,
                 "reacquired_count": 0,
+                # 23-11-2026 (review độc lập, F2): frame ĐÓNG BĂNG bị loại khỏi `mean_latency_ms`
+                # (`FROZEN_STATES`) ⇒ chi phí TÌM LẠI không nằm trong con số nào. Phiên
+                # `demoip_1123-095901` in `mean 161,8 ms (n=93)` trong khi 160 bước tìm lại
+                # (66 ms/bước) không được đếm ⇒ mọi tuyên bố "thêm probe có chậm không" KHÔNG kiểm được.
+                # `None` = chưa có frame đóng băng nào (KHÁC `0` = đo được 0 ms).
+                "search_mean_ms": None,
+                "search_p95_ms": None,
+                "search_n": 0,
+            "search_khong_do_n": 0,
             }
         lost_count = sum(1 for r in self.records if is_lost(r))
         # Frame đóng băng (mất dấu → không gọi model) có latency 0. Tính latency trên
@@ -148,11 +212,27 @@ class MetricsLogger:
         frozen = [r for r in self.records if is_frozen(r)]
         measured = [r for r in self.records if not is_frozen(r)]
         latencies = np.array([r.latency_ms for r in measured], dtype=float)
+        # Chi phí TÌM LẠI: latency của chính các frame bị loại khỏi `mean` — tách riêng để
+        # "thêm bước thử ứng viên có làm chậm phiên không" trả lời được bằng artifact.
+        #
+        # P1 review độc lập 23-11: CHỈ lấy frame có `latency_ms > 0` (tức bước tìm THẬT SỰ chạy).
+        # Frame `lost`/bail-out (`_auto_recover`, `_abandon_reacquire`) trả `LostResult.elapsed_ms =
+        # 0.0` vì KHÔNG gọi model — gộp 0,0 vào đây làm `search_mean_ms` bị PHA LOÃNG: càng thêm cờ
+        # nghi (⇒ càng nhiều frame bail-out) thì "chi phí tìm lại" càng **giảm** — đúng chiều ngược
+        # của sự thật. Số frame đóng băng mà KHÔNG đo được đếm riêng ở `search_khong_do_n` (bẫy
+        # "0/None ≠ đã đo").
+        frozen_do = [r for r in frozen if r.latency_ms and r.latency_ms > 0.0]
+        search_lat = np.array([r.latency_ms for r in frozen_do], dtype=float)
         if latencies.size == 0:
             mean_ms, p95_ms = 0.0, None
         else:
             mean_ms = float(np.mean(latencies))
             p95_ms = float(np.percentile(latencies, 95))
+        if search_lat.size == 0:
+            search_mean, search_p95 = None, None
+        else:
+            search_mean = float(np.mean(search_lat))
+            search_p95 = float(np.percentile(search_lat, 95))
         return {
             "total_frames": len(self.records),
             "mean_latency_ms": mean_ms,
@@ -166,6 +246,10 @@ class MetricsLogger:
             "frozen_frames": len(frozen),
             "reacquiring_frames": sum(1 for r in self.records if r.state == "reacquiring"),
             "reacquired_count": sum(1 for r in self.records if r.reacquired),
+            "search_khong_do_n": len(frozen) - int(search_lat.size),
+            "search_mean_ms": search_mean,
+            "search_p95_ms": search_p95,
+            "search_n": int(search_lat.size),
         }
 
     def write_csv(self, path: str) -> str:
@@ -188,13 +272,33 @@ class MetricsLogger:
                     r.mask_area if r.mask_area is not None else "",
                     f"{float(r.track_cos):.6g}" if r.track_cos is not None else "",
                     "" if r.nghi_doi_tuong is None else (1 if r.nghi_doi_tuong else 0),
+                    # `verify_cos`: TRỐNG = chưa chấm (không phải 0) — cùng luật với `track_cos`.
+                    f"{float(r.verify_cos):.6g}" if r.verify_cos is not None else "",
+                    f"{float(r.cos_truoc_cong):.6g}" if r.cos_truoc_cong is not None else "",
+                    "" if r.cand_n is None else str(int(r.cand_n)),
+                    "" if r.cand_sinh_n is None else str(int(r.cand_sinh_n)),
+                    "" if r.cand_ncc_loai is None else str(int(r.cand_ncc_loai)),
+                    # TRỐNG = chưa đo, không phải 0 (ô rỗng hoặc ô < 8×8 px).
+                    f"{float(r.bbox_area_ratio):.3f}" if r.bbox_area_ratio is not None else "",
+                    f"{self._area_watch.ema:.0f}" if self._area_watch.ema else "",
+                    self._area_watch.n or "",
                 ])
         return str(path)
 
-    def write_summary_json(self, path: str) -> str:
-        """Đổ summary ra JSON (báo cáo đọc lại/pandas)."""
+    def write_summary_json(self, path: str, extra: Optional[dict] = None) -> str:
+        """Đổ summary ra JSON (báo cáo đọc lại/pandas).
+
+        `extra`: field của **nhịp phát / độ dài video** (ticket #44 — `wall_s`, `display_fps_mean`,
+        `frames_written`, `video_s`, `ti_le_thoi_luong`). Vì sao phải nằm TRONG summary: bug "video
+        ngắn hơn thực 1,48×" sống nhiều tuần vì **không file artifact nào** chứa số về nhịp phát —
+        phải mở mp4 bằng ffprobe mới biết. Chỉ THÊM key, không đổi key cũ (summary là hợp đồng của
+        `web/` + notebook Colab).
+        """
+        data = self.summary()
+        if extra:
+            data.update({k: v for k, v in extra.items() if k not in data})
         with open(path, "w", encoding="utf-8") as f:
-            json.dump(self.summary(), f, ensure_ascii=False, indent=2)
+            json.dump(data, f, ensure_ascii=False, indent=2)
         return str(path)
 
 

@@ -26,27 +26,50 @@
 ### Cảnh 2 — Che khuất một phần (Motion Memory — trụ cột 2)
 - Lấy tay che **một nửa** vật rồi bỏ ra. Nói: *"Mask vẫn giữ nhờ memory bank + Kalman của SAMURAI; đo trên fixture: IoU 0,97 → 0,53 khi che 50% → hồi 0,967 ngay khung sau khi hết che."*
 
-### Cảnh 3 — Mất dấu & tìm lại (phần **tự làm**)
-- **Đưa vật ra khỏi khung hẳn** 2–3 giây → HUD hiện `MẤT DẤU / ĐANG TÌM LẠI`.
-- Đưa vật vào lại **chỗ khác**.
-- Nói: *"Hệ thống đóng băng thay vì bám sang vật khác. Khi vật trở lại, nó so khớp 'dấu vân tay' 89 số (covariance + histogram màu) với tập mẫu và bám lại khi đủ tin cậy. Cổng chính là cosine 0,60; cổng phụ NCC em để TẮT vì đo trên video thật: ca sai có ncc 0,39–0,69 nhưng ca ĐÚNG cũng có lúc chỉ 0,42 — bật 0,70 sẽ chặn 6/17 ca đúng. Chống bám nhầm nhờ vùng tìm nở dần + xác nhận 2 frame + kiểm chứng 2 frame, nên thà ở trạng thái ĐANG TÌM còn hơn bám nhầm."*
+### Cảnh 3 — Mất dấu & bám lại (phần **tự làm**) — kịch bản mặc định 23-11
+
+> ⚠️ Từ 23-11 `./run demoip` **mặc định TẮT re-ID** (`--no-reid`): đo bảng 2×2 cho thấy re-ID
+> **không thắng ô nào** (binh1 0,4236 vs 0,7794; be2 0,5668–0,8577 vs 0,8754). Cơ chế đang chạy là
+> **lan truyền liên tục của SAM 2** (memory của model), không phải so khớp "vân tay" ở trên.
+> Đoạn dưới đây là **bản cũ** — giữ lại để đối chiếu, **đừng đọc** khi demo.
+
+- **Đưa vật ra khỏi khung hẳn** 2–3 giây → HUD hiện `MẤT DẤU — bấm r chọn lại`, **không vẽ mask nào**
+  (13/13 frame mất dấu có mask = 0 px — đo phiên `demoip_1123-144505`). Nói: *"Hệ không vẽ bừa khi
+  không thấy vật; em đo trên phiên thật: 0 pixel mask ở mọi frame mất dấu."*
+- Đưa vật vào lại **chỗ khác** → memory của SAM 2 tự bám lại **ngay frame đầu** (đo: 83 660 px ở
+  frame đầu tiên vật xuất hiện lại).
+- Nếu ô **nhảy vô lý** (bám sang tường/cửa cùng tông) → HUD hiện **ô NÉT ĐỨT vàng + nhãn `NGHI`** và
+  banner `NGHI DOI TUONG — r: chon lai | c: van dung`. Nói: *"Hệ tự phát hiện nghi ngờ nên KHÔNG tô
+  mask, chỉ vẽ ô nét đứt; em bấm `c` nếu vẫn đúng, `r` nếu phải chọn lại."* (Bấm `c` để cổng tự xoá.)
+- **Chưa có** cơ chế tự nhận lại đáng tin: đo trên 2 clip GT, re-ID cho 0,4236/0,8577 so với 0,7794/0,8754
+  của lan truyền liên tục ⇒ **đừng nói câu "tự nhận lại"**.
+
+### (Bản cũ — chỉ để đối chiếu, không dùng khi demo)
 
 > Nếu cảnh 3 **không bám lại**: nói luôn *"với vật này nó chưa đủ tin cậy nên vẫn ở trạng thái đang tìm — đây là hành vi em chọn có chủ đích, em đã đo và ghi trong tài liệu"* → rồi chuyển sang cảnh 4 (video dự phòng có cảnh bám lại thành công).
 
-### ⭐ Bằng chứng nó CHẠY ĐƯỢC (dùng để trấn an khi thầy hỏi)
+### ⚠️ Bằng chứng "tự nhận lại" — ĐÃ BỊ SỐ ĐO 23-11 PHỦ ĐỊNH, đừng nói câu cũ
 
-Lần chạy thật `data/fast_1029-212632.mp4` (576 frame, webcam, `--reid-cue object`):
-
-| Chỉ số | Kết quả |
-|---|---|
-| frame mất dấu | 107/576 (**19%**), chia 31 đoạn |
-| **số lần tự nhận lại** | **17 / 17** (không lần nào phải bấm `r`) |
-| cosine khi nhận lại | **13 lần ≥ 0,90** · 3 lần 0,80–0,89 · 1 lần 0,77 |
-| FPS | 5,5 (183 ms/frame) |
-| ca khó nhất đã kiểm chứng | nhận lại sau khi tâm **nhảy 407 px** (tay di chuyển nhanh) → **bám đúng vật** (người dùng xác nhận ảnh `data/reid_review3/3_f328_nhay407px.png`) |
-
-→ Câu nói khi demo: *"Trong lần đo này, mất dấu 19% số frame, nhưng hệ thống tự nhận lại 17/17 lần,
-13 lần cosine trên 0,90. Không có lần nào phải chọn lại bằng tay."*
+> **ĐÍNH CHÍNH 23-11-2026.** Con số **"17/17"** trong bản cũ của mục này lấy từ
+> `data/reid_2clip_calib.json` — đó là **hiệu chuẩn NGƯỠNG cosine/NCC trên 17 ca dương + 1 ca âm**,
+> **KHÔNG** phải "hệ thống tự nhận lại đúng 17/17 lần trong một phiên". Đo lại bằng **mIoU mask vs GT**
+> (thước đo duy nhất của "bám đúng") trên cùng một clip, cùng ô chọn, 3+3 lần chèn kẽ
+> (`git_dirty_code=false`):
+>
+> | | mIoU | mask NGOÀI GT | frame vật đã cất |
+> |---|---|---|---|
+> | **có re-ID** | **0,4236** | **43,1 %** (tệ nhất 100 %) | **bịa** 33 199 / 37 574 / 6 385 / 34 696 / 52 056 px ở **5/5** frame |
+> | **không re-ID** (lan truyền liên tục) | **0,7794** | 0,6 % | **0 px** ở **5/5** frame |
+>
+> Artifact: `data/miou_binh1_{reid,nofreeze}_lan{1,2,3}_2026-11-23_metrics.json`,
+> `data/ab_binh1_*_lan1_masks/`, plan `docs/plan/23-11-2026-chon-co-che-tu-tim-lai.md`.
+> Trên clip "vật rời khung rồi vào lại" (`docs/gt/vat_be_vaolai`, 6 frame GT tay): lan truyền
+> **0,8754** vs re-ID **0,8577** (re-ID chậm ~8 frame và **nhận bừa 8 971 px** lúc vật vắng).
+>
+> **Câu ĐƯỢC nói** (kèm số): *"Trên clip có GT, để SAM 2 lan truyền liên tục cho mIoU 0,7794; bật
+> re-ID thì còn 0,4236 và mask tràn ra ngoài vật 43 %. Em đã đo nên chọn lan truyền cho demo."*
+> **Câu CẤM nói**: *"hệ thống tự nhận lại 17/17"*, *"tự tìm lại khi vật ra khỏi khung"*.
+> Chạy demo bằng `./run demoip --no-reid` (cờ này thêm 23-11 để chạy đúng cơ chế đã đo là tốt hơn).
 
 ### Cảnh 4 (dự phòng) — Chiếu video đã ghi
 - Mở `data/fast_*.mp4` (có HUD) hoặc `data/out_binh1_simloss.mp4` (**mất dấu f60, bám lại f80 với điểm 0,918**).

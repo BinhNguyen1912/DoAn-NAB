@@ -1,0 +1,236 @@
+# Ngày 23-11-2026 — Phân tích phiên `demoip_1123-092343`: bám nhầm remote be trơn
+
+## 🎯 Mục tiêu
+- Trả lời đúng câu "bám vật nhầm" của người dùng trên **phiên webcam thật mới nhất**, bằng bằng chứng
+  (CSV từng bước + ảnh trích từ video), KHÔNG bằng cảm tính.
+- Xác định: (a) đoạn nào bám SAI, (b) vì sao cổng "nghi đổi đối tượng" không báo, (c) vì sao sau khi
+  báo hệ vẫn KHÔNG tự cứu được.
+- Chốt việc tiếp theo có số đo làm tiêu chí nghiệm thu.
+
+## 📥 Input
+- `data/demoip_1123-092343_web.mp4` — 38,9 s, 1 168 frame @30 fps (có overlay: ô đỏ = `bbox` từ mask,
+  đường tím = quỹ đạo tâm, HUD = FPS/độ trễ/điểm tin cậy).
+- `data/demoip_1123-092343_metrics.csv` — **312 bước VOS**, 16 cột (có `nghi_doi_tuong`, `track_cos`,
+  `ncc`, `vetoed`, `mask_area`, `bbox_w/h`).
+- `data/demoip_1123-092343_summary.json` + `_run_info.json` (`git_rev f784e0e`).
+- Vật thể: **remote máy lạnh be/trắng trơn** cầm tay, nền là **tường be + máy lạnh be** — đúng ca
+  "vật trơn cùng tông nền" mà người dùng hỏi từ đầu phiên.
+- Code liên quan: `src/identity_guard.py` (`IdentityWatch`, `search_window_radius`),
+  `src/smooth_display.py:290-326` (vòng lặp MƯỢT + cổng nghi), `src/reid.py:840-913` (nhận lại).
+
+## 🔨 Công việc đã thực hiện
+1. Đọc CSV: dựng lại quỹ đạo tâm, các cú nhảy > 60 px, danh sách frame mất dấu / nhận lại / bị veto.
+2. Trích 12 + 12 frame (mỗi ~1,6 s) thành 2 ảnh lưới để nhìn toàn phiên; trích thêm frame lẻ ở
+   t = 20 / 24 / 25 / 28 / 29 / 30,5 / 31,5 / 33,3 / 36,7 s.
+3. Tính lại **đúng công thức cổng** (`search_window_radius`) trên từng bước để biết cổng báo mấy lần.
+4. Đối chiếu "ô vẽ trên video" ↔ "ô trong CSV" để tách lỗi **hiển thị** khỏi lỗi **mô hình**.
+
+## 📤 Output / Kết quả
+
+### Số tổng (từ `summary.json`)
+| | |
+|---|---|
+| bước VOS | **312** |
+| độ trễ | mean **158 ms** · p95 **186 ms** → **6,3 FPS** (mask), HUD ~20–22 FPS (LK lấp) |
+| mất dấu | **11 bước (3,5 %)** — f202-204, f216-217, f239, f244-248 |
+| nhận lại (re-ID) | **3 lần** — f205 (ncc 0,686) · f218 (0,687) · f249 (0,468) |
+| veto mặt/đầu | **3 ứng viên** (ncc 0,472–0,528) |
+| CPU / RAM | 460 % (1 lõi) · đỉnh 648 MB |
+| cổng "nghi đổi đối tượng" | **1 lần / 312 bước (0,3 %)** → ẩn overlay **48 bước = 15,4 %** phiên |
+
+### Diễn biến (ảnh lưới + CSV)
+| Giai đoạn | Ảnh trích | Trạng thái |
+|---|---|---|
+| ~0–20 s | lưới A (frame 0→583) | Ô **đúng trên remote** ở **12/12** mẫu. Quỹ đạo tím ngoằn ngoèo (người dùng vẫy vật), mask đôi khi tràn sang ổ điện/máy lạnh nhưng ô vẫn trên vật. |
+| ~20–24 s | f631 (21 s) | Ô rơi xuống **poster/desk góc dưới-trái**, remote không nằm trong ô ⇒ **SAI** |
+| ~24,3–25,9 s | f729, f778 | f729 đúng (hơi lệch), f778 ô lệch sang **tường phải** remote ⇒ **SAI** |
+| ~27,5–30,8 s | f827, f875, f924 | Ô ở **poster** rồi phình thành **ô lớn 370×130 → trùm áo người** ⇒ **SAI nặng** (CSV: score 0,04–1,24; `bbox_w` lên **391 px = 61 % chiều rộng khung** ở f236) |
+| ~31–32 s | f973 | Ô nhảy lên **tường/trần góc trái**, remote đang cầm giữa khung ⇒ cổng báo (f264, nhảy **204 px**) và **ẩn overlay từ đây** |
+| ~32,4–38,9 s | f1022, f1071, f1120 | Overlay **ẩn**, HUD in `NGHI DOI TUONG — r: chon lai | c: van dung`; **remote vẫn nằm rõ trong khung** (cầm tay, giữa khung) nhưng hệ **không tìm lại** |
+
+> Bản đồ bước↔giây là **xấp xỉ** (3,3–3,7 frame video cho 1 bước VOS; tỉ lệ trôi vì FPS hiển thị đổi
+> 19,8–24). Mọi số theo **bước** lấy từ CSV, mọi mô tả ảnh lấy từ frame video — không trộn hai hệ.
+
+### Ba nguyên nhân (đã kiểm bằng số, không suy đoán)
+1. **Cổng nhảy gần như mù với vật to.** `search_window_radius` = `min(0,25×đường chéo, max(0,10×đường
+   chéo, 1,5×max(w,h)))`; khung 640×480 ⇒ trần **200 px**, mà với ô 127×269 thì `1,5×size` = 403 px
+   nên luôn bị cắt về 200 px. Cú nhảy **204 px** ở f264 vừa đủ vượt; các cú 60–154 px ở f229–f266
+   **không** vượt. Chạy lại đúng công thức trên 312 bước: cổng báo **1 lần** (f264).
+2. **Trôi dần không bị bắt.** Kiểu sai ở đây là ô **bò** sang máy lạnh/poster/áo (mỗi bước 60–150 px),
+   không phải nhảy một phát. Cổng chỉ so ô với **ô bước trước** nên "bò" là hợp lệ.
+3. **Cổng báo ⇒ chỉ ẨN, không TÌM LẠI** (đây là lỗi lớn nhất). Trong **48 bước** bị ẩn, CSV ghi
+   `state = tracking` **cả 48 bước**, `reacquiring` = **0 bước**, score 1,21–4,46 (med 2,73),
+   `mask_area` med **43 512 px** (vùng áo người). Nghĩa là: engine **vẫn đang bám sai**, nên theo thiết
+   kế nó **không coi là mất dấu** ⇒ **Re-ID không được gọi lần nào** ⇒ không có cơ hội nhận lại remote
+   dù remote ở ngay giữa khung. Người dùng chỉ còn cách bấm `r` và kéo lại ô (lần thử ở f310 bị từ chối:
+   `[chọn] ô quá nhỏ`, `MIN_BOX = 16 px`).
+
+### Kết luận phụ (quan trọng để KHÔNG làm sai hướng)
+- **`ncc` không tách được ở phiên này**: nhận lại ĐÚNG = 0,686 / 0,687 / **0,468**; ứng viên SAI bị veto
+  = 0,472 / 0,528 ⇒ **cấm nâng `ncc_min` 0,40 → 0,55** (sẽ chặn luôn ca đúng 0,468). Đây là bằng chứng
+  ÂM TÍNH, ghi lại để lần sau không mở lại.
+- **Diện tích & tỉ lệ lấp không tách được**: `mask_area` lớn nhất chỉ **2,0×** trung vị 60 bước đầu
+  (43,8k vs 22,0k); `fill = area/(w×h)` med 0,77 — **không** bất thường so với các phiên tốt
+  (0,70–0,87). ⇒ cổng diện tích/fill **không** cứu được ca này.
+- **`track_cos` cũng không**: 0,45–0,79 ở vùng sai nằm trong dải ca đúng (đúng như kết luận 21-11).
+- Fix deadlock 22-11 **có tác dụng**: không còn re-latch vô hạn; nhận lại ở f249 **được** xoá nghi và ô
+  hiện lại (thấy rõ ở t≈31,5 s) — trước fix thì ô mất tới hết phiên.
+
+## ⚠️ Vấn đề gặp phải & cách xử lý
+- **`demoip_*.mp4` KHÔNG phải bản "raw"**: vẫn có overlay (dùng để soi ô/đường quỹ đạo), chỉ `_web.mp4`
+  là bản H.264 phát được trên Chrome. Muốn ảnh sạch phải tự tắt overlay trong visualizer.
+- Khớp bước↔frame bằng "ô đỏ trong ảnh" chỉ đúng 167/312 bước (phần sau lệch vì FPS hiển thị đổi) ⇒
+  **không** dùng phép khớp này để tuyên bố "frame X bám sai", chỉ dùng để mô tả giai đoạn.
+
+## 📌 Việc cần làm tiếp (Next steps)
+- [ ] **P0 — "cổng nghi ⇒ ÉP TÌM LẠI"** (≈2 h, không đổi model): khi `watch.nghi` bật thì (a) ngừng
+      propagate/ngừng tin `bbox` hiện tại, (b) đặt `ReIdSession` sang trạng thái tìm lại, (c) HUD
+      `DANG TIM LAI`. Nhận lại được ⇒ unlatch (đã có từ 22-11). Không được ⇒ `MẤT DẤU — bấm r`.
+      **Nghiệm thu có số trên chính phiên này**: 48 bước cuối phải là `reacquiring` (hoặc có lần nhận
+      lại), KHÔNG còn 48 bước `tracking` trên vùng áo; và **mọi phiên cũ (18 phiên replay)** không được
+      tăng số lần ẩn oan (hiện 21 lần/2 973 frame).
+- [ ] **P1 — cổng nhảy theo chuyển động dự đoán (Kalman/LK)**, không theo trần 200 px: đây là việc >4 h
+      ⇒ **phải lập plan 3 ý kiến (AGENTS §9.2)**. Tiêu chí: bắt được giai đoạn f229–f263 (ô bò sang
+      máy lạnh/poster) mà **không** tăng báo oan trên `binh1` (hiện 0 %).
+- [ ] **P2 — giảm đau cho người dùng**: khi latch, in rõ *"đang bám vùng SAI — bấm r rồi kéo ô"* + nhận
+      cú kéo nhỏ (hoặc chấp nhận click để "xoá latch") thay vì im lặng reset về idle.
+- [ ] Không làm: nâng `ncc_min`; thêm cổng diện tích/fill; thêm cổng cos (cả ba đều có bằng chứng âm).
+
+## 📚 Tài liệu tham khảo
+- `docs/task/22-11-2026-sua-deadlock-identity-watch-reacquire.md` (fix 22-11 + 4 bug)
+- `AGENTS.md` §6: "cổng nghi đổi đối tượng phải CÓ NHỚ", "`track_cos` KHÔNG phân biệt được vùng sai"
+- `src/identity_guard.py:26-70` (`search_window_radius`), `src/smooth_display.py:290-326`
+- Ảnh phân tích: `data/tmp_analyze_1123/` (2 lưới + 20 frame lẻ) — **không commit** (`data/` bị chặn)
+
+---
+
+## 🔧 BỔ SUNG (cùng ngày) — SỬA P0: "cổng nghi ⇒ ÉP TÌM LẠI"
+
+### Thay đổi
+| File | Nội dung |
+|---|---|
+| `src/reid.py` | `ReIdSession.set_suspicious(bool)` + `suspicious` (property). Bước `step()` kế tiếp khi cờ bật: **bỏ track NGAY** (không chờ `lost_after_frames`) qua `_auto_recover()` — tức là reset engine, về `LOST`, **giữ** mẫu tham chiếu để tìm lại. Cờ tự xoá trong `start()`, `reset()`, và `_reacquire()` (nếu giữ, hệ quay vòng: nhận lại → bỏ → nhận lại). |
+| `src/smooth_display.py` | `InferenceWorker.request_suspicious()` (main thread → luồng suy luận, chỉ khi giá trị **đổi**); `InferenceWorker.reanchor(bbox)` (neo lại engine nhưng **giữ** mẫu Re-ID — dùng cho phím `c`); vòng hiển thị: `_bao_nghi(watch.nghi)` sau mỗi bước; phím `c`/`r` đều `_bao_nghi(False)`; `c` gọi `reanchor(bbox_truoc_nghi)` (ô **đã lưu trước khi bỏ track**, vì sau đó `last_bbox` = rỗng). |
+| `src/live_pipeline.py` | Cùng luật cho đường `run_interactive` (không `--smooth`): `reid_session.set_suspicious(...)`, `c` → `reid_session.start(frame, bbox_truoc_nghi)`. |
+| Cả hai đường | In **một lần** khi cổng nghi bật mà **không** có Re-ID: "không tự tìm lại được; bấm r chọn lại" (trước đây im lặng). |
+
+### Test (mới)
+- `tests/test_reid.py::TestCoNghiTuTangHienThi` (5): bỏ track ngay trong bước kế tiếp · **không học thêm mẫu** (chống nhiễm `_obj_refs`) · bước sau vào nhánh tìm lại · nhận lại thì tự xoá cờ · `reset`/`start` xoá cờ.
+- `tests/test_smooth_display.py::TestCongNghiEpBoTrackThatSu` — **end-to-end thật**: vòng hiển thị + `ReIdSession` thật + engine giả, cú nhảy **70 px** nằm trong cửa sổ **chỉ cổng hiển thị** bắt được (cổng nội bộ cần ≥ 85 px) ⇒ test chỉ xanh nhờ đường mới. **Đã diễn tập giết mutant**: tắt nhánh `if self._suspicious` trong `reid.py` ⇒ test đỏ đúng chỗ.
+- `tests/test_smooth_display.py`: cổng nghi chuyển xuống session (worker → `set_suspicious`), `reanchor` **không** reset Re-ID, `c`/`r` xoá cờ.
+- `tests/test_live_pipeline.py::TestCoNghiEpTimLaiInline` (2).
+- Cập nhật test cũ `test_phim_c_giai_phong_deadlock_last_bbox` (đổi sang `worker.reanchor(bbox_truoc_nghi)`).
+
+### Kết quả kiểm tra
+- `./run lint`: **All checks passed**.
+- `./run test`: **1810 passed**, 5 deselected (trước: 1799).
+- **Chưa** chạy được phép đo "48 bước cuối thành tìm lại" trên chính phiên cũ: video `demoip_1123-092343.mp4` **có overlay cháy vào ảnh** ⇒ replay sẽ đưa ô đỏ vào cảnh, không phải dữ liệu sạch. Tiêu chí đó phải nghiệm thu bằng **phiên webcam mới** (`./run demoip`).
+
+### Rủi ro còn lại (ghi để không tuyên bố quá)
+- **Nhận lại SAI vẫn có thể xảy ra** (mẫu `_obj_refs` đã bị nhiễm trong giai đoạn trôi f229–f263, trước khi cổng báo). Và sau một lần nhận lại SAI, `watch.reset()` + `last_bbox = <ô vừa nhận lại>` làm bước kế tiếp **không còn cú nhảy lớn** ⇒ **cổng KHÔNG chắc báo lại**: hệ có thể lặng lẽ ngồi trên vùng sai với latch đã mở (đúng lớp lỗi mà mục 21-11 của AGENTS §6 cảnh báo — "cổng chỉ báo MỘT lần"). Muốn chặn gốc phải **ngừng học mẫu khi track đang trôi** + có mô hình chuyển động (cổng hình học/Kalman — P1, cần plan 3 ý kiến).
+- Đường **web** (`src/live_tracking.py`) **không có Re-ID** ⇒ chỉ ẩn overlay + banner như cũ; muốn có tự phục hồi phải port re-ID sang worker (việc riêng).
+
+---
+
+## 🔍 Review độc lập (AGENTS §9.1) — agent `reviewer`, task `mwso13pd-38aa`
+
+**Kết luận: MERGEABLE, P0 = 0.** Reviewer **không có shell** nên chưa tự chạy `git show`/`lint`/`test`
+(đã ghi rõ trong báo cáo); phần "1810 passed / lint xanh" do phiên chính chạy.
+
+| Mức | Phát hiện | Đã xử lý |
+|---|---|---|
+| **P1** | `bbox_truoc_nghi` thực chất là ô **LÚC NGHI** (ô của chính frame bật cờ), không phải ô trước cú nhảy ⇒ tên gọi mâu thuẫn tiêu chí, dễ bị "sửa" thành ô đã trôi | ✅ đổi tên `bbox_luc_nghi`, ghi rõ ngữ nghĩa + lý do chọn ô-lúc-nghi ở cả 2 đường |
+| P2 | Đường `run_interactive` chỉ có test ĐỌC SOURCE ⇒ regression thật vẫn xanh | ✅ thêm `TestCoNghiEpTimLaiThatSu` (vòng lặp thật + session ghi lời gọi). **Đã diễn tập giết mutant** (tắt `_bao_nghi` ⇒ test đỏ) |
+| P2 | `assert engine.reset_calls >= 1` xanh cả khi xoá nhánh sửa (worker reset cho MỌI `set_bbox`) | ✅ bỏ; thay bằng đếm `session._auto_recover` (đo trực tiếp) |
+| P2 | Test e2e phụ thuộc kết quả LOST thoáng qua (~40 ms) ⇒ flaky trên CI tải nặng | ✅ bỏ assert transient, dùng bộ đếm `_auto_recover` |
+| P2 | Khi **không** bật `--reid`, phím `c` lại reset ký ức SAM 2 + nháy HUD "kéo chọn" | ✅ chỉ `reanchor` khi `reid_session is not None` (như đường inline) |
+| P3 | Gọi `engine.process()` rồi vứt (~90–160 ms) ở frame bị nghi | ✅ đưa cổng **lên trước** `process()` |
+| P3 | Docstring `_auto_recover` nói "giữ mốc tìm cũ" — sai vì `_collect_reference` cập nhật mốc MỌI frame tracking | ✅ sửa docstring + nói rõ vùng tìm nở dần (12 frame) |
+| P3 | Câu "cổng báo lại" ở mục rủi ro là SAI (sau nhận lại sai không còn cú nhảy lớn) | ✅ sửa thành "cổng KHÔNG chắc báo lại" |
+| P3 | Docstring test cũ còn ghi `set_bbox` (code dùng `reanchor`) | ✅ sửa |
+| P3 | Frame bỏ track ghi `elapsed_ms = 0` trong CSV | ⏳ ghi nhận: `LostResult` mặc định 0 ⇒ trung bình latency bị lạc quan 1 dòng/lần cổng báo (0,71 % số frame) |
+
+**Nợ chưa trả (reviewer nêu, đồng ý):** (1) tiêu chí "48 bước cuối thành `reacquiring`" **vẫn chưa đo
+được trên phiên thật** — video cũ có overlay cháy vào ảnh, phải làm phiên webcam mới; (2) nhận lại
+sai vẫn có thể do bộ nhớ mẫu bị nhiễm trước khi cổng báo; (3) đường web vẫn chưa có Re-ID.
+
+---
+
+## 🔧 BỔ SUNG 2 (cùng ngày) — phiên `demoip_1123-095901`: "Không nhận diện lại được"
+
+### Bằng chứng (đọc CSV + trích frame)
+- 254 bước: `tracking` 93 · `reacquiring` **160** · `lost` 1. `nghi_doi_tuong` = **0 dòng** ⇒ **không
+  phải** đường "cổng nghi" vừa sửa: vật mất dấu **tự nhiên** ở f92 (score 1,58 → 0,78 → **−1,54**,
+  mask sụp còn 460 px ở ô 51×9).
+- Từ f94 trở đi: **160 bước tìm lại, 0 lần nhận lại**; ~**322 ứng viên bị veto "trùng khuôn mặt/đầu"**
+  (78 frame có `vetoed=1`, ncc 0,56–**0,71**, cosine 0,68–**0,73**).
+- **Frame video 400 (t≈16 s): remote to rõ giữa khung** (ảnh `data/tmp_analyze_1123/b400.jpg`) nhưng HUD
+  vẫn `MẤT DẤU — TỰ TÌM LẠI`. ⇒ Vật CÓ trong khung, hệ KHÔNG nhận lại ⇒ lỗi thật, không phải "vật đi mất".
+
+### Nguyên nhân (2 cái, cùng lúc)
+1. **Veto mặt chặn oan vật cao–hẹp cầm cạnh mặt.** `_trung_mat` chỉ hỏi "ô ứng viên có chồng lên ô mặt
+   không" ⇒ remote 103×267 (tỉ lệ w/h **0,39**) giữ ngay cạnh mặt bị coi là "mặt". Veto sinh ra để chặn
+   ca *nhận lại vào MẶT/TRÁN/ĐẦU* (20–21/11) — các ca đó đều **có hình học của mặt**.
+2. **So khớp KHÁC LOẠI.** Khi tìm lại, ứng viên được chấm cosine trên mặt nạ **hình chữ nhật**
+   (`_match_object` tự dựng mask = ô), còn `_obj_refs` là đặc trưng của **mask SAM** (không có tay/nền)
+   ⇒ cosine bị hạ **hệ thống**: đúng vật mà chỉ 0,68–0,73 < ngưỡng 0,75.
+
+### Đã sửa
+| File | Nội dung |
+|---|---|
+| `src/reid.py` | `_trung_mat`: thêm **điều kiện hình học** — ứng viên chỉ bị coi là mặt nếu `diện tích` 0,4–6,0× và **tỉ lệ w/h** 0,6–1,7× tỉ lệ của chính mặt đó (mặt 0,78 vs remote 0,39 ⇒ loại). Dây phân biệt là **tỉ lệ khung**, không phải diện tích. |
+| `src/reid.py` | `_obj_refs_box` (deque riêng): lưu thêm mẫu đặc trưng **tính trên ô chữ nhật** ⇒ khi tìm lại, ứng viên được so với mẫu CÙNG LOẠI (`raw = max(mask-mẫu, ô-mẫu)`). |
+
+### Test mới (4)
+`TestVetoChiChanVatGiongHinhMat`: remote cao–hẹp cạnh mặt **không** bị veto · ô giống hình mặt **vẫn** bị
+veto (giữ tác dụng chống bám mặt) · vật nhỏ–cao cũng không bị veto · mẫu-ô làm cosine của ứng viên-ô cao
+hơn hẳn mẫu-mask (chứng minh đúng cái lỗi "so khác loại").
+
+### Kết quả kiểm tra
+`./run lint` xanh · `./run test` **1815 passed**, 5 deselected.
+
+### Điều CHƯA chốt (phải đo tiếp)
+- Sửa này **chưa chứng minh** là đủ: chưa biết mẫu-ô có đẩy cosine của remote vượt 0,75 hay không
+  (`0,73` là số của mẫu-mask). Nếu phiên sau vẫn không nhận lại, HUD giờ in `khop 0.7x / can 0.75`
+  — đó chính là **số cần để chốt ngưỡng**, thay vì đoán.
+- Phiên này **không** dùng để kết luận về đường "cổng nghi ⇒ ép tìm lại" (nghi_doi_tuong = 0).
+
+---
+
+## ⛔ BỔ SUNG 3 (cùng ngày) — TÔI ĐÃ LÀM SAI, ĐÃ REVERT: phiên `demoip_1123-101110`
+
+### Người dùng nói đúng: "càng làm càng sai". Số liệu chỉ ra chính xác cái sai của tôi.
+
+`summary`: 221 frame · mean 159 ms · **mất dấu 2/221 (1 %)** · score tb 3,53 · **`vetoed` = 0** —
+**chỉ số ĐẸP NHẤT** trong mọi phiên, và chính vì thế nó **đánh lừa**: xem ảnh lưới thì từ ~f465 trở đi
+ô đỏ + mask nằm trên **TƯỜNG/CỬA** cạnh remote, không phải remote (`data/tmp_analyze_1123/sheetE.jpg`).
+
+Chuỗi nhân quả lấy từ CSV:
+
+| bước | dữ kiện |
+|---|---|
+| f114–115 | remote mất thật (score −0,24 / −0,29) |
+| f116–117 | `reacquiring`, ứng viên đầu tiên cos **0,894 / 0,972**, ncc 0,557 / 0,486 |
+| **f118** | **NHẬN LẠI: cos 0,976 · ncc 0,484** → ô `(375,290) 93×176` = **vùng TƯỜNG** |
+| f119–220 | bám vùng tường/cửa đó; `nghi_doi_tuong` = **0 dòng** (cổng nhảy mù vì sau mất dấu mốc bị xoá) |
+
+### Nguyên nhân = đúng thay đổi tôi thêm 2 giờ trước
+`_obj_refs_box` (mẫu đặc trưng tính trên **Ô chữ nhật**) — ý định là "so cùng loại" với ứng viên khi
+tìm lại. Nhưng ô mẫu **gồm cả tường nền**, nên đặc trưng bị nền chi phối:
+
+- Đo lại bằng script nhỏ trên ảnh tổng hợp: `cos(tường, mẫu-MASK)` = **0,457** nhưng
+  `cos(tường, mẫu-Ô to hơn vật)` = **0,779** > ngưỡng 0,75 ⇒ **tường được nhận là vật**.
+- Đúng khớp dữ kiện phiên thật: cos 0,976 (rất cao) nhưng ncc chỉ 0,484 (thấp) — dấu hiệu "đặc trưng
+  khớp mà pixel không khớp".
+
+### Đã làm
+- **REVERT** `_obj_refs_box` (xoá deque + chỗ nạp + chỗ chấm). `raw` quay lại `best_match(_obj_refs, sig)`.
+- Giữ lại **veto theo HÌNH HỌC** (không liên quan tới lỗi này): ca sai đã đo 20–21/11 (vào MẶT cos
+  0,974 / TRÁN 0,734 / ĐẦU 0,663) đều là ô **giống hình mặt** nên vẫn bị chặn — có test khoá.
+- Thay test cũ bằng test **chống tái phạm**: mẫu phải là MASK của vật (đúng 1 mẫu/lần thu), và vùng
+  nền phẳng **không** được khớp vật.
+
+### Bài học (đã ghi vào AGENTS §6)
+Đừng "sửa" phép so khớp bằng cách đổi **loại mặt nạ** của mẫu. Muốn cứu ca "vật có trong khung mà
+không nhận lại" thì phải **xác minh bằng mask thật** (re-prompt SAM vào ứng viên rồi chấm mask-vs-mask)
+— việc này đổi vòng lặp tìm kiếm + chi phí, phải lập plan 3 ý kiến (AGENTS §9.2) trước khi code.

@@ -189,7 +189,8 @@ class WorkerFrameSource(FrameSource):
             bam=_chuoi_hoac_none(status.get("bam")),
             bam_ly_do=_chuoi_hoac_none(status.get("bam_ly_do")),
             bam_no_evidence_n=int(status.get("bam_no_evidence_n") or 0),
-            # 21-11: `True` = worker đang nghi đổi đối tượng ⇒ đã ẩn mask/ô. Khoá vắng mặt (worker bản
+            # 21-11: `True` = worker đang nghi đổi đối tượng. Từ 23-11 (#45) là VẼ ô nét đứt,
+            # không phải ẩn. Khoá vắng mặt (worker bản
             # cũ) ⇒ `False` — an toàn vì khi đó worker cũng không ẩn gì.
             nghi_doi_tuong=bool(status.get("nghi_doi_tuong")),
             nghi_doi_tuong_n=int(status.get("nghi_doi_tuong_n") or 0),

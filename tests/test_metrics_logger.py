@@ -43,12 +43,19 @@ class TestCsv:
                            "center_x", "center_y", "lost",
                            "state", "reid_score", "reacquired", "ncc", "vetoed",
                            "bbox_w", "bbox_h", "mask_area", "track_cos",
-                           "nghi_doi_tuong"]   # 21-11: cổng nhảy có NHỚ (0/1/trống)
+                           "nghi_doi_tuong",    # 21-11: cổng nhảy có NHỚ (0/1/trống)
+                           "verify_cos",        # 23-11: cos mask-vs-mask ở frame NHẬN LẠI
+                           "cos_truoc_cong",    # 23-11: cos cao nhất TRƯỚC mọi cổng
+                           "cand_n",            # 23-11: số ứng viên đã chấm (sau prefilter NCC)
+                           "cand_sinh_n",       # 23-11: số ô BỘ SINH đưa ra (trước bán kính/NCC)
+                           "cand_ncc_loai",     # 23-11: số ứng viên bị cổng NCC loại
+                           "bbox_area_ratio",
+                           # 24-11 (review P2): mốc px + số mẫu — thiếu 2 cột này thì tỉ lệ
+                           # "ô / mốc" không kiểm lại được.
+                           "bbox_area_ref", "bbox_area_n"]
         assert len(rows) == 6  # header + 5 dòng
-        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "",
-                           "", "", "", "", ""]
-        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "",
-                           "", "", "", "", ""]
+        assert rows[1] == ["0", "100.0", "0.9", "50", "60", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
+        assert rows[5] == ["4", "140.0", "0.9", "58", "64", "0", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_mau_tam_ghi_rong_khi_mat_dau(self, tmp_path):
         """Mất dấu (tâm None) → cột center_x/center_y rỗng, lost=1 — không vẽ quỹ đạo sai."""
@@ -61,8 +68,7 @@ class TestCsv:
         logger.write_csv(str(out))
         with open(out, newline="") as f:
             rows = list(csv.reader(f))
-        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "",
-                           "", "", "", "", ""]
+        assert rows[2] == ["1", "200.0", "0.1", "", "", "1", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", "", ""]
 
     def test_log_mot_so_lan_cung_record_ke_du(self, tmp_path):
         logger = MetricsLogger()
@@ -293,8 +299,12 @@ class TestTrangThaiTaiNhanDien:
         # 21-11: thêm cột `vetoed` (ứng viên bị BỎ vì trùng khuôn mặt) — thiếu nó thì
         # `state=reacquiring` không phân biệt được "đang tìm" với "đã thấy nhưng bỏ".
         # 21-11 (cổng nhảy CÓ NHỚ): thêm cột `nghi_doi_tuong` ở CUỐI ⇒ 10 cột cuối.
-        assert header[-10:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
-                                "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong"]
+        assert header[-18:] == ["state", "reid_score", "reacquired", "ncc", "vetoed",
+                                "bbox_w", "bbox_h", "mask_area", "track_cos", "nghi_doi_tuong",
+                                "verify_cos", "cos_truoc_cong", "cand_n", "cand_sinh_n",
+                                "cand_ncc_loai",
+                                # 24-11: cột chẩn đoán tràn, đặt ở CUỐI để CSV cũ vẫn đọc được
+                                "bbox_area_ratio", "bbox_area_ref", "bbox_area_n"]
         assert rows[3][header.index("state")] == "reacquiring"
         assert float(rows[3][header.index("reid_score")]) == pytest.approx(0.21)
         assert rows[4][header.index("reacquired")] == "1"
@@ -389,3 +399,119 @@ class TestMeanVaP95CoMauKemTheo:
                                    lost=True, state="lost"))
         s = logger.summary()
         assert s["mean_latency_ms_n"] == 0 and s["mean_latency_ms"] == 0.0
+
+
+class TestChiPhiTimLai:
+    """23-11-2026 (review độc lập 3 ý kiến, F2): frame ĐÓNG BĂNG bị loại khỏi `mean_latency_ms`.
+
+    Hệ quả đo được: phiên `demoip_1123-095901` in `mean 161,8 ms (n=93)` trong khi nó có **160** bước
+    tìm lại (66 ms/bước) không nằm trong con số nào ⇒ mọi tuyên bố "thêm bước thử ứng viên có làm
+    chậm phiên không" trước đây KHÔNG kiểm được.
+    """
+
+    def _rec(self, idx, ms, state):
+        return FrameRecord(frame_idx=idx, latency_ms=ms, score=1.0, center=(1, 1),
+                           lost=(state != "tracking"), state=state)
+
+    def test_search_latency_tach_khoi_mean_va_co_n(self):
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 100.0, "tracking"))
+        lg.log(self._rec(1, 200.0, "lost"))
+        lg.log(self._rec(2, 500.0, "reacquiring"))
+        s = lg.summary()
+        # mean cũ KHÔNG đổi (chỉ tracking) — giữ hợp đồng
+        assert s["mean_latency_ms"] == 100.0 and s["mean_latency_ms_n"] == 1
+        assert s["search_n"] == 2
+        assert s["search_mean_ms"] == 350.0
+        assert s["search_p95_ms"] >= 350.0
+
+    def test_khong_co_frame_dong_bang_thi_search_la_None_khong_phai_0(self):
+        """`None` = chưa đo; `0` = đo được 0 ms — hai thứ khác nhau (bẫy đã gặp nhiều lần)."""
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 120.0, "tracking"))
+        s = lg.summary()
+        assert s["search_mean_ms"] is None and s["search_p95_ms"] is None and s["search_n"] == 0
+
+    def test_csv_co_cot_verify_cos_va_de_trong_khi_chua_cham(self, tmp_path):
+        lg = MetricsLogger()
+        lg.log(FrameRecord(frame_idx=0, latency_ms=10.0, score=1.0, center=(5, 5), lost=False,
+                           state="tracking", verify_cos=0.83))
+        lg.log(FrameRecord(frame_idx=1, latency_ms=10.0, score=1.0, center=(5, 5), lost=False,
+                           state="tracking"))
+        out = tmp_path / "m.csv"
+        lg.write_csv(str(out))
+        import csv as _csv
+        rows = list(_csv.reader(open(out, newline="")))
+        i = rows[0].index("verify_cos")
+        assert rows[1][i] == "0.83"
+        assert rows[2][i] == "", "chưa chấm phải để TRỐNG (không ghi 0)"
+
+    def test_frame_bail_out_0ms_khong_pha_loang_search_mean(self):
+        """P1 review độc lập 23-11: frame KHÔNG gọi model (`latency_ms = 0.0`) không được vào mean.
+
+        Trước khi sửa: `_auto_recover`/`_abandon_reacquire` trả `LostResult.elapsed_ms = 0.0`, và
+        `search_lat` gom cả 0,0 ⇒ **càng thêm cờ nghi (càng nhiều frame bail-out) thì "chi phí tìm
+        lại" càng GIẢM** — ngược chiều sự thật, đúng loại bẫy "số đẹp lên sau khi thêm tính năng".
+        """
+        lg = MetricsLogger()
+        lg.log(self._rec(0, 100.0, "tracking"))
+        lg.log(self._rec(1, 0.0, "lost"))          # bail-out: KHÔNG gọi model ⇒ 0 ms
+        lg.log(self._rec(2, 0.0, "lost"))
+        lg.log(self._rec(3, 400.0, "reacquiring"))  # bước tìm THẬT SỰ chạy
+        s = lg.summary()
+        assert s["search_n"] == 1, "chỉ frame ĐO ĐƯỢC mới vào mẫu"
+        assert s["search_mean_ms"] == 400.0, "0,0 không được kéo mean xuống"
+        assert s["search_khong_do_n"] == 2, "phải khai riêng số frame đóng băng KHÔNG đo được"
+
+
+class TestCotChanDoanTran:
+    """Plan 24-11 việc 4 — `bbox_area_ratio` là cột CUỐI của CSV, TRỐNG = chưa đo.
+
+    Vì sao phải là cột CUỐI: `DictReader` của mọi script phân tích cũ đọc theo tên, nhưng CSV cũ
+    (trước 24-11) không có cột này ⇒ chèn vào giữa sẽ làm lệch thứ tự giữa header và dòng dữ liệu
+    (đã xảy ra trong lúc làm: header 22 cột còn dòng 22 giá trị nhưng lệch vị trí, cột đọc ra rỗng).
+    """
+
+    def _m(self):
+        from src.metrics_logger import MetricsLogger
+
+        return MetricsLogger()
+
+    def test_cot_nam_o_cuoi_va_csv_cu_van_doc_duoc(self, tmp_path):
+        import csv
+
+        from src.metrics_logger import CSV_HEADER, FrameRecord
+
+        assert CSV_HEADER[-3:] == ["bbox_area_ratio", "bbox_area_ref", "bbox_area_n"]
+        m = self._m()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(10, 10),
+                          lost=False, bbox_w=76, bbox_h=76))
+        out = tmp_path / "c.csv"
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert len(rows[0]) == len(CSV_HEADER), "header và dòng dữ liệu lệch số cột"
+        # 24-11 (review P2): mốc lấy TRUNG VỊ 10 frame đầu ⇒ frame ĐẦU chưa công bố tỉ lệ.
+        assert rows[0]["bbox_area_ratio"] == "", "warm-up phải TRỐNG, không phải 1.000 giả"
+        assert rows[0]["bbox_w"] == "76"          # cột cũ vẫn đúng chỗ
+        # Sau warm-up: ô giữ nguyên cỡ ⇒ tỉ lệ đúng 1,000 và mốc ghi được để kiểm lại.
+        for i in range(1, 12):
+            m.log(FrameRecord(frame_idx=i, latency_ms=100.0, score=1.0, center=(10, 10),
+                              lost=False, bbox_w=76, bbox_h=76))
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert rows[-1]["bbox_area_ratio"] == "1.000"
+        assert rows[-1]["bbox_area_ref"] == "5776"
+        assert int(rows[-1]["bbox_area_n"]) == 12
+
+    def test_o_rong_thi_cot_trong_khong_phai_0(self, tmp_path):
+        import csv
+
+        from src.metrics_logger import FrameRecord
+
+        m = self._m()
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=0.0, center=None, lost=True,
+                          bbox_w=0, bbox_h=0))
+        out = tmp_path / "d.csv"
+        m.write_csv(str(out))
+        rows = list(csv.DictReader(open(out, encoding="utf-8")))
+        assert rows[0]["bbox_area_ratio"] == "", "mất dấu phải TRỐNG (chưa đo), không phải 0"

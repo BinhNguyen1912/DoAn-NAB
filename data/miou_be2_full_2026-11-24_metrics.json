@@ -1,0 +1,210 @@
+{
+  "git_rev": "3aac9a10a28a8588baa73a58549f32c0d4c76c06",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "git_loi": null,
+  "meta": {
+    "do_luc": "2026-11-24T12:16:36",
+    "lenh": "scripts/score_miou.py score --gt docs/gt/vat_be_vaolai --pred-dir data/be2_full_masks --out data/miou_be2_full_2026-11-24_metrics.json",
+    "git_rev": "3aac9a10a28a8588baa73a58549f32c0d4c76c06",
+    "git_dirty": true,
+    "git_dirty_code": false,
+    "git_loi": null,
+    "clip": "data/clip_be2.mp4",
+    "nguoi_gan": "Binh",
+    "gt": "docs/gt/vat_be_vaolai",
+    "pred_dir": "data/be2_full_masks",
+    "gt_do_model_goi_y": false,
+    "dang_gt": "silhouette",
+    "nguon_gt": "người tô tay trên frame gốc",
+    "phuong_phap_gt": "người tô tay từ frame trống",
+    "mask_manifest": {
+      "nguon": "data/clip_be2.mp4",
+      "image_size_yeu_cau": 192,
+      "image_size_hieu_luc": 192,
+      "vos_every": 1,
+      "mask_smoothing": 1.0,
+      "bbox_xywh": [
+        205,
+        130,
+        125,
+        260
+      ],
+      "lenh": "tools/run_live.py --source data/clip_be2.mp4 --image-size 192 --bbox 205,130,125,260 --max-frames 444 --dump-mask-frames 0,100,258,270,300,344,348,352,380,400,440 --dump-mask-dir data/be2_full_masks --metrics-csv /tmp/be2e.csv",
+      "git_rev": "6198c4f",
+      "git_dirty": true,
+      "git_dirty_code": false,
+      "do_luc": "2026-11-23T16:08:40",
+      "frames_yeu_cau": [
+        0,
+        100,
+        258,
+        270,
+        300,
+        344,
+        348,
+        352,
+        380,
+        400,
+        440
+      ],
+      "frames_da_ghi": [
+        0,
+        100,
+        258,
+        270,
+        300,
+        344,
+        348,
+        352,
+        380,
+        400,
+        440
+      ],
+      "so_file_ghi_de": 0,
+      "frame_goc_cua_phien": 0
+    },
+    "mask_manifest_loi": null,
+    "dinh_nghia": "mIoU = trung bình IoU(mask_pred, mask_gt) trên các frame chấm được; GT rỗng không chấm; model rỗng mà GT có vật = 0,0; `mask_ngoai_gt` = phần mask nằm NGOÀI GT (thấp = không tràn ra ngoài; một phía, không nói mask phủ đủ); nếu `dang_gt = hop_bao` thì `mIoU` là IoU(mask, HỘP BAO), KHÔNG phải mIoU phân đoạn"
+  },
+  "ket_qua": {
+    "gt_dang": "silhouette",
+    "mIoU": 0.8625,
+    "mIoU_p05": null,
+    "mIoU_p05_n": 8,
+    "mIoU_p05_nguong": 30,
+    "mask_ngoai_gt_mean": 0.0516,
+    "mask_ngoai_gt_n": 8,
+    "mask_ngoai_gt_max": 0.1526,
+    "mask_ngoai_gt_max_frame": 348,
+    "tran_recall_dung_gt": 0.9078,
+    "tran_recall_n": 8,
+    "tran_ly_thuyet_dung_gt": true,
+    "phu_thieu_mean": 0.0922,
+    "n_cham": 8,
+    "so_frame_gt_rong": 3,
+    "mask_px_gt_rong": {
+      "n": 3,
+      "mean": 0.0,
+      "max": 0,
+      "max_frame": 258,
+      "so_frame_bia": 0,
+      "frames": [
+        {
+          "frame_idx": 258,
+          "dien_tich_pred": 0
+        },
+        {
+          "frame_idx": 270,
+          "dien_tich_pred": 0
+        },
+        {
+          "frame_idx": 300,
+          "dien_tich_pred": 0
+        }
+      ]
+    },
+    "so_frame_thieu_mask": 0,
+    "so_frame_mask_hong": 0,
+    "so_frame_tong": 11,
+    "coverage": 0.7273,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.8237,
+        "dien_tich_gt": 28057,
+        "dien_tich_pred": 23157,
+        "mask_ngoai_gt": 0.0011,
+        "tran_recall": 0.8245,
+        "phu_thieu": 0.1755
+      },
+      {
+        "frame_idx": 100,
+        "iou": 0.9143,
+        "dien_tich_gt": 45662,
+        "dien_tich_pred": 43665,
+        "mask_ngoai_gt": 0.0229,
+        "tran_recall": 0.9344,
+        "phu_thieu": 0.0656
+      },
+      {
+        "frame_idx": 258,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 0
+      },
+      {
+        "frame_idx": 270,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 0
+      },
+      {
+        "frame_idx": 300,
+        "iou": null,
+        "ly_do": "GT rỗng (không chấm)",
+        "dien_tich_pred": 0
+      },
+      {
+        "frame_idx": 344,
+        "iou": 0.8358,
+        "dien_tich_gt": 82439,
+        "dien_tich_pred": 83660,
+        "mask_ngoai_gt": 0.0961,
+        "tran_recall": 0.9173,
+        "phu_thieu": 0.0827
+      },
+      {
+        "frame_idx": 348,
+        "iou": 0.8117,
+        "dien_tich_gt": 68561,
+        "dien_tich_pred": 76905,
+        "mask_ngoai_gt": 0.1526,
+        "tran_recall": 0.9506,
+        "phu_thieu": 0.0494
+      },
+      {
+        "frame_idx": 352,
+        "iou": 0.8828,
+        "dien_tich_gt": 61817,
+        "dien_tich_pred": 60691,
+        "mask_ngoai_gt": 0.0536,
+        "tran_recall": 0.9292,
+        "phu_thieu": 0.0708
+      },
+      {
+        "frame_idx": 380,
+        "iou": 0.8606,
+        "dien_tich_gt": 50628,
+        "dien_tich_pred": 44799,
+        "mask_ngoai_gt": 0.0147,
+        "tran_recall": 0.8718,
+        "phu_thieu": 0.1282
+      },
+      {
+        "frame_idx": 400,
+        "iou": 0.8823,
+        "dien_tich_gt": 32625,
+        "dien_tich_pred": 29256,
+        "mask_ngoai_gt": 0.0085,
+        "tran_recall": 0.8891,
+        "phu_thieu": 0.1109
+      },
+      {
+        "frame_idx": 440,
+        "iou": 0.8888,
+        "dien_tich_gt": 34969,
+        "dien_tich_pred": 35291,
+        "mask_ngoai_gt": 0.0632,
+        "tran_recall": 0.9455,
+        "phu_thieu": 0.0545
+      }
+    ]
+  },
+  "canh_bao_gt": [
+    "GT frame 258 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 270 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')",
+    "GT frame 300 toàn đen — `score` sẽ không chấm được frame này (đếm là 'GT rỗng')"
+  ],
+  "loi_chan": []
+}

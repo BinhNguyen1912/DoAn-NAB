@@ -28,6 +28,7 @@ import time
 from pathlib import Path
 
 import cv2
+import numpy as np
 
 _REPO_ROOT = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 if _REPO_ROOT not in sys.path:
@@ -45,6 +46,7 @@ except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn prog
 
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
+from src.live_tracking import xyxy_to_xywh                   # noqa: E402
 from src.smooth_display import run_smooth_display             # noqa: E402
 from src.prompt_selector import PromptSelector               # noqa: E402
 from src.config import REPO_ROOT, load_config, merge_cli_overrides, resolve_checkpoint  # noqa: E402
@@ -102,6 +104,111 @@ def _total_frames_hint(source):
     finally:
         cap.release()
     return total if total > 0 else None
+
+def _dump_cfg(args):
+    """Đọc `--dump-mask-frames`/`--dump-mask-dir` ⇒ `(set[int], str)`. Sai định dạng ⇒ SystemExit."""
+    raw = (getattr(args, "dump_mask_frames", "") or "").strip()
+    if not raw:
+        return set(), ""
+    try:
+        frames = {int(x) for x in raw.replace(" ", "").split(",") if x != ""}
+    except ValueError:
+        raise SystemExit(f"[LOI] --dump-mask-frames phải là danh sách số, nhận {raw!r}")
+    if any(f < 0 for f in frames):
+        raise SystemExit("[LOI] --dump-mask-frames: số frame không âm")
+    src = str(getattr(args, "source", ""))
+    # P2 review độc lập 23-11: với webcam/relay/RTSP thì "số frame" là bộ đếm PHIÊN, không phải frame
+    # của clip ⇒ `mask_NNNNNN.png` không ghép được với GT nào. Và không có `--bbox` thì `_load_bbox`
+    # im lặng dùng ô giữa 80×80 (bẫy "hộp mặc định rơi vào nền", AGENTS §6 ca Colab 13-11).
+    if not (Path(src).is_file() if src else False):
+        raise SystemExit(f"[LOI] --dump-mask-frames chỉ dùng cho nguồn là FILE (đang là {src!r}): "
+                         "với webcam/RTSP số frame là bộ đếm phiên, không ghép được với GT")
+    if not getattr(args, "bbox", None) and not getattr(args, "bbox_file", None):
+        raise SystemExit("[LOI] --dump-mask-frames cần --bbox/--bbox-file tường minh: ô mặc định "
+                         "giữa frame hay rơi vào nền ⇒ mask chấm ra số vô nghĩa")
+    out_dir = getattr(args, "dump_mask_dir", "") or ""
+    if not out_dir:
+        csv = getattr(args, "metrics_csv", None)
+        if not csv:
+            raise SystemExit("[LOI] --dump-mask-frames cần --dump-mask-dir (hoặc --metrics-csv)")
+        out_dir = str(Path(csv).with_suffix("")) + "_masks"
+    return frames, out_dir
+
+
+def _dump_mask_callback(out_dir, frames, info, base=None):
+    """Tạo `on_frame` ghi `mask_<số frame video>.png` cho các frame trong `frames`.
+
+    Vì sao cần ở đường CLI: `tools/live_worker.py` (web) đã có `--dump-mask-frames`, còn
+    `tools/run_live.py` thì KHÔNG ⇒ không chấm được `./run miou` cho bất kỳ phiên CLI nào (kể cả
+    phiên có Re-ID — đường mà web không có). Đo 23-11: A/B `binh1` phải chấm mask-vs-GT thì mới
+    trả lời được "Re-ID nhận lại ĐÚNG vật hay nhận bừa", mà không có file mask nào để chấm.
+
+    Tên file đi theo **số frame video** (đếm theo thứ tự callback, nguồn đọc tuần tự từ frame 0),
+    KHÔNG theo `result.frame_idx` (bộ đếm nội bộ engine) — bài học P0 14-11: đặt tên theo engine
+    làm `mask_000013.png` chứa mask của frame 42 ⇒ mIoU sai mà không cảnh báo.
+
+    Mask RỖNG vẫn ghi (file toàn 0): "model trả rỗng" là kết quả ĐO ĐƯỢC, phải chấm 0,0 khi GT có
+    vật — không có file sẽ bị đọc thành "chưa đo" (AGENTS §6).
+    """
+    if not out_dir or not frames:
+        return base
+    target = Path(out_dir)
+    target.mkdir(parents=True, exist_ok=True)
+    da_ghi, ghi_de = [], []
+    state = {"n": 0}
+
+    def _cb(img, result):
+        n = state["n"]
+        state["n"] = n + 1
+        if n in frames:
+            mask = getattr(result, "mask", None)
+            if mask is None:
+                print(f"[canh-bao] frame {n}: model không trả mask ⇒ không ghi file "
+                      "(chấm điểm sẽ đếm là 'thiếu mask', KHÔNG phải 0,0)")
+            else:
+                arr = np.asarray(mask)
+                if arr.size == 0:
+                    # P0 tự bắt (23-11): `_lost_result()` trả mask **0×0** (không phải `None`) ⇒
+                    # `cv2.imwrite` NÉM `!_img.empty()` và **giết cả phiên đo** (lần chạy re-ID trên
+                    # `clip_be2` dừng ở frame 259/444 mà không ai báo). Mask 0×0 = "model trả RỖNG"
+                    # ⇒ ghi file TOÀN 0 đúng kích thước frame (mới chấm được 0,0) thay vì bỏ qua.
+                    shape = img.shape[:2] if img is not None else (1, 1)
+                    arr = np.zeros(shape, bool)
+                d = target / f"mask_{n:06d}.png"
+                if d.exists():
+                    ghi_de.append(n)
+                ok = cv2.imwrite(str(d), (arr > 0).astype(np.uint8) * 255)
+                if not ok:
+                    print(f"[canh-bao] frame {n}: ghi mask thất bại ({d})")
+                else:
+                    da_ghi.append(n)
+            if len(da_ghi) + len(ghi_de) >= len(frames):
+                _write_mask_manifest(target, info, frames, da_ghi, ghi_de, state["man"])
+                state["man"] = True
+        return base(img, result) if base is not None else True
+
+    state["man"] = False
+    _cb.write_manifest = lambda: _write_mask_manifest(target, info, frames, da_ghi, ghi_de,
+                                                      state["man"])
+    return _cb
+
+
+def _write_mask_manifest(target, info, frames, da_ghi, ghi_de, da_ghi_lan_nay=False):
+    """Ghi `manifest.json` cạnh mask để `score_miou` đối chiếu được (cùng clip, cùng frame)."""
+    path = Path(target) / "manifest.json"
+    if da_ghi_lan_nay:
+        return                  # `finally` gọi lần hai trong CÙNG phiên ⇒ không phải cảnh báo
+    if path.exists():           # hai lần chạy vào cùng thư mục: KHÔNG ghi đè rồi im lặng
+        print(f"[canh-bao] {path} đã có — KHÔNG ghi đè manifest (mask có thể của lần chạy khác) "
+              "⇒ dùng --dump-mask-dir MỚI cho mỗi lần chạy")
+        return
+    data = dict(info)
+    data.update({"frames_yeu_cau": sorted(frames), "frames_da_ghi": sorted(da_ghi),
+                 "so_file_ghi_de": len(ghi_de), "frame_goc_cua_phien": 0})
+    try:
+        path.write_text(json.dumps(data, ensure_ascii=False, indent=1), encoding="utf-8")
+    except OSError as exc:
+        print(f"[canh-bao] không ghi được {path}: {exc}")
 
 
 def _progress_callback(path, total, every=5):
@@ -266,6 +373,22 @@ def _device_note(device):
     return "máy CPU (không GPU NVIDIA)"
 
 
+def _la_nguon_live(source):
+    """Nguồn có phải LIVE (webcam / RTSP / HTTP relay) — tức nhịp frame không do mình quyết?
+
+    Dùng để bật `pace_realtime` cho bản ghi video (ticket #44): chỉ nguồn live mới cần giữ
+    nhịp theo đồng hồ thực; nguồn file phải ghi đúng fps của clip.
+    """
+    from src.video_source import is_camera_source
+
+    if source is None:            # stub/test không khai `source` ⇒ coi như KHÔNG live (an toàn)
+        return False
+    text = str(source).strip().lower()
+    if is_camera_source(source):
+        return True
+    return text.startswith(("rtsp://", "rtspt://", "http://", "https://"))
+
+
 def _make_visualizer(args, record_size=None, record_fps=30.0):
     """Tạo Visualizer (HUD luôn bật); nếu --record chỉ định thì bật ghi mp4.
 
@@ -273,9 +396,15 @@ def _make_visualizer(args, record_size=None, record_fps=30.0):
     kích thước frame — headless truyền thẳng từ peek).
     """
     viz = Visualizer(max_trajectory=args.max_trajectory,
-                     show_trajectory=getattr(args, "show_trajectory", True))
+                     show_trajectory=getattr(args, "show_trajectory", True),
+                     trajectory_seconds=getattr(args, "trajectory_seconds", None))
     if args.record:
-        if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size):
+        # Nguồn LIVE: giữ nhịp thời gian THỰC trong file (ticket #44 — đo 23-11: phiên 30,76 s
+        # nhưng video chỉ 20,83 s ⇒ nhanh 1,48×). Nguồn FILE: ghi 1:1 đúng fps khai báo.
+        args._record_fps = float(record_fps)
+        args._record_pace = _la_nguon_live(getattr(args, "source", None))
+        if viz.open_recorder(args.record, fps=record_fps, frame_size=record_size,
+                             pace_realtime=args._record_pace):
             print(f"[pipeline] ghi video: {args.record} ({record_fps:.0f} fps)")
         else:
             print(f"[LOI] không ghi được video tới {args.record} — chạy không ghi")
@@ -355,7 +484,7 @@ def _finish_outputs(viz, metrics, args, reid_session=None):
         args._reid_veto_n = int(getattr(reid_session, "veto_mat_n", 0) or 0)
     try:
         if metrics is not None:
-            _finish_metrics(metrics, args)
+            _finish_metrics(metrics, args, viz)
     finally:
         _finish_recording(viz, args)
 
@@ -377,7 +506,7 @@ def _make_metrics(args):
     return MetricsLogger(sampler=sampler)
 
 
-def _finish_metrics(metrics, args):
+def _finish_metrics(metrics, args, viz=None):
     """Xuất CSV + (tuỳ chọn) summary JSON — gọi trong finally để Ctrl+C không mất số liệu.
 
     Nếu phiên KHÔNG có frame nào (mở camera lỗi, Ctrl+C quá sớm) thì **không ghi**, để không
@@ -389,8 +518,20 @@ def _finish_metrics(metrics, args):
         print("[metrics] chưa có frame nào — không ghi file (giữ nguyên kết quả lần chạy trước)")
         return
     metrics.write_csv(args.metrics_csv)
+    # Nhịp phát / độ dài video (ticket #44): không có mấy field này thì bug "video nhanh 1,48×"
+    # chỉ phát hiện được bằng ffprobe trên file mp4 — đúng chỗ artifact KHÔNG có số nào.
+    extra = {}
+    if viz is not None:
+        try:
+            extra = viz.phat_stats() or {}
+        except Exception as exc:            # không được chặn việc ghi số chính
+            print(f"[canh bao] không lấy được nhịp phát: {type(exc).__name__}: {exc}")
     if args.metrics_summary:
-        metrics.write_summary_json(args.metrics_summary)
+        metrics.write_summary_json(args.metrics_summary, extra=extra)
+    if extra.get("ti_le_thoi_luong") is not None:
+        print(f"[metrics] nhịp phát: {extra['frames_rendered']} lần vẽ / {extra['wall_s']:.1f} s "
+              f"= {extra['display_fps_mean']:.1f} FPS | video {extra.get('video_s', 0):.1f} s "
+              f"⇒ tỉ lệ thời lượng {extra['ti_le_thoi_luong']:.2f} (1,00 là đúng)")
     try:
         _write_run_info(args)
     except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
@@ -402,7 +543,14 @@ def _finish_metrics(metrics, args):
     if _veto_n:
         print(f"[re-ID] bỏ {_veto_n} ứng viên vì TRÙNG KHUÔN MẶT/ĐẦU (veto) — "
               f"xem cột `vetoed` (=1) trong CSV để biết các frame đó")
-    print(f"[metrics] {s['total_frames']} frame | mean={mean_txt} | "
+    # Chi phí TÌM LẠI phải in ra, không chỉ nằm trong JSON (review vòng 2, 23-11): phiên `095901`
+    # in "mean 161,8 ms (n=93)" trong khi **160 bước tìm lại (66,8 ms/bước)** không nằm trong con
+    # số nào ⇒ mọi tuyên bố "không chậm hơn" trước đó là không kiểm được.
+    _search_txt = ""
+    if s.get("search_n"):
+        _search_txt = (f" | tìm lại {s['search_mean_ms']:.1f} ms/bước "
+                       f"(p95 {s.get('search_p95_ms') or 0:.1f}, n={s['search_n']})")
+    print(f"[metrics] {s['total_frames']} frame | mean={mean_txt}{_search_txt} | "
           f"p95={_p95_txt(s)} | mất dấu {s['lost_count']}/{s['total_frames']} "
           f"({s['lost_ratio']:.0%}) | score tb={s['mean_score']:.2f}")
     res = s.get("resources") or {}
@@ -424,6 +572,27 @@ def _p95_txt(s: dict) -> str:
         return "chưa đo (0 mẫu đo được)"
     n = s.get("p95_latency_ms_n")
     return f"{s['p95_latency_ms']:.0f} ms (n={'?' if n is None else n})"
+
+
+def _loadavg_1m():
+    """Tải trung bình 1 phút của máy (`None` nếu nền tảng không có — Windows không có getloadavg)."""
+    try:
+        return round(os.getloadavg()[0], 2)
+    except (AttributeError, OSError):
+        return None
+
+
+def _dem_worker_mo_coi():
+    """Số `live_worker.py` KHÁC đang sống — chúng ăn CPU và có thể giữ luôn nguồn.
+
+    Đo 21-11: một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra 1484 ms thay vì 158 ms.
+    """
+    try:
+        from src.proc_pid import find_live_workers
+
+        return len(find_live_workers())
+    except Exception:
+        return None
 
 
 def _write_run_info(args):
@@ -453,12 +622,25 @@ def _write_run_info(args):
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
         reid=bool(getattr(args, "reid", False)),
+        # Độ dài file video phụ thuộc 2 thứ này (ticket #44) — thiếu chúng thì artifact KHÔNG tự
+        # giải thích được thời lượng (P3 review 23-11).
+        record_fps=getattr(args, "_record_fps", None),
+        # Cửa sổ quỹ đạo: không ghi thì `./run demoip` (5 s) không phân biệt được với mặc định
+        # 100 điểm ⇒ "quỹ đạo trong video dài 5 s" không tái lập được (P2 review 24-11).
+        trajectory_seconds=getattr(args, "trajectory_seconds", None),
+        max_trajectory=getattr(args, "max_trajectory", None),
+        record_pace_realtime=getattr(args, "_record_pace", None),
         reid_cue=getattr(args, "reid_cue", None),
         reid_obj_threshold=getattr(args, "reid_obj_threshold", None),
         reid_obj_ncc_min=getattr(args, "reid_obj_ncc_min", None),
         # Thiết bị ĐÃ DÙNG (cpu|cuda): `resources.gpu` trong summary chỉ nói "MÁY có GPU hay không" ⇒
         # job chạy CPU trên máy GPU vẫn in tên GPU, dễ bị trích như "số GPU" (AGENTS §6, review 10-11).
         device=getattr(args, "device", None) or "cpu",
+        # Tải của MÁY lúc đo (23-11): cùng một code cho 201–393 ms chỉ vì agent khác chạy pytest/npm.
+        # Thiếu số này thì "model chậm 4×" là kết luận không kiểm được (review độc lập 23-11).
+        loadavg_1m=_loadavg_1m(),
+        cpu_count=os.cpu_count(),
+        live_workers_khac=_dem_worker_mo_coi(),
         lost_score_threshold=getattr(args, "lost_score_threshold", None),
         # P3 review vòng 3: đọc SAI tên — `main()` gán `args.reid_confirm`/`args.reid_verify`
         # (`:759-760`) nên MỌI `data/*_run_info.json` tới nay ghi `null` cho 2 trường này.
@@ -471,6 +653,12 @@ def _write_run_info(args):
         # của commit sau ⇒ sinh trên cây BẨN).
         git_dirty=_git_dirty()[0],
         git_dirty_code=_git_dirty()[1],
+        # 23-11-2026: ô chọn ĐẦU TIÊN (hệ x1,y1,x2,y2) + số lần chọn lại giữa phiên.
+        # `./run demoip` không truyền `--bbox` (người dùng kéo chuột) nên TRƯỚC ĐÂY không file nào
+        # lưu bbox ⇒ không replay được phiên nào, và video `--record` đã cháy HUD nên cũng không
+        # dùng làm nguồn thô. `None` = không chọn (hoặc phiên headless dùng ô mặc định).
+        prompt_bbox=list(getattr(args, "_prompt_bbox", None) or []) or None,
+        reselect_n=getattr(args, "_reselect_n", None),
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -548,8 +736,11 @@ def _run_display(engine, args):
         metrics = _make_metrics(args)
         reid_session = _make_reid_session(engine, args)
         if args.smooth:
-            print("[pipeline] chế độ MƯỢT: video ~30 FPS, overlay cập nhật mỗi lần suy luận "
-                  "(HUD hiện tuổi overlay)")
+            # ĐÍNH CHÍNH 23-11: câu cũ hứa "video ~30 FPS" — SAI. Vòng hiển thị ngủ
+            # `1/30 s` SAU khi đã làm việc (`smooth_display.py:528`) ⇒ nhịp thật ≈ 1/(0,016+0,033)
+            # ≈ 20 fps; đo trên phiên `demoip_1123-144505`: 625 frame / 30,76 s = **20,3 fps**.
+            print("[pipeline] chế độ MƯỢT: overlay cập nhật mỗi lần suy luận xong "
+                  "(HUD hiện tuổi overlay); FPS thật in ở cuối phiên")
             summary = run_smooth_display(
                 source=args.source,
                 engine=engine,
@@ -561,7 +752,12 @@ def _run_display(engine, args):
                 visualizer=viz,
                 metrics=metrics,
                 reid_session=reid_session,
+                # Nguồn live: đọc tối đa 30 lần/s (đo 293/s trên relay 16 fps ⇒ 18 lần giải mã vô ích
+                # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
+                source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
+            args._prompt_bbox = summary.prompt_bbox
+            args._reselect_n = summary.reselect_n
         else:
             summary = run_interactive(
                 source=args.source,
@@ -602,6 +798,7 @@ def _run_headless(engine, args):
     summary = None
     reid_session = None        # P1 review vòng 2 (xem `_run_display`)
     progress_total = None
+    on_frame = None
     interrupted = False
     try:
         # Đọc trước 1 frame để suy ra bbox mặc định (nguồn mở 2 lần — chấp nhận được với webcam)
@@ -623,6 +820,25 @@ def _run_headless(engine, args):
         reid_session = _make_reid_session(engine, args)
         # Tổng frame dự kiến để backend vẽ progress bar (biết chắc khi nguồn là FILE)
         progress_total = args.max_frames or _total_frames_hint(args.source)
+        dump_frames, dump_dir = _dump_cfg(args)
+        on_frame = _progress_callback(args.progress_json, progress_total)
+        if dump_frames:
+            # P2 review độc lập 23-11: `image_size` phải tách YÊU CẦU vs HIỆU LỰC (bẫy AGENTS §6
+            # 15-11: override không áp được thì model chạy 1024 mà không báo), và manifest phải mang
+            # `git_rev`/`git_dirty_code` — không thì artifact mIoU (đọc `meta.mask_manifest`) biết rev
+            # của lần CHẤM mà mất rev của lần SINH MASK.
+            _dirty, _dirty_code = _git_dirty()
+            info = {"nguon": str(args.source),
+                    "image_size_yeu_cau": getattr(args, "image_size", None),
+                    "image_size_hieu_luc": getattr(engine, "image_size_hieu_luc", None),
+                    "vos_every": getattr(args, "vos_every", None) or 1,
+                    "mask_smoothing": getattr(args, "mask_smoothing", None) or 1.0,
+                    # `bbox` nội bộ là (x1,y1,x2,y2); manifest/GT dùng (x,y,w,h) — đổi trước khi ghi
+                    "bbox_xywh": list(xyxy_to_xywh(bbox)) if bbox else None,
+                    "lenh": " ".join(sys.argv),
+                    "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
+                    "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}
+            on_frame = _dump_mask_callback(dump_dir, dump_frames, info, base=on_frame)
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -632,13 +848,15 @@ def _run_headless(engine, args):
             metrics=metrics,
             reanchor_every=args.reanchor_every,
             reid_session=reid_session,
-            on_frame=_progress_callback(args.progress_json, progress_total),
+            on_frame=on_frame,
         )
     except KeyboardInterrupt:
         interrupted = True
         print("\n[pipeline] dừng bằng Ctrl+C — thoát sạch")
     finally:
         # Ctrl+C cũng phải giữ lại số liệu đã đo + video đã ghi (số liệu trước, chuyển mã sau)
+        if on_frame is not None and hasattr(on_frame, "write_manifest"):
+            on_frame.write_manifest()      # dừng sớm (Ctrl+C/--max-frames) vẫn phải có manifest
         _finish_outputs(viz, metrics, args, reid_session)
         # Ghi progress lần cuối để backend chốt thanh tiến trình (kể cả khi lỗi/Ctrl+C)
         frames_done = summary.total_frames if summary is not None else 0
@@ -689,7 +907,8 @@ def _canh_bao_worker_mo_coi() -> None:
         print("[WARN] (hoặc trên web bấm 'Dừng' — đóng tab KHÔNG dừng worker)")
 
 
-def main():
+def build_parser():
+    """Dựng `argparse` đầy đủ — tách khỏi `main()` để test được cờ mà không cần model/nguồn."""
     ap = argparse.ArgumentParser(
         description="Live/headless pipeline: nguồn video → SAMURAI → HUD + metrics",
         epilog=("Cấu hình: --config configs/default.yaml (checkpoint, nguồn, ghi mp4, "
@@ -706,6 +925,9 @@ def main():
     ap.add_argument("--record", default=None, help="ghi video mp4 HUD ra file này (đè config)")
     ap.add_argument("--record-fps", type=float, default=None,
                     help="fps file ghi (headless: mặc định lấy nguồn; display: 30)")
+    ap.add_argument("--trajectory-seconds", type=float, default=None,
+                    help="giữ quỹ đạo theo THỜI GIAN (giây) thay vì số điểm — cùng 5 s cho cùng "
+                         "độ dài quỹ đạo dù máy chạy 6,3 hay 3,1 bước/s (mặc định: theo số điểm)")
     ap.add_argument("--max-trajectory", type=int, default=None,
                     help="số điểm quỹ đạo tối đa (đè config)")
     ap.add_argument("--smooth", action="store_true",
@@ -729,9 +951,19 @@ def main():
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
-    ap.add_argument("--reid", action="store_true",
+    # `default=None` = TRI-STATE: "không nói gì" KHÁC "nói không". Thiếu điều này thì
+    # `--config configs/default.yaml --no-reid` bị YAML (`reid_enabled: true`) đè ngược và
+    # re-ID vẫn BẬT — im lặng, đúng loại lỗi mà cờ này sinh ra để chống (P1 review 23-11).
+    ap.add_argument("--reid", dest="reid", action="store_true", default=None,
                     help="bật tái nhận diện khuôn mặt: mất dấu thì ĐÓNG BĂNG, quay lại thì "
                          "tự bám lại đúng người (ADR-0003; cần model trong models/face/)")
+    # Cần cờ TẮT được vì `./run demoip` luôn chèn `--reid`: người dùng không có cách nào chạy demo
+    # theo cơ chế "lan truyền liên tục" để so. Đo 23-11 (`data/ab_binh1_*`, 3+3 lần, git_dirty_code
+    # false): re-ID cho mIoU 0,4236 còn lan truyền liên tục cho 0,7794 trên CÙNG clip/ô chọn ⇒ tắt
+    # được re-ID là điều kiện để chính người dùng kiểm chứng kết luận đó trên demo của mình.
+    ap.add_argument("--no-reid", dest="reid", action="store_false",
+                    help="TẮT tái nhận diện (giữ lan truyền liên tục của SAM 2 — cơ chế đo được là "
+                         "tốt hơn trên clip binh1: mIoU 0,7794 vs 0,4236)")
     ap.add_argument("--reid-threshold", type=float, default=None,
                     help="ngưỡng cosine SFace để coi là cùng người (mặc định 0.363)")
     ap.add_argument("--lost-after-frames", type=int, default=None,
@@ -759,6 +991,10 @@ def main():
                     help="số frame liên tiếp phải khớp cùng một chỗ mới nhận lại (mặc định 2)")
     ap.add_argument("--reid-verify", type=int, default=None,
                     help="số frame kiểm chứng sau khi nhận lại (mặc định 2; fail → về LOST)")
+    ap.add_argument("--dump-mask-frames", default="",
+                    help='ghi mask ra PNG cho các frame này, vd "0,30,181" (chấm ./run miou)')
+    ap.add_argument("--dump-mask-dir", default="",
+                    help="thư mục ghi mask (mặc định: cạnh --metrics-csv, thư mục <tag>_masks)")
     ap.add_argument("--metrics-csv", default=None,
                     help="ghi metrics từng frame ra CSV (đè config)")
     ap.add_argument("--metrics-summary", default=None,
@@ -767,15 +1003,19 @@ def main():
                     help="ghi tiến trình từng frame ra JSON ({\"frames\",\"total\"}) — backend "
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
-    args = ap.parse_args()
-    _canh_bao_worker_mo_coi()
+    return ap
 
-    # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
-    cfg = load_config(args.config)
-    cfg = merge_cli_overrides(cfg, {
+
+def _cfg_tu_cli(args) -> dict:
+    """Cờ CLI → dict để `merge_cli_overrides` (CLI thắng YAML). Tách ra để TEST được đường hợp
+    nhất thật: test chỉ kiểm `parse_args` từng bỏ lọt việc `--no-reid` có thắng `reid_enabled:
+    true` trong YAML hay không (P2 review 24-11).
+    """
+    return {
         "checkpoint": args.ckpt,
         "source": args.source,
         "max_trajectory": args.max_trajectory,
+        "trajectory_seconds": getattr(args, "trajectory_seconds", None),
         "reanchor_every": args.reanchor_every,
         "image_size": args.image_size,
         "device": args.device,
@@ -787,7 +1027,7 @@ def main():
         "record_fps": args.record_fps,
         "metrics_csv": args.metrics_csv,
         "metrics_summary": args.metrics_summary,
-        "reid_enabled": (True if args.reid else None),
+        "reid_enabled": args.reid,   # tri-state: None = không nói, False = --no-reid
         "reid_threshold": args.reid_threshold,
         "lost_after_frames": args.lost_after_frames,
         "reid_min_face_px": args.reid_min_face_px,
@@ -798,7 +1038,16 @@ def main():
         "lost_score_threshold": args.lost_score_threshold,
         "reid_reacquire_confirm": args.reid_confirm,
         "reid_verify_frames": args.reid_verify,
-    })
+    }
+
+
+def main():
+    args = build_parser().parse_args()
+    _canh_bao_worker_mo_coi()
+
+    # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
+    cfg = load_config(args.config)
+    cfg = merge_cli_overrides(cfg, _cfg_tu_cli(args))
     checkpoint = resolve_checkpoint(cfg["checkpoint"])
     if cfg["source"] is None:
         print("[LOI] chưa chỉ định nguồn — truyền --source hoặc đặt 'source:' trong file config")
@@ -807,6 +1056,9 @@ def main():
     if isinstance(args.source, str) and args.source.isdigit():
         args.source = int(args.source)
     args.max_trajectory = cfg["max_trajectory"]
+    # Cờ mới 24-11: CLI nói rõ thì thắng, không nói (None) thì lấy YAML.
+    if getattr(args, "trajectory_seconds", None) is None:
+        args.trajectory_seconds = cfg.get("trajectory_seconds")
     args.reanchor_every = cfg["reanchor_every"]
     args.image_size = cfg["image_size"]
     args.device = cfg["device"]
@@ -819,7 +1071,8 @@ def main():
     args.record = args.record or (cfg["record_path"] if cfg["record_enabled"] else None)
     args.metrics_csv = args.metrics_csv or cfg["metrics_csv"]
     args.metrics_summary = args.metrics_summary or cfg["metrics_summary"]
-    args.reid = bool(args.reid or cfg["reid_enabled"])
+    # Tri-state: CLI nói rõ (True/False) thì THẮNG; không nói (None) mới lấy từ YAML.
+    args.reid = bool(cfg["reid_enabled"]) if args.reid is None else bool(args.reid)
     args.reid_threshold = cfg["reid_threshold"]
     args.lost_after_frames = cfg["lost_after_frames"]
     args.reid_min_face_px = cfg["reid_min_face_px"]

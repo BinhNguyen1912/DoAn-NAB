@@ -210,7 +210,8 @@ export interface LiveStatus {
   /** số frame ĐÃ PHÁT ở trạng thái `no_evidence` */
   bam_no_evidence_n: number
   /**
-   * Cổng nhảy CÓ NHỚ: `true` = worker ĐANG NGHI đã bám sang đối tượng khác và ĐÃ ẨN mask/ô.
+   * Cổng nhảy CÓ NHỚ: `true` = worker ĐANG NGHI đã bám sang đối tượng khác; từ 23-11 worker VẼ ô
+   * NÉT ĐỨT + nhãn "NGHI" (không tô mask) chứ KHÔNG ẩn ô nữa.
    * UI phải hiện banner + nút "vẫn đúng" (`confirmLive`) — im lặng thì người xem tưởng hệ hỏng.
    */
   nghi_doi_tuong?: boolean

@@ -12,6 +12,7 @@ Lưu ý  : số FPS/latency là THỰC ĐO trên phần cứng chạy (ADR-0002:
          không claim real-time). Chức năng vẽ HUD đầy đủ/quỹ đạo là ticket 06.
 """
 from dataclasses import dataclass, field
+from typing import Optional, Tuple
 
 import cv2
 import numpy as np
@@ -120,7 +121,9 @@ def _switch_warning(prev_bbox, result, frame_shape):
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
-                 vetoed=None, track_cos=None, nghi_doi_tuong=None) -> FrameRecord:
+                 vetoed=None, track_cos=None, nghi_doi_tuong=None, verify_cos=None,
+                 cos_truoc_cong=None, cand_n=None, cand_sinh_n=None,
+                 cand_ncc_loai=None) -> FrameRecord:
     """TrackingResult → FrameRecord cho MetricsLogger: tâm từ bbox, mất dấu khi mask rỗng."""
     x1, y1, x2, y2 = [int(v) for v in result.bbox]
     mask = getattr(result, "mask", None)
@@ -142,6 +145,11 @@ def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
         mask_area=mask_area,
         nghi_doi_tuong=nghi_doi_tuong,
         track_cos=track_cos,
+        verify_cos=verify_cos,
+        cos_truoc_cong=cos_truoc_cong,
+        cand_n=cand_n,
+        cand_sinh_n=cand_sinh_n,
+        cand_ncc_loai=cand_ncc_loai,
     )
 
 
@@ -181,6 +189,9 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                     memory dài hạn — xem `_maybe_reanchor`). None = tắt (mặc định).
     """
     summary = SessionSummary(total_frames=0)
+    if visualizer is not None:
+        # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43).
+        visualizer.reid_enabled = reid_session is not None
     src = open_video_source(source).open()
     try:
         frame = src.read()
@@ -192,6 +203,8 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         warn_if_bad_selection(result)
         if metrics is not None:
             metrics.log(_record_from(result, state))
+        verify_cos = cos_truoc = cand_n = None     # frame đầu chưa qua `step()`
+        cand_sinh = cand_ncc_loai = None
         img = _annotate(frame, result, visualizer, state)
         summary.latencies_ms.append(result.elapsed_ms)
         summary.total_frames += 1
@@ -209,6 +222,14 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 reid_vetoed = bool(getattr(step, "vetoed", False))
                 track_cos = getattr(step, "track_cos", None)
                 reid_ncc = step.ncc
+                # P1 review độc lập 23-11: `run_tracking` (đường HEADLESS — đường DUY NHẤT có
+                # `--dump-mask-frames`) không truyền 3 số này ⇒ artifact dùng để ra quyết định A/B
+                # có 3 cột LUÔN TRỐNG, tức không trả lời được chính câu hỏi chúng sinh ra để trả lời.
+                verify_cos = getattr(step, "verify_cos", None)
+                cos_truoc = getattr(step, "cos_truoc_cong", None)
+                cand_n = getattr(step, "cand_n", None)
+                cand_sinh = getattr(step, "cand_sinh_n", None)
+                cand_ncc_loai = getattr(step, "cand_ncc_loai", None)
             else:
                 reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                              summary.total_frames, reanchor_every)
@@ -217,11 +238,16 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
                 reid_ncc = None
                 reid_vetoed = False
                 track_cos = None
+                verify_cos = cos_truoc = cand_n = None
+                cand_sinh = cand_ncc_loai = None
             if result.mask.any():
                 last_bbox = result.bbox
             if metrics is not None:
                 metrics.log(_record_from(result, state, reid_score, reacquired, reid_ncc,
-                                         vetoed=reid_vetoed, track_cos=track_cos))
+                                         vetoed=reid_vetoed, track_cos=track_cos,
+                                         verify_cos=verify_cos, cos_truoc_cong=cos_truoc,
+                                         cand_n=cand_n, cand_sinh_n=cand_sinh,
+                                         cand_ncc_loai=cand_ncc_loai))
             img = _annotate(frame, result, visualizer, state, reid_score, reid_vetoed)
             summary.latencies_ms.append(result.elapsed_ms)
             summary.total_frames += 1
@@ -237,6 +263,12 @@ class InteractiveSummary:
     """Số liệu 1 phiên tương tác (frame chọn không đếm, chỉ đếm frame đã track)."""
 
     processed: int = 0
+    # 23-11-2026 (review 3 ý kiến): ô chọn ĐẦU TIÊN của người dùng, hệ `(x1, y1, x2, y2)`.
+    # Vì sao phải lưu: `./run demoip` KHÔNG truyền `--bbox` (người dùng kéo chuột) ⇒ trước đây
+    # `run_info` không có bbox nào ⇒ **không replay được phiên nào** (mà video `--record` lại đã
+    # cháy HUD nên cũng không dùng làm nguồn thô được).
+    prompt_bbox: Optional[Tuple[int, int, int, int]] = None
+    reselect_n: int = 0        # số lần người dùng bấm `r` chọn lại giữa phiên
 
 
 def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
@@ -281,6 +313,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
     reanchor_every: N > 0 → reset + chọn lại bbox mỗi N frame (nhanh hơn, đánh đổi memory).
     Output   : InteractiveSummary(processed = số frame đã track).
     """
+    if visualizer is not None:
+        # Banner mất dấu phải nói ĐÚNG khả năng (ticket #43).
+        visualizer.reid_enabled = reid_session is not None
     summary = InteractiveSummary()
     src = open_video_source(source).open()
     try:
@@ -299,9 +334,30 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
         watch = IdentityWatch()
         switch = False
+        last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
+        # Ô của CHÍNH frame bật cờ nghi (ô model vừa đưa ra ở cú nhảy) — KHÔNG phải ô trước cú nhảy;
+        # `c` = "vùng đang hiện là đúng" nên neo vào ô đó mới khớp ý người dùng (P1 review 23-11).
+        bbox_luc_nghi = None
+
+        def _bao_nghi(co):
+            """Báo cờ nghi cho `ReIdSession` — CHỈ khi đổi (xem `smooth_display` cùng luật)."""
+            nonlocal last_nghi, bbox_luc_nghi
+            if co and not last_nghi and reid_session is None:
+                print("[WARN] cổng NGHI ĐỔI ĐỐI TƯỢNG bật nhưng KHÔNG có Re-ID (thiếu --reid) ⇒ hệ "
+                      "không tự tìm lại được; bấm r rồi kéo chọn lại ô quanh vật.")
+            if co and not last_nghi:
+                bbox_luc_nghi = (tuple(last_result.bbox)
+                                   if (last_result is not None and last_result.mask.any()) else None)
+            if co != last_nghi:
+                last_nghi = co
+                if reid_session is not None:
+                    reid_session.set_suspicious(co)
         state = reid_score = reacquired = None  # trạng thái tái nhận diện (None khi không bật)
         reid_vetoed = False                 # frame này có ứng viên bị bỏ vì trùng khuôn mặt
         track_cos = None                    # cos với neo danh tính (plan 21-11, log-only)
+        verify_cos = None                   # cos của cổng XÁC MINH mask-vs-mask (23-11, log-only)
+        cos_truoc = None                    # cos cao nhất chấm TRƯỚC mọi cổng (23-11, log-only)
+        cand_n = None                       # số ứng viên đã chấm ở frame này (23-11, log-only)
 
         while max_frames is None or summary.processed < max_frames or mode == "select":
             if mode == "select":
@@ -313,6 +369,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     break
                 if selector.has_bbox():
                     bbox = selector.take_bbox()
+                    # 23-11: lưu ô chọn ĐẦU TIÊN + đếm số lần chọn lại (để replay/giải thích phiên)
+                    if summary.prompt_bbox is None:
+                        summary.prompt_bbox = tuple(int(v) for v in bbox)
+                    else:
+                        summary.reselect_n += 1
                     _canh_bao_neu_chon_mat(frame, bbox, visualizer)
                     last_result = (reid_session.start(frame, bbox) if reid_session is not None
                                    else engine.start(frame, bbox))
@@ -345,16 +406,25 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if key == CONTINUE_KEY and watch.nghi:
                     # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
                     watch.reset()
+                    _bao_nghi(False)
                     switch = False
+                    # Từ 23-11: cờ nghi khiến session BỎ track (đi tìm lại) ⇒ "tiếp tục" phải NEO LẠI
+                    # engine ở ô vừa bị nghi, không chỉ xoá cờ.
+                    if reid_session is not None and bbox_luc_nghi is not None:
+                        last_result = reid_session.start(frame, bbox_luc_nghi)
+                        state = reid_session.state
+                    last_bbox = bbox_luc_nghi
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:
                     watch.reset()
+                    _bao_nghi(False)
                     engine.reset()
                     if reid_session is not None:
                         reid_session.reset()
                     state = reid_score = reacquired = None
                     reid_vetoed = False   # P1 vòng 2: đừng giữ lý do veto của phiên trước
+                    last_bbox = None
                     selector.bind(frame)  # chọn lại trên frame hiện tại
                     if visualizer is not None:
                         visualizer.reset()  # quỹ đạo đối tượng cũ bỏ đi
@@ -371,6 +441,16 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # và (vì reid_score = -1 khi mọi ứng viên bị bỏ) còn in "chua co ung vien…".
                     reid_vetoed = bool(getattr(step, "vetoed", False))
                     track_cos = getattr(step, "track_cos", None)
+                    verify_cos = getattr(step, "verify_cos", None)
+                    cos_truoc = getattr(step, "cos_truoc_cong", None)
+                    cand_n = getattr(step, "cand_n", None)
+                    cand_sinh = getattr(step, "cand_sinh_n", None)
+                    cand_ncc_loai = getattr(step, "cand_ncc_loai", None)
+                    if reacquired:
+                        # Re-ID đã tìm lại được đối tượng và xác nhận danh tính ⇒ xoá nghi, đặt lại mốc
+                        watch.reset()
+                        switch = False
+                        last_bbox = tuple(last_result.bbox) if last_result.mask.any() else None
                 else:
                     reanchored = _maybe_reanchor(engine, frame, last_bbox,
                                                  summary.processed, reanchor_every)
@@ -378,10 +458,19 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     state = reid_score = reacquired = None
                     reid_vetoed = False
                     track_cos = None
-                switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
-                switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
-                if last_result.mask.any() and not switch:
-                    last_bbox = last_result.bbox
+                    verify_cos = cos_truoc = cand_n = None
+                    cand_sinh = cand_ncc_loai = None
+                if not reacquired:
+                    switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
+                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
+                    if last_result.mask.any():
+                        last_bbox = last_result.bbox
+                    else:
+                        last_bbox = (0, 0, 0, 0)
+                # Cổng hiển thị vừa đổi trạng thái ⇒ báo xuống Re-ID (chỉ khi ĐỔI): `True` = ngừng
+                # tin track hiện tại (session bỏ track + đi tìm lại), `False` = hết nghi.
+                if watch.nghi != last_nghi:
+                    _bao_nghi(watch.nghi)
                 summary.processed += 1
                 if on_result is not None:
                     on_result(last_result)
@@ -390,7 +479,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # "ẩn bao nhiêu frame" và soi lại từ CSV xem ẩn có đúng.
                     metrics.log(_record_from(last_result, state, reid_score, reacquired,
                                              vetoed=reid_vetoed, track_cos=track_cos,
-                                             nghi_doi_tuong=True if watch.nghi else None))
+                                             nghi_doi_tuong=True if watch.nghi else None,
+                                             verify_cos=verify_cos,
+                                             cos_truoc_cong=cos_truoc, cand_n=cand_n,
+                                             cand_sinh_n=cand_sinh,
+                                             cand_ncc_loai=cand_ncc_loai))
     finally:
         src.close()
     return summary

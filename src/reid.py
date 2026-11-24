@@ -103,6 +103,14 @@ HINT_CHAM_MEP = (
 # (0,35) vì ở đây không cần IoU mà chỉ cần "ô này là mặt/đầu". CHƯA hiệu chuẩn trên clip có nhãn
 # (CSV cũ không ghi w/h của ô ứng viên) — nếu thấy chặn oan thì tắt bằng `--no-reid-face-veto`.
 NGUONG_PHU_MAT = 0.30
+# ĐIỀU KIỆN 0 (23-11-2026): ứng viên chỉ bị coi là "mặt" nếu HÌNH HỌC của nó giống hình học mặt.
+# Đo phiên `demoip_1123-095901`: remote 103×267 (tỉ lệ w/h **0,39**) giữ cạnh mặt (~0,76) bị veto
+# **322 ứng viên** ⇒ hệ "TỰ TÌM LẠI" 160 bước dù vật ở giữa khung. Vật cao 2,5× rộng không thể là
+# mặt ⇒ các ngưỡng này chỉ cần đủ rộng để không chặn oan mặt/đầu thật (đầu có tóc: tỉ lệ ~0,8–1,0).
+NGUONG_TI_LE_MAT = (0.60, 1.70)        # tỉ lệ (w/h ứng viên) / (w/h mặt)
+NGUONG_DIEN_TICH_MAT = (0.40, 6.00)    # diện tích ứng viên / diện tích mặt
+# (rộng: ô "cả đầu + mặt" có thể tới ~2× mặt, ô to hơn nữa là thân/người — dây phân biệt thật nằm ở
+#  TỈ LỆ KHUNG, không phải diện tích: vật cao 2,5× rộng có tỉ lệ 0,39 so với mặt 0,78 ⇒ bị loại)
 HINT_VETO_MAT = (
     "[re-ID] BỎ ứng viên nhận lại vì TRÙNG KHUÔN MẶT/ĐẦU — ô chọn ban đầu không phải mặt người "
     "nên đây là bám nhầm (đo 20–21/11: 3/3 lần nhận lại sai đều vào mặt/trán/đầu).\n"
@@ -160,6 +168,24 @@ class Step:
     # `cos` giữa MASK đang bám và NEO danh tính (`src/track_identity.py`); `None` = chưa đo được
     # (chưa đủ neo / mask rỗng) — KHÔNG phải 0. Plan 21-11-2026: chỉ GHI, chưa hành động.
     track_cos: Optional[float] = None
+    # `cos` của phép XÁC MINH mask-vs-mask (`_verify_ok`) ở frame này — `None` = frame không nằm
+    # trong giai đoạn kiểm chứng. 23-11-2026: phải GHI được con số này, vì câu "cổng xác minh có
+    # tách được vùng sai không" trước đây chỉ suy luận được (phiên `demoip_1123-101110` nhận lại
+    # vào TƯỜNG rồi tracking tới hết phiên ⇒ `_verify_ok` pass 2/2 nhưng không có số nào để soi).
+    verify_cos: Optional[float] = None
+    # Cosine CAO NHẤT trong số ứng viên của frame này, chấm **TRƯỚC** mọi cổng (veto/NCC/hình học/
+    # ngưỡng). 23-11-2026: `reid_score` chỉ là điểm của ứng viên ĐÃ QUA cổng, nên artifact cũ không
+    # phân biệt được "bộ sinh không đưa vật vào danh sách" với "cổng chặn" — đúng thứ phải tách
+    # trước khi quyết có nên xác minh ứng viên bằng mask hay không.
+    cos_truoc_cong: Optional[float] = None
+    # Số ứng viên ĐÃ CHẤM `object_signature` ở frame này (sau prefilter NCC). `0` có thể là bộ sinh
+    # rỗng, cũng có thể là "mọi ứng viên bị bán kính/NCC loại" ⇒ **phải đọc kèm 2 bộ đếm dưới**
+    # (P1 review độc lập 23-11: bản đầu ghi "`0` = bộ sinh rỗng" là SAI).
+    cand_n: Optional[int] = None
+    # Số ô mà BỘ SINH đưa ra ở frame này (trước `_filter_by_radius` và trước cổng NCC).
+    cand_sinh_n: Optional[int] = None
+    # Số ứng viên bị CỔNG NCC (`obj_ncc_min`) loại — tách "không có ứng viên" khỏi "cổng chặn".
+    cand_ncc_loai: Optional[int] = None
 
 
 # ---------- hàm thuần (test không cần model) ----------
@@ -390,6 +416,18 @@ class ReIdSession:
         self._state = STATE_TRACKING
         self._lost_streak = 0
         self._frame_idx = 0
+        # Cổng "NGHI ĐỔI ĐỐI TƯỢNG" của tầng hiển thị (`src/identity_guard.IdentityWatch`) bật cờ ⇒
+        # coi lần track hiện tại là KHÔNG TIN: bỏ ngay track + vào nhánh TÌM LẠI, và NGỪNG học mẫu.
+        # Vì sao (đo 23-11-2026, phiên `demoip_1123-092343`, remote be trơn): cổng báo nghi ở f264 rồi
+        # tầng hiển thị chỉ **ẩn** overlay, còn engine vẫn `tracking` **48 bước** trên ÁO NGƯỜI ⇒
+        # không vào nhánh tìm lại ⇒ **Re-ID không được gọi lần nào** dù vật ở giữa khung (48 bước =
+        # 15,4 % phiên, `mask_area` med 43 512 px).
+        self._suspicious = False
+        self._last_verify_cos = None    # cos của lần XÁC MINH gần nhất (`None` = chưa chấm)
+        self._cos_truoc_cong = -1.0     # cosine CAO NHẤT của frame, chấm trước mọi cổng
+        self._cand_n = 0                # số ứng viên đã chấm ở frame này
+        self._cand_sinh_n = 0           # số ô bộ sinh đưa ra (trước bán kính + trước cổng NCC)
+        self._cand_ncc_loai = 0         # số ứng viên bị cổng `obj_ncc_min` loại
 
     # -- trạng thái --
     @property
@@ -404,6 +442,23 @@ class ReIdSession:
     def object_ref_count(self) -> int:
         """Số mẫu đặc trưng VẬT THỂ đang giữ (tách khỏi `ref_count` của khuôn mặt)."""
         return len(self._obj_refs)
+
+    def set_suspicious(self, suspicious: bool) -> None:
+        """Tầng hiển thị báo "đang bám vùng SAI" ⇒ lần `step()` kế tiếp BỎ track và TÌM LẠI.
+
+        Khác `_auto_recover()` (tự phát hiện theo cú nhảy, `jump_ratio × đường chéo ô` = 1,5×): cổng
+        hiển thị dùng bán kính hẹp hơn (trần 200 px) nên nó **bắt được ca mà cổng nội bộ bỏ lọt** —
+        phiên 23-11: cổng hiển thị báo ở cú nhảy 204 px trong khi `_is_suspicious_jump` cần 1,5 × 297
+        = 446 px. Hai cổng là hai thước đo khác nhau, KHÔNG thay thế nhau.
+
+        Chỉ đặt cờ — mọi thao tác trên engine vẫn do luồng suy luận thực hiện.
+        """
+        self._suspicious = bool(suspicious)
+
+    @property
+    def suspicious(self) -> bool:
+        """Đang bị tầng hiển thị đánh dấu nghi (cờ do bên ngoài đặt, tự xoá khi nhận lại được)."""
+        return self._suspicious
 
     def reset(self) -> None:
         """Xoá mẫu + về trạng thái ban đầu. Bộ đếm `frame_idx` **KHÔNG** reset.
@@ -436,6 +491,7 @@ class ReIdSession:
         self.frames_vetoed_since_print = 0
         self._hint_veto_da_in = False
         self._faces_frame = None
+        self._suspicious = False         # chọn lại đối tượng ⇒ phiên mới, không còn "nghi" cũ
         self.neo.xoa()                  # chọn lại đối tượng ⇒ neo cũ vô nghĩa
         self.geo_profile.reset()
 
@@ -456,6 +512,7 @@ class ReIdSession:
         # (mặt quay đi/mờ) là veto bật cho CẢ phiên, dù người dùng chọn đúng mặt. Vì vậy giữ ô chọn
         # và ĐÁNH GIÁ LẠI (sticky, chỉ bật thêm, không tắt) khi đang tìm lại.
         self._ref_bbox = tuple(float(v) for v in bbox[:4]) if bbox is not None else None
+        self._suspicious = False          # phiên bám MỚI ⇒ không kế thừa cờ nghi của phiên trước
         self._ref_phu_mat = self._phu_mat(frame, bbox) >= NGUONG_PHU_MAT
         self._collect_reference(frame, getattr(result, "bbox", bbox), getattr(result, "mask", None))
         if self.object_on and not self._obj_refs and not self._obj_templates:
@@ -467,6 +524,13 @@ class ReIdSession:
         self._frame_idx += 1
 
         if self._state == STATE_TRACKING:
+            # Cổng hiển thị đã kết luận "vùng này KHÔNG phải vật" ⇒ bỏ track NGAY (không chờ
+            # `lost_after_frames`), và KHÔNG gọi `engine.process()` cho frame này (P3 review 23-11:
+            # gọi rồi vứt là phí ~90–160 ms CPU). Đồng thời KHÔNG nạp mẫu của vùng sai vào
+            # `_obj_refs`/neo — nhiễm bộ nhớ là đường dẫn tới "nhận lại" đúng vùng sai (đo 23-11: ô
+            # tường be được nhận lại với cosine 0,92). `_auto_recover()` giữ mẫu tham chiếu.
+            if self._suspicious:
+                return self._auto_recover()
             result = self.engine.process(frame)
             self._stamp_frame_idx(result)
             # "Còn thấy vật" = mask không rỗng **VÀ** score > ngưỡng. SAM 2 hay "tưởng tượng" ra
@@ -477,6 +541,7 @@ class ReIdSession:
                 return self._auto_recover()
             if result.mask is not None and result.mask.any():
                 self._last_bbox = tuple(result.bbox)
+            verify_cos = None      # chỉ khác None ở frame thuộc giai đoạn KIỂM CHỨNG sau nhận lại
             seen = (result.mask is not None and result.mask.any()
                     and float(result.score) > self.lost_score_threshold)
             if not seen:
@@ -490,8 +555,10 @@ class ReIdSession:
                 if self._verify_left > 0:
                     # Đang kiểm chứng một lần "nhận lại" → nếu không giống vật thì bỏ ngay,
                     # nếu không sẽ kẹt vĩnh viễn trên vùng bám nhầm (bug thật 27-10).
+                    self._last_verify_cos = None
                     if self._verify_ok(frame, result):
                         self._verify_left -= 1
+                        verify_cos = self._last_verify_cos
                     else:
                         return self._abandon_reacquire()
                 if self.enabled and self._verify_left == 0:
@@ -504,7 +571,8 @@ class ReIdSession:
                 # thổi lên 1,0 và phân bố bị lệch về phía "đúng".
                 track_cos = cos_voi_neo(self.neo, frame, mask)
                 self.neo.thu(frame, mask, getattr(result, "bbox", None))
-            return Step(result=result, state=self._state, track_cos=track_cos)
+            return Step(result=result, state=self._state, track_cos=track_cos,
+                        verify_cos=verify_cos)
 
         # LOST → chuyển sang tìm kiếm trong chính frame này
         self._recover_cooldown = max(0, self._recover_cooldown - 1)
@@ -553,6 +621,10 @@ class ReIdSession:
             # Veto mặt/đầu đã lọc TRONG `_match_object` (ứng viên bị bỏ, ứng viên kế tiếp được xét)
             # ⇒ ở đây chỉ còn câu hỏi "frame này có bị veto không" để HUD nói ĐÚNG lý do.
             so_veto_truoc = self.veto_mat_n
+            self._cos_truoc_cong = -1.0        # mỗi frame một giá trị (không rò sang frame sau)
+            self._cand_n = 0
+            self._cand_sinh_n = 0
+            self._cand_ncc_loai = 0
             score, bbox, ncc = self._match_object(frame)
             vetoed = self.veto_mat_n > so_veto_truoc
             if vetoed and self.frames_vetoed_since_print >= 20:
@@ -595,7 +667,11 @@ class ReIdSession:
         lost = self._lost_result()
         lost.elapsed_ms = (time.perf_counter() - _t0) * 1000.0   # chi phí TÌM LẠI (không phải VOS)
         return Step(result=lost, state=self._state,
-                    reid_score=best_score, ncc=best_ncc, vetoed=vetoed)
+                    reid_score=best_score, ncc=best_ncc, vetoed=vetoed,
+                    cos_truoc_cong=(self._cos_truoc_cong
+                                    if self._cos_truoc_cong >= 0.0 else None),
+                    cand_n=self._cand_n, cand_sinh_n=self._cand_sinh_n,
+                    cand_ncc_loai=self._cand_ncc_loai)
 
     # -- veto "nhận lại vào mặt/đầu" --
     def _mat_trong(self, frame) -> tuple:
@@ -648,8 +724,14 @@ class ReIdSession:
     def _trung_mat(self, frame, bbox, faces=None) -> bool:
         """Ứng viên nhận lại có phải MẶT/ĐẦU không (chỉ khi ô chọn ban đầu KHÔNG phủ mặt).
 
-        Hai điều kiện, OR: (a) TÂM ô nằm trong một mặt — không có ngưỡng nào để hiệu chỉnh;
-        (b) ≥ `NGUONG_PHU_MAT` diện tích ô bị một mặt phủ — bắt ca ô to trùm cả đầu + mặt.
+        Ba điều kiện: (0) ứng viên phải **GIỐNG HÌNH MẶT** so với chính mặt đó (diện tích
+        0,5–2,0× và tỉ lệ w/h trong 0,6–1,7×), rồi mới xét (a) TÂM ô nằm trong mặt, (b) ≥
+        `NGUONG_PHU_MAT` diện tích ô bị mặt phủ (bắt ca ô to trùm cả đầu + mặt).
+
+        Vì sao phải có (0): đo 23-11-2026, phiên `demoip_1123-095901` — remote giữ **ngay cạnh mặt**
+        (ô 103×267, tỉ lệ w/h **0,39**) bị veto **322 ứng viên** chỉ vì chồng lên ô mặt, hệ ngồi
+        "TỰ TÌM LẠI" 160 bước dù vật ở giữa khung. Veto sinh ra để chặn "nhận lại vào MẶT/TRÁN/ĐẦU"
+        (đo 20–21/11) — các ca đó đều có hình học của mặt/đầu.
         """
         if self.face_veto is None or self._ref_phu_mat or bbox is None:
             return False
@@ -657,14 +739,28 @@ class ReIdSession:
             x1, y1, x2, y2 = [float(v) for v in bbox[:4]]
         except (TypeError, ValueError):
             return False
+        cw, ch = abs(x2 - x1), abs(y2 - y1)
+        if cw <= 0 or ch <= 0:
+            return False
         if faces is None:
             faces = self._mat_trong(frame)      # MỘT lần detect cho cả hai điều kiện
         if not faces:
             return False
-        if self._phu_mat(frame, bbox, faces=faces) >= NGUONG_PHU_MAT:
+        giong_mat = []
+        for fx, fy, fw, fh in faces:
+            if fw <= 0 or fh <= 0:
+                continue
+            ti_le_dien_tich = (cw * ch) / (fw * fh)
+            ti_le_khung = (cw / ch) / (fw / fh)
+            if (NGUONG_DIEN_TICH_MAT[0] <= ti_le_dien_tich <= NGUONG_DIEN_TICH_MAT[1]
+                    and NGUONG_TI_LE_MAT[0] <= ti_le_khung <= NGUONG_TI_LE_MAT[1]):
+                giong_mat.append((fx, fy, fw, fh))
+        if not giong_mat:
+            return False
+        if self._phu_mat(frame, bbox, faces=giong_mat) >= NGUONG_PHU_MAT:
             return True
         cx, cy = (x1 + x2) / 2.0, (y1 + y2) / 2.0
-        for fx, fy, fw, fh in faces:
+        for fx, fy, fw, fh in giong_mat:
             if fx <= cx <= fx + fw and fy <= cy <= fy + fh:
                 return True
         return False
@@ -691,8 +787,13 @@ class ReIdSession:
     def _auto_recover(self) -> Step:
         """Tự bỏ track hiện tại (nghi sai) + về trạng thái TÌM LẠI, GIỮ mẫu tham chiếu.
 
-        Không xoá `_obj_refs`/`_obj_template` — đó là ký ức để tự nhận diện lại. Không cập nhật
-        `_last_center` theo ô sai (giữ mốc cũ để vùng tìm không bị lệch theo vật bám nhầm).
+        Không xoá `_obj_refs`/`_obj_template` — đó là ký ức để tự nhận diện lại.
+
+        ⚠ MỐC TÌM (`_last_center`) **KHÔNG** phải "ô tốt gần nhất": `_collect_reference()` cập nhật
+        nó ở MỌI frame tracking (kể cả những frame đang trôi), nên khi cổng báo nghi thì mốc đã là
+        vùng đang bị nghi. Vùng tìm vì thế bắt đầu quanh chỗ sai rồi **nở dần** (`search_grow_step`,
+        mặc định 12 frame mới mở toàn khung) — đó là giá phải trả để không nhảy sang vật khác ngay
+        frame đầu; đừng đọc dòng này thành "mốc tìm luôn đúng chỗ vật".
         """
         try:
             self.engine.reset()
@@ -719,6 +820,9 @@ class ReIdSession:
         self._stamp_frame_idx(result)
         self._state = STATE_TRACKING
         self._lost_streak = 0
+        # Nhận lại THÀNH CÔNG ⇒ hết nghi (nếu giữ cờ, bước tracking kế tiếp sẽ bỏ track ngay và
+        # hệ quay vòng vô hạn: nhận lại → bỏ → nhận lại). Tầng hiển thị cũng `watch.reset()` cùng lúc.
+        self._suspicious = False
         self._confirm_count = 0
         self._confirm_box = None
         self._verify_left = self.verify_frames      # chưa tin ngay: kiểm chứng mấy frame đầu
@@ -793,7 +897,10 @@ class ReIdSession:
         sig = object_signature(frame, result.mask)
         if sig is None:
             return False
-        return best_match(self._obj_refs, sig) >= self.obj_threshold
+        cos = best_match(self._obj_refs, sig)
+        # GHI LẠI để CSV/HUD có số thật của cổng xác minh (xem `Step.verify_cos`).
+        self._last_verify_cos = float(cos)
+        return cos >= self.obj_threshold
 
     def _abandon_reacquire(self) -> Step:
         """Bỏ lần nhận lại sai: reset engine + về LOST để tìm tiếp (không kẹt trên vùng nhầm)."""
@@ -806,7 +913,12 @@ class ReIdSession:
         self._verify_left = 0
         self._confirm_count = 0
         self._confirm_box = None
-        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0)
+        # P1 vòng 2 review: ca ĐÁNG QUAN TÂM NHẤT là verify **THẤT BẠI**, mà bản đầu trả Step
+        # không mang cos ⇒ CSV trống đúng ở ca cần soi ("cổng xác minh có chặn được vùng sai không").
+        cos = self._last_verify_cos
+        self._last_verify_cos = None
+        return Step(result=self._lost_result(), state=self._state, reid_score=-1.0,
+                    verify_cos=cos)
 
     def _match_object(self, frame):
         """Tìm lại vật: lọc rẻ bằng NCC (top-K) rồi chấm `object_signature` cho từng ô.
@@ -841,6 +953,10 @@ class ReIdSession:
             boxes = candidate_boxes(frame.shape[:2], size_grid, **grid_kwargs)
             pairs = [(b, -1.0) for b in boxes[: self.obj_top_k]]
 
+        # ĐẾM BỘ SINH ở đây (trước lọc bán kính + trước cổng NCC) — P1 review 23-11: đếm sau 2 cổng
+        # đó thì `cand_n = 0` lẫn ba ca khác nhau và artifact không trả lời được "bộ sinh có đưa vật
+        # vào danh sách hay không".
+        self._cand_sinh_n = len(pairs)
         # Vùng tìm nở DẦN: mấy frame đầu chỉ tìm quanh chỗ cũ → không nhảy sang vật khác
         # ở góc phòng (bug thật 29-10: dấu cái ly lại bám vào bóng đèn).
         pairs = self._filter_by_radius(pairs, frame.shape[:2])
@@ -878,6 +994,7 @@ class ReIdSession:
             # chỉ tính ứng viên **đã qua cổng** ⇒ nó là CẬN DƯỚI của "số ứng viên trùng mặt bị chặn"
             # (ca "vào ĐẦU" ncc 0,356 bị cổng 0,40 loại trước, không được đếm là veto).
             if self.obj_ncc_min > 0.0 and ncc < self.obj_ncc_min:
+                self._cand_ncc_loai += 1
                 if ncc > best_ncc:
                     best_ncc = ncc          # ghi lại điểm ứng viên tốt nhất bị loại (để hiệu chuẩn)
                 continue
@@ -887,6 +1004,9 @@ class ReIdSession:
             if sig is None:
                 continue
             raw = best_match(self._obj_refs, sig)
+            self._cand_n += 1
+            if raw > self._cos_truoc_cong:
+                self._cos_truoc_cong = float(raw)   # TRƯỚC mọi cổng (để tách "bộ sinh" vs "cổng")
             if faces and self._trung_mat(frame, (x1, y1, x2, y2), faces=faces):
                 # P1 review vòng 2: bản trước `continue` TRƯỚC khi chấm ⇒ `reid_score/ncc` = -1, trùng
                 # giá trị "không có ứng viên" ⇒ artifact KHÔNG hiệu chuẩn được ngưỡng (đúng thứ ta cần

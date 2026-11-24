@@ -4,9 +4,12 @@ Hệ thống nhận diện, phân đoạn và bám bắt đối tượng trong v
 **SAM 2.1 (config SAMURAI)** ở chế độ streaming từng frame — khớp 7 yêu cầu của đề cương
 "Xây dựng hệ thống Camera AI bám bắt đối tượng theo thời gian thực".
 
-> ⚠️ **Trung thực về hiệu năng (ADR-0002):** demo live chạy trên laptop CPU (không có GPU
-> NVIDIA) đạt **~0.2–0.3 FPS** (~3–5 giây/frame) — là "slideshow có chủ đích", mọi số liệu
-> được đo và in/GHI RA FILE trung thực. Video minh hoạ tốc độ GPU sẽ chạy headless trên Colab.
+> ⚠️ **Trung thực về hiệu năng (ADR-0002):** đo trên laptop CPU không GPU rời
+> (`data/demoip_1124-110536_summary.json`, `image_size 192`): suy luận **142,1 ms** mean / **180,1 ms**
+> p95 ⇒ **7,0 lần mask/giây**; hình hiển thị **~20 FPS** nhờ luồng vẽ riêng (mask vẫn ~0,14–0,2 s tuổi).
+> Con số **0,2–0,3 FPS** là của `image_size 1024` (đo 10-2026, `docs/colab-gpu.md`) — **không** phải cấu
+> hình demo. Mọi số liệu được đo và GHI RA FILE; nhịp phát video tự khai trong `summary.json`
+> (`ti_le_thoi_luong` = 1,0 là đúng thực gian).
 
 ## Kiến trúc (6 module)
 
@@ -137,7 +140,8 @@ powershell -ExecutionPolicy Bypass -File D:\DOAN-NAB\tools\setup_cam_relay.ps1
 ./run relay stop            # tắt
 
 # (WSL) demo bám VẬT bằng webcam qua relay (tự bật relay)
-./run demoip                # = relay + run_live --display --smooth --reid --reid-cue object
+./run demoip                # = relay + run_live --display --smooth --no-reid --image-size 192
+                                 # (re-ID TẮT mặc định từ 23-11: mIoU 0,4236 vs 0,7794 — bật lại bằng --reid)
                                  # tự ghi data/demoip_<mốc>.mp4 + metrics + summary
 ```
 
@@ -611,11 +615,19 @@ Ghi video minh chứng (ghi đúng luồng hiển thị 19 FPS):
 python tools/run_live.py --source 0 --display --smooth --image-size 384 --record data/webcam_smooth.mp4 --metrics-csv data/smooth_metrics.csv --metrics-summary data/smooth_summary.json
 ```
 
-### Tái nhận diện: mất dấu thì ĐÓNG BĂNG, quay lại thì bám lại đúng người (ADR-0003)
+### Tái nhận diện (re-ID) — **TẮT mặc định từ 23-11**, bật lại bằng `--reid` (ADR-0003)
+
+> ⚠️ **Đính chính 24-11.** Phần dưới mô tả cơ chế re-ID **khi được bật**. Từ 23-11 `./run demoip`
+> **KHÔNG** bật re-ID, vì đo trên GT người tô: re-ID **mIoU 0,4236** vs lan truyền liên tục **0,7794**
+> (`data/miou_binh1_*_2026-11-23_metrics.json`) và re-ID **bịa mask 5/5** frame vật đã cất
+> (33 199–52 056 px). Mặc định hiện tại là **lan truyền liên tục** của SAM 2.
+
+### Cơ chế khi BẬT `--reid`: mất dấu thì ĐÓNG BĂNG, quay lại thì tìm lại (ADR-0003)
 
 Demo 2 người (bạn = A, bạn của bạn = B): chọn mặt A → A rời khung → hệ thống **báo MẤT DẤU và dừng**
 (không bám sang B) → A quay lại → **tự bám lại đúng A** nhờ so khớp khuôn mặt (YuNet + SFace).
-**Đã bật sẵn** trong mọi lệnh `./run demo` / `demo5` / `view` / `video` / `fast`.
+**Bật bằng `--reid`** (không bật sẵn; xem đính chính ở trên). Các lệnh `demo5` / `view` / `video` / `fast`
+vẫn truyền `--reid` — đó là lý do `./run demoip` phải ghi rõ `--no-reid` để không bị đè.
 Chỉ cần chạy:
 
 ```bash

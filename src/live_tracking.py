@@ -1916,9 +1916,15 @@ class LiveTrackingSession:
             else:
                 self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
-        # `nghi_doi_tuong` ẩn ô Y NHƯ `no_evidence` (cùng luật với CLI): hệ không có bằng chứng về
-        # việc "vùng này là vật đã chọn" thì không được vẽ nó ra như đang bám.
-        an_o = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
+        # `no_evidence` ẩn ô (ô do LK suy diễn ⇒ vẽ ra là nói dối).
+        # `nghi_doi_tuong` từ 23-11 **KHÔNG ẩn nữa**: `_annotate` vẽ ô NÉT ĐỨT + nhãn "NGHI" (ticket #45).
+        # P1 review 24-11: bản trước vẫn gộp `nghi_doi_tuong` vào `an_o` ⇒ `shown = None` trong khi ảnh
+        # CÓ ô nét đứt ⇒ `shown.csv` + `scripts/ab_o_hien_thi_vs_gt.py::ty_le_o_ma` đếm "không vẽ ô" trên
+        # frame GT rỗng, tức metric nói ngược lại điều người xem thấy. Nay:
+        #   - `shown` = ô ĐÃ VẼ (nét đứt vẫn là ô được vẽ) ⇒ metric khớp ảnh;
+        #   - `bam` (cột thứ 12 của CSV) đã phân biệt `nghi_doi_tuong` với `tracking` ⇒ ai cần
+        #     "ô này chưa được kiểm" thì lọc theo cột đó, không cần bóp méo `shown`.
+        an_o = self._stats.bam == "no_evidence"
         if self._stats.bam == "nghi_doi_tuong":
             self._stats.nghi_doi_tuong_n = int(self._stats.nghi_doi_tuong_n or 0) + 1
         shown = None if an_o else obs_bbox
@@ -2048,6 +2054,10 @@ class LiveTrackingSession:
             tint[mask] = _OVERLAY_COLOR_MASK
             img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
 
+        # Ticket #45: "nghi đổi đối tượng" KHÁC "không có bằng chứng" — nghi thì VẪN có ô (chỉ là ô
+        # đáng ngờ), nên vẽ NÉT ĐỨT để người xem thấy hệ đang ở đâu mà không tưởng đó là kết quả đã
+        # kiểm. Ẩn sạch cả hai (luật 21-11) đã đo hậu quả 23-11: 50/194 frame = 25,8 % phiên trắng.
+        dang_nghi = self._stats.bam == "nghi_doi_tuong"
         if not khong_bang_chung:
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             if x2 > x1 and y2 > y1:
@@ -2056,6 +2066,15 @@ class LiveTrackingSession:
             points = list(self._trail)
             for index in range(1, len(points)):
                 cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
+        elif dang_nghi:
+            # import trong hàm: tránh vòng import nặng (visualizer cũng import ngược live_tracking)
+            from src.visualizer import _COLOR_NGHI, ve_o_net_dut
+
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            if x2 > x1 and y2 > y1:
+                ve_o_net_dut(img, x1, y1, x2, y2)
+                cv2.putText(img, "NGHI", (x1, max(18, y1 - 6)), cv2.FONT_HERSHEY_SIMPLEX,
+                            0.55, _COLOR_NGHI, 2)
 
         hud = (f"LIVE {self._stats.measured_fps:.1f}fps | VOS {self._stats.vos_fps:.1f}fps "
                f"{self._stats.vos_ms:.0f}ms | LK {self._stats.lk_ms:.1f}ms")

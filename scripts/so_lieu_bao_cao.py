@@ -25,6 +25,42 @@ _REPO_ROOT = Path(__file__).resolve().parents[1]
 # Mỗi dòng: (tuyên bố, artifact, đường dẫn khoá trong JSON, đơn vị, cấm trích thành)
 # Đường dẫn khoá dạng "a.b.0.c" — số nguyên là chỉ số mảng.
 REGISTRY = [
+    # ---- 24-11: mIoU mask-vs-GT (thước đo DUY NHẤT cho "bám có đúng không") ----
+    # Mỗi dòng PHẢI in kèm `n` frame đã chấm: 0,8625 (n=8) không phải "độ chính xác 86 % trên mọi clip".
+    ("mIoU phân đoạn — vật be, ra/vào khung + tay che (n=8)", "data/miou_be2_full_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "CẤM trích thành \"độ chính xác 86 %\" chung: n=8 frame, 1 clip, GT người tô. `mIoU_p05` = None vì "
+     "n < 30. Mask NGOÀI GT 5,2 % ⇒ phần hụt chưa nói gì về tràn."),
+    ("mIoU phân đoạn — chai binh1 (n=7)", "data/miou_b1_2026-11-20_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "Clip cũ; 113/333 frame mask rỗng nhưng 107 trong số đó là vật NGOÀI khung ⇒ cấm đọc thành \"mất dấu 34 %\"."),
+    ("mIoU phân đoạn — túi TRẮNG MỜ trên tường TRẮNG (n=5)", "data/miou_tran_nen_truoc_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "Ca KHÓ NHẤT có GT. n=5 ⇒ không công bố p05. Lỗi chính là HỤT (~18 % diện tích GT) + khởi tạo f0 "
+     "(tràn 36,9 % tại f0); 4/5 frame còn lại mask NHỎ hơn GT."),
+    ("Mask NGOÀI vật trung bình — ca cùng tông nền", "data/miou_tran_nen_truoc_2026-11-24_metrics.json",
+     "ket_qua.mask_ngoai_gt_mean", "tỉ lệ",
+     "Trung bình 5 frame; tệ nhất 36,9 % ở f0. KHÔNG phải mIoU và KHÔNG nói mask phủ đủ."),
+    ("Trần RECALL nếu cắt sạch phần tràn (dùng GT để cắt)", "data/miou_tran_nen_truoc_2026-11-24_metrics.json",
+     "ket_qua.tran_recall_dung_gt", "tỉ lệ",
+     "ĐÂY LÀ TRẦN LÝ THUYẾT, tính bằng GT (|mask ∩ GT| / |GT|) ⇒ cấm trình bày như \"cải thiện đạt được\"."),
+    ("Bịa mask ở frame vật VẮNG — be2 (0/3 frame)", "data/miou_be2_full_2026-11-24_metrics.json",
+     "ket_qua.mask_px_gt_rong.so_frame_bia", "số frame",
+     "n = 3 frame GT rỗng: ít. Cấm viết \"không bao giờ vẽ bừa\" từ 3 frame."),
+    ("Bịa mask ở frame vật VẮNG — túi trắng (1/1 frame, 3 713 px)", "data/miou_tran_nen_truoc_2026-11-24_metrics.json",
+     "ket_qua.mask_px_gt_rong.mean", "px",
+     "n = 1 frame ⇒ chỉ là ví dụ, không phải tỉ lệ. Ở ca này model tô lên MẶT người quay."),
+    # ---- 24-11: KẾT QUẢ ÂM TÍNH (đo rồi, để không ai đề xuất lại) ----
+    ("ÂM TÍNH — checkpoint base_plus @192 (so tiny 0,6987)", "data/miou_tran_nen_baseplus_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "Nâng checkpoint làm mIoU RƠI 0,44. Không phải lỗi config (thử cả config gốc SAM 2: 0,2741)."),
+    ("ÂM TÍNH — checkpoint small @192 (config SAMURAI)", "data/miou_tran_nen_small_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "Như trên; small với config GỐC cho 0,5258 — vẫn dưới tiny."),
+    ("ÂM TÍNH — image_size 320 vs 192 (cùng 5 frame)", "data/miou_tran_nen_320_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "Chênh +0,0282 nhưng CI95 cặp [-0,0416, +0,1126] CHỨA 0, sign test p=1,00 ⇒ KHÔNG PHÂN BIỆT ĐƯỢC. "
+     "Giá: 534 ms/frame (1,9 FPS)."),
     ("Tốc độ model ở `image_size 192` (đường live)", "data/lan2_chai_binh1_lan1_metrics.json",
      "worker_status.vos_ms", "ms/frame",
      "KHÔNG phải \"thời gian xử lý một frame người xem thấy\" — thiếu `pre_ms` (14,3 ms) và thời "

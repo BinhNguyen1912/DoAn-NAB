@@ -1,0 +1,46 @@
+{
+ "nguon": "data/raw_vat_be_rakhung.mp4",
+ "image_size_yeu_cau": 192,
+ "image_size_hieu_luc": 192,
+ "vos_every": 1,
+ "mask_smoothing": 1.0,
+ "bbox_xywh": [
+  315,
+  200,
+  150,
+  250
+ ],
+ "lenh": "tools/run_live.py --source data/raw_vat_be_rakhung.mp4 --image-size 192 --bbox 315,200,150,250 --max-frames 652 --lost-after-frames 999 --lost-score-threshold -99 --dump-mask-frames 0,300,540,570,582,594,600,612,624,636,648 --dump-mask-dir data/rawrakhung_nofreeze_masks --metrics-csv data/rawrakhung_nofreeze_2026-11-23_metrics.csv",
+ "git_rev": "1423f7d",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "do_luc": "2026-11-23T12:12:31",
+ "frames_yeu_cau": [
+  0,
+  300,
+  540,
+  570,
+  582,
+  594,
+  600,
+  612,
+  624,
+  636,
+  648
+ ],
+ "frames_da_ghi": [
+  0,
+  300,
+  540,
+  570,
+  582,
+  594,
+  600,
+  612,
+  624,
+  636,
+  648
+ ],
+ "so_file_ghi_de": 0,
+ "frame_goc_cua_phien": 0
+}

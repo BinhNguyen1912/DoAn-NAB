@@ -403,7 +403,7 @@ export function LivePanel(): JSX.Element {
       )}
 
       {bamLineText && (
-        // Ô đã bị ẩn khỏi ẢNH (không chỉ panel) — dòng này là lời giải thích cho người xem vì sao
+        // Ô KHÔNG còn được tô mask và (khi nghi) chỉ vẽ NÉT ĐỨT — dòng này giải thích cho người xem vì sao
         // không còn ô/mask. `role="alert"` vì đây là thông tin trung thực, không phải gợi ý.
         <div className="error" data-testid="bam-no-evidence" role="alert">
           <p>{bamLineText}</p>

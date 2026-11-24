@@ -138,7 +138,11 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   Trần pipeline SAM 2.1 tiny @256 là **~175 ms/frame (5,7 FPS)** và model chiếm 168/175 ms ⇒ tối ưu
   code quanh đó chỉ còn ~20 ms. Số GPU (Colab T4 49,6 ms = 20,15 FPS):
   `docs/task/22-10-2026-colab-gpu-so-lieu-va-fix.md`.
-- **Demo trên CPU dùng `image_size 256`** (155 ms ⇒ ~6,5 FPS); 320 chỉ khi cần chi tiết vật nhỏ.
+- **Demo trên CPU dùng `image_size 192`** (`run:328` — `./run demoip` truyền `--image-size 192`).
+  Đo 24-11 trên máy này: **142,1 ms** mean / 180,1 ms p95 ⇒ 7,0 mask/s (`data/demoip_1124-110536_summary.json`).
+  320 chỉ khi cần chi tiết vật nhỏ (đo: 534 ms/frame, và so cặp 192↔320 **không phân biệt được**).
+  **Đính chính 24-11: dòng cũ ghi "256 / 155 ms / 6,5 FPS" là số của lần đo khác, không phải cấu hình
+  demo** — đã sửa để agent sau không chạy sai.
   Bảng đo: `docs/research/03-kha-nang-real-time-tren-laptop-cpu-igpu.md`.
 - **Đo nguồn live ở đúng nhịp tiêu thụ.** Benchmark đọc liên tục từ webcam/relay cho số sai:
   30 ms "decode" MJPEG thực chất là *chờ* relay phát 20 fps; trong pipeline chỉ chênh ~5 ms.
@@ -520,6 +524,31 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
   0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
   mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Điểm prompt ÂM không phải "liều thuốc chung": trên clip mà lỗi là mask HỤT, nó làm HỤT THÊM.**
+  Đo 22-11 (`scripts/ab_diem_am.py`, so cặp từng frame, điểm âm sinh từ HÌNH HỌC chứ không từ GT):
+  trên `binh2` (lỗi đang là **hụt diện tích**) — điểm âm quanh ô ĐÚNG: 192 **+0,0016** (5/8 frame, CI95
+  chứa 0 ⇒ không kết luận), 512 **−0,0010** (1/8); mô phỏng "chọn ô rộng tay" (ô nới 1,3×, điểm âm
+  trong vành): 192 +0,0088 (2/8, CI95 chứa 0), **512 −0,0744 (2/8, CI95 [−0,2200, +0,0007])**.
+  ⇒ **Chỉ dùng điểm âm khi mask TRÀN ra ngoài vật** (ca 21-11 bám sang cửa/tường cùng tông); gợi ý
+  trên canvas đã ghi đúng câu đó. **Cấm** viết "điểm âm đã khắc phục bám nhầm" khi chưa có clip tái
+  hiện ca 21-11 (repo **chưa có** clip đó). Đây là kết quả ÂM TÍNH có artifact:
+  `data/ab_diem_am_2026-11-22_metrics.json`, `data/ab_diem_am_512_2026-11-22_metrics.json`.
+- **NGƯỠNG NHIỄU CỦA CHÍNH GT — phải đo THEO TỪNG CLIP, không có số chung.** Đo 24-11 bằng
+  `scripts/gt_noise.py` (người tô **lại cùng frame**, intra-labeler). Artifact `data/gt_noise_*_metrics.json`:
+
+  | clip | n frame tô lại | IoU(GT,GT) | ngưỡng "không kết luận" = 1−IoU |
+  |---|---|---|---|
+  | `clip_be2` (vật be, **đặc** — clip chủ lực) | 2 (f0 0,8697 · f344 0,8847) | **0,8772** | **0,1228** |
+  | `clip_tran_nen` (**túi mờ** trên nền trắng) | 3 (f0 0,7693 · f222 0,7757 · f400 0,7200) | **0,7550** | **0,2450** |
+
+  ⇒ (a) chênh mIoU **dưới ngưỡng của chính clip đang đo** thì phải viết **"không kết luận"**; (b) **cấm** so
+  chéo hai clip bằng chênh mIoU khi nhiễu hai clip khác nhau (be2 0,12 vs tran_nen 0,25); (c) trên **cùng**
+  clip `tran_nen`, các kết luận **giữ được** là Δ > 0,245: tiny vs base_plus (0,6987 vs 0,2716 = **0,427**),
+  tiny vs small (**0,442**); còn **phải hạ xuống "không phân biệt được"**: 320 vs 192 (0,028),
+  `--mask-threshold` 1,0/2,0 (−0,054/−0,167), mọi refiner biên (≤0,046); (d) bài học phương pháp: **hai lần
+  tô cùng frame mà lệch tới 22 % diện tích** ⇒ con số mIoU tuyệt đối phải đọc kèm "GT tự khớp bao nhiêu",
+  đừng bao giờ trình bày `mIoU = 0,86` như "độ chính xác 86 %".
+
 - **Muốn so hai cấu hình thì so CẶP theo frame (`scripts/paired_miou.py`), đừng so hai giá trị trung
   bình.** So trung bình cần ngưỡng nhiễu mIoU — repo **CHƯA có**; mọi lần trích trước đây đều mượn của
   đại lượng khác (0,019 = `drift_iou`; 0,022–0,034 = `iou_mean` hộp-vs-GT trên `binh1`/`b1b`) nên
@@ -552,6 +581,15 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   không đọc được hoặc ≤ 0** (trước đó `if dung_sau:` lặng lẽ bỏ cờ ⇒ lặp vô hạn trở lại), in log bằng
   `Popen` + luồng đọc riêng (`--timeout` mới thực sự cắt được tiến trình treo mà không in gì), và
   **kiểm `image_size_hieu_luc` == yêu cầu** (None = "chưa kiểm được" ⇒ dòng LỖI, không công bố).
+- **`IdentityWatch` latch deadlock: Re-ID reacquire PHẢI reset cổng nghi và cập nhật `last_bbox`.**
+  Đo 22-11 (phiên webcam thật `demoip_1122-195623`): chai nước chạm mép phải (`x2=639`) làm SAM 2
+  giật ô về giữa ⇒ `IdentityWatch` bật cờ nghi (latch) và ẩn ô. Sau đó Re-ID nhận lại chai nước thành
+  công 98% (`reid_score 0.98`, SAM 2 score 22.0) và bám mượt mà suốt 10 s — nhưng người dùng thấy MẤT
+  DẤU VĨNH VIỄN vì: (a) `reacquired=1` không reset `watch` và không cập nhật `last_bbox`, (b) nhánh
+  `if not switch: last_bbox = bbox` đóng băng `last_bbox` ở tọa độ cũ trước cú nhảy, biến mọi frame sau
+  đó thành cú nhảy giả 400 px, khiến visualizer ẩn ô suốt cả phiên. Nay: `reacquired=1` hoặc bấm `c`
+  tự động reset `watch` và cập nhật `last_bbox = result.bbox`; khi mất dấu (`mask.any() == False`),
+  `last_bbox = (0, 0, 0, 0)` để khi vật xuất hiện lại không bị so với ô cũ từ nhiều giây trước.
 - **Trần "mượt" của demo webcam là CÁI CAMERA (16,5 fps), không phải model.** Đo 21-11: relay `/info`
   = 16,53 fps; ảnh `/snapshot.jpg` đổi **16,0 lần/s**; hạ `--width 320 --height 240 --fps 30` vẫn **16,51
   fps** ⇒ giới hạn cảm biến, hạ độ phân giải **không** giúp. Model trên CPU: @192 **102 ms** (9,8 lần/s),
@@ -560,3 +598,166 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   điểm cân bằng); muốn hình >16 fps thì phải **đổi nguồn** (điện thoại 30 fps qua `./run phone`, hoặc
   clip). **Đừng hứa GPU free làm mượt live** — Colab/Kaggle không thấy webcam laptop và không có URL
   công khai để relay đẩy ảnh vào; tunnel thêm 50–150 ms/frame.
+
+- **Cổng "nghi đổi đối tượng" báo nghi thì phải kéo theo TÌM LẠI, không chỉ ẩn overlay.**
+  Đo 23-11 (phiên `demoip_1123-092343`, remote máy lạnh be trơn): cổng báo đúng ở f264, tầng hiển thị
+  ẩn ô/mask, **nhưng** `ReIdSession` vẫn `state = tracking` **48/312 bước (15,4 %)** trên **áo người**
+  (score 1,2–4,5; `mask_area` med 43 512 px) ⇒ không vào nhánh mất-dấu ⇒ **Re-ID không được gọi lần
+  nào** dù remote ở giữa khung; 47 bước cuối người dùng thấy "không có gì". Nay `IdentityWatch` →
+  `ReIdSession.set_suspicious(True)` ⇒ bước kế tiếp **bỏ track + đi tìm lại** (giữ mẫu tham chiếu),
+  cờ tự xoá khi nhận lại/`c`/`r`; phím `c` dùng `InferenceWorker.reanchor()` (GIỮ mẫu Re-ID).
+  **Cấm** quay lại kiểu "ẩn là đủ". Cờ này cũng là đường **chống nhiễm bộ nhớ**: bước bị nghi không
+  nạp mẫu vào `_obj_refs`/neo.
+- **Hai cổng nhảy KHÔNG cùng thước đo — đừng thay cái này bằng cái kia.** Cổng hiển thị
+  (`identity_guard.search_window_radius`) bị chặn trần **200 px** (0,25×đường chéo khung 640×480);
+  cổng nội bộ `reid._is_suspicious_jump` cần **1,5 × đường chéo ô** (ô 127×269 ⇒ **446 px**). Cùng
+  phiên 23-11: cổng hiển thị báo ở **204 px**, cổng nội bộ **không bao giờ** báo. Và cả hai đều **mù
+  với trôi dần** (ô bò 60–150 px/bước sang máy lạnh/poster/áo) — muốn bắt phải có mô hình chuyển động
+  (Kalman/LK), việc > 4 h ⇒ plan 3 ý kiến trước.
+- **Phiên 23-11 chốt thêm 3 bằng chứng ÂM TÍNH cho "cổng tự phán quyết":** `ncc` nhận lại ĐÚNG
+  0,686/0,687/**0,468** vs ứng viên SAI bị veto 0,472/0,528 (⇒ **cấm** nâng `ncc_min` 0,40→0,55);
+  `mask_area` lớn nhất chỉ **2,0×** trung vị (⇒ cổng diện tích không cứu được) và `fill` med 0,77
+  (bình thường); `track_cos` vùng sai 0,45–0,79 nằm trong dải ca đúng.
+
+- **Veto mặt phải kiểm HÌNH HỌC, không chỉ "chồng lên ô mặt".** Đo 23-11 (phiên `demoip_1123-095901`):
+  remote 103×267 (tỉ lệ w/h **0,39**) giữ ngay cạnh mặt (tỉ lệ 0,78) ⇒ **322 ứng viên bị veto** dù ncc
+  0,56–0,71, hệ ngồi "TỰ TÌM LẠI" **160/254 bước (64 %)** trong khi remote **to rõ giữa khung** ở
+  t≈16 s (`data/tmp_analyze_1123/b400.jpg`). Nay `_trung_mat` chỉ coi ứng viên là mặt khi **tỉ lệ w/h**
+  0,6–1,7× và diện tích 0,4–6,0× của chính mặt đó — dây phân biệt là TỈ LỆ KHUNG, không phải diện tích.
+- **Đừng so cosine giữa hai LOẠI mặt nạ khác nhau.** Khi tìm lại, `_match_object` chấm đặc trưng trên
+  **ô chữ nhật** (không có mask thật) còn `_obj_refs` là đặc trưng của **mask SAM** ⇒ cosine bị hạ hệ
+  thống (đo: đúng vật chỉ 0,68–0,73 < ngưỡng 0,75). Nay có thêm `_obj_refs_box` (mẫu chấm cùng cách) và
+  `raw = max(mẫu-mask, mẫu-ô)`. **Chưa chốt** là đủ để vượt 0,75 — phải đo phiên mới; HUD in
+  `khop X / can 0.75` là chỗ lấy số để chốt ngưỡng, đừng hạ ngưỡng bằng cảm tính.
+
+- **ĐỪNG lưu "mẫu đặc trưng trên ô chữ nhật" để so với ứng viên khi tìm lại.** Thử 23-11 rồi phải
+  REVERT: mẫu-ô gồm cả nền ⇒ `cos(tường, mẫu-ô)` = **0,779** (mẫu-MASK chỉ 0,457) ⇒ vượt ngưỡng 0,75
+  và **nhận lại SAI vào tường/cửa** (phiên `demoip_1123-101110`: reacquired f118 cos **0,976** / ncc
+  **0,484**, rồi bám tường ~100 bước; `mất dấu 1 %` — chỉ số ĐẸP mà bám sai, `nghi_doi_tuong` 0 dòng).
+  Quy luật đọc số: **cos cao + ncc thấp = khớp đặc trưng nhưng không khớp pixel**. Muốn cứu ca "vật
+  trong khung mà không nhận lại" thì phải **xác minh bằng mask thật** (re-prompt SAM rồi chấm
+  mask-vs-mask), không phải đổi loại mặt nạ của mẫu.
+- **Veto mặt: chặn theo HÌNH HỌC là đúng, nhưng nó KHÔNG phải thứ chữa "không nhận lại được".** Sau khi
+  nới veto (chỉ chặn ô giống hình mặt), phiên `demoip_1123-101110` có `vetoed = 0` và vẫn bám sai —
+  vì cổng chính là cosine. Đừng quy lỗi "không nhận lại" cho veto mà không nhìn `reid_score`/`ncc`.
+- **CƠ CHẾ ĐÚNG ĐỂ "TỰ TÌM LẠI" LÀ KHÔNG ĐÓNG BĂNG LAN TRUYỀN — KHÔNG PHẢI RE-ID.** Đo 23-11
+  (`data/ab_binh1_*`, `git_rev f065a98`, `git_dirty_code = false`, **3+3 lần chèn kẽ, cả 6 lần giống
+  nhau tới 4 chữ số**), clip `data/binh1.mp4` @192, `bbox 300,275,150,410`, 333 frame, chấm
+  `./run miou score --gt docs/gt/b1`: **A** (`--reid --reid-cue object --reid-obj-threshold 0.75
+  --reid-obj-ncc-min 0.40`) → mIoU **0,4236**, `mất dấu 5/333`, mask NGOÀI GT **43,1 %** (tệ nhất
+  **100 %**), f181/f211/f241 = **0,0016 / 0,0 / 0,0**; **C** (không `--reid`, `--lost-after-frames 999
+  --lost-score-threshold -99`) → mIoU **0,7794**, `113/333`, ngoài GT **0,6 %**, f181/f211/f241 =
+  **0,7994 / 0,8495 / 0,8435**. C **trùng khít** `data/miou_b1_2026-11-20_metrics.json` ⇒ artifact
+  20-11 là **lan truyền liên tục**, KHÔNG phải re-ID (đừng trích nó làm "bằng chứng re-ID chạy được").
+  ⇒ (a) re-ID **nhận lại SAI** trên clip này, mà HUD lại đẹp nhất từ trước tới giờ (`5/333`): đúng dạng
+  "chỉ số đẹp, kết quả sai"; (b) nút thắt thật là **cổng đóng băng** `--lost-after-frames` (mặc định
+  **2**): đóng băng thì pipeline **không gọi SAM 2 nữa** ⇒ model mất khả năng tự bám lại và mọi trách
+  nhiệm dồn cho re-ID; (c) vì thế 9 commit sửa ngưỡng/mẫu/loại mặt nạ re-ID ngày 23-11 **không thể**
+  cứu demo — chúng tối ưu sai cơ chế. Plan + 2 vòng phản biện:
+  `docs/plan/23-11-2026-chon-co-che-tu-tim-lai.md`.
+- **A/B trên FILE phải chạy thẳng `tools/run_live.py`, TUYỆT ĐỐI không qua `./run view`.** `./run view`
+  = `--display --smooth --reid --image-size 384`; `--smooth` trên file dùng `LatestFrameSource` (chỉ giữ
+  frame mới nhất) ⇒ **mất frame** và ra số vô nghĩa (lần đầu tôi đo được "mất dấu 36/40" trong khi
+  chạy đúng chỉ mất 4/40). Muốn chấm mIoU cho phiên CLI thì dùng
+  `--dump-mask-frames 0,30,... --dump-mask-dir <dir>` (thêm 23-11): tên file theo **số frame video**,
+  mask RỖNG vẫn ghi, mask `None` thì không ghi file + cảnh báo, có `manifest.json` để `score_miou`
+  đối chiếu. Trước 23-11 chỉ `tools/live_worker.py` (đường web) xuất được mask.
+- **Telemetry tìm lại: `reid_score = -1` KHÔNG nói được gì; phải đọc `cand_n` + `cos_truoc_cong`.**
+  `-1` xuất hiện ở cả ba ca khác nhau: không có ứng viên nào qua prefilter NCC (`cand_n = 0`), ứng viên
+  có cos 0,70–0,74 bị ngưỡng chặn (`cand_n > 0`), và cả frame `tracking`. Phiên `095901`: 175/254 dòng
+  `-1`, trong đó 170 dòng `ncc = -1` (bộ sinh rỗng) và 5 dòng `ncc` 0,33–0,40 (cổng NCC loại) — nếu
+  chỉ đọc `-1` thì kết luận "bộ sinh rỗng" là **suy diễn**, không phải số. Từ 23-11 CSV có
+  `cos_truoc_cong` (cos cao nhất chấm TRƯỚC mọi cổng) và `cand_n` (số ứng viên đã chấm); `verify_cos`
+  ghi ở **cả** nhánh xác minh thất bại (ca cần soi nhất).
+- **Re-ID "bịa mask" khi vật đã rời khung — đo được, 5/5 frame.** Cùng bộ dump với mIoU ở trên
+  (`data/ab_binh1_*_lan1_masks/`, 23-11): tại các frame GT **rỗng** (121/151/272/302/332 — vật đã
+  cất), nhánh **có re-ID** trả mask **33 199 / 37 574 / 6 385 / 34 696 / 52 056 px** (tường, áo,
+  điều hoà), còn nhánh **lan truyền liên tục** trả **0 px ở cả 5 frame**. ⇒ Lý do tồn tại của cổng
+  đóng băng ("chống SAM 2 tưởng tượng mask khi vật đã rời khung") **không đúng trên clip này**: thứ
+  tưởng tượng mask là re-ID chứ không phải model. Muốn nói "re-ID có ích" thì phải có clip mà vật
+  **thật sự rời khung rồi vào lại** + mIoU chứng minh, repo **chưa có** clip đó.
+- **Cổng xác minh mask-vs-mask PASS trên vùng SAI — đo trực tiếp, đừng chỉnh ngưỡng cos.** Telemetry
+  sau khi sửa (23-11, `data/ab_binh1_reid_lan1_2026-11-23_metrics.csv`, `git_rev 2fb1455`): pipeline
+  nhận lại ở f116 (`reid_score` 0,841 · ncc 0,614), rồi `verify_cos` = **0,8707** (f117) và **0,8746**
+  (f118) — **PASS** cả hai frame xác minh — mà lần nhận đó vẫn **SAI** (IoU mask vs GT tại f181 =
+  **0,0016**). Trước đó f113/f114 có `cand_sinh_n = 14` (bộ sinh đưa ra 14 ô) mà `cand_n = 0` và
+  `cand_ncc_loai = 0` ⇒ thủ phạm là **`_filter_by_radius`** (vùng tìm nở dần), **không** phải bộ sinh
+  và **không** phải cổng NCC. Hai hệ quả: (a) `cand_n = 0` một mình KHÔNG nói "bộ sinh rỗng" — phải
+  đọc kèm `cand_sinh_n`/`cand_ncc_loai`; (b) muốn nói "cổng xác minh chặn được vùng sai" thì phải có
+  ca vùng sai mà cổng trả cos **thấp** — repo **chưa có** ca đó, các ca đã đo đều 0,75–0,99.
+  Và `verify_cos` nằm ở các frame **SAU** frame nhận lại (`verify_frames = 2`), không phải frame nhận.
+- **ĐÍNH CHÍNH 23-11 (sau khi đọc artifact bằng CSV, không bằng mắt) — 4 câu tự viết trước đó đều sai:**
+  (a) **"SAM 2 gần như không bao giờ trả rỗng" CHỈ đúng cho `rawrakhung`** (0/652 — cảnh tĩnh có điều
+  hoà trắng + poster nên lúc nào cũng có thứ để bám). Trên `binh1` **113/333** frame rỗng (`--no-reid`)
+  và `be2` **81/444** ⇒ đừng khái quát từ một clip. Đáng chú ý: binh1 **có re-ID chỉ còn 5/333 frame
+  rỗng** — re-ID **lấp** chỗ rỗng bằng mask bịa, nên "ít mất dấu" trên HUD là dấu hiệu **xấu**, không
+  phải tốt.
+  (b) **"re-ID chậm ~8 frame khi vật vào lại" SAI**: độ trễ **cấu trúc 1 frame** (`reid_reacquire_confirm=2`:
+  f344 `state=reacquiring`, `reid_score 0,842` > ngưỡng 0,75, `cand_n=7`; f345 mới `reacquired=1`).
+  Cái đo được chỉ là **4 frame GT sau khi vật về đều thấp hơn** (chênh 0,003–0,058).
+  (c) **"cổng xác minh LOẠI đúng vật vừa vào" SAI** — không có `vetoed`, không phải veto; nguyên nhân là
+  `confirm=2` ở (b). Ngược lại cổng đó **PASS một phantom**: f338 `reacquired=1` (28 181 px) → f340
+  `verify_cos = 0,856` → f343 `lost`. ⇒ cổng mask-vs-mask vừa **bỏ sót** vùng sai vừa **chấp nhận** nó.
+  (d) **"nhận bừa 1 lần ở f280" thiếu mức độ**: trên `be2` có **25 lần `reacquired=1`**, trong đó **23
+  lần nằm trong cửa sổ vắng (253–337) và mỗi lần sống đúng 1 frame**, `mask_area` 257 → **22 202 px**,
+  `score` **17,0–18,1** (cao nhất phiên — tức điểm tin cậy *khen* đúng cái sai), `track_cos = None`
+  **25/25**. Đây là **mẫu hình**, không phải sự cố lẻ.
+  (e) **`track_cos` KHÔNG có mẫu nào trên nhánh `--no-reid`** (`src/live_pipeline.py:237,454` gán cứng
+  `None`) và **`None` ở 25/25 frame `_reacquire`** ⇒ mọi kết luận "cos tách được" đo trên nhánh re-ID
+  (nhánh đã bị A/B bác), và cos **mù đúng chỗ** re-ID bịa mask. Muốn dùng cos làm cổng thì phải bịt
+  hai lỗ này trước rồi **đo lại**.
+  (f) **`score` không cùng thang giữa hai chế độ**: frame `engine.start()` cho **17–22**, frame
+  `process()` cho **4–10** ⇒ **cấm** dùng một ngưỡng tuyệt đối chung (θ=4,0 cho FP 0,7 % trên clip này
+  và **52,8 %** trên clip khác).
+- **`--lost-after-frames` (cổng "đóng băng") KHÔNG có tác dụng gì khi KHÔNG bật re-ID** — cơ chế đóng băng
+  nằm trong `ReIdSession`, không phải vòng lặp pipeline. Đo 23-11 (cùng clip/GT, @192, `git_dirty_code=false`):
+  `binh1` không re-ID **0,7794** ở cả cổng đóng lẫn cổng mở. Bảng 2×2 đầy đủ: `binh1` — không re-ID **0,7794**,
+  có re-ID **0,4236**, re-ID + cổng mở 0,7794; `clip_be2` — không re-ID **0,8754**, có re-ID 0,8577,
+  re-ID + cổng mở **0,5668** (mask tràn ngoài GT 19,6 %). ⇒ **re-ID không thắng ô nào trong 4 ô**, và "muốn để
+  model tự bám lại" = **tắt re-ID**, không phải chỉnh cờ. Từ 23-11 `./run demoip` mặc định `--no-reid`
+  (bật lại bằng `--reid`); mặc định của `tools/run_live.py` KHÔNG đổi để artifact cũ tái lập được.
+  Đường lui: tag `demo-ok-23-11` + nhánh `backup/demo-ok-23-11`.
+- **Cổng "nghi đổi đối tượng" từng là CÔNG TẮC TẮT VĨNH VIỄN khi không có re-ID.** Đo phiên thật
+  `demoip_1123-144505`: latch bật ở f144 rồi không có gì xoá (`reacquired_count=0`, `reselect_n=0`) ⇒
+  **50/194 frame = 25,8 % phiên TRẮNG hoàn toàn** dù vật vẫn rõ trong khung (ảnh giây 20,5). Trước đó re-ID
+  nhận lại thành công sẽ reset latch; tắt re-ID là mất luôn cơ chế đó. Nay "nghi" vẽ **ô NÉT ĐỨT vàng + nhãn
+  NGHI** (`visualizer.ve_o_net_dut`), **không** tô mask/quỹ đạo, ở CẢ hai đường (`visualizer.render`,
+  `live_tracking._annotate`); `no_evidence` (ô do LK suy diễn) vẫn ẩn sạch theo luật 21-11. Cấm quay lại
+  "ẩn sạch khi nghi" mà không có cơ chế reset.
+- **`--record` ghi 1 frame cho mỗi frame HIỂN THỊ ⇒ video NGẮN hơn thực gian**. Đo phiên `demoip_1123-144505`:
+  suy luận thật **30,76 s** nhưng `_web.mp4` = **625 frame @30 fps = 20,83 s** (nhanh **1,48×**); diễn tập live
+  (model 100 ms, hiển thị 20 fps, 6,08 s) cho **2,27 s** = thiếu **62,7 %**. Nay `Visualizer._write()` giữ nhịp
+  theo đồng hồ thực (`int((now-t0)*fps)+1`, lặp frame đang vẽ, trần `_MAX_LAP_FRAMES=60` + **REBASE** khi vượt
+  trần), và cờ `pace_realtime` **chỉ bật cho nguồn LIVE** (`tools/run_live._la_nguon_live`): nguồn file phải ghi
+  1:1 đúng fps clip (clip 333 frame = 11 s, không phải 29 s). Đo lại sau khi sửa: **4,6 %** sai lệch.
+  Cấm trích "quỹ đạo theo thời gian thực" từ một video ghi trước 23-11 mà không kiểm thời lượng.
+- **HUD từng in "MẤT DẤU — TỰ TÌM LẠI" khi `--no-reid`** — hứa một việc hệ không làm được, và câu đó đi vào
+  video nộp bài. Nay `visualizer.lost_banner_text(tu_tim_lai)` chọn câu theo khả năng THẬT, `reid_enabled` được
+  set ở cả `smooth_display` và `live_pipeline`; mặc định `False` (không biết thì không hứa). Khi thêm đường
+  vẽ mới: phải đi qua `lost_banner_text`, đừng viết chuỗi mới.
+- **Số hiệu năng chỉ được trích theo TỈ LỆ, không trích ms tuyệt đối làm số công bố.** Đo 23-11 trên cùng
+  một code, máy có `loadavg` 6,2–8,2 (agent khác chạy `pytest`/`npm`): file **201–223 ms**, relay **211–393 ms**;
+  lúc máy rảnh (`loadavg` 1,5–4,3) cùng code cho **206/303 ms** và **293/321 ms** — tức **2–3× chậm hơn** số
+  lưu trữ (87–103 ms) chỉ vì trạng thái máy. Vì thế `run_info.json` từ 23-11 ghi `loadavg_1m`/`cpu_count`/
+  `live_workers_khac`; **thiếu `loadavg` thì con số không được vào báo cáo**. Cũng đừng trích
+  "live chậm 1,8× so với file" — hai số đó lấy từ hai artifact khác ngày, `n = 1`, và hôm nay đo chèn kẽ
+  **không tách được**.
+- **`--smooth` (đường `./run demoip`) KHÔNG có LK** — `grep light_tracker src/smooth_display.py` = 0; LK chỉ
+  ở `live_tracking` (đường web/worker). Câu trong mục này *"live 108 ms mà hình vẫn 30 FPS là nhờ luồng riêng
+  + LK"* **chỉ đúng cho đường web**. Với CLI, overlay là kết quả VOS gần nhất vẽ lên frame mới, và nhịp vẽ thật
+  là **20,3 tick/s** vì `smooth_display.py` ngủ `1/30 s` **sau** khi đã làm việc (16 + 33 ms) — chính là gốc
+  của "video nén 1,48×" trước ngày 23-11. Đừng tối ưu LK cho demo CLI; đừng hứa 30 FPS cho CLI.
+- **Vòng đọc nguồn cũ chạy hết tốc lực: relay ảnh JPEG 16 fps bị đọc 263–293 lần/s.** Đo 24-11 trên relay
+  thật: `LatestFrameSource` đọc **263 lần/s** cho nguồn 16 fps ⇒ 18 lần giải mã JPEG vô ích mỗi khung,
+  1,6 MB/s loopback, **0,36 lõi (8 % của 4,3 lõi)**. Nay `LatestFrameSource` có trần đọc (CLI: `--smooth` đặt **30 lần ĐỌC nguồn/giây** — **KHÔNG phải 30 FPS
+  hiển thị**: nhịp vẽ vẫn ~20 tick/s, xem bullet `--smooth` ngay trên). Trước đó (nguồn live 30, nguồn file `None`) và
+  ngủ theo **mốc đầu vòng**; đo lại: **60 lần/2 s = 30/s**. Nguồn **file** còn đọc **715 lần/s** (giải mã clip
+  20 lần, ffmpeg mở 8 luồng tranh torch) — chưa sửa, cần quyết "skip hay block".
+- **`--trajectory-seconds` là WALL CLOCK — với nguồn FILE nó đổi nghĩa (đọc kèm khi trích số).** 5 s wall ở
+  6,3 bước/s = 31 frame video = **1,05 s clip 30 fps**; ở 9 bước/s = 45 frame = 1,5 s clip. Với `./run demoip`
+  (live) wall ≈ video nên đúng; với `./run video` thì "5 s quỹ đạo" **không** phải 5 s của clip ⇒ khi báo cáo
+  phải ghi "cửa sổ wall clock" và cấu hình máy. Trần số điểm tự nới theo cửa sổ (24-11) nên 30 bước/s × 5 s
+  vẫn đủ 150 điểm.
+- **"Quỹ đạo 100 điểm" KHÔNG phải "quỹ đạo theo thời gian".** Cùng 100 điểm = **16 s** ở 6,3 bước/s nhưng
+  **32 s** ở 3,1 bước/s ⇒ đại lượng đổi nghĩa theo tốc độ máy. Từ 24-11 có `--trajectory-seconds` (cắt theo
+  mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.

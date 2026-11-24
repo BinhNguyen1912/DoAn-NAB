@@ -22,6 +22,8 @@ data/*
 !data/*_summary.json
 !data/*_metrics.csv
 !data/*_metrics.json
+# Manifest của bộ mask đã dump (nhỏ) — thiếu nó thì `./run miou` không đối chiếu được clip/frame
+!data/*_masks/manifest.json
 !data/*_run_info.json
 !data/*_calib.json
 # File tạm/ thử nghiệm KHÔNG thuộc số liệu công bố — ngoại lệ `*_metrics.json` ở trên từng làm một

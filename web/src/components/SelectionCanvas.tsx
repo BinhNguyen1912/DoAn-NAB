@@ -216,7 +216,11 @@ export function SelectionCanvas({
         <p className="hint" data-testid="points-hint">
           <strong>Click</strong> = điểm <span style={{ color: '#22c55e' }}>dương</span> (thuộc vật) ·{' '}
           <strong>Ctrl/Shift/Alt + Click</strong> = điểm <span style={{ color: '#ef4444' }}>âm</span>{' '}
-          (vùng bám <em>sai</em>: nền, cửa, tường cùng tông). Điểm đang đặt: {describePoints(points)}
+          (vùng bám <em>sai</em>: nền, cửa, tường cùng tông).
+          <br />
+          <em>Chỉ dùng khi mask TRÀN ra ngoài vật.</em> Đo 22-11 trên clip `binh2` (lỗi ở đó là mask
+          HỤT): thêm điểm âm quanh ô <strong>không</strong> cải thiện mIoU, còn ở `image_size 512` với ô
+          rộng thì <strong>giảm 0,074</strong>. Điểm đang đặt: {describePoints(points)}
         </p>
       )}
     </div>

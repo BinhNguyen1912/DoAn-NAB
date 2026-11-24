@@ -772,3 +772,237 @@ class TestProvenanceKhongDuocGietPhien:
         run_live._finish_metrics(FakeMetrics(), args)      # KHÔNG được ném
         out = capsys.readouterr().out
         assert "run_info" in out and "[metrics]" in out     # vẫn in số liệu cho người dùng
+
+
+class TestDumpMask:
+    """`--dump-mask-frames` (23-11-2026): đường CLI phải xuất được mask để `./run miou` chấm.
+
+    Vì sao cần: chỉ `tools/live_worker.py` (web) có dump mask, còn CLI thì không ⇒ **không chấm
+    được** bất kỳ phiên CLI nào, kể cả phiên có Re-ID (đường web không có Re-ID). Đo 23-11: phải có
+    mask mới trả lời được "Re-ID nhận lại ĐÚNG vật hay nhận bừa" — mà đó là câu quyết định.
+    """
+
+    def _args(self, tmp_path, **kw):
+        clip = tmp_path / "clip.mp4"
+        clip.write_bytes(b"")
+        base = {"dump_mask_frames": "0, 30,181", "dump_mask_dir": "",
+                "metrics_csv": str(tmp_path / "x.csv"), "source": str(clip),
+                "bbox": "1,2,3,4", "bbox_file": None}
+        base.update(kw)
+        return type("A", (), base)()
+
+    def test_dump_cfg_doi_xuong_thu_muc_canh_metrics_csv(self, tmp_path):
+        frames, out_dir = run_live._dump_cfg(self._args(tmp_path))
+        assert frames == {0, 30, 181}
+        assert out_dir == str(tmp_path / "x_masks")
+
+    def test_dump_mask_tu_choi_nguon_khong_phai_file(self, tmp_path):
+        """Webcam/relay/RTSP: số frame là bộ đếm PHIÊN ⇒ mask_NNNNNN.png không ghép được GT nào."""
+        for src in ("0", "http://127.0.0.1:8090/snapshot.jpg", "rtsp://cam/s"):
+            with pytest.raises(SystemExit):
+                run_live._dump_cfg(self._args(tmp_path, source=src))
+
+    def test_dump_mask_bat_buoc_co_bbox_tuong_minh(self, tmp_path):
+        """Không có --bbox thì `_load_bbox` im lặng dùng ô giữa 80x80 (bẫy 'hộp mặc định vào nền')."""
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, bbox=None, bbox_file=None))
+        frames, _ = run_live._dump_cfg(self._args(tmp_path, bbox=None,
+                                                 bbox_file=str(tmp_path / "b.txt")))
+        assert frames == {0, 30, 181}
+
+    def test_dump_cfg_tu_choi_khi_sai_dinh_dang(self, tmp_path):
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="0,abc"))
+
+    def test_dump_cfg_tu_choi_so_am(self, tmp_path):
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="0,-3"))
+
+    def test_dump_cfg_can_thu_muc_khi_khong_co_metrics_csv(self, tmp_path):
+        with pytest.raises(SystemExit):
+            run_live._dump_cfg(self._args(tmp_path, dump_mask_frames="5", metrics_csv=None))
+
+    def test_ghi_dung_frame_va_ten_file_theo_frame_video(self, tmp_path):
+        """Tên file phải theo **số frame video**, KHÔNG theo `result.frame_idx` (bài học P0 14-11)."""
+        cb = run_live._dump_mask_callback(str(tmp_path), {1, 3}, {"nguon": "x.mp4"}, base=None)
+        for n in range(5):
+            mask = np.zeros((8, 8), bool)
+            mask[0:2, 0:2] = True
+            # cố tình cho `frame_idx` LỆCH để bắt bug đặt tên theo engine
+            res = TrackingResult(frame_idx=100 + n, mask=mask, bbox=(0, 0, 1, 1), score=1.0, elapsed_ms=1.0)
+            assert cb(None, res) is True
+        assert sorted(p.name for p in tmp_path.glob("mask_*.png")) == ["mask_000001.png", "mask_000003.png"]
+        img = cv2.imread(str(tmp_path / "mask_000001.png"), cv2.IMREAD_GRAYSCALE)
+        assert img.max() == 255 and img.min() == 0        # mask nhị phân 0/255
+
+    def test_mask_rong_van_duoc_ghi(self, tmp_path):
+        """Mask rỗng = kết quả ĐO ĐƯỢC (phải chấm 0,0 khi GT có vật), không được bỏ qua."""
+        cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+        res = TrackingResult(frame_idx=0, mask=np.zeros((8, 8), bool), bbox=(0, 0, 1, 1),
+                             score=0.0, elapsed_ms=1.0)
+        cb(None, res)
+        img = cv2.imread(str(tmp_path / "mask_000000.png"), cv2.IMREAD_GRAYSCALE)
+        assert img is not None and img.max() == 0
+
+    def test_none_mask_khong_ghi_file(self, tmp_path):
+        cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+        res = TrackingResult(frame_idx=0, mask=None, bbox=(0, 0, 1, 1), score=0.0, elapsed_ms=1.0)
+        cb(None, res)
+        assert list(tmp_path.glob("mask_*.png")) == []
+
+    def test_manifest_du_khoa_va_khong_ghi_de(self, tmp_path):
+        info = {"nguon": "data/binh1.mp4", "image_size": 192, "bbox_xywh": [300, 275, 150, 410]}
+        cb = run_live._dump_mask_callback(str(tmp_path), {0, 1}, info, base=None)
+        for n in range(2):
+            cb(None, TrackingResult(frame_idx=n, mask=np.ones((4, 4), bool), bbox=(0, 0, 1, 1),
+                                    score=1.0, elapsed_ms=1.0))
+        man = json.loads((tmp_path / "manifest.json").read_text())
+        assert man["nguon"] == "data/binh1.mp4"
+        assert man["frames_yeu_cau"] == [0, 1] and man["frames_da_ghi"] == [0, 1]
+        assert man["so_file_ghi_de"] == 0 and man["frame_goc_cua_phien"] == 0
+        # gọi lại: KHÔNG được ghi đè manifest (mask có thể của lần chạy khác)
+        cb.write_manifest()
+        assert json.loads((tmp_path / "manifest.json").read_text())["frames_da_ghi"] == [0, 1]
+
+
+def test_no_reid_tat_duoc_reid_ma_run_demoip_luon_chen():
+    """`--no-reid` phải THẮNG `--reid` (./run demoip luôn chèn `--reid` trước "$@").
+
+    Không có cờ này thì người dùng không có cách nào chạy demo theo cơ chế "lan truyền liên tục"
+    để tự kiểm chứng kết luận 23-11 (re-ID mIoU 0,4236 vs lan truyền 0,7794 trên cùng clip).
+    """
+    ap = run_live.build_parser()          # parser THẬT của CLI, không phải bản dựng lại trong test
+    assert ap.parse_args(["--reid", "--no-reid"]).reid is False
+    assert ap.parse_args(["--no-reid"]).reid is False
+    assert ap.parse_args(["--reid"]).reid is True
+    # thứ tự: cờ SAU thắng (./run demoip đặt `--reid` trước "$@")
+    assert ap.parse_args(["--no-reid", "--reid"]).reid is True
+
+def test_mask_0x0_ghi_file_toan_0_khong_giet_phien(tmp_path):
+    """P0 tự bắt (23-11): `_lost_result()` trả mask **0×0** ⇒ `cv2.imwrite` NÉM và giết cả phiên đo.
+
+    Lần chạy re-ID trên `data/clip_be2.mp4` dừng ở frame 259/444 mà không có thông báo nào — mất
+    nửa sau của clip (đúng đoạn "vật vào lại") mà người đọc artifact không thể biết.
+    """
+    cb = run_live._dump_mask_callback(str(tmp_path), {0}, {"nguon": "x.mp4"}, base=None)
+    res = TrackingResult(frame_idx=0, mask=np.zeros((0, 0), bool), bbox=(0, 0, 0, 0),
+                         score=0.0, elapsed_ms=1.0)
+    anh = np.zeros((48, 64, 3), np.uint8)
+    assert cb(anh, res) is True                      # KHÔNG được ném
+    img = cv2.imread(str(tmp_path / "mask_000000.png"), cv2.IMREAD_GRAYSCALE)
+    assert img is not None and img.shape == (48, 64) and img.max() == 0
+
+
+class TestRecordPacingTheoNguon:
+    """Ticket #44 — dây nối: `--record` phải bật pacing khi nguồn LIVE, tắt khi nguồn FILE.
+
+    Vì sao cần: unit test trong `test_visualizer` chỉ chốt `_write()` khi cờ đã bật. Nếu
+    `_make_visualizer` quên truyền cờ thì phiên live lại ghi 1:1 và video lại ngắn hơn thực 1,5×
+    (đúng lỗi đã đo 23-11: 30,76 s thực → 20,83 s file).
+    """
+
+    @staticmethod
+    def _args(tmp_path, source):
+        return type("A", (), {"record": str(tmp_path / "x.mp4"), "max_trajectory": 10,
+                              "show_trajectory": True, "source": source})()
+
+    def test_nguon_webcam_bat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(self._args(tmp_path, "0"))
+        assert viz._pace_realtime is True
+        viz.close_recorder()
+
+    def test_nguon_relay_bat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(
+            self._args(tmp_path, "http://172.19.176.1:8090/snapshot.jpg"))
+        assert viz._pace_realtime is True
+        viz.close_recorder()
+
+    def test_nguon_file_tat_pacing(self, tmp_path):
+        viz = run_live._make_visualizer(self._args(tmp_path, "data/binh1.mp4"))
+        assert viz._pace_realtime is False
+        viz.close_recorder()
+
+
+class TestProvenanceHieuNang:
+    """Ticket #44 — `run_info` phải khai TẢI MÁY lúc đo.
+
+    Vì sao: đo 23-11, cùng một code cho 201–393 ms (±95 %) chỉ vì agent khác chạy `pytest`/`npm`
+    (`loadavg` 6,2–8,2). Thiếu `loadavg_1m` thì "model chậm 4×" là kết luận không kiểm được —
+    đúng loại lỗi đã xảy ra với tuyên bố "live chậm 1,8× so với file".
+    """
+
+    def test_loadavg_va_cpu_count_vao_run_info(self, tmp_path, monkeypatch):
+        import json
+
+        monkeypatch.setattr(run_live.os, "getloadavg", lambda: (7.25, 6.0, 5.0), raising=False)
+        monkeypatch.setattr(run_live, "_dem_worker_mo_coi", lambda: 2)
+        args = type("A", (), {"metrics_csv": str(tmp_path / "t_metrics.csv"),
+                              "metrics_summary": str(tmp_path / "t_summary.json"),
+                              "source": "data/binh1.mp4"})()
+        run_live._write_run_info(args)
+        d = json.loads((tmp_path / "t_run_info.json").read_text(encoding="utf-8"))
+        assert d["loadavg_1m"] == 7.25
+        assert d["cpu_count"] == run_live.os.cpu_count()
+        assert d["live_workers_khac"] == 2
+
+    def test_khong_co_getloadavg_thi_ghi_none(self, tmp_path, monkeypatch):
+        """Windows không có `os.getloadavg` ⇒ ghi None, KHÔNG được ném (provenance không chặn số)."""
+        import json
+
+        def nem():
+            raise AttributeError("getloadavg")
+
+        monkeypatch.setattr(run_live.os, "getloadavg", nem, raising=False)
+        args = type("A", (), {"metrics_csv": str(tmp_path / "u_metrics.csv"),
+                              "metrics_summary": str(tmp_path / "u_summary.json"),
+                              "source": "0"})()
+        run_live._write_run_info(args)
+        d = json.loads((tmp_path / "u_run_info.json").read_text(encoding="utf-8"))
+        assert d["loadavg_1m"] is None
+
+
+class TestSummaryCoNhipPhat:
+    def test_summary_co_du_field_va_khong_doi_field_cu(self, tmp_path):
+        """`extra` chỉ THÊM key: summary là hợp đồng của `web/` + notebook Colab."""
+        import json
+        from src.metrics_logger import MetricsLogger, write_run_info  # noqa: F401
+
+        m = MetricsLogger()
+        from src.metrics_logger import FrameRecord
+
+        m.log(FrameRecord(frame_idx=0, latency_ms=100.0, score=1.0, center=(5, 5), lost=False))
+        out = tmp_path / "s.json"
+        m.write_summary_json(str(out), extra={"wall_s": 30.76, "video_s": 20.83,
+                                               "ti_le_thoi_luong": 0.677,
+                                               "total_frames": 999})   # key cũ KHÔNG bị ghi đè
+        d = json.loads(out.read_text(encoding="utf-8"))
+        assert d["wall_s"] == 30.76 and d["ti_le_thoi_luong"] == 0.677
+        assert d["total_frames"] == 1, "extra không được ghi đè số của MetricsLogger"
+
+
+def test_no_reid_thang_yaml_qua_duong_hop_nhat_that():
+    """P2 review 24-11: test cũ chỉ kiểm `parse_args` (thứ tự cờ) — KHÔNG đi qua bước hợp nhất
+    YAML ⇒ đúng ca hỏng (YAML `reid_enabled: true`) không bị khoá.
+
+    Đo được: `_cfg_tu_cli` phải là **tri-state** (None/True/False) và `--no-reid` phải thắng YAML.
+    """
+    from src.config import merge_cli_overrides
+
+    ap = run_live.build_parser()
+    cfg_yaml = {"reid_enabled": True, "source": "data/binh1.mp4", "checkpoint": "tiny"}
+    cfg = merge_cli_overrides(dict(cfg_yaml), run_live._cfg_tu_cli(ap.parse_args(["--no-reid"])))
+    assert cfg["reid_enabled"] is False, "YAML bật re-ID mà --no-reid không thắng ⇒ tắt không được"
+    cfg = merge_cli_overrides(dict(cfg_yaml), run_live._cfg_tu_cli(ap.parse_args(["--reid"])))
+    assert cfg["reid_enabled"] is True
+    # không nói gì ⇒ giữ YAML
+    cfg = merge_cli_overrides({"reid_enabled": False}, run_live._cfg_tu_cli(ap.parse_args([])))
+    assert cfg["reid_enabled"] is False
+
+
+def test_run_info_ghi_cua_so_quy_dao(tmp_path):
+    """`run_info.json` phải nói quỹ đạo dài bao nhiêu — không có thì `./run demoip` (5 s) không
+    phân biệt được với mặc định 100 điểm (P2 review 24-11)."""
+    import inspect
+
+    src = inspect.getsource(run_live._write_run_info)
+    assert "trajectory_seconds" in src and "max_trajectory" in src
