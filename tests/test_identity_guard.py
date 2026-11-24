@@ -285,3 +285,22 @@ class TestTaiBamSauKhiVatRoiKhung:
             w.update(self.A, (0, 0, 0, 0), (480, 640), co_mask=False)
         w.update((0, 0, 0, 0), self.M, (480, 640))
         assert w.update(self.M, self.B, (480, 640)) is True
+
+
+class TestBannerDiTheoTrangThaiLatch:
+    """24-11: banner "đổi đối tượng" phải tắt khi latch được xoá TỪ BÊN TRONG `watch.update`
+
+    (tái bám sau khi vật rời khung). Bản cũ gán `switch = watch.nghi or switch` (sticky) ⇒ sau khi
+    latch tự xoá, banner treo trên màn hình trong khi mask đã vẽ lại bình thường.
+    """
+
+    def test_source_khong_dinh_sticky(self):
+        import inspect
+
+        from src import live_pipeline as lp
+        from src import smooth_display as sd
+
+        for mod in (sd, lp):
+            src = inspect.getsource(mod)
+            assert "switch = watch.nghi or switch" not in src, \
+                f"{mod.__name__}: `switch` còn dính sticky ⇒ banner không tắt khi latch tự xoá"

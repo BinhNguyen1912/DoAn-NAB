@@ -511,7 +511,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     # sau khi vật rời khung được MIỄN chấm) — 24-11.
                     if watch.vua_bao:
                         _switch_warning(last_bbox, last_result, frame.shape[:2])
-                    switch = watch.nghi or switch
+                    switch = watch.nghi        # xem `smooth_display`: banner = trạng thái latch
                     if co_mask:
                         last_bbox = last_result.bbox
                     else:

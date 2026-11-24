@@ -460,7 +460,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     # sau khi vật rời khung được MIỄN chấm (`watch.vua_bao`), nên không in.
                     if watch.vua_bao:
                         _switch_warning(last_bbox, stamped.result, frame.shape[:2])
-                    switch = watch.nghi or switch
+                    # Banner = ĐÚNG trạng thái latch (`watch.nghi`), KHÔNG dính kiểu sticky: latch có
+                    # thể được xoá từ bên trong `watch.update` (tái bám sau khi vật rời khung, 24-11)
+                    # mà không ai gán `switch = False` ⇒ banner "đổi đối tượng" treo trên màn hình
+                    # trong khi mask đã vẽ lại bình thường.
+                    switch = watch.nghi
                     if co_mask:
                         last_bbox = stamped.result.bbox
                     else:
