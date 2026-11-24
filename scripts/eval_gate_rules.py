@@ -129,6 +129,16 @@ def _nhay(prev, cur, dt, luat, van_toc=(0.0, 0.0)):
         ban_kinh = goc
     elif luat in ("theo_dt", "theo_dt_va_dien_tich"):
         ban_kinh = min(max(goc, TOC_DO_TOI_DA * dt), TRAN_TOI_DA_RATIO * diag)
+    elif luat.startswith("chi_khi_cham_"):
+        # LUẬT MỚI (từ ảnh 24-11): 2 ca OAN xảy ra ở bước NHANH (131–158 ms ⇒ 1 738–3 607 px/s), 2 ca
+        # ĐÚNG ở bước CHẬM (293–352 ms ⇒ 813–870 px/s). Nên: chỉ báo khi tốc độ tâm ≤ ngưỡng.
+        # CƠ SỞ: một cú nhảy "nhanh bất thường" là dấu hiệu vật THẬT SỰ đi nhanh (mask bám đúng), còn
+        # đổi vật thường xảy ra khi tay đang chậm (vật bị mất dấu / che). CHỈ 4 ca nhãn, 2 phiên, khác
+        # tải máy ⇒ đây là GIẢ THUYẾT, phải xác nhận trên phiên live mới.
+        nguong = float(luat.rsplit("_", 1)[1])
+        ban_kinh = goc
+        toc_do = math.hypot(cx - px, cy - py) / dt if dt > 0 else float("inf")
+        return math.hypot(cx - px, cy - py) > ban_kinh and toc_do <= nguong
     elif luat == "van_toc_lich_su":
         ban_kinh = goc
         ex, ey = px + van_toc[0], py + van_toc[1]
@@ -258,7 +268,8 @@ def main(argv=None) -> int:
         print(f"[LOI] không có CSV nào khớp {args.glob!r}", file=sys.stderr)
         return 1
 
-    luat_list = ["hien_tai", "theo_dt", "van_toc_lich_su", "theo_dt_va_dien_tich"]
+    luat_list = ["hien_tai", "theo_dt", "van_toc_lich_su", "theo_dt_va_dien_tich",
+                 "chi_khi_cham_600", "chi_khi_cham_900", "chi_khi_cham_1200", "chi_khi_cham_1500"]
     phien, bo_qua = [], 0
     for p in paths:
         rows = doc_cot(p)
