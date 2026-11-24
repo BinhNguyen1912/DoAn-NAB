@@ -131,8 +131,10 @@ class TestIdentityWatchTuHaMuc:
 
     Vì sao phải có (đo phiên `demoip_1124-125109`, 246 frame): cổng báo đúng ở f137 (ô nhảy sang
     tóc), rồi hệ **tự bám lại đúng vật** ở t≈40 s, nhưng latch chỉ xoá được bằng `r`/`c`/reacquire
-    (re-ID đang TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô nét đứt. Replay 39 phiên (7 041 frame):
-    ẩn 20,17 % → 2,57 %; 17,6 % frame chuyển sang kiểu "chưa xác minh".
+    (re-ID đang TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô nét đứt. Replay **22 phiên ĐO ĐƯỢC /
+    4 346 frame**: ẩn 32,67 % → 4,16 % (còn mask 29,71 % → 3,38 %); 28,51 % frame chuyển sang "chưa
+    xác minh" (`data/replay_latch_settle_2026-11-24_metrics.json`). ĐỪNG trích "20,17 % → 2,57 %":
+    số đó trộn 17 phiên thiếu cột `mask_area` (AGENTS §6).
     """
 
     A = (100, 100, 200, 200)

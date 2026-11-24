@@ -908,9 +908,14 @@ class TestChuaXacMinh:
         assert "c:" in chu and "r:" in chu, "phải nói phím nào để xác nhận / chọn lại"
 
     def test_nghi_thi_khong_in_chong_banner_mat_dau(self, monkeypatch):
-        """24-11: phiên thật t≈47 s có 2 banner cùng lúc (NGHI + MẤT DẤU) — hai câu nói hai chuyện."""
+        """24-11: phiên thật t≈47 s có 2 banner cùng lúc (NGHI + MẤT DẤU) — hai câu nói hai chuyện.
+
+        REVIEW vòng 2 (P2): bản đầu đặt `consecutive_lost = 0` ⇒ banner KHÔNG BAO GIỜ được vẽ kể cả
+        khi bỏ hẳn điều kiện `not switch_warning` ⇒ test vô nghĩa. Đúng ca bug phải là
+        `consecutive_lost > 0` **VÀ** đang NGHI.
+        """
         viz = Visualizer()
-        viz.consecutive_lost = 0
+        viz.consecutive_lost = 3
         goi = []
         monkeypatch.setattr(viz, "_draw_lost_banner", lambda img, tu_tim: goi.append(tu_tim))
         viz.render(_frame(), _result(frame_idx=0, bbox=(100, 150, 140, 190),
@@ -925,3 +930,34 @@ class TestChuaXacMinh:
         monkeypatch.setattr(viz, "_draw_lost_banner", lambda img, tu_tim: goi.append(tu_tim))
         viz.render(_frame(), _result(frame_idx=1, bbox=(0, 0, 0, 0), mask_box=None))
         assert len(goi) == 1
+
+
+class TestGuardMaskKhacCo:
+    """24-11 (review vòng 2, P3): mask khác kích thước frame KHÔNG được vẽ (vẽ là sai toạ độ).
+
+    `cv2.findContours`/`drawContours` không ném khi mask nhỏ hơn frame ⇒ bỏ guard là vẽ lệch trong
+    im lặng, nên phải có test bắt.
+    """
+
+    def test_mask_nho_hon_frame_khong_ve_gi(self, monkeypatch):
+        viz = Visualizer()
+        frame = np.zeros((200, 320, 3), np.uint8)
+        mask = np.zeros((48, 64), bool)
+        mask[10:30, 10:30] = True
+        # ô bao đặt XA vùng mask (mask 48×64 nằm ở góc trên-trái): nếu vẽ mask lệch cỡ thì pixel
+        # xuất hiện đúng ở (10..30, 10..30), còn ô nét đứt thì ở (200..240, 100..160)
+        r = TrackingResult(frame_idx=0, mask=mask, bbox=(200, 100, 240, 160),
+                           score=1.0, elapsed_ms=1.0)
+        goi = []
+        monkeypatch.setattr("cv2.drawContours", lambda *a, **k: goi.append(1))
+        viz.render(frame, r, chua_xac_minh=True)
+        # Chỉ assert ĐIỂM GỌI vẽ: HUD (chữ FPS/ô nét đứt) cũng vẽ lên ảnh nên so pixel ở vùng mask
+        # nhỏ sẽ dính chữ HUD — đúng cái bẫy làm test cũ vô nghĩa.
+        assert goi == [], "mask khác cỡ frame vẫn được vẽ ⇒ sai toạ độ trong im lặng"
+        # đối chứng: mask ĐÚNG cỡ thì phải vẽ (nếu không, test trên vô nghĩa)
+        dung_co = np.zeros((200, 320), bool)
+        dung_co[150:190, 20:60] = True
+        r2 = TrackingResult(frame_idx=0, mask=dung_co, bbox=(20, 150, 60, 190),
+                            score=1.0, elapsed_ms=1.0)
+        viz.render(frame, r2, chua_xac_minh=True)
+        assert goi, "mask đúng cỡ mà không vẽ viền ⇒ test trên không chứng minh được gì"

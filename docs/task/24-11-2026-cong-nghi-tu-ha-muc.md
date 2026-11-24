@@ -92,7 +92,7 @@ không có phiên nào đo được hoặc `git_rev` không đọc được.
   đang bám (kiểu chưa xác minh) thay vì im lặng 44 % phiên.
 - Có script **tái lập được** chi phí ẩn overlay trên CSV (`scripts/replay_latch_settle.py`), có
   provenance (`git_rev`, `git_dirty_code`, `lenh`, `do_luc`, `frame_shape`).
-- Kiểm tra: `./run lint` sạch · **1 974 test** · `./run webtest` **102** · `npm run build` OK ·
+- Kiểm tra: `./run lint` sạch · **1 979 test** · `./run webtest` **102** · `npm run build` OK ·
   `./run e2e` **PASS** (thêm 4 check cho trạng thái "chưa xác minh").
 - File thay đổi:
   - `src/identity_guard.py` — máy trạng thái 3 mức (`TRANG_THAI_*`, `settle_steps`, `chua_xac_minh`)
@@ -115,10 +115,29 @@ Reviewer độc lập verdict **"chưa mergeable"**. Đã xác nhận + vá:
 |---|---|---|---|
 | **P0** | `chua_xac_minh` **chết trong adapter API** — worker ghi `status.json` nhưng `GET /api/live/status` không mang ra ⇒ banner + nút trên web **không bao giờ hiện**; e2e vẫn xanh vì nó mock route | `grep chua_xac_minh src/api` = **0 dòng** | vá đủ **6 chỗ** (`LiveTelemetry`, `LiveStatus`, `telemetry()`, `live.status()`, `LiveStatusResponse`, `routes._live_status`) + test khẳng định **GIÁ TRỊ** qua HTTP |
 | **P0-b** | cùng lớp: `nghi_doi_tuong` (+`_n`) **cũng chết** ở `routes._live_status` từ **21-11** — allowlist xanh vì nó chỉ so **TÊN** khoá của schema | `routes.py` không map 2 field đó | map lại + test `nghi_doi_tuong is True` |
-| **P1-a** | HUD **mời bấm `c`** nhưng `c` chỉ có tác dụng ở `nghi` ⇒ ở `chua_xac_minh` bấm **không có gì xảy ra** = kẹt tới hết phiên | `if key == CONTINUE_KEY and watch.nghi:` (2 file) | `(watch.nghi or watch.chua_xac_minh)` + test hành vi + sửa 2 test cũ index theo chuỗi |
+| **P1-a** | HUD **mời bấm `c`** nhưng `c` chỉ có tác dụng ở `nghi` ⇒ ở `chua_xac_minh` bấm **không có gì xảy ra** = kẹt tới hết phiên | `if key == CONTINUE_KEY and watch.nghi:` (2 file) | `(watch.nghi or watch.chua_xac_minh)` + 2 test hành vi (CLI `smooth_display` và `run_interactive`, đọc `chua_xac_minh` mà visualizer nhận ở từng frame) + sửa 2 test cũ index theo chuỗi |
 | **P1-b** | số replay **trộn mẫu số** (P1-b ở trên) | 17 phiên thiếu cột | đo lại, đính chính AGENTS + log |
 | **P2** | `chua_xac_minh` không bị xoá khi mất bằng chứng (metric bị thổi); `_check_confirm` không xoá `chua_xac_minh*`; **quỹ đạo nối qua cú nhảy** (đường tím xuyên khung trong video demo) | code + test | vá cả 3 + `Visualizer.clear_trajectory()` |
 | **P3** | `_ve_vien_mask` vẽ mask khác cỡ frame ở toạ độ sai (im lặng); `settle_steps` âm không cảnh báo; git hỏng ⇒ artifact trông "tái lập được" | code | guard shape + kẹp 0 + `git_loi` ⇒ exit 1 |
+
+### 7. Review vòng 2 — 3 lỗi TEST (mã đúng, bằng chứng chưa đủ)
+
+Reviewer vòng 2 kết luận "chưa mergeable **vì test**, không vì mã": 4 vá P0/P1-a/P1-b/P2 "có thật, đúng
+chỗ, không tạo lỗi mới", nhưng thiếu test hành vi. Đã bổ sung và **kiểm bằng ĐỘT BIẾN** (sửa mã cho
+sai rồi xem test có đỏ):
+
+| mục | đột biến thử | kết quả |
+|---|---|---|
+| P1-a (2 test hành vi mới: `run_smooth_display` + `run_interactive`) | trả điều kiện về `watch.nghi` | **2/2 ĐỎ** ✔ |
+| P1-a (cùng 2 test) | giữ điều kiện, **bỏ `watch.reset()`** | **2/2 ĐỎ** ✔ |
+| P0 (test qua HTTP) | xoá 2 dòng map trong `routes._live_status` | **ĐỎ** ✔ |
+| P2 (test banner) | bỏ `and not switch_warning` | **ĐỎ** ✔ |
+
+Ngoài ra đã sửa: test banner trước đó **vô nghĩa** (`consecutive_lost = 0` ⇒ banner không bao giờ được
+vẽ kể cả khi bỏ điều kiện) → nay dùng đúng ca bug `consecutive_lost = 3` + `switch_warning=True`; assert
+`chua_xac_minh_n` trước đó cũng vô nghĩa (gọi hàm không tăng bộ đếm) → nay đi qua
+`_update_stats_locked`; thêm test guard `mask.shape` (bỏ guard ⇒ `drawContours` được gọi ⇒ đỏ) kèm đối
+chứng mask đúng cỡ; thay 2 docstring còn trích con số **đã rút** (20,17 %/2,57 %) bằng số đúng.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy

@@ -448,3 +448,82 @@ class TestPromptBboxTrongSummary:
                                      selector=PromptSelector(frame_shape=(120, 200, 3)),
                                      display=display, preselect_bbox=(10, 10, 50, 50))
         assert summary.prompt_bbox == (10, 10, 50, 50)
+
+
+class TestPhimCTaiChuaXacMinhHanhVi:
+    """24-11 (review vòng 2, P1): vá `c` ở `chua_xac_minh` mới chỉ có test ĐỌC SOURCE.
+
+    Đột biến "giữ điều kiện mới nhưng xoá `watch.reset()`" làm mọi test cũ vẫn XANH trong khi lỗi
+    quay lại (bấm `c` không có tác dụng ⇒ kẹt "chưa xác minh" tới hết phiên). Test này chạy VÒNG LẶP
+    THẬT của `run_interactive` và đọc `chua_xac_minh` mà visualizer nhận ở từng frame.
+    """
+
+    def test_bam_c_thoat_chua_xac_minh_va_xoa_quy_dao(self, tmp_path, write_video, monkeypatch):
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS, run_interactive
+        from src.prompt_selector import PromptSelector
+        from src.synthetic_video import generate_tracking_sequence
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        A, B = (10, 10, 50, 50), (180, 10, 220, 50)      # nhảy 170 px > bán kính
+
+        def _res(bbox):
+            m = np.zeros((120, 240), bool)
+            m[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+            return TrackingResult(frame_idx=0, mask=m, bbox=bbox, score=5.0, elapsed_ms=1.0)
+
+        class Engine:
+            def __init__(self):
+                self.jump = False
+
+            def start(self, frame, bbox):
+                return _res(A)
+
+            def process(self, frame):
+                return _res(B if self.jump else A)
+
+            def reset(self):
+                pass
+
+        nhan = []
+        goc = Visualizer.update
+
+        def ghi(self, frame, result, **kw):
+            nhan.append({"switch": kw.get("switch_warning"),
+                         "chua": kw.get("chua_xac_minh")})
+            return goc(self, frame, result, **kw)
+
+        monkeypatch.setattr(Visualizer, "update", ghi)
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(120, 240),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        engine = Engine()
+        state = {"n": 0, "da_bam_c": False, "quy_dao_sau_c": None}
+        viz = Visualizer()
+
+        def display(img, mode):
+            state["n"] += 1
+            if state["n"] >= 4 and not engine.jump:
+                engine.jump = True               # cú nhảy SAU khi đã có mốc cũ
+            if state["da_bam_c"] and state["quy_dao_sau_c"] is None:
+                # chụp NGAY sau khi `c` được xử lý (vòng trước) — đây là chỗ bug "nối quỹ đạo
+                # qua cú nhảy" lộ ra: điểm cũ (x≈30) còn nằm chung deque với vùng mới (x≈200)
+                state["quy_dao_sau_c"] = viz.trajectory_points
+            if nhan and nhan[-1]["chua"] and not state["da_bam_c"]:
+                state["da_bam_c"] = True          # đã sang "chưa xác minh" ⇒ bấm `c`
+                return CONTINUE_KEY
+            return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
+
+        run_interactive(source=str(path), engine=engine, selector=PromptSelector(
+            frame_shape=(120, 240, 3)), display=display, preselect_bbox=A, visualizer=viz)
+
+        assert any(d["chua"] for d in nhan), "phải tới được trạng thái chưa xác minh (nếu không, test vô nghĩa)"
+        chi_so_bam = next(i for i, d in enumerate(nhan) if d["chua"])
+        sau = nhan[chi_so_bam + 1:]
+        assert sau, "phải có frame render SAU khi bấm `c`"
+        assert not any(d["chua"] for d in sau), "bấm `c` rồi vẫn 'chưa xác minh' ⇒ kẹt (bug P1-a)"
+        assert not any(d["switch"] for d in sau), "bấm `c` rồi vẫn còn cờ nghi"
+        assert state["quy_dao_sau_c"] is not None, "không chụp được quỹ đạo sau khi bấm `c`"
+        cu = [p for p in state["quy_dao_sau_c"] if p[0] < 150]
+        assert not cu, f"quỹ đạo còn điểm của vùng CŨ ({cu[:3]}) ⇒ đường tím nối qua cú nhảy"

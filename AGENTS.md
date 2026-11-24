@@ -788,7 +788,7 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   **32,67 % → 4,16 %** frame (khi còn mask: **29,71 % → 3,38 %**), **28,51 %** frame chuyển sang "chưa
   xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn + 33,7 % chưa xác minh. **ĐỪNG trích 20,17 % →
   2,57 %** (số cũ): mẫu số đó trộn 17 phiên thiếu cột `mask_area` (2 695 frame) mà ở đó cổng **không
-  thể** bật — đúng bẫy "0/None ≠ đã đo"; script nay in `so_phien_do_duoc`/`pct_*_do_duoc` và thoát 1
+  thể** bật — đúng bẫy "0/None ≠ đã đo"; script nay in `so_phien_do_duoc`/`so_frame_do_duoc` + `pct_frame_an_co_mask` và thoát 1
   nếu không có phiên nào đo được hoặc `git_rev` không đọc được.
   **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG: chuyển động sau cú nhảy
   lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định khi mask rỗng. Cột CSV

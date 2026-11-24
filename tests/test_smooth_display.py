@@ -957,7 +957,8 @@ class TestTuHaMucTrenDuongMuot:
 
     Vì sao: phiên `demoip_1124-125109` — cổng báo đúng ở f137, hệ tự bám lại đúng cái thìa ở t≈40 s,
     nhưng latch chỉ xoá được bằng `r`/`c`/reacquire (re-ID TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô
-    nét đứt. Replay 39 phiên: ẩn 20,17 % → 2,57 % frame; 17,6 % frame chuyển sang "chưa xác minh".
+    nét đứt. Replay **22 phiên ĐO ĐƯỢC / 4 346 frame**: ẩn 32,67 % → 4,16 %; 28,51 % chưa xác minh
+(`data/replay_latch_settle_2026-11-24_metrics.json`) — ĐỪNG trích "20,17 % → 2,57 %" (mẫu số cũ sai).
     """
 
     def test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh(self, tmp_path, write_video, monkeypatch):
@@ -1067,3 +1068,82 @@ class TestPhimCTaiChuaXacMinh:
         viz._latencies.append(100.0)
         viz.clear_trajectory()
         assert viz.effective_fps == pytest.approx(10.0)
+
+
+class TestPhimCTaiChuaXacMinhHanhVi:
+    """24-11 (review vòng 2, P1): bản HÀNH VI cho đường `./run demoip` (không chỉ đọc source).
+
+    Đột biến "giữ điều kiện mới nhưng bỏ `watch.reset()`" phải làm test này ĐỎ — nếu không, lỗi
+    "bấm `c` không có tác dụng" quay lại mà không ai biết.
+    """
+
+    def test_bam_c_thoat_chua_xac_minh(self, tmp_path, write_video, monkeypatch):
+        from src import smooth_display as sd
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 4):
+            o_list.append((10 + i * 45, 10, 50 + i * 45, 50))
+        o_list.append((20, 150, 60, 190))          # nhảy vô lý
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                time.sleep(0.05)                   # chậm hơn nhịp vẽ ⇒ mỗi render thấy 1 kết quả mới
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 320), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        nhan = []
+        goc = Visualizer.render
+
+        def ghi(self, frame, result, **kw):
+            nhan.append({"switch": kw.get("switch_warning"),
+                         "chua": kw.get("chua_xac_minh")})
+            return goc(self, frame, result, **kw)
+
+        monkeypatch.setattr(Visualizer, "render", ghi)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 320),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0, "da_bam_c": False}
+        viz = Visualizer()
+
+        def display(img, mode):
+            state["n"] += 1
+            if nhan and nhan[-1]["chua"] and not state["da_bam_c"]:
+                state["da_bam_c"] = True
+                return CONTINUE_KEY
+            return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
+
+        sd.run_smooth_display(source=str(path), engine=Eng(),
+                              selector=PromptSelector(frame_shape=(240, 320, 3)),
+                              display=display, preselect_bbox=(10, 10, 50, 50),
+                              visualizer=viz)
+
+        assert any(d["chua"] for d in nhan), "phải tới được 'chưa xác minh' (nếu không, test vô nghĩa)"
+        chi_so = next(i for i, d in enumerate(nhan) if d["chua"])
+        sau = nhan[chi_so + 1:]
+        assert sau, "phải có frame render SAU khi bấm `c`"
+        assert not any(d["chua"] for d in sau), "bấm `c` mà vẫn 'chưa xác minh' ⇒ kẹt (bug P1-a)"
+        assert not any(d["switch"] for d in sau), "bấm `c` mà vẫn còn cờ nghi"

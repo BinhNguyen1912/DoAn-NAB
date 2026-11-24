@@ -3455,8 +3455,12 @@ class TestChuaXacMinhKhongKet:
         s._cap_nhat_bang_chung(True, raw_lost=True)     # đủ 2 frame ⇒ no_evidence
         assert s._stats.bam == "no_evidence"
         assert s._stats.chua_xac_minh is False, "'chưa xác minh' nghĩa là VẪN VẼ"
+        # REVIEW vòng 2 (P3): assert `_n` trên một hàm KHÔNG tăng `_n` là vô nghĩa. Bộ đếm tăng ở
+        # `_update_stats_locked` ⇒ phải đi qua đúng đường đó mới chứng minh được.
         truoc = s._stats.chua_xac_minh_n
-        s._cap_nhat_bang_chung(True, raw_lost=True)
+        from src.live_tracking import _FrameResult
+
+        s._update_stats_locked(_FrameResult(1, (0, 0, 0, 0), None, 1.0, raw_lost=True))
         assert s._stats.chua_xac_minh_n == truoc, "frame KHÔNG vẽ không được đếm là 'chưa xác minh'"
 
     def test_nut_van_dung_xoa_ca_hai_trang_thai(self, tmp_path):
