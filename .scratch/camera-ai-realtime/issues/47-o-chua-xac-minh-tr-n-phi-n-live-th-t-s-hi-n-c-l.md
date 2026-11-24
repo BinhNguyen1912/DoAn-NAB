@@ -17,3 +17,11 @@ Tiêu chí nghiệm thu: artifact live có `chua_xac_minh_n > 0` và `nghi_doi_t
 - [ ] ≥3 phiên live thật, artifact có `git_rev` + `git_dirty_code=false` + `loadavg`
 - [ ] Số live của `nghi_doi_tuong` giảm so với 109/246 = 44,3 % (phiên `demoip_1124-125109`)
 - [ ] Ghi rõ `settle_steps` và nhịp VOS đo được của phiên
+
+## Comments
+
+Bằng chứng live #1 (phiên `demoip_1124-141352`, 87 frame / 21,1 s, `git_rev e18b953`, `loadavg 1,41`, re-ID TẮT): cổng báo **2 lần** (f29, f42) và mỗi lần **đúng 8 frame** ẩn (f29–36, f42–49) ⇒ `nghi_doi_tuong = 16/87 = 18,4 %`. Hành vi CŨ trên **chính CSV đó** = **58/87 = 66,7 %** ẩn ⇒ phiên này code cũ sẽ mất 2/3 buổi demo. Replay `scripts/replay_latch_settle.py --settle 8` trên chính CSV ra **16 frame** = trùng khít số live. `settle 8` ở nhịp VOS **4,12 bước/s** = **1,94 s**.
+
+Ảnh tự kiểm: t=9,6 s "CHUA XAC MINH" với ô trên **vùng sai**; t=11,2 s "NGHI"; **t=12,6 s ô quay lại đúng cái thìa**; t=14,5 s chỉ còn 1 banner "MẤT DẤU".
+
+⇒ Đã chứng minh cơ chế chạy trên đường live (không chỉ replay). Còn lại của ticket: (a) `chua_xac_minh_n` cho đường CLI, (b) thêm ≥2 phiên nữa (tổng ≥3). Hạn chế phải nói: 1 phiên, 87 frame, máy có `loadavg 1,41` nhưng `--smooth` ăn 4,4 lõi (mean 232 ms) nên **không** dùng ms này làm số công bố.
