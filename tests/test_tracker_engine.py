@@ -273,3 +273,21 @@ class TestStartPointsAndLabels:
         assert res.mask[20:44, 20:44].all(), "mask phải phủ kín vùng vật thể"
         assert res.bbox == (20, 20, 43, 43)
 
+
+
+class TestBuildOverridesGate:
+    """Plan 24-11 P2 — `min_obj_score_logits` phải đi qua **hydra override**, không copy config.
+
+    Copy file config đã đo được là làm ĐỔI hành vi (cùng nội dung: mIoU 0,6987 → 0,2486) ⇒ mọi thí nghiệm
+    đổi cấu hình model phải đi qua `build_overrides()`.
+    """
+
+    def test_mac_dinh_khong_them_override(self):
+        from src.tracker_engine import build_overrides
+        assert build_overrides(192) == ["++model.image_size=192"]
+        assert build_overrides(192, None) == ["++model.image_size=192"]
+
+    def test_co_nguong_thi_them_dong_override(self):
+        from src.tracker_engine import build_overrides
+        assert build_overrides(192, 0) == ["++model.image_size=192", "++model.min_obj_score_logits=0"]
+        assert build_overrides(None, -100) == ["++model.min_obj_score_logits=-100"]

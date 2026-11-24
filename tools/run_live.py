@@ -619,6 +619,7 @@ def _write_run_info(args):
                         if getattr(args, "reid", False) else None),
         reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
+        min_obj_score_logits=getattr(args, "min_obj_score_logits", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
         reid=bool(getattr(args, "reid", False)),
@@ -1003,6 +1004,12 @@ def build_parser():
                     help="ghi tiến trình từng frame ra JSON ({\"frames\",\"total\"}) — backend "
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
+    # 24-11 (plan đường B, P2): ngưỡng "có vật" của SAM 2. Mặc định `None` = giữ config (−1).
+    # `0` = khớp với ngưỡng `>0` mà `sam2_base.py:867` đã dùng cho bộ nhớ (hai ngưỡng hiện LỆCH nhau).
+    # `-100` = tắt hẳn cổng (CHẨN ĐOÁN: xem model có phân đoạn tốt mà bị cổng zero-hoá hay không).
+    ap.add_argument("--min-obj-score-logits", type=float, default=None,
+                    help="ngưỡng logit 'có vật' của SAM 2 (mặc định theo config = -1; "
+                         "0 = khớp ngưỡng bộ nhớ; -100 = tắt cổng để chẩn đoán)")
     return ap
 
 
@@ -1112,6 +1119,7 @@ def main():
     if device == "cuda":
         print(f"[pipeline] device=cuda ({_torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
+                                        min_obj_score_logits=args.min_obj_score_logits,
                                          image_size=args.image_size, device=device,
                                          apply_postprocessing=args.postprocess,
                                          mask_threshold=args.mask_threshold)
