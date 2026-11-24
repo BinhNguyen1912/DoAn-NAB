@@ -307,11 +307,13 @@ class TestBannerDiTheoTrangThaiLatch:
 
 
 class TestBienCuaNguongVang:
-    """Biên của `lost_reset_streak` — KHOÁ BẰNG CHUỖI THẬT của 2 ca báo đúng sát ngưỡng.
+    """Biên của `lost_reset_streak` — **TỔNG HỢP**, lấy ô của ca thật làm nguyên liệu.
 
-    `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền (f176–177, đọc từ CSV) rồi ô nhảy
-    sang tóc/cửa. Ngưỡng 2 sẽ MẤT ca `121732#178`; ngưỡng 3 giữ 7/7. Test này đỏ nếu ai đổi `>=` thành
-    `>` hoặc hạ ngưỡng mặc định.
+    Vì sao tổng hợp: phiên `demoip_1121-121732` (cú báo đúng f178) **không tái lập được** bằng replay
+    hiện tại — CSV không có cột `nghi_doi_tuong` và f178 là `reacquired=1` (re-ID bật) nên đường CLI đi
+    nhánh `watch.reset()`; `data/eval_gate_rules_*` cho phiên đó `fire = 0` với **mọi** luật. Vì thế
+    đây KHÔNG phải "chứng minh ngưỡng 3 giữ ca 121732" — nó chỉ khoá **biên**: `>= 3` (không phải
+    `> 3`) và `1–2` bước vắng vẫn phải bị chấm. Test đỏ nếu ai đổi `>=` thành `>` hoặc hạ ngưỡng.
     """
 
     MOC = (566, 130, 656, 383)     # ô của ô-chai trước khi vắng (tâm ~611,256)

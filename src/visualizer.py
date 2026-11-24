@@ -276,7 +276,10 @@ class Visualizer:
         # (review 21-11, P3). Import trong hàm để `visualizer` không phụ thuộc nặng vào `live_tracking`.
         from src.live_tracking import _BAM_NO_EVIDENCE_FRAMES
 
-        # 21-11: NGHI ĐỔI ĐỐI TƯỢNG (cổng nhảy, có NHỚ) ẩn y như mất dấu. Vì sao: đo trên phiên
+        # 21-11 → 23-11: NGHI ĐỔI ĐỐI TƯỢNG (cổng nhảy, có NHỚ) **KHÔNG còn ẩn y như mất dấu** —
+        # từ ticket #45 nó vẽ ô NÉT ĐỨT + nhãn "NGHI" (`ve_o_net_dut`, xem `dang_nghi` bên dưới).
+        # Comment cũ ("ẩn y như mất dấu") chỉ đúng cho bản 21-11; giữ phần LÝ DO bên dưới vì vẫn đúng:
+        # đo trên phiên
         # `demoip_1121-121732`, sau cú nhảy ở f178 hệ bám sang cửa/tường be CÙNG TÔNG và vẽ mask sai
         # thêm 65 frame; `track_cos` chứng minh KHÔNG phân biệt được (0,752–0,989 nằm trong dải ca
         # đúng) ⇒ chỗ duy nhất còn đúng là NGỪNG VẼ và xin người dùng quyết (r/c), thay vì vẽ một

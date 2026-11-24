@@ -3685,3 +3685,31 @@ class TestCongNghiKhiMaskNone:
 
         # và mốc phải bị xoá để vật hiện lại chỗ khác không bị so với ô cũ
         assert session._last_good_bbox == (0, 0, 0, 0)
+
+
+class TestStartKhongBiDemHaiLan:
+    """24-11 (review vòng 3, P3): kết quả `engine.start()` mang seq=0 và là CÙNG frame video với frame
+
+    đang phát. Nếu `_watch_seq` còn `None` thì `_result_threaded` coi seq 0 là "bước VOS mới" ⇒ cùng
+    một frame bị đếm 2 lần vào `_lost` ⇒ `lost_reset_streak=3` reset sớm một bước.
+    """
+
+    def test_start_danh_dau_seq_0(self):
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        assert session._watch_seq is None
+        frame = np.zeros((48, 64, 3), np.uint8)
+        try:
+            session._start_worker(frame, session._gray(frame))
+        finally:
+            session._worker.stop() if hasattr(session._worker, "stop") else None
+        assert session._watch_seq == 0, \
+            "phải đánh dấu đã ăn seq 0 ngay trong `_start_worker`, nếu không frame start bị đếm 2 lần"

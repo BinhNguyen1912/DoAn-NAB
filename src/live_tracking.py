@@ -957,6 +957,11 @@ class LiveTrackingSession:
             self._vos_state = (0, self._interp_base_result, gray, time.perf_counter(),
                                float(getattr(self._interp_base_result, "elapsed_ms", 0.0)),
                                None, None, None)
+            # seq=0 là **kết quả `engine.start()`** — cùng MỘT frame video với frame đang phát. Nếu để
+            # `_watch_seq = None` thì bước kế (`_result_threaded` thấy seq 0) lại được tính là "bước VOS
+            # mới" ⇒ cùng một frame bị đếm 2 lần vào `_lost`, và `lost_reset_streak=3` có thể reset sớm
+            # một bước (review vòng 3, P3). Đánh dấu đã ăn seq 0 ngay tại đây.
+            self._watch_seq = 0
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1

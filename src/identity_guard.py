@@ -104,10 +104,14 @@ DEFAULT_SETTLE_STEPS = 8
 # **140/404 = 34,7 %** phiên KHÔNG TIN CẬY, trong đó **132 frame = 32,7 %** là `chua_xac_minh` (ô nét
 # đứt, không tô) và 8 frame đầu là `nghi` ⇒ người dùng thấy "không nhận diện lại nữa". Trước đó cùng
 # phiên còn 5 đoạn mất dấu dài 8–22 frame.
-# Vì sao 3 (và BIÊN MỎNG tới đâu): 1–2 frame rỗng là **nhấp nháy**. Hai ca báo ĐÚNG đã biết sát ngưỡng:
-# `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền (f176–177) ⇒ ngưỡng 2 sẽ MẤT ca
-# `121732#178`, ngưỡng 3 giữ 7/7. Đây KHÔNG phải "ngưỡng an toàn", chỉ là ranh giới giữa "nhấp nháy"
-# và "vắng" — muốn nói "3 là đúng" phải có thêm ca nhãn (nợ V0 của plan 24-11).
+# Vì sao 3 (và BIÊN MỎNG tới đâu): 1–2 frame rỗng là **nhấp nháy**. Ca báo ĐÚNG đã biết sát ngưỡng là
+# `125109#137` (vắng **1** frame, có mặt trong nhóm nhãn ⇒ đo được: ngưỡng 2 vẫn giữ, vì f136 có mask
+# nên mốc được đặt lại). Phiên `121732` **cũng** có 2 frame rỗng liền (f176–177, đọc từ CSV) — nhưng ca
+# đó **KHÔNG tái lập được** bằng replay hiện tại (CSV không có cột `nghi_doi_tuong`, f178 là
+# `reacquired=1` của re-ID nên đường CLI đi nhánh `watch.reset()`, `fire: 0` với mọi luật trong
+# `data/eval_gate_rules_*`) ⇒ chỉ dùng làm **ví dụ biên**, KHÔNG được trích như "ngưỡng 2 mất ca
+# đúng". Đây KHÔNG phải "ngưỡng an toàn", chỉ là ranh giới giữa "nhấp nháy" và "vắng"; muốn nói
+# "3 là đúng" phải có thêm ca nhãn (nợ V0 của plan 24-11).
 DEFAULT_LOST_RESET_STREAK = 3
 
 # Số bước ĐẦU của phiên bám mới mà cổng KHÔNG chấm nhảy. Vì sao > 1: bước đầu sau khi vắng (**f263**)
@@ -152,6 +156,7 @@ class IdentityWatch:
         self._settle = 0
         self._lost = 0          # số bước liên tiếp KHÔNG có mask
         self._grace = 0         # số bước đầu phiên bám mới còn miễn chấm nhảy
+        self._vua_bao = False   # cờ của lần gọi `update` gần nhất (đọc được cả trước lần gọi đầu)
 
     @property
     def tai_bam(self) -> bool:

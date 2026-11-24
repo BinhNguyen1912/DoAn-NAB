@@ -139,14 +139,37 @@ Các mục còn lại của vòng 2 đã đóng:
 | **P2** | Test P1 vòng 1 dùng `bbox=(10,10,30,30)` với mask rỗng — trạng thái engine **không bao giờ** sinh ra ⇒ test xanh dù web bỏ qua VOS rỗng | sửa thành `(0,0,0,0)` + assert `_lost == 3` |
 | **P2** | **P0 chỉ khoá bằng chuỗi source**: revert về `switch = watch.nghi or switch` vẫn xanh | thêm assert hành vi: sau khi sang `chua_xac_minh` **không** còn `switch_warning=True`. Đã kiểm mutant: revert sticky ⇒ `test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh` **ĐỎ** |
 | **P3** | `buoc_moi=False` có đổi `_vua_bao` (không phải no-op tuyệt đối) | ghi rõ hợp đồng trong docstring (`vua_bao` = cờ của **lần gọi này**); test assert `_lost/_grace/_settle/_trang_thai` không đổi |
-| **P3** | log §5.2 vẫn ghi "ca 21-11 vật không rời khung" (**SAI**: f176–177 có 2 frame rỗng) | sửa, ghi rõ ngưỡng 2 sẽ mất ca đúng đó |
+| **P3** | log §5.2 vẫn ghi "ca 21-11 vật không rời khung" (**SAI**: f176–177 có 2 frame rỗng) | sửa; và **vòng 3 bắt tiếp**: câu "ngưỡng 2 sẽ mất ca `121732#178`" là **overclaim** (replay cho `fire: 0` mọi luật, f178 là `reacquired=1`) ⇒ đã hạ xuống "ví dụ biên", test ghi rõ là **tổng hợp** |
 | **P3** | log ghi `2 017 passed`, "worker thật" (thực tế là stub) | cập nhật `2 026 passed` + nói rõ test dùng `_update_stats_locked` + stub, **không** phải engine SAM 2 |
 | **P3** | `eval_gate_rules` docstring còn "1 ca đúng / 1 ca sai"; `replay` docstring ghi sai tên artifact; thiếu `lost_reset_streak_truoc: 0`; comment cũ "nghi ẩn y như no_evidence" | sửa hết |
 | **P3** | Artifact ghi `git_rev` của commit **trước** HEAD | sinh lại ở commit code cuối; delta tới commit chứa artifact **chỉ là `data/`** ⇒ tiêu chí `git_dirty_code = false` |
 
+### 3.8. REVIEW VÒNG 3 — **MERGE ĐƯỢC** (0 P0, 0 P1)
+
+Reviewer vòng 3 xác nhận P1-web **đã đóng đúng ca yêu cầu** (chuỗi `engine ⇒ bbox (0,0,0,0) ⇒
+_bbox_hop_le ⇒ obs_bbox=None` nay vẫn gọi `_watch.update` với `co_mask=False`, `_lost` tăng đúng 1 mỗi
+bước VOS, mốc bị xoá), P0 có test hành vi **đủ mạnh** (revert sticky ⇒ đỏ), và `_last_good_bbox` không
+còn reader nào khác nên không hồi quy chỉ số.
+
+Còn lại đã sửa trong phiên này:
+
+| mức | phát hiện | xử lý |
+|---|---|---|
+| **P2** | Câu "ngưỡng 2 sẽ mất ca `121732#178`" là **overclaim**: replay cho phiên đó `fire = 0` với mọi luật (CSV không có cột `nghi_doi_tuong`, f178 là `reacquired=1` ⇒ CLI đi `watch.reset()`) | hạ xuống **"ví dụ biên"**, ghi rõ trong `identity_guard` docstring + AGENTS + log; docstring `TestBienCuaNguongVang` ghi **tổng hợp** |
+| **P3** | Frame `engine.start()` (seq 0) là **cùng frame video** với frame đang phát ⇒ bị đếm 2 lần vào `_lost`, `lost_reset_streak=3` reset sớm 1 bước | `_start_worker` đặt `_watch_seq = 0`; test `TestStartKhongBiDemHaiLan` |
+| **P3** | `_vua_bao` chưa khởi tạo trong `__init__` (property đọc trước `update` ⇒ `AttributeError`) | đã thêm |
+| **P3** | `visualizer.py` còn comment "NGHI ẩn y như mất dấu" (mâu thuẫn code vẽ nét đứt từ 23-11) | sửa comment |
+| **P3** | Câu provenance "delta chỉ là `data/`" — thực tế commit đó có cả `docs/` | sửa |
+| **P3** | Test `TestCongNghiKhiMaskNone` dựng trạng thái `mask=None` mà engine **không** sinh ra | giữ làm test **nhánh phòng thủ**, ghi rõ không phải ca web thật |
+
+**Residual risk reviewer nêu (đã ghi nhận, không sửa code):** `7/7` và "settle 8 ≈ 0,94 s" là số của
+đường **CLI/display-row**, **không** chuyển sang web (web nay đếm theo bước VOS); chuỗi "1–2 bước vắng
+rồi vật hiện lại chỗ khác" không bị chấm (đối xứng CLI, đã ghi §5.3); trôi dần vẫn mù.
+
 ## 4. Output / Kết quả
 
 ### 4.1. Phiên người dùng báo (404 frame) — replay bằng **chính** `IdentityWatch`
+(khoá `8|0` = settle 8 + `lost_reset_streak 0`; `8|3` = đang ship)
 
 | | báo | ẩn mask | chưa xác minh |
 |---|---|---|---|
@@ -174,9 +197,10 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 027 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
+- `./run lint` xanh · `./run test` **2 028 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
 - Artifact (sinh trên **cây sạch ở `05880ad`** = commit code cuối cùng, `git_dirty_code = false`;
-  commit chứa artifact là commit **sau** đó và delta chỉ là `data/` ⇒ đúng tiêu chí tái lập của repo):
+  commit chứa artifact là commit **sau** đó, delta là `data/` + `docs/` (không phải `src/`) ⇒ đúng tiêu
+  chí tái lập của repo, nhưng **phải nói đúng là có cả docs** — review vòng 3 bắt câu "chỉ `data/`"):
   `data/eval_gate_rules_2026-11-24_metrics.json` — chứa **cả hai cột** luật đang ship (`hien_tai`) và
   luật trước 24-11 (`hien_tai_truoc_khi_tai_bam`) trong cùng một `git_rev`;
   `data/replay_latch_tai_bam_2026-11-24_metrics.json` — `lost_reset_list = [0, 3]` +
@@ -193,9 +217,13 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
    "chưa xác minh"). Ca "vật ra khung rồi một vật khác vào" thì không phân biệt được nếu không có re-ID
    — ranh giới đã biết, không phải bug mới. **Về ca 21-11** (`demoip_1121-121732`, bám sang cửa/tường be
    cùng tông): câu "vật không rời khung" là **SAI** — CSV có **2 frame rỗng liền** (`f176–177`,
-   `lost=1`, `mask_area=0`) ngay trước cú báo đúng `f178`. Nó sống sót vì **2 < 3**, tức **ngưỡng 2 sẽ
-   MẤT ca đúng đó** ⇒ đây là ca đúng **sát ngưỡng**, đã khoá bằng `TestBienCuaNguongVang`. Cùng nhóm
-   với `125109#137` (vắng **1** frame).
+   `lost=1`, `mask_area=0`) ngay trước cú báo `f178`. **ĐÍNH CHÍNH (review vòng 3, P2):** KHÔNG được
+   viết "ngưỡng 2 sẽ mất ca đúng `121732#178`" — ca đó **không tái lập được** bằng replay hiện tại:
+   CSV thiếu cột `nghi_doi_tuong`, f178 là `reacquired=1` (re-ID bật) nên đường CLI đi `watch.reset()`,
+   và `data/eval_gate_rules_*` cho phiên này `fire = 0` với **mọi** luật. Nó chỉ là **ví dụ biên**
+   (2 frame rỗng < 3). Ca đúng **đo được** sát ngưỡng là `125109#137` (vắng **1** frame; f136 có mask
+   ⇒ mốc đặt lại). `TestBienCuaNguongVang` vì thế là **test tổng hợp** (ô của ca thật, chuỗi dựng),
+   đã ghi rõ trong docstring.
 3. **Mốc bị xoá khi mất dấu ⇒ "đổi vật ngay sau 1 bước vắng" không bị chấm.** Đây là luật **đã có ở
    CLI từ trước** (`last_bbox = (0,0,0,0)`), phiên này chỉ làm web **đối xứng**. Kiểm: ca đúng
    `125109#137` **vẫn báo** vì giữa f135 (rỗng) và f137 (nhảy) có **f136 có mask** ⇒ mốc được đặt lại.

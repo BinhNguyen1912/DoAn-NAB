@@ -844,10 +844,13 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   **11,33 % → 4,24 %**, không-tin-cậy **15,04 % → 7,95 %**, ca đúng **7/7**; `--lost-reset 0` là cờ tái
   lập hành vi cũ. Toàn pool (`data/replay_latch_tai_bam_2026-11-24_metrics.json`, 26 phiên đo được/5 180
   frame, `settle 8`): chưa-xác-minh **29,77 % → 16,20 %**, và hành vi `settle 0` **34,54 % → 20,50 %**.
-  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **BIÊN CỦA NGƯỠNG 3 RẤT MỎNG** —
-  hai ca báo ĐÚNG đã biết sát ngưỡng: `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền
-  (f176–177) ⇒ **ngưỡng 2 sẽ MẤT ca `121732#178`**; đã khoá bằng `TestBienCuaNguongVang` (đổi `>=`
-  thành `>` là test đỏ). **Đánh đổi phải nói kèm:** sau khi vật rời khung rồi vào lại, hệ **TIN** vùng
+  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **BIÊN CỦA NGƯỠNG 3 RẤT MỎNG:**
+  ca đúng đã biết sát ngưỡng là `125109#137` (**vắng 1** frame; f136 có mask nên mốc đặt lại ⇒ ngưỡng
+  2 vẫn giữ). Phiên `121732` **cũng** có **2 frame rỗng liền** (f176–177, đọc từ CSV) — nhưng ca đó
+  **KHÔNG tái lập được** bằng replay (`fire: 0` với mọi luật: CSV không có cột `nghi_doi_tuong` và
+  f178 là `reacquired=1` ⇒ đường CLI đi `watch.reset()`) ⇒ **chỉ là ví dụ biên, cấm trích** "ngưỡng 2
+  mất ca đúng". Biên được khoá bằng `TestBienCuaNguongVang` (**tổng hợp**: ô của ca thật, chuỗi dựng)
+  — đổi `>=` thành `>` hoặc hạ ngưỡng là test đỏ. **Đánh đổi phải nói kèm:** sau khi vật rời khung rồi vào lại, hệ **TIN** vùng
   mới — "một vật khác đi vào" thì không phân biệt được nếu không có re-ID. **CÒN HỞ:** cùng phiên được
   báo, ô bám sang **tường trống** ~130 frame mà cổng **không** báo (trôi dần — đúng kết luận 23-11) ⇒
   cần cơ chế khác (verified re-anchor / Cutie), **đừng** nới ngưỡng. **ĐƯỜNG WEB PHẢI ĂN THEO BƯỚC VOS,
