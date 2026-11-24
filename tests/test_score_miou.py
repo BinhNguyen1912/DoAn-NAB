@@ -1094,3 +1094,67 @@ class TestFramesYeuCauKhongDocDuoc:
         man = {"nguon": "data/binh1.mp4", "frames_yeu_cau": [0], "frames_da_ghi": []}
         chan, _ = sm.kiem_khop_manifest(self._idx, man)
         assert chan, "pred_dir=None phải fail-closed, không được bỏ qua cổng"
+
+
+class TestTranRecallVaPhuThieu:
+    """Plan 24-11 `bam-bat-vat-bat-ky` P2 — tách "tràn" khỏi "hụt".
+
+    Đo 24-11 trên `docs/gt/tran_nen` (@192): 4/5 frame mask **NHỎ hơn** GT ⇒ lỗi chính là **HỤT**,
+    nhưng artifact trước đó chỉ có `mask_ngoai_gt` (tràn) ⇒ người đọc không thấy phần thiếu.
+    `tran_recall` = |mask ∩ GT| / |GT| là **TRẦN** (IoU không thể vượt recall khi cắt sạch tràn) ⇒
+    artifact phải tự ghim ý nghĩa bằng `tran_ly_thuyet_dung_gt`.
+    """
+
+    def _gt(self, d, idx, arr):
+        import cv2
+        d.mkdir(exist_ok=True)
+        cv2.imwrite(str(d / f"gt_{idx:06d}.png"), (arr * 255).astype("uint8"))
+
+    def _pred(self, d, idx, arr):
+        import cv2
+        d.mkdir(exist_ok=True)
+        cv2.imwrite(str(d / f"mask_{idx:06d}.png"), (arr * 255).astype("uint8"))
+
+    def test_hut_duoc_do_rieng_khong_bi_goi_la_tran(self, tmp_path):
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        gt = np.zeros((10, 10))
+        gt[0:5, 0:10] = 1                 # 50 px
+        pred = np.zeros((10, 10))
+        pred[0:5, 0:5] = 1                # 25 px, nằm gọn trong GT ⇒ TRÀN = 0 nhưng HỤT 50 %
+        self._gt(gt_dir, 0, gt)
+        self._pred(pred_dir, 0, pred)
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        f = kq["frames"][0]
+        assert f["mask_ngoai_gt"] == 0.0      # không tràn…
+        assert f["tran_recall"] == 0.5        # …nhưng chỉ phủ 50 % vật
+        assert f["phu_thieu"] == 0.5
+        assert kq["tran_recall_dung_gt"] == 0.5
+        assert kq["phu_thieu_mean"] == 0.5
+
+    def test_tran_ghi_nhan_la_tran_ly_thuyet(self, tmp_path):
+        """Artifact phải TỰ nói `tran_recall` là trần dùng GT — để không ai trích thành "đạt được"."""
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        self._gt(gt_dir, 0, np.ones((4, 4)))
+        self._pred(pred_dir, 0, np.ones((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["tran_ly_thuyet_dung_gt"] is True
+        assert kq["tran_recall_n"] == 1
+
+    def test_gt_rong_khong_duoc_tinh_vao_recall(self, tmp_path):
+        """Frame GT rỗng ⇒ không chấm (recall không xác định), KHÔNG được ghi 0 (bẫy `IoU(rỗng,rỗng)=1`)."""
+        import numpy as np
+
+        import scripts.score_miou as sm
+        gt_dir, pred_dir = tmp_path / "gt", tmp_path / "pred"
+        self._gt(gt_dir, 0, np.zeros((4, 4)))
+        self._pred(pred_dir, 0, np.zeros((4, 4)))
+        kq = sm.cham([{"frame_idx": 0, "pred_path": str(pred_dir / "mask_000000.png")}], gt_dir)
+        assert kq["tran_recall_dung_gt"] is None
+        assert kq["phu_thieu_mean"] is None
+        assert kq["tran_recall_n"] == 0
