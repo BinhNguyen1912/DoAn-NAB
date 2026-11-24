@@ -139,6 +139,23 @@ vẽ kể cả khi bỏ điều kiện) → nay dùng đúng ca bug `consecutive
 `_update_stats_locked`; thêm test guard `mask.shape` (bỏ guard ⇒ `drawContours` được gọi ⇒ đỏ) kèm đối
 chứng mask đúng cỡ; thay 2 docstring còn trích con số **đã rút** (20,17 %/2,57 %) bằng số đúng.
 
+### 8. Bằng chứng LIVE đầu tiên (phiên `demoip_1124-141352`, 87 frame / 21,1 s, `git_rev e18b953`)
+
+| chỉ số | giá trị | đọc thế nào |
+|---|---|---|
+| video / wall | 631 frame @30 = **21,03 s** vs **21,11 s** ⇒ tỉ lệ **0,996** | bản ghi đúng thời gian |
+| `nghi_doi_tuong` | **16/87 = 18,4 %**, hai đoạn **đúng 8 frame** (f29–36, f42–49) | đúng `settle_steps = 8` |
+| hành vi CŨ trên cùng CSV | **58/87 = 66,7 %** ẩn (từ f29 tới hết) | phiên này code cũ sẽ mất **2/3** demo |
+| replay `--settle 8` trên chính CSV | **16 frame** ẩn | **trùng khít** số live ⇒ mô hình replay đúng |
+| `settle 8` ở nhịp VOS 4,12 bước/s | **1,94 s** | phải nói kèm nhịp VOS, không chỉ "1,3–1,8 s" |
+| mean / p95 | **232 / 348 ms**, hiển thị 19,3 FPS | `loadavg 1,41` (máy RẢNH) mà vẫn 232 ms vì `--smooth` ăn 4,4 lõi; headless cùng clip = 98 ms ⇒ **không so hai đường** |
+| mất dấu | 8/87 = 9,2 % (đoạn 56–60, 62, 83–84) | phần lớn là vật ra khỏi khung |
+
+Kiểm bằng ảnh (4 mốc): t=9,6 s **"CHUA XAC MINH"** với ô trên vùng SAI (đúng ca 21-11 — hệ vẽ nhưng
+nói thật là chưa xác minh); t=11,2 s **"NGHI"** (không mask); **t=12,6 s ô quay lại ĐÚNG cái thìa**;
+t=14,5 s chỉ còn **1 banner "MẤT DẤU"** (hết cảnh 2 banner chồng nhau). ⇒ Đúng khiếu nại ban đầu
+"chỉ nghi thôi, không focus lại": nay sau ~1,9 s hệ hiện lại vùng đang bám.
+
 ## 🐞 Vấn đề gặp phải & cách xử lý
 - **Test hành vi đầu tiên của tôi ĐO SAI**: engine giả trả kết quả tức thời ⇒ luồng suy luận chạy
   trước hàng trăm nghìn bước, mỗi lần render chỉ thấy **kết quả CUỐI** (bỏ qua cú nhảy) ⇒ test báo
@@ -158,8 +175,9 @@ chứng mask đúng cỡ; thay 2 docstring còn trích con số **đã rút** (2
       tay + nền, là lý do gốc khiến model trôi sang tóc ở t≈30 s (chưa sửa được bằng code).
 - [x] Review vòng 2 trên phần vừa vá: xác nhận mã đúng, chỉ thiếu bằng chứng test → đã bổ sung
       (mục 7) và **kiểm bằng đột biến** (4/4 đột biến làm test đỏ).
-- [ ] **Ticket #47** — đo `chua_xac_minh` trên phiên **live thật** (+ thêm `chua_xac_minh_n` cho
-      đường CLI): số hiện có là replay, chưa có phiên live nào chứng minh `settle_steps = 8`.
+- [x] **Bằng chứng live #1** (mục 8): 2 lần cổng báo, mỗi lần đúng 8 frame ẩn (16/87 = 18,4 % so với
+      66,7 % của hành vi cũ); replay `--settle 8` trên chính CSV ra đúng 16 frame.
+- [ ] **Ticket #47** — còn: thêm `chua_xac_minh_n` cho đường CLI + **≥3 phiên** live (mới có 1).
 - [ ] **Ticket #48** — gom 2 cờ rời (`switch_warning` + `chua_xac_minh`) thành một `che_do_ve` để
       điểm nối không thể nửa vời (P3).
 - [ ] `frame_shape` của replay dùng một hằng cho mọi phiên (`run_info.json` không lưu kích thước khung)

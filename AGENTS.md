@@ -799,3 +799,16 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   ngày 24-11 `chua_xac_minh` (và cả `nghi_doi_tuong` từ 21-11!) **chết ở `routes._live_status`** mà
   e2e (mock route) lẫn allowlist (chỉ so TÊN khoá của schema) vẫn xanh. Log:
   `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md`.
+- **ĐÃ CÓ bằng chứng LIVE cho cơ chế tự hạ mức (24-11, phiên `demoip_1124-141352`, 87 frame / 21,1 s,
+  `git_rev e18b953`, re-ID TẮT, `loadavg 1,41`):** cổng báo **2 lần** (f29, f42) và mỗi lần **đúng 8
+  frame** ẩn (f29–36, f42–49) rồi tự chuyển "chưa xác minh" ⇒ **16/87 = 18,4 %** frame ẩn. Hành vi CŨ
+  trên chính CSV đó = **58/87 = 66,7 %** (`scripts/replay_latch_settle.py --settle 0`), tức phiên này
+  sẽ mất **2/3** buổi demo. Replay `--settle 8` ra **16 frame** = **trùng khít** số live ⇒ mô hình
+  replay đúng và state machine chạy thật trên đường live. Ảnh tự kiểm: t=9,6 s "CHUA XAC MINH" (ô trên
+  vùng SAI — đúng ca 21-11, trung thực), t=11,2 s "NGHI", **t=12,6 s ô quay lại ĐÚNG cái thìa** (vẫn
+  nhãn chưa xác minh), t=14,5 s chỉ còn 1 banner "MẤT DẤU" (hết cảnh 2 banner chồng). `settle 8` ở
+  phiên này = **1,94 s** (nhịp VOS 4,12 bước/s) ⇒ con số "1,3–1,8 s" phải nói kèm nhịp VOS.
+  Số hiệu năng phiên này: mean **232 ms** / p95 348 ms, hiển thị 19,3 FPS, CPU 440 % — **KHÔNG** phải
+  máy bận (loadavg 1,41) mà chính pipeline (`--smooth`) ăn 4,4 lõi; headless cùng clip ra 98 ms ⇒
+  đừng so hai đường. Còn thiếu: `chua_xac_minh_n` cho đường CLI (ticket #47) — hiện chỉ đếm được qua
+  `nghi_doi_tuong` + replay.
