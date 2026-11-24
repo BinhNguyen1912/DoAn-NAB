@@ -735,3 +735,37 @@ class TestPhimCHoaDiToiVongLap:
         assert co_bam.chua_xac_minh_n < khong_bam.chua_xac_minh_n, (
             f"bấm `C` hoa phải giảm frame chưa xác minh: {co_bam.chua_xac_minh_n} vs "
             f"{khong_bam.chua_xac_minh_n}")
+
+
+class TestPhimHoaOModeChon:
+    """Caps Lock lúc đang KÉO Ô (mode `select`): `q` hoa phải vẫn thoát (review vòng 2, P2-D)."""
+
+    def test_bam_Q_hoa_thoat_duoc_khi_dang_chon(self, tmp_path, write_video):
+        from src.live_pipeline import run_interactive
+        from src.prompt_selector import PromptSelector
+
+        fx = generate_tracking_sequence(num_frames=10, frame_size=(120, 240),
+                                        square_size=40, start=(10, 10), velocity=(0, 0))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+
+        class Engine:
+            def start(self, frame, bbox):        # không được gọi: chưa chọn ô
+                raise AssertionError("chưa chọn ô mà engine.start() bị gọi")
+
+            def process(self, frame):
+                raise AssertionError
+
+            def reset(self):
+                pass
+
+        mode_da_gap = {"select": 0}
+
+        def display(img, mode):
+            mode_da_gap[mode] = mode_da_gap.get(mode, 0) + 1
+            return ord("Q")          # Caps Lock bật ⇒ 'Q' hoa, phải thoát ngay
+
+        summary = run_interactive(source=str(path), engine=Engine(),
+                                  selector=PromptSelector(frame_shape=(120, 240, 3)),
+                                  display=display, preselect_bbox=None)
+        assert mode_da_gap.get("select", 0) == 1, "phải thoát ngay ở frame chọn ô đầu tiên"
+        assert summary.processed == 0

@@ -54,6 +54,25 @@ class TestCuaCongNghiDaGhiThat:
         assert _settle_steps(SimpleNamespace(settle_steps=None)) == DEFAULT_SETTLE_STEPS
         assert _settle_steps(SimpleNamespace()) == DEFAULT_SETTLE_STEPS
 
+    def test_settle_steps_0_va_am_khong_bi_nuot(self):
+        """P1-1 của review: `0` là giá trị HỢP LỆ (TẮT cổng), `x or default` cũ nuốt thành 8."""
+        from types import SimpleNamespace
+
+        from tools.run_live import _settle_steps
+
+        assert _settle_steps(SimpleNamespace(settle_steps=0)) == 0
+        assert _settle_steps(SimpleNamespace(settle_steps=-3)) == 0
+
+    def test_headless_KHONG_ghi_co_khi_nguoi_dung_truyen(self):
+        """P2-A: `./run video --settle-steps 3` đi headless (không dựng cổng) ⇒ run_info phải là None."""
+        from types import SimpleNamespace
+
+        from tools.run_live import _max_jump_ratio, _settle_steps
+
+        a = SimpleNamespace(settle_steps=3, max_jump_ratio=0.4, _co_cong_nghi=False)
+        assert _settle_steps(a) is None
+        assert _max_jump_ratio(a) is None
+
     def test_max_jump_ratio_ghi_dung_gia_tri_mac_dinh(self):
         from types import SimpleNamespace
 

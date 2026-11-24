@@ -89,14 +89,14 @@ không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều*
 
 - **Tiêu chí nghiệm thu (có SỐ):**
   - [x] `scripts/eval_gate_rules.py` chấm được ≥ 6 luật trên **cùng** `IdentityWatch`, mọi số cùng
-        một mẫu số **11 phiên / 1 787 frame** đóng băng trong `data/eval_gate_config_list.json`.
+        một mẫu số **10 phiên / 1 509 frame** đóng băng trong `data/eval_gate_config_list.json`.
   - [x] Artifact `data/eval_gate_rules_2026-11-24_metrics.json` có `git_rev`, `git_dirty_code=false`,
         `lenh`, `do_luc`, chỉ số **đuôi** và `phien_co_bao`.
   - [x] Nhãn **7 ca ĐÚNG / 0 SAI** (đọc video HUD; **1 người dán** ⇒ phải có người thứ 2 mới trích).
   - [x] `--settle-steps` / `--max-jump-ratio` là cờ **THẬT** trên **2 đường CLI** (interactive +
         smooth; đường web vẫn mặc định — ticket P2-1), `run_info` có `frame_shape` (**None ở đường
         headless** vì headless không dựng `IdentityWatch`) + `max_jump_ratio` + `frame_shape_doi`;
-        Caps Lock không còn làm `c/r/q` im lặng. **11 test mới**, và 5 đột biến (m1–m6) đều bị bắt.
+        Caps Lock không còn làm `c/r/q` im lặng. **13 test mới**; **7/8 đột biến bị bắt** (m8 = gọi `note_frame_shape` chỉ ở frame đầu còn sống ⇒ ticket #51).
   - [ ] **Đóng băng replay thành test**: 10 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)` + assert
         **"KHÔNG báo"** cho 4 ca mù (f7 169,1 · f12 172,0 · f16 127,1 · f17 149,2 px) để hành vi hiện
         tại không trôi; đổi `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.

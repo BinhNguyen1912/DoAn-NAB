@@ -214,6 +214,9 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
             # Đường HEADLESS (`./run video|ab|miou` + mọi job web) cũng phải ghi khung: ngưỡng cổng
             # nghi = 0,25×đường chéo nên 1280×720 khác 640×480. Thiếu dòng này thì `run_info` của
             # mọi phiên headless ghi `frame_shape: null` dù khung đã biết (review 24-11, P1).
+            # Gọi MỖI frame (so tuple, ~0 chi phí): nguồn có ca đổi độ phân giải giữa phiên
+            # (`live_tracking`), nếu chỉ gọi lần đầu thì `frame_shape_doi` luôn 0 = "đã kiểm, không đổi"
+            # trong khi chưa hề kiểm (review vòng 2, P2-B).
             metrics.note_frame_shape(frame.shape)
         result = reid_session.start(frame, bbox) if reid_session is not None else engine.start(frame, bbox)
         state = reid_session.state if reid_session is not None else None

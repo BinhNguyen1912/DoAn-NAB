@@ -25,7 +25,7 @@ các lỗi provenance/UX mà 3 vòng review độc lập bắt được.
    `settle_steps/max_jump_ratio = None` (không bịa cổng chưa chạy).
 
 ## Output / Kết quả
-**Nhãn (đọc video HUD, 3 phiên có sự kiện)** — **6/6 lần báo là ĐÚNG**, `0` ca báo oan xác nhận:
+**Nhãn (đọc video HUD, 3 phiên có sự kiện)** — **7/7 lần báo là ĐÚNG**, `0` ca báo oan xác nhận:
 - `144057`: `prompt_bbox=[397,79,491,462]` = **thìa GỖ**; người dùng rút thìa gỗ, đưa **thìa NHỰA trắng**
   vào ⇒ SAM 2 bám thìa nhựa ⇒ **danh tính đã đổi** ⇒ cổng báo đúng.
 - `141352`: cùng kịch bản. `144226`: báo khi **tay người khác** vào khung.
@@ -48,9 +48,11 @@ báo cao nhất) → **1,019** (báo thấp nhất) = **8 % ngưỡng**; cổng 
 **Chi phí (cùng nhóm):** ẩn 3,71 % · chưa xác minh 11,33 % · **đuôi 9,68 %** (frame sau lần báo cuối —
 `chua_xac_minh` không tự xoá). Baseline take sạch: `110536` = 200 frame, `nghi = 0`.
 
-**Test:** thêm 11 case; `./run lint` xanh, `./run test` **1 997 passed, 5 deselected**. Kiểm bằng đột
-biến: m1 `_settle_steps` trả hằng 8 · m2 bỏ truyền `settle_steps` xuống runner · m4 bỏ `chuan_hoa_phim`
-ở call-site · m5 bỏ `note_frame_shape` headless · m6 `frame_shape=None` — **cả 5 đều làm test ĐỎ**.
+**Test:** thêm 13 case; `./run lint` xanh, `./run test` xanh toàn bộ. Kiểm bằng **8 đột biến** (m1–m8):
+m1 `_settle_steps` trả hằng 8 · m2 bỏ truyền `settle_steps` xuống runner · m3 bỏ `chuan_hoa_phim` ở
+**mode chọn ô** · m4 bỏ `chuan_hoa_phim` ở **mode track** · m5 bỏ `note_frame_shape` headless ·
+m6 `frame_shape=None` trong `run_info` · m7 bỏ kiểm `_co_cong_nghi` · — **cả 7 đều làm test ĐỎ**.
+**m8** (gọi `note_frame_shape` chỉ ở frame đầu) **CHƯA bắt được** ⇒ nợ ở ticket #51.
 
 ## Vấn đề & cách xử lý
 | vấn đề | cách xử lý |

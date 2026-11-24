@@ -421,11 +421,12 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if frame is None:
                 time.sleep(0.01)
                 continue
+            if metrics is not None:
+                # MỖI frame (so tuple): `frame_shape_doi` phải ĐO được, không chỉ công bố 0.
+                metrics.note_frame_shape(frame.shape)
             if not selector_bound:
                 selector.bind(frame)          # lần đầu: biết kích thước frame
                 selector_bound = True
-                if metrics is not None:
-                    metrics.note_frame_shape(frame.shape)   # ngưỡng cổng phụ thuộc khung
 
             stamped = worker.latest_result() if worker.is_tracking() else None
             img = None

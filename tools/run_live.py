@@ -44,6 +44,7 @@ try:
 except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn progress bar khi chạy thật
     pass
 
+from src.identity_guard import DEFAULT_SETTLE_STEPS          # noqa: E402
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
 from src.live_tracking import xyxy_to_xywh                   # noqa: E402
@@ -602,16 +603,19 @@ def _settle_steps(args):
     ⇒ `run_info` phải ghi `None`, KHÔNG được ghi 8 — ghi 8 là mô tả một cổng chưa từng chạy
     (review độc lập 24-11, P1).
 
-    `0` là giá trị HỢP LỆ (`IdentityWatch` hiểu là "tắt, hạ mức ngay"): biểu thức `x or default` cũ
-    nuốt `0` thành 8 ⇒ người dùng bấm `--settle-steps 0` mà vẫn thấy hạ mức sau 8 bước, im lặng.
+    `0` là giá trị HỢP LỆ nhưng nghĩa của nó là **TẮT: ẩn tới khi bấm `r`/`c`** (KHÔNG phải "hạ mức
+    ngay" — `IdentityWatch` chỉ hạ mức khi `settle_steps > 0`). Biểu thức `x or default` cũ nuốt `0`
+    thành 8 ⇒ người dùng bấm `--settle-steps 0` mà vẫn thấy hạ mức sau 8 bước, im lặng.
     Kẹp âm về 0 ở ĐÂY (cùng chỗ `IdentityWatch` kẹp) để `run_info` ghi đúng giá trị đã dùng.
     """
     from src.identity_guard import DEFAULT_SETTLE_STEPS
 
+    # Kiểm `_co_cong_nghi` TRƯỚC giá trị: `./run video --settle-steps 3` đi đường headless (KHÔNG dựng
+    # `IdentityWatch`) ⇒ ghi 3 vào run_info vẫn là provenance giả (review vòng 2, P2-A).
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
     v = getattr(args, "settle_steps", None)
-    if v is None:
-        return DEFAULT_SETTLE_STEPS if getattr(args, "_co_cong_nghi", True) else None
-    return max(0, int(v))
+    return DEFAULT_SETTLE_STEPS if v is None else max(0, int(v))
 
 
 def _max_jump_ratio(args):
@@ -619,12 +623,12 @@ def _max_jump_ratio(args):
 
     Ghi 0.25 cho một phiên headless là mô tả một cổng chưa từng chạy (review độc lập 24-11, P1).
     """
-    from src.identity_guard import IdentityWatch
+    from src.identity_guard import DEFAULT_MAX_JUMP_RATIO
 
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
     v = getattr(args, "max_jump_ratio", None)
-    if v is not None:
-        return float(v)
-    return float(IdentityWatch().max_jump_ratio) if getattr(args, "_co_cong_nghi", True) else None
+    return DEFAULT_MAX_JUMP_RATIO if v is None else float(v)
 
 
 def _write_run_info(args, metrics=None):
@@ -1010,8 +1014,10 @@ def build_parser():
                          "mặc định giữ 1024 của config SAM 2)")
     ap.add_argument("--settle-steps", type=int, default=None,
                     help="số bước ỔN ĐỊNH trước khi hạ 'nghi đổi đối tượng' xuống 'chưa xác minh' "
-                         f"(mặc định {8}). Đổi cờ này ĐỔI số frame bị ẩn ⇒ số đo cũ không so được "
-                         "với số mới. Ghi vào run_info để lần sau tái lập được.")
+                         f"(mặc định {DEFAULT_SETTLE_STEPS}). Đổi cờ này ĐỔI số frame bị ẩn ⇒ số đo "
+                         "cũ không so được với số mới. `0` = TẮT: ẩn tới khi bấm r/c (không bao giờ tự "
+                         "hạ mức). Đường headless (`./run video|ab|miou`) không dựng cổng ⇒ cờ bị bỏ "
+                         "qua và run_info ghi null.")
     ap.add_argument("--max-jump-ratio", type=float, default=None,
                     help="NGƯỠNG CHẨN ĐOÁN: tỉ lệ đường chéo khung mà tâm ô được phép nhảy trong một "
                          "bước VOS (mặc định 0.25 ⇒ 200 px ở 640x480). CẢNH BÁO: đổi cờ này KHÔNG "
