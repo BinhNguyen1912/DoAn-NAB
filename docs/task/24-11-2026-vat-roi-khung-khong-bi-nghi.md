@@ -70,13 +70,34 @@ Bài học P1 của review 24-11 (`run_info` ghi `settle_steps=8` trong khi **kh
 nay có thể được xoá **từ bên trong** `watch.update` (tái bám) mà không ai gán `switch = False` ⇒ banner
 treo trên màn hình trong khi mask đã vẽ lại bình thường. Nay `switch = watch.nghi` (banner ⇔ latch).
 
-### 3.5. Test (16 case mới, khoá đúng hành vi)
+### 3.5. Test (16 case mới, khoá đúng hành vi — đếm: 7 `TestTaiBamSauKhiVatRoiKhung` +
+3 `TestBienCuaNguongVang` + 3 `TestBuocVosKhongPhaiFrameHienThi` + 1 source-level WARN +
+2 `TestLostResetStreak` → thực tế **16** ở 3 file, xem danh sách dưới)
 
 `tests/test_identity_guard.py::TestTaiBamSauKhiVatRoiKhung` — vắng dài rồi vào lại **không báo**; hết
 grace thì **chấm lại như cũ** (chống "sửa" bằng cách tắt cổng); vắng 1–2 frame **vẫn chấm**; tái bám
 **xoá latch**; `lost_reset_streak=0` tái lập được hành vi trước 24-11.
 `tests/test_smooth_display.py::test_canh_bao_chi_in_khi_cong_that_su_cham`;
 `tests/test_run_live_helpers.py::TestLostResetStreak` (3 case: mặc định/cờ, `0` không bị nuốt, headless `None`).
+
+### 3.6. REVIEW ĐỘC LẬP (mục 9.1) — bắt 1 P0 + 2 P1 + 3 P2, đã sửa
+
+Reviewer (agent `reviewer`, chỉ đọc) kết luận **chưa merge được**. Các phát hiện và cách xử lý:
+
+| mức | phát hiện | xử lý |
+|---|---|---|
+| **P0** | `switch = watch.nghi or switch` **sticky** ⇒ sau khi latch tự xoá (tái bám) HUD **vẫn ẩn mask tới hết phiên** + CSV ghi `nghi_doi_tuong = None` trong khi ảnh đang ẩn. Đúng triệu chứng người dùng báo, chỉ khác nguyên nhân | sửa ở `92dcfe5`: `switch = watch.nghi`; test source-level + test hành vi |
+| **P1** | **Đường WEB đếm theo frame PHÁT, không theo bước VOS.** `live_tracking` gọi `_watch.update` mỗi vòng phát, `vos_every=3` ⇒ cùng một kết quả VOS lặp ~3,5 lần ⇒ `lost_reset_streak=3` co còn ~1 bước VOS (một VOS rỗng là reset ⇒ **mất** ca nhấp nháy `125109#137`) và `reacq_grace_steps=2` hết hạn **trước** bước VOS kế (⇒ đúng cú f263→f264 **vẫn** bị chấm trên web). Mọi số §4 là replay CLI nên **không** phát hiện được | `IdentityWatch.update(..., buoc_moi=)`; `live_tracking` chỉ đẩy cổng khi **seq VOS đổi** (`_watch_seq`). Test trên worker thật: `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` — đã kiểm **mutant** (bỏ điều kiện ⇒ test ĐỎ) |
+| **P1** | Artifact ghi `git_rev=14140ca` + `git_dirty_code=true`, và cột "trước" **không** có artifact nào ⇒ trái luật tái lập | sinh lại **trên cây sạch ở `d2dc7e7`**: `git_dirty_code=false`; `--lost-reset` nhận **danh sách** ⇒ **một** artifact `replay_latch_tai_bam_...` chứa cả `vắng>=0` và `vắng>=3` cùng `git_rev` |
+| **P2** | `_switch_warning` **tự chấm lại** với `max_jump_ratio` mặc định ⇒ `--max-jump-ratio < 0,25` thì cổng báo mà console **im lặng** | hàm chỉ còn **in**; phán quyết duy nhất ở `watch.vua_bao` |
+| **P2** | Thiếu `reacq_grace_steps` trong provenance; `eval_gate_rules` thiếu `git_dirty` | đã thêm cả hai vào artifact |
+| **P2** | Lỗ test: không test **biên đúng 3**, không test cờ đi tới `IdentityWatch` trên worker, test WARN chỉ so chuỗi source | thêm `TestBienCuaNguongVang`, `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (chạy worker thật), `TestLostResetStreak` |
+| **P3** | Docstring ghi "140/404 = 34,7 % chưa xác minh" sai nhãn | sửa: **132 = 32,7 %** chưa xác minh + **8** frame `nghi` = 34,7 % *không tin cậy* |
+| **P3** | Câu "ca 21-11 không bị ảnh hưởng vì vật **không** rời khung" **SAI**: phiên `1121-121732` có **2 frame rỗng liền** (f176–177) ngay trước cú báo f178 | sửa lại; **biên mỏng tới đâu**: ngưỡng **2** sẽ MẤT ca đúng đó, ngưỡng **3** giữ 7/7 — đã khoá bằng `TestBienCuaNguongVang` dùng đúng chuỗi f176–178 |
+
+Đã kiểm, **không** phải lỗi (reviewer xác nhận): thứ tự `_lost`/`_grace`/`reset()` trong `update()`;
+`vua_bao` không làm mất cảnh báo ở cấu hình mặc định; mẫu số replay (26 phiên đo được / 17 phiên bị loại);
+hai script lấy mặc định từ hằng số chung.
 
 ## 4. Output / Kết quả
 
@@ -97,6 +118,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 | **`hien_tai` (nay)** | 6 | 3,71 % | **4,24 %** | **7,95 %** | **7/7** |
 
 ### 4.3. Toàn bộ pool — `scripts/replay_latch_settle.py` (26 phiên ĐO ĐƯỢC / 5 180 frame, `settle=8`)
+`data/replay_latch_tai_bam_2026-11-24_metrics.json` (`git_rev d2dc7e7`, `git_dirty_code=false`)
 
 | | báo | ẩn | chưa xác minh |
 |---|---|---|---|
@@ -108,9 +130,13 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 ### 4.4. Kiểm tra
 
 - `./run lint` xanh · `./run test` **2 017 passed** (5 deselected).
-- Artifact: `data/eval_gate_rules_2026-11-24_metrics.json`,
-  `data/replay_latch_tai_bam_2026-11-24_metrics.json` (có `git_rev`, `git_dirty_code`, `lenh`, `do_luc`,
-  `lost_reset_streak`).
+- Artifact (sinh trên **cây sạch ở `d2dc7e7`**, `git_dirty_code = false`):
+  `data/eval_gate_rules_2026-11-24_metrics.json` — chứa **cả hai cột** luật đang ship (`hien_tai`) và
+  luật trước 24-11 (`hien_tai_truoc_khi_tai_bam`) trong cùng một `git_rev`;
+  `data/replay_latch_tai_bam_2026-11-24_metrics.json` — `lost_reset_list = [0, 3]` +
+  `reacq_grace_steps = 2`, tức **cột "trước" nằm trong cùng file** (khoá `"<settle>|<vắng>"`).
+  `git_dirty = true` ở cả hai là do chính file artifact vừa ghi; tiêu chí tái lập của repo là
+  **`git_dirty_code`** (bỏ qua `data/`).
 
 ## 5. Vấn đề & cách xử lý
 

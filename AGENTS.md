@@ -844,9 +844,16 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   **11,33 % → 4,24 %**, không-tin-cậy **15,04 % → 7,95 %**, ca đúng **7/7**; `--lost-reset 0` là cờ tái
   lập hành vi cũ. Toàn pool (`data/replay_latch_tai_bam_2026-11-24_metrics.json`, 26 phiên đo được/5 180
   frame, `settle 8`): chưa-xác-minh **29,77 % → 16,20 %**, và hành vi `settle 0` **34,54 % → 20,50 %**.
-  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **Đánh đổi phải nói kèm:** sau khi
-  vật rời khung rồi vào lại, hệ **TIN** vùng mới — "một vật khác đi vào" thì không phân biệt được nếu
-  không có re-ID (ca 21-11 không bị ảnh hưởng: vật **không** rời khung). **CÒN HỞ:** cùng phiên đó ô bám
-  sang **tường trống** ~130 frame mà cổng **không** báo (trôi dần — đúng kết luận 23-11) ⇒ cần cơ chế
-  khác (verified re-anchor / Cutie), **đừng** nới ngưỡng. Log:
+  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **BIÊN CỦA NGƯỠNG 3 RẤT MỎNG** —
+  hai ca báo ĐÚNG đã biết sát ngưỡng: `125109#137` vắng **1** frame, `121732#178` vắng **2** frame liền
+  (f176–177) ⇒ **ngưỡng 2 sẽ MẤT ca `121732#178`**; đã khoá bằng `TestBienCuaNguongVang` (đổi `>=`
+  thành `>` là test đỏ). **Đánh đổi phải nói kèm:** sau khi vật rời khung rồi vào lại, hệ **TIN** vùng
+  mới — "một vật khác đi vào" thì không phân biệt được nếu không có re-ID. **CÒN HỞ:** cùng phiên được
+  báo, ô bám sang **tường trống** ~130 frame mà cổng **không** báo (trôi dần — đúng kết luận 23-11) ⇒
+  cần cơ chế khác (verified re-anchor / Cutie), **đừng** nới ngưỡng. **ĐƯỜNG WEB PHẢI ĂN THEO BƯỚC VOS,
+  KHÔNG theo frame phát:** `live_tracking` gọi cổng mỗi vòng phát mà `vos_every=3` ⇒ cùng một kết quả VOS
+  lặp ~3,5 lần (29,8 FPS hiển thị / 8,5 VOS mỗi giây) ⇒ mọi ngưỡng đếm-theo-bước co lại 3,5 lần và grace
+  hết hạn **trước** bước VOS kế (ca f263→f264 **vẫn** bị chấm trên web). Nay `IdentityWatch.update(...,
+  buoc_moi=)` + `live_tracking._watch_seq` chỉ đẩy cổng khi **seq VOS đổi** — review độc lập 24-11 bắt
+  P1 này, số §4 (replay CLI) **không** phát hiện được. Log:
   `docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md`.

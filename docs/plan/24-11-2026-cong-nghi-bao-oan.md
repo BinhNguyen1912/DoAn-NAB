@@ -97,7 +97,10 @@ không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều*
         smooth; đường web vẫn mặc định — ticket P2-1), `run_info` có `frame_shape` (**None ở đường
         headless** vì headless không dựng `IdentityWatch`) + `max_jump_ratio` + `frame_shape_doi`;
         Caps Lock không còn làm `c/r/q` im lặng. **13 test mới**; **7/8 đột biến bị bắt** (m8 = gọi `note_frame_shape` chỉ ở frame đầu còn sống ⇒ ticket #51).
-  - [ ] **Đóng băng replay thành test**: 10 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)` + assert
+  - [ ] **Đóng băng replay thành test**: 10 phiên ⇒ luật đang ship **sau 24-11 tối**
+    `(fire=6, ẩn=56, chưa=64, đuôi=39)` — **KHÔNG** phải `(6, 56, 171, 146)`: bộ số đó là **trước**
+    khi có luật "vật rời khung rồi vào lại ≠ đổi đối tượng" (`data/eval_gate_rules_2026-11-24_metrics.json`
+    vẫn giữ cả hai cột: `hien_tai` vs `hien_tai_truoc_khi_tai_bam`). Khoá theo 171 là khoá sai luật + assert
         **"KHÔNG báo"** cho 4 ca mù (f7 169,1 · f12 172,0 · f16 127,1 · f17 149,2 px) để hành vi hiện
         tại không trôi; đổi `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.
   - [ ] **Diễn tập 3 lần**: `nghi ≤ 5 %` frame, đuôi `chua_xac_minh ≤ 20` frame, `ti_le_thoi_luong ≥
