@@ -553,6 +553,19 @@ class TestCongNhayCoNhoTrenDuongMuot:
             src = inspect.getsource(mod)
             assert "watch.vua_bao" in src, f"{mod.__name__} chưa đọc `watch.vua_bao` để in cảnh báo"
 
+    def test_switch_warning_khong_tu_cham_lai(self, capsys):
+        """24-11 (review vòng 2): `_switch_warning` từng gọi `is_suspect_switch` lần HAI, với
+
+        `max_jump_ratio` MẶC ĐỊNH ⇒ với `--max-jump-ratio < 0,25` cổng báo mà console im lặng. Nay nó
+        chỉ in. Test: gọi với hai ô GẦN NHAU (cú nhảy = 0, tức `is_suspect_switch` sẽ trả False) mà
+        vẫn phải in ⇒ chứng minh nó không tự chấm.
+        """
+        from src.live_pipeline import _switch_warning
+
+        assert _switch_warning((100, 100, 200, 200), (101, 101, 201, 201)) is True
+        out = capsys.readouterr().out
+        assert "ĐỔI ĐỐI TƯỢNG" in out, "phải IN khi được gọi (cổng đã phán quyết trước đó)"
+
     def test_reacquired_giai_phong_latch_nghi_doi_tuong(self):
         """22-11 (bug thật, phiên `demoip_1122-195623`): vật chạm mép nhảy ô ⇒ `IdentityWatch`
 
@@ -1048,6 +1061,12 @@ class TestTuHaMucTrenDuongMuot:
         chi_so_nghi = [i for i, d in enumerate(da_goi) if d["switch"]]
         chi_so_ha = [i for i, d in enumerate(da_goi) if d["chua_xac_minh"]]
         assert min(chi_so_ha) > min(chi_so_nghi)
+        # 24-11 (review vòng 2, P2): khoá HÀNH VI, không chỉ chuỗi source. Bản cũ gán
+        # `switch = watch.nghi or switch` (sticky) ⇒ sau khi hạ mức, `switch` vẫn True ⇒ ảnh KHÔNG có
+        # mask tô tới hết phiên (đúng triệu chứng người dùng báo) mà test này vẫn xanh.
+        assert not any(d["switch"] for d in da_goi[min(chi_so_ha):]), (
+            "sau khi chuyển `chua_xac_minh` vẫn còn `switch_warning=True` ⇒ `switch` dính sticky: "
+            "`visualizer.render` sẽ KHÔNG tô mask (dang_mat_dau) ⇒ mất mask tới hết phiên")
 
 
 class TestPhimCTaiChuaXacMinh:

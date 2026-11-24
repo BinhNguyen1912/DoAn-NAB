@@ -388,6 +388,9 @@ class TestBuocVosKhongPhaiFrameHienThi:
         w = IdentityWatch()
         w.update(self.A, self.B, (480, 640))
         assert w.nghi is True
+        truoc = (w._lost, w._grace, w._settle, w.trang_thai)
         for _ in range(5):
             assert w.update(self.B, self.A, (480, 640), buoc_moi=False) is True
-        assert w.trang_thai == "nghi"      # không xoá, không đếm settle
+        assert (w._lost, w._grace, w._settle, w.trang_thai) == truoc, \
+            "`buoc_moi=False` là NO-OP: không được đổi bộ đếm nào (review vòng 2, P3)"
+        assert w.vua_bao is False, "`vua_bao` là cờ của LẦN GỌI NÀY (không phải của bước trước)"

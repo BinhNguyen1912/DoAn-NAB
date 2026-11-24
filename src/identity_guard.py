@@ -201,6 +201,9 @@ class IdentityWatch:
         mất ca "nhấp nháy" `125109#137`) và `reacq_grace_steps=2` hết hạn TRƯỚC bước VOS kế (⇒ đúng cú
         "mẩu rác 559 px → vật 24 100 px" vẫn bị chấm và vẫn báo). `buoc_moi=False` ⇒ hàm KHÔNG đổi
         trạng thái gì: cùng một kết quả VOS không mang thêm thông tin về danh tính.
+        Hợp đồng: `buoc_moi=False` KHÔNG đổi `_lost`/`_grace`/`_settle`/`_trang_thai`; `vua_bao` là
+        cờ **của LẦN GỌI NÀY** nên nó về `False` (đừng đọc `vua_bao` để biết "bước trước có báo không"
+        — đọc `nghi`).
         """
         self._vua_bao = False          # cờ của BƯỚC NÀY (reset đầu mỗi `update`)
         if not buoc_moi:

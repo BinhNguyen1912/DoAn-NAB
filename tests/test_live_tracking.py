@@ -3578,26 +3578,76 @@ class TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat:
         session._result_threaded(np.zeros((48, 64, 3), np.uint8))
         assert session._buoc_vos_moi is True, "seq đổi ⇒ bước VOS mới"
 
-    def test_khong_phai_buoc_moi_thi_cong_khong_doi(self):
-        """Đáy nối: `_update_stats_locked` KHÔNG được đẩy frame lặp vào cổng."""
+    def _ket_qua(self, mask_rong=True, bbox=(0, 0, 0, 0)):
+        """Kết quả VOS ĐÚNG như `tracker_engine` sinh ra: mask rỗng ⇒ bbox `(0,0,0,0)`.
+
+        Review vòng 2 (P2): test cũ dùng `bbox=(10,10,30,30)` với mask RỖNG — trạng thái engine
+        KHÔNG BAO GIỜ sinh ra — nên nó xanh dù đường web bỏ qua VOS rỗng thật.
+        """
         import numpy as np
 
+        mask = np.zeros((48, 64), bool)
+        if not mask_rong:
+            mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+
+        class _R:
+            frame_idx = 1
+            score = 1.0
+            elapsed_ms = 40.0
+            raw_lost = mask_rong
+
+        _R.mask = mask
+        _R.bbox = bbox
+        return _R()
+
+    def test_khong_phai_buoc_moi_thi_cong_khong_doi(self):
+        """Đáy nối: `_update_stats_locked` KHÔNG được đẩy frame lặp vào cổng."""
         session = self._session(vos_every=3)
         session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
         truoc = (session._watch._lost, session._watch._grace, session._watch.trang_thai)
+        rong = self._ket_qua(mask_rong=True)
 
-        class _R:
-            frame_idx, mask, bbox, score, elapsed_ms, raw_lost = 1, None, (10, 10, 30, 30), 1.0, 40.0, True
-
-        _R.mask = np.zeros((48, 64), bool)          # mask RỖNG (vật ngoài khung)
         session._buoc_vos_moi = False
         for _ in range(5):
             with session._stats_lock:
-                session._update_stats_locked(_R())
+                session._update_stats_locked(rong)
         assert (session._watch._lost, session._watch._grace, session._watch.trang_thai) == truoc, \
             "5 frame phát lặp cùng kết quả VOS không được đếm thành 5 bước vắng (sẽ reset oan)"
 
         session._buoc_vos_moi = True
         with session._stats_lock:
-            session._update_stats_locked(_R())
+            session._update_stats_locked(rong)
         assert session._watch._lost == 1, "một BƯỚC VOS rỗng = đúng 1 bước vắng"
+
+    def test_VOS_rong_THAT_phai_lam_tang_lost_va_reset_moc(self):
+        """P1 vòng 2: mask rỗng ⇒ engine trả bbox `(0,0,0,0)` ⇒ `_bbox_hop_le` loại ⇒ `obs_bbox=None`.
+
+        Bản trước bọc `if obs_bbox is not None` nên trên đường web cổng **không bao giờ thấy VOS rỗng**
+        ⇒ `_lost` không tăng ⇒ đúng ca "vật rời khung rồi vào lại" vẫn bị báo nghi trên web.
+        """
+        session = self._session(vos_every=3)
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+        rong = self._ket_qua(mask_rong=True)
+        for _ in range(3):                      # 3 BƯỚC VOS rỗng (mỗi bước 1 lần đẩy cổng)
+            session._buoc_vos_moi = True
+            with session._stats_lock:
+                session._update_stats_locked(rong)
+            session._buoc_vos_moi = False
+            for _lap in range(2):               # 2 frame phát lặp lại của chính bước đó
+                with session._stats_lock:
+                    session._update_stats_locked(rong)
+        assert session._watch._lost == 3, "3 bước VOS rỗng ⇒ `_lost` = 3 (không phải 1, không phải 9)"
+        assert session._last_good_bbox == (0, 0, 0, 0), \
+            "mất dấu ⇒ xoá mốc (CLI làm ở `smooth_display`); không xoá thì vật hiện lại ở chỗ khác " \
+            "sẽ bị so với ô của NHIỀU GIÂY TRƯỚC"
+
+        # Vật hiện lại ở chỗ KHÁC HẲN: đây là phiên bám mới ⇒ KHÔNG báo nghi, KHÔNG chưa-xác-minh
+        vat = self._ket_qua(mask_rong=False, bbox=(40, 30, 60, 46))
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(vat)
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(self._ket_qua(mask_rong=False, bbox=(40, 30, 60, 46)))
+        assert session._watch.nghi is False and session._watch.chua_xac_minh is False, \
+            "vật rời khung rồi vào lại KHÔNG phải đổi đối tượng (ca demoip_1124-193026)"

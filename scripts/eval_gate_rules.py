@@ -22,10 +22,9 @@ Chạy:
         --out data/eval_gate_rules_2026-11-24_metrics.json
 
 ĐỌC SỐ CHO ĐÚNG (script tự in lại các cảnh báo này):
-  - `ca_dung` = các (phiên, frame) ĐÃ BIẾT là báo đúng (kiểm bằng ảnh). Hiện chỉ có **1** ca có đủ cột
-    để chấm ⇒ **không** kết luận được "giảm báo oan mà không bỏ sót" theo nghĩa thống kê; chỉ nói được
-    "ca đúng đã biết còn bắt hay không".
-  - `ca_sai` = các (phiên, frame) ĐÃ BIẾT là báo oan (kiểm bằng ảnh). Hiện có **1** ca.
+  - `ca_dung` = 7 cặp (phiên, frame) ĐÃ BIẾT là báo đúng (đọc video HUD; **1 người** dán ⇒ chỉ dùng để
+    trả lời "luật này có BỎ ca đúng nào không", KHÔNG dùng làm precision).
+  - `ca_sai` = **0** ca báo oan đã xác nhận (bản đầu của tệp này ghi 3 — SAI, xem comment ở `CA_DUNG`).
   - Phiên thiếu cột `bbox_w/bbox_h/mask_area` bị **loại khỏi mẫu số** (ô dựng lại rỗng ⇒ cổng không thể
     bật) — cùng luật với `scripts/replay_latch_settle.py`.
   - `dt` lấy từ `latency_ms` của CSV: đó là thời gian suy luận của frame, **xấp xỉ** khoảng cách giữa 2
@@ -385,12 +384,15 @@ def main(argv=None) -> int:
                     "area_band": [AREA_BAND_THAP, AREA_BAND_CAO]},
         "ca_dung": CA_DUNG, "ca_sai": CA_SAI,
         "luat_truoc_khi_tai_bam": luat_truoc,
+        # Luật "trước" trong cùng artifact: `lost_reset_streak = 0` (mẩu rác sau khi vắng được dùng
+        # làm mốc). Không ghi thì artifact không tự mô tả đủ hai cột (review vòng 2, P3).
+        "lost_reset_streak_truoc": 0,
         "lost_reset_streak": DEFAULT_LOST_RESET_STREAK,
         "reacq_grace_steps": DEFAULT_REACQ_GRACE_STEPS,
         "so_phien_doc_duoc": len(phien), "so_phien_bo_qua": bo_qua,
         "so_phien_khop_100pct": len(dung_config),
-        "ghi_chu_nhan": "NHÃN TẠM: ca 'SAI' (144057#48) có phép thử SUY BIẾN (ô phủ 18% khung) — "
-                        "chưa có nhãn theo luật fill>=0.5 viết trước; xem docstring CA_SAI.",
+        "ghi_chu_nhan": "7 ca DUNG do 1 nguoi dan tren video HUD => chi dung de kiem 'co bo ca dung "
+                        "nao khong'; 0 ca SAI da xac nhan.",
         "tong": tong, "phien": phien,
     }
 

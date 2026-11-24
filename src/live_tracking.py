@@ -263,7 +263,9 @@ class LiveTrackStats:
     bam_ly_do: str = ""
     bam_no_evidence_n: int = 0     # số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra)
     # 21-11: cổng nhảy CÓ NHỚ (`src/identity_guard.IdentityWatch`). `True` = ĐANG nghi đã bám sang đối
-    # tượng khác ⇒ `bam = "nghi_doi_tuong"` và worker KHÔNG vẽ mask/ô (cùng luật với `no_evidence`).
+    # tượng khác ⇒ `bam = "nghi_doi_tuong"`. Từ 23-11 (ticket #45) worker vẫn VẼ ô NÉT ĐỨT + nhãn
+    # "NGHI" (không tô mask, không quỹ đạo) — KHÁC `no_evidence` (ẩn sạch). Đừng đọc comment này như
+    # luật cũ: `an_o` chỉ còn `no_evidence` (dòng dưới).
     # `nghi_doi_tuong_n` = số frame ĐÃ PHÁT trong trạng thái đó (0 ⇒ chưa từng nghi).
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0
@@ -1926,21 +1928,33 @@ class LiveTrackingSession:
         # CHỈ một bước VOS mới mới được đẩy vào cổng (24-11, review P1): frame hiển thị lặp lại cùng
         # kết quả VOS thì `obs_bbox` chỉ là mask cũ DỊCH đi bằng LK ⇒ không có thông tin danh tính mới,
         # và nếu vẫn đẩy vào thì mọi ngưỡng đếm-theo-bước bị co ~3,5 lần.
-        if obs_bbox is not None and self._buoc_vos_moi:
-            _shape = getattr(getattr(result, "mask", None), "shape", None)
+        if self._buoc_vos_moi:
+            _shape = getattr(mask, "shape", None)
             if _shape is not None and len(_shape) >= 2:
                 lk_vel = None
                 if getattr(self._interp, "last_dx", None) is not None:
                     lk_vel = (self._interp.last_dx, self._interp.last_dy)
+                # ⚠ PHẢI gọi kể cả khi `obs_bbox is None` (VOS trả mask RỖNG ⇒ engine trả bbox
+                # `(0,0,0,0)` ⇒ `_bbox_hop_le` loại ⇒ `obs_bbox = None`). Bản trước bọc bằng
+                # `if obs_bbox is not None` nên trên đường web cổng **không bao giờ thấy VOS rỗng**:
+                # `_lost` không tăng ⇒ `lost_reset_streak`/`reacq_grace_steps` KHÔNG BAO GIỜ chạy ⇒
+                # đúng ca "vật rời khung rồi vào lại" vẫn bị báo nghi trên web (review độc lập vòng 2,
+                # P1). Đường CLI đã làm đúng từ trước: mất dấu ⇒ `prev = (0,0,0,0)`.
                 is_nghi = self._watch.update(
-                    self._last_good_bbox, obs_bbox,
+                    self._last_good_bbox,
+                    obs_bbox if obs_bbox is not None else (0, 0, 0, 0),
                     (int(_shape[0]), int(_shape[1])),
                     lk_velocity=lk_vel,
-                    co_mask=not raw_lost,
+                    co_mask=not raw_lost and obs_bbox is not None,
                 )
-                if not is_nghi:
+                if not is_nghi and obs_bbox is not None:
                     self._last_good_bbox = obs_bbox
-            else:
+                elif obs_bbox is None:
+                    # Mất dấu ⇒ xoá mốc, đúng luật của `is_suspect_switch` (CLI: `smooth_display`
+                    # `last_bbox = (0,0,0,0)`). Không xoá thì khi vật hiện lại ở chỗ khác, cổng so với
+                    # ô của NHIỀU GIÂY TRƯỚC ⇒ báo "nhảy" vô nghĩa.
+                    self._last_good_bbox = (0, 0, 0, 0)
+            elif obs_bbox is not None:
                 self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
         # `no_evidence` ẩn ô (ô do LK suy diễn ⇒ vẽ ra là nói dối).
@@ -2099,7 +2113,8 @@ class LiveTrackingSession:
             # Nguồn đổi độ phân giải giữa phiên (relay /snapshot.jpg, điện thoại xoay máy) ⇒
             # `tint[mask]` sẽ IndexError. Bỏ mask frame này, không làm chết phiên.
             mask = None
-        # 21-11: `nghi_doi_tuong` ẩn y như `no_evidence` (xem `IdentityWatch`) — cùng luật với CLI.
+        # 21-11 → 23-11: `nghi_doi_tuong` KHÔNG ẩn sạch nữa; nó vẽ ô NÉT ĐỨT (xem `IdentityWatch`,
+        # ticket #45). Chỉ `no_evidence` (ô do LK suy diễn) mới ẩn — đừng gộp hai thứ này.
         khong_bang_chung = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
         # 24-11: "chưa xác minh" — VẪN vẽ, nhưng khác kiểu (cùng luật với `visualizer.render`).
         chua_xac_minh = (bool(self._stats.chua_xac_minh) and not khong_bang_chung

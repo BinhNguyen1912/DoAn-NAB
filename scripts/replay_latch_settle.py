@@ -16,8 +16,12 @@ Hai đại lượng KHÁC nhau, không được lẫn:
 
 Chạy:
 
-    python scripts/replay_latch_settle.py --glob 'data/demoip_*_metrics.csv' --settle 8 \
-        --out data/replay_latch_settle_2026-11-24.json
+    python scripts/replay_latch_settle.py --glob 'data/demoip_*_metrics.csv' --settle 0,8 \
+        --lost-reset 0,3 --out data/replay_latch_tai_bam_2026-11-24_metrics.json
+
+`--lost-reset` nhận DANH SÁCH: `0` = hành vi TRƯỚC 24-11 tối (mẩu rác sau khi vắng được dùng làm
+mốc ⇒ báo nghi oan), `3` = mặc định đang ship. Khoá của mỗi cụm là `"<settle>|<lost>"` ⇒ **một**
+artifact chứa cả cột "trước" và "nay" với cùng `git_rev` (review vòng 2, P1).
 
 Giới hạn phải nói khi trích (script tự in): bbox được **dựng lại** từ `center_x/center_y/bbox_w/
 bbox_h` trong CSV (CSV không lưu 4 mép), và `frame_shape` lấy từ tham số (mặc định 480×640) ⇒ bán

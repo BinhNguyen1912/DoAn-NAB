@@ -78,9 +78,9 @@ treo trên màn hình trong khi mask đã vẽ lại bình thường. Nay `switc
 | | `TestBannerDiTheoTrangThaiLatch` | 1 |
 | | `TestBienCuaNguongVang` (biên đúng 3; chuỗi thật `121732` f176–178) | 2 |
 | | `TestBuocVosKhongPhaiFrameHienThi` | 3 |
-| `tests/test_live_tracking.py` | `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (worker thật) | 2 |
+| `tests/test_live_tracking.py` | `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (`_update_stats_locked` + `_result_threaded` với stub worker/interp — **không** phải engine SAM 2 thật) | 2 |
 | `tests/test_run_live_helpers.py` | `TestLostResetStreak` | 3 |
-| `tests/test_smooth_display.py` | `test_canh_bao_chi_in_khi_cong_that_su_cham` | 1 |
+| `tests/test_smooth_display.py` | `test_canh_bao_chi_in_khi_cong_that_su_cham` + assert hành vi chống-sticky trong `test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh` (2 case source-only, đã ghi rõ) | 1 |
 | **tổng** | | **17** |
 
 (Đã kiểm **mutant**: bỏ `and self._buoc_vos_moi` ⇒ `test_khong_phai_buoc_moi_thi_cong_khong_doi` ĐỎ.)
@@ -96,11 +96,11 @@ Reviewer (agent `reviewer`, chỉ đọc) kết luận **chưa merge được**.
 | mức | phát hiện | xử lý |
 |---|---|---|
 | **P0** | `switch = watch.nghi or switch` **sticky** ⇒ sau khi latch tự xoá (tái bám) HUD **vẫn ẩn mask tới hết phiên** + CSV ghi `nghi_doi_tuong = None` trong khi ảnh đang ẩn. Đúng triệu chứng người dùng báo, chỉ khác nguyên nhân | sửa ở `92dcfe5`: `switch = watch.nghi`; test source-level + test hành vi |
-| **P1** | **Đường WEB đếm theo frame PHÁT, không theo bước VOS.** `live_tracking` gọi `_watch.update` mỗi vòng phát, `vos_every=3` ⇒ cùng một kết quả VOS lặp ~3,5 lần ⇒ `lost_reset_streak=3` co còn ~1 bước VOS (một VOS rỗng là reset ⇒ **mất** ca nhấp nháy `125109#137`) và `reacq_grace_steps=2` hết hạn **trước** bước VOS kế (⇒ đúng cú f263→f264 **vẫn** bị chấm trên web). Mọi số §4 là replay CLI nên **không** phát hiện được | `IdentityWatch.update(..., buoc_moi=)`; `live_tracking` chỉ đẩy cổng khi **seq VOS đổi** (`_watch_seq`). Test trên worker thật: `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` — đã kiểm **mutant** (bỏ điều kiện ⇒ test ĐỎ) |
+| **P1** | **Đường WEB đếm theo frame PHÁT, không theo bước VOS.** `live_tracking` gọi `_watch.update` mỗi vòng phát, `vos_every=3` ⇒ cùng một kết quả VOS lặp ~3,5 lần ⇒ `lost_reset_streak=3` co còn ~1 bước VOS (một VOS rỗng là reset ⇒ **mất** ca nhấp nháy `125109#137`) và `reacq_grace_steps=2` hết hạn **trước** bước VOS kế (⇒ đúng cú f263→f264 **vẫn** bị chấm trên web). Mọi số §4 là replay CLI nên **không** phát hiện được | `IdentityWatch.update(..., buoc_moi=)`; `live_tracking` chỉ đẩy cổng khi **seq VOS đổi** (`_watch_seq`). Test qua `_update_stats_locked` với stub: `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` — đã kiểm **mutant** (bỏ điều kiện ⇒ test ĐỎ) |
 | **P1** | Artifact ghi `git_rev=14140ca` + `git_dirty_code=true`, và cột "trước" **không** có artifact nào ⇒ trái luật tái lập | sinh lại **trên cây sạch ở `d2dc7e7`**: `git_dirty_code=false`; `--lost-reset` nhận **danh sách** ⇒ **một** artifact `replay_latch_tai_bam_...` chứa cả `vắng>=0` và `vắng>=3` cùng `git_rev` |
 | **P2** | `_switch_warning` **tự chấm lại** với `max_jump_ratio` mặc định ⇒ `--max-jump-ratio < 0,25` thì cổng báo mà console **im lặng** | hàm chỉ còn **in**; phán quyết duy nhất ở `watch.vua_bao` |
 | **P2** | Thiếu `reacq_grace_steps` trong provenance; `eval_gate_rules` thiếu `git_dirty` | đã thêm cả hai vào artifact |
-| **P2** | Lỗ test: không test **biên đúng 3**, không test cờ đi tới `IdentityWatch` trên worker, test WARN chỉ so chuỗi source | thêm `TestBienCuaNguongVang`, `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (chạy worker thật), `TestLostResetStreak` |
+| **P2** | Lỗ test: không test **biên đúng 3**, không test cờ đi tới `IdentityWatch` trên worker, test WARN chỉ so chuỗi source | thêm `TestBienCuaNguongVang`, `TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat` (qua `_update_stats_locked`, stub worker), `TestLostResetStreak` |
 | **P3** | Docstring ghi "140/404 = 34,7 % chưa xác minh" sai nhãn | sửa: **132 = 32,7 %** chưa xác minh + **8** frame `nghi` = 34,7 % *không tin cậy* |
 | **P3** | Câu "ca 21-11 không bị ảnh hưởng vì vật **không** rời khung" **SAI**: phiên `1121-121732` có **2 frame rỗng liền** (f176–177) ngay trước cú báo f178 | sửa lại; **biên mỏng tới đâu**: ngưỡng **2** sẽ MẤT ca đúng đó, ngưỡng **3** giữ 7/7 — đã khoá bằng `TestBienCuaNguongVang` dùng đúng chuỗi f176–178 |
 
@@ -113,6 +113,36 @@ trước/sau mốc này mà không nói định nghĩa "bước" đã đổi.
 Đã kiểm, **không** phải lỗi (reviewer xác nhận): thứ tự `_lost`/`_grace`/`reset()` trong `update()`;
 `vua_bao` không làm mất cảnh báo ở cấu hình mặc định; mẫu số replay (26 phiên đo được / 17 phiên bị loại);
 hai script lấy mặc định từ hằng số chung.
+
+### 3.7. REVIEW VÒNG 2 — P1 CHƯA ĐÓNG: web **không nhìn thấy VOS rỗng thật**
+
+Reviewer vòng 2 (`2910cd1f`) kết luận **chưa merge được**: sửa `buoc_moi` ở vòng 1 đúng phần "đếm",
+nhưng trên đường web cổng **không bao giờ nhận được một bước VOS rỗng**, vì:
+
+`tracker_engine._mask_to_bbox` trả bbox `(0,0,0,0)` khi mask rỗng (`tracker_engine.py:338-339`) →
+`_bbox_hop_le((0,0,0,0))` = False (`live_tracking.py:584-596`) → `obs_bbox = None` → guard
+`if obs_bbox is not None` làm `_watch.update` **không được gọi** ⇒ `_lost` không tăng ⇒
+`lost_reset_streak`/`reacq_grace_steps` **không bao giờ chạy trên web** ⇒ đúng ca "vật rời khung rồi
+vào lại" **vẫn bị báo nghi** ở đó. Đường CLI làm đúng từ trước (`last_bbox = (0,0,0,0)` khi mất dấu).
+
+**Sửa:** gọi `_watch.update` **mỗi bước VOS**, kể cả khi `obs_bbox is None` (`cur = (0,0,0,0)`,
+`co_mask = not raw_lost and obs_bbox is not None`), và **xoá mốc** `_last_good_bbox = (0,0,0,0)` khi
+mất dấu (đối xứng `smooth_display.py` / `live_pipeline.py`). Test mới khoá đúng ca này:
+`test_VOS_rong_THAT_phai_lam_tang_lost_va_reset_moc` (mask rỗng + bbox `(0,0,0,0)` như engine thật ⇒
+3 bước = `_lost = 3`; vật hiện lại chỗ khác ⇒ **không** `nghi`, **không** `chua_xac_minh`).
+Đã kiểm **mutant**: bọc lại `if obs_bbox is not None` ⇒ test **ĐỎ**.
+
+Các mục còn lại của vòng 2 đã đóng:
+
+| mức | phát hiện | xử lý |
+|---|---|---|
+| **P2** | Test P1 vòng 1 dùng `bbox=(10,10,30,30)` với mask rỗng — trạng thái engine **không bao giờ** sinh ra ⇒ test xanh dù web bỏ qua VOS rỗng | sửa thành `(0,0,0,0)` + assert `_lost == 3` |
+| **P2** | **P0 chỉ khoá bằng chuỗi source**: revert về `switch = watch.nghi or switch` vẫn xanh | thêm assert hành vi: sau khi sang `chua_xac_minh` **không** còn `switch_warning=True`. Đã kiểm mutant: revert sticky ⇒ `test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh` **ĐỎ** |
+| **P3** | `buoc_moi=False` có đổi `_vua_bao` (không phải no-op tuyệt đối) | ghi rõ hợp đồng trong docstring (`vua_bao` = cờ của **lần gọi này**); test assert `_lost/_grace/_settle/_trang_thai` không đổi |
+| **P3** | log §5.2 vẫn ghi "ca 21-11 vật không rời khung" (**SAI**: f176–177 có 2 frame rỗng) | sửa, ghi rõ ngưỡng 2 sẽ mất ca đúng đó |
+| **P3** | log ghi `2 017 passed`, "worker thật" (thực tế là stub) | cập nhật `2 026 passed` + nói rõ test dùng `_update_stats_locked` + stub, **không** phải engine SAM 2 |
+| **P3** | `eval_gate_rules` docstring còn "1 ca đúng / 1 ca sai"; `replay` docstring ghi sai tên artifact; thiếu `lost_reset_streak_truoc: 0`; comment cũ "nghi ẩn y như no_evidence" | sửa hết |
+| **P3** | Artifact ghi `git_rev` của commit **trước** HEAD | sinh lại ở commit code cuối; delta tới commit chứa artifact **chỉ là `data/`** ⇒ tiêu chí `git_dirty_code = false` |
 
 ## 4. Output / Kết quả
 
@@ -144,7 +174,7 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
 
 ### 4.4. Kiểm tra
 
-- `./run lint` xanh · `./run test` **2 017 passed** (5 deselected).
+- `./run lint` xanh · `./run test` **2 026 passed** (5 deselected; lần chạy cuối, sau cả 3 vòng review).
 - Artifact (sinh trên **cây sạch ở `d2dc7e7`**, `git_dirty_code = false`):
   `data/eval_gate_rules_2026-11-24_metrics.json` — chứa **cả hai cột** luật đang ship (`hien_tai`) và
   luật trước 24-11 (`hien_tai_truoc_khi_tai_bam`) trong cùng một `git_rev`;
@@ -159,9 +189,12 @@ Nhóm chi phí **10 phiên / 1 509 frame** (danh sách đóng băng `data/eval_g
    (`theo_dt` 3/7, `van_toc_lich_su` 6/7, `chi_khi_cham_*` 1–5/7) đều **mất ca đúng**. Thay đổi lần này
    không đụng ngưỡng px nào, chỉ đổi **điều kiện chấm**.
 2. **Đánh đổi phải nói rõ:** sau khi vật rời khung rồi vào lại, hệ **tin** vùng mới (không còn dấu
-   "chưa xác minh"). Ca 21-11 (bám sang cửa/tường be cùng tông) **không** bị ảnh hưởng vì vật **không**
-   rời khung — nhưng ca "vật ra khung rồi một vật khác vào" thì không phân biệt được nếu không có re-ID.
-   Đây là ranh giới đã biết, không phải bug mới.
+   "chưa xác minh"). Ca "vật ra khung rồi một vật khác vào" thì không phân biệt được nếu không có re-ID
+   — ranh giới đã biết, không phải bug mới. **Về ca 21-11** (`demoip_1121-121732`, bám sang cửa/tường be
+   cùng tông): câu "vật không rời khung" là **SAI** — CSV có **2 frame rỗng liền** (`f176–177`,
+   `lost=1`, `mask_area=0`) ngay trước cú báo đúng `f178`. Nó sống sót vì **2 < 3**, tức **ngưỡng 2 sẽ
+   MẤT ca đúng đó** ⇒ đây là ca đúng **sát ngưỡng**, đã khoá bằng `TestBienCuaNguongVang`. Cùng nhóm
+   với `125109#137` (vắng **1** frame).
 3. **CÒN HỞ (không sửa trong phiên này): trôi dần.** Ảnh `m330` của chính phiên này cho thấy ô bám sang
    **tường** ~130 frame mà cổng **không** báo (đúng kết luận 23-11: cả hai cổng đều mù với trôi dần,
    biên quyết định chỉ 0,937→1,019 = 8 % ngưỡng). Muốn bắt phải có mô hình chuyển động/kiểm mask thật
