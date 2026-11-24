@@ -59,20 +59,25 @@ TOC_DO_TOI_DA = 1500.0            # px/s — tay cầm vật lia ngang khung 640
 AREA_BAND_THAP = 0.55             # mask nhỏ hơn 0,55× trung vị trước ⇒ co bất thường
 AREA_BAND_CAO = 2.20              # mask lớn hơn 2,20× ⇒ tràn nền (đo f48 ×2,9 · f82 ×4,0)
 
-# Ca ĐÃ KIỂM BẰNG **Ô VẼ TỪ CSV LÊN FRAME** (không đọc ô vàng trên HUD — HUD vẽ kết quả của bước
-# KHÁC, đã làm tôi kết luận sai 1 lần). Ảnh: `data/tmp_an/v2_*/v3_*.png`, tên theo `frame_idx`.
-#
-# NGỮ NGHĨA NHÃN = "danh tính vật bị bám có ĐỔI không" (đúng tên cổng "nghi đổi đối tượng"):
-#   DUNG     = ô đi sang VẬT KHÁC           -> cổng báo là ĐÚNG
-#   BAM_LAI  = ô đi TỪ nền VỀ ĐÚNG vật      -> danh tính không đổi, cổng báo là SAI (nhưng lỗi thật
-#              là cổng báo MUỘN: nó không báo lúc ô trôi khỏi vật)
-#   TROI     = ô đi TỪ vật SANG NỀN         -> danh tính không "đổi", nhưng hệ đang bám vùng vô nghĩa
-CA_DUNG = [("demoip_1124-125109_metrics.csv", 137)]     # ô trên TÓC, thìa ở x≈310 (ảnh v3_125109_f137)
-CA_SAI = [
-    ("demoip_1124-141352_metrics.csv", 29),             # ô VỀ ĐÚNG thìa, trước ở nền (v2_/v3_ f29)
-    ("demoip_1124-144057_metrics.csv", 48),             # ô ở NỀN 139x397, mask tràn 2,9x (v2_f48)
-    ("demoip_1124-144057_metrics.csv", 97),             # ô VỀ ĐÚNG thìa, trước ở nền (v3_f97)
+# NHÃN — đọc VIDEO HUD (`_web.mp4`) của 3 phiên có sự kiện, 24-11. Kết luận ĐẢO so với bản đầu:
+# **6/6 lần báo trong nhóm đóng băng là ĐÚNG**. Cái người dùng gọi là "vật đi nhanh nên bị nghi"
+# thực ra là **vùng bám đã rời VẬT ĐÃ CHỌN**: `144057` chọn **thìa gỗ** (`prompt_bbox=
+# [397,79,491,462]`), sau đó người dùng rút thìa gỗ xuống và đưa **thìa nhựa trắng** vào ⇒ SAM 2 bám
+# thìa NHỰA ⇒ danh tính ĐÃ đổi. `141352` cùng kịch bản. `144226` báo khi **tay người khác** vào khung.
+# Hệ quả: mọi luật "giảm số lần báo" đang giảm RECALL chứ không tăng precision ⇒ bảng dưới là bằng
+# chứng ÂM TÍNH cho việc chỉnh ngưỡng.
+# Nhãn do **1 người** đọc trên video HUD (frame báo KHÔNG vẽ mask theo thiết kế) ⇒ muốn TRÍCH trong
+# báo cáo phải có **người thứ 2** dán độc lập (việc V0 của plan 24-11).
+CA_DUNG = [
+    ("demoip_1124-141352_metrics.csv", 29),
+    ("demoip_1124-141352_metrics.csv", 42),
+    ("demoip_1124-144057_metrics.csv", 48),
+    ("demoip_1124-144057_metrics.csv", 74),
+    ("demoip_1124-144057_metrics.csv", 97),
+    ("demoip_1123-144226_metrics.csv", 196),
+    ("demoip_1124-125109_metrics.csv", 137),   # ngoài nhóm đóng băng (config khác): ô trên TÓC
 ]
+CA_SAI = []      # 0 ca báo oan đã xác nhận (bản đầu của tệp này ghi 3 — SAI, xem trên)
 
 
 def doc_cot(path):
@@ -212,7 +217,15 @@ def chay(rows, luat, settle_steps=DEFAULT_SETTLE_STEPS):
             "frame_chua_xac_minh": dem[TRANG_THAI_CHUA_XAC_MINH]}
 
 
-def khop_nhan(rows, settle_steps=DEFAULT_SETTLE_STEPS):
+def _header(path) -> str:
+    try:
+        with open(path, encoding="utf-8") as f:
+            return f.readline()
+    except OSError:
+        return ""
+
+
+def khop_nhan(rows, settle_steps=DEFAULT_SETTLE_STEPS, rows_path=None):
     """% frame mà phát lại với LUẬT HIỆN TẠI khớp cột `nghi_doi_tuong` đã ghi của phiên.
 
     Vì sao cần: pool CSV trộn ≥3 hành vi cổng (ẩn-vĩnh-viễn trước 24-11 · `settle_steps=8` · re-ID
@@ -221,9 +234,12 @@ def khop_nhan(rows, settle_steps=DEFAULT_SETTLE_STEPS):
     mới được dùng để SO SÁNH luật; phiên lệch vẫn dùng được làm NHÃN nhưng không dùng làm chi phí.
     """
     watch = IdentityWatch(settle_steps=settle_steps)
-    ghi = [r.get("ghi_nghi", "") in ("1", "True", "true") for r in rows]
-    if ghi is None:
+    # Cột KHÔNG TỒN TẠI ⇒ không có gì để so ⇒ `None` (CHƯA ĐO), KHÔNG phải "khớp 100 %".
+    # Bug thật 24-11: `demoip_1121-121732_metrics.csv` KHÔNG có cột `nghi_doi_tuong` (cột cuối là
+    # `track_cos`) ⇒ so "0 sự kiện" với "0 sự kiện" ra khớp 100 % — đúng bẫy "0/None ≠ đã đo".
+    if rows_path is not None and "nghi_doi_tuong" not in _header(rows_path):
         return None, 0
+    ghi = [r.get("ghi_nghi", "") in ("1", "True", "true") for r in rows]
     lai, prev = [], None
     for r in rows:
         co_mask = r["mask_area"] is not None and r["mask_area"] > 0
@@ -281,7 +297,7 @@ def main(argv=None) -> int:
         if not any(r["mask_area"] is not None for r in rows):
             bo_qua += 1
             continue                    # thiếu cột ⇒ ô rỗng ⇒ cổng không thể bật
-        khop, _ = khop_nhan(rows, args.settle)
+        khop, _ = khop_nhan(rows, args.settle, rows_path=p)
         phien.append({
             "ten": p.name,
             "n": len(rows),
@@ -376,11 +392,11 @@ def main(argv=None) -> int:
               f"{t['pct_frame_khong_tin_cay']:5.2f}% | ĐUÔI {t['duoi']:4d} ({t['pct_duoi']:5.2f}%) | "
               f"phiên có báo {t['phien_co_bao']:2d}/{t['so_phien']} | bắt ca ĐÚNG "
               f"{sum(1 for v in t['bat_ca_dung'].values() if v)}/{len(CA_DUNG)}")
-    print(f"[cong] GIỚI HẠN: {len(CA_DUNG)} ca ĐÚNG + {len(CA_SAI)} ca SAI (nhãn SAI là GIẢ THUYẾT — "
-          "phép thử ảnh của nó suy biến) ⇒ CHỈ kết luận được 'luật này có BỎ ca đúng nào không', KHÔNG "
-          "kết luận được 'ít báo oan hơn' (CI95 của tỉ lệ FP với n=23 lần báo là ±19 pp). "
-          "`dt` lấy từ `latency_ms` (xấp xỉ) ⇒ số `theo_dt` chỉ để SO SÁNH hai luật trên cùng dữ liệu. "
-          "`FRAME_SHAPE` là GIẢ ĐỊNH 640×480: run_info.json chưa ghi width/height.")
+    print(f"[cong] GIỚI HẠN: {len(CA_DUNG)} ca ĐÚNG (đọc video HUD, **1 người** dán ⇒ cần người thứ 2 "
+          f"mới được TRÍCH) + {len(CA_SAI)} ca SAI đã xác nhận ⇒ tiêu chí duy nhất dùng được là "
+          "'luật này có BỎ ca đúng nào không'. `dt` = `latency_ms` (xấp xỉ, thiếu pre/queue 10-40 %) "
+          "⇒ số `theo_dt`/`chi_khi_cham` chỉ để SO SÁNH giữa các luật trên cùng dữ liệu. "
+          "`FRAME_SHAPE` = GIẢ ĐỊNH 640×480 (run_info cũ không có khung; từ 24-11 mới ghi).")
     if args.out:
         Path(args.out).write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
         print(f"[cong] {args.out} (git_rev={rev}, git_dirty_code={dirty_code})")
