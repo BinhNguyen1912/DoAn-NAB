@@ -1,14 +1,14 @@
 {
-  "git_rev": "45b4caa95bd028791a0d3fc9a24b960179b5f4f3",
+  "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
   "git_dirty": true,
-  "git_dirty_code": false,
+  "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-24T11:28:27",
+    "do_luc": "2026-11-24T12:14:35",
     "lenh": "scripts/score_miou.py score --gt docs/gt/tran_nen --pred-dir data/tran_nen_masks --out data/miou_tran_nen_truoc_2026-11-24_metrics.json",
-    "git_rev": "45b4caa95bd028791a0d3fc9a24b960179b5f4f3",
+    "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
     "git_dirty": true,
-    "git_dirty_code": false,
+    "git_dirty_code": true,
     "git_loi": null,
     "clip": "data/clip_tran_nen.mp4",
     "nguoi_gan": "Binh",
@@ -71,6 +71,10 @@
     "mask_ngoai_gt_n": 5,
     "mask_ngoai_gt_max": 0.369,
     "mask_ngoai_gt_max_frame": 0,
+    "tran_recall_dung_gt": 0.8169,
+    "tran_recall_n": 5,
+    "tran_ly_thuyet_dung_gt": true,
+    "phu_thieu_mean": 0.1831,
     "n_cham": 5,
     "so_frame_gt_rong": 1,
     "mask_px_gt_rong": {
@@ -96,14 +100,18 @@
         "iou": 0.5324,
         "dien_tich_gt": 14833,
         "dien_tich_pred": 18174,
-        "mask_ngoai_gt": 0.369
+        "mask_ngoai_gt": 0.369,
+        "tran_recall": 0.7731,
+        "phu_thieu": 0.2269
       },
       {
         "frame_idx": 45,
         "iou": 0.7095,
         "dien_tich_gt": 14126,
         "dien_tich_pred": 13362,
-        "mask_ngoai_gt": 0.1462
+        "mask_ngoai_gt": 0.1462,
+        "tran_recall": 0.8076,
+        "phu_thieu": 0.1924
       },
       {
         "frame_idx": 133,
@@ -116,21 +124,27 @@
         "iou": 0.7057,
         "dien_tich_gt": 17774,
         "dien_tich_pred": 15865,
-        "mask_ngoai_gt": 0.1228
+        "mask_ngoai_gt": 0.1228,
+        "tran_recall": 0.783,
+        "phu_thieu": 0.217
       },
       {
         "frame_idx": 266,
         "iou": 0.7575,
         "dien_tich_gt": 15098,
         "dien_tich_pred": 15249,
-        "mask_ngoai_gt": 0.1422
+        "mask_ngoai_gt": 0.1422,
+        "tran_recall": 0.8663,
+        "phu_thieu": 0.1337
       },
       {
         "frame_idx": 400,
         "iou": 0.7882,
         "dien_tich_gt": 15013,
         "dien_tich_pred": 14090,
-        "mask_ngoai_gt": 0.0896
+        "mask_ngoai_gt": 0.0896,
+        "tran_recall": 0.8545,
+        "phu_thieu": 0.1455
       }
     ]
   },

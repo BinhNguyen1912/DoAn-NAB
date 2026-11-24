@@ -1,14 +1,14 @@
 {
-  "git_rev": "6198c4f554462c27eb8df4d90800aaaece58333e",
+  "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
   "git_dirty": true,
-  "git_dirty_code": false,
+  "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-23T16:09:29",
+    "do_luc": "2026-11-24T12:14:42",
     "lenh": "scripts/score_miou.py score --gt docs/gt/vat_be_vaolai --pred-dir data/be2_full_masks --out data/miou_be2_full_2026-11-24_metrics.json",
-    "git_rev": "6198c4f554462c27eb8df4d90800aaaece58333e",
+    "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
     "git_dirty": true,
-    "git_dirty_code": false,
+    "git_dirty_code": true,
     "git_loi": null,
     "clip": "data/clip_be2.mp4",
     "nguoi_gan": "Binh",
@@ -77,6 +77,10 @@
     "mask_ngoai_gt_n": 8,
     "mask_ngoai_gt_max": 0.1526,
     "mask_ngoai_gt_max_frame": 348,
+    "tran_recall_dung_gt": 0.9078,
+    "tran_recall_n": 8,
+    "tran_ly_thuyet_dung_gt": true,
+    "phu_thieu_mean": 0.0922,
     "n_cham": 8,
     "so_frame_gt_rong": 3,
     "mask_px_gt_rong": {
@@ -110,14 +114,18 @@
         "iou": 0.8237,
         "dien_tich_gt": 28057,
         "dien_tich_pred": 23157,
-        "mask_ngoai_gt": 0.0011
+        "mask_ngoai_gt": 0.0011,
+        "tran_recall": 0.8245,
+        "phu_thieu": 0.1755
       },
       {
         "frame_idx": 100,
         "iou": 0.9143,
         "dien_tich_gt": 45662,
         "dien_tich_pred": 43665,
-        "mask_ngoai_gt": 0.0229
+        "mask_ngoai_gt": 0.0229,
+        "tran_recall": 0.9344,
+        "phu_thieu": 0.0656
       },
       {
         "frame_idx": 258,
@@ -142,42 +150,54 @@
         "iou": 0.8358,
         "dien_tich_gt": 82439,
         "dien_tich_pred": 83660,
-        "mask_ngoai_gt": 0.0961
+        "mask_ngoai_gt": 0.0961,
+        "tran_recall": 0.9173,
+        "phu_thieu": 0.0827
       },
       {
         "frame_idx": 348,
         "iou": 0.8117,
         "dien_tich_gt": 68561,
         "dien_tich_pred": 76905,
-        "mask_ngoai_gt": 0.1526
+        "mask_ngoai_gt": 0.1526,
+        "tran_recall": 0.9506,
+        "phu_thieu": 0.0494
       },
       {
         "frame_idx": 352,
         "iou": 0.8828,
         "dien_tich_gt": 61817,
         "dien_tich_pred": 60691,
-        "mask_ngoai_gt": 0.0536
+        "mask_ngoai_gt": 0.0536,
+        "tran_recall": 0.9292,
+        "phu_thieu": 0.0708
       },
       {
         "frame_idx": 380,
         "iou": 0.8606,
         "dien_tich_gt": 50628,
         "dien_tich_pred": 44799,
-        "mask_ngoai_gt": 0.0147
+        "mask_ngoai_gt": 0.0147,
+        "tran_recall": 0.8718,
+        "phu_thieu": 0.1282
       },
       {
         "frame_idx": 400,
         "iou": 0.8823,
         "dien_tich_gt": 32625,
         "dien_tich_pred": 29256,
-        "mask_ngoai_gt": 0.0085
+        "mask_ngoai_gt": 0.0085,
+        "tran_recall": 0.8891,
+        "phu_thieu": 0.1109
       },
       {
         "frame_idx": 440,
         "iou": 0.8888,
         "dien_tich_gt": 34969,
         "dien_tich_pred": 35291,
-        "mask_ngoai_gt": 0.0632
+        "mask_ngoai_gt": 0.0632,
+        "tran_recall": 0.9455,
+        "phu_thieu": 0.0545
       }
     ]
   },

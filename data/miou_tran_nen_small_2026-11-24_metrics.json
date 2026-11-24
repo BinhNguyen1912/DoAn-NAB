@@ -1,12 +1,12 @@
 {
-  "git_rev": "4789d519cdee9381547e1dbce56ae044ecc7ac90",
+  "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
   "git_dirty": true,
   "git_dirty_code": true,
   "git_loi": null,
   "meta": {
-    "do_luc": "2026-11-24T12:00:16",
+    "do_luc": "2026-11-24T12:14:40",
     "lenh": "scripts/score_miou.py score --gt docs/gt/tran_nen --pred-dir data/tn_sm --out data/miou_tran_nen_small_2026-11-24_metrics.json",
-    "git_rev": "4789d519cdee9381547e1dbce56ae044ecc7ac90",
+    "git_rev": "02a93da5db2920aa12e8200b2c77d3693a1a48a3",
     "git_dirty": true,
     "git_dirty_code": true,
     "git_loi": null,
@@ -67,6 +67,10 @@
     "mask_ngoai_gt_n": 2,
     "mask_ngoai_gt_max": 0.3179,
     "mask_ngoai_gt_max_frame": 0,
+    "tran_recall_dung_gt": 0.3167,
+    "tran_recall_n": 5,
+    "tran_ly_thuyet_dung_gt": true,
+    "phu_thieu_mean": 0.6833,
     "n_cham": 5,
     "so_frame_gt_rong": 1,
     "mask_px_gt_rong": {
@@ -92,14 +96,18 @@
         "iou": 0.5696,
         "dien_tich_gt": 14833,
         "dien_tich_pred": 16864,
-        "mask_ngoai_gt": 0.3179
+        "mask_ngoai_gt": 0.3179,
+        "tran_recall": 0.7755,
+        "phu_thieu": 0.2245
       },
       {
         "frame_idx": 45,
         "iou": 0.7155,
         "dien_tich_gt": 14126,
         "dien_tich_pred": 13234,
-        "mask_ngoai_gt": 0.1378
+        "mask_ngoai_gt": 0.1378,
+        "tran_recall": 0.8078,
+        "phu_thieu": 0.1922
       },
       {
         "frame_idx": 133,
@@ -112,21 +120,27 @@
         "iou": 0.0,
         "dien_tich_gt": 17774,
         "dien_tich_pred": 0,
-        "mask_ngoai_gt": null
+        "mask_ngoai_gt": null,
+        "tran_recall": 0.0,
+        "phu_thieu": 1.0
       },
       {
         "frame_idx": 266,
         "iou": 0.0,
         "dien_tich_gt": 15098,
         "dien_tich_pred": 0,
-        "mask_ngoai_gt": null
+        "mask_ngoai_gt": null,
+        "tran_recall": 0.0,
+        "phu_thieu": 1.0
       },
       {
         "frame_idx": 400,
         "iou": 0.0,
         "dien_tich_gt": 15013,
         "dien_tich_pred": 0,
-        "mask_ngoai_gt": null
+        "mask_ngoai_gt": null,
+        "tran_recall": 0.0,
+        "phu_thieu": 1.0
       }
     ]
   },
