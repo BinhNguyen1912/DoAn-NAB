@@ -3713,3 +3713,35 @@ class TestStartKhongBiDemHaiLan:
             session._worker.stop() if hasattr(session._worker, "stop") else None
         assert session._watch_seq == 0, \
             "phải đánh dấu đã ăn seq 0 ngay trong `_start_worker`, nếu không frame start bị đếm 2 lần"
+
+    def test_chon_lai_giua_phien_khong_bo_sot_buoc_that(self):
+        """`start()` lần HAI (chọn lại giữa phiên) cũng đặt `_watch_seq = 0`, còn `self._seq` KHÔNG reset.
+
+        Nếu `_watch_seq` bị đặt sai (về `None`, hoặc về giá trị `self._seq` sắp dùng) thì bước VOS THẬT
+        kế tiếp có thể bị bỏ qua ⇒ `_lost` không tăng. Test: gọi `_start_worker` lần hai, rồi cho một
+        kết quả VOS thật (seq mới do worker sinh) ⇒ phải được tính là bước mới.
+        """
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        frame = np.zeros((48, 64, 3), np.uint8)
+        for _lan in range(2):
+            session._start_worker(frame, session._gray(frame))
+            if hasattr(session._worker, "stop"):
+                session._worker.stop()
+            assert session._watch_seq == 0, "lần start nào cũng phải tiêu thụ sentinel seq 0"
+        # `self._seq` phải đã tăng lên > 0 ⇒ kết quả VOS thật kế tiếp mang seq mới, không phải 0
+        assert session._seq >= 1
+        base = type("R", (), {"frame_idx": 9, "mask": np.zeros((48, 64), bool),
+                              "bbox": (0, 0, 0, 0), "score": 1.0, "elapsed_ms": 40.0,
+                              "raw_lost": True})()
+        session._vos_state = (session._seq, base, session._gray(frame), 0.0, 40.0, 1.0, 0.0, 0.0)
+        session._result_threaded(frame)
+        assert session._buoc_vos_moi is True, "bước VOS thật sau chọn lại KHÔNG được bỏ qua"
