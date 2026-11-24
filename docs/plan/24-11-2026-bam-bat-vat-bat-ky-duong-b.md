@@ -75,6 +75,28 @@ nhiễu 0,0903 — *đây là IoU hộp, không phải mIoU*) ⇒ model chậm h
 | **Có nên spike Cutie** | chưa (không có hiện tượng để sửa) | (không bàn) | có, kill > 150 ms | **Chưa spike.** Điều kiện mở lại ghi trước: chỉ khi có clip GT chứng minh **trôi/ra-vào khung**; dùng `be2` (mốc 0,8625, hai frame tái xuất 0,8358/0,8117), **kill nếu median > 100 ms/frame**. |
 | **"1 việc"** | băng thử refiner | bảng tuyên bố ↔ artifact | quét checkpoint | **Cả ba đều bị số bác hoặc bị hạ ưu tiên** — xem mục ✅. |
 
+### 🎚️ NGƯỠNG NHIỄU CỦA GT — đo 24-11 (đổi cách đọc TẤT CẢ các so sánh)
+
+Người dùng **tô lại 3 frame** (0/222/400) của `docs/gt/tran_nen` thành bộ `docs/gt/tran_nen_lan2`
+(`scripts/gt_noise.py`, artifact `data/gt_noise_2026-11-24_metrics.json`, `git_dirty_code=false`):
+
+| frame | IoU(GT lần 1, GT lần 2) | px chỉ có ở lần 1 | px chỉ có ở lần 2 |
+|---|---|---|---|
+| 0 | 0,7708 | 2 321 | 1 400 |
+| 222 | 0,6816 | 4 192 | 2 154 |
+| 400 | 0,7275 | 3 069 | 1 405 |
+| **trung bình** | **0,7266** | | |
+
+⇒ **ngưỡng "không kết luận" cho mọi chênh mIoU = 0,2734**. Đây là nhiễu **intra-labeler** trên **ca khó
+nhất** (túi mờ, biên không rõ) ⇒ **cận dưới** của sai số GT.
+
+**Áp ngay (và đây là chỗ plan này tự sửa):**
+- **Giữ nguyên** (Δ > 0,27): tiny vs base_plus **0,427** · tiny vs small **0,442** · re-ID vs lan truyền **0,356**.
+- **Hạ xuống "không phân biệt được"** (Δ ≤ 0,27): 320 vs 192 (0,028) · ngưỡng mask 1,0/2,0 (−0,054/−0,167)
+  · mọi refiner biên (≤0,046) · small-config-gốc (0,173).
+- **Hệ quả cho P3**: mốc nghiệm thu `tran_nen ≥ 0,7487` (+0,05) **nằm dưới ngưỡng nhiễu** ⇒ phải đổi thành
+  "Δ cặp > 0,27" **hoặc** dùng ≥3 clip + so cặp có CI95, và nói rõ sai số GT.
+
 ### 5 kết quả ÂM TÍNH parent tự đo trong phiên này (dùng để không ai đề xuất lại)
 
 1. **Quét checkpoint @192 trên `clip_tran_nen`**: tiny **0,6987** · small 0,2570 (config SAMURAI) / 0,5258
@@ -136,12 +158,12 @@ hành vi** (f0/f45 còn giống, từ f222 lệch) ⇒ **cấm** A/B bằng các
 | phương án | số bác |
 |---|---|
 | Đổi checkpoint / model to hơn | tiny 0,6987 vs small 0,2570 / base_plus 0,2716–0,2741 @192 |
-| `image_size` 320 cho live | +0,0282 CI95 chứa 0, p=1,00; giá 534 ms (1,9 FPS) |
-| Ngưỡng mask 1,0/2,0 | 0,6450 / 0,5321 |
+| `image_size` 320 cho live | +0,0282 (CI95 chứa 0, p=1,00) **và** ≪ 0,2734 ⇒ không kết luận; giá 534 ms |
+| Ngưỡng mask 1,0/2,0 | 0,6450 / 0,5321 — **Δ ≤ 0,167 < 0,2734 (nhiễu GT)** ⇒ **KHÔNG KẾT LUẬN ĐƯỢC** (trước 24-11 tôi ghi "tệ hơn": quá lời) |
 | `--reanchor-every` | 0,3965 (tràn 53,9 %) |
 | Bật lại re-ID | 0,4236 vs 0,7794; bịa mask 5/5 frame |
 | Cổng diện tích / cổng cos / latch | 50,5–73,6 % frame NGHI, 91,5 % trong đó báo oan |
-| Refiner `opening+CC`, `erode`, `GrabCut`, `convex hull` | no-op / tệ hơn / chắc chắn tăng tràn |
+| Refiner `opening+CC`, `erode`, `GrabCut`, `convex hull` | no-op / **Δ ≤ 0,046 < 0,2734 ⇒ không phân biệt được** (chỉ `convex hull` loại được bằng lý lẽ: nó nới mask ⇒ tràn tăng) |
 | Cắt mask theo ô LK | no-op (`mask_area/bbox_area` max 0,841) |
 | Đổi tên `docs/gt/*/frames/*` thành `gt_*` | = **tạo GT giả** (12 ảnh gốc 720×1280) |
 | A/B bằng cách **copy file config** | copy y nguyên cũng cho 0,2486 thay vì 0,6987 |

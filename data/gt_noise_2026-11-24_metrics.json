@@ -1,0 +1,54 @@
+{
+  "schema": 1,
+  "do_luc": "2026-11-24T12:26:34",
+  "git_rev": "3c2a87373fd72cd101bf52656d02cdea4a3601a0",
+  "git_dirty": true,
+  "git_dirty_code": false,
+  "lenh": "--a docs/gt/tran_nen --b docs/gt/tran_nen_lan2",
+  "gt_a": "docs/gt/tran_nen",
+  "gt_b": "docs/gt/tran_nen_lan2",
+  "n_frame_chung": 3,
+  "frame_chi_co_a": [
+    45,
+    133,
+    266
+  ],
+  "frame_chi_co_b": [],
+  "dao_gt": "intra_labeler",
+  "ket_qua": {
+    "ioU_GT_mean": 0.7266,
+    "ioU_GT_min": 0.6816,
+    "ioU_GT_max": 0.7708,
+    "nguong_khong_ket_luan": 0.2734,
+    "n": 3,
+    "frames": [
+      {
+        "frame_idx": 0,
+        "iou": 0.7708,
+        "px_a": 14833,
+        "px_b": 13912,
+        "px_chi_a": 2321,
+        "px_chi_b": 1400,
+        "gt_rong_ca_hai": false
+      },
+      {
+        "frame_idx": 222,
+        "iou": 0.6816,
+        "px_a": 17774,
+        "px_b": 15736,
+        "px_chi_a": 4192,
+        "px_chi_b": 2154,
+        "gt_rong_ca_hai": false
+      },
+      {
+        "frame_idx": 400,
+        "iou": 0.7275,
+        "px_a": 15013,
+        "px_b": 13349,
+        "px_chi_a": 3069,
+        "px_chi_b": 1405,
+        "gt_rong_ca_hai": false
+      }
+    ]
+  }
+}
