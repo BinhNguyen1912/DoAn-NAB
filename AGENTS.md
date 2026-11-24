@@ -138,7 +138,11 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   Trần pipeline SAM 2.1 tiny @256 là **~175 ms/frame (5,7 FPS)** và model chiếm 168/175 ms ⇒ tối ưu
   code quanh đó chỉ còn ~20 ms. Số GPU (Colab T4 49,6 ms = 20,15 FPS):
   `docs/task/22-10-2026-colab-gpu-so-lieu-va-fix.md`.
-- **Demo trên CPU dùng `image_size 256`** (155 ms ⇒ ~6,5 FPS); 320 chỉ khi cần chi tiết vật nhỏ.
+- **Demo trên CPU dùng `image_size 192`** (`run:328` — `./run demoip` truyền `--image-size 192`).
+  Đo 24-11 trên máy này: **142,1 ms** mean / 180,1 ms p95 ⇒ 7,0 mask/s (`data/demoip_1124-110536_summary.json`).
+  320 chỉ khi cần chi tiết vật nhỏ (đo: 534 ms/frame, và so cặp 192↔320 **không phân biệt được**).
+  **Đính chính 24-11: dòng cũ ghi "256 / 155 ms / 6,5 FPS" là số của lần đo khác, không phải cấu hình
+  demo** — đã sửa để agent sau không chạy sai.
   Bảng đo: `docs/research/03-kha-nang-real-time-tren-laptop-cpu-igpu.md`.
 - **Đo nguồn live ở đúng nhịp tiêu thụ.** Benchmark đọc liên tục từ webcam/relay cho số sai:
   30 ms "decode" MJPEG thực chất là *chờ* relay phát 20 fps; trong pipeline chỉ chênh ~5 ms.
