@@ -1,9 +1,9 @@
 {
- "git_rev": "d2dc7e7",
+ "git_rev": "0490300",
  "git_dirty": true,
  "git_dirty_code": false,
  "lenh": "scripts/eval_gate_rules.py --out data/eval_gate_rules_2026-11-24_metrics.json",
- "do_luc": "2026-11-24T20:12:05",
+ "do_luc": "2026-11-24T20:26:22",
  "frame_shape": [
   480,
   640
@@ -48,12 +48,13 @@
  ],
  "ca_sai": [],
  "luat_truoc_khi_tai_bam": "hien_tai_truoc_khi_tai_bam",
+ "lost_reset_streak_truoc": 0,
  "lost_reset_streak": 3,
  "reacq_grace_steps": 2,
  "so_phien_doc_duoc": 26,
  "so_phien_bo_qua": 17,
  "so_phien_khop_100pct": 10,
- "ghi_chu_nhan": "NHÃN TẠM: ca 'SAI' (144057#48) có phép thử SUY BIẾN (ô phủ 18% khung) — chưa có nhãn theo luật fill>=0.5 viết trước; xem docstring CA_SAI.",
+ "ghi_chu_nhan": "7 ca DUNG do 1 nguoi dan tren video HUD => chi dung de kiem 'co bo ca dung nao khong'; 0 ca SAI da xac nhan.",
  "tong": {
   "hien_tai": {
    "so_phien": 10,
