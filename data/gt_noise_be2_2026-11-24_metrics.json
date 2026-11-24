@@ -1,9 +1,9 @@
 {
   "schema": 1,
-  "do_luc": "2026-11-24T12:33:00",
-  "git_rev": "2a4118be1b66f5f4036bb1407c0d11ce4fdc5e96",
+  "do_luc": "2026-11-24T12:33:09",
+  "git_rev": "dedfd366d5e023a973d747c6fd8c2a9beca85863",
   "git_dirty": true,
-  "git_dirty_code": true,
+  "git_dirty_code": false,
   "lenh": "--a docs/gt/vat_be_vaolai --b docs/gt/be2_lan2",
   "gt_a": "docs/gt/vat_be_vaolai",
   "gt_b": "docs/gt/be2_lan2",

@@ -533,16 +533,22 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   trên canvas đã ghi đúng câu đó. **Cấm** viết "điểm âm đã khắc phục bám nhầm" khi chưa có clip tái
   hiện ca 21-11 (repo **chưa có** clip đó). Đây là kết quả ÂM TÍNH có artifact:
   `data/ab_diem_am_2026-11-22_metrics.json`, `data/ab_diem_am_512_2026-11-22_metrics.json`.
-- **NGƯỠNG NHIỄU CỦA CHÍNH GT: chênh mIoU < 0,27 là "không kết luận" (đo 24-11, intra-labeler).**
-  Đo bằng `scripts/gt_noise.py`: người tô **lại cùng 3 frame** của `docs/gt/tran_nen` (frame 0/222/400) vào
-  bộ mới `docs/gt/tran_nen_lan2` ⇒ `IoU(GT, GT)` = **0,7266** (min 0,6816 @f222 · max 0,7708 @f0);
-  artifact `data/gt_noise_2026-11-24_metrics.json` (`git_dirty_code=false`). ⇒ **ngưỡng "không kết luận"
-  = 1 − 0,7266 = 0,2734**. Hệ quả phải áp ngay: các kết luận **giữ được** (Δ > 0,27): tiny vs base_plus
-  (0,6987 vs 0,2716 = **0,427**), tiny vs small (0,442), re-ID vs lan truyền (0,4236 vs 0,7794 = **0,356**).
-  Các kết luận **phải hạ xuống "không phân biệt được"** (Δ ≤ 0,27): 320 vs 192 (0,028), `--mask-threshold`
-  1,0 (−0,054) và 2,0 (−0,167), mọi refiner biên (≤0,046), small-config-gốc (0,173). **Đây là nhiễu
-  intra-labeler và đo trên ca KHÓ NHẤT (túi mờ) ⇒ là CẬN DƯỚI của sai số; muốn con số dùng được cho clip
-  khác thì đo `gt_noise` cho chính clip đó.** So 2 trung bình vẫn cần ngưỡng riêng — xem bullet dưới.
+- **NGƯỠNG NHIỄU CỦA CHÍNH GT — phải đo THEO TỪNG CLIP, không có số chung.** Đo 24-11 bằng
+  `scripts/gt_noise.py` (người tô **lại cùng frame**, intra-labeler). Artifact `data/gt_noise_*_metrics.json`:
+
+  | clip | n frame tô lại | IoU(GT,GT) | ngưỡng "không kết luận" = 1−IoU |
+  |---|---|---|---|
+  | `clip_be2` (vật be, **đặc** — clip chủ lực) | 2 (f0 0,8697 · f344 0,8847) | **0,8772** | **0,1228** |
+  | `clip_tran_nen` (**túi mờ** trên nền trắng) | 3 (f0 0,7693 · f222 0,7757 · f400 0,7200) | **0,7550** | **0,2450** |
+
+  ⇒ (a) chênh mIoU **dưới ngưỡng của chính clip đang đo** thì phải viết **"không kết luận"**; (b) **cấm** so
+  chéo hai clip bằng chênh mIoU khi nhiễu hai clip khác nhau (be2 0,12 vs tran_nen 0,25); (c) trên **cùng**
+  clip `tran_nen`, các kết luận **giữ được** là Δ > 0,245: tiny vs base_plus (0,6987 vs 0,2716 = **0,427**),
+  tiny vs small (**0,442**); còn **phải hạ xuống "không phân biệt được"**: 320 vs 192 (0,028),
+  `--mask-threshold` 1,0/2,0 (−0,054/−0,167), mọi refiner biên (≤0,046); (d) bài học phương pháp: **hai lần
+  tô cùng frame mà lệch tới 22 % diện tích** ⇒ con số mIoU tuyệt đối phải đọc kèm "GT tự khớp bao nhiêu",
+  đừng bao giờ trình bày `mIoU = 0,86` như "độ chính xác 86 %".
+
 - **Muốn so hai cấu hình thì so CẶP theo frame (`scripts/paired_miou.py`), đừng so hai giá trị trung
   bình.** So trung bình cần ngưỡng nhiễu mIoU — repo **CHƯA có**; mọi lần trích trước đây đều mượn của
   đại lượng khác (0,019 = `drift_iou`; 0,022–0,034 = `iou_mean` hộp-vs-GT trên `binh1`/`b1b`) nên

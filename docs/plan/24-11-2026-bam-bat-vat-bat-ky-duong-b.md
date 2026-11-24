@@ -87,12 +87,21 @@ Người dùng **tô lại 3 frame** (0/222/400) của `docs/gt/tran_nen` thành
 | 400 | 0,7275 | 3 069 | 1 405 |
 | **trung bình** | **0,7266** | | |
 
-⇒ **ngưỡng "không kết luận" cho mọi chênh mIoU = 0,2734**. Đây là nhiễu **intra-labeler** trên **ca khó
-nhất** (túi mờ, biên không rõ) ⇒ **cận dưới** của sai số GT.
+Và tô lại **2 frame của clip chủ lực** `clip_be2` (bộ `docs/gt/be2_lan2`) ⇒ `IoU(GT,GT)` = **0,8772**
+(f0 0,8697 · f344 0,8847; artifact `data/gt_noise_be2_2026-11-24_metrics.json`).
+
+| clip | IoU(GT,GT) | ngưỡng "không kết luận" |
+|---|---|---|
+| `clip_be2` (vật be **đặc**) | **0,8772** | **0,1228** |
+| `clip_tran_nen` (**túi mờ**) | **0,7550** | **0,2450** |
+
+⇒ **ngưỡng phải lấy THEO CLIP**, không có số chung; và **cấm** so chéo hai clip (nhiễu 0,12 vs 0,25).
+Ghi chú của người tô: ở `be2` frame 344 vật **đang di chuyển, khá mờ** — nhưng nghịch lý là frame đó lại
+khớp **cao hơn** f0 (0,8847 vs 0,8697) vì người tô lần 2 vẽ **rộng hơn** (90 467 vs 82 439 px).
 
 **Áp ngay (và đây là chỗ plan này tự sửa):**
-- **Giữ nguyên** (Δ > 0,27): tiny vs base_plus **0,427** · tiny vs small **0,442** · re-ID vs lan truyền **0,356**.
-- **Hạ xuống "không phân biệt được"** (Δ ≤ 0,27): 320 vs 192 (0,028) · ngưỡng mask 1,0/2,0 (−0,054/−0,167)
+- **Giữ nguyên** (Δ > ngưỡng của clip): tiny vs base_plus **0,427** · tiny vs small **0,442** · re-ID vs lan truyền **0,356**.
+- **Hạ xuống "không phân biệt được"** (Δ ≤ ngưỡng của clip): 320 vs 192 (0,028) · ngưỡng mask 1,0/2,0 (−0,054/−0,167)
   · mọi refiner biên (≤0,046) · small-config-gốc (0,173).
 - **Hệ quả cho P3**: mốc nghiệm thu `tran_nen ≥ 0,7487` (+0,05) **nằm dưới ngưỡng nhiễu** ⇒ phải đổi thành
   "Δ cặp > 0,27" **hoặc** dùng ≥3 clip + so cặp có CI95, và nói rõ sai số GT.
