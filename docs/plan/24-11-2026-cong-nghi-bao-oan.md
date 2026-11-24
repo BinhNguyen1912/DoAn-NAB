@@ -32,25 +32,32 @@ jump·(1 − P/dt)` làm phán quyết **thành hàm của fps hiển thị** (b
 (1) **đóng băng replay thành test**; (2) `max_jump_ratio` vào `run_info`; (3) chỉ số **đuôi**; (4) kiểm
 ảnh vài cú nhảy; (5) tuỳ chọn nâng trần 0,25→0,30.
 
-## 🔬 Đo trong lúc tranh luận (do agent chính thực hiện, đã commit)
-| luật | báo | ẩn | chưa xác minh | **không tin cậy** | **đuôi** | ca ĐÚNG |
-|---|---|---|---|---|---|---|
-| **hiện tại** | 6 | 3,13 % | 9,57 % | **12,70 %** | 8,17 % | 1/1 |
-| `theo_dt` (nhân bán kính theo dt) | 4 | 2,13 % | 10,41 % | 12,53 % | 8,90 % | ❌ **0/1** |
-| `van_toc_lich_su` (dự đoán `prev + v`) | 9 | 4,48 % | 17,96 % | **22,44 %** | 15,67 % | 1/1 (tệ hơn) |
-| `theo_dt_va_dien_tich` (thêm mask_area) | 3 | 1,68 % | 10,86 % | 12,53 % | 9,46 % | ❌ **0/1** |
-| `chi_khi_cham_900` (chỉ báo khi ≤ 900 px/s) | 2 | 0,62 % | 2,80 % | **3,41 %** | 2,80 % | 1/1 |
-| `chi_khi_cham_1200` | 3 | 1,06 % | 2,35 % | **3,41 %** | 2,07 % | 1/1 |
-| `chi_khi_cham_600` | 1 | 0,17 % | 0 % | 0,17 % | 0 % | ❌ **0/1** |
+## 🔬 Đo trong lúc tranh luận (đã commit, cây sạch `243e146`)
+**Kết luận lật 2 lần** — bản cuối cùng dựa trên **đọc video HUD** (`_web.mp4`) của 3 phiên có sự kiện:
 
-Nguồn: `data/eval_gate_rules_2026-11-24_metrics.json` (`git_rev e54c5c2`, `git_dirty_code=false`),
-nhóm **11 phiên ĐÓNG BĂNG / 1 787 frame** (`data/eval_gate_config_list.json` — chọn theo "replay khớp
-100 % cột `nghi_doi_tuong`", đóng băng để đổi luật không làm rẻ mẫu số).
+> **6/6 lần cổng báo trên nhóm đóng băng là ĐÚNG.** Cái được gọi là *"vật đi nhanh nên bị nghi"* thực
+> ra là **vùng bám đã rời VẬT ĐÃ CHỌN**: `144057` chọn **thìa gỗ** (`prompt_bbox=[397,79,491,462]`),
+> người dùng rút thìa gỗ xuống rồi đưa **thìa nhựa trắng** vào ⇒ SAM 2 bám **thìa nhựa** ⇒ danh tính
+> **đã đổi**. `141352` cùng kịch bản. `144226` báo khi **tay người khác** đi vào khung.
 
-**Nhãn (kiểm bằng ô vẽ từ CSV lên frame, ảnh `data/tmp_an/v2_*`, `v3_*`)**:
-`125109#137` = ô trên **tóc người** ⇒ **đổi danh tính THẬT**; `141352#29` và `144057#97` = ô **về đúng
-cái thìa** ⇒ **bám lại**; `144057#48` = ô **ở nền**, mask tràn 2,9× ⇒ **không phải đổi danh tính**.
-⇒ **1 ĐÚNG + 3 SAI**.
+| luật | báo | không tin cậy | **đuôi** | **bắt ca ĐÚNG** |
+|---|---|---|---|---|
+| **hiện tại** | 6 | 15,04 % | 9,68 % | ✅ **7/7** |
+| `theo_dt` | 4 | 14,84 % | 10,54 % | ❌ **3/7** (mất 4) |
+| `van_toc_lich_su` | 9 | **26,57 %** | 18,56 % | ❌ 6/7 (thêm 3 báo, mất 1) |
+| `theo_dt_va_dien_tich` | 3 | 14,84 % | 11,20 % | ❌ **2/7** (mất 5) |
+| `chi_khi_cham_600` | 1 | 0,20 % | 0 % | ❌ 1/7 |
+| `chi_khi_cham_900` | 2 | 4,04 % | 3,31 % | ❌ 3/7 |
+| `chi_khi_cham_1200` | 3 | 4,04 % | 2,45 % | ❌ 4/7 |
+| `chi_khi_cham_1500` | 4 | 13,32 % | 11,20 % | ❌ 5/7 |
+
+Nguồn: `data/eval_gate_rules_2026-11-24_metrics.json` (`git_rev 243e146`, `git_dirty_code=false`),
+nhóm **10 phiên ĐÓNG BĂNG / 1 509 frame** (`data/eval_gate_config_list.json`).
+
+**Số quyết định (chất lượng/đo):** biên `|Δtâm| / bán kính` — bước **KHÔNG báo** cao nhất **0,937**,
+bước **báo** thấp nhất **1,019** ⇒ **khoảng trống chỉ 8 % của ngưỡng**. Và cổng **mù với dịch chuyển
+127–172 px** (141352 f7/f12/f16/f17 — mask tô đặc trên tóc/mặt mà không cảnh báo) ⇒ **lỗi là RECALL,
+không phải precision**. Mọi đề xuất nới ngưỡng đi **sai chiều**.
 
 ## ⚔️ Tranh chấp (vòng 2 — phản biện chéo)
 
@@ -61,16 +68,16 @@ cái thìa** ⇒ **bám lại**; `144057#48` = ô **ở nền**, mask tràn 2,9�
 | **D3** nâng trần 0,25→0,30 | **KHÔNG** (cửa sổ 231–255 px = 3,1 % đường chéo = 1 ca mỗi loại) | **KHÔNG**: **90,3 %** "cải thiện" đến từ 2 phiên **ngoài** nhóm đóng băng; **xoá `092343#264`** (ca AGENTS ghi là báo ĐÚNG); đuôi **146→159 (tệ hơn)** | **KHÔNG**: kwarg hiện tại đổi **4 thứ** cùng lúc (`ratio_factor` nhân luôn `1,5·size`); số 174/1152 chỉ tái lập với biến thể "cap-only" | **KHÔNG** |
 | **D4** 1 việc trong 3 h | mua nhãn | **diễn tập + video dự phòng** | **diễn tập** | **diễn tập** (nhưng 3 h đủ cho *cả* test đóng băng + nhãn) |
 | **LK (port sang `--smooth`)** | bác (2 lý do độc lập: sai thang thời gian; ngoài tầm LK) | bác | bác (5 lý do, có số) | **KHÔNG làm trước bảo vệ** |
-| **Luật `chi_khi_cham`** | — | **không ship** (n=4 nhãn trên 2 phiên, cơ chế "đổi vật chỉ xảy ra khi tay chậm" sai về nguyên tắc) nhưng **phải vào báo cáo** như đối chứng | — | **KHÔNG ship**, ghi vào báo cáo + ticket |
+| **Luật `chi_khi_cham`** | — | **không ship** | — | **KHÔNG ship**: chỉ giữ **3/7–4/7 ca đúng** ⇒ "giảm chi phí" bằng cách bỏ ca báo đúng |
 
 ## ✅ Quyết định
 
-**Chọn: KHÔNG sửa thuật toán cổng trước bảo vệ. Làm 4 việc đo được + 1 việc sửa lỗi thật.**
+**Chọn: KHÔNG sửa thuật toán cổng trước bảo vệ. Làm 3 việc đo được.**
 
-- **Vì sao:** cả 7 luật đã đo đều **thất bại** (bỏ ca báo đúng) hoặc **tệ hơn** (tăng chi phí). Luật duy
-  nhất thắng (`chi_khi_cham_900/1200`: không-tin-cậy **12,70 % → 3,41 %**, giữ 1/1 ca đúng) dựa trên
-  **4 nhãn / 2 phiên khác tải máy** ⇒ chưa đủ để ship; nó thành **giả thuyết có artifact**, cần xác
-  nhận trên phiên live mới.
+- **Vì sao:** cổng báo **đúng 7/7** ca đã kiểm, và **cả 7 luật thay thế đều làm MẤT ca đúng**
+  (3/7 · 2/7 · 1/7 · 4/7 · 6/7). Không có "báo oan" nào để sửa; lỗi thật là **bỏ sót** (dịch chuyển
+  127–172 px không báo; 8/38 lần vật hiện lại sau mất dấu cách > 200 px, gồm 248,9 px ở ca 21-11 —
+  log-only, không sửa vì 2/8 ca đó là "vật ra khỏi khung rồi về").
 - **Bác:**
   - `theo_dt` — bỏ ca báo đúng (0/1), vì ca OAN nhanh **hơn** ca ĐÚNG (1 763 vs 870 px/s).
   - `van_toc_lich_su` — **nhiều lần báo hơn** (9 vs 6) và chi phí 22,44 % (vs 12,70 %).
@@ -85,11 +92,12 @@ cái thìa** ⇒ **bám lại**; `144057#48` = ô **ở nền**, mask tràn 2,9�
         một mẫu số **11 phiên / 1 787 frame** đóng băng trong `data/eval_gate_config_list.json`.
   - [x] Artifact `data/eval_gate_rules_2026-11-24_metrics.json` có `git_rev`, `git_dirty_code=false`,
         `lenh`, `do_luc`, chỉ số **đuôi** và `phien_co_bao`.
-  - [x] Nhãn 4 ca kiểm bằng **ô vẽ từ CSV lên frame** (ảnh tên theo `frame_idx`) ⇒ 1 ĐÚNG + 3 SAI.
+  - [x] Nhãn **7 ca ĐÚNG / 0 SAI** (đọc video HUD; **1 người dán** ⇒ phải có người thứ 2 mới trích).
   - [x] `--settle-steps` / `--max-jump-ratio` là cờ **THẬT** (đi tới `IdentityWatch`), `run_info` có
         `frame_shape` + `max_jump_ratio`; Caps Lock không còn làm `c/r/q` im lặng (7 test mới).
-  - [ ] **Đóng băng replay thành test**: 11 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)`; đổi
-        `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.
+  - [ ] **Đóng băng replay thành test**: 10 phiên ⇒ `(fire=6, ẩn=56, chưa=171, đuôi=146)` + assert
+        **"KHÔNG báo"** cho 4 ca mù (f7 169,1 · f12 172,0 · f16 127,1 · f17 149,2 px) để hành vi hiện
+        tại không trôi; đổi `DEFAULT_MAX_JUMP_RATIO` → 0,30 thì test **phải đỏ**.
   - [ ] **Diễn tập 3 lần**: `nghi ≤ 5 %` frame, đuôi `chua_xac_minh ≤ 20` frame, `ti_le_thoi_luong ≥
         0,95` (baseline `110536` = 0,994, `nghi = 0/200`); 1 video dự phòng cùng kịch bản.
   - [ ] Báo cáo chỉ trích: **"6 lần báo / 1 787 frame (0,34 %), 3/11 phiên, đuôi 8,17 %"** + câu
@@ -99,13 +107,12 @@ cái thìa** ⇒ **bám lại**; `144057#48` = ô **ở nền**, mask tràn 2,9�
 ## 📌 Việc tách ra ticket
 - [ ] **Đóng băng replay thành test** (1,5 h) — `tests/test_eval_gate_frozen.py`, dùng danh sách
       đóng băng, `pytest.skip` khi thiếu `data/`.
-- [ ] **Mua nhãn cho 11 lần báo lệch** (0,75 h) — luật viết trước: ô tại frame báo chứa ≥ 50 % pixel
-      vật đã chọn; ô > 30 % khung ⇒ `khong_ket_luan`.
+- [ ] **Người thứ 2 dán nhãn 6 ca** (0,5 h) — điều kiện để TRÍCH số "7/7" trong báo cáo (hiện 1 người).
 - [ ] **Giữ `prev` qua ≤ 2 frame mất dấu** — làm ca `121732#178` báo lại được (lỗ cấu trúc, không phải
       ngưỡng); giá đo được: ẩn 56→104, chưa xác minh 171→326, đuôi 146→266 (≈ gấp đôi chi phí) ⇒ cần
       quyết riêng.
-- [ ] **Xác nhận `chi_khi_cham_1200` trên phiên live mới** (nếu giữ 1/1 ca đúng và không-tin-cậy
-      ≤ 4 % ⇒ mới được ship). Điều kiện bác bỏ: bỏ bất kỳ ca ĐÚNG nào ⇒ dừng.
+- [ ] **Log-only: đếm "hiện lại sau mất dấu cách > 200 px"** (0,25 h) — đo được **8/38** lần, gồm
+      **248,9 px** (21-11 #178) và **303,8 px** (`110536#142`). Không đổi hành vi.
 - [ ] **Sửa gốc: giảm mask tràn khi vật đi nhanh** (mask nở 2–4× ⇒ ô trôi ⇒ cổng báo). Đây là nguyên
       nhân thật; việc > 4 h ⇒ plan riêng.
 
