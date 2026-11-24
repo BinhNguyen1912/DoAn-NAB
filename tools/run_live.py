@@ -45,6 +45,7 @@ except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn prog
     pass
 
 from src.identity_guard import DEFAULT_SETTLE_STEPS          # noqa: E402
+from src.tracker_engine import MODEL_OVERRIDE_CHO_PHEP        # noqa: E402
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
 from src.live_tracking import xyxy_to_xywh                   # noqa: E402
@@ -596,6 +597,33 @@ def _dem_worker_mo_coi():
         return None
 
 
+def _model_overrides(args) -> dict:
+    """`--model-override k=v` (lặp được) → dict đã ép kiểu; khoá lạ ⇒ SystemExit.
+
+    Ép kiểu theo `MODEL_OVERRIDE_CHO_PHEP` để `samurai_mode=false` không bị truyền thành chuỗi.
+    """
+    ra = {}
+    for item in getattr(args, "model_override", None) or []:
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        if not sep:
+            raise SystemExit(f"[LOI] --model-override cần dạng KEY=VALUE, nhận {item!r}")
+        if key not in MODEL_OVERRIDE_CHO_PHEP:
+            raise SystemExit(f"[LOI] --model-override: khoá {key!r} không hợp lệ. "
+                             f"Chọn trong: {', '.join(sorted(MODEL_OVERRIDE_CHO_PHEP))}")
+        loai = MODEL_OVERRIDE_CHO_PHEP[key]
+        try:
+            if loai is bool:
+                ra[key] = raw.strip().lower() in ("1", "true", "yes", "on")
+            elif loai is int:
+                ra[key] = int(raw)
+            else:
+                ra[key] = float(raw)
+        except ValueError as exc:
+            raise SystemExit(f"[LOI] --model-override {key}={raw!r}: {exc}") from exc
+    return ra
+
+
 def _settle_steps(args):
     """Số bước ổn định trước khi hạ `nghi` → `chua_xac_minh`; `None` = KHÔNG dùng cổng.
 
@@ -711,6 +739,9 @@ def _write_run_info(args, metrics=None):
         # >0 ⇒ khung ĐỔI giữa phiên ⇒ `frame_shape` chỉ đúng cho phần đầu; scorer phải biết.
         frame_shape_doi=getattr(_m, "frame_shape_doi", None),
         max_jump_ratio=_max_jump_ratio(args),
+        # 24-11: siêu tham số motion-memory ĐÃ ĐÈ (None = không đè). Thiếu trường này thì một phiên
+        # thí nghiệm không phân biệt được với phiên mặc định ⇒ không tái lập được.
+        model_overrides=_model_overrides(args) or None,
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -896,6 +927,9 @@ def _run_headless(engine, args):
                     "mask_smoothing": getattr(args, "mask_smoothing", None) or 1.0,
                     # `bbox` nội bộ là (x1,y1,x2,y2); manifest/GT dùng (x,y,w,h) — đổi trước khi ghi
                     "bbox_xywh": list(xyxy_to_xywh(bbox)) if bbox else None,
+                    # 24-11 (Tầng 1): siêu tham số motion-memory ĐÃ ĐÈ — thiếu thì mask dump của hai
+                    # cấu hình khác nhau TRÔNG Y HỆT NHAU ⇒ không tái lập được thí nghiệm.
+                    "model_overrides": _model_overrides(args) or None,
                     "lenh": " ".join(sys.argv),
                     "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
                     "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}
@@ -1025,6 +1059,10 @@ def build_parser():
                          "học đều hoặc bỏ ca báo đúng, hoặc chỉ dời chỗ báo (xem "
                          "docs/plan/24-11-2026-cong-nghi-bao-oan.md). Dùng để DIỄN TẬP có ghi số, "
                          "không dùng để tuyên bố 'đã sửa'.")
+    ap.add_argument("--model-override", action="append", default=None, metavar="KEY=VALUE",
+                    help="CHẨN ĐOÁN: đè siêu tham số motion-memory của SAMURAI (lặp được). Khoá hợp lệ: "
+                         f"{', '.join(sorted(MODEL_OVERRIDE_CHO_PHEP))}. Ví dụ "
+                         "`--model-override kf_score_weight=0.5`. Ghi vào run_info để tái lập.")
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
@@ -1200,6 +1238,7 @@ def main():
         print(f"[pipeline] device=cuda ({_torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
                                         min_obj_score_logits=args.min_obj_score_logits,
+                                         model_overrides=_model_overrides(args),
                                          image_size=args.image_size, device=device,
                                          apply_postprocessing=args.postprocess,
                                          mask_threshold=args.mask_threshold)

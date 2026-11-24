@@ -138,3 +138,36 @@ class TestCoCongNghiDuocTruyenTuRunLive:
 
         assert nhan.get("settle_steps") == 3
         assert nhan.get("max_jump_ratio") == 0.4
+
+
+class TestCoModelOverride:
+    """`--model-override k=v`: ép kiểu đúng, khoá lạ ⇒ SystemExit (không để hydra bỏ qua im lặng)."""
+
+    def test_ep_kieu_va_lap_lai(self):
+        from tools.run_live import _model_overrides, build_parser
+
+        a = build_parser().parse_args([
+            "--source", "x",
+            "--model-override", "kf_score_weight=0.5",
+            "--model-override", "samurai_mode=false",
+            "--model-override", "stable_frames_threshold=8"])
+        assert _model_overrides(a) == {"kf_score_weight": 0.5, "samurai_mode": False,
+                                       "stable_frames_threshold": 8}
+
+    def test_khoa_la_bi_chan(self):
+        import pytest
+
+        from tools.run_live import _model_overrides, build_parser
+
+        a = build_parser().parse_args(["--source", "x", "--model-override", "kf_scor=0.5"])
+        with pytest.raises(SystemExit, match="không hợp lệ"):
+            _model_overrides(a)
+
+    def test_sai_dinh_dang_bi_chan(self):
+        import pytest
+
+        from tools.run_live import _model_overrides, build_parser
+
+        a = build_parser().parse_args(["--source", "x", "--model-override", "kf_score_weight"])
+        with pytest.raises(SystemExit, match="KEY=VALUE"):
+            _model_overrides(a)

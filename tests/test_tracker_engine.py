@@ -291,3 +291,37 @@ class TestBuildOverridesGate:
         from src.tracker_engine import build_overrides
         assert build_overrides(192, 0) == ["++model.image_size=192", "++model.min_obj_score_logits=0"]
         assert build_overrides(None, -100) == ["++model.min_obj_score_logits=-100"]
+
+
+class TestModelOverrides:
+    """Siêu tham số motion-memory của SAMURAI: khoá lạ phải NÉM, không được để hydra bỏ qua im lặng."""
+
+    def test_dung_dinh_dang_hydra(self):
+        from src.tracker_engine import build_overrides
+
+        ra = build_overrides(192, None, {"kf_score_weight": 0.5, "samurai_mode": False,
+                                         "stable_frames_threshold": 8})
+        assert ra == ["++model.image_size=192", "++model.kf_score_weight=0.5",
+                      "++model.samurai_mode=False", "++model.stable_frames_threshold=8"]
+
+    def test_khoa_la_thi_nem(self):
+        import pytest
+
+        from src.tracker_engine import build_overrides
+
+        with pytest.raises(ValueError, match="danh sách trắng"):
+            build_overrides(192, None, {"kf_score_weigth": 0.5})   # typo thật
+
+    def test_khong_doi_hanh_vi_khi_khong_truyen(self):
+        from src.tracker_engine import build_overrides
+
+        assert build_overrides(192, None, None) == ["++model.image_size=192"]
+
+    def test_moi_khoa_trong_danh_sach_trang_deu_dinh_dang_duoc(self):
+        from src.tracker_engine import MODEL_OVERRIDE_CHO_PHEP, build_overrides
+
+        for key, loai in MODEL_OVERRIDE_CHO_PHEP.items():
+            gia = True if loai is bool else (8 if loai is int else 0.5)
+            ra = build_overrides(None, None, {key: gia})
+            assert ra and ra[0].startswith(f"++model.{key}="), key
+            assert "'" not in ra[0], f"{key}: repr lọt dấu nháy ⇒ hydra parse sai"
