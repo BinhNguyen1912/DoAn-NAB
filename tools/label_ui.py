@@ -340,9 +340,12 @@ class _Handler(BaseHTTPRequestHandler):
         return self._json({"ok": True, "record": rec, "tong_hop": tong_hop(phien)})
 
 
-def tao_server(port: int = DEFAULT_PORT, nguoi_gan: str = "?", phien_mac_dinh: str | None = None):
+def tao_server(port: int = DEFAULT_PORT, nguoi_gan: str = "?", phien_mac_dinh: str | None = None,
+               host: str = "127.0.0.1"):
+    """`host` mặc định 127.0.0.1 (chỉ máy này). WSL2 thường chia cổng với Windows nên vẫn mở được từ
+    Chrome Windows; nếu không, chạy `--host 0.0.0.0` rồi mở `http://<IP-WSL>:<cổng>`."""
     handler = type("H", (_Handler,), {"nguoi_gan": nguoi_gan, "phien_mac_dinh": phien_mac_dinh})
-    return ThreadingHTTPServer(("127.0.0.1", port), handler)
+    return ThreadingHTTPServer((host, port), handler)
 
 
 def main(argv=None) -> int:
@@ -351,6 +354,8 @@ def main(argv=None) -> int:
     ap.add_argument("--phien", default=None,
                     help="mở sẵn 1 phiên (tên `…_metrics.csv` hoặc tên phiên)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
+    ap.add_argument("--host", default="127.0.0.1",
+                    help="mặc định 127.0.0.1; dùng 0.0.0.0 nếu Chrome Windows không mở được")
     ap.add_argument("--tong-hop", default=None, metavar="CSV",
                     help="KHÔNG mở server: in + ghi bản tổng hợp nhãn của phiên này")
     args = ap.parse_args(argv)
@@ -374,9 +379,17 @@ def main(argv=None) -> int:
     if nguoi == "?":
         print("[canh bao] chưa có --nguoi-gan ⇒ nhãn sẽ ghi '?' và KHÔNG trích vào báo cáo được "
               "(cần biết ai dán để so 2 người độc lập).")
-    srv = tao_server(args.port, nguoi, args.phien)
+    srv = tao_server(args.port, nguoi, args.phien, args.host)
     port = srv.server_address[1]
-    print(f"[labelui] mở http://127.0.0.1:{port}  (người gán: {nguoi})")
+    dia_chi = "127.0.0.1" if args.host in ("127.0.0.1", "localhost", "0.0.0.0") else args.host
+    print(f"[labelui] mở http://{dia_chi}:{port}  (người gán: {nguoi}, host {args.host})")
+    if args.host == "0.0.0.0":
+        try:
+            import socket
+            ip = socket.gethostbyname(socket.gethostname())
+            print(f"[labelui] hoặc http://{ip}:{port} (từ máy khác trong LAN)")
+        except OSError:
+            pass
     try:
         noi = THU_MUC_NHAN.relative_to(REPO_ROOT)
     except ValueError:                 # thư mục tạm (e2e) nằm ngoài repo

@@ -161,6 +161,15 @@ class TestApiHttp:
             assert r.headers["Content-Range"] == "bytes 4-7/32"
             assert r.read() == b"\x00" * 4
 
+    def test_host_0_0_0_0_bind_duoc(self, tmp_path, monkeypatch):
+        """Doc bảo 'mở http://<IP-WSL>:8770' khi không vào được 127.0.0.1 ⇒ server PHẢI bind 0.0.0.0."""
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        srv = L.tao_server(0, "B", None, host="0.0.0.0")
+        try:
+            assert srv.server_address[0] == "0.0.0.0"
+        finally:
+            srv.server_close()
+
     def test_ten_video_co_dau_gach_cheo_bi_chan(self, may_chu):
         req = urllib.request.Request(may_chu + "/video?v=../setup.py")
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -216,3 +225,4 @@ class TestHangSoVaTaiLieu:
         assert "2 người" in s or "người thứ 2" in s
         assert "hệ số bù" in s, "phải nói về hệ số bù (không bù thì cuối video lệch ~3 s)"
         assert "lệch" in s, "phải cảnh báo người dán khi đứng giữa 2 bước"
+        assert "--host" in s, "hướng dẫn mở từ Windows phải khớp cờ THẬT của tool (--host 0.0.0.0)"

@@ -79,7 +79,7 @@ WSL2 thường chia cổng với Windows, nhưng nếu không:
 ```bash
 # trong WSL: lấy IP của WSL
 hostname -I | awk '{print $1}'          # ví dụ 172.19.180.5
-./run labelui --nguoi-gan Binh --port 8770
+./run labelui --nguoi-gan Binh --host 0.0.0.0
 ```
 Rồi mở `http://<IP-vừa-in>:8770`. Nếu vẫn không vào, kiểm `netsh interface portproxy` trên Windows
 (hoặc chạy `./run labelui` và dùng trình duyệt **trong WSL** nếu có).
