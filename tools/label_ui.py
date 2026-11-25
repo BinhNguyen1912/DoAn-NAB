@@ -37,6 +37,7 @@ import re
 import unicodedata
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -197,6 +198,110 @@ def video_de_phat(ten: str) -> tuple[str | None, bool | None, str | None]:
         return web.name, True, f"đã chuyển mã {goc.name} → {web.name} (H.264) để trình duyệt phát được"
     return goc.name, False, (ghi_chu or "KHÔNG chuyển mã được (thiếu ffmpeg?) — file gốc là mp4v, "
                                        "Chrome KHÔNG phát được")
+
+
+# ── ẢNH TỪNG BƯỚC (dán nhanh: không phải bấm dừng video) ──────────────────────────────────────────
+# Vì sao: tua + dừng video rồi chấm từng bước rất chậm (mỗi lần seek 40–60 ms + phải bấm Space hai lần),
+# và bản ghi cũ (mp4v) thì Chrome không phát được luôn. Ảnh tĩnh lấy sẵn ra JPEG: `←/→` là đổi ảnh ngay,
+# không có khái niệm "đang phát".
+ANH_DIR_NAME = ".anh"          # nằm trong thư mục nhãn; bắt đầu bằng "." để không bị liệt kê là phiên
+_CAP: dict[str, tuple] = {}    # ten -> (VideoCapture, fps, n_frames)
+# OpenCV/FFmpeg **KHÔNG thread-safe** cho một `VideoCapture`: prefetch 4 ảnh song song (4 request của
+# `ThreadingHTTPServer`) từng làm `Assertion fctx->async_lock failed at libavcodec/pthread_frame.c:174`
+# và **abort cả tiến trình**. Mọi truy cập capture đi qua khoá này.
+_CAP_LOCK = threading.Lock()
+
+
+def _mo_video(ten: str):
+    """Mở (và giữ) `VideoCapture` cho phiên; trả `(cap, fps, n_frames)` hoặc `None`.
+
+    Gọi dưới `_CAP_LOCK` (xem `anh_buoc`) — hàm này chỉ ĐỌC/ghi dict, không seek.
+    """
+    if ten in _CAP:
+        return _CAP[ten]
+    ten_video, _, _ = video_de_phat(ten)
+    if not ten_video:
+        return None
+    p = DATA_DIR / ten_video
+    if not p.is_file():
+        return None
+    import cv2
+    cap = cv2.VideoCapture(str(p))
+    if not cap.isOpened():
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+    if fps <= 0 or n <= 0:
+        cap.release()
+        return None
+    if len(_CAP) > 2:                       # giữ tối đa 3 phiên đang mở
+        _CAP.clear()
+    _CAP[ten] = (cap, fps, n)
+    return _CAP[ten]
+
+
+def chi_so_khung(phien: str, buoc: int) -> tuple[int | None, str | None]:
+    """Bước VOS `buoc` ⇒ CHỈ SỐ FRAME trong video (kèm lý do nếu không tính được).
+
+    Dùng đúng phép bù của UI: `t_map = t_uoc_luong × (thời lượng video / tổng latency)` — chia đều
+    `thời lượng/số_bước` lệch tới 12 s trên phiên 98 s (AGENTS §6).
+    """
+    mo = _mo_video(phien)
+    if not mo:
+        return None, "không mở được video"
+    _, fps, n = mo
+    try:
+        d = doc_phien_cached(DATA_DIR / f"{phien}_metrics.csv")
+    except (OSError, ValueError) as e:
+        return None, f"không đọc được CSV: {e}"
+    if not 0 <= buoc < len(d["frames"]):
+        return None, f"buoc ngoài dải 0..{len(d['frames']) - 1}"
+    thoi_luong = n / fps
+    tong = d["tong_latency_s"] or 0.0
+    he_so = min(2.0, max(0.5, thoi_luong / tong)) if tong > 1 and thoi_luong > 1 else 1.0
+    t = d["frames"][buoc]["t_uoc_luong"] * he_so
+    return int(round(t * fps)), None
+
+
+def anh_buoc(phien: str, buoc: int) -> tuple[bytes | None, str | None]:
+    """JPEG của khung hình tại bước `buoc` (cache trên đĩa, lần 2 trả ngay)."""
+    if not ten_hop_le(phien):
+        return None, "tên phiên không hợp lệ"
+    try:
+        buoc = int(buoc)
+    except (TypeError, ValueError):
+        return None, "buoc phải là số nguyên"
+    thu_muc = THU_MUC_NHAN / ANH_DIR_NAME / phien
+    tep = thu_muc / f"{buoc:06d}.jpg"
+    if tep.is_file() and tep.stat().st_size > 0:
+        return tep.read_bytes(), None
+    idx, loi = chi_so_khung(phien, buoc)
+    if idx is None:
+        return None, loi
+    import cv2
+    with _CAP_LOCK:                      # seek+read TUẦN TỰ: FFmpeg không chịu được truy cập song song
+        mo = _mo_video(phien)
+        if not mo:
+            return None, "không mở được video"
+        cap, _, n = mo
+        cap.set(cv2.CAP_PROP_POS_FRAMES, max(0, min(idx, int(n) - 1)))
+        ok, khung = cap.read()
+    if not ok or khung is None:
+        return None, f"không đọc được frame {idx} của video"
+    # Thu nhỏ còn ≤ 960 px ngang: đủ nét để thấy ô/mask, nhẹ để `←/→` không phải chờ.
+    h, w = khung.shape[:2]
+    if w > 960:
+        khung = cv2.resize(khung, (960, int(round(h * 960 / w))), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", khung, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    if not ok:
+        return None, "không nén được JPEG"
+    du_lieu = buf.tobytes()
+    try:
+        thu_muc.mkdir(parents=True, exist_ok=True)
+        tep.write_bytes(du_lieu)
+    except OSError:
+        pass                                  # cache là tiện ích; không ghi được vẫn phải trả ảnh
+    return du_lieu, None
 
 
 def liet_ke_phien() -> list[dict]:
@@ -575,6 +680,19 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if u.path == "/video":
             return self._video(q)
+        if u.path == "/anh":
+            ten = (q.get("phien") or [""])[0]
+            buoc = (q.get("buoc") or ["0"])[0]
+            du_lieu, loi = anh_buoc(ten, buoc)
+            if du_lieu is None:
+                return self._json({"loi": loi or "không lấy được ảnh"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(du_lieu)))
+            self.send_header("Cache-Control", "max-age=86400")   # ảnh của một bước là bất biến
+            self.end_headers()
+            ghi_an_toan(self.wfile, du_lieu)
+            return
         if u.path == "/api/sessions":
             return self._json({"phien": liet_ke_phien(), "phien_mac_dinh": self.phien_mac_dinh,
                                "nguoi_gan": self.nguoi_gan, "nhan": NHAN})
@@ -603,6 +721,13 @@ class _Handler(BaseHTTPRequestHandler):
             ten_video, la_h264, ghi_chu_video = video_de_phat(ten)
             d["video"] = ten_video
             d["video_phat_duoc"] = bool(la_h264)
+            mo = _mo_video(ten)
+            if mo:
+                cap = mo[0]
+                import cv2
+                d["rong"] = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 640)
+                d["cao"] = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 480)
+            d["che_do_mac_dinh"] = "anh"
             d["canh_bao_video"] = ghi_chu_video
             d["nguoi_dang_dan"] = toi or None
             d["da_gan"] = cua_toi

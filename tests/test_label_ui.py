@@ -822,6 +822,122 @@ class TestVideoPhatDuoc:
             srv.server_close()
 
 
+class TestAnhTungBuoc:
+    """Chế độ ẢNH (dán nhanh): mỗi bước = 1 JPEG lấy từ video, cache trên đĩa.
+
+    Người dùng yêu cầu 25-11: dừng video rồi chấm từng bước quá chậm ⇒ phải cắt sẵn frame.
+    """
+
+    @staticmethod
+    def _video(tmp_path, monkeypatch, n_frame=30, fps=10.0):
+        import cv2
+        import numpy as np
+        d = tmp_path / "data"
+        d.mkdir()
+        p = d / "phien1.mp4"
+        w = cv2.VideoWriter(str(p), cv2.VideoWriter_fourcc(*"mp4v"), fps, (64, 48))
+        for k in range(n_frame):
+            khung = np.full((48, 64, 3), k * 8 % 255, np.uint8)
+            w.write(khung)
+        w.release()
+        assert p.is_file() and p.stat().st_size > 0
+        rows = "\n".join(f"{k},{100},10,10,4,4,9" for k in range(n_frame // 2))
+        (d / "phien1_metrics.csv").write_text(
+            "frame_idx,latency_ms,center_x,center_y,bbox_w,bbox_h,mask_area\n" + rows + "\n",
+            encoding="utf-8")
+        monkeypatch.setattr(L, "DATA_DIR", d)
+        monkeypatch.setattr(L, "THU_MUC_NHAN", d / "nhan")
+        monkeypatch.setattr(L, "_CAP", {})
+        import src.worker as W
+        monkeypatch.setattr(W, "transcode_for_web", lambda *a, **k: None)
+        return d, p
+
+    def test_chi_so_khung_va_he_so_bu(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        idx, loi = L.chi_so_khung("phien1", 0)
+        assert loi is None and idx == 0
+        idx_cuoi, loi_cuoi = L.chi_so_khung("phien1", L.doc_phien_cached(
+            L.DATA_DIR / "phien1_metrics.csv")["frames"].__len__() - 1)
+        assert loi_cuoi is None and 0 <= idx_cuoi < 30
+        # ngoài dải bước ⇒ None + lý do, KHÔNG được trả 0 (bẫy "0/None ≠ đã đo")
+        assert L.chi_so_khung("phien1", 999) == (None, L.chi_so_khung("phien1", 999)[1])
+        assert L.chi_so_khung("phien1", 999)[0] is None
+
+    def test_anh_buoc_tra_jpeg_va_cache(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        du_lieu, loi = L.anh_buoc("phien1", 1)
+        assert loi is None and du_lieu[:2] == b"\xff\xd8"      # magic bytes JPEG
+        import cv2
+        import numpy as np
+        anh = cv2.imdecode(np.frombuffer(du_lieu, np.uint8), cv2.IMREAD_COLOR)
+        assert anh.shape[:2] == (48, 64)
+        tep = L.THU_MUC_NHAN / L.ANH_DIR_NAME / "phien1" / "000001.jpg"
+        assert tep.is_file() and tep.read_bytes() == du_lieu        # lần 2 phục vụ từ đĩa
+        lan2, loi2 = L.anh_buoc("phien1", 1)
+        assert loi2 is None and lan2 == du_lieu
+
+    def test_anh_buoc_khac_nhau_theo_buoc(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        a, _ = L.anh_buoc("phien1", 0)
+        b, _ = L.anh_buoc("phien1", 5)
+        assert a != b, "hai bước khác nhau phải ra hai khung hình khác nhau"
+
+    @pytest.mark.parametrize("ten", ["../etc", "a/b", "", "phien1\x00"])
+    def test_ten_phien_khong_hop_le(self, ten):
+        assert L.anh_buoc(ten, 0)[0] is None
+
+    def test_buoc_khong_phai_so(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        assert L.anh_buoc("phien1", "abc")[0] is None
+
+    def test_khong_mo_duoc_video(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        L._CAP.clear()
+        monkeypatch.setattr(L, "video_de_phat", lambda ten: (None, None, "không có"))
+        assert L.anh_buoc("phien1", 0)[0] is None
+
+    def test_route_anh_tra_jpeg_va_404(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            goc = f"http://127.0.0.1:{srv.server_address[1]}"
+            with urllib.request.urlopen(goc + "/anh?phien=phien1&buoc=2") as r:
+                assert r.headers["Content-Type"] == "image/jpeg"
+                assert r.read()[:2] == b"\xff\xd8"
+            with pytest.raises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(goc + "/anh?phien=khong_co&buoc=0")
+            assert e.value.code == 404
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_api_frames_tra_rong_cao_cua_video(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            d = json.load(urllib.request.urlopen(
+                f"http://127.0.0.1:{srv.server_address[1]}/api/frames?phien=phien1"))
+            assert (d["rong"], d["cao"]) == (64, 48)      # UI quy đổi ảnh đã thu nhỏ → pixel video
+            assert d["che_do_mac_dinh"] == "anh"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_cap_khong_bi_dung_song_song(self, tmp_path, monkeypatch):
+        """FFmpeg không thread-safe: prefetch nhiều ảnh song song từng làm abort cả tiến trình."""
+        self._video(tmp_path, monkeypatch, n_frame=40)
+        ket, loi = [], []
+        def mot(b):
+            d, e = L.anh_buoc("phien1", b)
+            (ket.append(d) if d else loi.append(e))
+        ts = [threading.Thread(target=mot, args=(b,)) for b in range(3, 15)]
+        [t.start() for t in ts]
+        [t.join() for t in ts]
+        assert not loi and len(ket) == 12
+
+
 class TestClientHuyKetNoi:
     """Chrome huỷ request Range khi tua video ⇒ `write()` ném ConnectionResetError và `http.server` in
     traceback 20 dòng vào terminal đang dán nhãn (người dùng báo 25-11). Video vẫn phát bình thường —
@@ -905,7 +1021,11 @@ class TestHangSoVaTaiLieu:
         """Nhãn mù tệ hơn không có nhãn — đúng ca 25-11 (ảnh đen mà vẫn ghi được "ĐÚNG #0")."""
         h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
         assert "function datTrangThaiVideo" in h
-        assert "if (!state.videoOk)" in h, "ghiNhan phải từ chối khi video chưa phát được"
+        # 25-11 (tối): thêm chế độ ẢNH ⇒ điều kiện phải theo CHẾ ĐỘ đang xem (ảnh tải được là đủ),
+        # nhưng vẫn phải CHẶN khi nguồn đang xem không hiện được.
+        assert "state.cheDo === 'anh' ? !state.anhOk : !state.videoOk" in h, \
+            "ghiNhan phải từ chối khi NGUỒN ĐANG XEM (ảnh hoặc video) chưa hiện được"
+        assert "state.anhOk" in h and "state.videoOk" in h
         assert "addEventListener('error'" in h, "phải bắt lỗi giải mã để báo, không im lặng"
         assert "KHÔNG PHÁT ĐƯỢC VIDEO" in h
 

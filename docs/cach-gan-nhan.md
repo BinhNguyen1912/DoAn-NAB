@@ -44,6 +44,15 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 
 ## 2. Cách đi nhanh (đừng xem cả video từ đầu)
 
+**Chế độ mặc định là "Ảnh từng bước"** (ô chọn cạnh ô "Người gán"). Mỗi bước suy luận được server
+cắt sẵn thành **một ảnh JPEG** (có sẵn cả HUD: ô, mask, quỹ đạo như trong video) ⇒ `←`/`→` là **đổi
+ảnh ngay**, không phải phát + bấm dừng + tua. Không cần chờ video, và **phiên cũ codec `mp4v`
+(màn hình đen) vẫn dán được** — ảnh lấy thẳng từ file, không qua trình duyệt giải mã.
+
+- Lần đầu mở một bước: 60–350 ms (server seek + đọc frame + nén); các bước đã xem: **~9 ms** (đọc từ
+  cache trong `data/nhan/.anh/<phiên>/`). UI tự tải trước 4 bước kế ⇒ bấm liên tục vẫn mượt.
+- Muốn xem **chuyển động** (vật đi nhanh, có bị đổi đối tượng hay không): đổi ô chọn sang **"Video"**.
+  Cảnh báo `LỆCH` chỉ có nghĩa ở chế độ Video (ở chế độ Ảnh bạn luôn đứng đúng bước).
 - `→` / `←`: nhảy tới **bước suy luận** kế/trước. Đây là nhịp cần chấm (mỗi bước ~0,2–0,3 s), không
   phải từng frame video. Thanh bên phải hiện `#frame_vos` và `bước … ms`.
 - `Space`: phát/dừng. `,` `.`: nhích ±0,2 s khi hình đã đổi mà thời điểm ước lượng còn lệch.

@@ -547,7 +547,7 @@ EOF
     win_root="$(wslpath -w "$ROOT")"
     win_nhan="$(wslpath -w "$nhan_dir")"
     win_data="$(wslpath -w "$data_dir")"
-    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& set PHIEN=$phien& set LABELUI_NHAN_DIR=$win_nhan& set LABELUI_DATA_DIR=$win_data& node scripts\\e2e_label_ui.js"
+    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& set PHIEN=$phien& set LABELUI_NHAN_DIR=$win_nhan& set LABELUI_DATA_DIR=$win_data& set LABELUI_GIU_NHAN=${LABELUI_GIU_NHAN:-}& node scripts\\e2e_label_ui.js"
     ;;
   gte2e)
     # E2E TRÌNH DUYỆT THẬT cho trình tô GT (`scripts/gt_painter.html`). Vì sao riêng một target: PR #49
