@@ -180,36 +180,39 @@ function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.f
 
 async function chonPhien(ten){
   state.dangTai = true;
-  state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
-  veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
-  buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
-  const toi = ($('nguoi').value || '').trim();
-  const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
-                          + '&nguoi=' + encodeURIComponent(toi));
-  state.phien = ten;               // chỉ nhận phiên MỚI khi đã tải được (lỗi ⇒ giữ nguyên phiên cũ)
-  state.frames = d.frames;
-  state.tongLatency = d.tong_latency_s;
-  state.chuaXacMinh = (await getJSON('/api/sessions')).phien
-    .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
-  state.daGan = d.da_gan || [];
-  state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
-  state.nguoiKhac = d.nguoi_khac || [];
-  const v = $('v');
-  // Chỉ nạp lại khi ĐÚNG là video khác: đổi tên người dán cũng gọi lại `chonPhien` (để server lọc
-  // nhãn theo người) mà nạp lại video thì `currentTime` về 0 ⇒ nút "bước sau" như chết.
-  const nguon = '/video?v=' + encodeURIComponent(d.video);
-  if (v.getAttribute('src') !== nguon){
-    v.src = nguon;
-    v.load();
+  try {
+    state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
+    veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+    buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
+    const toi = ($('nguoi').value || '').trim();
+    const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
+                            + '&nguoi=' + encodeURIComponent(toi));
+    state.phien = ten;               // chỉ nhận phiên MỚI khi đã tải được (lỗi ⇒ giữ nguyên phiên cũ)
+    state.frames = d.frames;
+    state.tongLatency = d.tong_latency_s;
+    state.chuaXacMinh = (await getJSON('/api/sessions')).phien
+      .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
+    state.daGan = d.da_gan || [];
+    state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
+    state.nguoiKhac = d.nguoi_khac || [];
+    const v = $('v');
+    // Chỉ nạp lại khi ĐÚNG là video khác: đổi tên người dán cũng gọi lại `chonPhien` (để server lọc
+    // nhãn theo người) mà nạp lại video thì `currentTime` về 0 ⇒ nút "bước sau" như chết.
+    const nguon = '/video?v=' + encodeURIComponent(d.video);
+    if (v.getAttribute('src') !== nguon){
+      v.src = nguon;
+      v.load();
+    }
+    const cxm = state.chuaXacMinh;
+    $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
+      + (cxm !== null ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
+          + `CHUA XAC MINH: ${cxm} frame</span>` : '')
+      + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
+    window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
+    veTienDo(); veBang();
+  } finally {
+    state.dangTai = false;          // lỗi giữa đường KHÔNG được khoá vĩnh viễn mọi phím
   }
-  const cxm = state.chuaXacMinh;
-  $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
-    + (cxm !== null ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
-        + `CHUA XAC MINH: ${cxm} frame</span>` : '')
-    + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
-  window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
-  veTienDo(); veBang();
-  state.dangTai = false;
   $('phien').blur();
 }
 
@@ -400,7 +403,8 @@ function veTienDo(){
 
 function veBang(){
   const nguoi = ($('nguoi').value || '').trim();
-  const rows = state.daGan.filter(r => r.nguoi_gan === nguoi).slice(-8).reverse();
+  const khoa = (t) => (t || '').normalize('NFC').toLowerCase();   // khớp `khoa_ten` ở server
+  const rows = state.daGan.filter(r => khoa(r.nguoi_gan) === khoa(nguoi)).slice(-8).reverse();
   $('bang').innerHTML = rows.map(r =>
     `<tr><td>${r.frame_vos}</td><td>${Number(r.t_video).toFixed(1)}</td>
      <td><span class="pill ${PILL[r.nhan]||'warn'}">${NHAN_VI[r.nhan]||r.nhan}</span></td></tr>`).join('');
@@ -432,7 +436,8 @@ async function luuVaTiep(){
   if (await ghiNhan(state.nhanChon.nhan)) nhayBuoc(1);   // lỗi ⇒ Ở LẠI bước này
 }
 $('btnLuu').onclick = luuVaTiep;
-$('phien').onchange = e => chonPhien(e.target.value);
+$('phien').onchange = e => chonPhien(e.target.value)
+  .catch(err => flash('LỖI tải phiên: ' + (err.message || err)));
 $('nguoi').oninput = () => {
   const t = ($('nguoi').value || '').trim();
   if (t && t !== '?') localStorage.setItem('labelui_nguoi', t);   // nhớ NGAY, không đợi nhãn đầu
@@ -441,7 +446,10 @@ $('nguoi').oninput = () => {
 $('nguoi').onchange = async () => {
   // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
   // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).
-  if (state.phien) await chonPhien(state.phien);
+  if (state.phien) {
+    try { await chonPhien(state.phien); }
+    catch (e) { flash('LỖI tải phiên: ' + (e.message || e)); }
+  }
 };
 
 // Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và

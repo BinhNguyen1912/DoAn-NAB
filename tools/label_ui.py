@@ -319,6 +319,18 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
     return rec
 
 
+def _khong_nan(x):
+    """Thay NaN/±Infinity bằng `None` để JSON còn đọc được (số méo ⇒ "không đo được", không phải 0)."""
+    import math
+    if isinstance(x, float):
+        return x if math.isfinite(x) else None
+    if isinstance(x, dict):
+        return {k: _khong_nan(v) for k, v in x.items()}
+    if isinstance(x, (list, tuple)):
+        return [_khong_nan(v) for v in x]
+    return x
+
+
 def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
     """Đếm theo nhãn + theo NGƯỜI GÁN (mỗi người một dòng ⇒ so được 2 người độc lập).
 
@@ -416,7 +428,12 @@ class _Handler(BaseHTTPRequestHandler):
         return
 
     def _json(self, payload, code=200):
-        body = json.dumps(payload, ensure_ascii=False).encode()
+        # `allow_nan=False`: CSV có `latency_ms`/`t_uoc_luong` = NaN/Infinity (file bị sửa tay) thì
+        # `json.dumps` mặc định in ra `NaN` — KHÔNG phải JSON, Chrome `JSON.parse` ném ⇒ cả UI chết.
+        try:
+            body = json.dumps(payload, ensure_ascii=False, allow_nan=False).encode()
+        except ValueError:
+            body = json.dumps(_khong_nan(payload), ensure_ascii=False).encode()
         self.send_response(code)
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
@@ -678,7 +695,8 @@ def tao_server(port: int = DEFAULT_PORT, nguoi_gan: str = "?", phien_mac_dinh: s
     return ThreadingHTTPServer((host, port), handler)
 
 
-def _ghi_artifact(ten: str, d: dict, *, ket_qua: bool, ly_do: str | None = None) -> Path:
+def _ghi_artifact(ten: str, d: dict, *, ket_qua: bool, ly_do: str | None = None,
+                  kiem_dai_buoc: bool | None = None) -> Path:
     """Ghi `<phiên>_tonghop.json` — LUÔN có `ket_qua` (true/false) + `ly_do`.
 
     Trước đây file được ghi TRƯỚC các cổng kiểm ⇒ một lần chạy "chưa trích được" vẫn để lại artifact
@@ -687,6 +705,7 @@ def _ghi_artifact(ten: str, d: dict, *, ket_qua: bool, ly_do: str | None = None)
     out = THU_MUC_NHAN / f"{ten}_tonghop.json"
     out.parent.mkdir(parents=True, exist_ok=True)
     out.write_text(json.dumps({"phien": ten, "git_rev": _git_rev(), "ket_qua": ket_qua, "ly_do": ly_do,
+                               "kiem_dai_buoc": kiem_dai_buoc,
                                "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
                                **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
     print(f"\n[artifact] {duong_dan_gon(out)}  (ket_qua={ket_qua}"
@@ -733,6 +752,12 @@ def main(argv=None) -> int:
                 ngoai = [r.get("buoc") for r in doc_nhan(ten)
                          if isinstance(r, dict) and isinstance(r.get("buoc"), int)
                          and not 0 <= r["buoc"] < n_buoc]
+        kiem_dai = n_buoc is not None
+        if not kiem_dai:
+            # Chạy trên clone sạch: `data/nhan/*.jsonl` được track còn `data/*_metrics.csv` thì KHÔNG ⇒
+            # không có CSV để đối chiếu. Đã từng ghi `ket_qua=true` mà không nói cổng này bị bỏ qua.
+            print(f"[tong-hop] CẢNH BÁO: không tìm/đọc được CSV ({csv_p}) ⇒ KHÔNG kiểm được `buoc` có "
+                  "nằm trong dải bước của phiên (artifact ghi `kiem_dai_buoc: false`)")
         if ngoai:
             print(f"[tong-hop] LỖI: {len(ngoai)} nhãn có `buoc` NGOÀI dải 0..{n_buoc - 1} "
                   f"(vd {ngoai[:3]}) ⇒ CSV đã bị sinh lại hoặc nhãn thuộc phiên khác; "
@@ -754,7 +779,8 @@ def main(argv=None) -> int:
                       "(tool phiên bản cũ) ⇒ hai người đang ở hai không-gian khoá khác nhau")
             _ghi_artifact(ten, d, ket_qua=False, ly_do="không có bước nào cả hai cùng dán")
             return 1
-        _ghi_artifact(ten, d, ket_qua=True)
+        _ghi_artifact(ten, d, ket_qua=True, kiem_dai_buoc=kiem_dai,
+                     ly_do=(None if kiem_dai else "không có CSV để đối chiếu dải `buoc`"))
         return 0
 
     nguoi = (args.nguoi_gan or "").strip() or "?"

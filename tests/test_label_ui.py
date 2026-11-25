@@ -320,6 +320,28 @@ class TestApiHttp:
             urllib.request.urlopen(req)
         assert e.value.code == 400
 
+    def test_NaN_trong_csv_khong_lam_hong_JSON(self, tmp_path, monkeypatch):
+        """`json.dumps` mặc định in `NaN`/`Infinity` — KHÔNG phải JSON, Chrome `JSON.parse` ném ⇒ cả UI
+        chết. `/api/frames` phải trả `null` cho số méo (review vòng 5, P3-B)."""
+        (tmp_path / "data").mkdir(exist_ok=True)
+        csv = tmp_path / "data" / "nan_metrics.csv"
+        csv.write_text("frame_idx,latency_ms,center_x,center_y,bbox_w,bbox_h,mask_area\n"
+                       "0,NaN,10,10,4,4,Infinity\n", encoding="utf-8")
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "data" / "nhan")
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            raw = urllib.request.urlopen(
+                f"http://127.0.0.1:{srv.server_address[1]}/api/frames?phien=nan").read()
+            # chỉ kiểm GIÁ TRỊ (tên test chứa chữ "NaN" nên không so cả payload)
+            assert b": NaN" not in raw and b": Infinity" not in raw
+            assert b": -Infinity" not in raw
+            json.loads(raw)                       # parser strict: phải đọc được
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
     def test_body_qua_lon_tra_413(self, may_chu):
         """Nhãn chỉ vài trăm byte; `Content-Length` khổng lồ không được làm server cấp phát theo."""
         import http.client
@@ -620,6 +642,19 @@ class TestTongHopCLI:
             L.ghi_nhan("demoip_x", {"buoc": 99, "frame_vos": 99, "nhan": "dung"}, nguoi)
         assert L.main(["--tong-hop", str(csv)]) == 1
         assert "NGOÀI dải" in capsys.readouterr().out
+
+    def test_thieu_CSV_thi_artifact_ghi_kiem_dai_buoc_false(self, tmp_path, monkeypatch, capsys):
+        """Chạy trên clone sạch: nhãn được track còn CSV thì không ⇒ cổng dải `buoc` KHÔNG chạy. Artifact
+        phải nói rõ, không được trông y như đã kiểm (review vòng 5, P2-A)."""
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        for nguoi in ("Binh", "An"):
+            L.ghi_nhan("khong_co_csv", {"buoc": 0, "frame_vos": 0, "nhan": "dung"}, nguoi)
+        ma = L.main(["--tong-hop", str(tmp_path / "khong_co_csv_metrics.csv")])   # file KHÔNG tồn tại
+        out = capsys.readouterr().out
+        art = json.loads((tmp_path / "nhan" / "khong_co_csv_tonghop.json").read_text(encoding="utf-8"))
+        assert ma == 0, out
+        assert art["kiem_dai_buoc"] is False and art["ket_qua"] is True
+        assert "KHÔNG kiểm được" in out
 
     def test_duong_dan_gon_khong_nem(self, tmp_path, monkeypatch):
         monkeypatch.setattr(L, "REPO_ROOT", tmp_path)

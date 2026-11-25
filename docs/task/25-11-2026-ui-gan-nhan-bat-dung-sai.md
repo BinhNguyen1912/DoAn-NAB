@@ -142,8 +142,19 @@ P3 đã sửa: `t_video` kiểu lạ ⇒ 400 (trước 500); `Infinity`/`NaN` b�
 chỗ kèm `ket_qua`/`ly_do`; in `so_nhan_thieu_buoc` khi hai người ở hai không-gian khoá; bỏ `assert … or
 True`; test khẳng định **đúng tập 5 nhãn**; chưa tải xong phiên thì không cho ghi.
 
-- **Sau khi sửa (4 vòng review):** `./run lint` xanh · `./run test` **2 174 passed** ·
-  `tests/test_label_ui.py` **91 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
+### Review vòng 5 (task `mwvrmozv-68bc`) — **mergeable, không còn P0/P1**
+
+Vòng 5 chỉ trả lời "merge được chưa" và tìm thêm **2 P2** (không P1): (a) chạy trên **clone sạch** thì CSV
+không được track ⇒ cổng "buoc ngoài dải" **không chạy** mà artifact vẫn `ket_qua=true` như đã kiểm (nay
+ghi thêm `kiem_dai_buoc: false` + cảnh báo); (b) `chonPhien` đặt `dangTai = true` rồi **không xoá khi
+fetch lỗi** ⇒ mọi phím bị từ chối tới khi reload, không có thông báo (nay `try/finally` + `.catch` ở cả
+hai handler). P3 đã sửa: bảng "nhãn gần nhất" so **chuỗi thô** nên gõ lại tên khác hoa/thường thì bảng
+rỗng dù bộ đếm đầy (nay so theo NFC+lowercase như server); `/api/frames` có thể phát `NaN`/`Infinity`
+(`json.dumps` mặc định in ra — **không phải JSON**, Chrome `JSON.parse` ném ⇒ UI chết) ⇒ nay `allow_nan=False`
++ thay số méo bằng `null`; test khẳng định thêm `kiem_dai_buoc` và "payload không có `: NaN`".
+
+- **Sau khi sửa (5 vòng review):** `./run lint` xanh · `./run test` **2 176 passed** ·
+  `tests/test_label_ui.py` **93 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 
@@ -220,7 +231,9 @@ Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiể
 - [ ] (Tầng 2, việc lớn > 4 h ⇒ cần plan 3 ý kiến) **xác minh bằng mask thật**: re-prompt SAM 2 rồi
       chấm mask-vs-mask để tách "vẫy nhanh" khỏi "đổi vật" — đó mới là thứ cứu ca *"vật vào lại thì bám
       sang tường"*.
-- [ ] (P2/P3 từ review độc lập — xem mục dưới)
+- [ ] P3 còn nợ từ review (không chặn): `veTienDo` vẫn tự đếm theo tên gõ trong UI trong khi dữ liệu do
+      server lọc — hai chỗ có thể lệch nếu người dùng đổi tên giữa phiên (đã có `.catch` + `try/finally`,
+      chỉ còn chuyện hiển thị).
 
 ## 📚 Tài liệu tham khảo
 - `AGENTS.md` §2 (log), §6 (cộng dồn `latency_ms`; `nghi` vs `chua_xac_minh`; "vật rời khung" ≠ "mất
