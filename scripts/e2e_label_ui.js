@@ -36,7 +36,9 @@ const FILE_NHAN = path.join(process.env.LABELUI_NHAN_DIR || path.join(DATA_DIR, 
 const NGUOI = 'nguoi-tu-ui'
 
 let hong = 0
+let soKiem = 0
 function kiem(ok, moTa, chiTiet) {
+  soKiem++
   console.log(`${ok ? '✓' : '✗'} ${moTa}${chiTiet ? ' — ' + chiTiet : ''}`)
   if (!ok) hong++
 }
@@ -238,6 +240,10 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   // nếu không nó nằm lại trong `data/nhan/` (nay thư mục đó ĐƯỢC track).
   if (daTaoFileNhan && fs.existsSync(FILE_NHAN)) fs.unlinkSync(FILE_NHAN)
   await browser.close()
-  console.log(hong === 0 ? '\nLABELUI E2E: PASS' : `\nLABELUI E2E: ${hong} mục HỎNG`)
+  // In `đạt/tổng` để con số trong AGENTS/doc KIỂM ĐƯỢC từ output (trước đây khai "30/30" mà script
+  // không hề đếm ⇒ không ai phát hiện khi lệch — review vòng 4, P3-16).
+  console.log(hong === 0
+    ? `\nLABELUI E2E: PASS ${soKiem}/${soKiem}`
+    : `\nLABELUI E2E: ${hong} mục HỎNG / ${soKiem}`)
   process.exit(hong === 0 ? 0 : 1)
 })().catch(e => { console.error('LỖI E2E:', e.message); process.exit(1) })

@@ -116,7 +116,8 @@ class TestTongHop:
         # frame 1: A=dung, B=dung ⇒ đồng ý; frame 2: A=sai, B=dung ⇒ lệch
         dy = d["dong_y_2_nguoi"]
         assert (dy["so_buoc_ca_hai"], dy["so_buoc_ca_hai_co_ket_luan"], dy["so_buoc_dong_y"]) == (2, 2, 1)
-        assert dy["theo_cap"] == [{"cap": ["a", "b"], "so_buoc_ca_hai_co_ket_luan": 2,
+        # in TÊN HIỂN THỊ ("A","B"), không in khoá casefold ("a","b") — review vòng 4, P3-17
+        assert dy["theo_cap"] == [{"cap": ["A", "B"], "so_buoc_ca_hai_co_ket_luan": 2,
                                    "so_buoc_dong_y": 1}]
 
     def test_BO_QUA_khong_duoc_tinh_la_dong_y(self, tmp_path):
@@ -518,6 +519,18 @@ class TestGopTenNguoi:
         assert sorted(d["ten_theo_nguoi"]["binh"]["ten"]) == ["BINH", "Binh", "binh"]
         assert d["ten_theo_nguoi"]["binh"]["nhan_dau"] and d["ten_theo_nguoi"]["binh"]["nhan_cuoi"]
 
+    def test_khoa_nguoi_bi_sua_tay_khong_tach_1_nguoi_thanh_2(self, tmp_path):
+        """Tin `khoa_nguoi` đã lưu thì một dòng sửa tay (hoặc của bản tool khác) tách 1 người thành 2
+        ⇒ `so_nguoi = 2` giả + cặp "tự đồng ý với mình" (review vòng 4, P3-17)."""
+        p = tmp_path / "nhau"
+        p.mkdir()
+        (p / "s.jsonl").write_text(
+            '{"buoc": 1, "frame_vos": 1, "nhan": "dung", "nguoi_gan": "Binh", "khoa_nguoi": "binh"}\n'
+            '{"buoc": 2, "frame_vos": 2, "nhan": "dung", "nguoi_gan": "Binh", "khoa_nguoi": "BINH-2"}\n',
+            encoding="utf-8")
+        d = L.tong_hop("s", p)
+        assert d["so_nguoi"] == 1, "phải tính lại khoá từ tên, không tin trường đã lưu"
+
     def test_ba_nguoi_co_dong_y_theo_cap(self, tmp_path):
         p = tmp_path / "nhan"
         for nguoi, nhan in [("A", "dung"), ("B", "dung"), ("C", "sai")]:
@@ -525,7 +538,7 @@ class TestGopTenNguoi:
         dy = L.tong_hop("s", p)["dong_y_2_nguoi"]
         assert dy["so_buoc_dong_y"] == 0, "TẤT CẢ đồng ý = 0 (C nói sai)"
         cap = {tuple(x["cap"]): x["so_buoc_dong_y"] for x in dy["theo_cap"]}
-        assert cap == {("a", "b"): 1, ("a", "c"): 0, ("b", "c"): 0}
+        assert cap == {("A", "B"): 1, ("A", "C"): 0, ("B", "C"): 0}
 
 
 class TestTenNguoiDan:

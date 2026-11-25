@@ -153,8 +153,8 @@ rỗng dù bộ đếm đầy (nay so theo NFC+lowercase như server); `/api/fra
 (`json.dumps` mặc định in ra — **không phải JSON**, Chrome `JSON.parse` ném ⇒ UI chết) ⇒ nay `allow_nan=False`
 + thay số méo bằng `null`; test khẳng định thêm `kiem_dai_buoc` và "payload không có `: NaN`".
 
-- **Sau khi sửa (5 vòng review):** `./run lint` xanh · `./run test` **2 176 passed** ·
-  `tests/test_label_ui.py` **93 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
+- **Sau khi sửa (5 vòng review):** `./run lint` xanh · `./run test` **2 178 passed** ·
+  `tests/test_label_ui.py` **95 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 

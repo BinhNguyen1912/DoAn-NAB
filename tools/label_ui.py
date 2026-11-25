@@ -359,7 +359,9 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
                 so_thieu_buoc += 1
             else:
                 raise ValueError("thiếu buoc/frame_vos")
-            khoa_nguoi = str(r.get("khoa_nguoi") or khoa_ten(r["nguoi_gan"]))
+            # LUÔN tính lại từ tên: tin `khoa_nguoi` đã lưu thì một dòng bị sửa tay (hoặc của bản tool
+            # khác) tách một người thành hai ⇒ `so_nguoi = 2` giả + cặp "tự đồng ý với mình".
+            khoa_nguoi = khoa_ten(r["nguoi_gan"])
             hieu_luc[(khoa, khoa_nguoi)] = r["nhan"]
         except (TypeError, ValueError, OverflowError):
             so_nhan_loi += 1
@@ -393,7 +395,8 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
             "so_buoc_ca_hai": len(chung),
             "so_buoc_ca_hai_co_ket_luan": len(ket_luan),
             "so_buoc_dong_y": sum(1 for v in ket_luan if len(set(v.values())) == 1),
-            "theo_cap": _theo_cap(ban),
+            "theo_cap": _theo_cap(ban, {k: ((v.get("ten") or [k])[0])
+                                        for k, v in ten_hien_thi.items()}),
         }
     return {"phien": phien, "tong_nhan": len(rows), "so_nhan_hieu_luc": len(hieu_luc),
             "so_nhan_trung": so_hop_le - len(hieu_luc), "so_nhan_loi": so_nhan_loi,
@@ -405,16 +408,24 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
             "dong_y_2_nguoi": dong_y}
 
 
-def _theo_cap(ban: dict) -> list[dict]:
-    """Đồng ý theo TỪNG CẶP người (3+ người thì `so_buoc_dong_y` là "TẤT CẢ đồng ý", không phải cặp)."""
+def _theo_cap(ban: dict, ten: dict | None = None) -> list[dict]:
+    """Đồng ý theo TỪNG CẶP người (3+ người thì `so_buoc_dong_y` là "TẤT CẢ đồng ý", không phải cặp).
+
+    `ten` (khoá → tên hiển thị) để báo cáo đọc được: in khoá `binh` còn `theo_nguoi` in `Binh` là hai
+    không-gian tên khác nhau (review vòng 4, P3-17).
+    """
     import itertools
 
+    ten = ten or {}
+
+    def hien(k):
+        return ten.get(k) or k
     nguoi = sorted({n for v in ban.values() for n in v})
     # `ban` giữ khoá; in ra tên hiển thị cho dễ đọc trong báo cáo
     ra = []
     for a, b in itertools.combinations(nguoi, 2):
         chung = [v for v in ban.values() if a in v and b in v and v[a] != "bo_qua" and v[b] != "bo_qua"]
-        ra.append({"cap": [a, b], "so_buoc_ca_hai_co_ket_luan": len(chung),
+        ra.append({"cap": [hien(a), hien(b)], "so_buoc_ca_hai_co_ket_luan": len(chung),
                    "so_buoc_dong_y": sum(1 for v in chung if v[a] == v[b])})
     return ra
 
@@ -554,7 +565,8 @@ class _Handler(BaseHTTPRequestHandler):
     ORIGIN_CHO = {""}          # "" = không gửi Origin (curl/tool). KHÔNG nhận "null": mọi POST
     # `application/json` cross-origin đều phải preflight, mà server không có `do_OPTIONS` ⇒ browser
     # không gửi POST. Ngược lại, DNS rebinding thì Origin == Host nên allowlist `Host` mới chặn được.
-    HOST_CHO = ("", "127.0.0.1", "localhost", "::1")
+    # "0.0.0.0" cũng nhận: tài liệu bảo `--host 0.0.0.0`, người dùng hay gõ y nguyên vào thanh địa chỉ.
+    HOST_CHO = ("", "127.0.0.1", "localhost", "::1", "0.0.0.0")
 
     def _host_hop_le(self) -> bool:
         """Chặn DNS rebinding: kẻ tấn công khiến Origin == Host nên chỉ kiểm Origin là vô ích."""
@@ -591,6 +603,13 @@ class _Handler(BaseHTTPRequestHandler):
         try:
             for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
                 ra.add(info[4][0])
+        except OSError:
+            pass
+        # IPv6 nội bộ (ULA/link-local): thiếu nhánh này thì mở bằng IPv6 thì trang + video chạy mà MỌI
+        # POST 403 — đúng lỗi vòng 3 P2-7 nhưng cho họ địa chỉ IPv6 (review vòng 4, P3-19).
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET6):
+                ra.add(info[4][0].split("%")[0])
         except OSError:
             pass
         return ra
