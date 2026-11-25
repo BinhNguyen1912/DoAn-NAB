@@ -96,10 +96,52 @@ Khác biệt nằm đúng ở phiên người dùng báo:
    chấm vẫn dùng `latency_ms` (đã ghi rõ trong docstring là xấp xỉ) ⇒ số của script là **so sánh giữa
    hai luật trên cùng dữ liệu**, không phải số live.
 
+## 5b. Phiên kiểm lại 25-11 08:58 (`demoip_1125-085815`, 360 frame / 105,5 s) — **hết kẹt latch, còn 1 báo oan KHÔNG sửa được bằng ngưỡng**
+
+| đại lượng | số |
+|---|---|
+| `mean` / p95 | **280 / 415 ms**, hiển thị 17,2 FPS, tỉ lệ thời lượng **1,00** ✓ |
+| `loadavg_1m` lúc chạy | **7,42** (8 lõi) — đường `--smooth` tự ăn 4,3 lõi (CPU 434 %), nên đây là **chi phí của chính pipeline**, không phải máy bị người khác chiếm như phiên 08:44 |
+| `mất dấu` | 71/360 = **20 %** (thẻ vàng thật sự ra khỏi khung nhiều lần: 7 đoạn vắng ≥ 5 frame) |
+| `nghi` | **8 frame** (f47–54) |
+| `chua_xac_minh_n` | **27** |
+| **chi phí hiển thị** | (8+27)/360 = **9,7 %** — so với **32,7 %** (phiên 24-11 19:30) và **44,3 %** (phiên 1124-125109) ⇒ **hết kẹt** |
+| tự hồi phục | có: f55 hết `nghi` (mask vẫn còn 24 653 px), rồi f68–81 vắng 14 frame ⇒ tái bám ⇒ về `ok` |
+
+### Cú báo oan f47 — và vì sao **KHÔNG** sửa được bằng ngưỡng
+
+`f46→f47`: tâm nhảy **227,6 px** trong **343 ms** = **665 px/s**; bán kính cho phép 200 px (trần) ⇒ báo.
+Ảnh 2 khung liên tiếp cắt từ `_web.mp4` cho thấy ô **vẫn trên đúng tấm thẻ vàng** mà người dùng đang vẫy
+⇒ **báo oan**, không phải đổi đối tượng.
+
+Đo cả hai lớp cạnh nhau (cùng đại lượng, cùng thước):
+
+| | px/bước | ms | **px/s** |
+|---|---|---|---|
+| **7 ca báo ĐÚNG** (`CA_DUNG`) | 87 – 316 | 131 – 352 | **500 – 2 107** |
+| **ca báo OAN** 085815#47 (ảnh) | **228** | 343 | **665** |
+
+⇒ **Hai lớp chồng lấn hoàn toàn.** Bảng luật (`data/eval_gate_rules_2026-11-25_metrics.json`,
+`git_rev 033eafc`, có **1 ca SAI** đầu tiên):
+
+| luật | bắt ca ĐÚNG | báo ở ca SAI |
+|---|---|---|
+| `cham_noi_theo_dt` (đang ship) | **7/7** | 1/1 |
+| `theo_dt` (nới vô điều kiện) | **3/7** | 0/1 |
+| `theo_dt_va_dien_tich` | 2/7 | 0/1 |
+| `chi_khi_cham_600` | 1/7 | 0/1 |
+| `van_toc_lich_su` | 6/7 | 1/1 |
+
+Luật duy nhất "sạch" với ca oan (`theo_dt`) **bỏ 4/7 ca đúng** ⇒ **cấm** chọn nó. Kết luận: muốn hết
+báo oan kiểu này phải **xác minh bằng MASK THẬT** (re-prompt rồi chấm mask-vs-mask), tức Tầng 2 —
+không phải chỉnh `max_jump_ratio` / `theo_dt` / `chi_khi_cham`.
+
 ## 6. Next steps
 
-- [ ] **Chạy lại `./run demoip` lúc máy rảnh** — kỳ vọng ~137 ms/frame, và **không còn WARN** khi đưa
-      vật ra/vào khung.
+- [x] **Chạy lại `./run demoip`** (phiên 08:58) — **hết kẹt latch** (9,7 % so với 32,7 %), tỉ lệ thời
+      lượng 1,00. Còn **1 báo oan** khi vẫy vật nhanh ⇒ **không sửa được bằng ngưỡng** (§5b).
+- [ ] **Tầng 2 = việc thật sự còn lại**: xác minh bằng mask (re-prompt + mask-vs-mask) để tách "vẫy
+      nhanh" khỏi "đổi vật". Cần plan 3 ý kiến trước khi code (> 4 h).
 - [ ] Nếu lag lặp lại: mở **Task Manager (Windows)** lúc đó chụp lại cột CPU/Process — đó là bằng chứng
       duy nhất `loadavg` của WSL không thấy.
 - [ ] Ticket đã ghi từ 24-11 (dedupe cổng theo `frame_idx` cho frame `engine.start()`) vẫn còn.
