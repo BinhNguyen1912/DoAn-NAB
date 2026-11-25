@@ -244,3 +244,19 @@ Xử lý: thêm 6 mục vào `CHO_PHEP` (cơ chế CÓ SẴN cho "provenance kh�
 chứng"), mỗi mục nêu lý do + **CẤM dẫn rev**. Số trong AGENTS §6 vẫn dùng được (đo thật,
 `git_dirty_code = false`) — chỉ rev là không kiểm lại được. Kiểm lại trong clone thật:
 `134 artifact: 116 ok · 0 lệch · 18 đã-biết · 0 CHẾT-MỚI`, exit **0**.
+
+### 3. Kết quả cuối
+`main` = `e62c762`. CI **xanh cả 3 job** (`ruff`, `pytest (fast lane)`, `git_rev của artifact`) — lần đầu
+xanh lại sau chuỗi đỏ từ 22-11 (`61f2a6d`).
+
+| bước | số |
+|---|---|
+| `./run lint` | All checks passed |
+| `./run test` | **2 038 passed**, 5 deselected (194 s) |
+| làn nhanh trong **clone sạch** | 0 failed |
+| provenance trong **clone sạch** | 134 artifact: 116 ok · 0 lệch · 18 đã-biết · **0 CHẾT-MỚI** |
+
+Sai quy trình (ghi lại để lần sau tránh): commit `e62c762` được tạo **trực tiếp trên `main`** (quên
+`git switch` lại nhánh) ⇒ vi phạm §7b "không commit thẳng lên `main`". Đã đồng bộ nhánh
+`feat/nhan-lai-vat-live` lên đúng `main` (`git branch -f`) để không còn hai đường lịch sử; **không**
+rewrite `main` đã push (tệ hơn). Bài học: `git status`/`git branch --show-current` TRƯỚC mỗi commit.

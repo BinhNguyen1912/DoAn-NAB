@@ -500,6 +500,20 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   bao giờ bị ẩn** (`data/identity_latch_chi_phi_2026-11-21_metrics.json`). **Cả hai đường đều có** (web: `bam = "nghi_doi_tuong"` + `nghi_doi_tuong_n` trong `status.json`, nút
   "Vẫn đúng, tiếp tục" ⇒ `POST /api/live/confirm` ⇒ API ghi `confirm.json`, worker đọc rồi **tự xoá**;
   e2e trên Chrome thật kiểm banner + nút + endpoint).
+- **`git worktree` KHÔNG tái hiện được CI — muốn kiểm "rev có trên remote không" phải `git clone`.** Đo
+  25-11: job `git_rev của artifact` đỏ trên GitHub từ 22-11 nhưng **xanh trên máy dev** (6 rev thấy là
+  `lech` vì object rác còn trong `.git`) và **xanh cả trong `git worktree`** (worktree DÙNG CHUNG object
+  store). Chỉ `git clone --branch main file://$PWD /tmp/ci` (chỉ copy object REACHABLE) mới ra đúng **5
+  CHẾT-MỚI** như CI. Cùng ngày, job `pytest` đỏ vì 2 test `test_bench_gpu_binh2` gọi `main()` với `--clip`
+  mặc định `data/binh2.mp4` mà **video bị `.gitignore`** ⇒ xanh ở máy dev, đỏ ở CI. Quy tắc: (a) test
+  không được phụ thuộc file KHÔNG commit (tạo fixture trong `tmp_path`); (b) máy này **không có `gh`** ⇒
+  đọc CI bằng API công khai (`/commits/<sha>/check-runs`, `/actions/runs/<id>/jobs` cho tên STEP hỏng;
+  log tải cần token) và tái hiện bằng `clone`, đừng bằng `worktree`. `main` xanh lại ở `e62c762`.
+- **Hai loại "không có rev" là hai chuyện khác nhau**: `chet` (rev từng có, mất do rebase/squash) vs
+  `thieu-rev` (artifact schema cũ, **chưa từng khai** `git_rev`; 9 file trước 21-11). Gộp thành một nhãn
+  làm allowlist `CHO_PHEP` (khoá `(tên, rev)`) không dùng được vì `rev = None` ⇒ CI đỏ vĩnh viễn ⇒ cổng
+  mất tác dụng. Nay `thieu-rev` là nhãn riêng + `CHO_PHEP_KHONG_REV` theo TÊN, **file mới thiếu rev vẫn
+  bị bắt** (có test).
 - **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
   (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
