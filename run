@@ -322,8 +322,17 @@ EOF
     echo "[demoip] chế độ: LAN TRUYỀN LIÊN TỤC (re-ID TẮT) — bật lại bằng --reid. Lý do: mIoU 0,7794 vs 0,4236"
     # Quỹ đạo 5 GIÂY (không phải 100 điểm): cùng 100 điểm là 16 s ở 6,3 bước/s nhưng 32 s ở 3,1
     # bước/s ⇒ "quỹ đạo theo thời gian" đổi nghĩa theo tốc độ máy. 5 s = khớp yêu cầu 5 của đề cương.
+    # `--mask-threshold -1.0` (24-11): sweep 3 clip có GT người tô
+    # (`data/sweep_mask_threshold_{b1,binh2,be2}_2026-11-24_metrics.json`) — so CẶP theo frame:
+    #   0 → −1.0: binh1 +0,0526 (CI95 [+0,0367,+0,0715]) · binh2 +0,0313 (CI95 [+0,0116,+0,0506])
+    #   · clip_be2 −0,0021 (CI95 chứa 0 ⇒ KHÔNG phân biệt được). Lỗi chính của đường cầm tay là
+    #   mask HỤT (phủ thiếu 0,18–0,22 diện tích vật) ⇒ nới ngưỡng logit là đòn ĐÚNG hướng.
+    #   KHÔNG bịa mask khi vật vắng (0/5 frame GT rỗng ở cả 6 mức). Đừng đẩy tới −2.0: clip_be2
+    #   bắt đầu tệ (−0,0160). Ngưỡng này KHÔNG đổi `tools/run_live.py` mặc định (0.0) để artifact
+    #   cũ tái lập được — chỉ đường `demoip` (cầm tay, vật sát biên) dùng.
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --no-reid \
       --trajectory-seconds 5 --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
+      --mask-threshold -1.0 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"

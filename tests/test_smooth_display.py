@@ -10,6 +10,8 @@ giật đúng bằng tốc độ model (0.3–2 FPS). Giải pháp: 3 luồng �
 import threading
 import time
 
+import pytest
+
 import numpy as np
 
 from src.smooth_display import InferenceWorker, LatestFrameSource
@@ -531,10 +533,38 @@ class TestCongNhayCoNhoTrenDuongMuot:
         from src import smooth_display as sd
 
         src = inspect.getsource(sd.run_smooth_display)
-        cap_nhat = src.index("switch = watch.update(")
-        gan_lai = src.index("last_bbox = stamped.result.bbox")
+        cap_nhat = src.index("watch.update(last_bbox, stamped.result.bbox")
+        gan_lai = src.index("last_bbox = stamped.result.bbox", cap_nhat)
         assert cap_nhat < gan_lai, ("cổng nhảy phải được cập nhật TRƯỚC khi gán `last_bbox` = ô hiện "
                                     "tại, nếu không nó so ô với chính nó và không bao giờ bật")
+
+    def test_canh_bao_chi_in_khi_cong_that_su_cham(self):
+        """24-11 (phiên `demoip_1124-193026`): cổng MIỄN chấm bước đầu của phiên bám mới (vật rời
+
+        khung rồi vào lại) nhưng `_switch_warning` tự gọi `is_suspect_switch` LẦN NỮA ⇒ vẫn in WARN
+        và bật banner. Đường in cảnh báo phải đọc `watch.vua_bao` (phán quyết của cổng), không tự chấm.
+        """
+        import inspect
+
+        from src import live_pipeline as lp
+        from src import smooth_display as sd
+
+        for mod in (sd, lp):
+            src = inspect.getsource(mod)
+            assert "watch.vua_bao" in src, f"{mod.__name__} chưa đọc `watch.vua_bao` để in cảnh báo"
+
+    def test_switch_warning_khong_tu_cham_lai(self, capsys):
+        """24-11 (review vòng 2): `_switch_warning` từng gọi `is_suspect_switch` lần HAI, với
+
+        `max_jump_ratio` MẶC ĐỊNH ⇒ với `--max-jump-ratio < 0,25` cổng báo mà console im lặng. Nay nó
+        chỉ in. Test: gọi với hai ô GẦN NHAU (cú nhảy = 0, tức `is_suspect_switch` sẽ trả False) mà
+        vẫn phải in ⇒ chứng minh nó không tự chấm.
+        """
+        from src.live_pipeline import _switch_warning
+
+        assert _switch_warning((100, 100, 200, 200), (101, 101, 201, 201)) is True
+        out = capsys.readouterr().out
+        assert "ĐỔI ĐỐI TƯỢNG" in out, "phải IN khi được gọi (cổng đã phán quyết trước đó)"
 
     def test_reacquired_giai_phong_latch_nghi_doi_tuong(self):
         """22-11 (bug thật, phiên `demoip_1122-195623`): vật chạm mép nhảy ô ⇒ `IdentityWatch`
@@ -567,7 +597,7 @@ class TestCongNhayCoNhoTrenDuongMuot:
         from src import smooth_display as sd
 
         src = inspect.getsource(sd.run_smooth_display)
-        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
+        pos_c = src.index("if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):")
         pos_neo = src.index("worker.reanchor(bbox_luc_nghi)", pos_c)
         assert pos_c < pos_neo, "phím `c` phải neo lại engine ở ô vừa bị nghi"
         # và phải có biến lưu ô đó tại THỜI ĐIỂM cổng bật nghi (lúc `last_bbox` còn giá trị thật)
@@ -603,10 +633,13 @@ class TestCongNghiEpTimLai:
         # phải gọi TRƯỚC khi log/`continue` để cờ kịp tới worker ở vòng sau
         assert src.index("_bao_nghi(watch.nghi)") < src.index("if on_result is not None:")
         # `c` và `r` phải XOÁ cờ, nếu không bước tracking kế tiếp lại bị bỏ ⇒ quay vòng
-        pos_c = src.index("if key == CONTINUE_KEY and watch.nghi:")
-        assert "_bao_nghi(False)" in src[pos_c:pos_c + 400]
+        # Cắt theo `continue` của CHÍNH nhánh đó (không dùng cửa sổ ký tự: thêm chú thích là trượt)
+        pos_c = src.index("if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):")
+        nhanh_c = src[pos_c:src.index("continue", pos_c)]
+        assert "_bao_nghi(False)" in nhanh_c
         pos_r = src.index("if key == RESET_KEY:")
-        assert "_bao_nghi(False)" in src[pos_r:pos_r + 400]
+        nhanh_r = src[pos_r:src.index("continue", pos_r)]
+        assert "_bao_nghi(False)" in nhanh_r
 
     def test_worker_chuyen_co_nghi_vao_session(self):
         """Khoá đường worker → session (main thread không được chạm engine/session)."""
@@ -945,3 +978,279 @@ class TestTranDocNguon:
         assert nhip >= 0.60 * 30.0, (
             f"{nhip:.0f} lần/s (n={n}, {elapsed:.2f} s) ⇒ quá xa trần 30: đang CỘNG DỒN thời gian ngủ")
         assert nhip <= 1.2 * 30.0, f"{nhip:.0f} lần/s — VƯỢT trần 30/s"
+
+
+class TestTuHaMucTrenDuongMuot:
+    """24-11: cổng nghi phải TỰ HẠ MỨC (`nghi` → `chua_xac_minh`) trên đúng đường `./run demoip`.
+
+    Vì sao: phiên `demoip_1124-125109` — cổng báo đúng ở f137, hệ tự bám lại đúng cái thìa ở t≈40 s,
+    nhưng latch chỉ xoá được bằng `r`/`c`/reacquire (re-ID TẮT) ⇒ **109/246 = 44,3 % phiên** chỉ có ô
+    nét đứt. Replay **22 phiên ĐO ĐƯỢC / 4 346 frame**: ẩn 32,67 % → 4,16 %; 28,51 % chưa xác minh
+(`data/replay_latch_settle_2026-11-24_metrics.json`) — ĐỪNG trích "20,17 % → 2,57 %" (mẫu số cũ sai).
+    """
+
+    def test_render_nhan_chua_xac_minh_sau_khi_bam_on_dinh(self, tmp_path, write_video, monkeypatch):
+        from src import smooth_display as sd
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        # Ô: 60 px/bước (hợp lệ: bán kính = max(0,10×800, 1,5×40) = 80 px) → 1 cú NHẢY 420 px
+        # → rồi yên 40 bước (đúng ca phiên 1124: báo đúng rồi tự bám lại)
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 8):
+            o_list.append((10 + i * 60, 10, 50 + i * 60, 50))
+        o_list.append((20, 150, 60, 190))              # nhảy vô lý (~420 px)
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                # PHẢI chậm hơn nhịp vẽ: engine tức thời sẽ chạy trước và mọi lần render chỉ thấy
+                # kết quả CUỐI (bỏ qua cú nhảy) ⇒ test đo nhầm chỗ.
+                time.sleep(0.05)
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 640), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        da_goi = []
+        goc = Visualizer.render
+
+        def ghi_render(self, frame, result, **kw):
+            da_goi.append({"switch": kw.get("switch_warning"),
+                           "chua_xac_minh": kw.get("chua_xac_minh")})
+            return goc(self, frame, result, **kw)
+
+        monkeypatch.setattr(Visualizer, "render", ghi_render)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 640),
+                                       square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"hien": 0}
+
+        def display(img, mode):
+            state["hien"] += 1
+            return list(QUIT_KEYS)[0] if state["hien"] >= 70 else -1
+
+        # `run_smooth_display` KHÔNG tự tạo Visualizer (caller `tools/run_live.py` làm) ⇒ phải truyền
+        sd.run_smooth_display(source=str(path), engine=Eng(),
+                              selector=PromptSelector(frame_shape=(240, 640, 3)),
+                              display=display, preselect_bbox=(10, 10, 50, 50),
+                              visualizer=Visualizer())
+
+        assert any(d["switch"] for d in da_goi), "cổng nhảy KHÔNG bật ⇒ test vô nghĩa"
+        assert any(d["chua_xac_minh"] for d in da_goi), (
+            "không lần render nào nhận `chua_xac_minh` ⇒ hệ vẫn ẩn tới hết phiên (bug 44,3 %)")
+        # Thứ tự phải đúng: nghi TRƯỚC, chưa xác minh SAU (không được hạ mức ngay ở cú nhảy)
+        chi_so_nghi = [i for i, d in enumerate(da_goi) if d["switch"]]
+        chi_so_ha = [i for i, d in enumerate(da_goi) if d["chua_xac_minh"]]
+        assert min(chi_so_ha) > min(chi_so_nghi)
+        # 24-11 (review vòng 2, P2): khoá HÀNH VI, không chỉ chuỗi source. Bản cũ gán
+        # `switch = watch.nghi or switch` (sticky) ⇒ sau khi hạ mức, `switch` vẫn True ⇒ ảnh KHÔNG có
+        # mask tô tới hết phiên (đúng triệu chứng người dùng báo) mà test này vẫn xanh.
+        assert not any(d["switch"] for d in da_goi[min(chi_so_ha):]), (
+            "sau khi chuyển `chua_xac_minh` vẫn còn `switch_warning=True` ⇒ `switch` dính sticky: "
+            "`visualizer.render` sẽ KHÔNG tô mask (dang_mat_dau) ⇒ mất mask tới hết phiên")
+
+
+class TestPhimCTaiChuaXacMinh:
+    """24-11 (review độc lập P1-a): HUD MỜI bấm `c` nhưng `c` chỉ có tác dụng ở trạng thái `nghi`.
+
+    Hậu quả: ở `chua_xac_minh` (mask chỉ còn viền) bấm `c` không có gì xảy ra ⇒ kẹt tới hết phiên —
+    đúng cái người dùng phàn nàn ("không focus lại"), chỉ khác là còn thấy viền.
+    """
+
+    def test_c_xoa_ca_chua_xac_minh(self):
+        import inspect
+
+        from src import smooth_display as sd
+        from src import live_pipeline as lp
+
+        for mod in (sd, lp):
+            src = inspect.getsource(mod.run_smooth_display if mod is sd else mod.run_interactive)
+            assert "key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh)" in src, \
+                f"{mod.__name__}: phím `c` phải có tác dụng ở CẢ trạng thái chưa xác minh"
+
+    def test_c_xoa_quy_dao_khong_noi_qua_cu_nhay(self):
+        """Đối chứng P2: xác nhận xong mà giữ quỹ đạo ⇒ đường tím nối điểm trước cú nhảy với vùng
+        mới (một đoạn thẳng xuyên khung) đi thẳng vào video demo."""
+        from src.visualizer import Visualizer
+
+        viz = Visualizer()
+        for i in range(5):
+            viz._trajectory.append((10 * i, 10 * i))
+            viz._traj_ts.append(0.0)
+        viz.clear_trajectory()
+        assert viz.trajectory_points == ()
+        # `clear_trajectory` KHÔNG được xoá số liệu FPS (khác `reset()`) — nếu không HUD nhảy về 0
+        viz._latencies.append(100.0)
+        viz.clear_trajectory()
+        assert viz.effective_fps == pytest.approx(10.0)
+
+
+class TestPhimCTaiChuaXacMinhHanhVi:
+    """24-11 (review vòng 2, P1): bản HÀNH VI cho đường `./run demoip` (không chỉ đọc source).
+
+    Đột biến "giữ điều kiện mới nhưng bỏ `watch.reset()`" phải làm test này ĐỎ — nếu không, lỗi
+    "bấm `c` không có tác dụng" quay lại mà không ai biết.
+    """
+
+    def test_bam_c_thoat_chua_xac_minh(self, tmp_path, write_video, monkeypatch):
+        from src import smooth_display as sd
+        from src.live_pipeline import CONTINUE_KEY, QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 4):
+            o_list.append((10 + i * 45, 10, 50 + i * 45, 50))
+        o_list.append((20, 150, 60, 190))          # nhảy vô lý
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                time.sleep(0.05)                   # chậm hơn nhịp vẽ ⇒ mỗi render thấy 1 kết quả mới
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 320), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        nhan = []
+        goc = Visualizer.render
+
+        def ghi(self, frame, result, **kw):
+            nhan.append({"switch": kw.get("switch_warning"),
+                         "chua": kw.get("chua_xac_minh")})
+            return goc(self, frame, result, **kw)
+
+        monkeypatch.setattr(Visualizer, "render", ghi)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 320),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0, "da_bam_c": False, "quy_dao_sau_c": None}
+        viz = Visualizer()
+
+        def display(img, mode):
+            state["n"] += 1
+            if (state["da_bam_c"] and state["quy_dao_sau_c"] is None
+                    and viz.trajectory_points):          # chờ frame ĐẦU của vùng mới
+                state["quy_dao_sau_c"] = viz.trajectory_points
+            if nhan and nhan[-1]["chua"] and not state["da_bam_c"]:
+                state["da_bam_c"] = True
+                # SENTINEL (review vòng 3, P2): cắm điểm "vùng CŨ" ngay trước khi bấm `c`, nếu không
+                # test vẫn xanh khi xoá call-site `clear_trajectory` ở `smooth_display`.
+                viz._trajectory.append((30, 30))
+                viz._traj_ts.append(0.0)
+                return CONTINUE_KEY
+            return list(QUIT_KEYS)[0] if state["n"] >= 90 else -1
+
+        sd.run_smooth_display(source=str(path), engine=Eng(),
+                              selector=PromptSelector(frame_shape=(240, 320, 3)),
+                              display=display, preselect_bbox=(10, 10, 50, 50),
+                              visualizer=viz)
+
+        assert any(d["chua"] for d in nhan), "phải tới được 'chưa xác minh' (nếu không, test vô nghĩa)"
+        chi_so = next(i for i, d in enumerate(nhan) if d["chua"])
+        sau = nhan[chi_so + 1:]
+        assert sau, "phải có frame render SAU khi bấm `c`"
+        assert not any(d["chua"] for d in sau), "bấm `c` mà vẫn 'chưa xác minh' ⇒ kẹt (bug P1-a)"
+        assert not any(d["switch"] for d in sau), "bấm `c` mà vẫn còn cờ nghi"
+        snap = state["quy_dao_sau_c"]
+        assert snap, "quỹ đạo sau khi bấm `c` rỗng ⇒ không chứng minh được gì"
+        assert (30, 30) not in snap, ("sentinel vùng CŨ còn trong quỹ đạo ⇒ call-site "
+                                      "`clear_trajectory` ở `smooth_display` không chạy")
+        assert any(x > 150 for x, _ in snap) or any(x > 15 for x, _ in snap), \
+            "quỹ đạo sau `c` phải có điểm của vùng MỚI"
+
+
+class TestDemChuaXacMinhDuongDemoip:
+    """24-11 (ticket #47): đường `./run demoip` (smooth_display) cũng phải đếm "chưa xác minh".
+
+    Trước đây chỉ đường web có (`status.json`), nên phiên live của `./run demoip` **không sinh ra số
+    nào** — mọi tuyên bố về `chua_xac_minh` phải suy từ replay CSV.
+    """
+
+    def test_summary_dem_duoc(self, tmp_path, write_video):
+        from src import smooth_display as sd
+        from src.live_pipeline import QUIT_KEYS
+        from src.prompt_selector import PromptSelector
+        from src.tracker_engine import TrackingResult
+        from src.visualizer import Visualizer
+
+        o_list = [(10, 10, 50, 50)]
+        for i in range(1, 4):
+            o_list.append((10 + i * 45, 10, 50 + i * 45, 50))
+        o_list.append((20, 150, 60, 190))                 # nhảy vô lý ⇒ nghi
+        o_list += [(21 + i, 151 + i, 61 + i, 191 + i) for i in range(40)]
+
+        class Eng:
+            def __init__(self):
+                self.i = -1
+
+            def start(self, frame, bbox):
+                return self._res(bbox)
+
+            def process(self, frame):
+                time.sleep(0.05)
+                self.i = min(self.i + 1, len(o_list) - 1)
+                return self._res(o_list[self.i])
+
+            def reset(self):
+                self.i = -1
+
+            def _res(self, bbox):
+                mask = np.zeros((240, 320), bool)
+                mask[100:140, 20:60] = True
+                return TrackingResult(frame_idx=self.i, mask=mask, bbox=tuple(bbox),
+                                      score=1.0, elapsed_ms=10.0)
+
+        from src.synthetic_video import generate_tracking_sequence
+
+        fx = generate_tracking_sequence(num_frames=60, frame_size=(240, 320),
+                                        square_size=40, start=(10, 10))
+        path = write_video(tmp_path / "seq.avi", fx.frames, fps=30)
+        state = {"n": 0}
+
+        def display(img, mode):
+            state["n"] += 1
+            return list(QUIT_KEYS)[0] if state["n"] >= 60 else -1
+
+        summary = sd.run_smooth_display(source=str(path), engine=Eng(),
+                                        selector=PromptSelector(frame_shape=(240, 320, 3)),
+                                        display=display, preselect_bbox=(10, 10, 50, 50),
+                                        visualizer=Visualizer())
+        assert summary.chua_xac_minh_n > 0
+        assert summary.chua_xac_minh_n < summary.processed

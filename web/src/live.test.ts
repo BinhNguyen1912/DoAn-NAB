@@ -7,6 +7,7 @@ import {
   configMismatchIsAlert,
   configMismatchLine,
   bamLine,
+  chuaXacMinhLine,
   maskAgeLine,
   maskRhythmLine,
   sucKhoeIsAlert,
@@ -396,5 +397,25 @@ describe('bamLine — cổng nhảy CÓ NHỚ "nghi đổi đối tượng" (21-
 
   it('không nghi thì KHÔNG hiện banner nghi', () => {
     expect(bamLine({ bam: 'tracking', nghi_doi_tuong: false })).toBeNull()
+  })
+})
+
+describe('chuaXacMinhLine (24-11)', () => {
+  it('null khi không ở trạng thái chưa xác minh', () => {
+    expect(chuaXacMinhLine(null)).toBeNull()
+    expect(chuaXacMinhLine({})).toBeNull()
+    expect(chuaXacMinhLine({ chua_xac_minh: false })).toBeNull()
+  })
+
+  it('nói rõ mask chỉ được vẽ VIỀN, không tô + phím/nút để xác nhận', () => {
+    const line = chuaXacMinhLine({ chua_xac_minh: true, chua_xac_minh_n: 83 }) || ''
+    expect(line).toContain('CHƯA XÁC MINH')
+    expect(line).toContain('VIỀN NÉT ĐỨT')
+    expect(line).toContain('Vẫn đúng, tiếp tục')
+    expect(line).toContain('83 frame')
+  })
+
+  it('KHÔNG được nhầm với "nghi" (nghi thì ẩn mask, chưa xác minh thì vẫn vẽ)', () => {
+    expect(chuaXacMinhLine({ chua_xac_minh: true })).not.toContain('ô đã được ẩn')
   })
 })

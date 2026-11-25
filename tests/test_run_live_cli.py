@@ -120,6 +120,33 @@ class TestThietBiXuongEngine:
         data = json.loads(info.read_text(encoding="utf-8"))
         assert data["device"] == "cpu", "artifact job không ghi thiết bị ⇒ dễ bị trích như số GPU"
 
+    def test_run_info_headless_ghi_frame_shape_va_KHONG_bia_co_cong(self, tmp_path, video,
+                                                                   monkeypatch):
+        """Đường HEADLESS: `frame_shape` phải là khung THẬT, còn `settle_steps`/`max_jump_ratio`
+        phải là `None` — đường này KHÔNG dựng `IdentityWatch`, ghi 8/0.25 là mô tả cổng chưa chạy.
+
+        Review độc lập 24-11 (P1-2): trước đó đột biến "bỏ `metrics.note_frame_shape(...)`" vẫn xanh.
+        """
+        import cv2
+
+        self._bat_kwargs(monkeypatch, cuda=False)
+        cap = cv2.VideoCapture(video)
+        w = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+        h = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
+        cap.release()
+
+        info = tmp_path / "run_info.json"
+        monkeypatch.setattr(sys, "argv", [
+            "run_live.py", "--source", video, "--max-frames", "1",
+            "--metrics-csv", str(tmp_path / "m.csv"),
+            "--metrics-summary", str(tmp_path / "s.json")])
+        monkeypatch.setattr(run_live, "run_info_path_for", lambda *a, **k: str(info))
+        run_live.main()
+        data = json.loads(info.read_text(encoding="utf-8"))
+        assert data["frame_shape"] == [h, w], "headless phải ghi khung THẬT của clip"
+        assert data["settle_steps"] is None, "headless không dựng cổng nghi ⇒ không được ghi 8"
+        assert data["max_jump_ratio"] is None, "headless không dựng cổng nghi ⇒ không được ghi 0.25"
+
 
 def _write_cfg(tmp_path, text):
     """Ghi config YAML tạm — dedent để test viết YAML thụt lề tự nhiên."""

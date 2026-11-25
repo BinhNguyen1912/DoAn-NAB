@@ -240,7 +240,11 @@ class LiveStreamService:
                             bam_no_evidence_n=detail.bam_no_evidence_n,
                             # 21-11: cổng nhảy CÓ NHỚ — UI cần biết để hiện banner + nút "vẫn đúng".
                             nghi_doi_tuong=detail.nghi_doi_tuong,
-                            nghi_doi_tuong_n=detail.nghi_doi_tuong_n)
+                            nghi_doi_tuong_n=detail.nghi_doi_tuong_n,
+                            # 24-11: trạng thái thứ ba (vẫn VẼ, kiểu chưa xác minh) — `bam` vẫn là
+                            # `"tracking"` ở cả hai ca nên UI không suy ra được.
+                            chua_xac_minh=detail.chua_xac_minh,
+                            chua_xac_minh_n=detail.chua_xac_minh_n)
         return LiveStatus(**base)
 
     def latest_jpeg(self) -> bytes | None:

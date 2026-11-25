@@ -32,7 +32,32 @@ MODEL_CFG = "configs/samurai/sam2.1_hiera_t.yaml"
 DEFAULT_CKPT = os.path.join("samurai", "sam2", "checkpoints", "sam2.1_hiera_tiny.pt")
 
 
-def build_overrides(image_size=None):
+# Siêu tham số **motion-memory của SAMURAI** — bộ điều khiển "chọn ký ức nào" + Kalman filter.
+# Vì sao cần danh sách trắng: hydra override một khoá SAI TÊN bị **bỏ qua im lặng** ⇒ thí nghiệm
+# trông như đã chạy cấu hình mới mà thực ra chạy mặc định (đúng lớp lỗi AGENTS §6 ghi ở
+# `docs/plan/24-11-2026-bam-bat-vat-bat-ky-duong-b.md`: copy config làm đổi hành vi, mIoU 0,6987→0,2486).
+MODEL_OVERRIDE_CHO_PHEP = {
+    "samurai_mode": bool,                  # bật/tắt toàn bộ motion-aware memory (đối chứng)
+    "stable_frames_threshold": int,        # số frame "ổn định" trước khi tin (mặc định 15)
+    "stable_ious_threshold": float,        # (mặc định 0,3)
+    "kf_score_weight": float,              # trọng số dự đoán chuyển động khi chọn ký ức (0,25)
+    "memory_bank_iou_threshold": float,    # (0,5)
+    "memory_bank_obj_score_threshold": float,   # (0,0)
+    "memory_bank_kf_score_threshold": float,    # (0,0)
+}
+
+
+def _dinh_dang_hydra(key: str, value) -> str:
+    """`('kf_score_weight', 0.5)` → `'++model.kf_score_weight=0.5'`; bool → `True`/`False`."""
+    loai = MODEL_OVERRIDE_CHO_PHEP[key]
+    if loai is bool:
+        return f"++model.{key}={bool(value)}"
+    if loai is int:
+        return f"++model.{key}={int(value)}"
+    return f"++model.{key}={float(value)!r}"
+
+
+def build_overrides(image_size=None, min_obj_score_logits=None, model_overrides=None):
     """Hydra override cho predictor: giảm `image_size` để nhanh hơn trên CPU.
 
     Đo thật (fixture 20 frame, ô vuông 60px + che 5 frame):
@@ -42,9 +67,29 @@ def build_overrides(image_size=None):
     Đánh đổi: ảnh bị downsample mạnh hơn → đối tượng NHỎ có thể kém chính xác hơn;
     mặc định giữ 1024 của model, chỉ hạ khi cần demo mượt.
     """
-    if not image_size:
-        return []
-    return [f"++model.image_size={int(image_size)}"]
+    ra = []
+    if image_size:
+        ra.append(f"++model.image_size={int(image_size)}")
+    # 24-11 (`docs/plan/24-11-2026-bam-bat-vat-bat-ky-duong-b.md`, P2): SAM 2 dùng **HAI ngưỡng lệch nhau**
+    # cho cùng quyết định "có vật hay không":
+    #   `samurai/.../sam2.1_hiera_t.yaml:126` → `min_obj_score_logits: -1` (ngưỡng ZERO-HOÁ mask,
+    #                                            `sam2_base.py:398`), trong khi
+    #   `sam2_base.py:867` → `object_score_logits > 0` (ngưỡng gắn `no_obj_embed_spatial` vào bộ nhớ).
+    # Đo trên `data/fac_A.csv` (tiny @192, binh1, 333 frame): 113/113 frame mask RỖNG có score ≤ −1,086;
+    # **15 frame CÓ mask 42–3 767 px nằm trong dải (−1, 0]**; frame có vật thật score ≥ 0,582.
+    # ⇒ có khoảng trống ~0,58 logit. Override ở ĐÂY (hydra) chứ **không copy file config** — copy config
+    # đã đo được là làm ĐỔI hành vi (mIoU 0,6987 → 0,2486 dù nội dung y nguyên).
+    if min_obj_score_logits is not None:
+        ra.append(f"++model.min_obj_score_logits={min_obj_score_logits}")
+    # 24-11 (Tầng 1 "custom model"): 7 siêu tham số motion-memory của SAMURAI. Khoá lạ ⇒ NÉM
+    # (không im lặng bỏ qua), vì cái bẫy thật là "chạy tưởng cấu hình X mà thực ra mặc định".
+    for key, value in (model_overrides or {}).items():
+        if key not in MODEL_OVERRIDE_CHO_PHEP:
+            raise ValueError(
+                f"model override {key!r} không có trong danh sách trắng "
+                f"{sorted(MODEL_OVERRIDE_CHO_PHEP)} — hydra sẽ BỎ QUA khoá sai tên trong im lặng")
+        ra.append(_dinh_dang_hydra(key, value))
+    return ra
 
 
 @dataclass
@@ -118,7 +163,8 @@ class TrackerEngine:
     @classmethod
     def build_default(cls, device="cpu", checkpoint=DEFAULT_CKPT,
                       model_cfg=MODEL_CFG, image_size=None,
-                      apply_postprocessing=False, mask_threshold=0.0) -> "TrackerEngine":
+                      apply_postprocessing=False, mask_threshold=0.0,
+                      min_obj_score_logits=None, model_overrides=None) -> "TrackerEngine":
         """Dựng predictor SAMURAI (mặc định tiny trên CPU; ~20-60s).
 
         model_cfg: đường dẫn YAML của SAM 2 — có thể đè qua config YAML (ticket 08).
@@ -139,7 +185,8 @@ class TrackerEngine:
         predictor = build_sam2_video_predictor(
             model_cfg, ckpt, device=device,
             apply_postprocessing=apply_postprocessing,
-            hydra_overrides_extra=build_overrides(image_size),
+            hydra_overrides_extra=build_overrides(image_size, min_obj_score_logits,
+                                                  model_overrides),
         )
         return cls(predictor, mask_threshold=mask_threshold, image_size=image_size)
 

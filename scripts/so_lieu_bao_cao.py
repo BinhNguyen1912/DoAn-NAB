@@ -50,6 +50,13 @@ REGISTRY = [
     ("Bịa mask ở frame vật VẮNG — túi trắng (1/1 frame, 3 713 px)", "data/miou_tran_nen_truoc_2026-11-24_metrics.json",
      "ket_qua.mask_px_gt_rong.mean", "px",
      "n = 1 frame ⇒ chỉ là ví dụ, không phải tỉ lệ. Ở ca này model tô lên MẶT người quay."),
+    ("Cổng 'có vật' của SAM 2 = 0 (thay vì −1 của config) — binh1", "data/miou_gate_0_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "ÂM TÍNH: không cải thiện mIoU (0,7794 y hệt) mà TẠO phantom ở frame GT rỗng (1/5, 3 408 px) — "
+     "ngưỡng −1 trong config là TỐT NHẤT đo được, đừng 'sửa' nó."),
+    ("Cổng 'có vật' TẮT HẲN (−100) — chẩn đoán, binh1", "data/miou_gate_-100_2026-11-24_metrics.json",
+     "ket_qua.mIoU", "tỉ lệ (0–1)",
+     "ÂM TÍNH: 0,7206 (< 0,7794) và bịa 2/5 frame ⇒ cổng KHÔNG che một model tốt hơn; nó đang giúp."),
     # ---- 24-11: KẾT QUẢ ÂM TÍNH (đo rồi, để không ai đề xuất lại) ----
     ("ÂM TÍNH — checkpoint base_plus @192 (so tiny 0,6987)", "data/miou_tran_nen_baseplus_2026-11-24_metrics.json",
      "ket_qua.mIoU", "tỉ lệ (0–1)",

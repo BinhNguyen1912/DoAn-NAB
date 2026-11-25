@@ -481,6 +481,52 @@ async function waitJobState(page, wanted, timeout = 240000) {
     await page.unroute('**/api/live/confirm')
   }
 
+  // 24-11: trạng thái THỨ BA — "đã bám ổn định lại nhưng CHƯA xác nhận". `bam` = 'tracking' ở cả
+  // hai ca (vẫn VẼ) ⇒ nếu UI không có dòng riêng thì người xem thấy viền nét đứt mà panel im lặng.
+  // Ca này KHÔNG được lẫn với "nghi" (nghi = ẩn mask).
+  {
+    await page.unroute('**/api/live/status')
+    await page.route('**/api/live/status', async (route) => {
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'stub', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: null, suc_khoe_cau: null,
+          bam: 'tracking', bam_ly_do: null, bam_no_evidence_n: 0,
+          nghi_doi_tuong: false, nghi_doi_tuong_n: 0,
+          chua_xac_minh: true, chua_xac_minh_n: 83 }) })
+    })
+    let goiConfirm2 = false
+    await page.route('**/api/live/confirm', async (route) => {
+      goiConfirm2 = true
+      await route.fulfill({ status: 200, contentType: 'application/json',
+        body: JSON.stringify({ state: 'running', source: 'stub', frames: 0, measured_fps: 0,
+          mask_fps: 8.5, device: 'cpu', message: 'da xac nhan', cau_hinh_lech: [],
+          image_size_hieu_luc: 192, suc_khoe: null, suc_khoe_cau: null, bam: 'tracking',
+          bam_ly_do: null, bam_no_evidence_n: 0, nghi_doi_tuong: false, nghi_doi_tuong_n: 0,
+          chua_xac_minh: false, chua_xac_minh_n: 0 }) })
+    })
+    await page.waitForTimeout(1300)
+    const chu3 = ((await liveCard.getByTestId('chua-xac-minh').textContent().catch(() => '')) || '')
+      .replace(/\s+/g, ' ')
+    check('HUD báo CHƯA XÁC MINH khi chua_xac_minh (bam vẫn là tracking)',
+      /CHƯA XÁC MINH/.test(chu3) && /VIỀN NÉT ĐỨT/.test(chu3) && /83 frame/.test(chu3),
+      chu3 || '(không thấy dòng nào)')
+    check('KHÔNG hiện dòng "không có bằng chứng" khi chỉ chưa xác minh (bam=tracking)',
+      await liveCard.getByTestId('bam-no-evidence').count() === 0)
+    const nut3 = liveCard.getByTestId('live-confirm-object-chua-xac-minh')
+    check('có nút "Vẫn đúng, tiếp tục" ở trạng thái chưa xác minh',
+      await nut3.count() === 1)
+    await nut3.click()
+    await page.waitForTimeout(400)
+    // LƯU Ý (review 24-11): khối này mock `**/api/live/status` nên nó chỉ chứng minh FRONTEND. Đường
+    // GIÁ TRỊ thật (`status.json → telemetry → live.status() → HTTP`) được khoá bằng pytest
+    // `tests/test_api_live.py::TestChuaXacMinhXuyenTang` — vì cờ này từng CHẾT trong adapter API mà
+    // cả e2e lẫn allowlist vẫn xanh (allowlist chỉ so TÊN khoá của schema).
+    check('bấm nút chưa xác minh gọi ĐÚNG /api/live/confirm', goiConfirm2 === true,
+      `goiConfirm=${goiConfirm2}`)
+    await page.unroute('**/api/live/confirm')
+  }
+
   // "Có bằng chứng về vật" (21-11, plan P4): `state` = running KHÔNG có nghĩa là đang bám. Ba trạng
   // thái phải phân biệt được trên trình duyệt thật — mock route chỉ chứng minh được phần HIỂN THỊ,
   // phần DTO đã có test Python riêng (`TestBamXuyenTang`) vì e2e mock `**/api/live/status`.

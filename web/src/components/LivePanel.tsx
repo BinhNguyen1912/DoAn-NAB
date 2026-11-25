@@ -40,6 +40,7 @@ import {
   sourceCheckLine,
   stallLine,
   bamLine,
+  chuaXacMinhLine,
 } from '../live'
 import { SelectionCanvas } from './SelectionCanvas'
 import { removeLastPoint, type PromptPoint } from '../selection'
@@ -224,6 +225,9 @@ export function LivePanel(): JSX.Element {
   const ageLine = maskAgeLine(status)
   const cauHinhLine = configMismatchLine(status)
   const bamLineText = bamLine(status)
+  // 24-11: trạng thái thứ ba (vẫn VẼ, kiểu chưa xác minh). `bam` = 'tracking' ở cả hai ca ⇒ phải
+  // có dòng riêng, nếu không người xem thấy viền nét đứt mà panel im lặng.
+  const chuaXacMinhText = chuaXacMinhLine(status)
   const cauHinhLech = configMismatchIsAlert(status)
   const ageCu = maskAgeIsStale(status)
   const driftText = driftLine(status)
@@ -416,6 +420,16 @@ export function LivePanel(): JSX.Element {
               Vẫn đúng, tiếp tục
             </button>
           )}
+        </div>
+      )}
+
+      {chuaXacMinhText && !bamLineText && (
+        <div className="error" data-testid="chua-xac-minh" role="alert">
+          <p>{chuaXacMinhText}</p>
+          <button type="button" onClick={() => void onConfirmObject()}
+                  data-testid="live-confirm-object-chua-xac-minh">
+            Vẫn đúng, tiếp tục
+          </button>
         </div>
       )}
 

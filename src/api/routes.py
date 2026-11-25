@@ -166,6 +166,14 @@ def build_router(service: JobService, live, sources=None) -> APIRouter:
             bam=status.bam,
             bam_ly_do=status.bam_ly_do,
             bam_no_evidence_n=status.bam_no_evidence_n,
+            # 21-11 + 24-11 (review P0 24-11): hai cờ này CÓ trong `schemas` nhưng KHÔNG được map
+            # ở đây ⇒ pydantic trả mặc định (`False`) và web không bao giờ thấy cờ, trong khi
+            # `set(body)` của test allowlist vẫn xanh vì nó chỉ so TÊN khoá của schema.
+            # Đúng bẫy "trường số liệu mới chết trong adapter" — lần này chết ở `routes`.
+            nghi_doi_tuong=status.nghi_doi_tuong,
+            nghi_doi_tuong_n=status.nghi_doi_tuong_n,
+            chua_xac_minh=status.chua_xac_minh,
+            chua_xac_minh_n=status.chua_xac_minh_n,
             message=status.message,
         )
 

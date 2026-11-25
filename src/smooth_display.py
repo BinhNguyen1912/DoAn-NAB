@@ -27,7 +27,7 @@ import cv2
 
 from src.live_pipeline import (
     InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
-    CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection,
+    CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection, chuan_hoa_phim,
 )
 from src.video_source import open_video_source
 
@@ -351,7 +351,9 @@ class InferenceWorker:
 
 def run_smooth_display(source, engine, selector, display, max_frames=None, metrics=None,
                        visualizer=None, preselect_bbox=None,
-                       on_result=None, reid_session=None, source_max_fps=None) -> InteractiveSummary:
+                       on_result=None, reid_session=None, source_max_fps=None, *,
+                       settle_steps=None, max_jump_ratio=None,
+                       lost_reset_streak=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -369,8 +371,20 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     consumed_seq = 0
     last_bbox = None
     # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — xem `src/identity_guard.IdentityWatch`.
-    watch = IdentityWatch()
+    # `settle_steps=None` ⇒ giữ mặc định của `IdentityWatch`. Có mặt để `--settle-steps` THẬT SỰ
+    # đổi được hành vi: trước 24-11 `run_info` ghi `settle_steps=8` như một biến điều khiển trong khi
+    # không tồn tại cờ nào (provenance giả — review độc lập 24-11, P1).
+    from src.identity_guard import DEFAULT_SETTLE_STEPS
+
+    watch = IdentityWatch(
+        settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
+        **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+        **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
+    )
     switch = False
+    # Bước VOS dài bao nhiêu GIÂY (đo bằng đồng hồ thực giữa 2 kết quả liên tiếp) — cổng nghi dùng để nới
+    # bán kính khi máy bị chiếm (25-11: bước 851 ms ⇒ tâm nhảy 239 px chỉ là 281 px/s mà vẫn báo oan).
+    _truoc_cong = None
     last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)
     # Ô của CHÍNH frame bật cờ nghi (tức ô model vừa đưa ra ở cú nhảy), dùng cho phím `c`.
     # KHÔNG phải "ô trước cú nhảy": `c` nghĩa là "vùng đang hiện là đúng", nên neo vào ô đó mới khớp
@@ -412,6 +426,9 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
             if frame is None:
                 time.sleep(0.01)
                 continue
+            if metrics is not None:
+                # MỖI frame (so tuple): `frame_shape_doi` phải ĐO được, không chỉ công bố 0.
+                metrics.note_frame_shape(frame.shape)
             if not selector_bound:
                 selector.bind(frame)          # lần đầu: biết kích thước frame
                 selector_bound = True
@@ -431,14 +448,30 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 else:
                     # Cổng CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi bấm `r`/`c`. Không nhớ thì
                     # đúng ca `demoip_1121-121732` (báo ở f178 rồi vẽ mask SAI 65 frame) không được xử lý.
-                    switch = _switch_warning(last_bbox, stamped.result, frame.shape[:2])
+                    switch = watch.nghi
                     # ⚠ PHẢI cập nhật cổng TRƯỚC khi gán `last_bbox = ô hiện tại`: bản đầu đặt SAU nên
                     # `watch.update(last_bbox, bbox)` so **ô với chính nó** ⇒ nhảy = 0 ⇒ cổng CÓ NHỚ
                     # KHÔNG BAO GIỜ bật trên đúng đường `./run demoip` (chế độ MƯỢT). Bắt được nhờ phiên
                     # thật `demoip_1121-131421`: console in 2 lần WARN mà CSV ghi `nghi_doi_tuong` TRỐNG
                     # cả 334 dòng ⇒ hệ vẫn vẽ mask của vùng sai (người dùng: "vẫn focus nhầm").
-                    switch = watch.update(last_bbox, stamped.result.bbox, frame.shape[:2]) or switch
-                    if stamped.result.mask.any():
+                    # `co_mask`: chỉ đếm bước ổn định khi model THẬT SỰ trả mask (24-11).
+                    co_mask = bool(stamped.result.mask is not None
+                                   and stamped.result.mask.any())
+                    _bay_gio = time.monotonic()
+                    _buoc_s = None if _truoc_cong is None else (_bay_gio - _truoc_cong)
+                    _truoc_cong = _bay_gio
+                    watch.update(last_bbox, stamped.result.bbox, frame.shape[:2],
+                                 co_mask=co_mask, step_seconds=_buoc_s)
+                    # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy: bước đầu của phiên bám mới
+                    # sau khi vật rời khung được MIỄN chấm (`watch.vua_bao`), nên không in.
+                    if watch.vua_bao:
+                        _switch_warning(last_bbox, stamped.result.bbox)
+                    # Banner = ĐÚNG trạng thái latch (`watch.nghi`), KHÔNG dính kiểu sticky: latch có
+                    # thể được xoá từ bên trong `watch.update` (tái bám sau khi vật rời khung, 24-11)
+                    # mà không ai gán `switch = False` ⇒ banner "đổi đối tượng" treo trên màn hình
+                    # trong khi mask đã vẽ lại bình thường.
+                    switch = watch.nghi
+                    if co_mask:
                         last_bbox = stamped.result.bbox
                     else:
                         # Mất dấu ⇒ đặt mốc rỗng để khi vật xuất hiện lại không bị so với ô cũ
@@ -451,6 +484,13 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     _bao_nghi(watch.nghi)
                 if visualizer is not None:
                     visualizer.consume(stamped.result)
+                    # 24-11: quỹ đạo KHÔNG được nối qua cú nhảy. `consume()` gắn điểm vô điều kiện,
+                    # nên trong lúc `nghi` phải xóa mỗi bước (khi chuyển sang `chua_xac_minh` thì
+                    # đường mới bắt đầu từ vùng mới — không có đoạn thẳng xuyên khung).
+                    if watch.nghi:
+                        visualizer.clear_trajectory()
+                    if watch.chua_xac_minh:
+                        summary.chua_xac_minh_n += 1
                 if metrics is not None:
                     metrics.log(_record_from(stamped.result, reid_state, reid_score,
                                              reacquired, reid_ncc,
@@ -471,6 +511,7 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                                             overlay_age_ms=stamped.age_ms,
                                             display_fps=display_fps,
                                             switch_warning=switch,
+                                            chua_xac_minh=watch.chua_xac_minh,
                                             reid_state=reid_state, reid_score=reid_score,
                                             reid_vetoed=reid_vetoed)
                 else:                       # không có HUD: vẫn phải giữ chế độ track
@@ -483,14 +524,18 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
 
-            key = display(img, mode)
+            key = chuan_hoa_phim(display(img, mode))
             disp_count += 1
             if time.monotonic() - disp_t0 > 2.0:      # cửa sổ trượt 2 giây
                 disp_count, disp_t0 = 0, time.monotonic()
             if key in QUIT_KEYS:
                 break
-            if key == CONTINUE_KEY and watch.nghi:
+            if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):
                 # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô.
+                # 24-11 (review P1-a): điều kiện cũ chỉ `watch.nghi` ⇒ ở trạng thái `chua_xac_minh`
+                # HUD MỜI bấm `c` mà `c` KHÔNG CÓ TÁC DỤNG ⇒ kẹt "chưa xác minh" tới hết phiên
+                # (đúng cái người dùng phàn nàn, chỉ khác là còn thấy viền).
+                da_chua_xac_minh = watch.chua_xac_minh
                 watch.reset()
                 _bao_nghi(False)
                 switch = False
@@ -503,6 +548,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     worker.reanchor(bbox_luc_nghi)
                     consumed_seq = 0
                     last_bbox = bbox_luc_nghi
+                # 24-11: quỹ đạo là dấu vết của vật ĐANG được quan sát; sau khi xác nhận, nối điểm
+                # trước cú nhảy với vùng mới sẽ vẽ một đường xuyên khung (P2 review 24-11) ⇒ xoá.
+                if visualizer is not None and da_chua_xac_minh:
+                    visualizer.clear_trajectory()
                 print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                 continue
             if key == RESET_KEY:

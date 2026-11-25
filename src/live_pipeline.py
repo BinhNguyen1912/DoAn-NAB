@@ -14,12 +14,14 @@ Lưu ý  : số FPS/latency là THỰC ĐO trên phần cứng chạy (ADR-0002:
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+import time
+
 import cv2
 import numpy as np
 
 from src.video_source import open_video_source
 from src.metrics_logger import FrameRecord
-from src.identity_guard import IdentityWatch, is_suspect_switch
+from src.identity_guard import IdentityWatch
 
 _OVERLAY_COLOR_MASK = (0, 140, 255)   # BGR cam — cùng màu fixture
 _OVERLAY_COLOR_BOX = (0, 0, 255)      # BGR đỏ
@@ -30,6 +32,19 @@ QUIT_KEYS = (ord("q"), 27)
 RESET_KEY = ord("r")
 # `c` = "vẫn đúng đối tượng, tiếp tục": xoá trạng thái NGHI ĐỔI ĐỐI TƯỢNG mà không chọn lại ô.
 CONTINUE_KEY = ord("c")
+
+
+def chuan_hoa_phim(key: int) -> int:
+    """Đưa mã phím về CHỮ THƯỜNG cho `c`/`r`/`q` — bật Caps Lock vẫn bấm được.
+
+    Bug thật (demo 24-11): `cv2.waitKey` trả **mã chữ HOA** khi Caps Lock bật, mà `CONTINUE_KEY =
+    ord("c")` ⇒ `c` và `r` **im lặng không ăn** đúng lúc HUD mời bấm. Đây là đường thoát DUY NHẤT
+    khỏi trạng thái `chua_xac_minh` khi re-ID tắt (mặc định `./run demoip --no-reid`) ⇒ người diễn
+    bấm mà không thấy gì rồi tưởng hệ treo.
+    """
+    if not isinstance(key, int):        # stub trong test trả chuỗi; `waitKey` thật trả int
+        return key
+    return key + 32 if 65 <= key <= 90 else key          # 'A'..'Z' → 'a'..'z' (ASCII)
 
 # Ngưỡng cảnh báo chọn sai: SAM 2 luôn trả mask cho BẤT KỲ ô nào (kể cả nền trống) —
 # đo thật 18-10: chọn nền nhỏ vẫn được mask 1.2% khung (không phân biệt được với đối tượng),
@@ -111,13 +126,19 @@ def warn_if_bad_selection(result):
               f"chứa đối tượng; bấm r để chọn lại")
 
 
-def _switch_warning(prev_bbox, result, frame_shape):
-    """Cảnh báo khi ô bao nhảy quá xa trong 1 bước (nghi bám sang đối tượng khác)."""
-    if is_suspect_switch(prev_bbox, result.bbox, frame_shape):
-        print(f"[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ {tuple(prev_bbox)} "
-              f"sang {result.bbox}) — bấm r chọn lại")
-        return True
-    return False
+def _switch_warning(prev_bbox, cur_bbox):
+    """In cảnh báo "nghi đổi đối tượng". **KHÔNG tự chấm lại** cú nhảy.
+
+    Vì sao: bản trước gọi `is_suspect_switch(...)` lần thứ HAI, với `max_jump_ratio` MẶC ĐỊNH (0,25)
+    trong khi `IdentityWatch` được dựng theo `--max-jump-ratio` của người dùng. Hai hệ quả đo được:
+    (a) với `--max-jump-ratio < 0,25` thì cổng báo (`watch.vua_bao`) mà console **im lặng**;
+    (b) sau 24-11 cổng MIỄN chấm bước đầu của phiên bám mới (vật rời khung rồi vào lại) nhưng hàm
+    này vẫn chấm ⇒ vẫn in WARN + bật banner (ca thật: phiên `demoip_1124-193026`). Nay phán quyết
+    thuộc về MỘT chỗ (`IdentityWatch.vua_bao`) và hàm này chỉ in.
+    """
+    print(f"[WARN] nghi ngờ ĐỔI ĐỐI TƯỢNG (ô bao nhảy từ {tuple(prev_bbox)} "
+          f"sang {tuple(cur_bbox)}) — bấm r chọn lại")
+    return True
 
 
 def _record_from(result, state=None, reid_score=None, reacquired=None, ncc=None,
@@ -197,6 +218,14 @@ def run_tracking(source, engine, bbox, on_frame=None, max_frames=None,
         frame = src.read()
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
+        if metrics is not None:
+            # Đường HEADLESS (`./run video|ab|miou` + mọi job web) cũng phải ghi khung: ngưỡng cổng
+            # nghi = 0,25×đường chéo nên 1280×720 khác 640×480. Thiếu dòng này thì `run_info` của
+            # mọi phiên headless ghi `frame_shape: null` dù khung đã biết (review 24-11, P1).
+            # Gọi MỖI frame (so tuple, ~0 chi phí): nguồn có ca đổi độ phân giải giữa phiên
+            # (`live_tracking`), nếu chỉ gọi lần đầu thì `frame_shape_doi` luôn 0 = "đã kiểm, không đổi"
+            # trong khi chưa hề kiểm (review vòng 2, P2-B).
+            metrics.note_frame_shape(frame.shape)
         result = reid_session.start(frame, bbox) if reid_session is not None else engine.start(frame, bbox)
         state = reid_session.state if reid_session is not None else None
         last_bbox = result.bbox if result.mask.any() else tuple(bbox)
@@ -269,6 +298,11 @@ class InteractiveSummary:
     # cháy HUD nên cũng không dùng làm nguồn thô được).
     prompt_bbox: Optional[Tuple[int, int, int, int]] = None
     reselect_n: int = 0        # số lần người dùng bấm `r` chọn lại giữa phiên
+    # 24-11 (ticket #47): số frame ĐÃ PHÁT ở trạng thái "chưa xác minh" của cổng nghi. Đường WEB đã
+    # có (`status.json: chua_xac_minh_n`); đường CLI (`./run demoip`) trước đây KHÔNG đếm ⇒ mọi tuyên
+    # bố "44,3 % → 10,6 % + 33,7 %" chỉ kiểm được bằng replay trên CSV. `0` = chưa từng (KHÔNG phải
+    # "chưa đo" — cổng không bật thì đúng là 0).
+    chua_xac_minh_n: int = 0
 
 
 def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
@@ -293,7 +327,8 @@ def _canh_bao_neu_chon_mat(frame, bbox, visualizer=None) -> None:
 def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
                     visualizer=None, metrics=None, reanchor_every=None,
-                    reid_session=None) -> InteractiveSummary:
+                    reid_session=None, *, settle_steps=None, lost_reset_streak=None,
+                    max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
     source   : nguồn video (truyền vào open_video_source).
@@ -323,6 +358,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         if frame is None:
             raise RuntimeError("Nguồn không đưa được frame nào")
         selector.bind(frame)
+        if metrics is not None:
+            metrics.note_frame_shape(frame.shape)   # trần cổng = 0,25×đường chéo ⇒ phụ thuộc khung
         if preselect_bbox is not None:
             # arm bbox chỉ định sẵn qua đúng đường sự kiện chuột (chuẩn hoá + min-size)
             selector.on_mouse(cv2.EVENT_LBUTTONDOWN, preselect_bbox[0], preselect_bbox[1], 0, None)
@@ -332,8 +369,18 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11): báo 1 lần ⇒ ẩn overlay tới khi người dùng bấm
         # `r` (chọn lại) hoặc `c` (xác nhận vẫn đúng). Không nhớ thì cảnh báo vô dụng: đo trên
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
-        watch = IdentityWatch()
+        # `settle_steps=None` ⇒ mặc định của `IdentityWatch`; có mặt để `--settle-steps` đổi được
+        # hành vi thật (review độc lập 24-11: `run_info` ghi `settle_steps=8` mà không có cờ nào).
+        from src.identity_guard import DEFAULT_SETTLE_STEPS
+
+        watch = IdentityWatch(
+            settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
+            **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
+            **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+        )
         switch = False
+        # Đồng hồ thực giữa 2 lần đẩy cổng ⇒ `step_seconds` cho luật "bước dài bất thường" (25-11).
+        _truoc_cong = None
         last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
         # Ô của CHÍNH frame bật cờ nghi (ô model vừa đưa ra ở cú nhảy) — KHÔNG phải ô trước cú nhảy;
         # `c` = "vùng đang hiện là đúng" nên neo vào ô đó mới khớp ý người dùng (P1 review 23-11).
@@ -364,7 +411,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 img = selector.draw(frame)
                 cv2.putText(img, _HINT_SELECT, (8, 24), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                key = display(img, "select")
+                key = chuan_hoa_phim(display(img, "select"))
                 if key in QUIT_KEYS:
                     break
                 if selector.has_bbox():
@@ -394,17 +441,21 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             else:  # track
                 if visualizer is not None:
                     img = visualizer.update(frame, last_result, switch_warning=switch,
+                                            chua_xac_minh=watch.chua_xac_minh,
                                             reid_state=state, reid_score=reid_score,
                                             reid_vetoed=reid_vetoed)
                 else:
                     img = draw_overlay_minimal(frame, last_result)
                 cv2.putText(img, _HINT_TRACK, (8, 50), cv2.FONT_HERSHEY_SIMPLEX,
                             0.55, (255, 255, 255), 1, cv2.LINE_AA)
-                key = display(img, "track")
+                key = chuan_hoa_phim(display(img, "track"))
                 if key in QUIT_KEYS:
                     break
-                if key == CONTINUE_KEY and watch.nghi:
+                if key == CONTINUE_KEY and (watch.nghi or watch.chua_xac_minh):
                     # "vẫn đúng đối tượng": xoá nghi, KHÔNG chọn lại ô (giữ nguyên phiên bám).
+                    # 24-11 (review P1-a): thêm `chua_xac_minh` — nếu không, HUD mời bấm `c` mà `c`
+                    # không có tác dụng ⇒ kẹt trạng thái tới hết phiên.
+                    da_chua_xac_minh = watch.chua_xac_minh
                     watch.reset()
                     _bao_nghi(False)
                     switch = False
@@ -414,6 +465,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                         last_result = reid_session.start(frame, bbox_luc_nghi)
                         state = reid_session.state
                     last_bbox = bbox_luc_nghi
+                    # 24-11: đừng nối quỹ đạo qua cú nhảy (xem `Visualizer.clear_trajectory`).
+                    if visualizer is not None and da_chua_xac_minh:
+                        visualizer.clear_trajectory()
                     print("[track] da xac nhan: tiep tuc bam doi tuong hien tai")
                     continue
                 if key == RESET_KEY:
@@ -461,9 +515,18 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     verify_cos = cos_truoc = cand_n = None
                     cand_sinh = cand_ncc_loai = None
                 if not reacquired:
-                    switch = _switch_warning(last_bbox, last_result, frame.shape[:2])
-                    switch = watch.update(last_bbox, last_result.bbox, frame.shape[:2]) or switch
-                    if last_result.mask.any():
+                    co_mask = bool(last_result.mask is not None and last_result.mask.any())
+                    _bay_gio = time.monotonic()
+                    _buoc_s = None if _truoc_cong is None else (_bay_gio - _truoc_cong)
+                    _truoc_cong = _bay_gio
+                    watch.update(last_bbox, last_result.bbox, frame.shape[:2], co_mask=co_mask,
+                                 step_seconds=_buoc_s)
+                    # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy (bước đầu của phiên bám mới
+                    # sau khi vật rời khung được MIỄN chấm) — 24-11.
+                    if watch.vua_bao:
+                        _switch_warning(last_bbox, last_result.bbox)
+                    switch = watch.nghi        # xem `smooth_display`: banner = trạng thái latch
+                    if co_mask:
                         last_bbox = last_result.bbox
                     else:
                         last_bbox = (0, 0, 0, 0)
@@ -472,6 +535,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                 if watch.nghi != last_nghi:
                     _bao_nghi(watch.nghi)
                 summary.processed += 1
+                # ticket #47: đếm frame "chưa xác minh" (khác "đang nghi") cho CẢ hai đường CLI.
+                if watch.chua_xac_minh:
+                    summary.chua_xac_minh_n += 1
                 if on_result is not None:
                     on_result(last_result)
                 if metrics is not None:
@@ -484,6 +550,9 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                                              cos_truoc_cong=cos_truoc, cand_n=cand_n,
                                              cand_sinh_n=cand_sinh,
                                              cand_ncc_loai=cand_ncc_loai))
+                # 24-11: quỹ đạo KHÔNG được nối qua cú nhảy (cùng luật `smooth_display`).
+                if watch.nghi and visualizer is not None:
+                    visualizer.clear_trajectory()
     finally:
         src.close()
     return summary

@@ -263,10 +263,18 @@ class LiveTrackStats:
     bam_ly_do: str = ""
     bam_no_evidence_n: int = 0     # số frame ĐÃ PHÁT ở trạng thái no_evidence (đếm được, không suy ra)
     # 21-11: cổng nhảy CÓ NHỚ (`src/identity_guard.IdentityWatch`). `True` = ĐANG nghi đã bám sang đối
-    # tượng khác ⇒ `bam = "nghi_doi_tuong"` và worker KHÔNG vẽ mask/ô (cùng luật với `no_evidence`).
+    # tượng khác ⇒ `bam = "nghi_doi_tuong"`. Từ 23-11 (ticket #45) worker vẫn VẼ ô NÉT ĐỨT + nhãn
+    # "NGHI" (không tô mask, không quỹ đạo) — KHÁC `no_evidence` (ẩn sạch). Đừng đọc comment này như
+    # luật cũ: `an_o` chỉ còn `no_evidence` (dòng dưới).
     # `nghi_doi_tuong_n` = số frame ĐÃ PHÁT trong trạng thái đó (0 ⇒ chưa từng nghi).
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0
+    # 24-11: trạng thái THỨ BA của cổng nhảy — "đã bám ổn định lại nhưng CHƯA ai xác nhận".
+    # `True` ⇒ VẪN vẽ (khác `nghi_doi_tuong`) nhưng ở kiểu chưa xác minh: viền mask nét đứt,
+    # KHÔNG tô, KHÔNG quỹ đạo. Vì sao cần: phiên `demoip_1124-125109` hệ **tự bám lại đúng vật** mà
+    # latch không có đường xoá (re-ID tắt) ⇒ 109/246 = 44,3 % phiên trắng overlay.
+    chua_xac_minh: bool = False
+    chua_xac_minh_n: int = 0
     bbox: list = field(default_factory=list)
     message: str = ""
 
@@ -540,6 +548,10 @@ def status_payload(stats: "LiveTrackStats") -> dict:
         # Cổng nhảy có NHỚ (21-11): `true` ⇒ worker ĐÃ ẨN mask/ô. `nghi_doi_tuong_n == 0` = chưa từng.
         "nghi_doi_tuong": bool(stats.nghi_doi_tuong),
         "nghi_doi_tuong_n": int(stats.nghi_doi_tuong_n),
+        # 24-11: vẫn VẼ nhưng chưa xác minh (xem `_Stats.chua_xac_minh`). Tách khoá riêng để UI
+        # không phải suy từ `bam` (bam = "tracking" trong cả hai ca).
+        "chua_xac_minh": bool(stats.chua_xac_minh),
+        "chua_xac_minh_n": int(stats.chua_xac_minh_n),
         "bbox": stats.bbox,
         "message": stats.message,
     }
@@ -786,6 +798,18 @@ class LiveTrackingSession:
         # worker vẫn vẽ mask của vùng SAI. Xoá khi: API ghi `confirm.json` (`xac_nhan_doi_tuong`),
         # hoặc người dùng chọn ô mới (`start()`).
         self._watch = IdentityWatch()
+        # 24-11 (review P1): cổng nghi chỉ được ăn **một BƯỚC VOS**, không phải mỗi frame phát.
+        # `vos_every=3` ⇒ cùng một kết quả VOS được phát ~3,5 lần ⇒ đếm theo frame phát làm
+        # `lost_reset_streak`/`reacq_grace_steps`/`settle_steps` co lại ~3,5 lần (xem docstring
+        # `IdentityWatch.update(..., buoc_moi=)`).
+        self._watch_seq = None
+        self._buoc_vos_moi = True
+        # Kích thước khung của bước VOS gần nhất — dùng khi `result.mask is None` (không có mask thì
+        # không có `mask.shape`, nhưng cổng vẫn cần khung để tính bán kính nhảy).
+        self._watch_shape = None
+        # Đồng hồ thực của lần đẩy cổng gần nhất ⇒ `step_seconds` cho luật "bước dài bất thường"
+        # (25-11: máy bị chiếm, bước 851 ms làm cổng báo oan một cú nhảy 239 px = 281 px/s).
+        self._watch_t = None
         self._last_good_bbox = None
         self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
@@ -936,6 +960,19 @@ class LiveTrackingSession:
             self._vos_state = (0, self._interp_base_result, gray, time.perf_counter(),
                                float(getattr(self._interp_base_result, "elapsed_ms", 0.0)),
                                None, None, None)
+        # seq=0 là **kết quả `engine.start()`**. Nếu để `_watch_seq = None` thì bước kế
+        # (`_result_threaded` thấy seq 0) lại được tính là "bước VOS mới" ⇒ frame start bị đếm hai lần
+        # (review vòng 3, P3). Đánh dấu đã ăn seq 0. KHÔNG đặt trong `with self._lock` (review vòng 4,
+        # P3): `_watch_seq` không thuộc bất biến của `_vos_state` và chỉ luồng chính đọc/ghi nó —
+        # để trong lock là mẫu dễ copy sai.
+        #
+        # CÒN DƯ (ghi nhận, chưa sửa): `_start_worker` **submit lại chính frame** đó với `seq = 1`, nên
+        # nếu `engine.start()` trả mask RỖNG thì frame start vẫn cho **2 bước cổng** (1 = kết quả start,
+        # 1 = bản worker xử lý lại) ⇒ `_lost` có thể = 2 sau MỘT frame video ⇒ `lost_reset_streak = 3`
+        # hiệu dụng ~2 frame ở đầu phiên. Chỉ xảy ra khi ô chọn ban đầu không có mask (phiên đã hỏng);
+        # muốn sửa thì phải dedupe cổng theo `frame_idx` (như `_cap_nhat_danh_tinh`) và **đo lại** 7/7 +
+        # 4,24 % ⇒ để thành ticket, không sửa lúc này.
+        self._watch_seq = 0
         self._worker = _VosWorker(self._engine, self._store_vos, self._on_worker_error)
         self._worker.start()
         self._seq += 1
@@ -1058,9 +1095,16 @@ class LiveTrackingSession:
             # Hiện KHÔNG reachable (review PR #66, Q1), nhưng nếu reachable thì `chan_doan_lk` sẽ mang
             # chẩn đoán của frame TRƯỚC với `frame_idx` của frame này ⇒ bịt bằng 1 dòng.
             self._chan_doan_frame = None
+            # Không có kết quả VOS ⇒ KHÔNG có bước mới để cổng nghi ăn (24-11): để `True` sót lại từ
+            # bước trước sẽ đẩy một kết quả CŨ vào cổng như thể là bước mới.
+            self._buoc_vos_moi = False
             return self._interp_base_result
 
         seq, base_result, base_gray, produced_at, vos_ms, pre_ms, queue_ms, post_ms = state
+        # Bước VOS MỚI hay chỉ là frame hiển thị lặp lại cùng kết quả (24-11, review P1).
+        self._buoc_vos_moi = seq != self._watch_seq
+        self._watch_seq = seq
+        self._ghi_khung_cho_cong(frame)
         # Truyền ĐỦ các khoản của ĐÚNG lần VOS này (lấy từ snapshot, không đọc `_stats` — tránh lệch
         # thế hệ khi một VOS mới vừa xong).
         self._note_mask_age(time.perf_counter() - produced_at, vos_ms,
@@ -1144,6 +1188,12 @@ class LiveTrackingSession:
 
     # ------------------------------------------------------------------ đường đơn luồng
 
+    def _ghi_khung_cho_cong(self, frame) -> None:
+        """Ghi `frame.shape[:2]` để cổng nghi còn khung khi `result.mask is None`."""
+        shape = getattr(frame, "shape", None)
+        if shape is not None and len(shape) >= 2:
+            self._watch_shape = (int(shape[0]), int(shape[1]))
+
     def _result_inline(self, frame):
         """vos_every=1: chạy VOS ngay trong vòng lặp (không LK, không luồng phụ)."""
         # Không có nội suy ⇒ `lk_ok = None` ⇒ cột CSV ra **Ô TRỐNG** = "chưa đo" (từ 21-11; TRƯỚC đó
@@ -1151,6 +1201,8 @@ class LiveTrackingSession:
         # `n_lk_chua_do` trong artifact; cấm đọc ô trống thành "LK từ chối 100 %".
         self._lk_ok_frame = None
         self._chan_doan_frame = None      # ... và chẩn đoán LK cũng không áp dụng được
+        self._buoc_vos_moi = True         # đường đơn luồng: mỗi frame là một bước VOS
+        self._ghi_khung_cho_cong(frame)
         self._frame_index += 1
         result = self._engine.process(frame)
         self._after_vos(frame, result)
@@ -1900,20 +1952,42 @@ class LiveTrackingSession:
         # đúng frame chuyển trạng thái, CSV ghi "có toạ độ + bam=no_evidence" trong khi ảnh trống.
         # 21-11: cập nhật cổng nhảy CÓ NHỚ bằng ô VOS của CHÍNH frame này (so với ô TỐT gần nhất).
         # Ở đây ĐANG giữ `_stats_lock`; `IdentityWatch.update` là hàm thuần, không I/O.
-        if obs_bbox is not None:
-            _shape = getattr(getattr(result, "mask", None), "shape", None)
+        # CHỈ một bước VOS mới mới được đẩy vào cổng (24-11, review P1): frame hiển thị lặp lại cùng
+        # kết quả VOS thì `obs_bbox` chỉ là mask cũ DỊCH đi bằng LK ⇒ không có thông tin danh tính mới,
+        # và nếu vẫn đẩy vào thì mọi ngưỡng đếm-theo-bước bị co ~3,5 lần.
+        if self._buoc_vos_moi:
+            _shape = getattr(mask, "shape", None)
+            if _shape is None:
+                _shape = self._watch_shape          # mask None ⇒ lấy khung của bước VOS gần nhất
             if _shape is not None and len(_shape) >= 2:
                 lk_vel = None
                 if getattr(self._interp, "last_dx", None) is not None:
                     lk_vel = (self._interp.last_dx, self._interp.last_dy)
+                # ⚠ PHẢI gọi kể cả khi `obs_bbox is None` (VOS trả mask RỖNG ⇒ engine trả bbox
+                # `(0,0,0,0)` ⇒ `_bbox_hop_le` loại ⇒ `obs_bbox = None`). Bản trước bọc bằng
+                # `if obs_bbox is not None` nên trên đường web cổng **không bao giờ thấy VOS rỗng**:
+                # `_lost` không tăng ⇒ `lost_reset_streak`/`reacq_grace_steps` KHÔNG BAO GIỜ chạy ⇒
+                # đúng ca "vật rời khung rồi vào lại" vẫn bị báo nghi trên web (review độc lập vòng 2,
+                # P1). Đường CLI đã làm đúng từ trước: mất dấu ⇒ `prev = (0,0,0,0)`.
+                _bay_gio = time.monotonic()
+                _buoc_s = None if self._watch_t is None else (_bay_gio - self._watch_t)
+                self._watch_t = _bay_gio
                 is_nghi = self._watch.update(
-                    self._last_good_bbox, obs_bbox,
+                    self._last_good_bbox,
+                    obs_bbox if obs_bbox is not None else (0, 0, 0, 0),
                     (int(_shape[0]), int(_shape[1])),
                     lk_velocity=lk_vel,
+                    co_mask=not raw_lost and obs_bbox is not None,
+                    step_seconds=_buoc_s,
                 )
-                if not is_nghi:
+                if not is_nghi and obs_bbox is not None:
                     self._last_good_bbox = obs_bbox
-            else:
+                elif obs_bbox is None:
+                    # Mất dấu ⇒ xoá mốc, đúng luật của `is_suspect_switch` (CLI: `smooth_display`
+                    # `last_bbox = (0,0,0,0)`). Không xoá thì khi vật hiện lại ở chỗ khác, cổng so với
+                    # ô của NHIỀU GIÂY TRƯỚC ⇒ báo "nhảy" vô nghĩa.
+                    self._last_good_bbox = (0, 0, 0, 0)
+            elif obs_bbox is not None:
                 self._last_good_bbox = obs_bbox
         self._cap_nhat_bang_chung(lost, raw_lost=raw_lost)
         # `no_evidence` ẩn ô (ô do LK suy diễn ⇒ vẽ ra là nói dối).
@@ -1927,6 +2001,8 @@ class LiveTrackingSession:
         an_o = self._stats.bam == "no_evidence"
         if self._stats.bam == "nghi_doi_tuong":
             self._stats.nghi_doi_tuong_n = int(self._stats.nghi_doi_tuong_n or 0) + 1
+        elif self._stats.chua_xac_minh:
+            self._stats.chua_xac_minh_n = int(self._stats.chua_xac_minh_n or 0) + 1
         shown = None if an_o else obs_bbox
         # Drift chấm trên ô QUAN SÁT (không phải ô đã vẽ) — xem giải thích ở trên.
         self._shown_by_frame.append((self._frame_index, obs_bbox))
@@ -2001,17 +2077,23 @@ class LiveTrackingSession:
         # không thấy gì. Mặc định làm mượt TẮT nên hai giá trị bằng nhau.
         ly_do = "mask_rong" if (lost or (raw_lost if raw_lost is not None else False)) else ""
         if not ly_do:
-            self._bam_khong_bang_chung = 0
-            # 21-11: cổng nhảy CÓ NHỚ. `mask rỗng` là bằng chứng CHẮC hơn nên xét ở trên; ở đây chỉ
+            self._bam_khong_bang_chung = 0            # 21-11: cổng nhảy CÓ NHỚ. `mask rỗng` là bằng chứng CHẮC hơn nên xét ở trên; ở đây chỉ
             # còn ca "mask có nhưng ô nhảy vô lý" — đúng ca bám sang cửa/tường cùng tông.
             if self._watch.nghi:
                 self._stats.bam = "nghi_doi_tuong"
                 self._stats.bam_ly_do = "o_nhay"
                 self._stats.nghi_doi_tuong = True
+                self._stats.chua_xac_minh = False
+                # 24-11 (review P2): quỹ đạo không được nối qua cú nhảy — khi đang nghi thì xoá
+                # mỗi bước để đường mới (nếu có) bắt đầu từ vùng mới, không cắt ngang khung.
+                self._trail.clear()
                 return
             self._stats.bam = "tracking"
             self._stats.bam_ly_do = ""
             self._stats.nghi_doi_tuong = False
+            # 24-11: đã bám ổn định lại nhưng chưa ai xác nhận ⇒ `bam` vẫn "tracking" (ô được vẽ)
+            # nhưng KHÁC kiểu (xem `_annotate` + `_Stats.chua_xac_minh`).
+            self._stats.chua_xac_minh = self._watch.chua_xac_minh
             return
         if self._stats.bam is None:
             # FRAME ĐẦU TIÊN đã mất bằng chứng: dung sai 2 frame để chống NHẤP NHÁY giữa phiên, không
@@ -2020,6 +2102,10 @@ class LiveTrackingSession:
             self._stats.bam_ly_do = ly_do
             self._stats.bam_no_evidence_n += 1
             self._bam_khong_bang_chung = 1
+            # 24-11 (review P2): "chưa xác minh" nghĩa là **VẪN VẼ** ⇒ mất bằng chứng thì phải tắt
+            # cờ, nếu không `status.json` nói "chưa xác minh" cho frame không vẽ gì và
+            # `chua_xac_minh_n` bị thổi lên.
+            self._stats.chua_xac_minh = False
             return
         self._bam_khong_bang_chung += 1
         if self._bam_khong_bang_chung >= _BAM_NO_EVIDENCE_FRAMES:
@@ -2029,10 +2115,23 @@ class LiveTrackingSession:
             # Đang nghi đổi đối tượng VẪN phải hiện cờ cho web (nếu không, web mất nút "vẫn đúng"
             # đúng lúc người dùng cần bấm nhất) — nhưng lý do ưu tiên vẫn là `mask_rong`.
             self._stats.nghi_doi_tuong = self._stats.nghi_doi_tuong or self._watch.nghi
+            self._stats.chua_xac_minh = False        # xem giải thích ở nhánh `bam is None`
         else:
             # Chưa đủ số frame ⇒ giữ nguyên trạng thái trước (không nhấp nháy); frame đầu = "tracking"
             # vì chưa có gì chứng minh ngược lại.
             self._stats.bam = self._stats.bam or "tracking"
+
+    def _ve_vien_mask(self, img, mask) -> None:
+        """Viền mask (KHÔNG tô) — kiểu "CHƯA XÁC MINH" (24-11, cùng luật `visualizer._ve_vien_mask`)."""
+        from src.visualizer import _COLOR_NGHI
+
+        try:
+            found = cv2.findContours(mask.astype(np.uint8), cv2.RETR_EXTERNAL,
+                                     cv2.CHAIN_APPROX_SIMPLE)
+            contours = found[0] if len(found) == 2 else found[1]
+            cv2.drawContours(img, contours, -1, _COLOR_NGHI, 1)
+        except cv2.error:
+            return                        # mask lạ (rỗng/kích thước sai) ⇒ bỏ qua, không giết phiên
 
     def _annotate(self, frame, result):
         """Tô mask + ô bao + quỹ đạo + HUD. Chữ HUD dùng ASCII vì font Hershey không có dấu.
@@ -2047,18 +2146,25 @@ class LiveTrackingSession:
             # Nguồn đổi độ phân giải giữa phiên (relay /snapshot.jpg, điện thoại xoay máy) ⇒
             # `tint[mask]` sẽ IndexError. Bỏ mask frame này, không làm chết phiên.
             mask = None
-        # 21-11: `nghi_doi_tuong` ẩn y như `no_evidence` (xem `IdentityWatch`) — cùng luật với CLI.
+        # 21-11 → 23-11: `nghi_doi_tuong` KHÔNG ẩn sạch nữa; nó vẽ ô NÉT ĐỨT (xem `IdentityWatch`,
+        # ticket #45). Chỉ `no_evidence` (ô do LK suy diễn) mới ẩn — đừng gộp hai thứ này.
         khong_bang_chung = self._stats.bam in ("no_evidence", "nghi_doi_tuong")
+        # 24-11: "chưa xác minh" — VẪN vẽ, nhưng khác kiểu (cùng luật với `visualizer.render`).
+        chua_xac_minh = (bool(self._stats.chua_xac_minh) and not khong_bang_chung
+                         and mask is not None and bool(mask.any()))
         if mask is not None and mask.any() and not khong_bang_chung:
-            tint = img.copy()
-            tint[mask] = _OVERLAY_COLOR_MASK
-            img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
+            if chua_xac_minh:
+                self._ve_vien_mask(img, mask)
+            else:
+                tint = img.copy()
+                tint[mask] = _OVERLAY_COLOR_MASK
+                img = cv2.addWeighted(img, 1.0 - _OVERLAY_ALPHA, tint, _OVERLAY_ALPHA, 0)
 
         # Ticket #45: "nghi đổi đối tượng" KHÁC "không có bằng chứng" — nghi thì VẪN có ô (chỉ là ô
         # đáng ngờ), nên vẽ NÉT ĐỨT để người xem thấy hệ đang ở đâu mà không tưởng đó là kết quả đã
         # kiểm. Ẩn sạch cả hai (luật 21-11) đã đo hậu quả 23-11: 50/194 frame = 25,8 % phiên trắng.
         dang_nghi = self._stats.bam == "nghi_doi_tuong"
-        if not khong_bang_chung:
+        if not khong_bang_chung and not chua_xac_minh:
             x1, y1, x2, y2 = [int(v) for v in result.bbox]
             if x2 > x1 and y2 > y1:
                 cv2.rectangle(img, (x1, y1), (x2, y2), _OVERLAY_COLOR_BOX, 2)
@@ -2066,6 +2172,15 @@ class LiveTrackingSession:
             points = list(self._trail)
             for index in range(1, len(points)):
                 cv2.line(img, points[index - 1], points[index], (255, 0, 255), 2)  # BGR tím
+        elif chua_xac_minh:
+            # Ô nét đứt + nhãn, KHÔNG quỹ đạo (quỹ đạo = dấu vết của vật ĐANG được kiểm).
+            from src.visualizer import _COLOR_NGHI, ve_o_net_dut
+
+            x1, y1, x2, y2 = [int(v) for v in result.bbox]
+            if x2 > x1 and y2 > y1:
+                ve_o_net_dut(img, x1, y1, x2, y2)
+                cv2.putText(img, "CHUA XAC MINH", (x1, max(18, y1 - 6)),
+                            cv2.FONT_HERSHEY_SIMPLEX, 0.55, _COLOR_NGHI, 2)
         elif dang_nghi:
             # import trong hàm: tránh vòng import nặng (visualizer cũng import ngược live_tracking)
             from src.visualizer import _COLOR_NGHI, ve_o_net_dut
@@ -2084,6 +2199,8 @@ class LiveTrackingSession:
                 hud += " | NGHI DOI TUONG (o nhay) — chon lai hoac XAC NHAN"
             else:
                 hud += f" | KHONG CO BANG CHUNG ({self._stats.bam_ly_do})"
+        elif chua_xac_minh:
+            hud += " | CHUA XAC MINH — bam XAC NHAN neu dung vat"
         if self._stats.lost_streak:
             hud += f" | LOST {self._stats.lost_streak}"
         # ASCII (không dấu) là BẮT BUỘC: cv2.putText/Hershey không render được dấu tiếng Việt
@@ -2119,9 +2236,17 @@ class LiveTrackingSession:
             self._last_good_bbox = None
             self._stats.nghi_doi_tuong = False
             self._stats.nghi_doi_tuong_n = 0
+            # 24-11 (review P2/P3): xác nhận xong thì hết cả hai trạng thái — nếu không, `status.json`
+            # ngay sau khi bấm nút vẫn nói "chưa xác minh" và bộ đếm không đối xứng với
+            # `nghi_doi_tuong_n`.
+            self._stats.chua_xac_minh = False
+            self._stats.chua_xac_minh_n = 0
             if self._stats.bam == "nghi_doi_tuong":
                 self._stats.bam = "tracking"
                 self._stats.bam_ly_do = ""
+            # Quỹ đạo KHÔNG được nối qua cú nhảy/vùng chưa xác minh (P2 review 24-11): đường tím
+            # xuyên khung là thứ đi thẳng vào video demo với nhãn "quỹ đạo theo thời gian thực".
+            self._trail.clear()
         self._stats.message = "da xac nhan: tiep tuc bam doi tuong hien tai"
 
     def _publish_status(self, out_dir: Path) -> None:

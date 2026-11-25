@@ -524,6 +524,18 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   model ⇒ **cận trên**, không phải `vos_ms`. Cột `binh2_tay2` chỉ có **n=2** frame có vật ⇒ cấm trích
   0,81 của nó như số chắc. Mốc cho Cutie: **phải tự đo được ngưỡng nhiễu mIoU trước**, rồi mới đặt
   mốc (đừng lấy 0,856–0,868 — đó vẫn là số mượn).
+- **Cổng "có vật" của SAM 2: `min_obj_score_logits: -1` là TỐT NHẤT — đừng "sửa" cho khớp ngưỡng bộ nhớ.**
+  Trong SAM 2 có **hai ngưỡng lệch nhau** cho cùng quyết định: config `min_obj_score_logits: -1`
+  (`samurai/.../sam2.1_hiera_t.yaml:126` → zero-hoá mask, `sam2_base.py:398`) nhưng `sam2_base.py:867`
+  lại dùng `> 0` để gắn `no_obj_embed_spatial`. Đo 24-11 trên `binh1` (GT `docs/gt/b1`, 12 frame, 5 frame
+  GT rỗng, @192, `git_dirty_code=false`) bằng override hydra `++model.min_obj_score_logits`:
+  **−1 (mặc định): mIoU 0,7794 · bịa mask 0/5** · **0: 0,7794 · bịa 1/5 (3 408 px)** · **−100 (tắt cổng):
+  0,7206 · bịa 2/5**. ⇒ (a) làm hai ngưỡng "khớp nhau" **tạo phantom**, không xoá; (b) cổng **không** che
+  một model tốt hơn — nó đang giúp; (c) **cấm** kết luận "model to hơn mất vật là do cổng" (đã thử: base_plus
+  vẫn 0,2716–0,2741 khi tắt cổng). Artifact `data/miou_gate_{_‑1,0,-100}_2026-11-24_metrics.json`.
+  Cờ `--min-obj-score-logits` giữ lại **chỉ để chẩn đoán**. Và: **mọi A/B đổi cấu hình model phải qua
+  `build_overrides()`** — copy file config đã đo được là làm **đổi hành vi** (nội dung y nguyên:
+  mIoU 0,6987 → 0,2486).
 - **Điểm prompt ÂM không phải "liều thuốc chung": trên clip mà lỗi là mask HỤT, nó làm HỤT THÊM.**
   Đo 22-11 (`scripts/ab_diem_am.py`, so cặp từng frame, điểm âm sinh từ HÌNH HỌC chứ không từ GT):
   trên `binh2` (lỗi đang là **hụt diện tích**) — điểm âm quanh ô ĐÚNG: 192 **+0,0016** (5/8 frame, CI95
@@ -753,6 +765,23 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   hiển thị**: nhịp vẽ vẫn ~20 tick/s, xem bullet `--smooth` ngay trên). Trước đó (nguồn live 30, nguồn file `None`) và
   ngủ theo **mốc đầu vòng**; đo lại: **60 lần/2 s = 30/s**. Nguồn **file** còn đọc **715 lần/s** (giải mã clip
   20 lần, ffmpeg mở 8 luồng tranh torch) — chưa sửa, cần quyết "skip hay block".
+- **CỔNG "NGHI ĐỔI ĐỐI TƯỢNG" BÁO ĐÚNG 7/7 CA ĐÃ KIỂM — ĐỪNG NỚI NGƯỠNG, LỖI THẬT LÀ **BỎ SÓT** (24-11).**
+  Người dùng báo *"vật đi nhanh quá thì bị nghi"*, nhưng đọc video HUD (`_web.mp4`) của 3 phiên có sự kiện
+  cho thấy **6/6 lần báo là ĐÚNG**: `144057` chọn **thìa GỖ** (`prompt_bbox=[397,79,491,462]`), người dùng
+  rút thìa gỗ xuống rồi đưa **thìa NHỰA trắng** vào ⇒ SAM 2 bám thìa nhựa ⇒ **danh tính đã đổi**; `141352`
+  cùng kịch bản; `144226` báo khi **tay người khác** vào khung. Nên **mọi luật "giảm số lần báo" đều giảm
+  RECALL**, đo trên **10 phiên đóng băng / 1 509 frame** (`data/eval_gate_config_list.json`, artifact
+  `data/eval_gate_rules_2026-11-24_metrics.json`): bắt ca đúng — hiện tại **7/7**; `theo_dt` **3/7**;
+  `van_toc_lich_su` **6/7** + không-tin-cậy 26,57 %; `theo_dt_va_dien_tich` **2/7**; `chi_khi_cham_600`
+  **1/7**, `_900` **3/7**, `_1200` **4/7**, `_1500` **5/7**. ⇒ **cấm nới trần 0,25 / thêm luật hình học**
+  (biên quyết định chỉ **0,937 → 1,019** = 8 % ngưỡng, và cổng **mù** với dịch chuyển 127–172 px của
+  `141352` f7/f12/f16/f17 — mask tô đặc trên tóc/mặt mà không cảnh báo; **8/38** lần vật hiện lại sau mất
+  dấu cách **> 200 px**, gồm **248,9 px** ở ca 21-11 #178 và **303,8 px** ở `110536#142` — nhưng sửa chỗ
+  đó là tạo báo oan thật vì 2/8 ca là "vật ra khỏi khung rồi về"). Nhãn do **1 người** dán trên video HUD
+  (frame báo KHÔNG vẽ mask theo thiết bại) ⇒ muốn TRÍCH phải có người thứ 2.
+  Hệ quả thao tác: **demo phải khoá kịch bản KHÔNG đổi vật** (đừng đưa thìa thứ hai vào), và `c` là đường
+  thoát duy nhất khỏi `chua_xac_minh` khi `--no-reid` (nay Caps Lock không còn làm `c`/`r`/`q` im lặng nhờ
+  `live_pipeline.chuan_hoa_phim`). Plan + 2 vòng phản biện: `docs/plan/24-11-2026-cong-nghi-bao-oan.md`.
 - **`--trajectory-seconds` là WALL CLOCK — với nguồn FILE nó đổi nghĩa (đọc kèm khi trích số).** 5 s wall ở
   6,3 bước/s = 31 frame video = **1,05 s clip 30 fps**; ở 9 bước/s = 45 frame = 1,5 s clip. Với `./run demoip`
   (live) wall ≈ video nên đúng; với `./run video` thì "5 s quỹ đạo" **không** phải 5 s của clip ⇒ khi báo cáo
@@ -761,3 +790,91 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
 - **"Quỹ đạo 100 điểm" KHÔNG phải "quỹ đạo theo thời gian".** Cùng 100 điểm = **16 s** ở 6,3 bước/s nhưng
   **32 s** ở 3,1 bước/s ⇒ đại lượng đổi nghĩa theo tốc độ máy. Từ 24-11 có `--trajectory-seconds` (cắt theo
   mốc thời gian của từng điểm); `./run demoip` dùng **5 s**.
+
+- **Cổng "nghi đổi đối tượng" PHẢI TỰ HẠ MỨC — ẩn tới hết phiên là bug, không phải an toàn.**
+  Đo 24-11 (phiên `data/demoip_1124-125109`, 246 frame, @192, re-ID TẮT): cổng báo **ĐÚNG** ở f137 (ô
+  nhảy sang **tóc người**, vật là cái thìa trắng — kiểm bằng ảnh), rồi hệ **tự bám lại đúng cái thìa**
+  ở t≈40 s… mà màn hình vẫn in "NGHI ĐỔI ĐỐI TƯỢNG" suốt tới cuối ⇒ **109/246 = 44,3 % phiên** không
+  có mask (94 frame trong đó mask VẪN CÒN ⇒ "chi phí ẩn" đúng nghĩa 38 %). Nguyên nhân đọc từ code:
+  latch chỉ được xoá bằng `r`/`c`/`reacquired` ⇒ **re-ID tắt thì nó là công tắc tắt vĩnh viễn**. Nay
+  `IdentityWatch` có **3 trạng thái**: `nghi` (KHÔNG vẽ mask) → sau `settle_steps = 8` bước bám ổn định
+  **có mask** → `chua_xac_minh` (VẪN vẽ nhưng **viền nét đứt, không tô, không quỹ đạo** + câu xin xác
+  nhận, `c` xoá được) → `r`/`c`/reacquire ⇒ `ok`; cú nhảy mới ⇒ về `nghi`.
+  Replay `scripts/replay_latch_settle.py` trên **22 phiên ĐO ĐƯỢC / 4 346 frame** (artifact
+  `data/replay_latch_settle_2026-11-24_metrics.json`, `settle_steps = 0` = hành vi cũ): ẩn
+  **32,67 % → 4,16 %** frame (khi còn mask: **29,71 % → 3,38 %**), **28,51 %** frame chuyển sang "chưa
+  xác minh"; riêng phiên 1124: **44,3 % → 10,6 %** ẩn + 33,7 % chưa xác minh. **ĐỪNG trích 20,17 % →
+  2,57 %** (số cũ): mẫu số đó trộn 17 phiên thiếu cột `mask_area` (2 695 frame) mà ở đó cổng **không
+  thể** bật — đúng bẫy "0/None ≠ đã đo"; script nay in `so_phien_do_duoc`/`so_frame_do_duoc` + `pct_frame_an_co_mask` và thoát 1
+  nếu không có phiên nào đo được hoặc `git_rev` không đọc được.
+  **Cấm** hạ mức thành "tin cậy" (ca 21-11 bám sang cửa/tường be CÙNG TÔNG: chuyển động sau cú nhảy
+  lại mượt ⇒ tự bỏ nghi = vẽ mask SAI 65 frame) và **cấm** đếm bước ổn định khi mask rỗng. Cột CSV
+  `nghi_doi_tuong` vẫn nghĩa **"frame này ĐANG ẨN mask"**; `chua_xac_minh` là đại lượng KHÁC (có trong
+  `status.json` **và** `GET /api/live/status`: `chua_xac_minh`, `chua_xac_minh_n`) — đừng cộng gộp hai
+  cột rồi gọi là "tỉ lệ nghi". Thêm field mới vào `status.json` thì phải đi đủ **6 chỗ**: `LiveTelemetry`
+  + `LiveStatus` + `telemetry()` + `live.status()` + `LiveStatusResponse` + `routes._live_status` —
+  ngày 24-11 `chua_xac_minh` (và cả `nghi_doi_tuong` từ 21-11!) **chết ở `routes._live_status`** mà
+  e2e (mock route) lẫn allowlist (chỉ so TÊN khoá của schema) vẫn xanh. Log:
+  `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md`.
+- **ĐÃ CÓ bằng chứng LIVE cho cơ chế tự hạ mức (24-11, phiên `demoip_1124-141352`, 87 frame / 21,1 s,
+  `git_rev e18b953`, re-ID TẮT, `loadavg 1,41`):** cổng báo **2 lần** (f29, f42) và mỗi lần **đúng 8
+  frame** ẩn (f29–36, f42–49) rồi tự chuyển "chưa xác minh" ⇒ **16/87 = 18,4 %** frame ẩn. Hành vi CŨ
+  trên chính CSV đó = **58/87 = 66,7 %** (`scripts/replay_latch_settle.py --settle 0`), tức phiên này
+  sẽ mất **2/3** buổi demo. Replay `--settle 8` ra **16 frame** = **trùng khít** số live ⇒ mô hình
+  replay đúng và state machine chạy thật trên đường live. Ảnh tự kiểm: t=9,6 s "CHUA XAC MINH" (ô trên
+  vùng SAI — đúng ca 21-11, trung thực), t=11,2 s "NGHI", **t=12,6 s ô quay lại ĐÚNG cái thìa** (vẫn
+  nhãn chưa xác minh), t=14,5 s chỉ còn 1 banner "MẤT DẤU" (hết cảnh 2 banner chồng). `settle 8` ở
+  phiên này = **1,94 s** (nhịp VOS 4,12 bước/s) ⇒ con số "1,3–1,8 s" phải nói kèm nhịp VOS.
+  Số hiệu năng phiên này: mean **232 ms** / p95 348 ms, hiển thị 19,3 FPS, CPU 440 % — **KHÔNG** phải
+  máy bận (loadavg 1,41) mà chính pipeline (`--smooth`) ăn 4,4 lõi; headless cùng clip ra 98 ms ⇒
+  đừng so hai đường. Còn thiếu: `chua_xac_minh_n` cho đường CLI (ticket #47) — hiện chỉ đếm được qua
+  `nghi_doi_tuong` + replay.
+- **"VẬT RỜI KHUNG RỒI VÀO LẠI" KHÔNG PHẢI "ĐỔI ĐỐI TƯỢNG" — cổng nghi từng tự khoá phiên tới hết buổi.**
+  Người dùng báo 24-11 (phiên `demoip_1124-193026`, 404 frame, `git_rev 14140ca`): *"ra khung ~10 s, đưa
+  vào lại thì bị nghi, từ đó không nhận diện lại nữa"*. Đọc CSV: **15 frame `mask_area=0` liền**
+  (f248–262) → f263 mask đầu tiên chỉ **559 px** (`bbox_area_ratio 0,346` × tham chiếu = **mẩu rác**) →
+  f264 mask thật 24 100 px ⇒ cổng chấm "tâm nhảy 209 px" **giữa mẩu rác và vật** ⇒ báo nghi ⇒ latch
+  (re-ID TẮT nên **không có đường xoá**) ⇒ **132/404 = 32,7 %** phiên chỉ còn ô nét đứt "chưa xác minh".
+  Nay `IdentityWatch` có `lost_reset_streak` (**3** bước vắng liền = vật đã rời khung ⇒ lần có mask kế
+  tiếp là **phiên bám mới**: `reset()` về `ok` + `reacq_grace_steps` (**2**) bước đầu **miễn chấm nhảy**),
+  và cờ `vua_bao` để đường in cảnh báo **không tự chấm lại** (`_switch_warning` từng gọi
+  `is_suspect_switch` lần 2 ⇒ sửa state machine mà console vẫn in WARN + banner). Ngưỡng 3 vì 1–2 frame
+  rỗng là **nhấp nháy** (ca đúng `125109#137` chỉ vắng **1** frame) ⇒ **giữ nguyên 7/7 ca báo đúng**.
+  Đo (`data/eval_gate_rules_2026-11-24_metrics.json`, 10 phiên đóng băng/1 509 frame): chưa-xác-minh
+  **11,33 % → 4,24 %**, không-tin-cậy **15,04 % → 7,95 %**, ca đúng **7/7**; `--lost-reset 0` là cờ tái
+  lập hành vi cũ. Toàn pool (`data/replay_latch_tai_bam_2026-11-24_metrics.json`, 26 phiên đo được/5 180
+  frame, `settle 8`): chưa-xác-minh **29,77 % → 16,20 %**, và hành vi `settle 0` **34,54 % → 20,50 %**.
+  Phiên được báo: **1 lần báo → 0**, 132 frame chưa-xác-minh → **0**. **BIÊN CỦA NGƯỠNG 3 RẤT MỎNG:**
+  ca đúng đã biết sát ngưỡng là `125109#137` (**vắng 1** frame; f136 có mask nên mốc đặt lại ⇒ ngưỡng
+  2 vẫn giữ). Phiên `121732` **cũng** có **2 frame rỗng liền** (f176–177, đọc từ CSV) — nhưng ca đó
+  **KHÔNG tái lập được** bằng replay (`fire: 0` với mọi luật: CSV không có cột `nghi_doi_tuong` và
+  f178 là `reacquired=1` ⇒ đường CLI đi `watch.reset()`) ⇒ **chỉ là ví dụ biên, cấm trích** "ngưỡng 2
+  mất ca đúng". Biên được khoá bằng `TestBienCuaNguongVang` (**tổng hợp**: ô của ca thật, chuỗi dựng)
+  — đổi `>=` thành `>` hoặc hạ ngưỡng là test đỏ. **Đánh đổi phải nói kèm:** sau khi vật rời khung rồi vào lại, hệ **TIN** vùng
+  mới — "một vật khác đi vào" thì không phân biệt được nếu không có re-ID. **CÒN HỞ:** cùng phiên được
+  báo, ô bám sang **tường trống** ~130 frame mà cổng **không** báo (trôi dần — đúng kết luận 23-11) ⇒
+  cần cơ chế khác (verified re-anchor / Cutie), **đừng** nới ngưỡng. **ĐƯỜNG WEB PHẢI ĂN THEO BƯỚC VOS,
+  KHÔNG theo frame phát:** `live_tracking` gọi cổng mỗi vòng phát mà `vos_every=3` ⇒ cùng một kết quả VOS
+  lặp ~3,5 lần (29,8 FPS hiển thị / 8,5 VOS mỗi giây) ⇒ mọi ngưỡng đếm-theo-bước co lại 3,5 lần và grace
+  hết hạn **trước** bước VOS kế (ca f263→f264 **vẫn** bị chấm trên web). Nay `IdentityWatch.update(...,
+  buoc_moi=)` + `live_tracking._watch_seq` chỉ đẩy cổng khi **seq VOS đổi** — review độc lập 24-11 bắt
+  P1 này, số §4 (replay CLI) **không** phát hiện được. Log:
+  `docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md`.
+- **BƯỚC VOS DÀI BẤT THƯỜNG LÀM CỔNG BÁO OAN — nới theo THỜI GIAN chỉ khi bước > 0,5 s.** Người dùng
+  báo 25-11 (phiên `demoip_1125-084425`): *"sao nó lag dữ vậy, đưa vật vào 1 hồi mới có bỏ đỏ"* — log
+  **6 frame / 10,4 s, mean 2004 ms** (bình thường 137–141 ms). Tách hai chuyện: (a) **lag là môi trường,
+  không phải regression**: cùng commit, 15 phút sau, headless cùng clip = **137 ms** (n = 15);
+  `loadavg_1m 2,02`, `live_workers_khac 0`, `image_size 192` ⇒ nghi Windows Update/Defender lúc 8h45 —
+  **`loadavg` của WSL KHÔNG thấy tiến trình phía Windows**, muốn chắc phải xem Task Manager;
+  (b) **lỗi thật bị phơi ra**: ngưỡng cổng tính **px/BƯỚC**, nên `f3` báo oan vì tâm nhảy **239 px** >
+  trần **200 px** — mà 239 px trong **851 ms** chỉ là **281 px/s** (tay đi bình thường). Nay
+  `identity_guard` có `DT_CHAM_BI_THUONG_S = 0,5` · `TOC_DO_TOI_DA_PX_S = 1500` · `TRAN_CHAM_RATIO =
+  0,35`: **chỉ khi `step_seconds > 0,5 s`** mới `radius = max(base, 1500 × dt)` với trần `0,35·diag`, và
+  **không** áp dụng khi người dùng tự siết `--max-jump-ratio`. Ba đường runtime đo `step_seconds` bằng
+  **`time.monotonic()`** giữa 2 lần đẩy cổng (KHÔNG dùng `elapsed_ms`: ở frame nội suy LK đó là `lk_ms`).
+  Đo (`data/eval_gate_rules_2026-11-25_metrics.json`, `git_rev 3591f19`, `git_dirty_code=false`): nhóm 10
+  phiên đóng băng **y hệt** luật cũ (6 báo, chưa-xác-minh 4,24 %, **7/7** ca đúng — bước của chúng
+  131–352 ms < 500 ms nên luật **không kích hoạt**); phiên 25-11 `fire=[3] → []`. Đây **KHÔNG** phải nới
+  trần vô điều kiện (24-11 đã đo 0,25→0,30 làm **mất** ca đúng `092343#264`, đuôi 146→159). Hệ quả phải
+  nói kèm: máy rất chậm thì bán kính chạm trần 280 px ⇒ **mất độ nhạy** cổng với cú nhảy < 280 px/bước.
+  Log: `docs/task/25-11-2026-lag-2004ms-va-cong-bao-oan-khi-may-cham.md`.

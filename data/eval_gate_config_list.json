@@ -1,0 +1,16 @@
+{
+ "phien": [
+  "demoip_1121-130447_metrics.csv",
+  "demoip_1121-141016_metrics.csv",
+  "demoip_1121-150909_metrics.csv",
+  "demoip_1123-095901_metrics.csv",
+  "demoip_1123-101110_metrics.csv",
+  "demoip_1123-144130_metrics.csv",
+  "demoip_1123-144226_metrics.csv",
+  "demoip_1124-110536_metrics.csv",
+  "demoip_1124-141352_metrics.csv",
+  "demoip_1124-144057_metrics.csv"
+ ],
+ "ghi_chu": "sinh tự động từ các phiên khớp 100 % với cột nghi_doi_tuong",
+ "do_luc": "2026-11-24T15:26:45"
+}

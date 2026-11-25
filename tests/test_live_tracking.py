@@ -163,7 +163,11 @@ class TestLiveTrackingSession:
         bat_buoc = bat_buoc | {"bbox_w", "bbox_h", "mask_area", "track_cos", "track_cos_n",
                                # 21-11: cổng nhảy CÓ NHỚ. BẮT BUỘC — web cần `bam`/cờ này để hiện
                                # banner + nút "vẫn đúng"; xoá khỏi `status_payload` thì test phải đỏ.
-                               "nghi_doi_tuong", "nghi_doi_tuong_n"}
+                               "nghi_doi_tuong", "nghi_doi_tuong_n",
+                               # 24-11: trạng thái thứ ba "đã bám ổn định lại nhưng CHƯA xác nhận"
+                               # (`_Stats.chua_xac_minh`). `bam` = "tracking" ở CẢ hai ca (vẫn vẽ)
+                               # ⇒ UI KHÔNG suy ra được từ `bam`, phải có khoá riêng.
+                               "chua_xac_minh", "chua_xac_minh_n"}
         cho_phep = bat_buoc | {"chan_doan_lk", "bam", "bam_ly_do", "bam_no_evidence_n"}
         assert bat_buoc <= set(status), f"thiếu khoá: {bat_buoc - set(status)}"
         la = set(status) - cho_phep
@@ -3339,3 +3343,409 @@ class TestNghiDoiTuongVeONetDut:
         img = sess._annotate(frame, res)
         # chỉ còn HUD (chữ đỏ ở góc trên-trái); vùng ô phải nguyên nền
         assert img[40:70, 40:80].sum() == 0
+
+
+class TestChuaXacMinhDuongWeb:
+    """24-11: trạng thái thứ ba của cổng nghi trên ĐƯỜNG WEB — phải giống CLI.
+
+    Nếu web vẫn ẩn sạch thì hai đường demo nói hai chuyện (bài học review 21-11): phiên
+    `demoip_1124-125109` hệ **tự bám lại đúng vật** mà vẫn ẩn ⇒ 44,3 % phiên trắng.
+    """
+
+    @staticmethod
+    def _session():
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir="/tmp/khong-dung",
+                                                            vos_every=2))
+
+    @staticmethod
+    def _mask():
+        m = np.zeros((48, 64), bool)
+        m[10:30, 10:30] = True
+        return m
+
+    def _day_sang_chua_xac_minh(self, s):
+        from src.identity_guard import TRANG_THAI_CHUA_XAC_MINH
+
+        s._watch._trang_thai = TRANG_THAI_CHUA_XAC_MINH
+
+    def test_bam_van_la_tracking_nhung_co_co_chua_xac_minh(self):
+        s = self._session()
+        s._lk_ok_frame = True
+        self._day_sang_chua_xac_minh(s)
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "tracking", "chưa xác minh thì VẪN vẽ (khác `nghi_doi_tuong`)"
+        assert s._stats.chua_xac_minh is True
+        assert s._stats.nghi_doi_tuong is False
+
+    def test_nghi_van_an_va_xoa_co_chua_xac_minh(self):
+        from src.identity_guard import TRANG_THAI_NGHI
+
+        s = self._session()
+        s._lk_ok_frame = True
+        s._stats.chua_xac_minh = True
+        s._watch._trang_thai = TRANG_THAI_NGHI
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "nghi_doi_tuong"
+        assert s._stats.chua_xac_minh is False, "đang ẩn thì không được nói 'chưa xác minh'"
+
+    def test_annotate_chua_xac_minh_khong_to_mask(self):
+        from src.live_tracking import _FrameResult
+
+        s = self._session()
+        frame = np.zeros((200, 320, 3), np.uint8)
+        mask = np.zeros((200, 320), bool)
+        mask[100:160, 100:160] = True
+        res = _FrameResult(1, (100, 100, 160, 160), mask, 1.0)
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = True
+        img = s._annotate(frame, res)
+        # vùng GIỮA mask, tránh dòng HUD ở y≈28 và nhãn "CHUA XAC MINH" trên đỉnh ô
+        giua = img[120:145, 120:145]
+        assert not giua.any(), "mask bị TÔ như đã kiểm — phải chỉ vẽ viền"
+        vien = img[100:102, 105:155]
+        assert vien.any(), "không vẽ gì ⇒ người xem không biết hệ đang bám ở đâu"
+
+    def test_annotate_da_xac_minh_thi_to_mask(self):
+        """Đối chứng: `chua_xac_minh = False` ⇒ tô như cũ (nếu không, test trên vô nghĩa)."""
+        from src.live_tracking import _FrameResult
+
+        s = self._session()
+        frame = np.zeros((200, 320, 3), np.uint8)
+        mask = np.zeros((200, 320), bool)
+        mask[100:160, 100:160] = True
+        res = _FrameResult(1, (100, 100, 160, 160), mask, 1.0)
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = False
+        img = s._annotate(frame, res)
+        assert img[120:145, 120:145].any(), "mask tin cậy phải được tô"
+
+
+class TestChuaXacMinhKhongKet:
+    """24-11 (review độc lập P2/P3) — 3 lỗi của trạng thái mới trên đường WEB.
+
+    (a) `chua_xac_minh` KHÔNG bị xoá khi mất bằng chứng ⇒ `status.json` nói "chưa xác minh" cho
+        frame KHÔNG VẼ GÌ và `chua_xac_minh_n` bị thổi;
+    (b) `_check_confirm` (nút "Vẫn đúng") chỉ xoá `nghi_doi_tuong_n`, không xoá `chua_xac_minh*`;
+    (c) quỹ đạo (`_trail`) không được nối qua cú nhảy.
+    """
+
+    @staticmethod
+    def _session(out_dir):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        return LiveTrackingSession(_Noop(), LiveTrackConfig(source="x", out_dir=str(out_dir),
+                                                            vos_every=2))
+
+    def test_mat_bang_chung_thi_tat_co_chua_xac_minh(self, tmp_path):
+        s = self._session(tmp_path)
+        s._stats.chua_xac_minh = True
+        s._stats.bam = "tracking"
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(True, raw_lost=True)     # frame trượt đầu
+        s._cap_nhat_bang_chung(True, raw_lost=True)     # đủ 2 frame ⇒ no_evidence
+        assert s._stats.bam == "no_evidence"
+        assert s._stats.chua_xac_minh is False, "'chưa xác minh' nghĩa là VẪN VẼ"
+        # REVIEW vòng 2 (P3): assert `_n` trên một hàm KHÔNG tăng `_n` là vô nghĩa. Bộ đếm tăng ở
+        # `_update_stats_locked` ⇒ phải đi qua đúng đường đó mới chứng minh được.
+        truoc = s._stats.chua_xac_minh_n
+        from src.live_tracking import _FrameResult
+
+        s._update_stats_locked(_FrameResult(1, (0, 0, 0, 0), None, 1.0, raw_lost=True))
+        assert s._stats.chua_xac_minh_n == truoc, "frame KHÔNG vẽ không được đếm là 'chưa xác minh'"
+
+    def test_nut_van_dung_xoa_ca_hai_trang_thai(self, tmp_path):
+        import json
+
+        from src.live_tracking import CONFIRM_NAME
+
+        s = self._session(tmp_path)
+        s._stats.nghi_doi_tuong = True
+        s._stats.nghi_doi_tuong_n = 12
+        s._stats.chua_xac_minh = True
+        s._stats.chua_xac_minh_n = 83
+        s._watch._trang_thai = "chua_xac_minh"
+        s._trail.append((10, 10))
+        (tmp_path / CONFIRM_NAME).write_text(json.dumps({"x": 1}), encoding="utf-8")
+        s._check_confirm(tmp_path)
+        assert (s._stats.chua_xac_minh, s._stats.chua_xac_minh_n) == (False, 0)
+        assert (s._stats.nghi_doi_tuong, s._stats.nghi_doi_tuong_n) == (False, 0)
+        assert s._watch.nghi is False and s._watch.chua_xac_minh is False
+        assert list(s._trail) == [], "quỹ đạo không được nối qua cú nhảy sau khi xác nhận"
+
+    def test_dang_nghi_thi_quy_dao_bi_xoa(self, tmp_path):
+        s = self._session(tmp_path)
+        s._trail.append((1, 1))
+        s._watch._trang_thai = "nghi"
+        s._lk_ok_frame = True
+        s._cap_nhat_bang_chung(False)
+        assert s._stats.bam == "nghi_doi_tuong"
+        assert list(s._trail) == []
+
+    def test_bo_dem_tang_khi_that_su_chua_xac_minh(self, tmp_path):
+        """ĐỐI CHỨNG DƯƠNG (review vòng 3, P3): assert "không tăng" một mình không chứng minh bộ đếm
+        còn sống — xoá hẳn nhánh `elif self._stats.chua_xac_minh: ... += 1` thì mọi test cũ vẫn xanh
+        trong khi web/status báo 0 mãi."""
+        from src.live_tracking import _FrameResult
+
+        s = self._session(tmp_path)
+        mask = np.zeros((48, 64), bool)
+        mask[10:30, 10:30] = True
+        s._watch._trang_thai = "chua_xac_minh"
+        s._stats.bam = "tracking"
+        s._stats.chua_xac_minh = True
+        assert s._stats.chua_xac_minh_n == 0
+        s._update_stats_locked(_FrameResult(1, (10, 10, 30, 30), mask, 1.0))
+        assert s._stats.chua_xac_minh_n == 1, "bộ đếm 'chưa xác minh' chết im lặng"
+
+
+class TestCongNghiAnMotBuocVOSKhongPhaiMoiFramePhat:
+    """24-11 (review độc lập P1): cổng nghi trên đường web ăn MỖI frame PHÁT.
+
+    `vos_every>1` ⇒ cùng một kết quả VOS được phát ~`display_fps/vos_fps` lần (AGENTS §6: 29,8 FPS
+    hiển thị / 8,5 VOS mỗi giây ≈ 3,5). Đếm theo frame phát làm `lost_reset_streak=3` co còn ~1 bước VOS
+    (một VOS rỗng là reset ⇒ mất ca nhấp nháy) và `reacq_grace_steps=2` hết hạn TRƯỚC bước VOS kế ⇒
+    đúng cú "mẩu rác 559 px → vật 24 100 px" của phiên `demoip_1124-193026` vẫn bị chấm và vẫn báo.
+    """
+
+    def _session(self, vos_every=3):
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        class _WorkerStub:
+            def submit(self, seq, frame, gray): ...
+
+        class _InterpStub:
+            """LK "ok" dịch 0 px ⇒ `_result_threaded` đi nhánh dựng result từ mask VOS."""
+
+            last_dx = last_dy = None
+            last_ly_do = "ok"
+            last_ly_do_khop = None
+            last_scale = 1.0
+            last_angle_deg = 0.0
+            last_n_diem = 8
+            last_khop_similarity = False
+            last_matrix = None
+
+            def reset(self, gray, bbox):
+                self._bbox = tuple(bbox)
+
+            def update(self, gray):
+                return self._bbox, True
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=vos_every))
+        session._worker = _WorkerStub()
+        session._interp = _InterpStub()
+        return session
+
+    def _dat_ket_qua_vos(self, session, seq, bbox, co_mask=True):
+        import time
+
+        import numpy as np
+
+        frame = np.zeros((48, 64, 3), np.uint8)
+        mask = np.zeros((48, 64), bool)
+        if co_mask:
+            mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+        base = type("R", (), {"frame_idx": seq, "mask": mask, "bbox": bbox, "score": 1.0,
+                              "elapsed_ms": 40.0, "raw_lost": not co_mask})()
+        session._vos_state = (seq, base, session._gray(frame), time.perf_counter(),
+                              40.0, 1.0, 0.0, 0.0)
+        return base
+
+    def test_co_buoc_vos_moi_chi_bat_o_lan_dau(self):
+        session = self._session(vos_every=3)
+        self._dat_ket_qua_vos(session, 1, (10, 10, 30, 30))
+        session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+        assert session._buoc_vos_moi is True, "kết quả VOS seq=1 là bước mới ở lần phát đầu"
+        for _ in range(2):          # 2 frame phát lặp lại CÙNG kết quả VOS seq=1
+            session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+            assert session._buoc_vos_moi is False, "cùng seq ⇒ KHÔNG phải bước VOS mới"
+        self._dat_ket_qua_vos(session, 2, (12, 12, 32, 32))
+        session._result_threaded(np.zeros((48, 64, 3), np.uint8))
+        assert session._buoc_vos_moi is True, "seq đổi ⇒ bước VOS mới"
+
+    def _ket_qua(self, mask_rong=True, bbox=(0, 0, 0, 0)):
+        """Kết quả VOS ĐÚNG như `tracker_engine` sinh ra: mask rỗng ⇒ bbox `(0,0,0,0)`.
+
+        Review vòng 2 (P2): test cũ dùng `bbox=(10,10,30,30)` với mask RỖNG — trạng thái engine
+        KHÔNG BAO GIỜ sinh ra — nên nó xanh dù đường web bỏ qua VOS rỗng thật.
+        """
+        import numpy as np
+
+        mask = np.zeros((48, 64), bool)
+        if not mask_rong:
+            mask[bbox[1]:bbox[3], bbox[0]:bbox[2]] = True
+
+        class _R:
+            frame_idx = 1
+            score = 1.0
+            elapsed_ms = 40.0
+            raw_lost = mask_rong
+
+        _R.mask = mask
+        _R.bbox = bbox
+        return _R()
+
+    def test_khong_phai_buoc_moi_thi_cong_khong_doi(self):
+        """Đáy nối: `_update_stats_locked` KHÔNG được đẩy frame lặp vào cổng."""
+        session = self._session(vos_every=3)
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+        truoc = (session._watch._lost, session._watch._grace, session._watch.trang_thai)
+        rong = self._ket_qua(mask_rong=True)
+
+        session._buoc_vos_moi = False
+        for _ in range(5):
+            with session._stats_lock:
+                session._update_stats_locked(rong)
+        assert (session._watch._lost, session._watch._grace, session._watch.trang_thai) == truoc, \
+            "5 frame phát lặp cùng kết quả VOS không được đếm thành 5 bước vắng (sẽ reset oan)"
+
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(rong)
+        assert session._watch._lost == 1, "một BƯỚC VOS rỗng = đúng 1 bước vắng"
+
+    def test_VOS_rong_THAT_phai_lam_tang_lost_va_reset_moc(self):
+        """P1 vòng 2: mask rỗng ⇒ engine trả bbox `(0,0,0,0)` ⇒ `_bbox_hop_le` loại ⇒ `obs_bbox=None`.
+
+        Bản trước bọc `if obs_bbox is not None` nên trên đường web cổng **không bao giờ thấy VOS rỗng**
+        ⇒ `_lost` không tăng ⇒ đúng ca "vật rời khung rồi vào lại" vẫn bị báo nghi trên web.
+        """
+        session = self._session(vos_every=3)
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+        rong = self._ket_qua(mask_rong=True)
+        for _ in range(3):                      # 3 BƯỚC VOS rỗng (mỗi bước 1 lần đẩy cổng)
+            session._buoc_vos_moi = True
+            with session._stats_lock:
+                session._update_stats_locked(rong)
+            session._buoc_vos_moi = False
+            for _lap in range(2):               # 2 frame phát lặp lại của chính bước đó
+                with session._stats_lock:
+                    session._update_stats_locked(rong)
+        assert session._watch._lost == 3, "3 bước VOS rỗng ⇒ `_lost` = 3 (không phải 1, không phải 9)"
+        assert session._last_good_bbox == (0, 0, 0, 0), \
+            "mất dấu ⇒ xoá mốc (CLI làm ở `smooth_display`); không xoá thì vật hiện lại ở chỗ khác " \
+            "sẽ bị so với ô của NHIỀU GIÂY TRƯỚC"
+
+        # Vật hiện lại ở chỗ KHÁC HẲN: đây là phiên bám mới ⇒ KHÔNG báo nghi, KHÔNG chưa-xác-minh
+        vat = self._ket_qua(mask_rong=False, bbox=(40, 30, 60, 46))
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(vat)
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(self._ket_qua(mask_rong=False, bbox=(40, 30, 60, 46)))
+        assert session._watch.nghi is False and session._watch.chua_xac_minh is False, \
+            "vật rời khung rồi vào lại KHÔNG phải đổi đối tượng (ca demoip_1124-193026)"
+
+
+class TestCongNghiKhiMaskNone:
+    """24-11 (vòng 3, tự kiểm) — **NHÁNH PHÒNG THỦ**, không phải ca web thật.
+
+    Engine SAM 2 **không** sinh `result.mask = None` (`_mask_to_bbox` luôn trả mảng, kể cả rỗng); chỉ có
+    sentinel `_interp_base_result` trước `start()` mang `mask=None`. Test này khoá nhánh phòng thủ đó
+    (nếu `mask` là None thì KHÔNG được bỏ qua bước, phải coi là mất dấu).
+
+    Bản trước bỏ qua cả bước (`elif obs_bbox is not None: _last_good_bbox = obs_bbox`) ⇒ `_lost` không
+    tăng ⇒ ca "model trả None rồi vật hiện lại chỗ khác" vẫn bị báo nghi. Nay lấy khung của bước VOS
+    gần nhất (`_watch_shape`) nên cổng vẫn ăn bước đó với `co_mask=False`.
+    """
+
+    def test_mask_none_van_la_mot_buoc_vang(self):
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        session._ghi_khung_cho_cong(np.zeros((48, 64, 3), np.uint8))
+        session._watch.update((10, 10, 30, 30), (10, 10, 30, 30), (48, 64))
+
+        class _R:
+            frame_idx, mask, bbox, score, elapsed_ms, raw_lost = 1, None, (0, 0, 0, 0), 1.0, 40.0, True
+
+        session._buoc_vos_moi = True
+        with session._stats_lock:
+            session._update_stats_locked(_R())
+        assert session._watch._lost == 1, "mask None = mất dấu ⇒ phải là MỘT bước vắng"
+
+        # và mốc phải bị xoá để vật hiện lại chỗ khác không bị so với ô cũ
+        assert session._last_good_bbox == (0, 0, 0, 0)
+
+
+class TestStartKhongBiDemHaiLan:
+    """24-11 (review vòng 3, P3): kết quả `engine.start()` mang seq=0 và là CÙNG frame video với frame
+
+    đang phát. Nếu `_watch_seq` còn `None` thì `_result_threaded` coi seq 0 là "bước VOS mới" ⇒ cùng
+    một frame bị đếm 2 lần vào `_lost` ⇒ `lost_reset_streak=3` reset sớm một bước.
+    """
+
+    def test_start_danh_dau_seq_0(self):
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        assert session._watch_seq is None
+        frame = np.zeros((48, 64, 3), np.uint8)
+        try:
+            session._start_worker(frame, session._gray(frame))
+        finally:
+            session._worker.stop() if hasattr(session._worker, "stop") else None
+        assert session._watch_seq == 0, \
+            "phải đánh dấu đã ăn seq 0 ngay trong `_start_worker`, nếu không frame start bị đếm 2 lần"
+
+    def test_chon_lai_giua_phien_khong_bo_sot_buoc_that(self):
+        """`start()` lần HAI (chọn lại giữa phiên) cũng đặt `_watch_seq = 0`, còn `self._seq` KHÔNG reset.
+
+        Nếu `_watch_seq` bị đặt sai (về `None`, hoặc về giá trị `self._seq` sắp dùng) thì bước VOS THẬT
+        kế tiếp có thể bị bỏ qua ⇒ `_lost` không tăng. Test: gọi `_start_worker` lần hai, rồi cho một
+        kết quả VOS thật (seq mới do worker sinh) ⇒ phải được tính là bước mới.
+        """
+        import numpy as np
+
+        from src.live_tracking import LiveTrackConfig, LiveTrackingSession
+
+        class _Noop:
+            def start(self, frame, bbox): ...
+            def process(self, frame): ...
+
+        session = LiveTrackingSession(_Noop(), LiveTrackConfig(
+            source="x", out_dir="/tmp/khong-dung", vos_every=3))
+        frame = np.zeros((48, 64, 3), np.uint8)
+        for _lan in range(2):
+            session._start_worker(frame, session._gray(frame))
+            if hasattr(session._worker, "stop"):
+                session._worker.stop()
+            assert session._watch_seq == 0, "lần start nào cũng phải tiêu thụ sentinel seq 0"
+        # `self._seq` phải đã tăng lên > 0 ⇒ kết quả VOS thật kế tiếp mang seq mới, không phải 0
+        assert session._seq >= 1
+        base = type("R", (), {"frame_idx": 9, "mask": np.zeros((48, 64), bool),
+                              "bbox": (0, 0, 0, 0), "score": 1.0, "elapsed_ms": 40.0,
+                              "raw_lost": True})()
+        session._vos_state = (session._seq, base, session._gray(frame), 0.0, 40.0, 1.0, 0.0, 0.0)
+        session._result_threaded(frame)
+        assert session._buoc_vos_moi is True, "bước VOS thật sau chọn lại KHÔNG được bỏ qua"

@@ -267,3 +267,22 @@ export function bamLine(status: { bam?: string | null; bam_ly_do?: string | null
   return `Không có bằng chứng về vật (${lyDo}) — ô đã được ẩn khỏi ảnh để không vẽ ô suy diễn`
     + dem
 }
+
+/**
+ * Câu chữ cho trạng thái thứ ba "đã bám ổn định lại nhưng CHƯA ai xác nhận" (24-11).
+ *
+ * Vì sao phải có: `bam === 'tracking'` ở CẢ hai ca (vẫn vẽ), nên panel web không có gì để phân biệt
+ * ——  đúng lúc hệ đang vẽ một vùng mà nó KHÔNG có bằng chứng (ca 21-11 bám sang cửa/tường cùng tông).
+ * Đo phiên `demoip_1124-125109`: cổng báo đúng rồi hệ tự bám lại đúng vật, nhưng latch không có đường
+ * xoá (re-ID tắt) ⇒ 109/246 = 44,3 % phiên không có mask; nay phần lớn số đó chuyển sang "chưa xác
+ * minh" ⇒ câu này thay cho im lặng.
+ */
+export function chuaXacMinhLine(status: { chua_xac_minh?: boolean
+  chua_xac_minh_n?: number } | null | undefined): string | null {
+  if (!status || status.chua_xac_minh !== true) return null
+  const n = status.chua_xac_minh_n ?? 0
+  const dem = n > 0 ? ` · ${n} frame` : ''
+  return 'CHƯA XÁC MINH: vừa có cảnh báo đổi đối tượng, hệ đã bám ổn định lại nhưng chưa ai xác nhận — '
+    + 'mask chỉ được vẽ VIỀN NÉT ĐỨT (không tô). Bấm "Vẫn đúng, tiếp tục" nếu vẫn là vật đã chọn, '
+    + 'hoặc chọn lại ô.' + dem
+}

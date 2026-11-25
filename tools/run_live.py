@@ -44,6 +44,9 @@ try:
 except ImportError:  # sam2 chưa cài — chỉ ảnh hưởng việc ẩn progress bar khi chạy thật
     pass
 
+from src.identity_guard import DEFAULT_LOST_RESET_STREAK       # noqa: E402
+from src.identity_guard import DEFAULT_SETTLE_STEPS          # noqa: E402
+from src.tracker_engine import MODEL_OVERRIDE_CHO_PHEP        # noqa: E402
 from src.tracker_engine import TrackerEngine                 # noqa: E402
 from src.live_pipeline import QUIT_KEYS, run_interactive, run_tracking  # noqa: E402
 from src.live_tracking import xyxy_to_xywh                   # noqa: E402
@@ -533,7 +536,7 @@ def _finish_metrics(metrics, args, viz=None):
               f"= {extra['display_fps_mean']:.1f} FPS | video {extra.get('video_s', 0):.1f} s "
               f"⇒ tỉ lệ thời lượng {extra['ti_le_thoi_luong']:.2f} (1,00 là đúng)")
     try:
-        _write_run_info(args)
+        _write_run_info(args, metrics)
     except Exception as exc:            # provenance KHÔNG được chặn phần in số liệu bên dưới
         print(f"[canh bao] không ghi được run_info: {type(exc).__name__}: {exc}")
     s = metrics.summary()
@@ -595,7 +598,83 @@ def _dem_worker_mo_coi():
         return None
 
 
-def _write_run_info(args):
+def _model_overrides(args) -> dict:
+    """`--model-override k=v` (lặp được) → dict đã ép kiểu; khoá lạ ⇒ SystemExit.
+
+    Ép kiểu theo `MODEL_OVERRIDE_CHO_PHEP` để `samurai_mode=false` không bị truyền thành chuỗi.
+    """
+    ra = {}
+    for item in getattr(args, "model_override", None) or []:
+        key, sep, raw = item.partition("=")
+        key = key.strip()
+        if not sep:
+            raise SystemExit(f"[LOI] --model-override cần dạng KEY=VALUE, nhận {item!r}")
+        if key not in MODEL_OVERRIDE_CHO_PHEP:
+            raise SystemExit(f"[LOI] --model-override: khoá {key!r} không hợp lệ. "
+                             f"Chọn trong: {', '.join(sorted(MODEL_OVERRIDE_CHO_PHEP))}")
+        loai = MODEL_OVERRIDE_CHO_PHEP[key]
+        try:
+            if loai is bool:
+                ra[key] = raw.strip().lower() in ("1", "true", "yes", "on")
+            elif loai is int:
+                ra[key] = int(raw)
+            else:
+                ra[key] = float(raw)
+        except ValueError as exc:
+            raise SystemExit(f"[LOI] --model-override {key}={raw!r}: {exc}") from exc
+    return ra
+
+
+def _settle_steps(args):
+    """Số bước ổn định trước khi hạ `nghi` → `chua_xac_minh`; `None` = KHÔNG dùng cổng.
+
+    `None` nghĩa là "đường này không dựng `IdentityWatch`" (headless: `run_tracking` không có cổng)
+    ⇒ `run_info` phải ghi `None`, KHÔNG được ghi 8 — ghi 8 là mô tả một cổng chưa từng chạy
+    (review độc lập 24-11, P1).
+
+    `0` là giá trị HỢP LỆ nhưng nghĩa của nó là **TẮT: ẩn tới khi bấm `r`/`c`** (KHÔNG phải "hạ mức
+    ngay" — `IdentityWatch` chỉ hạ mức khi `settle_steps > 0`). Biểu thức `x or default` cũ nuốt `0`
+    thành 8 ⇒ người dùng bấm `--settle-steps 0` mà vẫn thấy hạ mức sau 8 bước, im lặng.
+    Kẹp âm về 0 ở ĐÂY (cùng chỗ `IdentityWatch` kẹp) để `run_info` ghi đúng giá trị đã dùng.
+    """
+    from src.identity_guard import DEFAULT_SETTLE_STEPS
+
+    # Kiểm `_co_cong_nghi` TRƯỚC giá trị: `./run video --settle-steps 3` đi đường headless (KHÔNG dựng
+    # `IdentityWatch`) ⇒ ghi 3 vào run_info vẫn là provenance giả (review vòng 2, P2-A).
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
+    v = getattr(args, "settle_steps", None)
+    return DEFAULT_SETTLE_STEPS if v is None else max(0, int(v))
+
+
+def _lost_reset_streak(args):
+    """Số bước vắng để coi là "vật rời khung" ĐÃ DÙNG; `None` = đường này KHÔNG có cổng.
+
+    Song song `_settle_steps`: ghi giá trị vào `run_info` để phiên sau replay được. `0` là giá trị
+    HỢP LỆ (tái lập hành vi trước 24-11) nên KHÔNG được nuốt thành mặc định.
+    """
+    from src.identity_guard import DEFAULT_LOST_RESET_STREAK
+
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
+    v = getattr(args, "lost_reset_streak", None)
+    return DEFAULT_LOST_RESET_STREAK if v is None else max(0, int(v))
+
+
+def _max_jump_ratio(args):
+    """Ngưỡng cổng nghi ĐÃ DÙNG; `None` = đường này KHÔNG có cổng (headless `run_tracking`).
+
+    Ghi 0.25 cho một phiên headless là mô tả một cổng chưa từng chạy (review độc lập 24-11, P1).
+    """
+    from src.identity_guard import DEFAULT_MAX_JUMP_RATIO
+
+    if not getattr(args, "_co_cong_nghi", True):
+        return None
+    v = getattr(args, "max_jump_ratio", None)
+    return DEFAULT_MAX_JUMP_RATIO if v is None else float(v)
+
+
+def _write_run_info(args, metrics=None):
     """Ghi `{tag}_run_info.json` cạnh metrics → lần đo THẤT BẠI tự giải thích được.
 
     Bug thật 29-10: lần đo `fast_1029-212010` (234f, mất dấu từ f58 đến hết) không phân biệt
@@ -605,6 +684,7 @@ def _write_run_info(args):
                              getattr(args, "metrics_summary", None))
     if not path:
         return None
+    _m = metrics if metrics is not None else getattr(args, "_metrics", None)
     rev = _git_rev()
     write_run_info(
         path,
@@ -619,6 +699,10 @@ def _write_run_info(args):
                         if getattr(args, "reid", False) else None),
         reid_veto_mat_n=getattr(args, "_reid_veto_n", None),
         image_size=getattr(args, "image_size", None),
+        min_obj_score_logits=getattr(args, "min_obj_score_logits", None),
+        # 24-11 (sweep mask_threshold): ngưỡng logit quyết định mask phủ rộng/co. Thiếu trường này thì
+        # hai phiên khác ngưỡng TRÔNG Y HỆT NHAU trong run_info ⇒ không tái lập được A/B.
+        mask_threshold=getattr(args, "mask_threshold", None),
         reanchor_every=getattr(args, "reanchor_every", None),
         max_frames=getattr(args, "max_frames", None),
         reid=bool(getattr(args, "reid", False)),
@@ -659,6 +743,26 @@ def _write_run_info(args):
         # dùng làm nguồn thô. `None` = không chọn (hoặc phiên headless dùng ô mặc định).
         prompt_bbox=list(getattr(args, "_prompt_bbox", None) or []) or None,
         reselect_n=getattr(args, "_reselect_n", None),
+        # `None` = đường HEADLESS (`run_tracking`) không đếm trạng thái này (chỉ 2 đường tương tác
+        # đếm) — KHÔNG phải "đo được 0". Đường tương tác không hạ mức lần nào thì ghi `0` thật.
+        chua_xac_minh_n=getattr(args, "_chua_xac_minh_n", None),
+        # `settle_steps` của cổng nghi — số frame ẩn phụ thuộc TRỰC TIẾP vào nó, và nó đổi theo nhịp
+        # VOS (8 bước = 1,3 s ở 6,3 bước/s nhưng 1,94 s ở 4,12 bước/s). Thiếu trường này thì phiên
+        # sau không so được với phiên trước (ticket #47).
+        settle_steps=_settle_steps(args),
+        # 24-11: "vắng >= N bước = vật rời khung" — đổi cờ này ĐỔI số lần báo oan sau khi vật vào lại
+        # ⇒ phải ghi, nếu không phiên sau replay ra số khác mà không biết vì sao.
+        lost_reset_streak=_lost_reset_streak(args),
+        # Trần cổng nghi = `0,25 × đường chéo` ⇒ 640×480 = 200 px nhưng 1280×720 = 367 px. Scorer
+        # replay GIẢ ĐỊNH 640×480 và CSV không có cột nào nói khác ⇒ phiên khung khác bị chấm sai
+        # trong im lặng (review độc lập 24-11). Thiếu `frame_shape` (None) = CHƯA ĐO ĐƯỢC.
+        frame_shape=getattr(_m, "frame_shape", None),
+        # >0 ⇒ khung ĐỔI giữa phiên ⇒ `frame_shape` chỉ đúng cho phần đầu; scorer phải biết.
+        frame_shape_doi=getattr(_m, "frame_shape_doi", None),
+        max_jump_ratio=_max_jump_ratio(args),
+        # 24-11: siêu tham số motion-memory ĐÃ ĐÈ (None = không đè). Thiếu trường này thì một phiên
+        # thí nghiệm không phân biệt được với phiên mặc định ⇒ không tái lập được.
+        model_overrides=_model_overrides(args) or None,
     )
     print(f"[metrics] provenance: {path} (git_rev={rev})")
     return path
@@ -734,6 +838,7 @@ def _run_display(engine, args):
             viz.reid_threshold = (getattr(args, "reid_obj_threshold", None)
                                   if getattr(args, "reid_cue", "face") != "face" else None)
         metrics = _make_metrics(args)
+        args._metrics = metrics          # `_write_run_info` đọc `frame_shape` từ đây
         reid_session = _make_reid_session(engine, args)
         if args.smooth:
             # ĐÍNH CHÍNH 23-11: câu cũ hứa "video ~30 FPS" — SAI. Vòng hiển thị ngủ
@@ -754,10 +859,16 @@ def _run_display(engine, args):
                 reid_session=reid_session,
                 # Nguồn live: đọc tối đa 30 lần/s (đo 293/s trên relay 16 fps ⇒ 18 lần giải mã vô ích
                 # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
+                settle_steps=_settle_steps(args),
+                lost_reset_streak=_lost_reset_streak(args),
+                max_jump_ratio=args.max_jump_ratio,
                 source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
             args._prompt_bbox = summary.prompt_bbox
             args._reselect_n = summary.reselect_n
+            # ticket #47: đếm được "chưa xác minh" trên đường CLI ⇒ phiên live tự sinh số, không phải
+            # suy từ replay. `0` = cổng không hạ mức lần nào (đúng nghĩa 0, không phải "chưa đo").
+            args._chua_xac_minh_n = getattr(summary, "chua_xac_minh_n", 0)
         else:
             summary = run_interactive(
                 source=args.source,
@@ -771,6 +882,9 @@ def _run_display(engine, args):
                 metrics=metrics,
                 reanchor_every=args.reanchor_every,
                 reid_session=reid_session,
+                settle_steps=_settle_steps(args),
+                lost_reset_streak=_lost_reset_streak(args),
+                max_jump_ratio=args.max_jump_ratio,
             )
     except KeyboardInterrupt:
         interrupted = True
@@ -817,6 +931,7 @@ def _run_headless(engine, args):
                                record_fps=record_fps)
         print("[pipeline] bắt đầu tracking... (headless)")
         metrics = _make_metrics(args)
+        args._metrics = metrics          # `_write_run_info` đọc `frame_shape` từ đây
         reid_session = _make_reid_session(engine, args)
         # Tổng frame dự kiến để backend vẽ progress bar (biết chắc khi nguồn là FILE)
         progress_total = args.max_frames or _total_frames_hint(args.source)
@@ -835,10 +950,17 @@ def _run_headless(engine, args):
                     "mask_smoothing": getattr(args, "mask_smoothing", None) or 1.0,
                     # `bbox` nội bộ là (x1,y1,x2,y2); manifest/GT dùng (x,y,w,h) — đổi trước khi ghi
                     "bbox_xywh": list(xyxy_to_xywh(bbox)) if bbox else None,
+                    # 24-11 (Tầng 1): siêu tham số motion-memory ĐÃ ĐÈ — thiếu thì mask dump của hai
+                    # cấu hình khác nhau TRÔNG Y HỆT NHAU ⇒ không tái lập được thí nghiệm.
+                    "model_overrides": _model_overrides(args) or None,
+                    "mask_threshold": getattr(args, "mask_threshold", None),
                     "lenh": " ".join(sys.argv),
                     "git_rev": _git_rev(), "git_dirty": _dirty, "git_dirty_code": _dirty_code,
                     "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S")}
             on_frame = _dump_mask_callback(dump_dir, dump_frames, info, base=on_frame)
+        # Đường HEADLESS: `run_tracking` KHÔNG dựng `IdentityWatch` (cổng nghi chỉ tồn tại trên 3
+        # đường tương tác) ⇒ `run_info` phải ghi `settle_steps/max_jump_ratio = None` thay vì 8/0.25.
+        args._co_cong_nghi = False
         summary = run_tracking(
             source=args.source,
             engine=engine,
@@ -948,6 +1070,29 @@ def build_parser():
     ap.add_argument("--image-size", type=int, default=None,
                     help="độ phân giải đầu vào của model (512 = nhanh ~5-6x trên CPU; "
                          "mặc định giữ 1024 của config SAM 2)")
+    ap.add_argument("--settle-steps", type=int, default=None,
+                    help="số bước ỔN ĐỊNH trước khi hạ 'nghi đổi đối tượng' xuống 'chưa xác minh' "
+                         f"(mặc định {DEFAULT_SETTLE_STEPS}). Đổi cờ này ĐỔI số frame bị ẩn ⇒ số đo "
+                         "cũ không so được với số mới. `0` = TẮT: ẩn tới khi bấm r/c (không bao giờ tự "
+                         "hạ mức). Đường headless (`./run video|ab|miou`) không dựng cổng ⇒ cờ bị bỏ "
+                         "qua và run_info ghi null.")
+    ap.add_argument("--lost-reset-streak", type=int, default=None,
+                    help="số frame LIÊN TIẾP không có mask để coi là 'vật đã RỜI KHUNG' ⇒ lần có mask "
+                         "kế tiếp là PHIÊN BÁM MỚI (xoá nghi + miễn chấm nhảy 2 bước đầu). Mặc định "
+                         f"{DEFAULT_LOST_RESET_STREAK}. `0` = tái lập hành vi trước 24-11 (mẩu rác "
+                         "sau khi vắng được dùng làm mốc so sánh ⇒ báo nghi oan). Đường headless "
+                         "không dựng cổng ⇒ cờ bị bỏ qua và run_info ghi null.")
+    ap.add_argument("--max-jump-ratio", type=float, default=None,
+                    help="NGƯỠNG CHẨN ĐOÁN: tỉ lệ đường chéo khung mà tâm ô được phép nhảy trong một "
+                         "bước VOS (mặc định 0.25 ⇒ 200 px ở 640x480). CẢNH BÁO: đổi cờ này KHÔNG "
+                         "phải 'cải thiện độ chính xác' — bằng chứng 24-11 cho thấy mọi ngưỡng hình "
+                         "học đều hoặc bỏ ca báo đúng, hoặc chỉ dời chỗ báo (xem "
+                         "docs/plan/24-11-2026-cong-nghi-bao-oan.md). Dùng để DIỄN TẬP có ghi số, "
+                         "không dùng để tuyên bố 'đã sửa'.")
+    ap.add_argument("--model-override", action="append", default=None, metavar="KEY=VALUE",
+                    help="CHẨN ĐOÁN: đè siêu tham số motion-memory của SAMURAI (lặp được). Khoá hợp lệ: "
+                         f"{', '.join(sorted(MODEL_OVERRIDE_CHO_PHEP))}. Ví dụ "
+                         "`--model-override kf_score_weight=0.5`. Ghi vào run_info để tái lập.")
     ap.add_argument("--reanchor-every", type=int, default=None,
                     help="N>0: reset + chọn lại bbox mỗi N frame (nhanh hơn trên CPU, "
                          "đánh đổi memory dài hạn; mặc định tắt)")
@@ -1003,6 +1148,12 @@ def build_parser():
                     help="ghi tiến trình từng frame ra JSON ({\"frames\",\"total\"}) — backend "
                          "web đọc để hiện progress bar; không truyền = hành vi cũ")
     ap.add_argument("--ckpt", default=None, help="checkpoint SAM 2 (đè config)")
+    # 24-11 (plan đường B, P2): ngưỡng "có vật" của SAM 2. Mặc định `None` = giữ config (−1).
+    # `0` = khớp với ngưỡng `>0` mà `sam2_base.py:867` đã dùng cho bộ nhớ (hai ngưỡng hiện LỆCH nhau).
+    # `-100` = tắt hẳn cổng (CHẨN ĐOÁN: xem model có phân đoạn tốt mà bị cổng zero-hoá hay không).
+    ap.add_argument("--min-obj-score-logits", type=float, default=None,
+                    help="ngưỡng logit 'có vật' của SAM 2 (mặc định theo config = -1; "
+                         "0 = khớp ngưỡng bộ nhớ; -100 = tắt cổng để chẩn đoán)")
     return ap
 
 
@@ -1043,6 +1194,10 @@ def _cfg_tu_cli(args) -> dict:
 
 def main():
     args = build_parser().parse_args()
+    # P3-3 (review 24-11): `--max-jump-ratio 0` ⇒ `search_window_radius` = 0 ⇒ MỌI bước bị nghi;
+    # `>1` ⇒ trần > đường chéo. Cờ này dùng được trên sân khấu nên phải chặn từ đầu.
+    if args.max_jump_ratio is not None and not 0.0 < args.max_jump_ratio <= 1.0:
+        raise SystemExit("--max-jump-ratio phải trong (0, 1]: 0 ⇒ mọi bước bị nghi; >1 ⇒ trần vô lý")
     _canh_bao_worker_mo_coi()
 
     # --- hợp nhất cấu hình: defaults < YAML (--config) < CLI (--flag chỉ định) ---
@@ -1112,6 +1267,8 @@ def main():
     if device == "cuda":
         print(f"[pipeline] device=cuda ({_torch.cuda.get_device_name(0)})")
     engine = TrackerEngine.build_default(checkpoint=checkpoint, model_cfg=cfg["model_cfg"],
+                                        min_obj_score_logits=args.min_obj_score_logits,
+                                         model_overrides=_model_overrides(args),
                                          image_size=args.image_size, device=device,
                                          apply_postprocessing=args.postprocess,
                                          mask_threshold=args.mask_threshold)

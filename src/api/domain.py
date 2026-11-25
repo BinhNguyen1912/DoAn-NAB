@@ -153,6 +153,13 @@ class LiveStatus:
     # UI phải hiện banner + nút "vẫn đúng" (`POST /api/live/confirm`), KHÔNG được im lặng.
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0
+    # 24-11: trạng thái THỨ BA — "đã bám ổn định lại nhưng CHƯA ai xác nhận". `bam` vẫn là
+    # `"tracking"` (VẪN vẽ) ở CẢ hai ca ⇒ không suy ra được từ `bam`, phải có field riêng.
+    # REVIEW 24-11 (P0): thiếu field ở `domain`/`schemas`/`live.status()`/`telemetry()` thì
+    # `status.json` của worker có mà **API vứt đi** ⇒ banner+nút trên web không bao giờ hiện mà test
+    # vẫn xanh (đúng bẫy "trường số liệu mới chết trong adapter", `src/api/live.py`).
+    chua_xac_minh: bool = False
+    chua_xac_minh_n: int = 0
     message: str = ""
 
 
@@ -193,6 +200,9 @@ class LiveTelemetry:
     bam_no_evidence_n: int = 0
     nghi_doi_tuong: bool = False
     nghi_doi_tuong_n: int = 0
+    # Xem `LiveStatus.chua_xac_minh` (24-11).
+    chua_xac_minh: bool = False
+    chua_xac_minh_n: int = 0
 
 
 @dataclass(frozen=True)
