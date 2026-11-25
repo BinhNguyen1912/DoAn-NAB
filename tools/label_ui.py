@@ -85,6 +85,7 @@ def doc_phien(csv_path: Path) -> dict:
     frames = []
     t = 0.0
     truoc = -1
+    khong_tang = False
     for r in rows:
         if (r.get("frame_idx") or "").strip() == "":
             raise ValueError(f"{csv_path.name}: thiếu cột `frame_idx` (hoặc cột rỗng) — "
@@ -97,10 +98,10 @@ def doc_phien(csv_path: Path) -> dict:
             bbox = [round(cx - w / 2), round(cy - h / 2), round(cx + w / 2), round(cy + h / 2)]
         fv = int(float(r["frame_idx"]))
         if fv <= truoc:
-            raise ValueError(f"{csv_path.name}: `frame_idx` không tăng dần ({fv} sau {truoc}) — "
-                             "không xác định được bước nào với bước nào")
-        truoc = fv
+            khong_tang = True          # frame_idx lặp/giảm: HỢP LỆ (nguồn file lặp quay về 0) nhưng phải
+        truoc = fv                     # cảnh báo, và `buoc` (số thứ tự dòng) mới là danh tính của bước
         frames.append({
+            "buoc": len(frames),
             "frame_vos": fv,
             "t_uoc_luong": round(t, 2),
             "latency_ms": round(lat, 1),
@@ -115,10 +116,13 @@ def doc_phien(csv_path: Path) -> dict:
         video = csv_path.with_name(ten + ".mp4")
     return {
         "phien": ten,
-        "csv": str(csv_path.relative_to(REPO_ROOT)) if _trong_repo(csv_path) else str(csv_path),
+        "csv": duong_dan_gon(csv_path),
         "video": video.name if video.is_file() else None,
         "frames": frames,
         "tong_latency_s": round(t, 2),
+        "canh_bao": ("`frame_idx` lặp hoặc không tăng — nhãn vẫn phân biệt được vì mỗi bước có `buoc` "
+                     "riêng (số thứ tự dòng), nhưng ĐỪNG cộng gộp theo `frame_vos`"
+                     if khong_tang else None),
     }
 
 
@@ -222,8 +226,8 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
     nhan = str(record.get("nhan") or "").strip()
     if nhan not in NHAN:
         raise ValueError(f"nhãn không hợp lệ: {nhan!r}; chỉ nhận {sorted(NHAN)}")
-    if record.get("frame_vos") in (None, ""):
-        raise ValueError("thiếu `frame_vos` — nhãn không gắn được vào bước nào")
+    if record.get("frame_vos") in (None, "") and record.get("buoc") in (None, ""):
+        raise ValueError("thiếu `frame_vos`/`buoc` — nhãn không gắn được vào bước nào")
     bbox = record.get("bbox_dung")
     if bbox is not None:
         if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
@@ -239,6 +243,8 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
         b = None
     rec = {
         "phien": phien,
+        # `buoc` = số thứ tự dòng trong CSV = DANH TÍNH của bước (duy nhất kể cả khi frame_idx lặp).
+        "buoc": None if record.get("buoc") in (None, "") else int(record["buoc"]),
         "frame_vos": int(record.get("frame_vos") or 0),
         "t_video": round(float(record.get("t_video") or 0.0), 3),
         "t_uoc_luong": (None if record.get("t_uoc_luong") is None
@@ -264,12 +270,13 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
     `dong_y_2_nguoi` sẽ nói về hai tập dữ liệu khác nhau (review độc lập bắt đúng lỗi này).
     """
     rows = doc_nhan(phien, thu_muc)
-    hieu_luc: dict[tuple[int, str], str] = {}
+    hieu_luc: dict[tuple, str] = {}
     for r in rows:
         if r.get("nhan") in NHAN:
-            hieu_luc[(int(r["frame_vos"]), r.get("nguoi_gan") or "?")] = r["nhan"]
+            khoa = r.get("buoc") if r.get("buoc") is not None else int(r["frame_vos"])
+            hieu_luc[(khoa, r.get("nguoi_gan") or "?")] = r["nhan"]
     theo_nguoi: dict[str, dict] = {}
-    ban: dict[int, dict[str, str]] = {}
+    ban: dict[object, dict[str, str]] = {}
     for (buoc, nguoi), nhan in hieu_luc.items():
         d = theo_nguoi.setdefault(nguoi, {"tong": 0, **{k: 0 for k in NHAN}})
         d[nhan] += 1

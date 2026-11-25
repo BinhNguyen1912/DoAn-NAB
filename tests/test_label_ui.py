@@ -291,11 +291,31 @@ class TestCsvBan:
         with pytest.raises(ValueError, match="frame_idx"):
             L.doc_phien(p)
 
-    def test_frame_idx_khong_tang_dan_bi_tu_choi(self, tmp_path):
-        p = tmp_path / "loạn_metrics.csv"
-        p.write_text("frame_idx,latency_ms\n5,100\n3,100\n", encoding="utf-8")
-        with pytest.raises(ValueError, match="tăng dần"):
-            L.doc_phien(p)
+    def test_frame_idx_lap_thi_CANH_BAO_chu_khong_tu_choi(self, tmp_path):
+        """`frame_idx` lặp là HỢP LỆ (nguồn file lặp quay về 0; `data/gpu_metrics.csv` có 50 dòng lặp).
+        Từ chối là chặn phiên thật ⇒ chỉ cảnh báo, và `buoc` (số thứ tự dòng) là danh tính của bước."""
+        p = tmp_path / "lap_metrics.csv"
+        p.write_text("frame_idx,latency_ms\n5,100\n3,100\n3,100\n", encoding="utf-8")
+        d = L.doc_phien(p)
+        assert [f["buoc"] for f in d["frames"]] == [0, 1, 2]
+        assert [f["frame_vos"] for f in d["frames"]] == [5, 3, 3]
+        assert d["canh_bao"] and "lặp" in d["canh_bao"]
+
+    def test_hai_buoc_cung_frame_vos_van_la_hai_buoc(self, tmp_path):
+        """Nếu khoá theo `frame_vos` thì hai bước khác nhau bị GỘP ⇒ mất dữ liệu của một bước."""
+        p = tmp_path / "nhau"
+        L.ghi_nhan("s", {"buoc": 0, "frame_vos": 7, "nhan": "dung"}, "A", p)
+        L.ghi_nhan("s", {"buoc": 1, "frame_vos": 7, "nhan": "sai"}, "A", p)
+        d = L.tong_hop("s", p)
+        assert d["so_buoc_da_dan"] == 2, "hai dòng CSV khác nhau phải là hai bước"
+        assert d["theo_nguoi"]["A"]["tong"] == 2
+
+    def test_duong_dan_tuong_doi_khong_lam_sap(self, tmp_path, monkeypatch):
+        """`csv_path.relative_to(REPO_ROOT)` từng NÉM khi truyền đường dẫn tương đối (CLI/thư viện)."""
+        monkeypatch.chdir(tmp_path)
+        (tmp_path / "rel_metrics.csv").write_text("frame_idx,latency_ms\n0,100\n", encoding="utf-8")
+        d = L.doc_phien(Path("rel_metrics.csv"))
+        assert d["frames"][0]["buoc"] == 0
 
     def test_csv_rong_bi_tu_choi(self, tmp_path):
         p = tmp_path / "rong_metrics.csv"

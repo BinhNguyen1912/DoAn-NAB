@@ -1,0 +1,7 @@
+frame_idx,latency_ms,score,center_x,center_y,lost,state,reid_score,reacquired,ncc,vetoed,bbox_w,bbox_h,mask_area,track_cos,nghi_doi_tuong,verify_cos,cos_truoc_cong,cand_n,cand_sinh_n,cand_ncc_loai,bbox_area_ratio,bbox_area_ref,bbox_area_n
+0,3079.4,16.7912,350,245,0,,,0,,0,155,244,25005,,,,,,,,,,
+1,2508.6,4.57862,327,265,0,,,0,,0,109,215,19157,,,,,,,,,,
+2,1506.0,4.16206,418,279,0,,,0,,0,101,252,20207,,,,,,,,,,
+3,851.4,1.29543,187,340,0,,,0,,0,144,278,25647,,1,,,,,,,,
+4,3170.2,0.0016223,368,279,0,,,0,,0,84,210,14226,,1,,,,,,,,
+5,908.3,-1.15026,,,1,,,0,,0,0,0,0,,1,,,,,,,,

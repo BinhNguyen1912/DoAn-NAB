@@ -41,6 +41,10 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 - `Space`: phát/dừng. `,` `.`: nhích ±0,2 s khi hình đã đổi mà thời điểm ước lượng còn lệch.
   (Thanh tua/play của chính video vẫn bấm được — canvas không nuốt chuột trừ khi đang vẽ ô.)
 - Bấm phím số là **ghi ngay** (append vào `data/nhan/<phiên>.jsonl`), không cần bấm Lưu.
+- Nếu header hiện nhãn đỏ **`CSV: frame_idx lặp`**: CSV của phiên này có `frame_idx` lặp/không tăng
+  (nguồn file lặp quay về 0, hoặc artifact cũ như `data/gpu_metrics.csv`). Vẫn dán bình thường — mỗi
+  nhãn lưu kèm `buoc` (số thứ tự dòng, **duy nhất**) chứ không chỉ `frame_vos`; nhưng **đừng** cộng gộp
+  thống kê theo `frame_vos` trong trường hợp này.
 - `s` (hoặc nút "Lưu & bước kế") = **ghi lại nhãn bạn vừa chọn** rồi sang bước kế. Chưa chọn nhãn nào
   thì nó **từ chối** và nhắc bạn bấm `1/2/3/4` trước — nó không tự đoán "ĐÚNG".
 - `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán

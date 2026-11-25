@@ -183,7 +183,8 @@ async function chonPhien(ten){
   const v = $('v');
   v.src = '/video?v=' + encodeURIComponent(d.video);
   v.load();
-  $('meta').textContent = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`;
+  $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
+    + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
   window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
   veTienDo(); veBang();
   $('phien').blur();
@@ -278,7 +279,8 @@ async function ghiNhan(nhan){
   const v = $('v'), i = chiSoHienTai(), f = state.frames[i] || {};
   const body = {
     phien: state.phien, nhan,
-    frame_vos: f.frame_vos, t_video: v.currentTime, t_uoc_luong: f.t_uoc_luong,
+    // `buoc` = danh tính bước (duy nhất); `frame_vos` chỉ để người đọc đối chiếu CSV.
+    buoc: f.buoc, frame_vos: f.frame_vos, t_video: v.currentTime, t_uoc_luong: f.t_uoc_luong,
     bbox_dung: veO.co ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
                          Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null
   };
@@ -303,7 +305,7 @@ function veTienDo(){
   // Nhãn là append-only ⇒ một bước có thể có nhiều dòng. Đếm theo BƯỚC (đúng câu "N/295 bước đã dán");
   // nhãn hiệu lực của mỗi bước là dòng CUỐI (khớp quy tắc `tong_hop` ở server).
   const theoBuoc = new Map();
-  state.daGan.forEach(r => theoBuoc.set(r.frame_vos, r));
+  state.daGan.forEach(r => theoBuoc.set(r.buoc ?? r.frame_vos, r));
   const cuaToi = [...theoBuoc.values()];
   $('demNguoi').textContent = cuaToi.length;
   const dem = {};

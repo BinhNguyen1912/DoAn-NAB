@@ -390,6 +390,9 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `b` + kéo chuột = vẽ **ô đúng**. Nhãn append-only vào `data/nhan/<phiên>.jsonl` kèm `nguoi_gan`/
   `git_rev`/`do_luc`/`t_video`; tổng hợp + mức đồng ý 2 người: `python tools/label_ui.py --tong-hop
   data/<phiên>_metrics.csv`. Hướng dẫn người dán: `docs/cach-gan-nhan.md`.
+  Danh tính của một bước là `buoc` (số thứ tự dòng CSV), **không** phải `frame_vos`: `frame_idx` lặp là
+  hợp lệ (nguồn file lặp về 0; `data/gpu_metrics.csv` có 50 dòng lặp) ⇒ từ chối CSV đó là chặn phiên thật,
+  nên tool chỉ **cảnh báo** và khoá nhãn theo `buoc`.
   Ba điều đã đo phải nhớ: (a) thời điểm bước VOS = **cộng dồn `latency_ms`** rồi **nhân hệ số bù
   `thời lượng video / tổng latency`** (phiên `121456`: 94,76 s vs video 98,0 s ⇒ 1,034; không bù thì
   cuối video lệch ~3 s và nhãn rơi sang bước khác) — nên **nhãn luôn lưu `t_video` thật** để truy ngược;
