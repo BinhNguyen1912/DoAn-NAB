@@ -133,7 +133,8 @@
 const NHAN_VI = { dung:"ĐÚNG", sai:"SAI", mat_dau:"MẤT DẤU", khong_co_vat:"KHÔNG CÓ VẬT", bo_qua:"BỎ QUA" };
 const PILL = { dung:"ok", sai:"bad", mat_dau:"warn", khong_co_vat:"warn", bo_qua:"warn" };
 
-let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhan:{} };
+// `nhanChon` = nhãn vừa bấm ở BƯỚC NÀY (để `s` lưu lại đúng nhãn đó). Đặt `null` khi đổi phiên/bước.
+let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhan:{}, nhanChon:null };
 // `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
 // sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
 let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
@@ -174,6 +175,7 @@ function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.f
 
 async function chonPhien(ten){
   state.phien = ten;
+  state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
   const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten));
   state.frames = d.frames;
   state.tongLatency = d.tong_latency_s;
@@ -207,6 +209,10 @@ function capNhat(){
   const i = chiSoHienTai();
   if (buocTruoc !== null && i !== buocTruoc && veO.co){
     veO.co = false; veO.buoc = null;          // ô thuộc bước khác ⇒ bỏ, không lưu hộ
+  }
+  if (buocTruoc !== null && i !== buocTruoc && state.nhanChon){
+    state.nhanChon = null;                    // nhãn đã chọn thuộc bước khác ⇒ `s` phải từ chối
+    flash('Đã sang bước khác — bấm 1/2/3/4 để chọn nhãn cho bước này');
   }
   buocTruoc = i;
   const f = state.frames[i] || {};
