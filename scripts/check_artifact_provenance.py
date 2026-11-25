@@ -51,6 +51,33 @@ CHO_PHEP = {
     ("live_web_relay_2026-11-10_metrics.json", "da1d671c3c20be6f98ea4a3f4674714ff1fdae6c"):
         "rev chỉ có trong object local (nhánh rebase trước khi push) — số relay webcam thật 10-11, "
         "CẤM dẫn rev",
+    # ── Nhóm 20–22/11: cùng bệnh "rev chỉ có ở object LOCAL" nhưng nặng hơn — 5 rev dưới **không tồn
+    # tại trên remote** (nhánh bị rebase/squash trước khi push). Phát hiện 25-11: máy dev thấy chúng là
+    # `lech` (rev còn sống, không phải tổ tiên) nên job CI xanh-ở-nhà/đỏ-trên-GitHub suốt 3 ngày; chỉ
+    # `git clone file://…` (chỉ copy object REACHABLE) mới tái hiện đúng `chet`. Số vẫn dùng được (đo
+    # thật, `git_dirty_code = false`) nhưng **CẤM trích rev** vì không ai kiểm lại được.
+    # Cách tự kiểm khi nghi: `git clone --branch main file://$PWD /tmp/ci && (cd /tmp/ci &&
+    # python scripts/check_artifact_provenance.py --nghiem)`.
+    ("ab_image_size_b1b_2026-11-20_metrics.json",
+     "6969fc40661ce42a6a9916d23d62b6640ae30f45"):
+        "rev không tồn tại trên remote (nhánh rebase trước khi push) — A/B image_size trên `b1b` 20-11, "
+        "CẤM dẫn rev",
+    ("ab_max_mad_b1b_2026-11-20_metrics.json",
+     "891f4f50c2a637820fc015876d640af1c8184ee8"):
+        "rev không tồn tại trên remote (nhánh rebase trước khi push) — A/B max_mad trên `b1b` 20-11, "
+        "CẤM dẫn rev",
+    ("ab_vos_every_b1b_2026-11-20_metrics.json",
+     "d893517ebb56c5e3b056467052396dd13e9207af"):
+        "rev không tồn tại trên remote (nhánh rebase trước khi push) — A/B vos_every trên `b1b` 20-11, "
+        "CẤM dẫn rev",
+    ("gpu_sweep_binh2_2026-11-22_metrics.json",
+     "316c6e8018b57f2bece05001a4e38de91d012f3a"):
+        "rev không tồn tại trên remote (nhánh rebase trước khi push) — sweep GPU 22-11 (số 0,7644/0,8161 "
+        "trong AGENTS §6 vẫn dùng được), CẤM dẫn rev",
+    ("gpu_sweep_binh2_2026-11-22_lan192-320_metrics.json", "316c6e8"):
+        "cùng lần sweep GPU 22-11 (rev ghi dạng NGẮN 7 ký tự) — CẤM dẫn rev",
+    ("gpu_sweep_binh2_2026-11-22_lan512-1024_metrics.json", "316c6e8"):
+        "cùng lần sweep GPU 22-11 (rev ghi dạng NGẮN 7 ký tự) — CẤM dẫn rev",
 }
 
 

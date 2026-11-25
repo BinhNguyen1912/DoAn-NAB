@@ -219,3 +219,28 @@ test mới. **Không** sửa số trong artifact, không xoá bằng chứng.
 - Máy này **không có `gh`** ⇒ không mở được PR; quy trình §7b "vào `main` qua PR" đang được làm tay
   bằng merge commit. Nên cài `gh` (hoặc dùng token) để đọc log CI khi đỏ — lần này phải tái hiện
   bằng `git worktree` mới tìm ra nguyên nhân.
+
+### 2b. Vì sao lần đầu sửa provenance vẫn đỏ: `lech` ở máy ≠ `chet` ở CI
+
+Sau commit `9b21d49`, CI còn đỏ **đúng job provenance** (pytest đã xanh). Đo lại từng nấc:
+
+| môi trường | `--nghiem` | vì sao |
+|---|---|---|
+| `data/` trên máy dev | exit **0** | 6 rev thấy là `lech` (object còn trong `.git`, không phải tổ tiên) |
+| `git worktree` của chính repo | exit **0** | worktree **dùng chung object store** với repo ⇒ vẫn thấy rev rác |
+| **`git clone file://$PWD`** (chỉ copy object REACHABLE) | exit **1**, **5 CHẾT-MỚI** | đúng như CI: runner clone sạch |
+| Python 3.14 thay 3.11 | exit 0 | ⇒ không phải lỗi phiên bản Python |
+
+⇒ Bài học phương pháp: **`git worktree` KHÔNG phải bản sao của checkout CI.** Muốn tái hiện "rev có
+tồn tại trên remote không" thì phải `clone` (hoặc `git fetch` vào repo trống), vì thứ tự kiểm
+`rev-parse --verify` mới là thứ CI chạy. Đây là lần thứ hai trong ngày tôi suýt kết luận "đã xanh"
+bằng một phép kiểm không cùng điều kiện với CI.
+
+5 rev chết thật (đều là nhánh rebase/squash trước khi push): `6969fc4` (A/B image_size `b1b`),
+`891f4f5` (A/B max_mad), `d893517` (A/B vos_every), `316c6e8` × 3 (sweep GPU `binh2` 22-11 —
+`gpu_sweep_binh2_2026-11-22*.json`, rev ghi dạng NGẮN 7 ký tự ở 2 file).
+
+Xử lý: thêm 6 mục vào `CHO_PHEP` (cơ chế CÓ SẴN cho "provenance không truy được nhưng giữ nguyên bằng
+chứng"), mỗi mục nêu lý do + **CẤM dẫn rev**. Số trong AGENTS §6 vẫn dùng được (đo thật,
+`git_dirty_code = false`) — chỉ rev là không kiểm lại được. Kiểm lại trong clone thật:
+`134 artifact: 116 ok · 0 lệch · 18 đã-biết · 0 CHẾT-MỚI`, exit **0**.
