@@ -760,6 +760,12 @@ def _write_run_info(args, metrics=None):
         # >0 ⇒ khung ĐỔI giữa phiên ⇒ `frame_shape` chỉ đúng cho phần đầu; scorer phải biết.
         frame_shape_doi=getattr(_m, "frame_shape_doi", None),
         max_jump_ratio=_max_jump_ratio(args),
+        # 25-11: `--box-smooth-tau-ms` ĐỔI THỨ NGƯỜI XEM THẤY (ô vẽ ra mượt hơn) mà không đổi
+        # `result.bbox` ⇒ thiếu trường này thì 2 phiên TRÔNG KHÁC NHAU nhưng `run_info` y hệt, và
+        # video dự phòng không tái lập được đúng cấu hình hiển thị (P2 do review độc lập 25-11 bắt).
+        # `None` = TẮT (hành vi trước 25-11); chỉ có tác dụng khi `--smooth`.
+        box_smooth_tau_ms=(getattr(args, "box_smooth_tau_ms", None)
+                          if getattr(args, "smooth", False) else None),
         # 24-11: siêu tham số motion-memory ĐÃ ĐÈ (None = không đè). Thiếu trường này thì một phiên
         # thí nghiệm không phân biệt được với phiên mặc định ⇒ không tái lập được.
         model_overrides=_model_overrides(args) or None,

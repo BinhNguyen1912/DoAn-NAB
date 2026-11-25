@@ -205,3 +205,38 @@ class TestLostResetStreak:
         from tools.run_live import _lost_reset_streak
 
         assert _lost_reset_streak(SimpleNamespace(lost_reset_streak=3, _co_cong_nghi=False)) is None
+
+
+class TestBoxSmoothRunInfo:
+    """25-11 (P2 review độc lập): `--box-smooth-tau-ms` ĐỔI thứ người xem thấy (ô vẽ ra mượt hơn)
+
+    nhưng KHÔNG đổi `result.bbox` ⇒ thiếu trường trong `run_info` thì hai phiên trông khác nhau mà
+    artifact y hệt, và video dự phòng không tái lập được đúng cấu hình hiển thị.
+    """
+
+    def test_co_cli_va_mac_dinh_none(self):
+        from tools.run_live import build_parser
+
+        mac_dinh = build_parser().parse_args(["--source", "0"])
+        assert mac_dinh.box_smooth_tau_ms is None, "mặc định phải TẮT (artifact cũ tái lập được)"
+        a = build_parser().parse_args(["--source", "0", "--box-smooth-tau-ms", "125"])
+        assert a.box_smooth_tau_ms == 125.0
+
+    def test_di_den_smooth_display(self, monkeypatch):
+        """Cờ phải đi tới `run_smooth_display` (không chỉ nằm trong `run_info`)."""
+        import inspect
+
+        from src.smooth_display import run_smooth_display
+
+        assert "box_smooth_tau_ms" in inspect.signature(run_smooth_display).parameters
+
+    def test_headless_ghi_none(self):
+        """Headless (không `--smooth`) ⇒ `None`: không có khái niệm "ô vẽ ra"."""
+        from tools.run_live import build_parser
+
+        a = build_parser().parse_args(["--source", "0", "--box-smooth-tau-ms", "125"])
+        assert a.smooth is False
+        # cùng biểu thức mà `_write_run_info` dùng
+        assert (getattr(a, "box_smooth_tau_ms", None) if getattr(a, "smooth", False) else None) is None
+        b = build_parser().parse_args(["--source", "0", "--smooth", "--box-smooth-tau-ms", "125"])
+        assert (getattr(b, "box_smooth_tau_ms", None) if b.smooth else None) == 125.0
