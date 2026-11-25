@@ -1,9 +1,9 @@
 {
- "git_rev": "3591f19",
+ "git_rev": "033eafc",
  "git_dirty": true,
  "git_dirty_code": false,
  "lenh": "scripts/eval_gate_rules.py --out data/eval_gate_rules_2026-11-25_metrics.json",
- "do_luc": "2026-11-25T08:56:28",
+ "do_luc": "2026-11-25T09:03:25",
  "frame_shape": [
   480,
   640
@@ -46,12 +46,17 @@
    137
   ]
  ],
- "ca_sai": [],
+ "ca_sai": [
+  [
+   "demoip_1125-085815_metrics.csv",
+   47
+  ]
+ ],
  "luat_truoc_khi_tai_bam": "hien_tai_truoc_khi_tai_bam",
  "lost_reset_streak_truoc": 0,
  "lost_reset_streak": 3,
  "reacq_grace_steps": 2,
- "so_phien_doc_duoc": 28,
+ "so_phien_doc_duoc": 29,
  "so_phien_bo_qua": 17,
  "so_phien_khop_100pct": 10,
  "ghi_chu_nhan": "7 ca DUNG do 1 nguoi dan tren video HUD => chi dung de kiem 'co bo ca dung nao khong'; 0 ca SAI da xac nhan.",
@@ -77,7 +82,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "hien_tai": {
    "so_phien": 10,
@@ -100,7 +107,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "theo_dt": {
    "so_phien": 10,
@@ -123,7 +132,9 @@
     "demoip_1123-144226_metrics.csv#196": false,
     "demoip_1124-125109_metrics.csv#137": false
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": false
+   }
   },
   "van_toc_lich_su": {
    "so_phien": 10,
@@ -146,7 +157,9 @@
     "demoip_1123-144226_metrics.csv#196": false,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "theo_dt_va_dien_tich": {
    "so_phien": 10,
@@ -169,7 +182,9 @@
     "demoip_1123-144226_metrics.csv#196": false,
     "demoip_1124-125109_metrics.csv#137": false
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": false
+   }
   },
   "chi_khi_cham_600": {
    "so_phien": 10,
@@ -192,7 +207,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": false
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": false
+   }
   },
   "chi_khi_cham_900": {
    "so_phien": 10,
@@ -215,7 +232,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "chi_khi_cham_1200": {
    "so_phien": 10,
@@ -238,7 +257,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "chi_khi_cham_1500": {
    "so_phien": 10,
@@ -261,7 +282,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   },
   "hien_tai_truoc_khi_tai_bam": {
    "so_phien": 10,
@@ -284,7 +307,9 @@
     "demoip_1123-144226_metrics.csv#196": true,
     "demoip_1124-125109_metrics.csv#137": true
    },
-   "bat_ca_sai": {}
+   "bat_ca_sai": {
+    "demoip_1125-085815_metrics.csv#47": true
+   }
   }
  },
  "phien": [
@@ -2735,6 +2760,106 @@
      "duoi": 0,
      "frame_an": 3,
      "frame_chua_xac_minh": 0
+    }
+   }
+  },
+  {
+   "ten": "demoip_1125-085815_metrics.csv",
+   "n": 360,
+   "khop_pct": 97.5,
+   "luat": {
+    "cham_noi_theo_dt": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      326
+     ],
+     "duoi": 19,
+     "frame_an": 16,
+     "frame_chua_xac_minh": 46
+    },
+    "hien_tai": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 46
+    },
+    "theo_dt": {
+     "fire": 0,
+     "fire_frames": [],
+     "duoi": 0,
+     "frame_an": 0,
+     "frame_chua_xac_minh": 0
+    },
+    "van_toc_lich_su": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 46
+    },
+    "theo_dt_va_dien_tich": {
+     "fire": 0,
+     "fire_frames": [],
+     "duoi": 0,
+     "frame_an": 0,
+     "frame_chua_xac_minh": 0
+    },
+    "chi_khi_cham_600": {
+     "fire": 1,
+     "fire_frames": [
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 9,
+     "frame_chua_xac_minh": 19
+    },
+    "chi_khi_cham_900": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 46
+    },
+    "chi_khi_cham_1200": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 46
+    },
+    "chi_khi_cham_1500": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 19,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 46
+    },
+    "hien_tai_truoc_khi_tai_bam": {
+     "fire": 2,
+     "fire_frames": [
+      47,
+      325
+     ],
+     "duoi": 26,
+     "frame_an": 17,
+     "frame_chua_xac_minh": 296
     }
    }
   }
