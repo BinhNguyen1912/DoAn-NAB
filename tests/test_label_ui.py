@@ -962,6 +962,89 @@ class TestAnhTungBuoc:
         b, loi = L.anh_buoc("phien1", 2)
         assert loi is None and b != b"\xff\xd8\xff\xd9", "phải bỏ cache cũ, cắt lại từ video"
 
+    def test_api_frames_khong_lam_ban_cache(self, tmp_path, monkeypatch):
+        """`doc_phien_cached` trả object DÙNG CHUNG: trang trí lên nó ⇒ 2 người dùng chung server
+        nhận nhãn của nhau + `rong/cao` có thể mất (review vòng 2, P1-1)."""
+        self._video(tmp_path, monkeypatch)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            goc = f"http://127.0.0.1:{srv.server_address[1]}"
+            for nguoi in ("A", "B"):
+                d = json.load(urllib.request.urlopen(
+                    f"{goc}/api/frames?phien=phien1&nguoi={nguoi}"))
+                assert d["rong"] == 64 and d["cao"] == 48
+                assert "idx" in d["frames"][0] and "t_video_thuc" in d["frames"][0]
+            cache = L.doc_phien_cached(L.DATA_DIR / "phien1_metrics.csv")
+            assert "da_gan" not in cache and "rong" not in cache, "cache bị trang trí ⇒ rò giữa 2 request"
+            assert all("idx" not in f for f in cache["frames"]), "frame trong cache bị thêm key"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_api_frames_idx_khop_chi_so_khung_va_t_video_thuc(self, tmp_path, monkeypatch):
+        """Hai đường tính `idx` (server trang trí `/api/frames` vs `chi_so_khung`) phải TRÙNG; nếu lệch
+        thì panel `t≈` một đằng mà ảnh một nẻo."""
+        self._video(tmp_path, monkeypatch)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            d = json.load(urllib.request.urlopen(
+                f"http://127.0.0.1:{srv.server_address[1]}/api/frames?phien=phien1"))
+            assert d["frames"], "phải có bước"
+            for f in d["frames"]:
+                idx, loi = L.chi_so_khung("phien1", f["buoc"])
+                assert loi is None and f["idx"] == idx, f"bước {f['buoc']}: {f['idx']} vs {idx}"
+                assert f["t_video_thuc"] == round(f["idx"] / d["fps"], 3)
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_hai_nguoi_cung_luc_moi_nguoi_chi_thay_nhan_cua_minh(self, tmp_path, monkeypatch):
+        """2 request `/api/frames` CHỒNG NHAU (2 người dùng chung 1 server) không được trộn nhãn."""
+        self._video(tmp_path, monkeypatch)
+        nhan = L.THU_MUC_NHAN / "phien1.jsonl"
+        nhan.parent.mkdir(parents=True, exist_ok=True)
+        dong = []
+        for nguoi, b in (("A", 1), ("B", 2), ("B", 3)):
+            dong.append(json.dumps({"phien": "phien1", "buoc": b, "frame_vos": b, "nhan": "dung",
+                                    "nguoi_gan": nguoi, "t_video": 0.1 * b, "t_uoc_luong": 0.1 * b,
+                                    "git_rev": "t", "do_luc": "t"}))
+        nhan.write_text("\n".join(dong) + "\n", encoding="utf-8")
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            goc = f"http://127.0.0.1:{srv.server_address[1]}"
+            ket: dict[str, list] = {}
+            rao = threading.Barrier(2)
+
+            def mot(nguoi):
+                rao.wait()                      # cùng lúc
+                d = json.load(urllib.request.urlopen(f"{goc}/api/frames?phien=phien1&nguoi={nguoi}"))
+                ket[nguoi] = [r["nguoi_gan"] for r in d["da_gan"]]
+
+            ts = [threading.Thread(target=mot, args=(n,)) for n in ("A", "B")]
+            [t.start() for t in ts]
+            [t.join() for t in ts]
+            assert ket["A"] == ["A"], f"A nhận nhãn của người khác: {ket['A']}"
+            assert ket["B"] == ["B", "B"], f"B nhận nhãn lẫn: {ket['B']}"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+    def test_che_do_duoc_ghi_vao_nhan(self, tmp_path, monkeypatch):
+        """`t_video` có hai nguồn khác nhau ⇒ file bằng chứng phải nói nhãn dán ở chế độ nào."""
+        rec = L.ghi_nhan("phien1", {"buoc": 1, "frame_vos": 1, "nhan": "dung",
+                                    "t_video": 0.1, "t_uoc_luong": 0.1, "che_do": "anh"},
+                         "A", tmp_path)
+        assert rec["che_do"] == "anh"
+        rec2 = L.ghi_nhan("phien1", {"buoc": 1, "frame_vos": 1, "nhan": "dung",
+                                     "t_video": 0.1, "t_uoc_luong": 0.1}, "A", tmp_path)
+        assert rec2["che_do"] is None, "không khai thì để None, đừng bịa 'video'"
+        with pytest.raises(ValueError):
+            L.ghi_nhan("phien1", {"buoc": 1, "frame_vos": 1, "nhan": "dung", "che_do": "auto"},
+                       "A", tmp_path)
+
     def test_route_anh_thieu_buoc_400(self, tmp_path, monkeypatch):
         self._video(tmp_path, monkeypatch)
         srv = L.tao_server(0, "B", None)
@@ -1051,8 +1134,7 @@ class TestAnhTungBuoc:
                 return self._c.release()
 
         monkeypatch.setattr(cv2, "VideoCapture", Dem)
-        monkeypatch.setattr(L, "_CAP_MAX", 1)
-        # mở 3 phiên KHÁC TÊN ⇒ với _CAP_MAX = 1 thì 2 cái đầu bị đuổi
+        monkeypatch.setattr(L, "_CAP_MAX", 2)   # MAX=2 + 3 phiên ⇒ phải đuổi ĐÚNG cái CŨ NHẤT
         for ten in ("phien1", "phienB", "phienC"):
             (L.DATA_DIR / f"{ten}.mp4").write_bytes((L.DATA_DIR / "phien1.mp4").read_bytes())
             (L.DATA_DIR / f"{ten}_metrics.csv").write_text(
@@ -1060,8 +1142,8 @@ class TestAnhTungBuoc:
         L._CAP.clear()
         for ten in ("phien1", "phienB", "phienC"):
             L.anh_buoc(ten, 0)
-        assert len(L._CAP) == 1, f"chỉ giữ _CAP_MAX=1, đang giữ {len(L._CAP)}"
-        assert len(so_release) >= 2, f"capture bị đuổi phải release(), mới release {len(so_release)}"
+        assert set(L._CAP) == {"phienB", "phienC"}, f"phải đuổi cái CŨ NHẤT: {sorted(L._CAP)}"
+        assert len(so_release) >= 1, f"capture bị đuổi phải release(), mới release {len(so_release)}"
 
 
 class TestClientHuyKetNoi:
@@ -1154,6 +1236,16 @@ class TestHangSoVaTaiLieu:
         assert "state.anhOk" in h and "state.videoOk" in h
         assert "addEventListener('error'" in h, "phải bắt lỗi giải mã để báo, không im lặng"
         assert "KHÔNG PHÁT ĐƯỢC VIDEO" in h
+
+    def test_html_anh_khong_bat_khoa_khi_anh_khong_hien(self):
+        """`src` không đổi KHÔNG có nghĩa ảnh đang hiện (ảnh lỗi vẫn giữ src cũ) ⇒ cấm bật khoá ghi."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "im.complete && im.naturalWidth > 0" in h, \
+            "nhánh 'src không đổi' phải kiểm ảnh có thật trước khi cho ghi nhãn"
+        assert "if (tenCu !== ten) state.i = 0;" in h, \
+            "đổi PHIÊN phải về bước 0 (guard cũ so sau khi đã gán nên không bao giờ chạy)"
+        assert "(state.cheDo === 'anh') ? 0 :" in h, \
+            "chế độ ảnh không được bắn cảnh báo LỆCH (luôn đứng đúng bước)"
 
     def test_html_khoa_ghi_nhan_theo_nguon_dang_xem(self):
         """Chế độ ẢNH không được khoá oan vì <video> của phiên mp4v không phát được."""

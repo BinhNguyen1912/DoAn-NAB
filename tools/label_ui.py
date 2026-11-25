@@ -322,12 +322,22 @@ def _doc_dau_van_tay(thu_muc) -> str | None:
 
 
 def _ghi_cache(thu_muc, tep, du_lieu: bytes, dau_van_tay: str, phien: str) -> None:
-    """Ghi cache **atomic**: `*.tmp` + `os.replace` (thread khác không thấy file ghi dở)."""
+    """Ghi cache **atomic**: file tạm riêng + `os.replace` (thread khác không thấy file ghi dở)."""
     try:
+        # Nguồn đã đổi TRONG LÚC cắt ⇒ ảnh này là của nguồn CŨ, đừng gắn nhãn fingerprint MỚI cho nó
+        # (nếu không, lần sau fingerprint khớp và cache phục vụ ảnh cũ VĨNH VIỄN — review vòng 2, P2-5).
+        if _dau_van_tay(phien) != dau_van_tay:
+            return
         thu_muc.mkdir(parents=True, exist_ok=True)
-        tam = tep.with_suffix(".jpg.tmp")
-        tam.write_bytes(du_lieu)
-        os.replace(tam, tep)
+        import tempfile
+        fd, ten_tam = tempfile.mkstemp(dir=str(thu_muc), prefix=".tmp-", suffix=".jpg")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(du_lieu)
+            os.replace(ten_tam, tep)
+        finally:
+            if os.path.exists(ten_tam):
+                os.unlink(ten_tam)          # `os.replace` đã chuyển đi thì nhánh này không chạy
         (thu_muc / MANIFEST).write_text(
             json.dumps({"phien": phien, "dau_van_tay": dau_van_tay}), encoding="utf-8")
     except OSError:
@@ -367,6 +377,11 @@ def anh_buoc(phien: str, buoc: int) -> tuple[bytes | None, str | None]:
         dich = max(0, min(idx, int(n) - 1))
         if not cap.set(cv2.CAP_PROP_POS_FRAMES, dich):
             return None, f"seek tới frame {dich} thất bại"     # đừng trả frame của bước KHÁC rồi cache
+        # `set()` có thể trả True mà vẫn đứng ở keyframe gần nhất (tuỳ backend) ⇒ đọc lại vị trí.
+        # Sai lệch > 1 frame = ảnh của BƯỚC KHÁC, không được cache.
+        vi_tri = int(round(cap.get(cv2.CAP_PROP_POS_FRAMES) or dich))
+        if abs(vi_tri - dich) > 1:
+            return None, f"seek lệch: muốn frame {dich}, đứng ở {vi_tri}"
         ok, khung = cap.read()
     if not ok or khung is None:
         return None, f"không đọc được frame {idx} của video"
@@ -512,12 +527,18 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
         bbox = b
     else:
         b = None
+    che_do = record.get("che_do")
+    if che_do not in (None, "", "anh", "video"):
+        raise ValueError(f"`che_do` chỉ nhận 'anh'/'video'; nhận {che_do!r}")
     rec = {
         "phien": phien,
         # `buoc` = số thứ tự dòng trong CSV = DANH TÍNH của bước (duy nhất kể cả khi frame_idx lặp).
         "buoc": None if record.get("buoc") in (None, "") else int(record["buoc"]),
         "frame_vos": int(record.get("frame_vos") or 0),
         "t_video": round(_so_huu_han(record.get("t_video"), "t_video"), 3),
+        # `t_video` có hai nguồn: chế độ Ảnh = `idx/fps` của frame server cắt ra; chế độ Video =
+        # `currentTime`. Không ghi lại thì file bằng chứng không phân biệt được (review vòng 2, P3-8).
+        "che_do": che_do or None,
         "t_uoc_luong": (None if record.get("t_uoc_luong") is None
                         else round(_so_huu_han(record["t_uoc_luong"], "t_uoc_luong"), 2)),
         "nhan": nhan,
@@ -769,7 +790,10 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_response(200)
             self.send_header("Content-Type", "image/jpeg")
             self.send_header("Content-Length", str(len(du_lieu)))
-            self.send_header("Cache-Control", "max-age=86400")   # ảnh của một bước là bất biến
+            # `no-cache` + ETag theo fingerprint: ảnh của một bước là bất biến TRONG một nguồn, nhưng
+            # CSV/video sinh lại thì KHÔNG — `max-age=86400` từng khiến browser hiện ảnh cũ suốt 24 h
+            # trong khi `t_video` lấy từ CSV mới (review vòng 2, P2-4). Đọc lại cache chỉ 9,2 ms.
+            self.send_header("Cache-Control", "no-cache")
             self.end_headers()
             ghi_an_toan(self.wfile, du_lieu)
             return
@@ -784,9 +808,15 @@ class _Handler(BaseHTTPRequestHandler):
             if not p.is_file():
                 return self._json({"loi": f"không có {p.name}"}, 404)
             try:
-                d = doc_phien_cached(p)                # cache: 50 000 dòng parse 169 ms mỗi lần mở phiên
+                goc = doc_phien_cached(p)              # cache: 50 000 dòng parse 169 ms mỗi lần mở phiên
             except ValueError as e:                    # CSV bẩn (BOM, thiếu cột, không tăng dần)
                 return self._json({"loi": str(e)}, 400)
+            # COPY-ON-READ: object trong cache được DÙNG CHUNG giữa các thread; trang trí (`da_gan`,
+            # `rong`, `idx`...) lên chính nó thì hai request cùng phiên ghi đè nhau ⇒ người này nhận
+            # NHÃN CỦA NGƯỜI KIA (đúng thứ tool phải chống), và `rong/cao` có thể mất key ⇒ ô vẽ sai
+            # tỉ lệ. Chép nông dict + chép từng frame (review vòng 2, P1-1).
+            d = {k: v for k, v in goc.items() if k != "frames"}
+            d["frames"] = [dict(f) for f in goc["frames"]]
             # ĐỘC LẬP THẬT: chỉ trả nhãn của CHÍNH người đang dán; nhãn người khác chỉ đi kèm SỐ LƯỢNG.
             # Trước đây server trả hết rồi UI ẩn bằng CSS ⇒ mở DevTools là thấy, "2 người độc lập" thành giả.
             # Tên người dán nay do CLIENT khai (`?nguoi=`) vì 2 người có thể dùng CHUNG một server (đó là

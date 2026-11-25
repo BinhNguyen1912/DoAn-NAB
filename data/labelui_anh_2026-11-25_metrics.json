@@ -1,25 +1,29 @@
 {
- "do_luc": "2026-11-25T15:53:21+0700",
+ "song_song": {
+  "so_request": 8,
+  "tong_ms": 99.7,
+  "so_capture_mo": 1,
+  "chiet_giai": "8 request đồng thời trên 8 bước khác nhau; `so_capture_mo` phải = 1"
+ },
+ "do_luc": "2026-11-25T15:59:03+0700",
  "lenh": "scripts/do_toc_do_anh.py --phien demoip_1125-121456 --out data/labelui_anh_2026-11-25_metrics.json",
- "git_rev": "0bb2b33",
+ "git_rev": "264de36",
  "git_dirty": true,
- "git_dirty_code": false,
+ "git_dirty_code": true,
  "phien": "demoip_1125-121456",
  "so_buoc_do": 10,
  "so_lan_moi_buoc": 3,
  "lan_dau_ms": {
   "n": 10,
-  "mean_ms": 38.0,
-  "p95_ms": 214.1,
-  "min_ms": 15.4,
-  "max_ms": 214.1
+  "mean_ms": 38.1,
+  "min_ms": 19.1,
+  "max_ms": 192.1
  },
  "da_cache_ms": {
   "n": 20,
-  "mean_ms": 9.2,
-  "p95_ms": 12.1,
-  "min_ms": 7.6,
-  "max_ms": 12.1
+  "mean_ms": 9.7,
+  "min_ms": 7.8,
+  "max_ms": 14.9
  },
  "kich_thuoc_jpeg_b": {
   "mean": 34773,
@@ -27,6 +31,6 @@
   "max": 40018
  },
  "chiet_giai": "`lan_dau` = bước CHƯA có cache (seek + decode + nén + ghi); `da_cache` = đọc file. Đo trên máy này, không GPU; số tuyệt đối phụ thuộc tải máy (AGENTS §6: chỉ trích theo TỈ LỆ nếu không có loadavg).",
- "loadavg_1m": "0.63",
+ "loadavg_1m": "0.70",
  "cpu_count": 8
 }

@@ -62,14 +62,48 @@ def main() -> int:
             (lan_dau if k == 0 else da_cache).append(round(ms, 1))
 
     def thong_ke(xs: list[float]) -> dict:
+        # KHÔNG có `p95` khi n nhỏ: với n = 10–20, `int(0.95*n)` = n-1 ⇒ "p95" chính là MAX
+        # (review vòng 2, P3-1: đừng trích nó như đuôi phân bố). Chỉ in p95 khi n >= 100.
         if not xs:
             return {"n": 0}
         xs_sap = sorted(xs)
-        return {"n": len(xs), "mean_ms": round(statistics.fmean(xs), 1),
-                "p95_ms": round(xs_sap[min(len(xs_sap) - 1, int(0.95 * len(xs_sap)))], 1),
-                "min_ms": xs_sap[0], "max_ms": xs_sap[-1]}
+        out = {"n": len(xs), "mean_ms": round(statistics.fmean(xs), 1),
+               "min_ms": xs_sap[0], "max_ms": xs_sap[-1]}
+        if len(xs_sap) >= 100:
+            out["p95_ms"] = round(xs_sap[int(0.95 * len(xs_sap))], 1)
+        return out
+
+    # Ảnh SONG SONG (prefetch của UI: 4 ảnh kế mỗi lần bấm ←/→): đo thời gian + chứng minh chỉ mở
+    # MỘT `VideoCapture` (FFmpeg không thread-safe — review vòng 2, P2-6).
+    import concurrent.futures
+    shutil.rmtree(thu_muc, ignore_errors=True)
+    L._CAP.clear()
+    so_mo = []
+    that = L.cv2.VideoCapture if hasattr(L, "cv2") else None
+    import cv2
+    that = cv2.VideoCapture
+
+    class Dem:
+        def __init__(self, *a, **k):
+            so_mo.append(1)
+            self._c = that(*a, **k)
+        def __getattr__(self, n):
+            return getattr(self._c, n)
+
+    cv2.VideoCapture = Dem
+    try:
+        t0 = time.perf_counter()
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as ex:
+            ds = list(ex.map(lambda b: L.anh_buoc(args.phien, b), buoc[:8]))
+        song_song_ms = (time.perf_counter() - t0) * 1000
+    finally:
+        cv2.VideoCapture = that
+    assert all(d and not e for d, e in ds), "có ảnh song song bị lỗi"
 
     payload = {
+        "song_song": {"so_request": len(ds), "tong_ms": round(song_song_ms, 1),
+                      "so_capture_mo": len(so_mo),
+                      "chiet_giai": "8 request đồng thời trên 8 bước khác nhau; `so_capture_mo` phải = 1"},
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "lenh": " ".join(sys.argv),
         "git_rev": git("rev-parse", "--short", "HEAD"),

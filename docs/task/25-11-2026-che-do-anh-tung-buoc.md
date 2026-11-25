@@ -40,11 +40,11 @@ Số đo có **artifact** (`scripts/do_toc_do_anh.py` → `data/labelui_anh_2026
 
 | Chỉ số | Số đo |
 |---|---|
-| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **38,0 ms** · p95 **214,1 ms** (n = 10; p95 là lần mở `VideoCapture` đầu tiên) |
-| Ảnh **đã cache** (đọc file) | mean **9,2 ms** · p95 **12,1 ms** (n = 20) |
+| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **38,1 ms** · max **192,1 ms** (n = 10; max là lần mở `VideoCapture` đầu tiên — **không** gọi là p95) |
+| Ảnh **đã cache** (đọc file) | mean **9,7 ms** · max **14,9 ms** (n = 20) |
 | Kích thước JPEG | 29 980–40 018 B (mean 34 773) |
-| 8 request ảnh **song song** (prefetch) | 0,83 s, 8/8 thành công, mở đúng **1** `VideoCapture` |
-| `./run test` | **2 211 passed**, 6 deselected (198 s) |
+| **8 request song song** (prefetch) | **99,7 ms** tổng, mở đúng **1** `VideoCapture` (`song_song`) |
+| `./run test` | **2 216 passed**, 6 deselected (213 s) |
 | `./run labeluie2e` | **PASS 37/37** (thêm 7 mục: ảnh tải được, ←/→ đổi ảnh, CLICK nút nhãn, giữ bước khi đổi chế độ…) |
 | `./run lint` | sạch |
 
@@ -99,6 +99,21 @@ P1 + các P2 ảnh hưởng dữ liệu:
 **Bài học quy trình**: 5 lần `str.replace` của tôi **không khớp** nhưng script vẫn in "ok" ⇒ khối e2e
 "chế độ ảnh" tưởng đã có mà thực ra **chưa bao giờ được chèn**, và reviewer đếm ra 30 mục thay vì 35.
 Từ nay: sau mỗi lần thay chuỗi phải `assert` chuỗi mới **có trong file** rồi mới tin.
+
+## 5c. Review độc lập vòng 2 — P0 = 0, nhưng tôi vừa tạo 1 P1
+
+Vòng 2 bắt đúng một hồi quy **do fix vòng 2 sinh ra**: `/api/frames` trang trí `da_gan`/`rong`/`idx`
+lên **chính dict trong cache** `doc_phien_cached` (dùng chung giữa các thread) ⇒ 2 người dán chung một
+server có thể **nhận nhãn của nhau**, và `rong/cao` có thể mất key ⇒ ô vẽ sai tỉ lệ. Đã sửa bằng
+**copy-on-read** (chép dict + chép từng frame) + 2 test (1 test 2 thread qua `Barrier`, 1 test assert
+cache không bị thêm key).
+
+Sửa thêm 6 P2/P3: `state.i` không reset khi đổi **phiên** (guard so sau khi đã gán ⇒ phiên ngắn hơn thì
+`/anh` 404 ⇒ khoá sạch nút); nhánh "src không đổi" bật khoá ghi nhãn mà không kiểm ảnh có thật (nhãn
+mù); cảnh báo `LỆCH` bắn sai ở chế độ Ảnh khi `<video>` thiếu metadata (ca mp4v) ⇒ ép `lech = 0`;
+`Cache-Control: max-age=86400` vô hiệu hoá fingerprint ⇒ `no-cache`; fingerprint đọc lại **trước khi
+ghi cache** (chống cache ảnh nguồn cũ dưới fingerprint mới); file tạm dùng `tempfile.mkstemp`; nhãn ghi
+thêm `che_do`; script đo bỏ "p95" khi n < 100 + thêm mục `song_song`.
 
 ## 6. Next steps
 
