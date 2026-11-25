@@ -890,9 +890,24 @@ class TestAnhTungBuoc:
         self._video(tmp_path, monkeypatch)
         assert L.anh_buoc("phien1", "abc")[0] is None
 
+    def test_khong_transcode_khi_lay_anh(self, tmp_path, monkeypatch):
+        """Ảnh phải lấy từ FILE GỐC: chuyển mã cả clip (0,5–30 s) sẽ treo ảnh đầu vô ích.
+
+        `cv2` đọc được `mp4v` (Chrome thì không) ⇒ không có lý do gọi `video_de_phat`.
+        """
+        self._video(tmp_path, monkeypatch)
+        da_goi = []
+        goc = L.video_de_phat
+        monkeypatch.setattr(L, "video_de_phat", lambda ten: (da_goi.append(ten), goc(ten))[1])
+        du_lieu, loi = L.anh_buoc("phien1", 0)
+        assert loi is None and du_lieu[:2] == b"\xff\xd8"
+        assert da_goi == [], "không được gọi video_de_phat (có thể transcode) khi chỉ cần frame"
+
     def test_khong_mo_duoc_video(self, tmp_path, monkeypatch):
         self._video(tmp_path, monkeypatch)
         L._CAP.clear()
+        # không có file gốc `<ten>.mp4` ⇒ mới đi qua `video_de_phat`, và nó hỏng ⇒ None + lý do
+        (L.DATA_DIR / "phien1.mp4").unlink()
         monkeypatch.setattr(L, "video_de_phat", lambda ten: (None, None, "không có"))
         assert L.anh_buoc("phien1", 0)[0] is None
 

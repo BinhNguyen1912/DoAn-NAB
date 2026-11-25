@@ -67,7 +67,10 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
    khớp CUỐI CÙNG; để trước thì ngoại lệ thắng, đúng lỗi lần 1), `git rm -r --cached`, test
    `test_cache_anh_khong_duoc_commit`. **Bài học: file nhãn `data/nhan/*.jsonl` được track có chủ ý
    (là bằng chứng) ⇒ từ nay stage theo ĐƯỜNG DẪN CỤ THỂ, không `git add -A`.**
-6. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
+6. **Ảnh lấy từ FILE GỐC, không qua `video_de_phat`**: hàm đó có thể **chuyển mã cả clip** (0,5–30 s)
+   trước khi trả ảnh đầu tiên. `cv2` đọc được `mp4v` (Chrome thì không) nên chỉ khi **không có** file
+   gốc mới đi qua đường chuyển mã. Test `test_khong_transcode_khi_lay_anh`.
+7. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
    cập nhật sang điều kiện theo chế độ (hợp đồng mới: *nguồn đang xem* phải hiện được).
 
 ## 6. Next steps

@@ -219,15 +219,25 @@ def _mo_video(ten: str):
     """
     if ten in _CAP:
         return _CAP[ten]
-    ten_video, _, _ = video_de_phat(ten)
-    if not ten_video:
-        return None
-    p = DATA_DIR / ten_video
-    if not p.is_file():
-        return None
     import cv2
-    cap = cv2.VideoCapture(str(p))
-    if not cap.isOpened():
+    # Ưu tiên FILE GỐC: `cv2` đọc được cả `mp4v` (Chrome thì không), nên KHÔNG cần chuyển mã.
+    # `video_de_phat()` có thể transcode cả clip (0,5–30 s) — gọi nó ở đây sẽ làm ảnh ĐẦU TIÊN treo
+    # lâu vô ích, đúng thứ chế độ ảnh sinh ra để tránh.
+    ung_vien = [DATA_DIR / f"{ten}.mp4"]
+    if not ung_vien[0].is_file():
+        ten_video, _, _ = video_de_phat(ten)
+        if ten_video:
+            ung_vien.append(DATA_DIR / ten_video)
+    cap = None
+    for p in ung_vien:
+        if not p.is_file():
+            continue
+        cap = cv2.VideoCapture(str(p))
+        if cap.isOpened():
+            break
+        cap.release()
+        cap = None
+    if cap is None:
         return None
     fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
     n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
