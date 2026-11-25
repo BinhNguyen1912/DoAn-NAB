@@ -756,6 +756,62 @@ class TestChanHoiQuyVong3:
         assert "thiếu `buoc` — client phải gửi" in p, "thiếu `buoc` mà bỏ qua kiểm là lỗ (P3-10)"
 
 
+class TestClientHuyKetNoi:
+    """Chrome huỷ request Range khi tua video ⇒ `write()` ném ConnectionResetError và `http.server` in
+    traceback 20 dòng vào terminal đang dán nhãn (người dùng báo 25-11). Video vẫn phát bình thường —
+    đây là rác log phải nuốt, KHÔNG được ảnh hưởng phiên."""
+
+    @pytest.mark.parametrize("loi", [ConnectionResetError(104, "Connection reset by peer"),
+                                     BrokenPipeError(32, "Broken pipe"),
+                                     ConnectionAbortedError(103, "Software caused connection abort")])
+    def test_ghi_an_toan_khong_nem(self, loi):
+        class Wfile:
+            def write(self, b):
+                raise loi
+            def flush(self):
+                pass
+
+        assert L.ghi_an_toan(Wfile(), b"x") is False
+
+    def test_ghi_an_toan_binh_thuong(self):
+        class Wfile:
+            def __init__(self):
+                self.da = b""
+
+            def write(self, b):
+                self.da += b
+
+        w = Wfile()
+        assert L.ghi_an_toan(w, b"abc") is True and w.da == b"abc"
+
+    def test_video_khong_no_traceback_khi_client_huy(self, tmp_path, monkeypatch):
+        """Gọi thật `_video` với `wfile` ném giữa đường ⇒ không ném ra ngoài."""
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "v_web.mp4").write_bytes(b"\x00" * 4096)
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path / "data")
+        srv = L.tao_server(0, "B", None)
+        httph = srv.RequestHandlerClass
+        obj = object.__new__(httph)                    # không mở socket: chỉ kiểm đường ghi
+        obj.headers = {"Range": "bytes=0-99"}
+        obj.send_response = lambda *a, **k: None
+        obj.send_header = lambda *a, **k: None
+        obj.end_headers = lambda: None
+        obj._json = lambda *a, **k: None
+
+        class Wfile:
+            def write(self, b):
+                raise ConnectionResetError(104, "Connection reset by peer")
+
+            def flush(self):
+                pass
+
+        obj.wfile = Wfile()
+        try:
+            obj._video({"v": ["v_web.mp4"]})
+        finally:
+            srv.server_close()
+
+
 class TestHangSoVaTaiLieu:
     def test_tap_nhan_dung_nhu_thiet_ke(self):
         """Phải so ĐÚNG TẬP: thiếu nhãn thì `tong_hop` đếm thiếu mà test mô tả vẫn xanh."""

@@ -153,8 +153,8 @@ rỗng dù bộ đếm đầy (nay so theo NFC+lowercase như server); `/api/fra
 (`json.dumps` mặc định in ra — **không phải JSON**, Chrome `JSON.parse` ném ⇒ UI chết) ⇒ nay `allow_nan=False`
 + thay số méo bằng `null`; test khẳng định thêm `kiem_dai_buoc` và "payload không có `: NaN`".
 
-- **Sau khi sửa (5 vòng review + 2 vòng dọn nốt P3):** `./run lint` xanh · `./run test` **2 179 passed** ·
-  `tests/test_label_ui.py` **96 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
+- **Sau khi sửa (5 vòng review + 2 vòng dọn nốt P3):** `./run lint` xanh · `./run test` **2 184 passed** ·
+  `tests/test_label_ui.py` **99 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 
@@ -229,6 +229,16 @@ Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiể
 
 - Vòng review vòng 1 đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
   ⇒ các mục P1 đã sửa cần **review vòng 2** trước khi merge.
+
+### Dùng thật lần đầu (25-11 tối) — rác log `ConnectionResetError`
+
+Người dùng chạy `./run labelui --nguoi-gan binh`: UI mở được nhưng terminal in **2 traceback 20 dòng**
+`ConnectionResetError: [Errno 104] Connection reset by peer` tại `self.wfile.write(chunk)`.
+
+Chẩn đoán: **không phải lỗi tool** — Chrome huỷ request `Range` giữa đường mỗi lần tua video, `write()`
+ném, `http.server` in traceback. Video vẫn phát bình thường, nhưng traceback làm người dùng tưởng hỏng
+(dễ dẫn tới "thôi không dán nữa"). Nay mọi chỗ ghi ra socket đi qua `ghi_an_toan()` (trả `False`, không
+ném) — áp cho cả 206, stream 200, JSON, HTML. 4 test mới, gồm gọi **thật** `_video` với `wfile` ném.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Người dùng dán nhãn một phiên thật** (`demoip_1125-121456`), rồi **người thứ 2** dán cùng tập

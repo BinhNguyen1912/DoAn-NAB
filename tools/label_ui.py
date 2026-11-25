@@ -319,6 +319,20 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
     return rec
 
 
+def ghi_an_toan(wfile, du_lieu: bytes) -> bool:
+    """Ghi ra socket, trả False (KHÔNG ném) nếu client đã đóng kết nối.
+
+    Chrome huỷ request `Range` giữa đường mỗi lần người dùng tua video ⇒ `write()` ném
+    `ConnectionResetError: [Errno 104]`, và `http.server` in **traceback 20 dòng** vào terminal đang
+    dán nhãn. Đó không phải lỗi của tool (video vẫn phát bình thường) nhưng làm người dùng tưởng hỏng.
+    """
+    try:
+        wfile.write(du_lieu)
+        return True
+    except (ConnectionError, BrokenPipeError, OSError):
+        return False
+
+
 def _khong_nan(x):
     """Thay NaN/±Infinity bằng `None` để JSON còn đọc được (số méo ⇒ "không đo được", không phải 0)."""
     import math
@@ -449,14 +463,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_header("Content-Type", "application/json; charset=utf-8")
         self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-        self.wfile.write(body)
+        ghi_an_toan(self.wfile, body)
 
     def _bytes(self, data: bytes, ctype: str, code=200):
         self.send_response(code)
         self.send_header("Content-Type", ctype)
         self.send_header("Content-Length", str(len(data)))
         self.end_headers()
-        self.wfile.write(data)
+        ghi_an_toan(self.wfile, data)
 
     def _video(self, query):
         ten = (query.get("v") or [""])[0]
@@ -497,7 +511,7 @@ class _Handler(BaseHTTPRequestHandler):
             self.send_header("Content-Range", f"bytes {start}-{end}/{dai_file}")
             self.send_header("Content-Length", str(len(chunk)))
             self.end_headers()
-            self.wfile.write(chunk)
+            ghi_an_toan(self.wfile, chunk)
             return
         self.send_response(200)
         self.send_header("Content-Type", "video/mp4")
@@ -509,7 +523,9 @@ class _Handler(BaseHTTPRequestHandler):
                 khoi = f.read(256 * 1024)              # stream, không nạp cả file vào RAM
                 if not khoi:
                     break
-                self.wfile.write(khoi)
+                if not ghi_an_toan(self.wfile, khoi):
+                    return                             # client đã huỷ (tua video) — im lặng
+
 
     def do_GET(self):
         u = urlparse(self.path)
