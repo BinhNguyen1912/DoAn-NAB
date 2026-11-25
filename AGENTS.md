@@ -384,6 +384,22 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `cau_hinh`; đừng trích chúng như "bảng đã tự kiểm cấu hình".
 
 
+- **Nhãn "bắt đúng/sai" phải do 2 người dán ĐỘC LẬP — nay có UI để dán: `./run labelui`.**
+  `tools/label_ui.py` (+ `label_ui.html`) mở trên trình duyệt: chọn phiên đã quay, phím `1` ĐÚNG · `2` SAI
+  · `3` MẤT DẤU (vật còn trong khung mà hệ không vẽ) · `4` KHÔNG CÓ VẬT (đã đưa ra ngoài) · `0` BỎ QUA;
+  `b` + kéo chuột = vẽ **ô đúng**. Nhãn append-only vào `data/nhan/<phiên>.jsonl` kèm `nguoi_gan`/
+  `git_rev`/`do_luc`/`t_video`; tổng hợp + mức đồng ý 2 người: `python tools/label_ui.py --tong-hop
+  data/<phiên>_metrics.csv`. Hướng dẫn người dán: `docs/cach-gan-nhan.md`.
+  Ba điều đã đo phải nhớ: (a) thời điểm bước VOS = **cộng dồn `latency_ms`** rồi **nhân hệ số bù
+  `thời lượng video / tổng latency`** (phiên `121456`: 94,76 s vs video 98,0 s ⇒ 1,034; không bù thì
+  cuối video lệch ~3 s và nhãn rơi sang bước khác) — nên **nhãn luôn lưu `t_video` thật** để truy ngược;
+  (b) `3` và `4` là hai chuyện khác nhau, gộp lại là biến "hệ mất dấu" thành "người dùng cất vật"; (c) UI
+  **ẩn nhãn của người khác** (chỉ hiện số lượng) — nếu không, "2 người đồng ý" chỉ là 1 người dán 2 lần.
+  Nhãn nằm trong `data/` (gitignore): muốn dùng làm **bằng chứng nộp bài** thì `git add -f` file
+  `.jsonl` + `_tonghop.json`. E2E: `./run labeluie2e` (Chrome thật, 22 mục — dùng `LABELUI_NHAN_DIR` để
+  không bao giờ ghi vào `data/nhan/` thật). Vẫn **không** thay được mIoU mask vs GT: nhãn này là *phán
+  quyết*, không phải mask.
+
 ## 7. Các repo/model tham khảo
 
 - SAM 2: https://github.com/facebookresearch/sam2
