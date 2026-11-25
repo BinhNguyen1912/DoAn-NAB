@@ -1,0 +1,111 @@
+{
+  "lenh": "python scripts/measure_hud_jitter.py data/demoip_1125-100334_web.mp4 data/demoip_1124-141352_web.mp4 data/demoip_1125-085815_web.mp4 data/demoip_1124-193026_web.mp4",
+  "do_luc": "2026-11-25T10:28:08+07:00",
+  "git_rev": "d658ed0",
+  "git_dirty_code": false,
+  "buoc_lay_mau": 1,
+  "ket_qua": [
+    {
+      "video": "demoip_1125-100334_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 16.07,
+      "dich_chuyen_frame_n": 921,
+      "dai_buoc_nhay": {
+        "<20px": 57,
+        "50-100px": 16,
+        "100-200px": 11,
+        "20-50px": 16
+      },
+      "fps_video": 30.0,
+      "so_frame": 1296,
+      "giu_frame_med": 8,
+      "giu_frame_med_n": 105,
+      "nhay_tam_med": 15.56,
+      "nhay_tam_p95": 160.8,
+      "nhay_tam_max": 188.12,
+      "nhay_tam_n": 100,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 71.37,
+      "pct_net_dut": 17.98,
+      "o_do_n": 925
+    },
+    {
+      "video": "demoip_1124-141352_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 58.08,
+      "dich_chuyen_frame_n": 196,
+      "dai_buoc_nhay": {
+        "<20px": 15,
+        "20-50px": 4,
+        "100-200px": 5,
+        "50-100px": 5
+      },
+      "fps_video": 30.0,
+      "so_frame": 631,
+      "giu_frame_med": 6,
+      "giu_frame_med_n": 31,
+      "nhay_tam_med": 15.52,
+      "nhay_tam_p95": 169.14,
+      "nhay_tam_max": 173.03,
+      "nhay_tam_n": 29,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 31.22,
+      "pct_net_dut": 60.06,
+      "o_do_n": 197
+    },
+    {
+      "video": "demoip_1125-085815_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 22.09,
+      "dich_chuyen_frame_n": 2330,
+      "dai_buoc_nhay": {
+        "<20px": 143,
+        "50-100px": 34,
+        "100-200px": 10,
+        "20-50px": 79,
+        ">=200px": 2
+      },
+      "fps_video": 30.0,
+      "so_frame": 3162,
+      "giu_frame_med": 8.0,
+      "giu_frame_med_n": 278,
+      "nhay_tam_med": 18.07,
+      "nhay_tam_p95": 89.94,
+      "nhay_tam_max": 232.64,
+      "nhay_tam_n": 268,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 74.0,
+      "pct_net_dut": 6.51,
+      "o_do_n": 2340
+    },
+    {
+      "video": "demoip_1124-193026_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 58.52,
+      "dich_chuyen_frame_n": 800,
+      "dai_buoc_nhay": {
+        "<20px": 72,
+        "20-50px": 65,
+        "50-100px": 46,
+        "100-200px": 9
+      },
+      "fps_video": 30.0,
+      "so_frame": 1797,
+      "giu_frame_med": 4,
+      "giu_frame_med_n": 201,
+      "nhay_tam_med": 31.96,
+      "nhay_tam_p95": 94.58,
+      "nhay_tam_max": 194.62,
+      "nhay_tam_n": 192,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 44.96,
+      "pct_net_dut": 34.34,
+      "o_do_n": 808
+    }
+  ],
+  "ghi_chu": "Số đo trên KHUNG HÌNH VẼ RA (dò màu), không phải CSV mỗi bước VOS."
+}

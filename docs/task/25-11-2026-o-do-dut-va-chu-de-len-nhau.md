@@ -84,3 +84,28 @@ báo" đều **giảm recall** (7/7 → 1/7…6/7).
 - `docs/task/24-11-2026-cong-nghi-tu-ha-muc.md` (3 trạng thái + số replay 4 346 frame)
 - `docs/plan/24-11-2026-cong-nghi-bao-oan.md` (vì sao không nới ngưỡng)
 - AGENTS.md §6 các bullet "cổng nghi đổi đối tượng", "`--smooth` KHÔNG có LK"
+
+## 8. Bổ sung: đo 4 phiên bằng script mới (bằng chứng cho cả hai phàn nàn)
+
+`scripts/measure_hud_jitter.py` (mới) dò **màu trên từng frame hiển thị** của video HUD — đo đúng thứ
+người dùng thấy, không đọc CSV mỗi bước VOS. Artifact: `data/hud_jitter_2026-11-25_metrics.json`
+(`git_rev d658ed0`, `git_dirty_code false`).
+
+| phiên | ô ĐỎ ("box đỏ") | nét đứt vàng (nghi/chưa xác minh) | ô đứng yên (frame) | bước nhảy med / max |
+|---|---|---|---|---|
+| `1125-100334` (phiên được phản ánh) | 71,4 % | **18,0 %** | 8 | 15,6 / 188 px |
+| `1124-141352` | **31,2 %** | **60,1 %** | 6 | 15,5 / 173 px |
+| `1125-085815` | 74,0 % | 6,5 % | 8 | 18,1 / 233 px |
+| `1124-193026` | 45,0 % | **34,3 %** | 4 | 32,0 / 195 px |
+
+⇒ (a) "dựt" là **hệ quả của thiết kế đường CLI** (ô đứng yên 4–8 frame rồi nhảy 15–32 px), có ở **mọi**
+phiên chứ không riêng hôm nay; (b) ở 2/4 phiên người xem thấy ô **nét đứt 34–60 % thời gian** — tức
+phàn nàn *"chưa cập nhật thành box đỏ"* đúng và **không phải ca hiếm**: đường `--no-reid` không có
+đường nào tự về `ok` sau lần nghi đầu tiên.
+
+Hai bẫy của chính phép đo, đã sửa và có test:
+1. **Banner "MẤT DẤU" bị đọc thành ô** (khối đỏ đặc có chữ trắng) ⇒ báo bước nhảy 336 px. Phân biệt
+   bằng mật độ đỏ **ruột hộp**: banner 0,184 · ô thật 0,000 (còn "cả hộp" thì ngược: 0,139 < 0,308).
+   Sau khi lọc: max 336,77 → **188,12 px**.
+2. **mp4v (4:2:0) xoá sạch nét đỏ 1 px** (nét 1 px còn 5 pixel đỏ, 2 px còn 449, 4 px còn 880) ⇒ test
+   dựng video giả phải vẽ nét ≥ 2–3 px, nếu không test "xanh" mà chẳng đo gì.
