@@ -57,7 +57,11 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
    - `veO.buoc = chiSoHienTai()` ⇒ ô vẽ ở chế độ ảnh bị coi là "của bước khác" ⇒ `bbox: []`.
 3. **Hai mục e2e cũ kiểm khái niệm chỉ có ở chế độ VIDEO** (`tua được video`, `cảnh báo LỆCH`) ⇒
    chuyển chúng vào khối chuyển sang chế độ Video thay vì xoá (vẫn giữ độ phủ).
-4. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
+4. **Chế độ ảnh từng bị khoá oan bởi `<video>`** (tự phát hiện sau khi dựng xong): `datTrangThaiVideo(false)`
+   disable mọi nút ghi nhãn + phủ banner đỏ lên khung ⇒ đúng phiên `mp4v` (lý do sinh ra chế độ ảnh) vẫn
+   không dán được. Nay `capNhatKhoa()` khoá theo **nguồn đang xem** (`anhOk` / `videoOk`), banner video
+   chỉ hiện ở chế độ video; test `test_html_khoa_ghi_nhan_theo_nguon_dang_xem`.
+5. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
    cập nhật sang điều kiện theo chế độ (hợp đồng mới: *nguồn đang xem* phải hiện được).
 
 ## 6. Next steps

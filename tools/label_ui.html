@@ -195,22 +195,28 @@ function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.f
 // ── video có PHÁT ĐƯỢC không ────────────────────────────────────────────────
 // Chrome không giải mã `mp4v`; nếu video không tải được thì tool cũ vẫn cho bấm phím và ghi nhãn vào
 // BƯỚC 0 (gặp thật 25-11). Nhãn mù tệ hơn không có nhãn ⇒ chặn hẳn đường ghi.
+// Có được ghi nhãn hay không phụ thuộc NGUỒN ĐANG XEM: ảnh ⇒ `anhOk`; video ⇒ `videoOk`.
+// (Bản đầu khoá theo `videoOk` cho cả hai chế độ ⇒ phiên mp4v vẫn bị khoá oan ở chế độ ảnh.)
+function capNhatKhoa(){
+  const cho = (state.cheDo === 'anh') ? state.anhOk : state.videoOk;
+  document.querySelectorAll('button[data-n]').forEach(b => b.disabled = !cho);
+  $('btnLuu').disabled = !cho;
+  $('next').disabled = state.frames.length === 0;
+  $('prev').disabled = state.frames.length === 0;
+}
+
 function datTrangThaiVideo(ok, lyDo){
   state.videoOk = !!ok;
-  if (state.cheDo === 'anh' && !ok){
-    // Chế độ ảnh vẫn dùng được nếu server trích được frame — đừng chặn oan.
-    if (lyDo && /đang tải/.test(lyDo)) return;
-  }
+  // Chế độ ẢNH không cần <video>: banner/lỗi video KHÔNG được phủ lên ảnh (mp4v vẫn dán được).
   const el = $('loiVideo');
-  if (ok){ el.style.display = 'none'; el.innerHTML = ''; }
+  if (ok || state.cheDo === 'anh'){ el.style.display = 'none'; el.innerHTML = ''; }
   else {
     el.style.display = 'block';
     el.innerHTML = `<b>KHÔNG PHÁT ĐƯỢC VIDEO</b><br>${lyDo || ''}<br><br>
       Tool <b>khoá việc ghi nhãn</b> vì nhãn ghi khi không thấy hình là nhãn rác.<br>
       Thử: chọn phiên khác, hoặc bấm tải lại trang (Ctrl+R) để tool chuyển mã H.264 lại.`;
   }
-  document.querySelectorAll('button[data-n]').forEach(b => b.disabled = !state.videoOk);
-  $('btnLuu').disabled = !state.videoOk;
+  capNhatKhoa();
 }
 
 // ── chế độ ẢNH: chỉ số bước là nguồn sự thật, không có `currentTime` ──────────
@@ -222,20 +228,28 @@ function urlAnh(i){
 function napAnh(i, prefetch = 4){
   const im = $('anh');
   state.anhOk = false;
+  $('dangTaiAnh').textContent = 'đang lấy ảnh…';
   $('dangTaiAnh').style.display = 'flex';
   const src = urlAnh(i);
   if (im.getAttribute('src') !== src){
-    im.onload = () => { state.anhOk = true; $('dangTaiAnh').style.display = 'none'; capNhat(); };
+    im.onload = () => {
+      state.anhOk = true;
+      $('dangTaiAnh').style.display = 'none';
+      $('dangTaiAnh').textContent = 'đang lấy ảnh…';
+      capNhat();
+    };
     im.onerror = () => {
       state.anhOk = false;
-      $('dangTaiAnh').style.display = 'none';
-      datTrangThaiVideo(false, 'Không lấy được ảnh của bước này (server chưa trích được frame).');
+      $('dangTaiAnh').textContent = 'không lấy được ảnh của bước này';
+      $('dangTaiAnh').style.display = 'flex';
+      capNhatKhoa();
     };
     im.src = src;
   } else {
     state.anhOk = true;
     $('dangTaiAnh').style.display = 'none';
   }
+  capNhatKhoa();
   // Prefetch vài ảnh kế: `←/→` thành tức thì thay vì chờ 60–350 ms/ảnh.
   for (let k = 1; k <= prefetch; k++){
     const j = i + k;
@@ -249,6 +263,8 @@ function datCheDo(cheDo){
   $('anh').style.display = anhMode ? 'block' : 'none';
   $('v').style.display = anhMode ? 'none' : 'block';
   $('v').controls = !anhMode;
+  if (anhMode) { const el = $('loiVideo'); el.style.display = 'none'; el.innerHTML = ''; }
+  capNhatKhoa();
   if (anhMode) { $('v').pause(); napAnh(state.i); }
   else { capNhatHeSo(); }
   capNhat();
@@ -429,7 +445,9 @@ function ghimBuoc(){
 async function ghiNhan(nhan){
   if (state.dangTai) { flash('Đang tải phiên — chờ xong rồi bấm nhãn'); return false; }
   if (state.cheDo === 'anh' ? !state.anhOk : !state.videoOk){
-    flash('KHÔNG phát được video — KHÔNG ghi nhãn (nhãn mù làm hỏng bằng chứng). Chọn phiên khác hoặc Ctrl+R.');
+    flash(state.cheDo === 'anh'
+      ? 'Chưa có ảnh của bước này — chờ một nhịp rồi bấm lại (ảnh đang được lấy từ video).'
+      : 'KHÔNG phát được video — KHÔNG ghi nhãn (nhãn mù làm hỏng bằng chứng). Chọn phiên khác hoặc Ctrl+R.');
     return false;
   }
   const g = ghimBuoc();

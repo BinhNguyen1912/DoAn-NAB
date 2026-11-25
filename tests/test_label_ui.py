@@ -1029,6 +1029,18 @@ class TestHangSoVaTaiLieu:
         assert "addEventListener('error'" in h, "phải bắt lỗi giải mã để báo, không im lặng"
         assert "KHÔNG PHÁT ĐƯỢC VIDEO" in h
 
+    def test_html_khoa_ghi_nhan_theo_nguon_dang_xem(self):
+        """Chế độ ẢNH không được khoá oan vì <video> của phiên mp4v không phát được."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "function capNhatKhoa" in h
+        assert "(state.cheDo === 'anh') ? state.anhOk : state.videoOk" in h, \
+            "khoá nút phải theo nguồn đang xem"
+        body = h.split("function capNhatKhoa")[1].split("function datTrangThaiVideo")[0]
+        assert "disabled = !cho" in body or "disabled = !cho" in h
+        # banner đỏ chỉ dành cho chế độ video
+        assert "if (ok || state.cheDo === 'anh')" in h, \
+            "chế độ ảnh không được phủ banner 'KHÔNG PHÁT ĐƯỢC VIDEO' lên ảnh"
+
     def test_html_khong_hua_phim_khong_ton_tai(self):
         """Doc/comment hứa `Space` = phát/dừng ⇒ file HTML phải thật sự có nhánh xử lý Space."""
         h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
