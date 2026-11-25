@@ -36,12 +36,12 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
 ## 4. Output / Kết quả
 
 Số đo có **artifact** (`scripts/do_toc_do_anh.py` → `data/labelui_anh_2026-11-25_metrics.json`,
-`git_dirty_code = false` khi chạy lại trên cây sạch; 10 bước × 3 lần, cache xoá trước khi đo, `loadavg_1m 0,99`):
+`git_rev 0bb2b33`, `git_dirty_code = false`, `loadavg_1m 0,63`; 10 bước × 3 lần, cache xoá trước khi đo):
 
 | Chỉ số | Số đo |
 |---|---|
-| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **34,4 ms** · p95 **167,8 ms** (lần đầu mở capture) |
-| Ảnh **đã cache** (đọc file) | mean **9,4 ms** · p95 **14,3 ms** (n = 20) |
+| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **38,0 ms** · p95 **214,1 ms** (n = 10; p95 là lần mở `VideoCapture` đầu tiên) |
+| Ảnh **đã cache** (đọc file) | mean **9,2 ms** · p95 **12,1 ms** (n = 20) |
 | Kích thước JPEG | 29 980–40 018 B (mean 34 773) |
 | 8 request ảnh **song song** (prefetch) | 0,83 s, 8/8 thành công, mở đúng **1** `VideoCapture` |
 | `./run test` | **2 211 passed**, 6 deselected (198 s) |
