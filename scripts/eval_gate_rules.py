@@ -81,7 +81,17 @@ CA_DUNG = [
     ("demoip_1123-144226_metrics.csv", 196),
     ("demoip_1124-125109_metrics.csv", 137),   # ngoài nhóm đóng băng (config khác): ô trên TÓC
 ]
-CA_SAI = []      # 0 ca báo oan đã xác nhận (bản đầu của tệp này ghi 3 — SAI, xem trên)
+# CA BÁO OAN ĐÃ XÁC NHẬN — **1 ca** (25-11, nhãn của 1 người + ảnh).
+# `demoip_1125-085815#47`: ô nhảy **227,6 px** trong **343 ms** = **665 px/s**; ảnh 2 khung liên tiếp
+# (cắt từ `_web.mp4`) cho thấy ô vẫn trên **CÙNG tấm thẻ vàng** mà người dùng đang vẫy nhanh ⇒ đây là
+# chuyển động thật, không phải đổi đối tượng.
+# ⚠ VÌ SAO CA NÀY QUAN TRỌNG: nó CHỒNG LẤN hoàn toàn với 7 ca ĐÚNG — px/bước 87–316 (đúng) vs 227 (oan),
+# px/s 500–2 102 (đúng) vs 665 (oan) ⇒ **KHÔNG tồn tại ngưỡng hình học nào tách được hai lớp**. Muốn
+# "hết báo oan mà không mất ca đúng" thì phải xác minh bằng MASK THẬT (re-prompt rồi chấm mask-vs-mask),
+# không phải chỉnh `max_jump_ratio`/`theo_dt`/`chi_khi_cham`. Xem `docs/task/25-11-2026-...`.
+CA_SAI = [
+    ("demoip_1125-085815_metrics.csv", 47),
+]
 
 
 def doc_cot(path):
@@ -421,7 +431,8 @@ def main(argv=None) -> int:
               f"({t['pct_frame_chua_xac_minh']:5.2f}%) | KHÔNG tin cậy "
               f"{t['pct_frame_khong_tin_cay']:5.2f}% | ĐUÔI {t['duoi']:4d} ({t['pct_duoi']:5.2f}%) | "
               f"phiên có báo {t['phien_co_bao']:2d}/{t['so_phien']} | bắt ca ĐÚNG "
-              f"{sum(1 for v in t['bat_ca_dung'].values() if v)}/{len(CA_DUNG)}")
+              f"{sum(1 for v in t['bat_ca_dung'].values() if v)}/{len(CA_DUNG)} | báo ở ca SAI "
+              f"{sum(1 for v in t['bat_ca_sai'].values() if v)}/{len(CA_SAI)}")
     print(f"[cong] GIỚI HẠN: {len(CA_DUNG)} ca ĐÚNG (đọc video HUD, **1 người** dán ⇒ cần người thứ 2 "
           f"mới được TRÍCH) + {len(CA_SAI)} ca SAI đã xác nhận ⇒ tiêu chí duy nhất dùng được là "
           "'luật này có BỎ ca đúng nào không'. `dt` = `latency_ms` (xấp xỉ, thiếu pre/queue 10-40 %) "
