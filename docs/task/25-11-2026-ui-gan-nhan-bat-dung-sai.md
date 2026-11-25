@@ -126,7 +126,7 @@
   - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
     **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
 - **Sau khi sửa (vòng 1 + vòng 2):** `./run lint` xanh · `./run test` **2 156 passed** ·
-  `tests/test_label_ui.py` **71 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
+  `tests/test_label_ui.py` **73 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 2 (task `mwvq1i7z-26e0`) — bắt 3 P1 mà vòng 1 bỏ qua
 
