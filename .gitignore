@@ -19,7 +19,6 @@ data/*
 !data/*.txt
 # Ngoại lệ: NHÃN NGƯỜI DÙNG DÁN (nhỏ, là BẰNG CHỨNG) phải vào Git — không thì "2 người dán độc lập"
 # không ai kiểm được, và dữ liệu chết theo máy. Chỉ nhận .jsonl + bản tổng hợp, không nhận video/frame.
-data/nhan/.anh/          # cache ảnh từng bước: sinh lại được, KHÔNG commit (13 JPEG/phiên đã lỡ vào repo 25-11)
 !data/nhan/
 !data/nhan/*.jsonl
 !data/nhan/*_tonghop.json
@@ -87,3 +86,7 @@ data/gte2e_server.log
 .env
 .env.*
 !.env.example
+# Cache ảnh từng bước của UI gán nhãn (sinh lại được từ video, ~13 JPEG/phiên) — đặt SAU các ngoại lệ
+# `!data/nhan/...` vì git lấy mẫu khớp CUỐI CÙNG: để trước thì ngoại lệ `!data/nhan/` thắng và 13 JPEG
+# đã lỡ vào repo ngày 25-11.
+data/nhan/.anh/
