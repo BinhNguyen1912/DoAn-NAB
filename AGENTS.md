@@ -401,8 +401,10 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   người khác) — nếu không, "2 người đồng ý" chỉ là 1 người dán 2 lần. **Tên người dán là ô trong UI và đi
   cùng từng nhãn** (không phải `--nguoi-gan`; cờ đó chỉ là giá trị điền sẵn) ⇒ 2 người dùng chung 1 server
   vẫn ra `so_nguoi = 2`. Nhãn nằm trong `data/` và **đã** có ngoại lệ trong `.gitignore` ⇒ `git add
-  data/nhan/` (đừng `-f`). E2E: `./run labeluie2e` (Chrome thật,
-  **27 mục**, tự sinh fixture H.264 vào thư mục tạm — `data/*` bị gitignore nên e2e trỏ vào phiên thật sẽ
+  data/nhan/` (đừng `-f`). Tên người dán được gộp theo NFC + không phân biệt hoa/thường, nhưng đó là
+  gộp **chuỗi tên**: tool chứng được "2 tên", **không** chứng được "2 con người" — đừng trích
+  "2 người đồng ý" mà không nêu ai ngồi dán. E2E: `./run labeluie2e` (Chrome thật,
+  **30 mục**, tự sinh fixture H.264 vào thư mục tạm — `data/*` bị gitignore nên e2e trỏ vào phiên thật sẽ
   đỏ trên clone sạch; **mp4v Chrome không phát được** nên phải qua `transcode_for_web`). Nhãn của người
   khác **không được server gửi về trình duyệt** (chỉ số lượng) — ẩn bằng CSS là "độc lập" giả. Vẫn **không** thay được mIoU mask vs GT: nhãn này là *phán
   quyết*, không phải mask.

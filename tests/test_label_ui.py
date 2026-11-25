@@ -114,8 +114,10 @@ class TestTongHop:
         assert d["tong_nhan"] == 4 and d["so_nguoi"] == 2
         assert d["theo_nguoi"]["A"]["tong"] == 2
         # frame 1: A=dung, B=dung ⇒ đồng ý; frame 2: A=sai, B=dung ⇒ lệch
-        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 2, "so_buoc_ca_hai_co_ket_luan": 2,
-                                       "so_buoc_dong_y": 1}
+        dy = d["dong_y_2_nguoi"]
+        assert (dy["so_buoc_ca_hai"], dy["so_buoc_ca_hai_co_ket_luan"], dy["so_buoc_dong_y"]) == (2, 2, 1)
+        assert dy["theo_cap"] == [{"cap": ["a", "b"], "so_buoc_ca_hai_co_ket_luan": 2,
+                                   "so_buoc_dong_y": 1}]
 
     def test_BO_QUA_khong_duoc_tinh_la_dong_y(self, tmp_path):
         """Hai người cùng bấm `0` = "không kết luận được" ⇒ KHÔNG phải "2 người đồng ý" (review vòng 2)."""
@@ -124,7 +126,7 @@ class TestTongHop:
             L.ghi_nhan("s", {"buoc": 1, "frame_vos": 1, "nhan": "bo_qua"}, nguoi, p)
             L.ghi_nhan("s", {"buoc": 2, "frame_vos": 2, "nhan": "dung"}, nguoi, p)
         d = L.tong_hop("s", p)["dong_y_2_nguoi"]
-        assert d == {"so_buoc_ca_hai": 2, "so_buoc_ca_hai_co_ket_luan": 1, "so_buoc_dong_y": 1}
+        assert (d["so_buoc_ca_hai"], d["so_buoc_ca_hai_co_ket_luan"], d["so_buoc_dong_y"]) == (2, 1, 1)
 
     def test_nhan_CUOI_cua_mot_nguoi_la_nhan_hieu_luc(self, tmp_path):
         """Bấm `2` rồi `s` (mặc định ĐÚNG) từng tạo 2 nhãn mâu thuẫn: đếm mọi dòng thì `theo_nguoi` và
@@ -137,8 +139,8 @@ class TestTongHop:
         assert d["theo_nguoi"]["A"]["dung"] == 1 and d["theo_nguoi"]["A"]["sai"] == 0
         assert d["theo_nguoi"]["A"]["tong"] == 1, "một bước chỉ đếm 1 lần cho mỗi người"
         assert d["so_nhan_trung"] == 1 and d["so_buoc_da_dan"] == 1
-        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 1, "so_buoc_ca_hai_co_ket_luan": 1,
-                                       "so_buoc_dong_y": 1}
+        dy = d["dong_y_2_nguoi"]
+        assert (dy["so_buoc_ca_hai"], dy["so_buoc_ca_hai_co_ket_luan"], dy["so_buoc_dong_y"]) == (1, 1, 1)
 
     def test_mot_nguoi_thi_khong_co_muc_dong_y(self, tmp_path):
         p = tmp_path / "nhan"
@@ -174,7 +176,7 @@ class TestApiHttp:
     def test_frames_va_label(self, may_chu):
         d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api"))
         assert len(d["frames"]) == 4 and d["da_gan"] == []
-        body = json.dumps({"phien": "demoip_api", "frame_vos": 2, "t_video": 0.5,
+        body = json.dumps({"phien": "demoip_api", "buoc": 2, "frame_vos": 2, "t_video": 0.5,
                            "nhan": "sai", "bbox_dung": [10, 10, 50, 50]}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
@@ -185,7 +187,7 @@ class TestApiHttp:
         assert len(d2["da_gan"]) == 1
 
     def test_nhan_sai_tra_400_chu_khong_500(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "bậy"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "bậy"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -204,7 +206,8 @@ class TestApiHttp:
     def test_content_type_sai_tra_415(self, may_chu):
         """Request "simple" (text/plain, no-cors) phải bị chặn — nếu không, trang web khác chèn được
         nhãn vào file bằng chứng dưới TÊN người đang dán."""
-        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
+                           "nhan": "dung"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "text/plain"})
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -260,7 +263,8 @@ class TestApiHttp:
         assert d["so_nhan_nguoi_khac"] == 1
 
     def test_origin_la_tra_403(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
+                           "nhan": "dung"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json",
                                               "Origin": "https://evil.example"})
@@ -269,7 +273,8 @@ class TestApiHttp:
         assert e.value.code == 403
 
     def test_origin_cung_goc_duoc_nhan(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
+                           "nhan": "dung"}).encode()
         host = urllib.parse.urlparse(may_chu).netloc
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json",
@@ -418,6 +423,31 @@ class TestChanDuongDan:
             srv.server_close()
 
 
+class TestGopTenNguoi:
+    """`Binh` / `binh` / `Bình` phải là MỘT người — nếu không, một người gõ lại tên với chữ hoa khác
+    sẽ tạo ra "2 người đồng ý" giả và `--tong-hop` thoát mã 0 (review vòng 3, P2-8)."""
+
+    def test_case_va_dau_khong_tao_them_nguoi(self, tmp_path):
+        p = tmp_path / "nhan"
+        for ten in ("Binh", "binh", "BINH"):
+            L.ghi_nhan("s", {"buoc": 1, "frame_vos": 1, "nhan": "dung"}, ten, p)
+        d = L.tong_hop("s", p)
+        assert d["so_nguoi"] == 1, "cùng một người gõ 3 kiểu phải là 1"
+        assert d["theo_nguoi"]["Binh"]["tong"] == 1, "in theo tên hiển thị đầu tiên, không in khoá"
+        # thứ tự gặp trong file (append-only), không phải sorted — để người đọc thấy diễn biến
+        assert sorted(d["ten_theo_nguoi"]["binh"]["ten"]) == ["BINH", "Binh", "binh"]
+        assert d["ten_theo_nguoi"]["binh"]["nhan_dau"] and d["ten_theo_nguoi"]["binh"]["nhan_cuoi"]
+
+    def test_ba_nguoi_co_dong_y_theo_cap(self, tmp_path):
+        p = tmp_path / "nhan"
+        for nguoi, nhan in [("A", "dung"), ("B", "dung"), ("C", "sai")]:
+            L.ghi_nhan("s", {"buoc": 1, "frame_vos": 1, "nhan": nhan}, nguoi, p)
+        dy = L.tong_hop("s", p)["dong_y_2_nguoi"]
+        assert dy["so_buoc_dong_y"] == 0, "TẤT CẢ đồng ý = 0 (C nói sai)"
+        cap = {tuple(x["cap"]): x["so_buoc_dong_y"] for x in dy["theo_cap"]}
+        assert cap == {("a", "b"): 1, ("a", "c"): 0, ("b", "c"): 0}
+
+
 class TestTenNguoiDan:
     @pytest.mark.parametrize("ten", ["", "  ", "?", None])
     def test_ten_khong_dung_duoc(self, ten):
@@ -533,6 +563,40 @@ class TestTongHopCLI:
         monkeypatch.setattr(L, "REPO_ROOT", tmp_path)
         assert L.duong_dan_gon(tmp_path / "a") == "a"                    # trong repo → gọn
         assert L.duong_dan_gon(Path("/tmp/khac/a")) == "/tmp/khac/a"      # ngoài repo → nguyên gốc
+
+
+class TestChanHoiQuyVong3:
+    """Các sửa vòng 3 là hành vi JS/luồng ⇒ giữ bằng cách kiểm chính mã nguồn (không thay được e2e)."""
+
+    def test_loi_POST_khong_bi_nuot(self):
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert ".catch(() => {})" not in h, "nuốt lỗi POST ⇒ người dán tin là đã ghi (P2-3)"
+        assert "LỖI GHI NHÃN" in h
+        assert "if (await ghiNhan(state.nhanChon.nhan)) nhayBuoc(1)" in h, \
+            "lỗi ghi mà vẫn nhảy bước là mất nhãn âm thầm"
+
+    def test_buoc_duoc_GHIM_luc_bam_phim(self):
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "function ghimBuoc" in h and "ghiNhanThat(nhan, g)" in h, \
+            "tính lại bước trong hàng đợi ⇒ phán quyết của bước k rơi vào bước k+1 (P2-4)"
+
+    def test_khong_dong_dau_buoc_tren_mousemove(self):
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        dong = [ln for ln in h.splitlines() if "veO.x1, veO.y1" in ln and "toaDoVideo" in ln]
+        assert dong and all("veO.buoc" not in ln for ln in dong), \
+            "đóng dấu `buoc` khi di chuột làm ô của bước trước trông như ô mới (P2-5)"
+
+    def test_ten_da_luu_thang_mac_dinh_server(self):
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        i_luu = h.index("localStorage.getItem('labelui_nguoi')")
+        i_md = h.index("d.nguoi_gan !== '?'")
+        assert i_luu < i_md, "ưu tiên mặc định server ⇒ người thứ 2 ghi đè nhãn người thứ 1 (P1 vòng 3)"
+
+    def test_server_tu_dien_frame_vos(self):
+        p = (REPO / "tools" / "label_ui.py").read_text(encoding="utf-8")
+        assert "\"frame_vos\": int(khung[buoc][\"frame_vos\"])" in p, \
+            "không được tin `frame_vos` của client (P3-10)"
+        assert "thiếu `buoc` — client phải gửi" in p, "thiếu `buoc` mà bỏ qua kiểm là lỗ (P3-10)"
 
 
 class TestHangSoVaTaiLieu:

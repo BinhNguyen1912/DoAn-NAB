@@ -125,9 +125,33 @@
     `!data/nhan/*.jsonl` + `!data/nhan/*_tonghop.json` vào `.gitignore`.
   - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
     **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
-- **Sau khi sửa (vòng 1 + vòng 2):** `./run lint` xanh · `./run test` **2 156 passed** ·
-  `tests/test_label_ui.py` **75 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
+- **Sau khi sửa (3 vòng review):** `./run lint` xanh · `./run test` **2 165 passed** ·
+  `tests/test_label_ui.py` **82 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
   thuộc `data/`.
+### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
+
+P1 vòng 3 nặng về **quy trình** hơn là code: bản sửa P1-A (tên đi cùng nhãn) vẫn **điền sẵn tên của
+người thứ nhất** vì ưu tiên `--nguoi-gan` hơn tên đã lưu trong trình duyệt ⇒ người thứ 2 mở cùng URL,
+không sửa ô tên là mọi nhãn ghi dưới tên người 1, và quy tắc "nhãn cuối thắng" **ghi đè** nhãn của
+người 1 ⇒ `tong_hop` in "1 người" **và** đã xoá mất bằng chứng. Đã sửa: tên đã lưu của trình duyệt
+thắng mặc định server; e2e kiểm đúng điều này.
+
+Các P2/P3 đã sửa: `tong_hop` vẫn có thể **ném** với dòng `buoc: [1]`/`buoc: "abc"` ⇒ cả POST trả lỗi
+mạng **sau khi** nhãn đã ghi (nay mọi dòng méo thành `so_nhan_loi`, và `tong_hop` trong response được
+bọc); UI **nuốt lỗi POST** (`.catch(()=>{})`) rồi vẫn nhảy bước ⇒ nay hiện lỗi đỏ và **ở lại** bước;
+bước được **tính lại sau khi chờ hàng đợi** nên phán quyết rơi sang bước kế (nay **ghim bước tại lúc bấm
+phím**); `veO.buoc` bị **đóng dấu lại khi di chuột** (nay chỉ neo ở `mousedown`); Host allowlist chỉ
+nhận 1 IPv4 ⇒ **403 đường LAN** mà tài liệu hướng dẫn (nay dùng `ip_may()` = mọi IPv4 + test); `[::1]`
+bị 403 vì tách tay `rpartition(":")` (nay `urlparse("//"+host).hostname`); thiếu `buoc` thì **bỏ qua
+toàn bộ kiểm** (nay bắt buộc + server tự điền `frame_vos`/`t_uoc_luong` từ CSV); `chua_xac_minh_n = 0`
+hiển thị như "không có" (nay `?? null`); **tên gộp theo NFC + casefold** (`Binh`/`binh`/`BINH` là 1
+người — trước đó một người gõ lại tên khác hoa/thường tạo "2 người đồng ý" giả + `--tong-hop` exit 0);
+thêm `theo_cap` (đồng ý theo từng cặp) cho trường hợp ≥ 3 người; `--tong-hop` gate trên số nhãn **hợp
+lệ**, kiểm `git_rev`, cảnh báo `buoc` ngoài dải CSV; fixture `i % 52` (vật không ra khỏi khung); e2e tự
+dọn file nhãn khi chạy tay; bỏ `void 0;` + `state.nguoi`/`state.nhan` chết; `chonPhien` chỉ nhận phiên
+mới **sau** khi tải xong; doc sửa mẫu số (`so_buoc_ca_hai_co_ket_luan`), ghi rõ tool chứng "2 **tên**"
+chứ không phải "2 con người".
+
 ### Review vòng 2 (task `mwvq1i7z-26e0`) — bắt 3 P1 mà vòng 1 bỏ qua
 
 Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiển thị, và bắt đúng 3 lỗi làm **số liệu sai

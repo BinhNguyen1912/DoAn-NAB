@@ -134,7 +134,7 @@ const NHAN_VI = { dung:"ĐÚNG", sai:"SAI", mat_dau:"MẤT DẤU", khong_co_vat:
 const PILL = { dung:"ok", sai:"bad", mat_dau:"warn", khong_co_vat:"warn", bo_qua:"warn" };
 
 // `nhanChon` = nhãn vừa bấm ở BƯỚC NÀY (để `s` lưu lại đúng nhãn đó). Đặt `null` khi đổi phiên/bước.
-let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhan:{}, nhanChon:null };
+let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:null };
 // `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
 // sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
 let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
@@ -154,9 +154,14 @@ async function napDanhSach(){
     if (d.phien_mac_dinh && p.phien === d.phien_mac_dinh) o.selected = true;
     sel.appendChild(o);
   });
-  if (d.nguoi_gan && d.nguoi_gan !== '?') $('nguoi').value = d.nguoi_gan;
+  // THỨ TỰ QUAN TRỌNG: tên đã lưu của trình duyệt này (localStorage) THẮNG tên mặc định của server.
+  // Nếu để server thắng thì người thứ 2 mở cùng URL sẽ thấy sẵn tên người thứ 1 (đúng kịch bản tài liệu
+  // khuyên), và mọi nhãn của họ ghi dưới tên người 1 — `tong_hop` báo "1 người" và last-wins xoá nhãn
+  // của người 1 (review vòng 3, P1).
   const daLuu = localStorage.getItem('labelui_nguoi');
-  if (!$('nguoi').value && daLuu) $('nguoi').value = daLuu;
+  if (daLuu) $('nguoi').value = daLuu;
+  else if (d.nguoi_gan && d.nguoi_gan !== '?') $('nguoi').value = d.nguoi_gan;
+  state.daLuu = daLuu || null;
   if (!sel.options.length) { $('meta').textContent = 'Không có phiên nào có video + CSV trong data/'; return; }
   await chonPhien(sel.value);
 }
@@ -174,17 +179,17 @@ function capNhatHeSo(){
 function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.frames[i].t_uoc_luong : 0); }
 
 async function chonPhien(ten){
-  state.phien = ten;
   state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
   veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
   buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
   const toi = ($('nguoi').value || '').trim();
   const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
                           + '&nguoi=' + encodeURIComponent(toi));
+  state.phien = ten;               // chỉ nhận phiên MỚI khi đã tải được (lỗi ⇒ giữ nguyên phiên cũ)
   state.frames = d.frames;
   state.tongLatency = d.tong_latency_s;
   state.chuaXacMinh = (await getJSON('/api/sessions')).phien
-    .find(p => p.phien === ten)?.chua_xac_minh_n || null;
+    .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
   state.daGan = d.da_gan || [];
   state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
   state.nguoiKhac = d.nguoi_khac || [];
@@ -198,7 +203,7 @@ async function chonPhien(ten){
   }
   const cxm = state.chuaXacMinh;
   $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
-    + (cxm ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
+    + (cxm !== null ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
         + `CHUA XAC MINH: ${cxm} frame</span>` : '')
     + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
   window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
@@ -228,7 +233,6 @@ function capNhat(){
     state.nhanChon = null;                    // nhãn đã chọn thuộc bước khác ⇒ `s` phải từ chối
     flash('Đã sang bước khác — bấm 1/2/3/4 để chọn nhãn cho bước này');
   }
-  void 0;
   buocTruoc = i;
   const f = state.frames[i] || {};
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
@@ -283,7 +287,10 @@ $('c').addEventListener('mousedown', ev => {
 });
 $('c').addEventListener('mousemove', ev => {
   if (!veO.dang || !veO.co) return;
-  [veO.x1, veO.y1] = toaDoVideo(ev); veO.buoc = chiSoHienTai(); veCanvas();
+  // KHÔNG cập nhật `veO.buoc` ở đây: `buoc` là mốc NEO (mousedown). Đóng dấu lại mỗi lần di chuột thì
+  // một cú kéo vắt qua ranh giới bước sẽ khiến ô cũ (điểm neo của bước trước) trông như ô của bước mới
+  // (review vòng 3, P2-5).
+  [veO.x1, veO.y1] = toaDoVideo(ev); veCanvas();
 });
 $('c').addEventListener('mouseup', () => {
   if (!veO.dang) return;
@@ -301,39 +308,58 @@ $('c').addEventListener('mouseup', () => {
 // HÀNG ĐỢI cho POST: hai lần bấm phím sát nhau mở 2 connection song song ⇒ server có thể nhận SAI THỨ
 // TỰ, và quy tắc "nhãn CUỐI của mỗi bước là nhãn có hiệu lực" sẽ chọn phím bấm TRƯỚC (review vòng 2).
 let hangDoi = Promise.resolve();
+let loiGanNhan = null;
+
+// BƯỚC được GHIM tại lúc bấm phím. Trước đây `ghiNhanThat` tính lại `chiSoHienTai()` khi hàng đợi
+// tới lượt nó ⇒ video đang phát (hoặc POST trước chậm 2 s) làm `currentTime` đã sang bước k+1, và phán
+// quyết của bước k bị ghi cho bước k+1 (review vòng 3, P2-4).
+function ghimBuoc(){
+  const i = chiSoHienTai(), f = state.frames[i] || {};
+  return { i, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
+           t_video: $('v').currentTime,
+           bbox: (veO.co && veO.buoc === i)
+             ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
+                Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null };
+}
 
 async function ghiNhan(nhan){
-  hangDoi = hangDoi.then(() => ghiNhanThat(nhan)).catch(() => {});
+  const g = ghimBuoc();
+  hangDoi = hangDoi.then(() => ghiNhanThat(nhan, g));
   return hangDoi;
 }
 
-async function ghiNhanThat(nhan){
+async function ghiNhanThat(nhan, g){
   const nguoi = ($('nguoi').value || '').trim();
-  state.nguoi = nguoi;
-  if (!nguoi){ alert('Nhập "Người gán" trước (cần biết ai dán để so 2 người độc lập).'); $('nguoi').focus(); return; }
-  localStorage.setItem('labelui_nguoi', nguoi);
-  const v = $('v'), i = chiSoHienTai(), f = state.frames[i] || {};
   const body = {
-    phien: state.phien, nhan,
-    nguoi_gan: nguoi,        // P1-A: tên người dán đi CÙNG nhãn; server lấy tên này, không lấy cờ CLI
-    // `buoc` = danh tính bước (duy nhất); `frame_vos` chỉ để người đọc đối chiếu CSV.
-    buoc: f.buoc, frame_vos: f.frame_vos, t_video: v.currentTime, t_uoc_luong: f.t_uoc_luong,
-    // Ô chỉ được gửi nếu nó được vẽ TRÊN CHÍNH BƯỚC NÀY. Xoá ô trong `capNhat` là chưa đủ: `capNhat`
-    // chạy theo event (~4 lần/s với `timeupdate`) nên bấm phím trong khe giữa hai event vẫn gửi ô cũ
-    // (review vòng 2, P1-B). Đây mới là chỗ ĐỌC `veO.buoc`.
-    bbox_dung: (veO.co && veO.buoc === i)
-      ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
-         Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null
+    phien: state.phien, nhan, nguoi_gan: nguoi,     // P1-A: tên đi CÙNG nhãn
+    buoc: g.buoc, frame_vos: g.frame_vos,
+    t_video: g.t_video, t_uoc_luong: g.t_uoc_luong,
+    bbox_dung: g.bbox,
   };
-  const r = await fetch('/api/label', {method:'POST', headers:{'Content-Type':'application/json'},
-                                       body: JSON.stringify(body)});
-  const d = await r.json();
-  if (!r.ok){ alert('Lỗi: ' + (d.loi || r.status)); return; }
-  state.nhanChon = {buoc: i, nhan};   // nhớ cả BƯỚC: `s` chỉ được lưu lại nhãn của ĐÚNG bước này
+  let d = null, ok = false;
+  try {
+    const r = await fetch('/api/label', {method:'POST', headers:{'Content-Type':'application/json'},
+                                         body: JSON.stringify(body)});
+    d = await r.json();
+    ok = r.ok;
+    if (!ok) throw new Error(d.loi || ('HTTP ' + r.status));
+  } catch (e) {
+    // Lỗi PHẢI hiện và phải DỪNG: bản cũ `.catch(()=>{})` nuốt lỗi, `luuVaTiep` vẫn nhảy bước ⇒ người
+    // dán tin là đã ghi (review vòng 3, P2-3).
+    loiGanNhan = String(e.message || e);
+    flash('LỖI GHI NHÃN: ' + loiGanNhan + ' — nhãn CHƯA được lưu');
+    $('ghiChu').style.color = '#e74c3c';
+    return false;
+  }
+  loiGanNhan = null;
+  $('ghiChu').style.color = '';
+  localStorage.setItem('labelui_nguoi', nguoi);
+  state.nhanChon = {buoc: g.i, nhan};   // nhớ cả BƯỚC: `s` chỉ lưu lại nhãn của ĐÚNG bước này
   state.daGan.push(d.record);
   veO.co = false; veO.buoc = null; veCanvas();
   veTienDo(); veBang();
-  flash(`${NHAN_VI[nhan]} · #${f.frame_vos} @ ${v.currentTime.toFixed(2)}s`);
+  flash(`${NHAN_VI[nhan]} · #${g.frame_vos} @ ${Number(g.t_video).toFixed(2)}s`);
+  return true;
 }
 
 function flash(txt){
@@ -393,8 +419,7 @@ async function luuVaTiep(){
     flash('Bước này chưa chọn nhãn: bấm 1/2/3/4 rồi mới "Lưu & bước kế"');
     return;
   }
-  await ghiNhan(state.nhanChon.nhan);
-  nhayBuoc(1);
+  if (await ghiNhan(state.nhanChon.nhan)) nhayBuoc(1);   // lỗi ⇒ Ở LẠI bước này
 }
 $('btnLuu').onclick = luuVaTiep;
 $('phien').onchange = e => chonPhien(e.target.value);

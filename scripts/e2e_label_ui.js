@@ -52,6 +52,8 @@ function docNhan() {
   return fs.readFileSync(FILE_NHAN, 'utf8').split('\n').filter(Boolean).map(s => JSON.parse(s))
 }
 
+let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` dọn thư mục tạm)
+
 ;(async () => {
   // `channel: 'chrome'` = dùng Chrome CÀI SẴN trên Windows (giống e2e_web.js / e2e_gt_painter.js);
   // bản chromium tải riêng chưa chắc có trên máy ⇒ launch() trần sẽ ném.
@@ -62,6 +64,18 @@ function docNhan() {
   page.on('console', m => { if (m.type() === 'error') loi.push('console: ' + m.text()) })
 
   await page.goto(BASE, { waitUntil: 'domcontentloaded' })
+
+  // 0) P1 vòng 3: tên ĐÃ LƯU của trình duyệt phải THẮNG `--nguoi-gan` của server (nếu không, người thứ
+  //    2 mở cùng URL thấy sẵn tên người thứ 1 ⇒ mọi nhãn ghi tên người 1 và ghi đè nhãn của người 1).
+  await page.addInitScript(() => localStorage.setItem('labelui_nguoi', 'nguoi-da-luu'))
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('#phien option', { state: 'attached', timeout: 15000 })
+  const tenMacDinh = await page.$eval('#nguoi', el => el.value)
+  kiem(tenMacDinh === 'nguoi-da-luu', 'tên đã lưu trong trình duyệt THẮNG mặc định --nguoi-gan',
+       tenMacDinh)
+  await page.evaluate(() => localStorage.removeItem('labelui_nguoi'))
+  await page.reload({ waitUntil: 'domcontentloaded' })
+  await page.waitForSelector('#phien option', { state: 'attached', timeout: 15000 })
 
   // 1) chọn phiên + nhập tên người gán
   // `<option>` trong <select> đóng KHÔNG 'visible' theo Playwright ⇒ phải chờ `attached`
@@ -139,6 +153,7 @@ function docNhan() {
   const truoc = docNhan().length
   await page.keyboard.press('1')
   const coFile = await choFile(FILE_NHAN)
+  daTaoFileNhan = coFile
   kiem(coFile, 'file nhãn được tạo', FILE_NHAN)
   const sau1 = docNhan()
   kiem(sau1.length === truoc + 1, 'phím 1 ghi ĐÚNG 1 nhãn', `${truoc} → ${sau1.length}`)
@@ -219,6 +234,9 @@ function docNhan() {
   // 8) không có lỗi JS nào (bắt P0 "nút chết" kiểu gt_painter)
   kiem(loi.length === 0, 'không có pageerror/console.error', loi.join(' | ') || '(sạch)')
 
+  // Chạy TAY (`node scripts/e2e_label_ui.js`) không có trap của `./run` ⇒ tự xoá file nhãn đã tạo,
+  // nếu không nó nằm lại trong `data/nhan/` (nay thư mục đó ĐƯỢC track).
+  if (daTaoFileNhan && fs.existsSync(FILE_NHAN)) fs.unlinkSync(FILE_NHAN)
   await browser.close()
   console.log(hong === 0 ? '\nLABELUI E2E: PASS' : `\nLABELUI E2E: ${hong} mục HỎNG`)
   process.exit(hong === 0 ? 0 : 1)

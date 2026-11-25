@@ -34,6 +34,7 @@ import csv
 import json
 import os
 import re
+import unicodedata
 import subprocess
 import sys
 from datetime import datetime
@@ -231,6 +232,15 @@ def doc_nhan(phien: str, thu_muc: Path | None = None) -> list[dict]:
     return ra
 
 
+def khoa_ten(ten: str) -> str:
+    """Khoá GỘP người dán: NFC + casefold.
+
+    Không có nó thì một người gõ lại tên với chữ hoa khác (`Binh` rồi `binh`) thành **2 người**, và
+    `--tong-hop` in "2/2 người đồng ý" + thoát mã 0 cho **một** người (review vòng 3, P2-8).
+    """
+    return unicodedata.normalize("NFC", str(ten or "")).casefold()
+
+
 def chuan_hoa_ten(ten) -> str:
     """Tên người dán: bắt buộc, ≤ 40 ký tự, không được là `?`.
 
@@ -280,7 +290,8 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
                         else round(float(record["t_uoc_luong"]), 2)),
         "nhan": nhan,
         "bbox_dung": b,
-        "nguoi_gan": str(nguoi_gan).strip(),
+        "nguoi_gan": nguoi_gan,                     # tên hiển thị (giữ nguyên chữ hoa/dấu)
+        "khoa_nguoi": khoa_ten(nguoi_gan),          # khoá GỘP ⇒ "Binh"/"binh" là MỘT người
         "git_rev": _git_rev(),
         "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
     }
@@ -300,31 +311,49 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
     """
     rows = doc_nhan(phien, thu_muc)
     hieu_luc: dict[tuple, str] = {}
+    ten_hien_thi: dict[str, dict] = {}
     so_nhan_loi = so_thieu_buoc = so_hop_le = 0
     for r in rows:
         if not isinstance(r, dict) or r.get("nhan") not in NHAN or not r.get("nguoi_gan"):
             so_nhan_loi += 1               # dòng JSON hợp lệ nhưng không phải nhãn ⇒ KHÔNG được làm sập
             continue
         so_hop_le += 1
-        # Hai KHÔNG GIAN KHOÁ khác nhau phải mang tiền tố, nếu không một dòng legacy (`frame_vos=7`,
-        # không có `buoc`) sẽ ghi đè một bước khác (`buoc=7`) — đúng loại lỗi trộn schema (review P2-4).
-        if r.get("buoc") is not None:
-            khoa = ("buoc", int(r["buoc"]))
-        elif r.get("frame_vos") not in (None, ""):
-            khoa = ("frame", int(r["frame_vos"]))
-            so_thieu_buoc += 1
-        else:
+        # `tong_hop` chạy TRONG response của POST, sau khi nhãn đã ghi ⇒ mọi kiểu dữ liệu méo
+        # (`buoc: [1]`, `buoc: "abc"`, tên lạ) phải thành "dòng lỗi", KHÔNG được ném (review vòng 3).
+        try:
+            # Hai KHÔNG GIAN KHOÁ khác nhau phải mang tiền tố: một dòng legacy (`frame_vos=7`, không có
+            # `buoc`) không được ghi đè một bước khác (`buoc=7`) — lỗi trộn schema (review vòng 2, P2-4).
+            if r.get("buoc") is not None:
+                khoa = ("buoc", int(r["buoc"]))
+            elif r.get("frame_vos") not in (None, ""):
+                khoa = ("frame", int(r["frame_vos"]))
+                so_thieu_buoc += 1
+            else:
+                raise ValueError("thiếu buoc/frame_vos")
+            khoa_nguoi = str(r.get("khoa_nguoi") or khoa_ten(r["nguoi_gan"]))
+            hieu_luc[(khoa, khoa_nguoi)] = r["nhan"]
+        except (TypeError, ValueError):
             so_nhan_loi += 1
             so_hop_le -= 1
             continue
-        hieu_luc[(khoa, r["nguoi_gan"])] = r["nhan"]
+        hien = ten_hien_thi.setdefault(khoa_nguoi, {"ten": [], "dau": None, "cuoi": None})
+        if str(r["nguoi_gan"]) not in hien["ten"]:
+            hien["ten"].append(str(r["nguoi_gan"]))
+        luc = r.get("do_luc")
+        if luc:
+            hien["dau"] = hien["dau"] or luc
+            hien["cuoi"] = luc
     theo_nguoi: dict[str, dict] = {}
     ban: dict[object, dict[str, str]] = {}
-    for (buoc, nguoi), nhan in hieu_luc.items():
-        d = theo_nguoi.setdefault(nguoi, {"tong": 0, **{k: 0 for k in NHAN}})
+    for (khoa, nguoi), nhan in hieu_luc.items():
+        # Nhóm theo KHOÁ (NFC+casefold) nhưng IN theo tên hiển thị đầu tiên gặp — nếu in bằng khoá thì
+        # báo cáo ghi "binh" thay vì "Binh" (và không ai nhận ra đó là mình).
+        hien = ten_hien_thi.get(nguoi) or {}
+        ten_in = (hien.get("ten") or [nguoi])[0]
+        d = theo_nguoi.setdefault(ten_in, {"tong": 0, **{k: 0 for k in NHAN}})
         d[nhan] += 1
         d["tong"] += 1
-        ban.setdefault(buoc, {})[nguoi] = nhan
+        ban.setdefault(khoa, {})[nguoi] = nhan
     dong_y = None
     if len(theo_nguoi) >= 2:
         chung = [v for v in ban.values() if len(v) >= 2]
@@ -335,12 +364,30 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
             "so_buoc_ca_hai": len(chung),
             "so_buoc_ca_hai_co_ket_luan": len(ket_luan),
             "so_buoc_dong_y": sum(1 for v in ket_luan if len(set(v.values())) == 1),
+            "theo_cap": _theo_cap(ban),
         }
     return {"phien": phien, "tong_nhan": len(rows), "so_nhan_hieu_luc": len(hieu_luc),
-            "so_nhan_trung": max(0, so_hop_le - len(hieu_luc)),
-            "so_nhan_loi": so_nhan_loi, "so_nhan_thieu_buoc": so_thieu_buoc,
-            "so_buoc_da_dan": len(ban),
-            "theo_nguoi": theo_nguoi, "so_nguoi": len(theo_nguoi), "dong_y_2_nguoi": dong_y}
+            "so_nhan_trung": so_hop_le - len(hieu_luc), "so_nhan_loi": so_nhan_loi,
+            "so_nhan_thieu_buoc": so_thieu_buoc, "so_buoc_da_dan": len(ban),
+            "theo_nguoi": theo_nguoi, "so_nguoi": len(theo_nguoi),
+            "ten_theo_nguoi": {k: {"ten": sorted(v["ten"]), "nhan_dau": v["dau"],
+                                   "nhan_cuoi": v["cuoi"]}
+                               for k, v in ten_hien_thi.items()},
+            "dong_y_2_nguoi": dong_y}
+
+
+def _theo_cap(ban: dict) -> list[dict]:
+    """Đồng ý theo TỪNG CẶP người (3+ người thì `so_buoc_dong_y` là "TẤT CẢ đồng ý", không phải cặp)."""
+    import itertools
+
+    nguoi = sorted({n for v in ban.values() for n in v})
+    # `ban` giữ khoá; in ra tên hiển thị cho dễ đọc trong báo cáo
+    ra = []
+    for a, b in itertools.combinations(nguoi, 2):
+        chung = [v for v in ban.values() if a in v and b in v and v[a] != "bo_qua" and v[b] != "bo_qua"]
+        ra.append({"cap": [a, b], "so_buoc_ca_hai_co_ket_luan": len(chung),
+                   "so_buoc_dong_y": sum(1 for v in chung if v[a] == v[b])})
+    return ra
 
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────────────────────────
@@ -474,18 +521,39 @@ class _Handler(BaseHTTPRequestHandler):
         host = (self.headers.get("Host") or "").strip().lower()
         if not host:
             return True                      # curl không gửi Host (HTTP/1.0) — không phải đường browser
-        ten, _, cong = host.rpartition(":") if host.count(":") == 1 else (host, "", "")
-        ten = ten.strip("[]")
+        # `urlsplit` hiểu đúng `[::1]:8770`; tách tay bằng `rpartition(":")` từng trả 403 cho IPv6.
+        try:
+            ten = (urlparse("//" + host).hostname or "").strip("[]")
+        except ValueError:
+            return False
         if ten in self.HOST_CHO:
             return True
-        # bind 0.0.0.0 ⇒ chấp nhận IP LAN của chính máy này (người dùng mở từ máy khác)
+        # bind 0.0.0.0 ⇒ chấp nhận MỌI IPv4 của chính máy này (người dùng mở từ máy khác)
         try:
-            import socket
-            if ten == socket.gethostbyname(socket.gethostname()):
-                return True
+            return ten in self.ip_may()
+        except OSError:
+            return False
+
+    @staticmethod
+    def ip_may() -> set[str]:
+        """Tập IPv4 của CHÍNH máy này (LAN/VPN/docker có thể khác `gethostbyname`).
+
+        `docs/cach-gan-nhan.md` §5 hướng dẫn `--host 0.0.0.0` rồi mở `http://<IP-WSL>:8770`; nếu chỉ
+        so một địa chỉ thì đường dự phòng đó bị 403 ở MỌI POST trong khi trang + video vẫn chạy
+        (review vòng 3, P2-7).
+        """
+        import socket
+        ra = {"127.0.0.1"}
+        try:
+            ra |= set(socket.gethostbyname_ex(socket.gethostname())[2])
         except OSError:
             pass
-        return False
+        try:
+            for info in socket.getaddrinfo(socket.gethostname(), None, socket.AF_INET):
+                ra.add(info[4][0])
+        except OSError:
+            pass
+        return ra
 
     def _origin_hop_le(self) -> bool:
         o = self.headers.get("Origin") or ""
@@ -534,6 +602,10 @@ class _Handler(BaseHTTPRequestHandler):
         except (OSError, ValueError) as e:
             return self._json({"loi": f"không đọc được CSV của phiên: {e}"}, 400)
         buoc = body.get("buoc")
+        if buoc in (None, "") and csv_path.is_file():
+            # Trước đây thiếu `buoc` là BỎ QUA toàn bộ kiểm ⇒ tab cũ/curl ghi được `frame_vos=999999`
+            # và làm `so_buoc_da_dan` vượt số bước của CSV (review vòng 3, P3-10).
+            return self._json({"loi": "thiếu `buoc` — client phải gửi số thứ tự bước"}, 400)
         if buoc not in (None, ""):
             try:
                 buoc = int(buoc)
@@ -548,6 +620,10 @@ class _Handler(BaseHTTPRequestHandler):
                         return self._json({"loi": "`frame_vos` không khớp dòng CSV của `buoc`"}, 400)
                 except (TypeError, ValueError):
                     return self._json({"loi": "`frame_vos` phải là số nguyên"}, 400)
+            # Server TỰ điền `frame_vos`/`t_uoc_luong` từ CSV: đó là dữ liệu của server, không phải của
+            # client — nhãn phải khớp CSV kể cả khi client cũ không gửi.
+            body = {**body, "frame_vos": int(khung[buoc]["frame_vos"]),
+                    "t_uoc_luong": khung[buoc]["t_uoc_luong"]}
         # P1-A: TÊN NGƯỜI DÁN LẤY TỪ CHÍNH NHÃN (body), không phải cờ lúc khởi động. Trước đây
         # `--nguoi-gan` quyết định toàn bộ ⇒ 2 người mở cùng URL thì mọi nhãn ghi 1 tên ⇒ "2 người
         # đồng ý" không bao giờ đạt được bằng cách làm đúng tài liệu.
@@ -556,7 +632,11 @@ class _Handler(BaseHTTPRequestHandler):
             rec = ghi_nhan(phien, body, nguoi)
         except ValueError as e:
             return self._json({"loi": str(e)}, 400)
-        return self._json({"ok": True, "record": rec, "tong_hop": tong_hop(phien)})
+        try:
+            th = tong_hop(phien)
+        except Exception as e:                    # nhãn ĐÃ ghi; không được trả lỗi mạng cho client
+            th = {"loi": f"không tổng hợp được: {e}"}
+        return self._json({"ok": True, "record": rec, "tong_hop": th})
 
 
 def tao_server(port: int = DEFAULT_PORT, nguoi_gan: str = "?", phien_mac_dinh: str | None = None,
@@ -592,9 +672,29 @@ def main(argv=None) -> int:
                                    "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
                                    **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"\n[artifact] {duong_dan_gon(out)}")
-        if not d["tong_nhan"]:
-            print("[tong-hop] KHÔNG có nhãn nào — chưa đo được gì")
+        if not d["so_nhan_hieu_luc"]:
+            print(f"[tong-hop] KHÔNG có nhãn HỢP LỆ nào ({d['tong_nhan']} dòng, "
+                  f"{d['so_nhan_loi']} dòng lỗi) — chưa đo được gì")
             return 1
+        rev = _git_rev()
+        if not rev:
+            print("[tong-hop] KHÔNG đọc được git_rev — artifact không tái lập được (AGENTS §6)")
+            return 1
+        csv_p = DATA_DIR / f"{ten}_metrics.csv"
+        if csv_p.is_file():
+            try:
+                n_buoc = len(doc_phien_cached(csv_p)["frames"])
+            except (OSError, ValueError):
+                n_buoc = None
+            ngoai = [r.get("buoc") for r in doc_nhan(ten)
+                     if isinstance(r, dict) and isinstance(r.get("buoc"), int)
+                     and n_buoc is not None and not 0 <= r["buoc"] < n_buoc]
+            if ngoai:
+                print(f"[tong-hop] CẢNH BÁO: {len(ngoai)} nhãn có `buoc` NGOÀI dải 0..{n_buoc - 1} "
+                      f"(vd {ngoai[:3]}) ⇒ nhiều khả năng nhãn của CSV khác/phiên bản tool khác")
+        if d["so_nguoi"] > 2:
+            print(f"[tong-hop] CẢNH BÁO: {d['so_nguoi']} người — `so_buoc_dong_y` ở đây là \"TẤT CẢ đồng ý\", "
+                  "KHÔNG phải tỉ lệ đồng ý theo cặp; muốn số theo cặp thì so từng đôi một")
         if d["so_nguoi"] < 2:
             print(f"[tong-hop] CHỈ {d['so_nguoi']} người dán ⇒ CHƯA trích được (cần 2 người độc lập)")
             return 1

@@ -53,7 +53,8 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
   thì nó **từ chối** và nhắc bạn bấm `1/2/3/4` trước — nó không tự đoán "ĐÚNG".
 - `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán
   quyết. Ô được **xoá khi sang bước khác**: nó thuộc về đúng bước bạn vẽ, không đi theo.
-- Enter ở ô "Người gán" = nhả focus (sau đó phím tắt mới ăn; bạn cũng không cần click ra ngoài).
+- `Enter` ở ô "Người gán" = nhả focus. Phím `1/2/3/4/0` **vẫn ăn** khi con trỏ đang ở trong ô tên
+  (không lọt ký tự vào tên), nên bấm Enter chỉ để tiện gõ tiếp.
 
 ## 3. Bốn cái bẫy phải biết (đã từng làm sai số của repo)
 
@@ -71,8 +72,8 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
    `hệ đang ẩn mask` (cột `nghi_doi_tuong` trong CSV). Nhãn cho các bước đó nên là `bo_qua`, trừ khi
    bạn đang chấm riêng câu hỏi *"lúc nghi thì vùng nghi có đúng vật không"*.
    **Đừng lẫn với `CHUA XAC MINH`**: trạng thái đó **VẪN VẼ** (ô nét đứt, không tô, không quỹ đạo), và
-   **CSV metrics KHÔNG có cột cho nó** — chỉ có tổng ở `run_info.json` (`chua_xac_minh_n`), mà danh sách
-   phiên trong UI có hiện. Nghĩa là: không có cách nào biết *theo từng bước* một bước là `chua_xac_minh`,
+   **CSV metrics KHÔNG có cột cho nó** — chỉ có tổng ở `run_info.json` (`chua_xac_minh_n`), và UI hiện số
+   đó ở **dòng mô tả phiên** (cạnh tên video) sau khi bạn chọn phiên. Nghĩa là: không có cách nào biết *theo từng bước* một bước là `chua_xac_minh`,
    nên khi chấm bước nào thấy HUD ghi "CHUA XAC MINH" thì tự ghi `bo_qua` và **ghi lại số bước** vào
    sổ tay — đừng để nó lẫn vào tỉ lệ "bắt đúng".
 4. **Nhãn của người khác bị ẩn** (chỉ hiện số lượng). Đây là chủ ý: hai người phải dán **độc lập**,
@@ -116,8 +117,15 @@ In + ghi `data/nhan/<phiên>_tonghop.json` (có `git_rev`, `do_luc`):
 
 - `theo_nguoi.<tên>.<nhãn>` — mỗi người một dòng, **nhãn cuối của mỗi bước** là nhãn có hiệu lực;
 - `so_nhan_trung` / `so_buoc_da_dan` — đã dán lại bao nhiêu lần / có bao nhiêu bước;
-- `dong_y_2_nguoi` — `so_buoc_ca_hai` (số bước **cả hai cùng dán**) và `so_buoc_dong_y` ⇒ đây mới là
-  con số trích được ("2 người đồng ý 7/8 bước").
+- `dong_y_2_nguoi` — **mẫu số phải là `so_buoc_ca_hai_co_ket_luan`**, không phải `so_buoc_ca_hai`:
+  `so_buoc_ca_hai` đếm cả bước mà **một trong hai** bấm `0` (bỏ qua), và bước đó **không** được tính là
+  đồng ý. Con số trích được là **`so_buoc_dong_y / so_buoc_ca_hai_co_ket_luan`**
+  (vd "2 người đồng ý **7/8** bước có kết luận").
+- `theo_cap` — đồng ý theo **từng cặp** người; chỉ dùng khi có **≥ 3 người** (khi đó `so_buoc_dong_y` là
+  "TẤT CẢ đồng ý", không phải tỉ lệ theo cặp).
+- `ten_theo_nguoi` — các cách viết tên đã gặp + nhãn đầu/cuối. **Tên được gộp theo NFC + không phân biệt
+  hoa/thường** (`Binh` = `binh`), nhưng đây là gộp **chuỗi tên**: tool chỉ chứng được "**2 chuỗi tên**",
+  không chứng được "2 con người" — cần người phụ trách biết ai ngồi dán.
 
 **Cấm trích** khi: chỉ có 1 người dán; `nguoi_gan = "?"`; hoặc bạn chấm theo giây đoán tay mà không
 kiểm `t_video` (xem bẫy 1).
