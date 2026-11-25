@@ -1,0 +1,104 @@
+# Cách gán nhãn "hệ bắt ĐÚNG hay SAI" (và cách dùng số sau khi gán)
+
+> Dành cho người ngồi gán nhãn. Mục đích: có **bằng chứng thứ hai** cho các tuyên bố kiểu *"hệ bám đúng
+> 7/7 ca"* — AGENTS §6 nói nhãn do **1 người** thì **không được trích** vào báo cáo.
+
+## 0. Chạy trong 30 giây
+
+```bash
+cd /mnt/d/doan-nab
+./run labelui --nguoi-gan Binh          # tên bạn — BẮT BUỘC, không có thì nhãn ghi "?" và không dùng được
+```
+Rồi mở link script in ra: **http://127.0.0.1:8770** (mở bằng Chrome/Edge trên Windows; WSL chia cổng
+với Windows nên `127.0.0.1` thường vào được — nếu không, xem mục 5).
+
+Gán xong, xem tổng hợp:
+
+```bash
+python tools/label_ui.py --tong-hop data/demoip_1125-121456_metrics.csv
+```
+
+## 1. Bạn đang chấm cái gì
+
+Video là **bản ghi màn hình của hệ** (đã có HUD vẽ ô + mask). Bạn chấm **từng bước suy luận**:
+cái ô/mask mà hệ đang vẽ **có nằm trên đúng vật đã chọn** hay không.
+
+| Phím | Nhãn | Khi nào bấm |
+|---|---|---|
+| `1` | **ĐÚNG** | Ô/mask nằm trên **đúng** vật người dùng đã chọn (kể cả khi mask hơi rộng/hụt) |
+| `2` | **SAI** | Ô/mask nằm trên vùng **khác**: nền, tường, điều hoà, tay người, vật khác |
+| `3` | **MẤT DẤU** | **Vật vẫn còn trong khung** nhưng hệ **không vẽ gì** (không ô, không mask) |
+| `4` | **KHÔNG CÓ VẬT** | Vật **không có trong khung** (người dùng đã đưa ra ngoài) — đây **không** phải lỗi |
+| `0` | **BỎ QUA** | Không kết luận được: quá mờ, che kín, không thấy rõ vật |
+
+Điều quan trọng nhất: **`3` và `4` là hai chuyện khác nhau.** Phân biệt sai ở đây sẽ biến "hệ mất dấu"
+thành "người dùng cất vật" và làm hỏng mọi kết luận về độ ổn định.
+
+## 2. Cách đi nhanh (đừng xem cả video từ đầu)
+
+- `→` / `←`: nhảy tới **bước suy luận** kế/trước. Đây là nhịp cần chấm (mỗi bước ~0,2–0,3 s), không
+  phải từng frame video. Thanh bên phải hiện `#frame_vos` và `bước … ms`.
+- `Space`: phát/dừng. `,` `.`: nhích ±0,2 s khi hình đã đổi mà thời điểm ước lượng còn lệch.
+- Bấm phím số là **ghi ngay** (append vào `data/nhan/<phiên>.jsonl`), không cần bấm Lưu.
+- `s` = ghi "ĐÚNG" + sang bước kế (dùng khi phần lớn frame đúng, để đi nhanh).
+- `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán quyết.
+
+## 3. Ba cái bẫy phải biết (đã từng làm sai số của repo)
+
+1. **Thời điểm frame ↔ giây KHÔNG chia đều.** Tool tính `t≈` bằng cách **cộng dồn `latency_ms`** của
+   từng bước. Trên phiên `demoip_1125-121456` (295 bước / 98,3 s), chia đều cho bước 141 ra **46,6 s**
+   nhưng cộng dồn ra **34,9 s** — lệch **12 s**. Nếu bạn chấm theo "đoán giây" thì nhãn rơi vào **sai
+   frame** và cả bộ nhãn thành vô dụng. Vì vậy tool ghi **cả** `t_video` (đồng hồ thật của video, cái
+   bạn đang nhìn) **và** `t_uoc_luong` (cộng dồn latency) — khi lệch nhau nhiều, hãy tin `t_video`.
+2. **Đừng chấm vào frame hệ đang ẩn mask** (HUD hiện `NGHI` / `CHUA XAC MINH`): lúc đó hệ **cố tình**
+   không vẽ. Tool có hiện cảnh báo `hệ đang ẩn mask`; nhãn cho các frame đó nên là `bo_qua` trừ khi bạn
+   đang chấm riêng câu hỏi "lúc ẩn thì vùng nghi có đúng vật không".
+3. **Nhãn của người khác bị ẩn** (chỉ hiện số lượng). Đây là chủ ý: hai người phải dán **độc lập**,
+   nếu không thì "2 người đồng ý" chỉ là một người dán hai lần. Muốn so: gán xong cả hai rồi chạy
+   `--tong-hop` (in `dong_y_2_nguoi`).
+
+## 4. Gán bao nhiêu là đủ
+
+| Mục đích | Số nhãn cần |
+|---|---|
+| Kiểm một ca cụ thể (1 lần cổng báo) | 5 bước trước + lúc báo + 5 bước sau |
+| Tỉ lệ "bắt đúng" của một phiên | mọi bước có vật trong khung (bỏ `4`) |
+| Đối chứng 2 người cho báo cáo | **cùng một tập** bước, 2 người dán độc lập ⇒ `--tong-hop` cho số đồng ý |
+
+Ghi nhãn **từng bước VOS**, không phải từng frame video — video 30 fps có ~9 frame cho mỗi bước.
+
+## 5. Không mở được `127.0.0.1` từ trình duyệt Windows
+
+WSL2 thường chia cổng với Windows, nhưng nếu không:
+
+```bash
+# trong WSL: lấy IP của WSL
+hostname -I | awk '{print $1}'          # ví dụ 172.19.180.5
+./run labelui --nguoi-gan Binh --port 8770
+```
+Rồi mở `http://<IP-vừa-in>:8770`. Nếu vẫn không vào, kiểm `netsh interface portproxy` trên Windows
+(hoặc chạy `./run labelui` và dùng trình duyệt **trong WSL** nếu có).
+
+## 6. Sau khi gán: số dùng vào đâu
+
+```bash
+python tools/label_ui.py --tong-hop data/demoip_1125-121456_metrics.csv
+```
+In + ghi `data/nhan/<phiên>_tonghop.json` (có `git_rev`, `do_luc`):
+
+- `theo_nguoi.<tên>.<nhãn>` — mỗi người một dòng;
+- `dong_y_2_nguoi` — số bước **cả hai cùng dán** và số bước **đồng ý** ⇒ đây mới là con số trích được
+  ("2/2 người đồng ý 7/8 ca").
+
+**Cấm trích** khi: chỉ có 1 người dán; `nguoi_gan = "?"`; hoặc bạn chấm theo giây đoán tay mà không
+kiểm `t_video` (xem bẫy 1).
+
+## 7. Quan hệ với công cụ khác trong repo
+
+| muốn gán | dùng |
+|---|---|
+| **Phán quyết bắt đúng/sai** trên phiên đã quay (video đã cháy HUD) | `./run labelui` (tài liệu này) |
+| **Mask GT** để chấm mIoU trên **clip sạch** | `./run gt` (`scripts/gt_gan_nhanh.py`) — xem `docs/thuoc-do-bam-dung.md` |
+| Chấm **sự kiện cổng** theo toạ độ (`px`, `px/s`) | `scripts/eval_gate_rules.py` (đọc `CA_DUNG`/`CA_SAI`) |
+
+Nhãn của `labelui` là **nguồn** để cập nhật `CA_DUNG`/`CA_SAI` khi có ca mới — nhớ ghi kèm ảnh cắt.
