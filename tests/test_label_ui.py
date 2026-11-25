@@ -896,6 +896,12 @@ class TestAnhTungBuoc:
         monkeypatch.setattr(L, "video_de_phat", lambda ten: (None, None, "không có"))
         assert L.anh_buoc("phien1", 0)[0] is None
 
+    def test_cache_anh_khong_duoc_commit(self):
+        """13 JPEG của cache từng lỡ vào repo (25-11): cache sinh lại được, `.gitignore` phải chặn."""
+        gi = (REPO / ".gitignore").read_text(encoding="utf-8")
+        assert "data/nhan/.anh/" in gi, "cache ảnh phải bị gitignore"
+        assert L.ANH_DIR_NAME == ".anh", "tên thư mục cache trong code phải khớp `.gitignore`"
+
     def test_route_anh_tra_jpeg_va_404(self, tmp_path, monkeypatch):
         self._video(tmp_path, monkeypatch)
         srv = L.tao_server(0, "B", None)

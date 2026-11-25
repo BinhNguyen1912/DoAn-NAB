@@ -19,6 +19,7 @@ data/*
 !data/*.txt
 # Ngoại lệ: NHÃN NGƯỜI DÙNG DÁN (nhỏ, là BẰNG CHỨNG) phải vào Git — không thì "2 người dán độc lập"
 # không ai kiểm được, và dữ liệu chết theo máy. Chỉ nhận .jsonl + bản tổng hợp, không nhận video/frame.
+data/nhan/.anh/          # cache ảnh từng bước: sinh lại được, KHÔNG commit (13 JPEG/phiên đã lỡ vào repo 25-11)
 !data/nhan/
 !data/nhan/*.jsonl
 !data/nhan/*_tonghop.json
