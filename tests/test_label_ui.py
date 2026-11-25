@@ -406,12 +406,17 @@ class TestApiHttp:
         assert e.value.code == 416
 
     def test_nhan_nguoi_khac_chi_tra_SO_LUONG(self, may_chu):
-        """Độc lập phải do SERVER bảo đảm: trả nội dung nhãn người khác rồi ẩn bằng CSS là giả."""
-        L.ghi_nhan("demoip_api", {"frame_vos": 9, "t_video": 3.0, "nhan": "sai"}, "An")
-        d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api"))
-        assert [r["frame_vos"] for r in d["da_gan"]] == [], "nhãn của An không được trả cho Binh"
+        """Độc lập phải do SERVER bảo đảm: trả nội dung nhãn người khác rồi ẩn bằng CSS là giả.
+
+        Bản cũ để nhãn DUY NHẤT thuộc `An` nên `da_gan == []` xanh cả khi server fallback về
+        `--nguoi-gan` (tức assertion không phân biệt được gì). Nay mỗi người có nhãn riêng.
+        """
+        L.ghi_nhan("demoip_api", {"buoc": 9, "frame_vos": 9, "t_video": 3.0, "nhan": "sai"}, "An")
+        L.ghi_nhan("demoip_api", {"buoc": 8, "frame_vos": 8, "t_video": 2.0, "nhan": "dung"}, "Binh")
+        d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api&nguoi=Binh"))
+        assert [r["buoc"] for r in d["da_gan"]] == [8], "chỉ nhãn CỦA MÌNH, không lẫn của An"
         assert d["so_nhan_nguoi_khac"] == 1 and d["nguoi_khac"] == ["An"]
-        assert "bbox_dung" not in json.dumps(d["da_gan"])
+        assert "An" not in json.dumps([r["nguoi_gan"] for r in d["da_gan"]])
 
     def test_ten_video_co_dau_gach_cheo_bi_chan(self, may_chu):
         req = urllib.request.Request(may_chu + "/video?v=../setup.py")
@@ -687,6 +692,17 @@ class TestTongHopCLI:
         assert ma == 0, out
         assert art["kiem_dai_buoc"] is False and art["ket_qua"] is True
         assert "KHÔNG kiểm được" in out
+
+    def test_khong_co_nhan_hop_le_thi_exit_1_va_artifact_false(self, tmp_path, monkeypatch, capsys):
+        """Cổng sớm nhất (0 nhãn hợp lệ) từng KHÔNG có test và KHÔNG ghi artifact ⇒ một file
+        `ket_qua=true` cũ còn nguyên trên đĩa (review vòng 5, P3)."""
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        (tmp_path / "nhan").mkdir()
+        (tmp_path / "nhan" / "rong.jsonl").write_text('123\n"x"\n', encoding="utf-8")
+        csv = _csv(tmp_path, ten="rong")
+        assert L.main(["--tong-hop", str(csv)]) == 1
+        art = json.loads((tmp_path / "nhan" / "rong_tonghop.json").read_text(encoding="utf-8"))
+        assert art["ket_qua"] is False and "hợp lệ" in art["ly_do"]
 
     def test_duong_dan_gon_khong_nem(self, tmp_path, monkeypatch):
         monkeypatch.setattr(L, "REPO_ROOT", tmp_path)

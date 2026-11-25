@@ -153,8 +153,8 @@ rỗng dù bộ đếm đầy (nay so theo NFC+lowercase như server); `/api/fra
 (`json.dumps` mặc định in ra — **không phải JSON**, Chrome `JSON.parse` ném ⇒ UI chết) ⇒ nay `allow_nan=False`
 + thay số méo bằng `null`; test khẳng định thêm `kiem_dai_buoc` và "payload không có `: NaN`".
 
-- **Sau khi sửa (5 vòng review):** `./run lint` xanh · `./run test` **2 178 passed** ·
-  `tests/test_label_ui.py` **95 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
+- **Sau khi sửa (5 vòng review + 2 vòng dọn nốt P3):** `./run lint` xanh · `./run test` **2 179 passed** ·
+  `tests/test_label_ui.py` **96 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 
@@ -217,6 +217,15 @@ Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiể
   `(path, mtime_ns, size)` (vẫn đúng khi CSV bị ghi lại).
 - Reviewer ghi rõ **không có shell** nên lint/test/e2e là số của tôi, không tái lập được — đúng quy ước
   "ghi rõ môi trường đo".
+
+- **Dọn nốt P3 của vòng 4–5** (không chặn merge): hai **cổng sớm** của `--tong-hop` giờ cũng ghi artifact
+  `ket_qua=false` (trước đó file `ket_qua=true` CŨ còn nguyên trên đĩa, chỉ khác `do_luc`); cổng dải `buoc`
+  nhận mọi dạng `tong_hop` nhận (`int("99")`, `99.0`) thay vì chỉ `isinstance(int)`; cảnh báo **>2 người**
+  được ghi vào `ly_do` của artifact; IPv6 nội bộ + `0.0.0.0` được nhận ở allowlist `Host`; `theo_cap` in
+  **tên hiển thị**; `tong_hop` **luôn tính lại** khoá tên (không tin `khoa_nguoi` đã lưu); e2e in
+  `PASS n/n` nên con số trong doc **kiểm được từ output** (trước đó khai 30 trong khi script có 29 và
+  không hề đếm). Siết thêm 2 test "pass vì lý do khác" (nhãn người khác, thiếu người gán) + 1 test cho
+  cổng "0 nhãn hợp lệ".
 
 - Vòng review vòng 1 đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
   ⇒ các mục P1 đã sửa cần **review vòng 2** trước khi merge.

@@ -754,10 +754,12 @@ def main(argv=None) -> int:
         if not d["so_nhan_hieu_luc"]:
             print(f"[tong-hop] KHÔNG có nhãn HỢP LỆ nào ({d['tong_nhan']} dòng, "
                   f"{d['so_nhan_loi']} dòng lỗi) — chưa đo được gì")
+            _ghi_artifact(ten, d, ket_qua=False, ly_do="không có nhãn hợp lệ")
             return 1
         rev = _git_rev()
         if not rev:
             print("[tong-hop] KHÔNG đọc được git_rev — artifact không tái lập được (AGENTS §6)")
+            _ghi_artifact(ten, d, ket_qua=False, ly_do="không đọc được git_rev")
             return 1
         csv_p = p if p.is_file() else DATA_DIR / f"{ten}_metrics.csv"
         ngoai: list = []
@@ -768,9 +770,17 @@ def main(argv=None) -> int:
             except (OSError, ValueError):
                 n_buoc = None
             if n_buoc is not None:
-                ngoai = [r.get("buoc") for r in doc_nhan(ten)
-                         if isinstance(r, dict) and isinstance(r.get("buoc"), int)
-                         and not 0 <= r["buoc"] < n_buoc]
+                # `tong_hop` nhận `buoc` kiểu `int("99")`/`99.0`; cổng này từng chỉ nhận `isinstance(int)`
+                # ⇒ một dòng sửa tay NGOÀI dải vẫn được đếm mà không bị cờ (review vòng 5, P3).
+                def _ngoai_dai(r):
+                    if not isinstance(r, dict) or r.get("buoc") in (None, ""):
+                        return False
+                    try:
+                        b = int(float(r["buoc"]))
+                    except (TypeError, ValueError, OverflowError):
+                        return True          # `buoc` không đọc được ⇒ coi như ngoài dải (báo lỗi)
+                    return not 0 <= b < n_buoc
+                ngoai = [r.get("buoc") for r in doc_nhan(ten) if _ngoai_dai(r)]
         kiem_dai = n_buoc is not None
         if not kiem_dai:
             # Chạy trên clone sạch: `data/nhan/*.jsonl` được track còn `data/*_metrics.csv` thì KHÔNG ⇒
@@ -784,9 +794,11 @@ def main(argv=None) -> int:
             _ghi_artifact(ten, d, ket_qua=False,
                          ly_do=f"{len(ngoai)} nhãn ngoài dải 0..{n_buoc - 1}")
             return 1
+        canh_bao_3 = None
         if d["so_nguoi"] > 2:
-            print(f"[tong-hop] CẢNH BÁO: {d['so_nguoi']} người — `so_buoc_dong_y` ở đây là \"TẤT CẢ đồng ý\", "
-                  "KHÔNG phải tỉ lệ đồng ý theo cặp; muốn số theo cặp thì so từng đôi một")
+            canh_bao_3 = (f"{d['so_nguoi']} người: `so_buoc_dong_y` là \"TẤT CẢ đồng ý\", "
+                          "không phải tỉ lệ theo cặp — dùng `theo_cap`")
+            print(f"[tong-hop] CẢNH BÁO: {canh_bao_3}")
         if d["so_nguoi"] < 2:
             print(f"[tong-hop] CHỈ {d['so_nguoi']} người dán ⇒ CHƯA trích được (cần 2 người độc lập)")
             _ghi_artifact(ten, d, ket_qua=False, ly_do=f"chỉ {d['so_nguoi']} người dán")
@@ -798,8 +810,13 @@ def main(argv=None) -> int:
                       "(tool phiên bản cũ) ⇒ hai người đang ở hai không-gian khoá khác nhau")
             _ghi_artifact(ten, d, ket_qua=False, ly_do="không có bước nào cả hai cùng dán")
             return 1
+        ly_do = []
+        if not kiem_dai:
+            ly_do.append("không có CSV để đối chiếu dải `buoc`")
+        if canh_bao_3:
+            ly_do.append(canh_bao_3)
         _ghi_artifact(ten, d, ket_qua=True, kiem_dai_buoc=kiem_dai,
-                     ly_do=(None if kiem_dai else "không có CSV để đối chiếu dải `buoc`"))
+                     ly_do=("; ".join(ly_do) or None))
         return 0
 
     nguoi = (args.nguoi_gan or "").strip() or "?"
