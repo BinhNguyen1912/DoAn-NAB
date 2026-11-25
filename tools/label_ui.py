@@ -68,6 +68,26 @@ def _so(v):
         return None
 
 
+_CACHE_PHIEN: dict[tuple, dict] = {}
+
+
+def doc_phien_cached(csv_path: Path) -> dict:
+    """`doc_phien` + cache theo `(đường dẫn, mtime, kích thước)`.
+
+    `do_POST` phải đối chiếu `buoc` với CSV ở MỖI nhãn (review vòng 2, P2-5); parse lại không cache đo
+    được 1,3 ms cho 295 dòng nhưng **169 ms cho 50 000 dòng** — người dán sẽ thấy độ trễ mỗi lần bấm
+    phím. Cache vẫn đúng khi CSV bị ghi lại: mtime/size đổi ⇒ khoá đổi.
+    """
+    p = Path(csv_path)
+    st = p.stat()
+    khoa = (str(p.resolve()), st.st_mtime_ns, st.st_size)
+    if khoa not in _CACHE_PHIEN:
+        if len(_CACHE_PHIEN) > 8:            # đừng để cache phình theo số phiên đã mở
+            _CACHE_PHIEN.clear()
+        _CACHE_PHIEN[khoa] = doc_phien(p)
+    return _CACHE_PHIEN[khoa]
+
+
 def doc_phien(csv_path: Path) -> dict:
     """CSV metrics ⇒ `{phien, video, frames:[…], tong_latency_s}`.
 
@@ -224,6 +244,8 @@ def chuan_hoa_ten(ten) -> str:
         raise ValueError("`nguoi_gan` không được là '?' — hãy khai tên thật")
     if len(t) > 40:
         raise ValueError("`nguoi_gan` quá dài (>40 ký tự)")
+    if any(ord(c) < 32 or ord(c) == 127 for c in t):
+        raise ValueError("`nguoi_gan` chứa ký tự điều khiển (xuống dòng/tab) — không đọc được cho người")
     return t
 
 
@@ -508,7 +530,7 @@ class _Handler(BaseHTTPRequestHandler):
         # cùng tên), mà đây là file BẰNG CHỨNG (review vòng 2, P2-5).
         csv_path = DATA_DIR / f"{phien}_metrics.csv"
         try:
-            khung = doc_phien(csv_path)["frames"]
+            khung = doc_phien_cached(csv_path)["frames"]
         except (OSError, ValueError) as e:
             return self._json({"loi": f"không đọc được CSV của phiên: {e}"}, 400)
         buoc = body.get("buoc")

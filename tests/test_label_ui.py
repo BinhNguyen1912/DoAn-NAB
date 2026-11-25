@@ -432,6 +432,23 @@ class TestTenNguoiDan:
         assert L.chuan_hoa_ten("  Nguyễn An Bình  ") == "Nguyễn An Bình"
 
 
+class TestCacheVaTen:
+    def test_cache_tra_ve_cung_ket_qua_va_doi_khi_file_doi(self, tmp_path):
+        p = _csv(tmp_path, ten="c")
+        a = L.doc_phien_cached(p)
+        b = L.doc_phien_cached(p)
+        assert a is b, "lần 2 phải lấy từ cache (nếu không: parse CSV ở MỌI lần bấm phím)"
+        p.write_text(p.read_text(encoding="utf-8").replace("0,300", "0,999"), encoding="utf-8")
+        c = L.doc_phien_cached(p)
+        assert c is not a and c["frames"][0]["latency_ms"] == 999.0, \
+            "CSV bị ghi lại thì cache phải bỏ (mtime/size đổi)"
+
+    def test_ten_co_ky_tu_dieu_khien_bi_tu_choi(self):
+        for ten in ("An\nBinh", "An\tBinh", "An\x00"):
+            with pytest.raises(ValueError, match="điều khiển"):
+                L.chuan_hoa_ten(ten)
+
+
 class TestDongRac:
     def test_dong_json_khong_phai_nhan_khong_lam_sap_tong_hop(self, tmp_path):
         """`tong_hop` chạy TRONG response của mỗi POST ⇒ một dòng rác làm nó ném là nhãn đã ghi xong
