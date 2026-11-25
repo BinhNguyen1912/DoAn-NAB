@@ -514,6 +514,22 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   làm allowlist `CHO_PHEP` (khoá `(tên, rev)`) không dùng được vì `rev = None` ⇒ CI đỏ vĩnh viễn ⇒ cổng
   mất tác dụng. Nay `thieu-rev` là nhãn riêng + `CHO_PHEP_KHONG_REV` theo TÊN, **file mới thiếu rev vẫn
   bị bắt** (có test).
+- **Làm mượt ô vẽ ra trên CLI: ĐÃ đo trên phiên THẬT (không chỉ mô phỏng).** `--box-smooth-tau-ms 125`
+  (`src/box_smoother.py`, `./run demoip` bật sẵn) — đo bằng `scripts/measure_hud_jitter.py` trên video HUD
+  (`data/hud_jitter_2026-11-25_lan2_metrics.json`, `git_rev 696dbc4`): ô **đứng yên 8 → 2 frame**, bước nhảy
+  tâm **p95 160,8 → 23,0 px**, tỉ lệ bước nhảy < 20 px **57 % → 94 %**. `result.bbox` KHÔNG đổi
+  (cổng nghi/metrics/mIoU vẫn dùng số model thật) ⇒ **không** dùng cờ này để giải thích số mIoU.
+- **Ánh xạ `frame_idx → giây` phải CỘNG DỒN `latency_ms`, không chia đều.** Phiên `demoip_1125-121456`
+  (295 bước / 98,3 s): chia đều cho f141 ≈ 46,6 s nhưng cộng dồn cho **34,9 s** — lệch **12 s** vì các bước
+  VOS dài ngắn khác nhau (1291–1771 ms ở f195–197). Mọi kết luận "frame nào ứng với giây nào" (cắt ảnh để
+  chấm nhãn!) phải cộng dồn, nếu không sẽ chấm nhãn vào **sai frame**.
+- **20 s nét đứt trong một phiên 98 s KHÔNG phải lỗi hiển thị — đọc ảnh trước khi sửa code.** Phiên
+  `121456`: cổng báo 1 lần ở f140, `chua_xac_minh` 49 frame ⇒ 19,9 s nét đứt. Ảnh t=46,8 s cho thấy ô nét
+  đứt nằm trên **điều hoà/tường** trong khi remote ở giữa khung ⇒ hệ **bám sai** (remote trắng trên nền
+  trắng), hiển thị trung thực. Luật round-trip **không** cứu được ca này (không phải "nhảy rồi quay về");
+  trạng thái thoát nhờ mask rỗng 3 bước ở f195–197. Bài học: **chọn vật khác màu nền** (phiên `085815`
+  dùng thẻ vàng: 6,5 % nét đứt) và vẽ ô **sát vật, đừng ôm bàn tay** (ô đầu phiên này 156×275, cao gấp
+  1,8× rộng).
 - **Trước khi trích số FPS/latency: kiểm KHÔNG có worker live mồ côi.** Đóng tab web KHÔNG dừng worker
   (`/dev/shm/doan-live`); API chỉ reap khi mở phiên mới **cùng thư mục**, nên CLI không biết. Đo 21-11:
   một worker web bỏ quên ăn **461 % CPU** ⇒ `./run demoip` ra **1484 ms mean / 2821 ms p95** thay vì
