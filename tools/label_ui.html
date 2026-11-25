@@ -1,0 +1,501 @@
+<!DOCTYPE html>
+<!--
+  Trang gán nhãn "hệ bắt ĐÚNG hay SAI" cho một phiên đã quay.
+  Server: tools/label_ui.py (mở bằng `./run labelui`).
+
+  Vì sao KHÔNG vẽ lại ô từ CSV đè lên video: video đã có HUD vẽ ô của CHÍNH hệ (bản đã làm mượt), nên
+  người gán chấm đúng cái mình NHÌN THẤY. Vẽ thêm ô từ CSV sẽ thành hai ô lệch nhau vài px ⇒ dễ chấm
+  sang ô của script thay vì ô của sản phẩm.
+
+  Phím tắt (để dán nhanh, không phải rời tay khỏi bàn phím):
+    1 = ĐÚNG   2 = SAI   3 = MẤT DẤU   4 = KHÔNG CÓ VẬT   0 = BỎ QUA
+    Space = phát/dừng · ←/→ = về bước VOS trước/sau · ,/. = nudge ±0.2 s
+    b = vẽ ô đúng (kéo chuột) · Esc = bỏ ô đang vẽ · s = lưu nhãn + sang bước kế
+-->
+<html lang="vi">
+<head>
+<meta charset="utf-8">
+<title>Gán nhãn — bắt đúng / sai</title>
+<style>
+  :root { --bg:#101317; --fg:#e6e8ec; --dim:#9aa4b2; --ok:#2ecc71; --bad:#e74c3c;
+          --warn:#f1c40f; --info:#3498db; }
+  * { box-sizing:border-box; }
+  body { margin:0; background:var(--bg); color:var(--fg); font:14px/1.5 system-ui,Segoe UI,Roboto,sans-serif; }
+  header { display:flex; gap:12px; align-items:center; padding:10px 14px; border-bottom:1px solid #222;
+           flex-wrap:wrap; }
+  header b { color:#fff; }
+  select,input { background:#1a1f26; color:var(--fg); border:1px solid #2b323b; border-radius:6px; padding:5px 8px; }
+  main { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:14px; padding:14px; }
+  #wrap { position:relative; background:#000; border-radius:8px; overflow:hidden; }
+  video { display:block; width:100%; height:auto; }
+  /* `pointer-events:none` để <video controls> còn bấm được (play/scrub/volume). Bản đầu để
+     `auto` ⇒ canvas trong suốt phủ lên video, mọi click vào thanh tua bị nuốt (review độc lập P2).
+     Chỉ bật khi ĐANG vẽ ô (phím b). */
+  canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  canvas.dang-ve { pointer-events:auto; cursor:crosshair; }
+  aside { display:flex; flex-direction:column; gap:10px; }
+  .card { background:#161b22; border:1px solid #232a33; border-radius:8px; padding:10px; }
+  .k { display:inline-block; min-width:22px; text-align:center; background:#232a33; border-radius:4px;
+       padding:0 6px; margin-right:6px; font-weight:600; }
+  button { background:#1f6feb; color:#fff; border:0; border-radius:6px; padding:7px 10px; cursor:pointer; }
+  button.ghost { background:#232a33; }
+  button:disabled { opacity:.45; cursor:not-allowed; }
+  .row { display:flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .big { font-size:20px; font-weight:700; }
+  .muted { color:var(--dim); }
+  #status { min-height:44px; }
+  .pill { border-radius:999px; padding:1px 8px; font-size:12px; }
+  .pill.ok { background:rgba(46,204,113,.18); color:var(--ok); }
+  .pill.bad { background:rgba(231,76,60,.18); color:var(--bad); }
+  .pill.warn { background:rgba(241,196,15,.18); color:var(--warn); }
+  table { width:100%; border-collapse:collapse; font-size:12px; }
+  td,th { border-bottom:1px solid #232a33; padding:3px 4px; text-align:left; }
+  .hint { color:var(--dim); font-size:12px; }
+  kbd { background:#232a33; border-radius:3px; padding:0 4px; }
+  #drawHint { position:absolute; left:10px; top:10px; background:rgba(0,0,0,.6); padding:4px 8px;
+              border-radius:6px; display:none; }
+</style>
+</head>
+<body>
+<header>
+  <b>Gán nhãn “bắt đúng / sai”</b>
+  <label>Phiên <select id="phien"></select></label>
+  <label>Người gán <input id="nguoi" size="12" placeholder="tên của bạn"></label>
+  <span id="dangDan" class="pill ok">?</span>
+  <span id="tienDo" class="muted"></span>
+  <span style="flex:1"></span>
+  <span class="muted" id="meta"></span>
+</header>
+
+<main>
+  <div>
+    <div id="wrap">
+      <video id="v" controls preload="auto"></video>
+      <canvas id="c"></canvas>
+      <div id="drawHint">Đang vẽ ô đúng — kéo chuột, <kbd>Esc</kbd> để bỏ</div>
+    </div>
+    <div class="row" style="margin-top:10px">
+      <button id="prev" class="ghost">◀ bước trước <span class="hint">(←)</span></button>
+      <button id="next" class="ghost">bước sau ▶ <span class="hint">(→)</span></button>
+      <span class="hint">nudge <kbd>,</kbd> <kbd>.</kbd> ±0.2 s</span>
+      <span style="flex:1"></span>
+      <span class="muted" id="viTri"></span>
+    </div>
+  </div>
+
+  <aside>
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <span class="muted">Bước VOS</span><span class="big" id="fVos">–</span>
+      </div>
+      <div class="muted" id="fInfo">–</div>
+    </div>
+
+    <div class="card">
+      <div class="row">
+        <button data-n="dung" style="background:#1e8449">1 · ĐÚNG</button>
+        <button data-n="sai" style="background:#a93226">2 · SAI</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button data-n="mat_dau" style="background:#7d6608">3 · MẤT DẤU</button>
+        <button data-n="khong_co_vat" class="ghost">4 · KHÔNG CÓ VẬT</button>
+      </div>
+      <div class="row" style="margin-top:8px">
+        <button data-n="bo_qua" class="ghost">0 · BỎ QUA</button>
+        <button id="btnLuu" style="background:#1f6feb">Lưu &amp; bước kế (s)</button>
+      </div>
+      <p class="hint" id="ghiChu" style="margin:8px 0 0">
+        Nhãn ghi ngay khi bấm phím số (không cần bấm Lưu). Bấm <kbd>s</kbd> = lưu + sang bước kế —
+        dùng khi đã vẽ <b>ô đúng</b> hoặc muốn đi tiếp nhanh.
+      </p>
+      <p class="hint" id="drawHint2" style="margin:4px 0 0">
+        <kbd>b</kbd> rồi kéo chuột để vẽ <b>ô đúng</b> (dùng khi nhãn là SAI/ĐÚNG mà muốn GT ô).
+      </p>
+    </div>
+
+    <div class="card">
+      <div class="row" style="justify-content:space-between">
+        <span class="muted">Đã dán (người này)</span>
+        <span class="big" id="demNguoi">0</span>
+      </div>
+      <div class="muted" id="demTheoNhan">–</div>
+      <div class="muted" style="margin-top:6px" id="demKhac"></div>
+    </div>
+
+    <div class="card">
+      <div class="muted" style="margin-bottom:4px">Nhãn đã dán (gần nhất)</div>
+      <table><thead><tr><th>#</th><th>giây</th><th>nhãn</th></tr></thead><tbody id="bang"></tbody></table>
+    </div>
+  </aside>
+</main>
+
+<script>
+const NHAN_VI = { dung:"ĐÚNG", sai:"SAI", mat_dau:"MẤT DẤU", khong_co_vat:"KHÔNG CÓ VẬT", bo_qua:"BỎ QUA" };
+const PILL = { dung:"ok", sai:"bad", mat_dau:"warn", khong_co_vat:"warn", bo_qua:"warn" };
+
+// `nhanChon` = nhãn vừa bấm ở BƯỚC NÀY (để `s` lưu lại đúng nhãn đó). Đặt `null` khi đổi phiên/bước.
+let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:null };
+// `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
+// sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
+let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+const $ = id => document.getElementById(id);
+
+async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
+
+async function napDanhSach(){
+  const d = await getJSON('/api/sessions');
+  state.nhan = d.nhan;
+  const sel = $('phien');
+  sel.innerHTML = '';
+  d.phien.forEach(p => {
+    const o = document.createElement('option');
+    o.value = p.phien;
+    o.textContent = `${p.phien}  (${p.da_gan} nhãn)`;
+    if (d.phien_mac_dinh && p.phien === d.phien_mac_dinh) o.selected = true;
+    sel.appendChild(o);
+  });
+  // THỨ TỰ QUAN TRỌNG: tên đã lưu của trình duyệt này (localStorage) THẮNG tên mặc định của server.
+  // Nếu để server thắng thì người thứ 2 mở cùng URL sẽ thấy sẵn tên người thứ 1 (đúng kịch bản tài liệu
+  // khuyên), và mọi nhãn của họ ghi dưới tên người 1 — `tong_hop` báo "1 người" và last-wins xoá nhãn
+  // của người 1 (review vòng 3, P1).
+  const daLuu = localStorage.getItem('labelui_nguoi');
+  if (daLuu) $('nguoi').value = daLuu;
+  else if (d.nguoi_gan && d.nguoi_gan !== '?') $('nguoi').value = d.nguoi_gan;
+  state.daLuu = daLuu || null;
+  if (!sel.options.length) { $('meta').textContent = 'Không có phiên nào có video + CSV trong data/'; return; }
+  await chonPhien(sel.value);
+}
+
+// Hệ số bù: `t_uoc_luong` là CỘNG DỒN `latency_ms` (94,76 s trên phiên 121456) còn video dài 98,0 s
+// ⇒ nếu dùng thẳng thì cuối video lệch ~3 s (nhãn rơi sang bước khác). Video được ghi theo đồng hồ thật
+// nên `thời lượng / tổng_latency` là hệ số bù đúng chiều; kẹp trong [0.5, 2] để CSV hỏng không kéo lệch.
+function capNhatHeSo(){
+  const v = $('v');
+  const tong = state.tongLatency || 0;
+  const dur = v.duration;
+  state.heSo = (tong > 1 && dur > 1) ? Math.min(2, Math.max(0.5, dur / tong)) : 1;
+  state.mapT = (state.frames || []).map(f => f.t_uoc_luong * state.heSo);
+}
+function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.frames[i].t_uoc_luong : 0); }
+
+async function chonPhien(ten){
+  state.dangTai = true;
+  try {
+    state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
+    veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+    buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
+    const toi = ($('nguoi').value || '').trim();
+    const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
+                            + '&nguoi=' + encodeURIComponent(toi));
+    state.phien = ten;               // chỉ nhận phiên MỚI khi đã tải được (lỗi ⇒ giữ nguyên phiên cũ)
+    state.frames = d.frames;
+    state.tongLatency = d.tong_latency_s;
+    state.chuaXacMinh = (await getJSON('/api/sessions')).phien
+      .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
+    state.daGan = d.da_gan || [];
+    state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
+    state.nguoiKhac = d.nguoi_khac || [];
+    const v = $('v');
+    // Chỉ nạp lại khi ĐÚNG là video khác: đổi tên người dán cũng gọi lại `chonPhien` (để server lọc
+    // nhãn theo người) mà nạp lại video thì `currentTime` về 0 ⇒ nút "bước sau" như chết.
+    const nguon = '/video?v=' + encodeURIComponent(d.video);
+    if (v.getAttribute('src') !== nguon){
+      v.src = nguon;
+      v.load();
+    }
+    const cxm = state.chuaXacMinh;
+    $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
+      + (cxm !== null ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
+          + `CHUA XAC MINH: ${cxm} frame</span>` : '')
+      + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
+    window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
+    veTienDo(); veBang();
+  } finally {
+    state.dangTai = false;          // lỗi giữa đường KHÔNG được khoá vĩnh viễn mọi phím
+  }
+  $('phien').blur();
+}
+
+// ── bước VOS gần nhất với thời điểm đang xem ────────────────────────────────
+function buocGanNhat(t){
+  let best = 0, d = Infinity;
+  for (let i=0;i<state.frames.length;i++){
+    const x = Math.abs(tMap(i) - t);
+    if (x < d) { d = x; best = i; }
+  }
+  return best;
+}
+function chiSoHienTai(){ return buocGanNhat($('v').currentTime); }
+
+let buocTruoc = null;
+function capNhat(){
+  const v = $('v');
+  const i = chiSoHienTai();
+  if (buocTruoc !== null && i !== buocTruoc && veO.co){
+    veO.co = false; veO.buoc = null;          // ô thuộc bước khác ⇒ bỏ, không lưu hộ
+  }
+  if (buocTruoc !== null && i !== buocTruoc && state.nhanChon){
+    state.nhanChon = null;                    // nhãn đã chọn thuộc bước khác ⇒ `s` phải từ chối
+    flash('Đã sang bước khác — bấm 1/2/3/4 để chọn nhãn cho bước này');
+  }
+  buocTruoc = i;
+  const f = state.frames[i] || {};
+  $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
+  // CẢNH BÁO LỆCH: nếu người gán tua tay đi xa thì nhãn sẽ gắn vào BƯỚC GẦN NHẤT (có thể sai bước).
+  // Phải hiện ra, nếu không nhãn đúng ý người mà rơi vào frame khác — đúng bẫy "0/None ≠ đã đo".
+  const lech = Math.abs(tMap(i) - v.currentTime);
+  const canhBaoLech = lech > 0.5
+    ? `<div class="pill bad" id="lech" style="margin-top:4px">lệch ${lech.toFixed(2)} s so với bước này —
+       nhãn sẽ gắn vào bước GẦN NHẤT (#${f.frame_vos}); bấm ←/→ cho khớp</div>` : '';
+  $('fInfo').innerHTML = `t≈${tMap(i).toFixed(2)}s`
+    + (f.latency_ms!=null ? ` · bước ${Math.round(f.latency_ms)} ms` : '')
+    + (f.may_an_mask ? ` <span class="pill warn">hệ đang ẩn mask</span>` : '')
+    + (f.bbox ? `<br><span class="muted">ô CSV: ${f.bbox.join(', ')}</span>` : '')
+    + '<br><span class="muted">t video: ' + v.currentTime.toFixed(2) + 's · bù hệ số '
+      + (state.heSo || 1).toFixed(3) + '</span>'
+    + canhBaoLech;
+  $('viTri').textContent = `${i+1}/${state.frames.length}`;
+  veCanvas();
+}
+
+// ── canvas: ô đang vẽ ────────────────────────────────────────────────────────
+function veCanvas(){
+  const v = $('v'), c = $('c');
+  const r = v.getBoundingClientRect();
+  if (c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
+    c.width = Math.round(r.width); c.height = Math.round(r.height);
+  }
+  const g = c.getContext('2d');
+  g.clearRect(0,0,c.width,c.height);
+  if (!veO.co) return;
+  const kx = c.width / (v.videoWidth || 640), ky = c.height / (v.videoHeight || 480);
+  g.strokeStyle = '#2ecc71'; g.lineWidth = 2; g.setLineDash([]);
+  const x = Math.min(veO.x0,veO.x1)*kx, y = Math.min(veO.y0,veO.y1)*ky;
+  const w = Math.abs(veO.x1-veO.x0)*kx, h = Math.abs(veO.y1-veO.y0)*ky;
+  g.strokeRect(x,y,w,h);
+  g.fillStyle = 'rgba(46,204,113,.12)'; g.fillRect(x,y,w,h);
+}
+
+function toaDoVideo(ev){
+  const v = $('v'), r = v.getBoundingClientRect();
+  const W = v.videoWidth || 640, H = v.videoHeight || 480;
+  const x = (ev.clientX - r.left) * W / r.width;
+  const y = (ev.clientY - r.top) * H / r.height;
+  // kẹp CẢ HAI biên: kéo ra ngoài khung từng lưu toạ độ âm/vượt kích thước frame
+  return [Math.min(W, Math.max(0, Math.round(x))), Math.min(H, Math.max(0, Math.round(y)))];
+}
+
+$('c').addEventListener('mousedown', ev => {
+  if (!veO.dang) return;
+  [veO.x0, veO.y0] = toaDoVideo(ev); veO.x1 = veO.x0; veO.y1 = veO.y0; veO.co = true;
+  veO.buoc = chiSoHienTai(); veCanvas();
+});
+$('c').addEventListener('mousemove', ev => {
+  if (!veO.dang || !veO.co) return;
+  // KHÔNG cập nhật `veO.buoc` ở đây: `buoc` là mốc NEO (mousedown). Đóng dấu lại mỗi lần di chuột thì
+  // một cú kéo vắt qua ranh giới bước sẽ khiến ô cũ (điểm neo của bước trước) trông như ô của bước mới
+  // (review vòng 3, P2-5).
+  [veO.x1, veO.y1] = toaDoVideo(ev); veCanvas();
+});
+$('c').addEventListener('mouseup', () => {
+  if (!veO.dang) return;
+  veO.dang = false;
+  $('drawHint').style.display = 'none';
+  $('c').classList.remove('dang-ve');       // trả chuột lại cho <video controls>
+  // Click mà không kéo ⇒ ô 0 px. Server từ chối (`x2 > x1`), và bản cũ còn GIỮ ô đó ⇒ MỌI nhãn sau
+  // đều 400 tới khi bấm Esc (review vòng 2, P2-1). Bỏ ô ngay tại đây.
+  if (Math.abs(veO.x1 - veO.x0) < 3 || Math.abs(veO.y1 - veO.y0) < 3){
+    veO.co = false; veO.buoc = null; veCanvas();
+  }
+});
+
+// ── ghi nhãn ────────────────────────────────────────────────────────────────
+// HÀNG ĐỢI cho POST: hai lần bấm phím sát nhau mở 2 connection song song ⇒ server có thể nhận SAI THỨ
+// TỰ, và quy tắc "nhãn CUỐI của mỗi bước là nhãn có hiệu lực" sẽ chọn phím bấm TRƯỚC (review vòng 2).
+let hangDoi = Promise.resolve();
+let loiGanNhan = null;
+
+// BƯỚC được GHIM tại lúc bấm phím. Trước đây `ghiNhanThat` tính lại `chiSoHienTai()` khi hàng đợi
+// tới lượt nó ⇒ video đang phát (hoặc POST trước chậm 2 s) làm `currentTime` đã sang bước k+1, và phán
+// quyết của bước k bị ghi cho bước k+1 (review vòng 3, P2-4).
+function ghimBuoc(){
+  const i = chiSoHienTai(), f = state.frames[i] || {};
+  return { i, phien: state.phien, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
+           t_video: $('v').currentTime,
+           bbox: (veO.co && veO.buoc === i)
+             ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
+                Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null };
+}
+
+async function ghiNhan(nhan){
+  if (state.dangTai) { flash('Đang tải phiên — chờ xong rồi bấm nhãn'); return false; }
+  const g = ghimBuoc();
+  hangDoi = hangDoi.then(() => ghiNhanThat(nhan, g))
+                   .catch(e => {           // ném NGOÀI try/catch của ghiNhanThat (vd localStorage)
+                     flash('LỖI GHI NHÃN: ' + (e && e.message ? e.message : e));
+                     return false;
+                   });
+  return hangDoi;
+}
+
+async function ghiNhanThat(nhan, g){
+  const nguoi = ($('nguoi').value || '').trim();
+  const body = {
+    phien: g.phien, nhan, nguoi_gan: nguoi,         // P1-A: tên đi CÙNG nhãn; phiên GHIM lúc bấm
+    buoc: g.buoc, frame_vos: g.frame_vos,
+    t_video: g.t_video, t_uoc_luong: g.t_uoc_luong,
+    bbox_dung: g.bbox,
+  };
+  let d = null, ok = false;
+  try {
+    const r = await fetch('/api/label', {method:'POST', headers:{'Content-Type':'application/json'},
+                                         body: JSON.stringify(body)});
+    d = await r.json();
+    ok = r.ok;
+    if (!ok) throw new Error(d.loi || ('HTTP ' + r.status));
+  } catch (e) {
+    // Lỗi PHẢI hiện và phải DỪNG: bản cũ `.catch(()=>{})` nuốt lỗi, `luuVaTiep` vẫn nhảy bước ⇒ người
+    // dán tin là đã ghi (review vòng 3, P2-3).
+    loiGanNhan = String(e.message || e);
+    flash('LỖI GHI NHÃN: ' + loiGanNhan + ' — nhãn CHƯA được lưu');
+    $('ghiChu').style.color = '#e74c3c';
+    return false;
+  }
+  loiGanNhan = null;
+  $('ghiChu').style.color = '';
+  try { localStorage.setItem('labelui_nguoi', nguoi); } catch (e) { /* chỉ là tiện ích, không phải bằng chứng */ }
+  state.nhanChon = {buoc: g.i, nhan};   // nhớ cả BƯỚC: `s` chỉ lưu lại nhãn của ĐÚNG bước này
+  state.daGan.push(d.record);
+  veO.co = false; veO.buoc = null; veCanvas();
+  veTienDo(); veBang();
+  flash(`${NHAN_VI[nhan]} · #${g.frame_vos} @ ${Number(g.t_video).toFixed(2)}s`, true);
+  return true;
+}
+
+function flash(txt, daGhi = false){
+  // Chỉ nói "(đã ghi)" khi CÓ ghi. Bản cũ nối vào mọi thông báo, kể cả hai nhánh KHÔNG ghi gì (review
+  // vòng 4, P2-1) — đúng lớp "người dán tin là đã ghi".
+  $('ghiChu').style.color = daGhi ? '' : '#f1c40f';
+  $('ghiChu').textContent = daGhi ? `${txt}  (đã ghi)` : txt;
+}
+
+function veTienDo(){
+  const nguoi = ($('nguoi').value || '').trim();
+  $('dangDan').textContent = nguoi || '?';
+  // Nhãn là append-only ⇒ một bước có thể có nhiều dòng. Đếm theo BƯỚC (đúng câu "N/295 bước đã dán");
+  // nhãn hiệu lực của mỗi bước là dòng CUỐI (khớp quy tắc `tong_hop` ở server).
+  const theoBuoc = new Map();
+  state.daGan.forEach(r => theoBuoc.set(r.buoc ?? r.frame_vos, r));
+  const cuaToi = [...theoBuoc.values()];
+  $('demNguoi').textContent = cuaToi.length;
+  const dem = {};
+  cuaToi.forEach(r => dem[r.nhan] = (dem[r.nhan]||0) + 1);
+  $('demTheoNhan').textContent = Object.keys(dem).length
+    ? Object.entries(dem).map(([k,v]) => `${NHAN_VI[k]||k}: ${v}`).join(' · ') : 'chưa dán nhãn nào';
+  // Số nhãn của người khác do SERVER trả (chỉ số lượng, không nội dung) — không phải tự đếm từ dữ liệu
+  // đã tải về, vì server không gửi nhãn của người khác nữa.
+  const khac = state.soNhanKhac || 0;
+  $('demKhac').textContent = khac
+    ? `(có ${khac} nhãn của người khác${state.nguoiKhac && state.nguoiKhac.length
+        ? ' (' + state.nguoiKhac.join(', ') + ')' : ''} — không hiện nội dung để bạn dán độc lập)` : '';
+  $('tienDo').textContent = `${cuaToi.length}/${state.frames.length} bước đã dán`;
+}
+
+function veBang(){
+  const nguoi = ($('nguoi').value || '').trim();
+  const khoa = (t) => (t || '').normalize('NFC').toLowerCase();   // khớp `khoa_ten` ở server
+  const rows = state.daGan.filter(r => khoa(r.nguoi_gan) === khoa(nguoi)).slice(-8).reverse();
+  $('bang').innerHTML = rows.map(r =>
+    `<tr><td>${r.frame_vos}</td><td>${Number(r.t_video).toFixed(1)}</td>
+     <td><span class="pill ${PILL[r.nhan]||'warn'}">${NHAN_VI[r.nhan]||r.nhan}</span></td></tr>`).join('');
+}
+
+// ── điều khiển ──────────────────────────────────────────────────────────────
+function nhayBuoc(delta){
+  const v = $('v');
+  let i = chiSoHienTai() + delta;
+  i = Math.max(0, Math.min(state.frames.length-1, i));
+  v.currentTime = tMap(i);
+  v.pause();
+  setTimeout(capNhat, 60);
+}
+
+document.querySelectorAll('button[data-n]').forEach(b => b.onclick = () => ghiNhan(b.dataset.n));
+$('next').onclick = () => nhayBuoc(1);
+$('prev').onclick = () => nhayBuoc(-1);
+// "Lưu & bước kế": nếu đã bấm 1/2/3/4 ở bước này thì ghi LẠI CHÍNH nhãn đó (bản ghi trùng được
+// `tong_hop` gộp theo nhãn CUỐI), nếu chưa chọn gì thì TỪ CHỐI thay vì ngầm ghi 'dung'.
+async function luuVaTiep(){
+  const i = chiSoHienTai();
+  // Chỉ dùng lại nhãn nếu nó được bấm Ở CHÍNH BƯỚC NÀY. Trước đây `s` mang nhãn của bước trước sang
+  // bước mới (guard chỉ bảo vệ lần bấm đầu của cả phiên) — review vòng 2, P1-C.
+  if (!state.nhanChon || state.nhanChon.buoc !== i){
+    flash('Bước này chưa chọn nhãn: bấm 1/2/3/4 rồi mới "Lưu & bước kế"');
+    return;
+  }
+  if (await ghiNhan(state.nhanChon.nhan)) nhayBuoc(1);   // lỗi ⇒ Ở LẠI bước này
+}
+$('btnLuu').onclick = luuVaTiep;
+$('phien').onchange = e => chonPhien(e.target.value)
+  .catch(err => flash('LỖI tải phiên: ' + (err.message || err)));
+$('nguoi').oninput = () => {
+  const t = ($('nguoi').value || '').trim();
+  if (t && t !== '?') localStorage.setItem('labelui_nguoi', t);   // nhớ NGAY, không đợi nhãn đầu
+  $('dangDan').textContent = t || '?';
+};
+$('nguoi').onchange = async () => {
+  // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
+  // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).
+  if (state.phien) {
+    try { await chonPhien(state.phien); }
+    catch (e) { flash('LỖI tải phiên: ' + (e.message || e)); }
+  }
+};
+
+// Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và
+// KHÔNG ghi nhãn nào; tệ hơn: mọi nhãn sau đó mang tên sai ⇒ `tong_hop` báo "2 người" cho 1 người
+// (review độc lập P1-1).
+$('nguoi').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); $('nguoi').blur(); $('dangDan').textContent = ($('nguoi').value||'?').trim(); }
+});
+
+document.addEventListener('keydown', ev => {
+  const trongOText = ['INPUT','TEXTAREA'].includes(ev.target.tagName);
+  const k = ev.key;
+  // Phím nhãn vẫn phải ăn kể cả khi con trỏ đang ở ô tên / select (người dùng không biết phải click
+  // ra ngoài). Với <select>, ArrowUp/Down là của select nên chỉ nhận phím nhãn.
+  const laPhimNhan = ['1','2','3','4','0','s','S','b','B'].includes(k);
+  if (trongOText && !laPhimNhan) return;
+  if (ev.target.tagName === 'SELECT' && !laPhimNhan) return;
+  if (laPhimNhan && trongOText) { $('nguoi').blur(); }
+  if (k === '1') { ghiNhan('dung'); ev.preventDefault(); }
+  else if (k === '2') { ghiNhan('sai'); ev.preventDefault(); }
+  else if (k === '3') { ghiNhan('mat_dau'); ev.preventDefault(); }
+  else if (k === '4') { ghiNhan('khong_co_vat'); ev.preventDefault(); }
+  else if (k === '0') { ghiNhan('bo_qua'); ev.preventDefault(); }
+  else if (k === 's' || k === 'S') { luuVaTiep(); ev.preventDefault(); }
+  else if (k === ' ') { const v = $('v'); if (v.paused) v.play(); else v.pause(); ev.preventDefault(); }
+  else if (k === 'ArrowRight') { nhayBuoc(1); ev.preventDefault(); }
+  else if (k === 'ArrowLeft') { nhayBuoc(-1); ev.preventDefault(); }
+  else if (k === ',') { $('v').currentTime = Math.max(0, $('v').currentTime - 0.2); capNhat(); ev.preventDefault(); }
+  else if (k === '.') { $('v').currentTime = $('v').currentTime + 0.2; capNhat(); ev.preventDefault(); }
+  else if (k === 'b' || k === 'B') {
+    veO.dang = true; veO.co = false;
+    $('drawHint').style.display = 'block';
+    $('c').classList.add('dang-ve');        // chỉ LÚC NÀY canvas mới nhận chuột
+    ev.preventDefault();
+  } else if (k === 'Escape') {
+    veO.dang = false; veO.co = false; veO.buoc = null;
+    $('drawHint').style.display = 'none';
+    $('c').classList.remove('dang-ve');
+    veCanvas();
+  }
+});
+
+$('v').addEventListener('loadedmetadata', () => { capNhatHeSo(); capNhat(); });
+['seeked','timeupdate','play','pause'].forEach(e => $('v').addEventListener(e, () => capNhat()));
+window.addEventListener('resize', veCanvas);
+napDanhSach().catch(e => { $('meta').textContent = 'Lỗi: ' + e.message; });
+</script>
+</body>
+</html>

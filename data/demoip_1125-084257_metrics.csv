@@ -1,0 +1,2 @@
+frame_idx,latency_ms,score,center_x,center_y,lost,state,reid_score,reacquired,ncc,vetoed,bbox_w,bbox_h,mask_area,track_cos,nghi_doi_tuong,verify_cos,cos_truoc_cong,cand_n,cand_sinh_n,cand_ncc_loai,bbox_area_ratio,bbox_area_ref,bbox_area_n
+0,4083.7,15.8965,398,268,0,,,0,,0,149,213,18188,,,,,,,,,,
