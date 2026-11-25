@@ -1052,10 +1052,8 @@ class TestAnhTungBuoc:
 
         monkeypatch.setattr(cv2, "VideoCapture", Dem)
         monkeypatch.setattr(L, "_CAP_MAX", 1)
-        for ten in ("phien1", "phien1", "phien1"):
-            L._CAP.clear() if False else None
-        # mở 3 phiên khác tên ⇒ với _CAP_MAX = 1 thì 2 cái đầu bị đuổi
-        for k, ten in enumerate(["phien1", "phienB", "phienC"]):
+        # mở 3 phiên KHÁC TÊN ⇒ với _CAP_MAX = 1 thì 2 cái đầu bị đuổi
+        for ten in ("phien1", "phienB", "phienC"):
             (L.DATA_DIR / f"{ten}.mp4").write_bytes((L.DATA_DIR / "phien1.mp4").read_bytes())
             (L.DATA_DIR / f"{ten}_metrics.csv").write_text(
                 (L.DATA_DIR / "phien1_metrics.csv").read_text(encoding="utf-8"), encoding="utf-8")
