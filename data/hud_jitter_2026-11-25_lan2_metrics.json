@@ -1,0 +1,86 @@
+{
+  "lenh": "python scripts/measure_hud_jitter.py data/demoip_1125-121456_web.mp4 data/demoip_1125-100334_web.mp4 data/demoip_1125-085815_web.mp4",
+  "do_luc": "2026-11-25T12:31:10+07:00",
+  "git_rev": "696dbc4",
+  "git_dirty_code": false,
+  "buoc_lay_mau": 1,
+  "ket_qua": [
+    {
+      "video": "demoip_1125-121456_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 14.53,
+      "dich_chuyen_frame_n": 1745,
+      "dai_buoc_nhay": {
+        "<20px": 787,
+        "20-50px": 45,
+        "50-100px": 6,
+        ">=200px": 2
+      },
+      "fps_video": 30.0,
+      "so_frame": 2939,
+      "giu_frame_med": 2,
+      "giu_frame_med_n": 851,
+      "nhay_tam_med": 3.16,
+      "nhay_tam_p95": 23.02,
+      "nhay_tam_max": 443.9,
+      "nhay_tam_n": 840,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 59.75,
+      "pct_net_dut": 20.28,
+      "o_do_n": 1756
+    },
+    {
+      "video": "demoip_1125-100334_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 16.07,
+      "dich_chuyen_frame_n": 921,
+      "dai_buoc_nhay": {
+        "<20px": 57,
+        "50-100px": 16,
+        "100-200px": 11,
+        "20-50px": 16
+      },
+      "fps_video": 30.0,
+      "so_frame": 1296,
+      "giu_frame_med": 8,
+      "giu_frame_med_n": 105,
+      "nhay_tam_med": 15.56,
+      "nhay_tam_p95": 160.8,
+      "nhay_tam_max": 188.12,
+      "nhay_tam_n": 100,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 71.37,
+      "pct_net_dut": 17.98,
+      "o_do_n": 925
+    },
+    {
+      "video": "demoip_1125-085815_web.mp4",
+      "dich_chuyen_frame_med": 0.0,
+      "dich_chuyen_frame_p95": 22.09,
+      "dich_chuyen_frame_n": 2330,
+      "dai_buoc_nhay": {
+        "<20px": 143,
+        "50-100px": 34,
+        "100-200px": 10,
+        "20-50px": 79,
+        ">=200px": 2
+      },
+      "fps_video": 30.0,
+      "so_frame": 3162,
+      "giu_frame_med": 8.0,
+      "giu_frame_med_n": 278,
+      "nhay_tam_med": 18.07,
+      "nhay_tam_p95": 89.94,
+      "nhay_tam_max": 232.64,
+      "nhay_tam_n": 268,
+      "nhay_sau_gap_n": 0,
+      "nhay_sau_gap_max": null,
+      "pct_o_do": 74.0,
+      "pct_net_dut": 6.51,
+      "o_do_n": 2340
+    }
+  ],
+  "ghi_chu": "Số đo trên KHUNG HÌNH VẼ RA (dò màu), không phải CSV mỗi bước VOS."
+}
