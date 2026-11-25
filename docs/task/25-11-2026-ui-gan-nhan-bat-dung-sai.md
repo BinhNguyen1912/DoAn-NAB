@@ -126,7 +126,7 @@
   - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
     **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
 - **Sau khi sửa (vòng 1 + vòng 2):** `./run lint` xanh · `./run test` **2 156 passed** ·
-  `tests/test_label_ui.py` **73 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
+  `tests/test_label_ui.py` **75 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 2 (task `mwvq1i7z-26e0`) — bắt 3 P1 mà vòng 1 bỏ qua
 
@@ -159,6 +159,10 @@ Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiể
   có lên; `--tong-hop` trả mã 1 khi chưa trích được (1 người / 0 bước trùng có kết luận); fixture: vật
   chạy ra ngoài khung từ frame 56 (nay `i % 56`) và docstring sai số frame; POST **serialize** trong UI
   để "dòng cuối thắng" đúng thứ tự bấm; bỏ dead code `_trong_repo`.
+- **Tự kiểm thêm 2 lỗi (không phải reviewer bắt)**: tên người dán chứa `\n`/tab vẫn ghi được (JSONL hợp
+  lệ nhưng không đọc được cho người) ⇒ từ chối ký tự điều khiển; và `doc_phien` bị parse lại **ở mỗi
+  nhãn** để đối chiếu `buoc` — đo **1,3 ms** (295 dòng) nhưng **169 ms** (50 000 dòng) ⇒ thêm cache theo
+  `(path, mtime_ns, size)` (vẫn đúng khi CSV bị ghi lại).
 - Reviewer ghi rõ **không có shell** nên lint/test/e2e là số của tôi, không tái lập được — đúng quy ước
   "ghi rõ môi trường đo".
 
