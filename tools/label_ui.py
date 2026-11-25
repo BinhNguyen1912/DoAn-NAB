@@ -324,34 +324,36 @@ class _Handler(BaseHTTPRequestHandler):
         p = DATA_DIR / ten
         if not p.is_file():
             return self._json({"loi": f"không có {ten}"}, 404)
-        data = p.read_bytes()
-        # Range request: Chrome cần nó để tua (không có thì `currentTime` không nhảy).
+        # Đọc theo ĐOẠN, không `read_bytes()` cả file: Chrome tua = nhiều Range request, mà mỗi lần
+        # đọc cả mp4 27 MB từ 9p (WSL↔Windows) là chậm và tốn I/O vô ích (review vòng 1, P3).
+        dai_file = p.stat().st_size
         ra = self.headers.get("Range")
         if ra and ra.startswith("bytes="):
             # `bytes=-500` (suffix) KHÔNG được hiểu thành `start=0`: Chrome dùng dạng này khi tua lùi.
             try:
                 a, _, b = ra[6:].partition("-")
                 if a == "" and b != "":
-                    dai = int(b)
-                    start = max(0, len(data) - dai)
-                    end = len(data) - 1
+                    start = max(0, dai_file - int(b))
+                    end = dai_file - 1
                 else:
                     start = int(a or 0)
-                    end = int(b) if b else len(data) - 1
+                    end = int(b) if b else dai_file - 1
             except ValueError:
-                start, end = 0, len(data) - 1
-            if start >= len(data):
+                start, end = 0, dai_file - 1
+            if start >= dai_file:
                 self.send_response(416)
-                self.send_header("Content-Range", f"bytes */{len(data)}")
+                self.send_header("Content-Range", f"bytes */{dai_file}")
                 self.end_headers()
                 return
             start = max(0, start)
-            end = min(end, len(data) - 1)
-            chunk = data[start:end + 1]
+            end = min(end, dai_file - 1)
+            with p.open("rb") as f:
+                f.seek(start)
+                chunk = f.read(end - start + 1)
             self.send_response(206)
             self.send_header("Content-Type", "video/mp4")
             self.send_header("Accept-Ranges", "bytes")
-            self.send_header("Content-Range", f"bytes {start}-{end}/{len(data)}")
+            self.send_header("Content-Range", f"bytes {start}-{end}/{dai_file}")
             self.send_header("Content-Length", str(len(chunk)))
             self.end_headers()
             self.wfile.write(chunk)
@@ -359,9 +361,14 @@ class _Handler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", "video/mp4")
         self.send_header("Accept-Ranges", "bytes")
-        self.send_header("Content-Length", str(len(data)))
+        self.send_header("Content-Length", str(dai_file))
         self.end_headers()
-        self.wfile.write(data)
+        with p.open("rb") as f:
+            while True:
+                khoi = f.read(256 * 1024)              # stream, không nạp cả file vào RAM
+                if not khoi:
+                    break
+                self.wfile.write(khoi)
 
     def do_GET(self):
         u = urlparse(self.path)
