@@ -118,6 +118,15 @@ def ten_hop_le(ten: str) -> bool:
     return bool(ten) and bool(_TEN_HOP_LE.fullmatch(ten)) and ".." not in ten
 
 
+def duong_dan_gon(p: Path) -> str:
+    """Đường dẫn gọn để IN ra. `relative_to` ném khi thư mục nhãn nằm ngoài repo (`LABELUI_NHAN_DIR`
+    trỏ /tmp) ⇒ phải bọc, nếu không tool chết ngay sau khi GHI XONG file (đã gặp thật)."""
+    try:
+        return str(Path(p).resolve().relative_to(REPO_ROOT))
+    except ValueError:
+        return str(p)
+
+
 def _trong_repo(p: Path) -> bool:
     try:
         Path(p).resolve().relative_to(REPO_ROOT)
@@ -372,7 +381,7 @@ def main(argv=None) -> int:
         out.write_text(json.dumps({"phien": ten, "git_rev": _git_rev(),
                                    "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
                                    **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"\n[artifact] {out.relative_to(REPO_ROOT)}")
+        print(f"\n[artifact] {duong_dan_gon(out)}")
         return 0 if d["tong_nhan"] else 1
 
     nguoi = (args.nguoi_gan or "").strip() or "?"
@@ -390,11 +399,7 @@ def main(argv=None) -> int:
             print(f"[labelui] hoặc http://{ip}:{port} (từ máy khác trong LAN)")
         except OSError:
             pass
-    try:
-        noi = THU_MUC_NHAN.relative_to(REPO_ROOT)
-    except ValueError:                 # thư mục tạm (e2e) nằm ngoài repo
-        noi = THU_MUC_NHAN
-    print(f"[labelui] nhãn ghi vào {noi}/<phiên>.jsonl")
+    print(f"[labelui] nhãn ghi vào {duong_dan_gon(THU_MUC_NHAN)}/<phiên>.jsonl")
     print("[labelui] Ctrl-C để dừng")
     try:
         srv.serve_forever()

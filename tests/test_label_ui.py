@@ -212,6 +212,30 @@ class TestChanDuongDan:
             srv.server_close()
 
 
+class TestTongHopCLI:
+    """`--tong-hop` phải chạy được khi thư mục nhãn NGOÀI repo (`LABELUI_NHAN_DIR=/tmp/...`).
+
+    Đã gặp thật: bản đầu in `out.relative_to(REPO_ROOT)` ⇒ ValueError NGAY SAU KHI ghi xong artifact,
+    tức file đúng nhưng lệnh thoát mã 1 (script tự động sẽ hiểu là hỏng).
+    """
+
+    def test_chay_duoc_voi_thu_muc_ngoai_repo(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "ngoai")
+        L.ghi_nhan("demoip_x", {"frame_vos": 1, "t_video": 0.3, "nhan": "dung"}, "Binh")
+        L.ghi_nhan("demoip_x", {"frame_vos": 1, "t_video": 0.3, "nhan": "dung"}, "An")
+        csv = _csv(tmp_path, ten="demoip_x")
+        ma = L.main(["--tong-hop", str(csv)])
+        out = capsys.readouterr().out
+        assert ma == 0, out
+        assert "dong_y_2_nguoi" in out
+        assert (tmp_path / "ngoai" / "demoip_x_tonghop.json").is_file()
+
+    def test_duong_dan_gon_khong_nem(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(L, "REPO_ROOT", tmp_path)
+        assert L.duong_dan_gon(tmp_path / "a") == "a"                    # trong repo → gọn
+        assert L.duong_dan_gon(Path("/tmp/khac/a")) == "/tmp/khac/a"      # ngoài repo → nguyên gốc
+
+
 class TestHangSoVaTaiLieu:
     def test_moi_nhan_deu_co_mo_ta(self):
         for k, mo_ta in L.NHAN.items():
