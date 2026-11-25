@@ -60,7 +60,7 @@
      (không phải `[0,0,0,0]`), append-only, từ chối nhãn lạ/thiếu người gán/bbox đảo cạnh, dòng JSONL
      hỏng không làm sập, đếm theo người + mức đồng ý, **5 test HTTP thật** (trang chủ, sessions, frames,
      label, 400 cho nhãn sai, **206 + Content-Range** cho Range, chặn `../setup.py`), 11 case tên bẩn.
-   - `scripts/e2e_label_ui.js` + `./run labeluie2e`: **19 mục trên Chrome thật** (Windows Chrome lái từ
+   - `scripts/e2e_label_ui.js` + `./run labeluie2e`: **27 mục trên Chrome thật** (Windows Chrome lái từ
      WSL qua `cmd.exe`, đúng kiểu `e2e_web.js`/`e2e_gt_painter.js`). Kiểm: trang tải không `pageerror`;
      `<video>` có metadata (chứng minh Range chạy); nút "bước sau" **tua thật** `0,00 → 0,35 s`; phím
      `1` ghi `dung` vào đĩa; `b` + kéo chuột ⇒ `bbox_dung = [192,144,383,335]`; bộ đếm + bảng cập nhật;
@@ -94,6 +94,41 @@
 5. **E2E lần đầu ghi nhãn vào `data/nhan/` THẬT** (file `demoip_1125-121456.jsonl` có 2 dòng `e2e`) ⇒
    thêm `LABELUI_NHAN_DIR` để e2e dùng `mktemp -d`, không bao giờ lẫn nhãn thật. Đã xoá file rác.
 6. **Favicon 404 làm E2E đỏ** ở mục "không có console.error" ⇒ thêm route `/favicon.ico` trả 204.
+
+## 📋 Kết quả review độc lập (AGENTS §9.1)
+
+- **Agent review:** `reviewer` (task `mwvpd7rz-66b0`, read-only). Kết luận: *mergeable after the four P1
+  items; no P0 remains*. Review bắt **4 P1 + 7 P2 + 8 P3**, trong đó nhiều lỗi **thật** mà test + e2e của
+  tôi không thấy:
+  - **P1-1 focus trap bịa ra "2 người"**: gõ tên rồi bấm `1` ⇒ số `1` vào ô tên (`"Binh1"`), không ghi
+    nhãn nào, và **mọi nhãn sau mang tên sai** ⇒ `tong_hop` báo `so_nguoi = 2` cho **một người**. Đã
+    sửa: Enter ở ô tên = blur; phím nhãn vẫn ăn khi con trỏ ở ô tên/select; header hiện người đang dán.
+  - **P1-2 ô vẽ sống qua bước**: vẽ ô ở bước *k*, `→`, bấm `2` ⇒ lưu ô của bước *k* cho bước *k+1*.
+    Đã sửa: ô gắn `buoc`, `capNhat` xoá ô khi bước đổi; E2E kiểm (`rec3.bbox_dung === null`).
+  - **P1-3 `s` luôn ghi "ĐÚNG"**: bấm `2` rồi `s` tạo **hai nhãn mâu thuẫn** cho cùng bước, và
+    `tong_hop` đếm mọi dòng (`theo_nguoi`) nhưng chấm đồng ý theo dòng **đầu** ⇒ hai con số nói về hai
+    tập khác nhau. Đã sửa: `s` ghi lại **nhãn vừa chọn** (chưa chọn thì từ chối), `tong_hop` lấy nhãn
+    **CUỐI** của mỗi `(bước, người)` + báo `so_nhan_trung`.
+  - **P1-4 trang web khác chèn được nhãn** (request `text/plain` `no-cors` ⇒ server vẫn parse) ⇒ đầu độc
+    file bằng chứng **dưới tên người đang dán**. Đã sửa: bắt buộc `Content-Type: application/json`
+    (buộc preflight) + chặn `Origin` lạ (403).
+  - **P2 đã sửa luôn**: canvas nuốt chuột của `<video controls>` (nay `pointer-events:none`, chỉ bật khi
+    vẽ) và **thiếu nhánh `Space`** dù doc hứa; nhãn người khác trước đây **vẫn được gửi về trình duyệt**
+    rồi ẩn bằng CSS (nay server **chỉ trả nhãn của chính người dán** + số lượng); CSV có BOM từng làm
+    **mọi `frame_vos = 0`** (nay `utf-8-sig` + từ chối CSV không tăng dần); body POST méo (mảng, `null`
+    trong `bbox_dung`, `Content-Length` khổng lồ) nay trả 400/413/415 thay vì **không trả gì**; E2E assert
+    rỗng (`kiem(true,…)`, kiểm `!khac ||` luôn đúng) nay kiểm **toạ độ ô chính xác** (96,72,192,168 trên
+    lưới 320×240) + pre-seed nhãn người khác; `./run labeluie2e` phụ thuộc `data/demoip_1125-121456_web.mp4`
+    (không được track ⇒ đỏ trên clone sạch) nay **tự sinh fixture** (`scripts/make_labelui_fixture.py`,
+    H.264 bằng chính `transcode_for_web` vì **mp4v Chrome không phát được**).
+  - **P2-7**: nhãn nằm trong `data/` bị gitignore ⇒ **không ai kiểm được** bằng chứng. Đã thêm ngoại lệ
+    `!data/nhan/*.jsonl` + `!data/nhan/*_tonghop.json` vào `.gitignore`.
+  - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
+    **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
+- **Sau khi sửa:** `./run lint` xanh · `tests/test_label_ui.py` **58 test** · `./run labeluie2e`
+  **PASS 27/27** trên Chrome thật, không phụ thuộc `data/`.
+- Vòng review đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
+  ⇒ các mục P1 đã sửa cần **review vòng 2** trước khi merge.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 - [ ] **Người dùng dán nhãn một phiên thật** (`demoip_1125-121456`), rồi **người thứ 2** dán cùng tập

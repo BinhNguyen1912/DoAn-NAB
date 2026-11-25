@@ -28,7 +28,11 @@
   main { display:grid; grid-template-columns:minmax(0,1fr) 320px; gap:14px; padding:14px; }
   #wrap { position:relative; background:#000; border-radius:8px; overflow:hidden; }
   video { display:block; width:100%; height:auto; }
-  canvas { position:absolute; inset:0; width:100%; height:100%; cursor:crosshair; }
+  /* `pointer-events:none` để <video controls> còn bấm được (play/scrub/volume). Bản đầu để
+     `auto` ⇒ canvas trong suốt phủ lên video, mọi click vào thanh tua bị nuốt (review độc lập P2).
+     Chỉ bật khi ĐANG vẽ ô (phím b). */
+  canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
+  canvas.dang-ve { pointer-events:auto; cursor:crosshair; }
   aside { display:flex; flex-direction:column; gap:10px; }
   .card { background:#161b22; border:1px solid #232a33; border-radius:8px; padding:10px; }
   .k { display:inline-block; min-width:22px; text-align:center; background:#232a33; border-radius:4px;
@@ -57,6 +61,7 @@
   <b>Gán nhãn “bắt đúng / sai”</b>
   <label>Phiên <select id="phien"></select></label>
   <label>Người gán <input id="nguoi" size="12" placeholder="tên của bạn"></label>
+  <span id="dangDan" class="pill ok">?</span>
   <span id="tienDo" class="muted"></span>
   <span style="flex:1"></span>
   <span class="muted" id="meta"></span>
@@ -129,7 +134,9 @@ const NHAN_VI = { dung:"ĐÚNG", sai:"SAI", mat_dau:"MẤT DẤU", khong_co_vat:
 const PILL = { dung:"ok", sai:"bad", mat_dau:"warn", khong_co_vat:"warn", bo_qua:"warn" };
 
 let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhan:{} };
-let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false };
+// `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
+// sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
+let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
 const $ = id => document.getElementById(id);
 
 async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -171,12 +178,15 @@ async function chonPhien(ten){
   state.frames = d.frames;
   state.tongLatency = d.tong_latency_s;
   state.daGan = d.da_gan || [];
+  state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
+  state.nguoiKhac = d.nguoi_khac || [];
   const v = $('v');
   v.src = '/video?v=' + encodeURIComponent(d.video);
   v.load();
   $('meta').textContent = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`;
   window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
   veTienDo(); veBang();
+  $('phien').blur();
 }
 
 // ── bước VOS gần nhất với thời điểm đang xem ────────────────────────────────
@@ -190,9 +200,14 @@ function buocGanNhat(t){
 }
 function chiSoHienTai(){ return buocGanNhat($('v').currentTime); }
 
+let buocTruoc = null;
 function capNhat(){
   const v = $('v');
   const i = chiSoHienTai();
+  if (buocTruoc !== null && i !== buocTruoc && veO.co){
+    veO.co = false; veO.buoc = null;          // ô thuộc bước khác ⇒ bỏ, không lưu hộ
+  }
+  buocTruoc = i;
   const f = state.frames[i] || {};
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
   // CẢNH BÁO LỆCH: nếu người gán tua tay đi xa thì nhãn sẽ gắn vào BƯỚC GẦN NHẤT (có thể sai bước).
@@ -201,7 +216,7 @@ function capNhat(){
   const canhBaoLech = lech > 0.5
     ? `<div class="pill bad" id="lech" style="margin-top:4px">lệch ${lech.toFixed(2)} s so với bước này —
        nhãn sẽ gắn vào bước GẦN NHẤT (#${f.frame_vos}); bấm ←/→ cho khớp</div>` : '';
-  $('fInfo').innerHTML = `t≈${(f.t_uoc_luong ?? 0).toFixed(2)}s`
+  $('fInfo').innerHTML = `t≈${tMap(i).toFixed(2)}s`
     + (f.latency_ms!=null ? ` · bước ${Math.round(f.latency_ms)} ms` : '')
     + (f.may_an_mask ? ` <span class="pill warn">hệ đang ẩn mask</span>` : '')
     + (f.bbox ? `<br><span class="muted">ô CSV: ${f.bbox.join(', ')}</span>` : '')
@@ -232,20 +247,28 @@ function veCanvas(){
 
 function toaDoVideo(ev){
   const v = $('v'), r = v.getBoundingClientRect();
-  const x = (ev.clientX - r.left) * (v.videoWidth || 640) / r.width;
-  const y = (ev.clientY - r.top) * (v.videoHeight || 480) / r.height;
-  return [Math.max(0, Math.round(x)), Math.max(0, Math.round(y))];
+  const W = v.videoWidth || 640, H = v.videoHeight || 480;
+  const x = (ev.clientX - r.left) * W / r.width;
+  const y = (ev.clientY - r.top) * H / r.height;
+  // kẹp CẢ HAI biên: kéo ra ngoài khung từng lưu toạ độ âm/vượt kích thước frame
+  return [Math.min(W, Math.max(0, Math.round(x))), Math.min(H, Math.max(0, Math.round(y)))];
 }
 
 $('c').addEventListener('mousedown', ev => {
   if (!veO.dang) return;
-  [veO.x0, veO.y0] = toaDoVideo(ev); veO.x1 = veO.x0; veO.y1 = veO.y0; veO.co = true; veCanvas();
+  [veO.x0, veO.y0] = toaDoVideo(ev); veO.x1 = veO.x0; veO.y1 = veO.y0; veO.co = true;
+  veO.buoc = chiSoHienTai(); veCanvas();
 });
 $('c').addEventListener('mousemove', ev => {
   if (!veO.dang || !veO.co) return;
-  [veO.x1, veO.y1] = toaDoVideo(ev); veCanvas();
+  [veO.x1, veO.y1] = toaDoVideo(ev); veO.buoc = chiSoHienTai(); veCanvas();
 });
-$('c').addEventListener('mouseup', () => { if (veO.dang) { veO.dang = false; $('drawHint').style.display='none'; } });
+$('c').addEventListener('mouseup', () => {
+  if (!veO.dang) return;
+  veO.dang = false;
+  $('drawHint').style.display = 'none';
+  $('c').classList.remove('dang-ve');       // trả chuột lại cho <video controls>
+});
 
 // ── ghi nhãn ────────────────────────────────────────────────────────────────
 async function ghiNhan(nhan){
@@ -263,8 +286,9 @@ async function ghiNhan(nhan){
                                        body: JSON.stringify(body)});
   const d = await r.json();
   if (!r.ok){ alert('Lỗi: ' + (d.loi || r.status)); return; }
+  state.nhanChon = nhan;          // để `s` / nút "Lưu & bước kế" lưu ĐÚNG nhãn vừa chọn
   state.daGan.push(d.record);
-  veO.co = false; veCanvas();
+  veO.co = false; veO.buoc = null; veCanvas();
   veTienDo(); veBang();
   flash(`${NHAN_VI[nhan]} · #${f.frame_vos} @ ${v.currentTime.toFixed(2)}s`);
 }
@@ -275,15 +299,23 @@ function flash(txt){
 
 function veTienDo(){
   const nguoi = ($('nguoi').value || '').trim();
-  const cuaToi = state.daGan.filter(r => r.nguoi_gan === nguoi);
-  const nguoiKhac = state.daGan.filter(r => r.nguoi_gan !== nguoi);
+  $('dangDan').textContent = nguoi || '?';
+  // Nhãn là append-only ⇒ một bước có thể có nhiều dòng. Đếm theo BƯỚC (đúng câu "N/295 bước đã dán");
+  // nhãn hiệu lực của mỗi bước là dòng CUỐI (khớp quy tắc `tong_hop` ở server).
+  const theoBuoc = new Map();
+  state.daGan.forEach(r => theoBuoc.set(r.frame_vos, r));
+  const cuaToi = [...theoBuoc.values()];
   $('demNguoi').textContent = cuaToi.length;
   const dem = {};
   cuaToi.forEach(r => dem[r.nhan] = (dem[r.nhan]||0) + 1);
   $('demTheoNhan').textContent = Object.keys(dem).length
     ? Object.entries(dem).map(([k,v]) => `${NHAN_VI[k]||k}: ${v}`).join(' · ') : 'chưa dán nhãn nào';
-  $('demKhac').textContent = nguoiKhac.length
-    ? `(có ${nguoiKhac.length} nhãn của người khác — ẩn để bạn dán độc lập)` : '';
+  // Số nhãn của người khác do SERVER trả (chỉ số lượng, không nội dung) — không phải tự đếm từ dữ liệu
+  // đã tải về, vì server không gửi nhãn của người khác nữa.
+  const khac = state.soNhanKhac || 0;
+  $('demKhac').textContent = khac
+    ? `(có ${khac} nhãn của người khác${state.nguoiKhac && state.nguoiKhac.length
+        ? ' (' + state.nguoiKhac.join(', ') + ')' : ''} — không hiện nội dung để bạn dán độc lập)` : '';
   $('tienDo').textContent = `${cuaToi.length}/${state.frames.length} bước đã dán`;
 }
 
@@ -308,25 +340,58 @@ function nhayBuoc(delta){
 document.querySelectorAll('button[data-n]').forEach(b => b.onclick = () => ghiNhan(b.dataset.n));
 $('next').onclick = () => nhayBuoc(1);
 $('prev').onclick = () => nhayBuoc(-1);
-$('btnLuu').onclick = async () => { await ghiNhan('dung'); nhayBuoc(1); };
+// "Lưu & bước kế": nếu đã bấm 1/2/3/4 ở bước này thì ghi LẠI CHÍNH nhãn đó (bản ghi trùng được
+// `tong_hop` gộp theo nhãn CUỐI), nếu chưa chọn gì thì TỪ CHỐI thay vì ngầm ghi 'dung'.
+async function luuVaTiep(){
+  if (!state.nhanChon){
+    flash('Chưa chọn nhãn: bấm 1/2/3/4 trước rồi mới "Lưu & bước kế"');
+    return;
+  }
+  await ghiNhan(state.nhanChon);
+  nhayBuoc(1);
+}
+$('btnLuu').onclick = luuVaTiep;
 $('phien').onchange = e => chonPhien(e.target.value);
 $('nguoi').onchange = () => { veTienDo(); veBang(); };
 
+// Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và
+// KHÔNG ghi nhãn nào; tệ hơn: mọi nhãn sau đó mang tên sai ⇒ `tong_hop` báo "2 người" cho 1 người
+// (review độc lập P1-1).
+$('nguoi').addEventListener('keydown', ev => {
+  if (ev.key === 'Enter') { ev.preventDefault(); $('nguoi').blur(); $('dangDan').textContent = ($('nguoi').value||'?').trim(); }
+});
+
 document.addEventListener('keydown', ev => {
-  if (['INPUT','SELECT','TEXTAREA'].includes(ev.target.tagName)) return;
+  const trongOText = ['INPUT','TEXTAREA'].includes(ev.target.tagName);
   const k = ev.key;
+  // Phím nhãn vẫn phải ăn kể cả khi con trỏ đang ở ô tên / select (người dùng không biết phải click
+  // ra ngoài). Với <select>, ArrowUp/Down là của select nên chỉ nhận phím nhãn.
+  const laPhimNhan = ['1','2','3','4','0','s','S','b','B'].includes(k);
+  if (trongOText && !laPhimNhan) return;
+  if (ev.target.tagName === 'SELECT' && !laPhimNhan) return;
+  if (laPhimNhan && trongOText) { $('nguoi').blur(); }
   if (k === '1') { ghiNhan('dung'); ev.preventDefault(); }
   else if (k === '2') { ghiNhan('sai'); ev.preventDefault(); }
   else if (k === '3') { ghiNhan('mat_dau'); ev.preventDefault(); }
   else if (k === '4') { ghiNhan('khong_co_vat'); ev.preventDefault(); }
   else if (k === '0') { ghiNhan('bo_qua'); ev.preventDefault(); }
-  else if (k === 's' || k === 'S') { ghiNhan('dung'); nhayBuoc(1); ev.preventDefault(); }
+  else if (k === 's' || k === 'S') { luuVaTiep(); ev.preventDefault(); }
+  else if (k === ' ') { const v = $('v'); if (v.paused) v.play(); else v.pause(); ev.preventDefault(); }
   else if (k === 'ArrowRight') { nhayBuoc(1); ev.preventDefault(); }
   else if (k === 'ArrowLeft') { nhayBuoc(-1); ev.preventDefault(); }
   else if (k === ',') { $('v').currentTime = Math.max(0, $('v').currentTime - 0.2); capNhat(); ev.preventDefault(); }
   else if (k === '.') { $('v').currentTime = $('v').currentTime + 0.2; capNhat(); ev.preventDefault(); }
-  else if (k === 'b' || k === 'B') { veO.dang = true; veO.co = false; $('drawHint').style.display='block'; ev.preventDefault(); }
-  else if (k === 'Escape') { veO.dang = false; veO.co = false; $('drawHint').style.display='none'; veCanvas(); }
+  else if (k === 'b' || k === 'B') {
+    veO.dang = true; veO.co = false;
+    $('drawHint').style.display = 'block';
+    $('c').classList.add('dang-ve');        // chỉ LÚC NÀY canvas mới nhận chuột
+    ev.preventDefault();
+  } else if (k === 'Escape') {
+    veO.dang = false; veO.co = false; veO.buoc = null;
+    $('drawHint').style.display = 'none';
+    $('c').classList.remove('dang-ve');
+    veCanvas();
+  }
 });
 
 $('v').addEventListener('loadedmetadata', () => { capNhatHeSo(); capNhat(); });

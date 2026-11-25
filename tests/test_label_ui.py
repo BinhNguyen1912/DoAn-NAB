@@ -75,6 +75,20 @@ class TestGhiNhan:
         with pytest.raises(ValueError, match="nguoi_gan"):
             L.ghi_nhan("x", {"frame_vos": 1, "nhan": "dung"}, "  ", tmp_path)
 
+    def test_bbox_rong_bi_tu_choi(self, tmp_path):
+        """`bbox_dung: []` từng LỌT kiểm (độ dài nằm trong nhánh `is not None`) ⇒ ghi nhãn rác."""
+        with pytest.raises(ValueError, match="bbox_dung"):
+            L.ghi_nhan("x", {"frame_vos": 1, "nhan": "sai", "bbox_dung": []}, "B", tmp_path)
+
+    def test_bbox_phan_tu_khong_phai_so(self, tmp_path):
+        for xau in ([None] * 4, [{}, 1, 2, 3], ["a", "b", "c", "d"]):
+            with pytest.raises(ValueError, match="bbox_dung"):
+                L.ghi_nhan("x", {"frame_vos": 1, "nhan": "sai", "bbox_dung": xau}, "B", tmp_path)
+
+    def test_thieu_frame_vos_bi_tu_choi(self, tmp_path):
+        with pytest.raises(ValueError, match="frame_vos"):
+            L.ghi_nhan("x", {"nhan": "dung"}, "B", tmp_path)
+
     def test_bbox_dao_canh_bi_tu_choi(self, tmp_path):
         with pytest.raises(ValueError, match="bbox_dung"):
             L.ghi_nhan("x", {"frame_vos": 1, "nhan": "sai", "bbox_dung": [10, 10, 5, 5]}, "B", tmp_path)
@@ -100,7 +114,20 @@ class TestTongHop:
         assert d["tong_nhan"] == 4 and d["so_nguoi"] == 2
         assert d["theo_nguoi"]["A"]["tong"] == 2
         # frame 1: A=dung, B=dung ⇒ đồng ý; frame 2: A=sai, B=dung ⇒ lệch
-        assert d["dong_y_2_nguoi"] == {"so_frame_ca_hai": 2, "so_frame_dong_y": 1}
+        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 2, "so_buoc_dong_y": 1}
+
+    def test_nhan_CUOI_cua_mot_nguoi_la_nhan_hieu_luc(self, tmp_path):
+        """Bấm `2` rồi `s` (mặc định ĐÚNG) từng tạo 2 nhãn mâu thuẫn: đếm mọi dòng thì `theo_nguoi` và
+        `dong_y_2_nguoi` nói về hai tập khác nhau. Nhãn cuối mới có hiệu lực."""
+        p = tmp_path / "nhan"
+        L.ghi_nhan("s", {"frame_vos": 1, "nhan": "sai"}, "A", p)
+        L.ghi_nhan("s", {"frame_vos": 1, "nhan": "dung"}, "A", p)     # người này đổi ý
+        L.ghi_nhan("s", {"frame_vos": 1, "nhan": "dung"}, "B", p)
+        d = L.tong_hop("s", p)
+        assert d["theo_nguoi"]["A"]["dung"] == 1 and d["theo_nguoi"]["A"]["sai"] == 0
+        assert d["theo_nguoi"]["A"]["tong"] == 1, "một bước chỉ đếm 1 lần cho mỗi người"
+        assert d["so_nhan_trung"] == 1 and d["so_buoc_da_dan"] == 1
+        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 1, "so_buoc_dong_y": 1}
 
     def test_mot_nguoi_thi_khong_co_muc_dong_y(self, tmp_path):
         p = tmp_path / "nhan"
@@ -113,9 +140,10 @@ class TestApiHttp:
 
     @pytest.fixture
     def may_chu(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
-        monkeypatch.setattr(L, "REPO_ROOT", tmp_path)
         (tmp_path / "data").mkdir()
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "data" / "nhan")
+        monkeypatch.setattr(L, "REPO_ROOT", tmp_path)
         _csv(tmp_path / "data", ten="demoip_api")
         (tmp_path / "data" / "demoip_api_web.mp4").write_bytes(b"\x00" * 32)
         srv = L.tao_server(0, "Binh", "demoip_api")
@@ -162,6 +190,33 @@ class TestApiHttp:
             assert r.headers["Content-Range"] == "bytes 4-7/32"
             assert r.read() == b"\x00" * 4
 
+    def test_content_type_sai_tra_415(self, may_chu):
+        """Request "simple" (text/plain, no-cors) phải bị chặn — nếu không, trang web khác chèn được
+        nhãn vào file bằng chứng dưới TÊN người đang dán."""
+        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "text/plain"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 415
+
+    def test_origin_la_tra_403(self, may_chu):
+        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json",
+                                              "Origin": "https://evil.example"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 403
+
+    def test_origin_cung_goc_duoc_nhan(self, may_chu):
+        body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
+        host = urllib.parse.urlparse(may_chu).netloc
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json",
+                                              "Origin": f"http://{host}"})
+        assert json.load(urllib.request.urlopen(req))["ok"] is True
+
     def test_body_qua_lon_tra_413(self, may_chu):
         """Nhãn chỉ vài trăm byte; `Content-Length` khổng lồ không được làm server cấp phát theo."""
         import http.client
@@ -192,11 +247,61 @@ class TestApiHttp:
         finally:
             srv.server_close()
 
+    def test_range_suffix_va_ngoai_bien(self, may_chu):
+        """`bytes=-8` là SUFFIX (8 byte cuối), không phải start=0; start vượt độ dài ⇒ 416."""
+        req = urllib.request.Request(may_chu + "/video?v=demoip_api_web.mp4",
+                                     headers={"Range": "bytes=-8"})
+        with urllib.request.urlopen(req) as r:
+            assert r.status == 206
+            assert r.headers["Content-Range"] == "bytes 24-31/32"
+        req = urllib.request.Request(may_chu + "/video?v=demoip_api_web.mp4",
+                                     headers={"Range": "bytes=100-200"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 416
+
+    def test_nhan_nguoi_khac_chi_tra_SO_LUONG(self, may_chu):
+        """Độc lập phải do SERVER bảo đảm: trả nội dung nhãn người khác rồi ẩn bằng CSS là giả."""
+        L.ghi_nhan("demoip_api", {"frame_vos": 9, "t_video": 3.0, "nhan": "sai"}, "An")
+        d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api"))
+        assert [r["frame_vos"] for r in d["da_gan"]] == [], "nhãn của An không được trả cho Binh"
+        assert d["so_nhan_nguoi_khac"] == 1 and d["nguoi_khac"] == ["An"]
+        assert "bbox_dung" not in json.dumps(d["da_gan"])
+
     def test_ten_video_co_dau_gach_cheo_bi_chan(self, may_chu):
         req = urllib.request.Request(may_chu + "/video?v=../setup.py")
         with pytest.raises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(req)
         assert e.value.code == 400
+
+
+class TestCsvBan:
+    """CSV bẩn phải bị TỪ CHỐI, không được lặng lẽ dồn nhãn vào bước 0 (review độc lập P2-4)."""
+
+    def test_BOM_khong_lam_mat_frame_idx(self, tmp_path):
+        p = tmp_path / "bom_metrics.csv"
+        p.write_text("\ufeffframe_idx,latency_ms,center_x,center_y,bbox_w,bbox_h,mask_area\n"
+                     "0,100,10,10,4,4,9\n1,100,10,10,4,4,9\n", encoding="utf-8")
+        d = L.doc_phien(p)
+        assert [f["frame_vos"] for f in d["frames"]] == [0, 1], "BOM từng làm mọi frame_vos = 0"
+
+    def test_thieu_cot_frame_idx_bi_tu_choi(self, tmp_path):
+        p = tmp_path / "thieu_metrics.csv"
+        p.write_text("latency_ms,mask_area\n100,9\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="frame_idx"):
+            L.doc_phien(p)
+
+    def test_frame_idx_khong_tang_dan_bi_tu_choi(self, tmp_path):
+        p = tmp_path / "loạn_metrics.csv"
+        p.write_text("frame_idx,latency_ms\n5,100\n3,100\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="tăng dần"):
+            L.doc_phien(p)
+
+    def test_csv_rong_bi_tu_choi(self, tmp_path):
+        p = tmp_path / "rong_metrics.csv"
+        p.write_text("frame_idx,latency_ms\n", encoding="utf-8")
+        with pytest.raises(ValueError, match="rỗng"):
+            L.doc_phien(p)
 
 
 class TestChanDuongDan:
@@ -234,7 +339,51 @@ class TestChanDuongDan:
             srv.server_close()
 
 
+class TestLietKePhien:
+    def test_ten_file_la_bi_BO_QUA_khong_nem(self, tmp_path, monkeypatch):
+        """File CSV tên lạ (dấu tiếng Việt, bắt đầu bằng `.`) từng làm `/api/sessions` 500 ⇒ cả tool
+        không mở được. Đường liệt kê phải bỏ qua, không ném."""
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        for ten in ("hợp_lệ_metrics.csv", ".an_metrics.csv"):
+            (tmp_path / ten).write_text("frame_idx,latency_ms\n0,100\n", encoding="utf-8")
+            (tmp_path / ten.replace("_metrics.csv", "_web.mp4")).write_bytes(b"x")
+        (tmp_path / "ok_metrics.csv").write_text("frame_idx,latency_ms\n0,100\n", encoding="utf-8")
+        (tmp_path / "ok_web.mp4").write_bytes(b"x")
+        assert [p["phien"] for p in L.liet_ke_phien()] == ["ok"]
+
+    def test_doc_chua_xac_minh_n_tu_run_info(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        (tmp_path / "a_metrics.csv").write_text("frame_idx,latency_ms\n0,100\n", encoding="utf-8")
+        (tmp_path / "a_web.mp4").write_bytes(b"x")
+        (tmp_path / "a_run_info.json").write_text('{"chua_xac_minh_n": 49}', encoding="utf-8")
+        assert L.liet_ke_phien()[0]["chua_xac_minh_n"] == 49
+
+    def test_thieu_run_info_thi_none(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        (tmp_path / "b_metrics.csv").write_text("frame_idx,latency_ms\n0,100\n", encoding="utf-8")
+        (tmp_path / "b_web.mp4").write_bytes(b"x")
+        assert L.liet_ke_phien()[0]["chua_xac_minh_n"] is None
+
+
 class TestTongHopCLI:
+    def test_phien_nhan_ten_CSV_duoc_chuan_hoa(self, tmp_path, monkeypatch):
+        """Doc hứa `--phien` nhận `…_metrics.csv`; code cũ so tên trần nên đưa tên CSV vào là không
+        chọn gì. Nay chuẩn hoá trước khi so."""
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        seen = {}
+
+        def gia(port, nguoi, phien=None, host="127.0.0.1"):
+            seen["phien"] = phien
+            raise SystemExit(0)
+
+        monkeypatch.setattr(L, "tao_server", gia)
+        with pytest.raises(SystemExit):
+            L.main(["--nguoi-gan", "B", "--phien", "data/demoip_x_metrics.csv"])
+        assert seen["phien"] == "demoip_x"
+
     """`--tong-hop` phải chạy được khi thư mục nhãn NGOÀI repo (`LABELUI_NHAN_DIR=/tmp/...`).
 
     Đã gặp thật: bản đầu in `out.relative_to(REPO_ROOT)` ⇒ ValueError NGAY SAU KHI ghi xong artifact,
@@ -272,3 +421,13 @@ class TestHangSoVaTaiLieu:
         assert "hệ số bù" in s, "phải nói về hệ số bù (không bù thì cuối video lệch ~3 s)"
         assert "lệch" in s, "phải cảnh báo người dán khi đứng giữa 2 bước"
         assert "--host" in s, "hướng dẫn mở từ Windows phải khớp cờ THẬT của tool (--host 0.0.0.0)"
+        assert "Space" in s, "hướng dẫn nhắc Space thì CODE phải có nhánh Space"
+        assert "CHUA XAC MINH" in s and "KHÔNG có cột" in s, \
+            "phải nói rõ `chua_xac_minh` KHÔNG có cột trong CSV (bản đầu mô tả sai là 'không vẽ')"
+        assert "so_buoc_dong_y" in s, "khoá JSON trong doc phải khớp `tong_hop` thật"
+
+    def test_html_khong_hua_phim_khong_ton_tai(self):
+        """Doc/comment hứa `Space` = phát/dừng ⇒ file HTML phải thật sự có nhánh xử lý Space."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "k === ' '" in h, "mất nhánh Space ⇒ hướng dẫn sai (đúng lỗi review P2-1)"
+        assert "pointer-events:none" in h, "canvas nuốt chuột của <video controls> nếu thiếu"

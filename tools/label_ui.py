@@ -15,7 +15,8 @@ Nguyên tắc (để số dán ra dùng được):
   mỗi dòng có `nguoi_gan`, `git_rev`, `do_luc`, `frame_vos`, `t_video` **thực tế** người gán đang xem.
 - `t_video` lấy từ **đồng hồ của chính video** (truth), còn `t_uoc_luong` = **cộng dồn `latency_ms`**
   của CSV — vì chia đều `thời lượng / số_frame` lệch tới **12 s** trên phiên 98 s (AGENTS §6).
-- Hai người gán **không xem nhãn của nhau**: nhãn của người khác chỉ hiện khi bấm `--hien-nhan-khac`.
+- Hai người gán **không xem nhãn của nhau**: server chỉ trả về nhãn của **chính người đang dán**
+  (`--nguoi-gan`); nhãn của người khác chỉ đi kèm **số lượng** (không có nội dung, không có toạ độ).
 
 Chạy:
     ./run labelui                      # rồi mở link script in ra (mặc định http://127.0.0.1:8770)
@@ -42,7 +43,10 @@ from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
 
-THU_MUC_NHAN = Path(os.environ.get("LABELUI_NHAN_DIR") or (REPO_ROOT / "data" / "nhan"))
+# `LABELUI_DATA_DIR`/`LABELUI_NHAN_DIR` chỉ phục vụ E2E: bộ dữ liệu mẫu KHÔNG được track (data/* bị
+# gitignore) nên `./run labeluie2e` phải tự dựng data dir tạm, nếu không nó đỏ trên clone sạch/CI.
+DATA_DIR = Path(os.environ.get("LABELUI_DATA_DIR") or (REPO_ROOT / "data"))
+THU_MUC_NHAN = Path(os.environ.get("LABELUI_NHAN_DIR") or (DATA_DIR / "nhan"))
 HTML = Path(__file__).resolve().with_name("label_ui.html")
 
 # Tập nhãn ĐÓNG — thêm nhãn mới phải sửa cả `label_ui.html` và `tests/test_label_ui.py`.
@@ -73,18 +77,31 @@ def doc_phien(csv_path: Path) -> dict:
     hỏng cả bộ nhãn (AGENTS §6).
     """
     csv_path = Path(csv_path)
-    rows = list(csv.DictReader(csv_path.open(encoding="utf-8")))
+    # `utf-8-sig`: CSV đi qua Excel có BOM ⇒ mọi `r.get("frame_idx")` là None ⇒ nhãn dồn hết vào bước 0
+    # mà KHÔNG có lỗi nào (đã bị review bắt). Không được đọc bằng "utf-8" trần.
+    rows = list(csv.DictReader(csv_path.open(encoding="utf-8-sig")))
+    if not rows:
+        raise ValueError(f"{csv_path.name}: CSV rỗng")
     frames = []
     t = 0.0
+    truoc = -1
     for r in rows:
+        if (r.get("frame_idx") or "").strip() == "":
+            raise ValueError(f"{csv_path.name}: thiếu cột `frame_idx` (hoặc cột rỗng) — "
+                             "nhãn sẽ dồn vào bước 0 nên tool từ chối phục vụ phiên này")
         lat = _so(r.get("latency_ms")) or 0.0
         cx, cy = _so(r.get("center_x")), _so(r.get("center_y"))
         w, h = _so(r.get("bbox_w")) or 0.0, _so(r.get("bbox_h")) or 0.0
         bbox = None
         if cx is not None and cy is not None and w > 0 and h > 0:
             bbox = [round(cx - w / 2), round(cy - h / 2), round(cx + w / 2), round(cy + h / 2)]
+        fv = int(float(r["frame_idx"]))
+        if fv <= truoc:
+            raise ValueError(f"{csv_path.name}: `frame_idx` không tăng dần ({fv} sau {truoc}) — "
+                             "không xác định được bước nào với bước nào")
+        truoc = fv
         frames.append({
-            "frame_vos": int(float(r.get("frame_idx") or 0)),
+            "frame_vos": fv,
             "t_uoc_luong": round(t, 2),
             "latency_ms": round(lat, 1),
             "bbox": bbox,
@@ -136,17 +153,32 @@ def _trong_repo(p: Path) -> bool:
 
 
 def liet_ke_phien() -> list[dict]:
-    """Các phiên có cả CSV + video, mới nhất trước, kèm số nhãn đã có."""
+    """Các phiên có cả CSV + video, mới nhất trước, kèm số nhãn đã có.
+
+    Tên file lạ (bắt đầu bằng `_`/`.`, có dấu tiếng Việt) bị **BỎ QUA**, không được ném: đây là
+    đường liệt kê thư mục, một file rác mà làm `/api/sessions` 500 là cả tool không mở được.
+    """
     ra = []
-    for csv_path in sorted((REPO_ROOT / "data").glob("*_metrics.csv"), reverse=True):
+    for csv_path in sorted(DATA_DIR.glob("*_metrics.csv"), reverse=True):
         ten = csv_path.name.replace("_metrics.csv", "")
+        if not ten_hop_le(ten):
+            continue
         video = csv_path.with_name(ten + "_web.mp4")
         if not video.is_file():
             video = csv_path.with_name(ten + ".mp4")
         if not video.is_file():
             continue
         da_gan = len(doc_nhan(ten))
-        ra.append({"phien": ten, "csv": csv_path.name, "video": video.name, "da_gan": da_gan})
+        # `chua_xac_minh` KHÔNG có cột trong CSV metrics (chỉ có tổng trong `run_info`) ⇒ đọc từ đây để
+        # người dán biết phiên này có bao nhiêu frame "vẽ nhưng chưa xác minh" (đại lượng KHÁC `nghi`).
+        ri = csv_path.with_name(ten + "_run_info.json")
+        cxm = None
+        try:
+            cxm = json.loads(ri.read_text(encoding="utf-8")).get("chua_xac_minh_n")
+        except (OSError, ValueError):
+            pass
+        ra.append({"phien": ten, "csv": csv_path.name, "video": video.name, "da_gan": da_gan,
+                   "chua_xac_minh_n": cxm})
     return ra
 
 
@@ -190,11 +222,18 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
     nhan = str(record.get("nhan") or "").strip()
     if nhan not in NHAN:
         raise ValueError(f"nhãn không hợp lệ: {nhan!r}; chỉ nhận {sorted(NHAN)}")
+    if record.get("frame_vos") in (None, ""):
+        raise ValueError("thiếu `frame_vos` — nhãn không gắn được vào bước nào")
     bbox = record.get("bbox_dung")
     if bbox is not None:
-        b = [int(round(float(v))) for v in bbox]
-        if len(b) != 4 or b[2] <= b[0] or b[3] <= b[1]:
-            raise ValueError(f"`bbox_dung` phải là [x1,y1,x2,y2] với x2>x1, y2>y1; nhận {bbox}")
+        if not isinstance(bbox, (list, tuple)) or len(bbox) != 4:
+            raise ValueError(f"`bbox_dung` phải là [x1,y1,x2,y2] (4 số); nhận {bbox!r}")
+        try:
+            b = [int(round(float(v))) for v in bbox]
+        except (TypeError, ValueError, OverflowError) as e:
+            raise ValueError(f"`bbox_dung` có phần tử không phải số: {bbox!r}") from e
+        if b[2] <= b[0] or b[3] <= b[1]:
+            raise ValueError(f"`bbox_dung` phải có x2>x1, y2>y1; nhận {bbox}")
         bbox = b
     else:
         b = None
@@ -218,28 +257,34 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
 
 
 def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
-    """Đếm theo nhãn + theo NGƯỜI GÁN (mỗi người một dòng ⇒ so được 2 người độc lập)."""
+    """Đếm theo nhãn + theo NGƯỜI GÁN (mỗi người một dòng ⇒ so được 2 người độc lập).
+
+    Nhãn là **append-only** nên một người có thể dán 2 lần cho cùng bước (bấm `2` rồi `s`). Quy tắc:
+    nhãn **CUỐI** của mỗi `(bước, người)` là nhãn có hiệu lực — nếu đếm mọi dòng thì `theo_nguoi` và
+    `dong_y_2_nguoi` sẽ nói về hai tập dữ liệu khác nhau (review độc lập bắt đúng lỗi này).
+    """
     rows = doc_nhan(phien, thu_muc)
-    theo_nguoi: dict[str, dict] = {}
+    hieu_luc: dict[tuple[int, str], str] = {}
     for r in rows:
-        n = r.get("nguoi_gan") or "?"
-        d = theo_nguoi.setdefault(n, {"tong": 0, **{k: 0 for k in NHAN}})
-        if r.get("nhan") in d:
-            d[r["nhan"]] += 1
+        if r.get("nhan") in NHAN:
+            hieu_luc[(int(r["frame_vos"]), r.get("nguoi_gan") or "?")] = r["nhan"]
+    theo_nguoi: dict[str, dict] = {}
+    ban: dict[int, dict[str, str]] = {}
+    for (buoc, nguoi), nhan in hieu_luc.items():
+        d = theo_nguoi.setdefault(nguoi, {"tong": 0, **{k: 0 for k in NHAN}})
+        d[nhan] += 1
         d["tong"] += 1
+        ban.setdefault(buoc, {})[nguoi] = nhan
     dong_y = None
     if len(theo_nguoi) >= 2:
-        # chỉ tính trên khung MÀ CẢ HAI cùng dán
-        ban = {}
-        for r in rows:
-            ban.setdefault(int(r["frame_vos"]), {}).setdefault(r.get("nguoi_gan") or "?", r["nhan"])
         chung = [v for v in ban.values() if len(v) >= 2]
         dong_y = {
-            "so_frame_ca_hai": len(chung),
-            "so_frame_dong_y": sum(1 for v in chung if len(set(v.values())) == 1),
+            "so_buoc_ca_hai": len(chung),
+            "so_buoc_dong_y": sum(1 for v in chung if len(set(v.values())) == 1),
         }
-    return {"phien": phien, "tong_nhan": len(rows), "theo_nguoi": theo_nguoi,
-            "so_nguoi": len(theo_nguoi), "dong_y_2_nguoi": dong_y}
+    return {"phien": phien, "tong_nhan": len(rows), "so_nhan_hieu_luc": len(hieu_luc),
+            "so_nhan_trung": len(rows) - len(hieu_luc), "so_buoc_da_dan": len(ban),
+            "theo_nguoi": theo_nguoi, "so_nguoi": len(theo_nguoi), "dong_y_2_nguoi": dong_y}
 
 
 # ── HTTP ─────────────────────────────────────────────────────────────────────────────────────────
@@ -269,19 +314,31 @@ class _Handler(BaseHTTPRequestHandler):
         ten = (query.get("v") or [""])[0]
         if not ten_hop_le(ten) or not ten.endswith(".mp4"):
             return self._json({"loi": "tên video không hợp lệ"}, 400)
-        p = REPO_ROOT / "data" / ten
+        p = DATA_DIR / ten
         if not p.is_file():
             return self._json({"loi": f"không có {ten}"}, 404)
         data = p.read_bytes()
         # Range request: Chrome cần nó để tua (không có thì `currentTime` không nhảy).
         ra = self.headers.get("Range")
         if ra and ra.startswith("bytes="):
+            # `bytes=-500` (suffix) KHÔNG được hiểu thành `start=0`: Chrome dùng dạng này khi tua lùi.
             try:
                 a, _, b = ra[6:].partition("-")
-                start = int(a or 0)
-                end = int(b) if b else len(data) - 1
+                if a == "" and b != "":
+                    dai = int(b)
+                    start = max(0, len(data) - dai)
+                    end = len(data) - 1
+                else:
+                    start = int(a or 0)
+                    end = int(b) if b else len(data) - 1
             except ValueError:
                 start, end = 0, len(data) - 1
+            if start >= len(data):
+                self.send_response(416)
+                self.send_header("Content-Range", f"bytes */{len(data)}")
+                self.end_headers()
+                return
+            start = max(0, start)
             end = min(end, len(data) - 1)
             chunk = data[start:end + 1]
             self.send_response(206)
@@ -320,18 +377,44 @@ class _Handler(BaseHTTPRequestHandler):
             ten = (q.get("phien") or [""])[0]
             if not ten_hop_le(ten):
                 return self._json({"loi": "tên phiên không hợp lệ"}, 400)
-            p = REPO_ROOT / "data" / f"{ten}_metrics.csv"
+            p = DATA_DIR / f"{ten}_metrics.csv"
             if not p.is_file():
                 return self._json({"loi": f"không có {p.name}"}, 404)
-            d = doc_phien(p)
-            d["da_gan"] = doc_nhan(ten)
+            try:
+                d = doc_phien(p)
+            except ValueError as e:                    # CSV bẩn (BOM, thiếu cột, không tăng dần)
+                return self._json({"loi": str(e)}, 400)
+            # ĐỘC LẬP THẬT: chỉ trả nhãn của CHÍNH người đang dán; nhãn người khác chỉ đi kèm SỐ LƯỢNG.
+            # Trước đây server trả hết rồi UI ẩn bằng CSS ⇒ mở DevTools là thấy, "2 người độc lập" thành giả.
+            tat_ca = doc_nhan(ten)
+            cua_toi = [r for r in tat_ca if (r.get("nguoi_gan") or "") == self.nguoi_gan]
+            d["da_gan"] = cua_toi
+            d["so_nhan_nguoi_khac"] = len(tat_ca) - len(cua_toi)
+            d["nguoi_khac"] = sorted({r.get("nguoi_gan") for r in tat_ca
+                                      if (r.get("nguoi_gan") or "") != self.nguoi_gan} - {None})
             return self._json(d)
         return self._json({"loi": "không có route"}, 404)
+
+    # Origin được phép: server chỉ phục vụ đúng trang của nó. Trang web khác KHÔNG được ghi nhãn vào
+    # phiên đang dán — file nhãn là BẰNG CHỨNG, bị chèn dòng là hỏng cả kết luận (review độc lập P1).
+    ORIGIN_CHO = {"", "null"}          # "" = không gửi Origin (curl/tool), "null" = file://
+
+    def _origin_hop_le(self) -> bool:
+        o = self.headers.get("Origin") or ""
+        if o in self.ORIGIN_CHO:
+            return True
+        return urlparse(o).netloc == (self.headers.get("Host") or "")
 
     def do_POST(self):
         u = urlparse(self.path)
         if u.path != "/api/label":
             return self._json({"loi": "không có route"}, 404)
+        if not self._origin_hop_le():
+            return self._json({"loi": "Origin lạ — không nhận nhãn từ trang web khác"}, 403)
+        # Bắt buộc `application/json`: một request "simple" (text/plain, no-cors) KHÔNG được phép đổi
+        # Content-Type, nên luật này buộc trình duyệt phải preflight ⇒ chặn được kiểu chèn mù.
+        if "application/json" not in (self.headers.get("Content-Type") or "").lower():
+            return self._json({"loi": "Content-Type phải là application/json"}, 415)
         # Trần kích thước body: một nhãn chỉ vài trăm byte; không chặn thì client lỗi (hoặc ác ý) khai
         # `Content-Length: 10^9` là server cấp phát theo ⇒ treo cả tiến trình đang dán nhãn.
         TRAN_BODY = 64 * 1024
@@ -371,7 +454,7 @@ def main(argv=None) -> int:
     ap = argparse.ArgumentParser(description="UI gán nhãn 'bắt đúng/sai' cho phiên đã quay.")
     ap.add_argument("--nguoi-gan", default=None, help="tên người dán (bắt buộc khi dán thật)")
     ap.add_argument("--phien", default=None,
-                    help="mở sẵn 1 phiên (tên `…_metrics.csv` hoặc tên phiên)")
+                    help="mở sẵn 1 phiên (tên phiên, hoặc tên/đường dẫn file `…_metrics.csv`)")
     ap.add_argument("--port", type=int, default=DEFAULT_PORT)
     ap.add_argument("--host", default="127.0.0.1",
                     help="mặc định 127.0.0.1; dùng 0.0.0.0 nếu Chrome Windows không mở được")
@@ -398,7 +481,15 @@ def main(argv=None) -> int:
     if nguoi == "?":
         print("[canh bao] chưa có --nguoi-gan ⇒ nhãn sẽ ghi '?' và KHÔNG trích vào báo cáo được "
               "(cần biết ai dán để so 2 người độc lập).")
-    srv = tao_server(args.port, nguoi, args.phien, args.host)
+    mo_san = None
+    if args.phien:
+        # Chấp nhận `demoip_x`, `demoip_x_metrics.csv`, `data/demoip_x_metrics.csv` — doc hứa thế,
+        # code cũ so sánh trực tiếp với tên trần nên đưa tên CSV vào là KHÔNG chọn gì (review P3).
+        mo_san = Path(str(args.phien).replace("\\", "/")).name.replace("_metrics.csv", "")
+        if not ten_hop_le(mo_san):
+            print(f"[labelui] --phien không hợp lệ: {args.phien!r}")
+            mo_san = None
+    srv = tao_server(args.port, nguoi, mo_san, args.host)
     port = srv.server_address[1]
     dia_chi = "127.0.0.1" if args.host in ("127.0.0.1", "localhost", "0.0.0.0") else args.host
     print(f"[labelui] mở http://{dia_chi}:{port}  (người gán: {nguoi}, host {args.host})")

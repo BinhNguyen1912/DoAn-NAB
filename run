@@ -511,6 +511,8 @@ EOF
   labeluie2e)
     # E2E TRÌNH DUYỆT THẬT cho UI gán nhãn (`tools/label_ui.html`). Bắt buộc khi sửa file HTML đó:
     # unit test Python không thấy lỗi JS (xem PR #49 — 2 P0 "vẽ mù" chỉ lộ khi lái Chrome thật).
+    # Bộ dữ liệu mẫu được TỰ SINH vào thư mục tạm: `data/*` bị gitignore nên trỏ vào phiên thật là
+    # e2e đỏ trên clone sạch/CI (bài học `test_bench_gpu_binh2`).
     activate_env
     if ! command -v cmd.exe >/dev/null 2>&1; then
       echo "[labeluie2e] cần WSL (script dùng Chrome/Edge trên Windows)"
@@ -521,19 +523,22 @@ EOF
       exit 1
     fi
     port="${LABELUI_PORT:-8772}"
-    phien="${LABELUI_PHIEN:-demoip_1125-121456}"
+    data_dir="$(mktemp -d)"
     nhan_dir="$(mktemp -d)"
+    "$PYTHON" scripts/make_labelui_fixture.py --out-dir "$data_dir" >/dev/null || exit 1
+    phien="${LABELUI_PHIEN:-e2e_labelui}"
     # Nhãn e2e ghi vào THƯ MỤC TẠM: không được lẫn vào data/nhan/ (nhãn thật của người dùng).
-    LABELUI_NHAN_DIR="$nhan_dir" "$PYTHON" tools/label_ui.py --nguoi-gan e2e --port "$port" \
+    LABELUI_DATA_DIR="$data_dir" LABELUI_NHAN_DIR="$nhan_dir" \
+      "$PYTHON" tools/label_ui.py --nguoi-gan e2e --port "$port" \
       > "$ROOT/data/labelui_e2e_server.log" 2>&1 &
     srv=$!
-    trap 'kill "$srv" 2>/dev/null' EXIT
-    sleep 3
+    trap 'kill "$srv" 2>/dev/null; rm -rf "$data_dir" "$nhan_dir"' EXIT
     for _ in $(seq 1 25); do curl -sf "localhost:$port/api/sessions" >/dev/null && break; sleep 1; done
     # Node + Chrome phải là bản WINDOWS (chạy từ WSL: node Linux không thấy Chrome của Windows).
     win_root="$(wslpath -w "$ROOT")"
     win_nhan="$(wslpath -w "$nhan_dir")"
-    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& set PHIEN=$phien& set LABELUI_NHAN_DIR=$win_nhan& node scripts\\e2e_label_ui.js"
+    win_data="$(wslpath -w "$data_dir")"
+    cmd.exe /c "cd /d $win_root && set BASE=http://localhost:$port& set PHIEN=$phien& set LABELUI_NHAN_DIR=$win_nhan& set LABELUI_DATA_DIR=$win_data& node scripts\\e2e_label_ui.js"
     ;;
   gte2e)
     # E2E TRÌNH DUYỆT THẬT cho trình tô GT (`scripts/gt_painter.html`). Vì sao riêng một target: PR #49

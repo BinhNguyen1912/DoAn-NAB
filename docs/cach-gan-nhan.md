@@ -39,9 +39,13 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 - `→` / `←`: nhảy tới **bước suy luận** kế/trước. Đây là nhịp cần chấm (mỗi bước ~0,2–0,3 s), không
   phải từng frame video. Thanh bên phải hiện `#frame_vos` và `bước … ms`.
 - `Space`: phát/dừng. `,` `.`: nhích ±0,2 s khi hình đã đổi mà thời điểm ước lượng còn lệch.
+  (Thanh tua/play của chính video vẫn bấm được — canvas không nuốt chuột trừ khi đang vẽ ô.)
 - Bấm phím số là **ghi ngay** (append vào `data/nhan/<phiên>.jsonl`), không cần bấm Lưu.
-- `s` = ghi "ĐÚNG" + sang bước kế (dùng khi phần lớn frame đúng, để đi nhanh).
-- `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán quyết.
+- `s` (hoặc nút "Lưu & bước kế") = **ghi lại nhãn bạn vừa chọn** rồi sang bước kế. Chưa chọn nhãn nào
+  thì nó **từ chối** và nhắc bạn bấm `1/2/3/4` trước — nó không tự đoán "ĐÚNG".
+- `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán
+  quyết. Ô được **xoá khi sang bước khác**: nó thuộc về đúng bước bạn vẽ, không đi theo.
+- Enter ở ô "Người gán" = nhả focus (sau đó phím tắt mới ăn; bạn cũng không cần click ra ngoài).
 
 ## 3. Ba cái bẫy phải biết (đã từng làm sai số của repo)
 
@@ -55,9 +59,14 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
    gần nhất** chứ không phải bước bạn đang xem. Bấm `←`/`→` cho khớp rồi hãy bấm phím số. Tool cũng
    nhân `t≈` với **hệ số bù = thời lượng video / tổng latency** (phiên 121456: 1,034) vì cộng dồn
    `latency_ms` ra 94,76 s còn video dài 98,0 s — không bù thì cuối video lệch ~3 s.
-3. **Đừng chấm vào frame hệ đang ẩn mask** (HUD hiện `NGHI` / `CHUA XAC MINH`): lúc đó hệ **cố tình**
-   không vẽ. Tool có hiện cảnh báo `hệ đang ẩn mask`; nhãn cho các frame đó nên là `bo_qua` trừ khi bạn
-   đang chấm riêng câu hỏi "lúc ẩn thì vùng nghi có đúng vật không".
+3. **Frame `NGHI` (HUD hiện `NGHI ĐỔI ĐỐI TƯỢNG`) thì hệ CỐ TÌNH không vẽ mask** ⇒ tool hiện cảnh báo
+   `hệ đang ẩn mask` (cột `nghi_doi_tuong` trong CSV). Nhãn cho các bước đó nên là `bo_qua`, trừ khi
+   bạn đang chấm riêng câu hỏi *"lúc nghi thì vùng nghi có đúng vật không"*.
+   **Đừng lẫn với `CHUA XAC MINH`**: trạng thái đó **VẪN VẼ** (ô nét đứt, không tô, không quỹ đạo), và
+   **CSV metrics KHÔNG có cột cho nó** — chỉ có tổng ở `run_info.json` (`chua_xac_minh_n`), mà danh sách
+   phiên trong UI có hiện. Nghĩa là: không có cách nào biết *theo từng bước* một bước là `chua_xac_minh`,
+   nên khi chấm bước nào thấy HUD ghi "CHUA XAC MINH" thì tự ghi `bo_qua` và **ghi lại số bước** vào
+   sổ tay — đừng để nó lẫn vào tỉ lệ "bắt đúng".
 4. **Nhãn của người khác bị ẩn** (chỉ hiện số lượng). Đây là chủ ý: hai người phải dán **độc lập**,
    nếu không thì "2 người đồng ý" chỉ là một người dán hai lần. Muốn so: gán xong cả hai rồi chạy
    `--tong-hop` (in `dong_y_2_nguoi`).
@@ -71,6 +80,8 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 | Đối chứng 2 người cho báo cáo | **cùng một tập** bước, 2 người dán độc lập ⇒ `--tong-hop` cho số đồng ý |
 
 Ghi nhãn **từng bước VOS**, không phải từng frame video — video 30 fps có ~9 frame cho mỗi bước.
+Bộ đếm trên UI đếm **bước đã dán** (một bước dán lại chỉ tính 1), còn `--tong-hop` báo cả
+`so_nhan_trung` để bạn thấy mình đã dán lại bao nhiêu lần.
 
 ## 5. Không mở được `127.0.0.1` từ trình duyệt Windows
 
@@ -91,12 +102,16 @@ python tools/label_ui.py --tong-hop data/demoip_1125-121456_metrics.csv
 ```
 In + ghi `data/nhan/<phiên>_tonghop.json` (có `git_rev`, `do_luc`):
 
-- `theo_nguoi.<tên>.<nhãn>` — mỗi người một dòng;
-- `dong_y_2_nguoi` — số bước **cả hai cùng dán** và số bước **đồng ý** ⇒ đây mới là con số trích được
-  ("2/2 người đồng ý 7/8 ca").
+- `theo_nguoi.<tên>.<nhãn>` — mỗi người một dòng, **nhãn cuối của mỗi bước** là nhãn có hiệu lực;
+- `so_nhan_trung` / `so_buoc_da_dan` — đã dán lại bao nhiêu lần / có bao nhiêu bước;
+- `dong_y_2_nguoi` — `so_buoc_ca_hai` (số bước **cả hai cùng dán**) và `so_buoc_dong_y` ⇒ đây mới là
+  con số trích được ("2 người đồng ý 7/8 bước").
 
 **Cấm trích** khi: chỉ có 1 người dán; `nguoi_gan = "?"`; hoặc bạn chấm theo giây đoán tay mà không
 kiểm `t_video` (xem bẫy 1).
+
+Nhãn nằm trong `data/` — `.gitignore` đã có ngoại lệ cho `data/nhan/*.jsonl` và `*_tonghop.json`, nên
+muốn dùng làm bằng chứng nộp bài thì `git add data/nhan/…` (đừng `-f` cả thư mục `data/`).
 
 ## 7. Quan hệ với công cụ khác trong repo
 
