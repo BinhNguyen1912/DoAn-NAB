@@ -214,3 +214,5 @@ class TestHangSoVaTaiLieu:
         s = p.read_text(encoding="utf-8")
         assert "latency_ms" in s, "hướng dẫn phải nói về cộng dồn latency_ms"
         assert "2 người" in s or "người thứ 2" in s
+        assert "hệ số bù" in s, "phải nói về hệ số bù (không bù thì cuối video lệch ~3 s)"
+        assert "lệch" in s, "phải cảnh báo người dán khi đứng giữa 2 bước"

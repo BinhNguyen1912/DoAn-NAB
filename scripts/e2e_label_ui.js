@@ -88,6 +88,32 @@ function docNhan() {
   const vos = await page.$eval('#fVos', el => el.textContent)
   kiem(/^#\d+$/.test(vos.trim()), 'panel bước VOS cập nhật', vos)
 
+  // 3b) hệ số bù đã áp: video 98,0 s vs tổng latency 94,76 s ⇒ hệ số ≈ 1,034 (nếu KHÔNG bù thì cuối
+  //     video lệch ~3 s và nhãn rơi sang bước khác)
+  const heSo = await page.evaluate(() => (window.__labelui || {}).heSo)
+  kiem(typeof heSo === 'number' && heSo > 0.99 && heSo < 1.2, 'áp hệ số bù thời gian video/latency',
+       String(heSo))
+
+  // 3c) tua vào GIỮA hai bước xa nhau nhất (bước 197 có 1771 ms) ⇒ phải hiện cảnh báo LỆCH
+  const giua = await page.evaluate(() => {
+    const s = window.__labelui, m = s.mapT || []
+    let best = 0, gapMax = 0
+    for (let i = 1; i < m.length; i++) {
+      const g = m[i] - m[i - 1]
+      if (g > gapMax) { gapMax = g; best = i }
+    }
+    return { t: (m[best] + m[best - 1]) / 2, gap: gapMax }
+  })
+  await page.evaluate(t => { document.getElementById('v').currentTime = t }, giua.t)
+  await page.waitForTimeout(800)
+  const coCanhBao = await page.evaluate(() => !!document.getElementById('lech'))
+  kiem(coCanhBao, 'cảnh báo LỆCH hiện khi đứng giữa 2 bước xa nhau',
+       `giữa 2 bước cách ${giua.gap.toFixed(2)} s, ở ${giua.t.toFixed(2)} s`)
+  await page.click('#prev')                      // về bước gần nhất ⇒ cảnh báo phải tắt
+  await page.waitForTimeout(800)
+  const hetCanhBao = await page.evaluate(() => !document.getElementById('lech'))
+  kiem(hetCanhBao, 'cảnh báo lệch TẮT sau khi bấm ←')
+
   // 4) phím 1 ⇒ ghi nhãn ĐÚNG vào đĩa
   const truoc = docNhan().length
   await page.keyboard.press('1')

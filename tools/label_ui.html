@@ -153,15 +153,29 @@ async function napDanhSach(){
   await chonPhien(sel.value);
 }
 
+// Hệ số bù: `t_uoc_luong` là CỘNG DỒN `latency_ms` (94,76 s trên phiên 121456) còn video dài 98,0 s
+// ⇒ nếu dùng thẳng thì cuối video lệch ~3 s (nhãn rơi sang bước khác). Video được ghi theo đồng hồ thật
+// nên `thời lượng / tổng_latency` là hệ số bù đúng chiều; kẹp trong [0.5, 2] để CSV hỏng không kéo lệch.
+function capNhatHeSo(){
+  const v = $('v');
+  const tong = state.tongLatency || 0;
+  const dur = v.duration;
+  state.heSo = (tong > 1 && dur > 1) ? Math.min(2, Math.max(0.5, dur / tong)) : 1;
+  state.mapT = (state.frames || []).map(f => f.t_uoc_luong * state.heSo);
+}
+function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.frames[i].t_uoc_luong : 0); }
+
 async function chonPhien(ten){
   state.phien = ten;
   const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten));
   state.frames = d.frames;
+  state.tongLatency = d.tong_latency_s;
   state.daGan = d.da_gan || [];
   const v = $('v');
   v.src = '/video?v=' + encodeURIComponent(d.video);
   v.load();
   $('meta').textContent = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`;
+  window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
   veTienDo(); veBang();
 }
 
@@ -169,7 +183,7 @@ async function chonPhien(ten){
 function buocGanNhat(t){
   let best = 0, d = Infinity;
   for (let i=0;i<state.frames.length;i++){
-    const x = Math.abs(state.frames[i].t_uoc_luong - t);
+    const x = Math.abs(tMap(i) - t);
     if (x < d) { d = x; best = i; }
   }
   return best;
@@ -181,11 +195,19 @@ function capNhat(){
   const i = chiSoHienTai();
   const f = state.frames[i] || {};
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
+  // CẢNH BÁO LỆCH: nếu người gán tua tay đi xa thì nhãn sẽ gắn vào BƯỚC GẦN NHẤT (có thể sai bước).
+  // Phải hiện ra, nếu không nhãn đúng ý người mà rơi vào frame khác — đúng bẫy "0/None ≠ đã đo".
+  const lech = Math.abs(tMap(i) - v.currentTime);
+  const canhBaoLech = lech > 0.5
+    ? `<div class="pill bad" id="lech" style="margin-top:4px">lệch ${lech.toFixed(2)} s so với bước này —
+       nhãn sẽ gắn vào bước GẦN NHẤT (#${f.frame_vos}); bấm ←/→ cho khớp</div>` : '';
   $('fInfo').innerHTML = `t≈${(f.t_uoc_luong ?? 0).toFixed(2)}s`
     + (f.latency_ms!=null ? ` · bước ${Math.round(f.latency_ms)} ms` : '')
     + (f.may_an_mask ? ` <span class="pill warn">hệ đang ẩn mask</span>` : '')
     + (f.bbox ? `<br><span class="muted">ô CSV: ${f.bbox.join(', ')}</span>` : '')
-    + '<br><span class="muted">t video: ' + v.currentTime.toFixed(2) + 's</span>';
+    + '<br><span class="muted">t video: ' + v.currentTime.toFixed(2) + 's · bù hệ số '
+      + (state.heSo || 1).toFixed(3) + '</span>'
+    + canhBaoLech;
   $('viTri').textContent = `${i+1}/${state.frames.length}`;
   veCanvas();
 }
@@ -278,7 +300,7 @@ function nhayBuoc(delta){
   const v = $('v');
   let i = chiSoHienTai() + delta;
   i = Math.max(0, Math.min(state.frames.length-1, i));
-  v.currentTime = state.frames[i].t_uoc_luong;
+  v.currentTime = tMap(i);
   v.pause();
   setTimeout(capNhat, 60);
 }
@@ -307,8 +329,8 @@ document.addEventListener('keydown', ev => {
   else if (k === 'Escape') { veO.dang = false; veO.co = false; $('drawHint').style.display='none'; veCanvas(); }
 });
 
-['loadedmetadata','seeked','timeupdate','play','pause'].forEach(e =>
-  $('v').addEventListener(e, () => capNhat()));
+$('v').addEventListener('loadedmetadata', () => { capNhatHeSo(); capNhat(); });
+['seeked','timeupdate','play','pause'].forEach(e => $('v').addEventListener(e, () => capNhat()));
 window.addEventListener('resize', veCanvas);
 napDanhSach().catch(e => { $('meta').textContent = 'Lỗi: ' + e.message; });
 </script>

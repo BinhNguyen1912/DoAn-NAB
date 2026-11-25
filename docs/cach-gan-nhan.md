@@ -50,10 +50,15 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
    nhưng cộng dồn ra **34,9 s** — lệch **12 s**. Nếu bạn chấm theo "đoán giây" thì nhãn rơi vào **sai
    frame** và cả bộ nhãn thành vô dụng. Vì vậy tool ghi **cả** `t_video` (đồng hồ thật của video, cái
    bạn đang nhìn) **và** `t_uoc_luong` (cộng dồn latency) — khi lệch nhau nhiều, hãy tin `t_video`.
-2. **Đừng chấm vào frame hệ đang ẩn mask** (HUD hiện `NGHI` / `CHUA XAC MINH`): lúc đó hệ **cố tình**
+2. **Nếu thanh bên hiện "lệch X s so với bước này" thì ĐỪNG bấm nhãn ngay** — nghĩa là bạn đang đứng
+   giữa hai bước suy luận (các bước dài ngắn khác nhau: bước #197 tới 1,77 s), nhãn sẽ gắn vào **bước
+   gần nhất** chứ không phải bước bạn đang xem. Bấm `←`/`→` cho khớp rồi hãy bấm phím số. Tool cũng
+   nhân `t≈` với **hệ số bù = thời lượng video / tổng latency** (phiên 121456: 1,034) vì cộng dồn
+   `latency_ms` ra 94,76 s còn video dài 98,0 s — không bù thì cuối video lệch ~3 s.
+3. **Đừng chấm vào frame hệ đang ẩn mask** (HUD hiện `NGHI` / `CHUA XAC MINH`): lúc đó hệ **cố tình**
    không vẽ. Tool có hiện cảnh báo `hệ đang ẩn mask`; nhãn cho các frame đó nên là `bo_qua` trừ khi bạn
    đang chấm riêng câu hỏi "lúc ẩn thì vùng nghi có đúng vật không".
-3. **Nhãn của người khác bị ẩn** (chỉ hiện số lượng). Đây là chủ ý: hai người phải dán **độc lập**,
+4. **Nhãn của người khác bị ẩn** (chỉ hiện số lượng). Đây là chủ ý: hai người phải dán **độc lập**,
    nếu không thì "2 người đồng ý" chỉ là một người dán hai lần. Muốn so: gán xong cả hai rồi chạy
    `--tong-hop` (in `dong_y_2_nguoi`).
 
