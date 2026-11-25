@@ -1,29 +1,29 @@
 {
  "song_song": {
   "so_request": 8,
-  "tong_ms": 99.7,
+  "tong_ms": 91.4,
   "so_capture_mo": 1,
   "chiet_giai": "8 request đồng thời trên 8 bước khác nhau; `so_capture_mo` phải = 1"
  },
- "do_luc": "2026-11-25T15:59:03+0700",
+ "do_luc": "2026-11-25T16:03:26+0700",
  "lenh": "scripts/do_toc_do_anh.py --phien demoip_1125-121456 --out data/labelui_anh_2026-11-25_metrics.json",
- "git_rev": "264de36",
+ "git_rev": "060ba23",
  "git_dirty": true,
- "git_dirty_code": true,
+ "git_dirty_code": false,
  "phien": "demoip_1125-121456",
  "so_buoc_do": 10,
  "so_lan_moi_buoc": 3,
  "lan_dau_ms": {
   "n": 10,
-  "mean_ms": 38.1,
-  "min_ms": 19.1,
-  "max_ms": 192.1
+  "mean_ms": 34.1,
+  "min_ms": 17.2,
+  "max_ms": 159.2
  },
  "da_cache_ms": {
   "n": 20,
-  "mean_ms": 9.7,
-  "min_ms": 7.8,
-  "max_ms": 14.9
+  "mean_ms": 9.0,
+  "min_ms": 7.3,
+  "max_ms": 13.8
  },
  "kich_thuoc_jpeg_b": {
   "mean": 34773,
@@ -31,6 +31,6 @@
   "max": 40018
  },
  "chiet_giai": "`lan_dau` = bước CHƯA có cache (seek + decode + nén + ghi); `da_cache` = đọc file. Đo trên máy này, không GPU; số tuyệt đối phụ thuộc tải máy (AGENTS §6: chỉ trích theo TỈ LỆ nếu không có loadavg).",
- "loadavg_1m": "0.70",
+ "loadavg_1m": "1.07",
  "cpu_count": 8
 }
