@@ -152,3 +152,70 @@ không phải chỉnh `max_jump_ratio` / `theo_dt` / `chi_khi_cham`.
 - `docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md` (luật "vật rời khung ≠ đổi đối tượng")
 - `docs/plan/24-11-2026-cong-nghi-bao-oan.md` (vì sao **cấm** nới trần vô điều kiện; 7 luật bị bác)
 - `src/identity_guard.py` (hằng số + docstring luật), `scripts/eval_gate_rules.py` (luật `cham_noi_theo_dt`)
+
+---
+
+## Bổ sung: merge vào `main` + CI đỏ 3 ngày (3 giờ sáng 25-11)
+
+### 1. Merge
+Nhánh `feat/nhan-lai-vat-live` (HEAD `c5d6dc4`) đã merge vào `main` bằng merge commit (không squash —
+giữ 62 commit lẻ để `git log`/`bisect` còn tác dụng), rồi push `0480b9c`.
+Kiểm sau merge: `git diff feat/nhan-lai-vat-live main` = **rỗng** ⇒ không mất commit nào.
+`./run lint` xanh · `./run test` = **2 036 passed, 5 deselected** (297 s) trên chính commit merge.
+
+### 2. CI `main` đỏ từ 22-11 — tìm ra 2 nguyên nhân, KHÔNG do việc hôm nay
+
+`gh` không có trên máy ⇒ đọc trạng thái qua GitHub API công khai
+(`/commits/<sha>/check-runs`, `/actions/runs?branch=main`):
+
+| sha main | lúc | kết quả |
+|---|---|---|
+| `3ed5bc8` (20-11) | 15:45 | **success** |
+| `61f2a6d` (22-11) | 09:03 | failure ← **đỏ từ đây** |
+| `7121718`, `d149202` | 22-11, 24-11 | failure |
+| `0480b9c` (hôm nay) | 25-11 | failure (ruff ✅, pytest ❌, provenance ❌) |
+
+#### (a) `pytest` — 2 test phụ thuộc video KHÔNG commit
+
+Tái hiện được bằng **checkout sạch** (`git worktree add --detach /tmp/ci_main HEAD`), đúng cách CI
+checkout — không đoán:
+
+```
+FAILED tests/test_bench_gpu_binh2.py::test_dong_thanh_cong_co_lenh_rieng
+FAILED tests/test_bench_gpu_binh2.py::test_ma_thoat_chi_tinh_lan_nay
+  [loi] KHÔNG có clip: data/binh2.mp4
+```
+
+Nguyên nhân: `scripts/bench_gpu_binh2.py` chặn ở cửa vào khi không thấy `--clip`, còn `data/*.mp4` bị
+`.gitignore` ⇒ máy dev có video (xanh), CI không có (đỏ). Đúng "bẫy môi trường": test xanh trên máy
+dev **không** chứng minh được gì về CI.
+
+Sửa: fixture `clip_gia` tạo file rỗng trong `tmp_path` + truyền `--clip` (`_so_frame_cua_clip` và
+`chay_mot_cau_hinh` đều đã được monkeypatch nên chỉ cần file **tồn tại**). Không `skip` — test vẫn
+chạy thật ở CI.
+
+**Kiểm chứng**: chạy lại full làn nhanh trong checkout sạch `/tmp/ci_main` ⇒ **0 failed**.
+
+#### (b) `git_rev của artifact` — 9 artifact schema cũ (trước luật provenance)
+
+`scripts/check_artifact_provenance.py --nghiem` báo `9 CHẾT-MỚI`. Đọc từng file: cả 9 **không có
+field `git_rev`** (schema cũ: `sach_binh{1,2}_lan{1,2,3}`, `remote_trang_comparison`,
+`identity_latch_chi_phi_2026-11-21`, `jump_gate_replay_2026-11-21`) — **không phải** "rev chết"
+(rev từng tồn tại rồi mất do rebase). Script gộp cả hai thành `chet` ⇒ 2 chuyện khác nhau bị gán một
+nhãn, và allowlist `CHO_PHEP` (khoá `(tên, rev)`) **không dùng được** vì `rev = None`.
+
+Sửa: thêm nhãn **`thieu-rev`** (không khai rev) tách khỏi `chet` (rev chết), + `CHO_PHEP_KHONG_REV`
+allowlist **theo TÊN** kèm lý do, mỗi mục ghi rõ "cấm trích rev". Cổng **vẫn còn răng**: file MỚI
+thiếu `git_rev` không nằm trong danh sách ⇒ vẫn `thieu-rev` ⇒ CI đỏ (có test
+`test_thieu_rev_ten_moi_van_bi_bat`). Trước: `134 artifact: 116 ok · 6 lệch · 3 đã-biết · 9 CHẾT-MỚI`
+(exit 1) → sau: `116 ok · 6 lệch · 12 đã-biết · 0 CHẾT-MỚI` (exit 0).
+
+Cập nhật 2 test cũ đang khẳng định `None ⇒ chet` (đúng theo thiết kế CŨ, nay đổi có chủ ý) + thêm 3
+test mới. **Không** sửa số trong artifact, không xoá bằng chứng.
+
+### 3. Việc còn lại (chưa làm)
+- `d149202`/`61f2a6d`/`7121718` (22–24/11) đỏ do (a)+(b) ⇒ sau commit này `main` mới xanh lại; muốn
+  chắc thì xem run của commit kế tiếp.
+- Máy này **không có `gh`** ⇒ không mở được PR; quy trình §7b "vào `main` qua PR" đang được làm tay
+  bằng merge commit. Nên cài `gh` (hoặc dùng token) để đọc log CI khi đỏ — lần này phải tái hiện
+  bằng `git worktree` mới tìm ra nguyên nhân.

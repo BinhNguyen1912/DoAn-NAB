@@ -23,8 +23,9 @@ class TestPhanLoai:
         """`--help` từng được chấm `ok` (git hiểu option ở tầng trên, rc 0 cho cả hai lệnh)."""
         assert cap.phan_loai("--help") == "chet"
         assert cap.phan_loai("HEAD") == "chet"
-        assert cap.phan_loai("") == "chet"
-        assert cap.phan_loai(None) == "chet"
+        # `""` và `None` = KHÔNG khai rev (schema cũ) — nhãn RIÊNG, không phải "rev chết" (25-11).
+        assert cap.phan_loai("") == "thieu-rev"
+        assert cap.phan_loai(None) == "thieu-rev"
 
     def test_rev_that_la_ok(self):
         """Rev của `HEAD` là tổ tiên của chính nó ⇒ `ok`.
@@ -72,11 +73,30 @@ class TestQuet:
         goc = {r["file"]: r["goc"] for r in cap.quet(tmp_path, cho_phep={})}
         assert goc == {"hong_metrics.json": "chet", "ok_metrics.json": "ok"}, goc
 
-    def test_artifact_hong_va_thieu_rev_deu_la_chet(self, tmp_path):
+    def test_artifact_hong_la_chet_con_thieu_rev_la_nhan_rieng(self, tmp_path):
+        """25-11: tách "rev CHẾT" khỏi "CHƯA TỪNG khai rev".
+
+        Gộp hai chuyện này làm MỘT (bản trước) khiến 9 artifact schema cũ (trước luật provenance) bị
+        tính là "chết" ⇒ job CI `git_rev của artifact` đỏ liên tục từ 22-11 ⇒ cổng mất tác dụng. Nay
+        `thieu-rev` là nhãn riêng và allowlist theo TÊN, nên file MỚI thiếu `git_rev` vẫn bị bắt.
+        """
         (tmp_path / "hong_metrics.json").write_text("{khong-json", encoding="utf-8")
         _artifact(tmp_path, "thieu_metrics.json", None)
         ra = {r["file"]: r["trang_thai"] for r in cap.quet(tmp_path, cho_phep={})}
-        assert ra == {"hong_metrics.json": "chet", "thieu_metrics.json": "chet"}
+        assert ra == {"hong_metrics.json": "chet", "thieu_metrics.json": "thieu-rev"}
+
+    def test_allowlist_khong_rev_theo_ten_va_co_ly_do(self):
+        """Artifact schema cũ: allowlist theo TÊN (không theo rev vì không có rev) + lý do rõ."""
+        assert cap.CHO_PHEP_KHONG_REV, "danh sách artifact schema cũ không được rỗng"
+        for ten, ly_do in cap.CHO_PHEP_KHONG_REV.items():
+            assert ten.endswith("_metrics.json"), ten
+            assert len(ly_do) > 30, f"`{ten}` phải nêu lý do đọc được"
+
+    def test_thieu_rev_ten_moi_van_bi_bat(self, tmp_path):
+        """Cổng còn răng: file KHÔNG nằm trong allowlist mà thiếu `git_rev` ⇒ vẫn là `thieu-rev`."""
+        _artifact(tmp_path, "moi_hoan_toan_metrics.json", None)
+        ra = {r["file"]: r["trang_thai"] for r in cap.quet(tmp_path, cho_phep={})}
+        assert ra == {"moi_hoan_toan_metrics.json": "thieu-rev"}
 
     def test_allowlist_co_ly_do_du_dai_va_nhac_commit_that(self):
         """Lý do phải đọc được VÀ nhắc commit thật (`ee9f2567`) — nếu không, lần "dọn" sau sẽ xoá mất
