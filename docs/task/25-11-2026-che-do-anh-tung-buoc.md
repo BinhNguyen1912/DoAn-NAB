@@ -61,7 +61,13 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
    disable mọi nút ghi nhãn + phủ banner đỏ lên khung ⇒ đúng phiên `mp4v` (lý do sinh ra chế độ ảnh) vẫn
    không dán được. Nay `capNhatKhoa()` khoá theo **nguồn đang xem** (`anhOk` / `videoOk`), banner video
    chỉ hiện ở chế độ video; test `test_html_khoa_ghi_nhan_theo_nguon_dang_xem`.
-5. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
+5. **`git add -A` trong cây bẩn nuốt dữ liệu của người dùng** (đúng anti-pattern AGENTS): commit
+   `ca794f7` kéo theo **13 JPEG cache** (`data/nhan/.anh/`) và 1 file nhãn đang dán dở. Đã sửa:
+   `.gitignore` thêm `data/nhan/.anh/` — **phải đặt SAU** các ngoại lệ `!data/nhan/...` (git lấy mẫu
+   khớp CUỐI CÙNG; để trước thì ngoại lệ thắng, đúng lỗi lần 1), `git rm -r --cached`, test
+   `test_cache_anh_khong_duoc_commit`. **Bài học: file nhãn `data/nhan/*.jsonl` được track có chủ ý
+   (là bằng chứng) ⇒ từ nay stage theo ĐƯỜNG DẪN CỤ THỂ, không `git add -A`.**
+6. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
    cập nhật sang điều kiện theo chế độ (hợp đồng mới: *nguồn đang xem* phải hiện được).
 
 ## 6. Next steps
