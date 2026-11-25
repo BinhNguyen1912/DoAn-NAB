@@ -36,14 +36,14 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
 ## 4. Output / Kết quả
 
 Số đo có **artifact** (`scripts/do_toc_do_anh.py` → `data/labelui_anh_2026-11-25_metrics.json`,
-`git_rev 060ba23`, `git_dirty_code = false`, `loadavg_1m 1.07`; 10 bước × 3 lần, cache xoá trước khi đo):
+`git_rev 23aba2f` (**rev của `main`** — rev cũ `060ba23` chết sau squash-merge), `git_dirty_code = false`, `loadavg_1m 1.22`; 10 bước × 3 lần, cache xoá trước khi đo):
 
 | Chỉ số | Số đo |
 |---|---|
-| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **34.1 ms** · max **159.2 ms** (n = 10; max là lần mở `VideoCapture` đầu tiên — **không** gọi là p95) |
-| Ảnh **đã cache** (đọc file) | mean **9.0 ms** · max **13.8 ms** (n = 20) |
+| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **51.4 ms** · max **286.8 ms** (n = 10; max là lần mở `VideoCapture` đầu tiên — **không** gọi là p95) |
+| Ảnh **đã cache** (đọc file) | mean **10.2 ms** · max **12.8 ms** (n = 20) |
 | Kích thước JPEG | 29 980–40 018 B (mean 34 773) |
-| **8 request song song** (prefetch) | **91.4 ms** tổng, mở đúng **1** `VideoCapture` (`song_song`) |
+| **8 request song song** (prefetch) | **120.3 ms** tổng, mở đúng **1** `VideoCapture` (`song_song`) |
 | `./run test` | **2 216 passed**, 6 deselected (213 s) |
 | `./run labeluie2e` | **PASS 37/37** (thêm 7 mục: ảnh tải được, ←/→ đổi ảnh, CLICK nút nhãn, giữ bước khi đổi chế độ…) |
 | `./run lint` | sạch |
