@@ -400,7 +400,8 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   **không nhận nội dung nhãn của người khác** (server chỉ trả nhãn của tên đang hỏi + **số lượng** và tên
   người khác) — nếu không, "2 người đồng ý" chỉ là 1 người dán 2 lần. **Tên người dán là ô trong UI và đi
   cùng từng nhãn** (không phải `--nguoi-gan`; cờ đó chỉ là giá trị điền sẵn) ⇒ 2 người dùng chung 1 server
-  vẫn ra `so_nguoi = 2`. Nhãn nằm trong `data/` và **đã** có ngoại lệ trong `.gitignore` ⇒ `git add
+  vẫn ra `so_nguoi = 2`. **Ô tên trống ⇒ server trả 400**, KHÔNG lấy mặc định (nếu lấy, người thứ 2 xoá ô
+  tên là nhãn ghi dưới tên người thứ 1 và ghi đè nhãn người đó). Nhãn nằm trong `data/` và **đã** có ngoại lệ trong `.gitignore` ⇒ `git add
   data/nhan/` (đừng `-f`). Tên người dán được gộp theo NFC + không phân biệt hoa/thường, nhưng đó là
   gộp **chuỗi tên**: tool chứng được "2 tên", **không** chứng được "2 con người" — đừng trích
   "2 người đồng ý" mà không nêu ai ngồi dán. E2E: `./run labeluie2e` (Chrome thật,

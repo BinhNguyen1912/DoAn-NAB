@@ -177,17 +177,25 @@ class TestApiHttp:
         d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api"))
         assert len(d["frames"]) == 4 and d["da_gan"] == []
         body = json.dumps({"phien": "demoip_api", "buoc": 2, "frame_vos": 2, "t_video": 0.5,
-                           "nhan": "sai", "bbox_dung": [10, 10, 50, 50]}).encode()
+                           "nhan": "sai", "bbox_dung": [10, 10, 50, 50],
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         d = json.load(urllib.request.urlopen(req))
         assert d["ok"] and d["record"]["nguoi_gan"] == "Binh"
         assert d["tong_hop"]["theo_nguoi"]["Binh"]["sai"] == 1
+        # `/api/frames` KHÔNG có `nguoi` ⇒ KHÔNG trả nhãn của ai (bản cũ fallback về `--nguoi-gan` ⇒
+        # người thứ 2 thấy đúng nhãn của người thứ 1 — review vòng 4, P1-1)
         d2 = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api"))
-        assert len(d2["da_gan"]) == 1
+        assert d2["da_gan"] == [] and d2["nguoi_dang_dan"] is None
+        d3 = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api&nguoi=Binh"))
+        assert len(d3["da_gan"]) == 1
+        d4 = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api&nguoi=binh"))
+        assert len(d4["da_gan"]) == 1, "lọc theo KHOÁ tên (NFC+casefold), không so chuỗi thô"
 
     def test_nhan_sai_tra_400_chu_khong_500(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "bậy"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "bậy",
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -206,13 +214,24 @@ class TestApiHttp:
     def test_content_type_sai_tra_415(self, may_chu):
         """Request "simple" (text/plain, no-cors) phải bị chặn — nếu không, trang web khác chèn được
         nhãn vào file bằng chứng dưới TÊN người đang dán."""
-        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
-                           "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "text/plain"})
         with pytest.raises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(req)
         assert e.value.code == 415
+
+    def test_thieu_nguoi_gan_trong_body_tra_400(self, may_chu):
+        """Ô 'Người gán' trống KHÔNG được lấy `--nguoi-gan` thay thế (nếu không, người thứ 2 xoá ô tên
+        là nhãn của họ ghi dưới tên người thứ 1 — review vòng 4, P1-1)."""
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 0, "nhan": "dung",
+                           "nguoi_gan": "   "}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
 
     def test_ten_nguoi_dan_lay_tu_BODY_khong_phai_co_CLI(self, may_chu):
         """P1-A: server chạy `--nguoi-gan Binh` nhưng nhãn gửi `nguoi_gan: "An"` ⇒ file phải ghi "An".
@@ -222,14 +241,14 @@ class TestApiHttp:
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         d = json.load(urllib.request.urlopen(req))
-        assert d["record"]["nguoi_gan"] == "An"
-        assert "Binh" in d["tong_hop"]["theo_nguoi"] or True     # Binh chưa dán gì
+        assert d["record"]["nguoi_gan"] == "An", "phải ghi tên trong BODY, không phải cờ --nguoi-gan"
         assert d["tong_hop"]["theo_nguoi"]["An"]["dung"] == 1
+        assert "Binh" not in d["tong_hop"]["theo_nguoi"], "Binh chưa dán gì"
 
     def test_buoc_ngoai_dai_bi_tu_choi(self, may_chu):
         """P2-5: `buoc` phải nằm trong CSV server đang giữ — không thì file bằng chứng nhận bước ma."""
-        body = json.dumps({"phien": "demoip_api", "buoc": 9999, "frame_vos": 0,
-                           "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 9999, "frame_vos": 0, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -237,8 +256,8 @@ class TestApiHttp:
         assert e.value.code == 400
 
     def test_frame_vos_khong_khop_buoc_bi_tu_choi(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 123,
-                           "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 123, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json"})
         with pytest.raises(urllib.error.HTTPError) as e:
@@ -263,8 +282,8 @@ class TestApiHttp:
         assert d["so_nhan_nguoi_khac"] == 1
 
     def test_origin_la_tra_403(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
-                           "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json",
                                               "Origin": "https://evil.example"})
@@ -273,13 +292,33 @@ class TestApiHttp:
         assert e.value.code == 403
 
     def test_origin_cung_goc_duoc_nhan(self, may_chu):
-        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1,
-                           "nhan": "dung"}).encode()
+        body = json.dumps({"phien": "demoip_api", "buoc": 1, "frame_vos": 1, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
         host = urllib.parse.urlparse(may_chu).netloc
         req = urllib.request.Request(may_chu + "/api/label", data=body,
                                      headers={"Content-Type": "application/json",
                                               "Origin": f"http://{host}"})
         assert json.load(urllib.request.urlopen(req))["ok"] is True
+
+    def test_t_video_kieu_la_tra_400(self, may_chu):
+        """`t_video: [1]`/`1e400` (json nhận Infinity) từng làm server 500 — phải là 400."""
+        for gia in ([1], 1e400):
+            body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 0, "nhan": "dung",
+                               "nguoi_gan": "Binh", "t_video": gia}).encode()
+            req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                         headers={"Content-Type": "application/json"})
+            with pytest.raises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(req)
+            assert e.value.code == 400, gia
+
+    def test_thieu_frame_vos_tra_400(self, may_chu):
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
 
     def test_body_qua_lon_tra_413(self, may_chu):
         """Nhãn chỉ vài trăm byte; `Content-Length` khổng lồ không được làm server cấp phát theo."""
@@ -559,6 +598,29 @@ class TestTongHopCLI:
         assert "dong_y_2_nguoi" in out
         assert (tmp_path / "ngoai" / "demoip_x_tonghop.json").is_file()
 
+    @pytest.mark.parametrize("so_nguoi, mong_doi", [(1, 1), (2, 0)])
+    def test_chi_MOT_nguoi_thi_exit_1(self, tmp_path, monkeypatch, capsys, so_nguoi, mong_doi):
+        """Cổng quan trọng nhất của `--tong-hop` (một người ⇒ chưa trích được) từng KHÔNG có test
+        đường thất bại ⇒ xoá cả cổng mà suite vẫn xanh (review vòng 4, P2-6)."""
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        csv = _csv(tmp_path, ten="demoip_x")
+        for i, nguoi in enumerate(["Binh", "An"][:so_nguoi]):
+            for buoc in (0, 1):
+                L.ghi_nhan("demoip_x", {"buoc": buoc, "frame_vos": buoc, "nhan": "dung"}, nguoi)
+        ma = L.main(["--tong-hop", str(csv)])
+        out = capsys.readouterr().out
+        assert ma == mong_doi, out
+        art = json.loads((tmp_path / "nhan" / "demoip_x_tonghop.json").read_text(encoding="utf-8"))
+        assert art["ket_qua"] is (mong_doi == 0), "artifact phải nói rõ lần chạy này có trích được không"
+
+    def test_buoc_ngoai_dai_thi_exit_1(self, tmp_path, monkeypatch, capsys):
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "nhan")
+        csv = _csv(tmp_path, ten="demoip_x")            # CSV 4 bước
+        for nguoi in ("Binh", "An"):
+            L.ghi_nhan("demoip_x", {"buoc": 99, "frame_vos": 99, "nhan": "dung"}, nguoi)
+        assert L.main(["--tong-hop", str(csv)]) == 1
+        assert "NGOÀI dải" in capsys.readouterr().out
+
     def test_duong_dan_gon_khong_nem(self, tmp_path, monkeypatch):
         monkeypatch.setattr(L, "REPO_ROOT", tmp_path)
         assert L.duong_dan_gon(tmp_path / "a") == "a"                    # trong repo → gọn
@@ -612,6 +674,10 @@ class TestChanHoiQuyVong3:
 
 
 class TestHangSoVaTaiLieu:
+    def test_tap_nhan_dung_nhu_thiet_ke(self):
+        """Phải so ĐÚNG TẬP: thiếu nhãn thì `tong_hop` đếm thiếu mà test mô tả vẫn xanh."""
+        assert set(L.NHAN) == {"dung", "sai", "mat_dau", "khong_co_vat", "bo_qua"}
+
     def test_moi_nhan_deu_co_mo_ta(self):
         for k, mo_ta in L.NHAN.items():
             assert len(mo_ta) > 15, f"nhãn `{k}` phải có mô tả đọc được cho người dán"

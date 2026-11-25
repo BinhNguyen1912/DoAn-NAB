@@ -179,6 +179,7 @@ function capNhatHeSo(){
 function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.frames[i].t_uoc_luong : 0); }
 
 async function chonPhien(ten){
+  state.dangTai = true;
   state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
   veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
   buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
@@ -208,6 +209,7 @@ async function chonPhien(ten){
     + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
   window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
   veTienDo(); veBang();
+  state.dangTai = false;
   $('phien').blur();
 }
 
@@ -323,8 +325,13 @@ function ghimBuoc(){
 }
 
 async function ghiNhan(nhan){
+  if (state.dangTai) { flash('Đang tải phiên — chờ xong rồi bấm nhãn'); return false; }
   const g = ghimBuoc();
-  hangDoi = hangDoi.then(() => ghiNhanThat(nhan, g));
+  hangDoi = hangDoi.then(() => ghiNhanThat(nhan, g))
+                   .catch(e => {           // ném NGOÀI try/catch của ghiNhanThat (vd localStorage)
+                     flash('LỖI GHI NHÃN: ' + (e && e.message ? e.message : e));
+                     return false;
+                   });
   return hangDoi;
 }
 
@@ -353,17 +360,20 @@ async function ghiNhanThat(nhan, g){
   }
   loiGanNhan = null;
   $('ghiChu').style.color = '';
-  localStorage.setItem('labelui_nguoi', nguoi);
+  try { localStorage.setItem('labelui_nguoi', nguoi); } catch (e) { /* chỉ là tiện ích, không phải bằng chứng */ }
   state.nhanChon = {buoc: g.i, nhan};   // nhớ cả BƯỚC: `s` chỉ lưu lại nhãn của ĐÚNG bước này
   state.daGan.push(d.record);
   veO.co = false; veO.buoc = null; veCanvas();
   veTienDo(); veBang();
-  flash(`${NHAN_VI[nhan]} · #${g.frame_vos} @ ${Number(g.t_video).toFixed(2)}s`);
+  flash(`${NHAN_VI[nhan]} · #${g.frame_vos} @ ${Number(g.t_video).toFixed(2)}s`, true);
   return true;
 }
 
-function flash(txt){
-  $('ghiChu').textContent = txt + '  (đã ghi)';
+function flash(txt, daGhi = false){
+  // Chỉ nói "(đã ghi)" khi CÓ ghi. Bản cũ nối vào mọi thông báo, kể cả hai nhánh KHÔNG ghi gì (review
+  // vòng 4, P2-1) — đúng lớp "người dán tin là đã ghi".
+  $('ghiChu').style.color = daGhi ? '' : '#f1c40f';
+  $('ghiChu').textContent = daGhi ? `${txt}  (đã ghi)` : txt;
 }
 
 function veTienDo(){

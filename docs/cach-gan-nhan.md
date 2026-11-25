@@ -9,6 +9,10 @@
 cd /mnt/d/doan-nab
 ./run labelui --nguoi-gan Binh          # tên MẶC ĐỊNH (điền sẵn vào ô "Người gán")
 ```
+⚠ **Ô "Người gán" để TRỐNG thì tool TỪ CHỐI ghi** (`400`) — nó không tự lấy tên mặc định của server.
+Đây là chủ ý: nếu tự lấy, người thứ 2 xoá ô tên là nhãn của họ ghi dưới tên người thứ 1 và **ghi đè**
+nhãn của người thứ 1 theo quy tắc "nhãn cuối thắng".
+
 **Tên trong ô "Người gán" là tên được ghi vào file** — sửa ô đó là đổi người dán. Vì vậy **hai người
 dùng chung một server cũng đúng**: mỗi người gõ tên mình, nhãn ghi đúng tên đó (`--nguoi-gan` chỉ là
 giá trị điền sẵn). Nhãn của người khác **không** được gửi về trình duyệt (server chỉ trả nhãn của tên

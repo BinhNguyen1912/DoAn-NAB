@@ -259,6 +259,23 @@ def chuan_hoa_ten(ten) -> str:
     return t
 
 
+def _so_huu_han(gia, ten_truong: str) -> float:
+    """Chuyển sang float và từ chối NaN/±Infinity.
+
+    `json.loads("{\"x\": 1e400}")` cho `inf`; `float(inf)` không ném ⇒ bản ghi ghi ra `Infinity`, thứ
+    mà `json.dumps` cho qua nhưng **parser strict không đọc được** — file bằng chứng bị hỏng (review
+    vòng 4, P3-10).
+    """
+    import math
+    try:
+        v = float(gia or 0.0)
+    except (TypeError, ValueError, OverflowError) as e:
+        raise ValueError(f"`{ten_truong}` không phải số: {gia!r}") from e
+    if not math.isfinite(v):
+        raise ValueError(f"`{ten_truong}` phải hữu hạn (nhận {gia!r})")
+    return v
+
+
 def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = None) -> dict:
     """Ghi MỘT nhãn (append-only). Trả record đã chuẩn hoá (để UI hiện lại được)."""
     nguoi_gan = chuan_hoa_ten(nguoi_gan)
@@ -285,9 +302,9 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
         # `buoc` = số thứ tự dòng trong CSV = DANH TÍNH của bước (duy nhất kể cả khi frame_idx lặp).
         "buoc": None if record.get("buoc") in (None, "") else int(record["buoc"]),
         "frame_vos": int(record.get("frame_vos") or 0),
-        "t_video": round(float(record.get("t_video") or 0.0), 3),
+        "t_video": round(_so_huu_han(record.get("t_video"), "t_video"), 3),
         "t_uoc_luong": (None if record.get("t_uoc_luong") is None
-                        else round(float(record["t_uoc_luong"]), 2)),
+                        else round(_so_huu_han(record["t_uoc_luong"], "t_uoc_luong"), 2)),
         "nhan": nhan,
         "bbox_dung": b,
         "nguoi_gan": nguoi_gan,                     # tên hiển thị (giữ nguyên chữ hoa/dấu)
@@ -332,7 +349,7 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
                 raise ValueError("thiếu buoc/frame_vos")
             khoa_nguoi = str(r.get("khoa_nguoi") or khoa_ten(r["nguoi_gan"]))
             hieu_luc[(khoa, khoa_nguoi)] = r["nhan"]
-        except (TypeError, ValueError):
+        except (TypeError, ValueError, OverflowError):
             so_nhan_loi += 1
             so_hop_le -= 1
             continue
@@ -469,6 +486,8 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
+        if (u.path == "/video" or u.path.startswith("/api/")) and not self._host_hop_le():
+            return self._json({"loi": "Host lạ — không nhận (chống DNS rebinding)"}, 403)
         if u.path in ("/", "/index.html"):
             if not HTML.is_file():
                 return self._bytes(b"thieu tools/label_ui.html", "text/plain; charset=utf-8", 500)
@@ -498,14 +517,18 @@ class _Handler(BaseHTTPRequestHandler):
             # Trước đây server trả hết rồi UI ẩn bằng CSS ⇒ mở DevTools là thấy, "2 người độc lập" thành giả.
             # Tên người dán nay do CLIENT khai (`?nguoi=`) vì 2 người có thể dùng CHUNG một server (đó là
             # cách làm đúng tài liệu) — mặc định là tên cấu hình lúc khởi động.
-            toi = (q.get("nguoi") or [self.nguoi_gan])[0].strip() or self.nguoi_gan
+            toi = (q.get("nguoi") or [""])[0].strip()
             tat_ca = [r for r in doc_nhan(ten) if isinstance(r, dict)]
-            cua_toi = [r for r in tat_ca if (r.get("nguoi_gan") or "") == toi]
-            d["nguoi_dang_dan"] = toi
+            # Rỗng ⇒ KHÔNG trả nhãn của ai (bản cũ fallback về `--nguoi-gan` ⇒ người thứ 2 mở trang thấy
+            # ĐÚNG nhãn của người thứ 1 — mở lại đúng lỗi P1 vòng 3 ở đường đọc).
+            khoa_toi = khoa_ten(toi) if toi else None
+            cua_toi = ([r for r in tat_ca if khoa_ten(r.get("nguoi_gan") or "") == khoa_toi]
+                       if khoa_toi else [])
+            d["nguoi_dang_dan"] = toi or None
             d["da_gan"] = cua_toi
             d["so_nhan_nguoi_khac"] = len(tat_ca) - len(cua_toi)
             d["nguoi_khac"] = sorted({r.get("nguoi_gan") for r in tat_ca
-                                      if (r.get("nguoi_gan") or "") != toi} - {None})
+                                      if khoa_ten(r.get("nguoi_gan") or "") != khoa_toi} - {None})
             return self._json(d)
         return self._json({"loi": "không có route"}, 404)
 
@@ -614,6 +637,8 @@ class _Handler(BaseHTTPRequestHandler):
             if not 0 <= buoc < len(khung):
                 return self._json({"loi": f"`buoc` ngoài dải 0..{len(khung) - 1}"}, 400)
             fv = body.get("frame_vos")
+            if fv in (None, ""):
+                return self._json({"loi": "thiếu `frame_vos` (phải gửi kèm `buoc`)"}, 400)
             if fv not in (None, ""):
                 try:
                     if int(fv) != int(khung[buoc]["frame_vos"]):
@@ -627,11 +652,17 @@ class _Handler(BaseHTTPRequestHandler):
         # P1-A: TÊN NGƯỜI DÁN LẤY TỪ CHÍNH NHÃN (body), không phải cờ lúc khởi động. Trước đây
         # `--nguoi-gan` quyết định toàn bộ ⇒ 2 người mở cùng URL thì mọi nhãn ghi 1 tên ⇒ "2 người
         # đồng ý" không bao giờ đạt được bằng cách làm đúng tài liệu.
-        nguoi = body.get("nguoi_gan") or self.nguoi_gan
+        # KHÔNG fallback về `self.nguoi_gan` khi client gửi rỗng: người thứ 2 xoá ô tên rồi bấm phím sẽ
+        # ghi nhãn dưới TÊN NGƯỜI THỨ 1 (đúng lớp lỗi P1 vòng 3, bị server mở lại — review vòng 4).
+        nguoi = str(body.get("nguoi_gan") or "").strip()
+        if not nguoi:
+            return self._json({"loi": "thiếu `nguoi_gan` trong body (ô 'Người gán' đang trống)"}, 400)
         try:
             rec = ghi_nhan(phien, body, nguoi)
         except ValueError as e:
             return self._json({"loi": str(e)}, 400)
+        except (TypeError, OverflowError) as e:      # vd `t_video: [1]` / `1e400` (json nhận Infinity)
+            return self._json({"loi": f"giá trị không hợp lệ: {e}"}, 400)
         try:
             th = tong_hop(phien)
         except Exception as e:                    # nhãn ĐÃ ghi; không được trả lỗi mạng cho client
@@ -645,6 +676,22 @@ def tao_server(port: int = DEFAULT_PORT, nguoi_gan: str = "?", phien_mac_dinh: s
     Chrome Windows; nếu không, chạy `--host 0.0.0.0` rồi mở `http://<IP-WSL>:<cổng>`."""
     handler = type("H", (_Handler,), {"nguoi_gan": nguoi_gan, "phien_mac_dinh": phien_mac_dinh})
     return ThreadingHTTPServer((host, port), handler)
+
+
+def _ghi_artifact(ten: str, d: dict, *, ket_qua: bool, ly_do: str | None = None) -> Path:
+    """Ghi `<phiên>_tonghop.json` — LUÔN có `ket_qua` (true/false) + `ly_do`.
+
+    Trước đây file được ghi TRƯỚC các cổng kiểm ⇒ một lần chạy "chưa trích được" vẫn để lại artifact
+    trông như đã đo, mà `.gitignore` lại cho file này vào git (review vòng 4, P3-12).
+    """
+    out = THU_MUC_NHAN / f"{ten}_tonghop.json"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    out.write_text(json.dumps({"phien": ten, "git_rev": _git_rev(), "ket_qua": ket_qua, "ly_do": ly_do,
+                               "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
+                               **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
+    print(f"\n[artifact] {duong_dan_gon(out)}  (ket_qua={ket_qua}"
+          + (f", lý do: {ly_do}" if ly_do else "") + ")")
+    return out
 
 
 def main(argv=None) -> int:
@@ -666,12 +713,6 @@ def main(argv=None) -> int:
         ten = p.name.replace("_metrics.csv", "").replace(".csv", "")
         d = tong_hop(ten)
         print(json.dumps(d, ensure_ascii=False, indent=2))
-        out = THU_MUC_NHAN / f"{ten}_tonghop.json"
-        out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(json.dumps({"phien": ten, "git_rev": _git_rev(),
-                                   "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
-                                   **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
-        print(f"\n[artifact] {duong_dan_gon(out)}")
         if not d["so_nhan_hieu_luc"]:
             print(f"[tong-hop] KHÔNG có nhãn HỢP LỆ nào ({d['tong_nhan']} dòng, "
                   f"{d['so_nhan_loi']} dòng lỗi) — chưa đo được gì")
@@ -680,27 +721,40 @@ def main(argv=None) -> int:
         if not rev:
             print("[tong-hop] KHÔNG đọc được git_rev — artifact không tái lập được (AGENTS §6)")
             return 1
-        csv_p = DATA_DIR / f"{ten}_metrics.csv"
+        csv_p = p if p.is_file() else DATA_DIR / f"{ten}_metrics.csv"
+        ngoai: list = []
+        n_buoc = None
         if csv_p.is_file():
             try:
                 n_buoc = len(doc_phien_cached(csv_p)["frames"])
             except (OSError, ValueError):
                 n_buoc = None
-            ngoai = [r.get("buoc") for r in doc_nhan(ten)
-                     if isinstance(r, dict) and isinstance(r.get("buoc"), int)
-                     and n_buoc is not None and not 0 <= r["buoc"] < n_buoc]
-            if ngoai:
-                print(f"[tong-hop] CẢNH BÁO: {len(ngoai)} nhãn có `buoc` NGOÀI dải 0..{n_buoc - 1} "
-                      f"(vd {ngoai[:3]}) ⇒ nhiều khả năng nhãn của CSV khác/phiên bản tool khác")
+            if n_buoc is not None:
+                ngoai = [r.get("buoc") for r in doc_nhan(ten)
+                         if isinstance(r, dict) and isinstance(r.get("buoc"), int)
+                         and not 0 <= r["buoc"] < n_buoc]
+        if ngoai:
+            print(f"[tong-hop] LỖI: {len(ngoai)} nhãn có `buoc` NGOÀI dải 0..{n_buoc - 1} "
+                  f"(vd {ngoai[:3]}) ⇒ CSV đã bị sinh lại hoặc nhãn thuộc phiên khác; "
+                  "KHÔNG trích được (số đồng ý sẽ bị thổi phồng)")
+            _ghi_artifact(ten, d, ket_qua=False,
+                         ly_do=f"{len(ngoai)} nhãn ngoài dải 0..{n_buoc - 1}")
+            return 1
         if d["so_nguoi"] > 2:
             print(f"[tong-hop] CẢNH BÁO: {d['so_nguoi']} người — `so_buoc_dong_y` ở đây là \"TẤT CẢ đồng ý\", "
                   "KHÔNG phải tỉ lệ đồng ý theo cặp; muốn số theo cặp thì so từng đôi một")
         if d["so_nguoi"] < 2:
             print(f"[tong-hop] CHỈ {d['so_nguoi']} người dán ⇒ CHƯA trích được (cần 2 người độc lập)")
+            _ghi_artifact(ten, d, ket_qua=False, ly_do=f"chỉ {d['so_nguoi']} người dán")
             return 1
         if d["dong_y_2_nguoi"] and d["dong_y_2_nguoi"]["so_buoc_ca_hai_co_ket_luan"] == 0:
             print("[tong-hop] hai người KHÔNG dán trùng bước nào có kết luận ⇒ chưa so được")
+            if d["so_nhan_thieu_buoc"]:
+                print(f"[tong-hop] nguyên nhân khả dĩ: có {d['so_nhan_thieu_buoc']} nhãn KHÔNG có `buoc` "
+                      "(tool phiên bản cũ) ⇒ hai người đang ở hai không-gian khoá khác nhau")
+            _ghi_artifact(ten, d, ket_qua=False, ly_do="không có bước nào cả hai cùng dán")
             return 1
+        _ghi_artifact(ten, d, ket_qua=True)
         return 0
 
     nguoi = (args.nguoi_gan or "").strip() or "?"
