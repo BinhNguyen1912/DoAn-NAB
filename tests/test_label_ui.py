@@ -274,6 +274,25 @@ class TestApiHttp:
             urllib.request.urlopen(req)
         assert e.value.code == 403
 
+    def test_host_la_IP_LAN_cua_may_duoc_nhan(self, may_chu):
+        """`docs/cach-gan-nhan.md` §5 hướng dẫn `--host 0.0.0.0` rồi mở `http://<IP-WSL>:8770`.
+
+        Allowlist chỉ so `gethostbyname` (MỘT địa chỉ) từng làm mọi POST 403 trên đường dự phòng đó
+        trong khi trang + video vẫn chạy (review vòng 3, P2-7). Test này POST thật bằng `Host: <IP>:port`.
+        """
+        import socket
+        ips = sorted(L._Handler.ip_may() - {"127.0.0.1"})
+        if not ips:
+            pytest.skip("máy chỉ có 127.0.0.1 — không có IP LAN để thử")
+        port = may_chu.rsplit(":", 1)[1]
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 0, "nhan": "dung",
+                           "nguoi_gan": "Binh"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json",
+                                              "Host": f"{ips[0]}:{port}"})
+        assert json.load(urllib.request.urlopen(req))["ok"] is True
+        assert socket.inet_aton(ips[0])            # đúng là IPv4 thật của máy này
+
     def test_frames_loc_theo_ten_nguoi_hoi(self, may_chu):
         L.ghi_nhan("demoip_api", {"buoc": 1, "frame_vos": 1, "nhan": "sai"}, "An")
         L.ghi_nhan("demoip_api", {"buoc": 2, "frame_vos": 2, "nhan": "dung"}, "Binh")
