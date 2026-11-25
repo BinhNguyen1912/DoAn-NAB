@@ -807,6 +807,9 @@ class LiveTrackingSession:
         # Kích thước khung của bước VOS gần nhất — dùng khi `result.mask is None` (không có mask thì
         # không có `mask.shape`, nhưng cổng vẫn cần khung để tính bán kính nhảy).
         self._watch_shape = None
+        # Đồng hồ thực của lần đẩy cổng gần nhất ⇒ `step_seconds` cho luật "bước dài bất thường"
+        # (25-11: máy bị chiếm, bước 851 ms làm cổng báo oan một cú nhảy 239 px = 281 px/s).
+        self._watch_t = None
         self._last_good_bbox = None
         self._danh_tinh_frame_idx = None   # frame VIDEO đã chấm danh tính gần nhất (chống chấm 2 lần)
         self._seq = 0
@@ -1966,12 +1969,16 @@ class LiveTrackingSession:
                 # `_lost` không tăng ⇒ `lost_reset_streak`/`reacq_grace_steps` KHÔNG BAO GIỜ chạy ⇒
                 # đúng ca "vật rời khung rồi vào lại" vẫn bị báo nghi trên web (review độc lập vòng 2,
                 # P1). Đường CLI đã làm đúng từ trước: mất dấu ⇒ `prev = (0,0,0,0)`.
+                _bay_gio = time.monotonic()
+                _buoc_s = None if self._watch_t is None else (_bay_gio - self._watch_t)
+                self._watch_t = _bay_gio
                 is_nghi = self._watch.update(
                     self._last_good_bbox,
                     obs_bbox if obs_bbox is not None else (0, 0, 0, 0),
                     (int(_shape[0]), int(_shape[1])),
                     lk_velocity=lk_vel,
                     co_mask=not raw_lost and obs_bbox is not None,
+                    step_seconds=_buoc_s,
                 )
                 if not is_nghi and obs_bbox is not None:
                     self._last_good_bbox = obs_bbox

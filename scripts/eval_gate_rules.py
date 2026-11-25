@@ -46,6 +46,9 @@ sys.path.insert(0, str(REPO_ROOT))
 
 from src.identity_guard import (  # noqa: E402
     DEFAULT_LOST_RESET_STREAK,
+    DT_CHAM_BI_THUONG_S,
+    TOC_DO_TOI_DA_PX_S,
+    TRAN_CHAM_RATIO,
     DEFAULT_REACQ_GRACE_STEPS,
     DEFAULT_SETTLE_STEPS,
     TRANG_THAI_CHUA_XAC_MINH,
@@ -147,6 +150,12 @@ def _nhay(prev, cur, dt, luat, van_toc=(0.0, 0.0)):
         ban_kinh = goc
         toc_do = math.hypot(cx - px, cy - py) / dt if dt > 0 else float("inf")
         return math.hypot(cx - px, cy - py) > ban_kinh and toc_do <= nguong
+    elif luat == "cham_noi_theo_dt":
+        # Luật ĐANG SHIP từ 25-11: nới theo thời gian CHỈ khi bước dài bất thường.
+        ban_kinh = goc
+        if dt > DT_CHAM_BI_THUONG_S:
+            ban_kinh = max(goc, TOC_DO_TOI_DA_PX_S * dt)
+            ban_kinh = min(ban_kinh, max(goc, TRAN_CHAM_RATIO * diag))
     elif luat == "van_toc_lich_su":
         ban_kinh = goc
         ex, ey = px + van_toc[0], py + van_toc[1]
@@ -295,7 +304,7 @@ def main(argv=None) -> int:
         print(f"[LOI] không có CSV nào khớp {args.glob!r}", file=sys.stderr)
         return 1
 
-    luat_list = ["hien_tai", "theo_dt", "van_toc_lich_su", "theo_dt_va_dien_tich",
+    luat_list = ["cham_noi_theo_dt", "hien_tai", "theo_dt", "van_toc_lich_su", "theo_dt_va_dien_tich",
                  "chi_khi_cham_600", "chi_khi_cham_900", "chi_khi_cham_1200", "chi_khi_cham_1500"]
     # Hành vi TRƯỚC 24-11 tối: `lost_reset_streak=0` ⇒ sau khi vật vắng, mẩu rác của lần dò lại
     # được dùng làm mốc so sánh ⇒ báo "nhảy" oan. Có mặt để bảng dưới là A/B, không phải lời khai.

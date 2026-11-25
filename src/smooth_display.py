@@ -382,6 +382,9 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
         **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
     )
     switch = False
+    # Bước VOS dài bao nhiêu GIÂY (đo bằng đồng hồ thực giữa 2 kết quả liên tiếp) — cổng nghi dùng để nới
+    # bán kính khi máy bị chiếm (25-11: bước 851 ms ⇒ tâm nhảy 239 px chỉ là 281 px/s mà vẫn báo oan).
+    _truoc_cong = None
     last_nghi = False      # trạng thái nghi đã báo xuống worker (chống gửi lặp mỗi frame)
     # Ô của CHÍNH frame bật cờ nghi (tức ô model vừa đưa ra ở cú nhảy), dùng cho phím `c`.
     # KHÔNG phải "ô trước cú nhảy": `c` nghĩa là "vùng đang hiện là đúng", nên neo vào ô đó mới khớp
@@ -454,8 +457,11 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                     # `co_mask`: chỉ đếm bước ổn định khi model THẬT SỰ trả mask (24-11).
                     co_mask = bool(stamped.result.mask is not None
                                    and stamped.result.mask.any())
+                    _bay_gio = time.monotonic()
+                    _buoc_s = None if _truoc_cong is None else (_bay_gio - _truoc_cong)
+                    _truoc_cong = _bay_gio
                     watch.update(last_bbox, stamped.result.bbox, frame.shape[:2],
-                                 co_mask=co_mask)
+                                 co_mask=co_mask, step_seconds=_buoc_s)
                     # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy: bước đầu của phiên bám mới
                     # sau khi vật rời khung được MIỄN chấm (`watch.vua_bao`), nên không in.
                     if watch.vua_bao:

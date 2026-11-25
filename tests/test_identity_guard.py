@@ -406,3 +406,58 @@ class TestBuocVosKhongPhaiFrameHienThi:
         assert (w._lost, w._grace, w._settle, w.trang_thai) == truoc, \
             "`buoc_moi=False` là NO-OP: không được đổi bộ đếm nào (review vòng 2, P3)"
         assert w.vua_bao is False, "`vua_bao` là cờ của LẦN GỌI NÀY (không phải của bước trước)"
+
+
+class TestBuocVosDaiBatThuong:
+    """25-11 (phiên `demoip_1125-084425`): máy bị chiếm ⇒ **2004 ms/bước** (bình thường 137 ms).
+
+    Cổng báo oan ở f3: tâm nhảy **239 px** > trần **200 px**, nhưng 239 px trong **851 ms** chỉ là
+    **281 px/s** — tay cầm vật đi bình thường. Ngưỡng hiện tại tính **px/BƯỚC** nên máy càng chậm càng
+    dễ báo oan. Luật: bước > 0,5 s ⇒ nới theo THỜI GIAN (`1500 px/s × dt`, trần 0,35·đường chéo).
+    **KHÔNG** phải nới trần vô điều kiện (đo 24-11: 0,25→0,30 làm MẤT ca báo đúng).
+    """
+
+    PREV = (368, 153, 469, 405)      # f2 của phiên 25-11
+    CUR = (115, 201, 259, 479)       # f3 — tâm nhảy 239 px
+    SHAPE = (480, 640)
+
+    def test_buoc_ngan_van_bao_nhu_cu(self):
+        from src.identity_guard import is_suspect_switch
+
+        assert is_suspect_switch(self.PREV, self.CUR, self.SHAPE, step_seconds=0.14) is True
+
+    def test_buoc_dai_bat_thuong_thi_khong_bao(self):
+        from src.identity_guard import is_suspect_switch
+
+        # 851 ms: 239 px / 0,851 s = 281 px/s — chậm hơn nhiều so với 1500 px/s
+        assert is_suspect_switch(self.PREV, self.CUR, self.SHAPE, step_seconds=0.851) is False
+
+    def test_buoc_dai_nhung_nhay_that_thi_van_bao(self):
+        """Nới theo thời gian KHÔNG có nghĩa là tha hết: nhảy 600 px trong 1 s vẫn vô lý."""
+        from src.identity_guard import is_suspect_switch
+
+        assert is_suspect_switch((10, 10, 80, 80), (560, 400, 630, 470), self.SHAPE,
+                                 step_seconds=1.0) is True
+
+    def test_buoc_dai_khong_noi_qua_tran_0_35(self):
+        from src.identity_guard import search_window_radius
+
+        # bước 10 s: 1500×10 = 15 000 px, nhưng trần là 0,35 × đường chéo = 280 px
+        assert search_window_radius((100, 100, 200, 300), self.SHAPE,
+                                    step_seconds=10.0) <= 0.35 * 800 + 1e-6
+
+    def test_nguoi_dung_tu_siet_ratio_thi_khong_bi_noi(self):
+        """`--max-jump-ratio` là cờ CHẨN ĐOÁN của demo — luật mới không được đè lên lựa chọn đó."""
+        from src.identity_guard import search_window_radius
+
+        chat = search_window_radius((100, 100, 200, 300), self.SHAPE,
+                                    max_jump_ratio=0.10, step_seconds=2.0)
+        assert chat <= 0.10 * 800 + 1e-6
+
+    def test_step_seconds_none_la_hanh_vi_cu(self):
+        from src.identity_guard import is_suspect_switch, search_window_radius
+
+        a = search_window_radius((100, 100, 200, 300), self.SHAPE)
+        b = search_window_radius((100, 100, 200, 300), self.SHAPE, step_seconds=0.3)
+        assert abs(a - b) < 1e-6
+        assert is_suspect_switch(self.PREV, self.CUR, self.SHAPE) is True

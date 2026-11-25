@@ -14,6 +14,8 @@ Lưu ý  : số FPS/latency là THỰC ĐO trên phần cứng chạy (ADR-0002:
 from dataclasses import dataclass, field
 from typing import Optional, Tuple
 
+import time
+
 import cv2
 import numpy as np
 
@@ -377,6 +379,8 @@ def run_interactive(source, engine, selector, display, max_frames=None,
             **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
         )
         switch = False
+        # Đồng hồ thực giữa 2 lần đẩy cổng ⇒ `step_seconds` cho luật "bước dài bất thường" (25-11).
+        _truoc_cong = None
         last_nghi = False          # trạng thái nghi đã báo xuống `ReIdSession` (chống gửi lặp)
         # Ô của CHÍNH frame bật cờ nghi (ô model vừa đưa ra ở cú nhảy) — KHÔNG phải ô trước cú nhảy;
         # `c` = "vùng đang hiện là đúng" nên neo vào ô đó mới khớp ý người dùng (P1 review 23-11).
@@ -512,7 +516,11 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     cand_sinh = cand_ncc_loai = None
                 if not reacquired:
                     co_mask = bool(last_result.mask is not None and last_result.mask.any())
-                    watch.update(last_bbox, last_result.bbox, frame.shape[:2], co_mask=co_mask)
+                    _bay_gio = time.monotonic()
+                    _buoc_s = None if _truoc_cong is None else (_bay_gio - _truoc_cong)
+                    _truoc_cong = _bay_gio
+                    watch.update(last_bbox, last_result.bbox, frame.shape[:2], co_mask=co_mask,
+                                 step_seconds=_buoc_s)
                     # WARN + banner CHỈ khi cổng thật sự chấm cú nhảy (bước đầu của phiên bám mới
                     # sau khi vật rời khung được MIỄN chấm) — 24-11.
                     if watch.vua_bao:

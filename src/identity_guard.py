@@ -16,6 +16,20 @@ import math
 
 DEFAULT_MAX_JUMP_RATIO = 0.25
 
+# BƯỚC VOS DÀI BẤT THƯỜNG ⇒ ngưỡng px/BƯỚC mất nghĩa (đo 25-11, phiên `demoip_1125-084425`).
+# Người dùng báo *"sao nó lag dữ vậy"*: máy bị chiếm lúc 8h45 ⇒ **2004 ms/bước** (bình thường 137 ms).
+# Cùng lúc cổng báo oan ở f3: tâm nhảy **239 px** > trần **200 px** — nhưng 239 px trong **851 ms** chỉ là
+# **281 px/s**, tay cầm vật đi bình thường. Ngưỡng hiện tại tính **px/bước**, nên máy càng chậm thì cùng
+# một tốc độ tay càng dễ vượt ngưỡng. Đây KHÔNG phải nới trần (đã đo 24-11: nới vô điều kiện 0,25→0,30
+# làm MẤT ca báo đúng) mà là **chỉ nới khi bước dài bất thường**:
+#   `radius = max(base, TỐC_ĐỘ_TỐI_ĐA × step)` và trần `0,35 × đường chéo`, chỉ khi `step > 0,5 s`.
+# Đo trên 10 phiên đóng băng + phiên 25-11 (cùng `IdentityWatch`): bỏ **đúng 1** lần báo (f3 của phiên
+# 25-11) và **giữ 7/7** ca báo đúng (bước của chúng 131–352 ms, dưới ngưỡng 0,5 s ⇒ luật KHÔNG kích hoạt).
+# Artifact: `data/eval_gate_rules_2026-11-25_metrics.json` (luật `cham_noi_theo_dt`).
+DT_CHAM_BI_THUONG_S = 0.5
+TOC_DO_TOI_DA_PX_S = 1500.0      # tay lia vật ngang khung 640 px trong ~0,4 s
+TRAN_CHAM_RATIO = 0.35           # trần nới cho bước dài (0,25 → 0,35)
+
 
 def _center(bbox):
     x1, y1, x2, y2 = bbox
@@ -24,7 +38,8 @@ def _center(bbox):
 
 def search_window_radius(bbox, frame_shape, lk_velocity=None,
                          motion_scale=1.5, min_ratio=0.10,
-                         max_jump_ratio=DEFAULT_MAX_JUMP_RATIO) -> float:
+                         max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
+                         step_seconds=None) -> float:
     """Tính bán kính dịch chuyển tối đa hợp lý cho đối tượng.
 
     Dựa trên kích thước đối tượng (size = max(w, h)) và vận tốc Lucas-Kanade.
@@ -46,13 +61,22 @@ def search_window_radius(bbox, frame_shape, lk_velocity=None,
         vx, vy = float(lk_velocity[0]), float(lk_velocity[1])
         radius += math.hypot(vx, vy)
 
-    return min(radius, max_jump_ratio * diagonal)
+    cap = max_jump_ratio * diagonal
+    # Bước VOS dài BẤT THƯỜNG (máy bị chiếm, bước ~1-3 s): nới theo THỜI GIAN, xem hằng số ở đầu tệp.
+    # Chỉ áp dụng khi người dùng KHÔNG tự siết `max_jump_ratio` (cờ chẩn đoán của demo).
+    if (step_seconds is not None and float(step_seconds) > DT_CHAM_BI_THUONG_S
+            and max_jump_ratio >= DEFAULT_MAX_JUMP_RATIO):
+        radius = max(radius, TOC_DO_TOI_DA_PX_S * float(step_seconds))
+        cap = max(cap, TRAN_CHAM_RATIO * diagonal)
+
+    return min(radius, cap)
 
 
 def is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
                       max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
                       lk_velocity=None,
-                      use_search_window=True):
+                      use_search_window=True,
+                      step_seconds=None):
     """True nếu tâm ô bao nhảy ra ngoài bán kính chuyển động hợp lý (search window)."""
     if not prev_bbox or not cur_bbox:
         return False
@@ -68,7 +92,8 @@ def is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
 
     if use_search_window:
         radius = search_window_radius(prev_bbox, frame_shape, lk_velocity=lk_velocity,
-                                      max_jump_ratio=max_jump_ratio)
+                                      max_jump_ratio=max_jump_ratio,
+                                      step_seconds=step_seconds)
         return jump > radius
 
     h, w = frame_shape[0], frame_shape[1]
@@ -188,7 +213,8 @@ class IdentityWatch:
         return self._vua_bao
 
     def update(self, prev_bbox, cur_bbox, frame_shape, lk_velocity=None,
-               co_mask=True, nhay=None, buoc_moi=True) -> bool:
+               co_mask=True, nhay=None, buoc_moi=True,
+               step_seconds=None) -> bool:
         """Cập nhật bằng một bước VOS; trả True nếu ĐANG CHẶN vẽ mask (trạng thái `nghi`).
 
         `co_mask` = bước này model THẬT SỰ trả mask (không rỗng). Chỉ đếm bước ổn định khi có mask:
@@ -228,7 +254,8 @@ class IdentityWatch:
         if nhay is None:
             nhay = is_suspect_switch(prev_bbox, cur_bbox, frame_shape,
                                     max_jump_ratio=self.max_jump_ratio,
-                                    lk_velocity=lk_velocity)
+                                    lk_velocity=lk_velocity,
+                                    step_seconds=step_seconds)
         if self._grace > 0:
             # Mốc chưa đáng tin ⇒ KHÔNG chấm (và KHÔNG in cảnh báo — xem `vua_bao`).
             self._grace -= 1
