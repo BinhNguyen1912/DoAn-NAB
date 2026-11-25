@@ -41,9 +41,19 @@ Bối cảnh đo được trước khi mở plan (`data/hud_jitter_2026-11-25_me
   Kèm bảng bằng chứng + Q&A + danh sách "cấm trích". Nếu chỉ chọn 1 việc: **diễn tập khoá kịch bản**.
 - P2 phát hiện thêm (đã vá): `run_info` **thiếu** `box_smooth_tau_ms` ⇒ cấu hình hiển thị không tái lập.
 
-### C. Độ bền & hiệu năng
-- *Chưa trả lời tại thời điểm chốt.* Không chặn quyết định vì phương án được chọn (B) là **luật thuần
-  số học trong state machine đã có test**, không thêm lời gọi model, không thêm luồng.
+### C. Độ bền & hiệu năng (đã trả lời — sau khi chốt, ghi bổ sung)
+- **`add_new_points_or_box` trên state đang bám NỔ và GIẾT PHIÊN** (2/2 lần): `KeyError: 'best_iou_score'`
+  ở `sam2_base.py:667` (index thẳng, không `.get`) → `process()` kế `AssertionError` → `IndexError`.
+  ⇒ hướng "re-prompt **tại chỗ**" (A) không chỉ khó đo mà **nguy hiểm** ⇒ càng củng cố việc bác A.
+- Chi phí nếu sau này làm verifier **đúng cách**: state mới chung predictor **122–163 ms**; image-predictor
+  stateless `set_image` 116–131 + `predict` 18–23 = **135–150 ms** và **tái lập tuyệt đối**; predictor thứ
+  hai **+1 439 ms / +201 MB** (bác). Đặt verifier vào `_stats_lock` (`live_tracking.py:1954`) là chặn luồng VOS
+  + nhịp `frame.jpg` của watchdog ⇒ phải chạy trên thread sở hữu engine.
+- **Bug tái lập số đo (đã sửa cùng ngày, `docs/task/25-11-2026-kalman-ro-giua-hai-phien.md`)**: Kalman của
+  SAMURAI nằm trên MODEL, `reset()` không dọn ⇒ phiên 2 lệch từ frame thứ 6 (**min IoU 0,8253**), và
+  **`r` chọn vật khác thừa hưởng Kalman vật cũ**. `TrackerEngine.start()` nay zero 3 field ⇒ 3 phiên liên
+  tiếp **IoU = 1,0000**. Cũng chính vì rò này mà phương án A′ (state mới) tự đo ra **IoU 0,695 giữa 2 lần
+  cùng frame** ⇒ không tái lập được.
 
 ## ⚔️ Tranh chấp (vòng 2 — phản biện chéo)
 
