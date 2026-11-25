@@ -328,6 +328,7 @@ def run_interactive(source, engine, selector, display, max_frames=None,
                     preselect_bbox=None, on_result=None,
                     visualizer=None, metrics=None, reanchor_every=None,
                     reid_session=None, *, settle_steps=None, lost_reset_streak=None,
+                    round_trip_steps=None,
                     max_jump_ratio=None) -> InteractiveSummary:
     """Vòng lặp tương tác: chọn ô bằng chuột → track → r chọn lại → q/ESC thoát.
 
@@ -371,12 +372,15 @@ def run_interactive(source, engine, selector, display, max_frames=None,
         # `demoip_1121-121732`, cổng báo đúng ở f178 rồi hệ vẽ mask SAI 65 frame mà không báo lại.
         # `settle_steps=None` ⇒ mặc định của `IdentityWatch`; có mặt để `--settle-steps` đổi được
         # hành vi thật (review độc lập 24-11: `run_info` ghi `settle_steps=8` mà không có cờ nào).
-        from src.identity_guard import DEFAULT_SETTLE_STEPS
+        from src.identity_guard import DEFAULT_ROUND_TRIP_STEPS, DEFAULT_SETTLE_STEPS
 
         watch = IdentityWatch(
             settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
             **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
             **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
+            # 25-11: cùng luật với CLI (xem `src/identity_guard.py` mục ROUND-TRIP).
+            round_trip_steps=(DEFAULT_ROUND_TRIP_STEPS if round_trip_steps is None
+                              else round_trip_steps),
         )
         switch = False
         # Đồng hồ thực giữa 2 lần đẩy cổng ⇒ `step_seconds` cho luật "bước dài bất thường" (25-11).

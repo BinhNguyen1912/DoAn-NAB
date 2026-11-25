@@ -647,6 +647,19 @@ def _settle_steps(args):
     return DEFAULT_SETTLE_STEPS if v is None else max(0, int(v))
 
 
+def _round_trip_steps(args):
+    """`--round-trip-steps` (25-11): số bước ĐẦU của đợt nghi để coi là "nhảy rồi quay về chỗ cũ".
+
+    `None` ⇒ mặc định của `IdentityWatch` (2, số đã đo là an toàn). `0` = TẮT (hành vi trước 25-11,
+    để tái lập số phiên cũ). Luật này KHÔNG phải "sửa báo oan": đo trên 10 phiên có nhãn ⇒ không đổi
+    frame nào; ca báo oan đã xác nhận `085815#47` vẫn báo.
+    """
+    from src.identity_guard import DEFAULT_ROUND_TRIP_STEPS
+
+    v = getattr(args, "round_trip_steps", None)
+    return DEFAULT_ROUND_TRIP_STEPS if v is None else max(0, int(v))
+
+
 def _lost_reset_streak(args):
     """Số bước vắng để coi là "vật rời khung" ĐÃ DÙNG; `None` = đường này KHÔNG có cổng.
 
@@ -760,6 +773,9 @@ def _write_run_info(args, metrics=None):
         # >0 ⇒ khung ĐỔI giữa phiên ⇒ `frame_shape` chỉ đúng cho phần đầu; scorer phải biết.
         frame_shape_doi=getattr(_m, "frame_shape_doi", None),
         max_jump_ratio=_max_jump_ratio(args),
+        # 25-11: luật "nhảy rồi quay về chỗ cũ ⇒ xoá nghi" ĐỔI số frame ẩn/chưa-xác-minh (đo:
+        # 100334 ẩn 9→1) ⇒ thiếu trường này thì hai phiên khác luật trông y hệt nhau trong run_info.
+        round_trip_steps=_round_trip_steps(args),
         # 25-11: `--box-smooth-tau-ms` ĐỔI THỨ NGƯỜI XEM THẤY (ô vẽ ra mượt hơn) mà không đổi
         # `result.bbox` ⇒ thiếu trường này thì 2 phiên TRÔNG KHÁC NHAU nhưng `run_info` y hệt, và
         # video dự phòng không tái lập được đúng cấu hình hiển thị (P2 do review độc lập 25-11 bắt).
@@ -867,6 +883,7 @@ def _run_display(engine, args):
                 # mỗi khung + 0,36 lõi). Nguồn file: None (phải đọc nhanh nhất, đúng thứ tự).
                 settle_steps=_settle_steps(args),
                 lost_reset_streak=_lost_reset_streak(args),
+                round_trip_steps=_round_trip_steps(args),
                 max_jump_ratio=args.max_jump_ratio,
                 box_smooth_tau_ms=getattr(args, "box_smooth_tau_ms", None),
                 source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
@@ -1083,6 +1100,15 @@ def build_parser():
                          "cũ không so được với số mới. `0` = TẮT: ẩn tới khi bấm r/c (không bao giờ tự "
                          "hạ mức). Đường headless (`./run video|ab|miou`) không dựng cổng ⇒ cờ bị bỏ "
                          "qua và run_info ghi null.")
+    ap.add_argument("--round-trip-steps", type=int, default=None,
+                    help="số bước ĐẦU của đợt nghi để được coi là 'NHẢY RỒI QUAY VỀ chỗ cũ' ⇒ xoá "
+                         "nghi (mặc định 2, `0` = TẮT). Vì sao cần: "
+                         "đo 25-11 (`demoip_1125-100334`) cổng báo một cú nhảy 229 px rồi bước sau "
+                         "quay lại cách chỗ cũ 47 px — vật CHƯA hề đổi, nhưng latch không có đường "
+                         "tự xoá khi re-ID tắt ⇒ 33 frame (20,6 phần trăm) chỉ vẽ viền nét đứt. Đo lại: ẩn "
+                         "9→1, chưa-xác-minh 33→0; 10 phiên có nhãn KHÔNG đổi frame nào; 7/7 ca "
+                         "báo đúng giữ nguyên; ca báo OAN `085815#47` KHÔNG bị xoá ⇒ cờ này KHÔNG "
+                         "phải 'sửa báo oan'. `k=8` bắt đầu xoá ca đật ở `144057`.")
     ap.add_argument("--lost-reset-streak", type=int, default=None,
                     help="số frame LIÊN TIẾP không có mask để coi là 'vật đã RỜI KHUNG' ⇒ lần có mask "
                          "kế tiếp là PHIÊN BÁM MỚI (xoá nghi + miễn chấm nhảy 2 bước đầu). Mặc định "

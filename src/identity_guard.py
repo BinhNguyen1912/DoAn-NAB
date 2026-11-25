@@ -144,6 +144,31 @@ DEFAULT_LOST_RESET_STREAK = 3
 # 2 bước. Sau đó mốc là một ô thật (mask 24k px) nên chấm lại là đúng.
 DEFAULT_REACQ_GRACE_STEPS = 2
 
+# ── ROUND-TRIP: "cú nhảy" RỒI "quay về chỗ cũ" ⇒ chưa hề MẤT vật, chỉ là rung -------------------
+# Vấn đề (đo 25-11, phiên `demoip_1125-100334`): cổng báo ở f114 vì tâm nhảy **229 px** sang vùng
+# phantom, rồi **f115 quay lại** cách chỗ cũ **47 px** — vật CHƯA BAO GIỜ đổi. Nhưng latch không có
+# đường tự xoá (đường `--no-reid` không có re-ID reacquire) ⇒ **33 frame (20,6 %) chỉ vẽ viền nét đứt**,
+# người dùng thấy "nghi cũng đúng vật mà không về box đỏ". Đo thêm: ô nét đứt 18 / 34 / 60 % ở 3 phiên.
+#
+# Luật: khi đang `nghi`, nếu trong `k` bước đầu và tâm ô về trong **θ×kích thước vật** của ô TIN CẬY
+# (ô ngay trước cú nhảy) ⇒ `reset()` về `ok`. Đây KHÔNG phải "tự tuyên bố đã xác minh danh tính" —
+# nó nói một điều hẹp hơn: *"ta chưa từng mất vật, chỉ đường bám rung một bước"*.
+#
+# SỐ ĐO (replay trên chính code này, `scripts/replay_latch_settle.py`):
+#   • 10 phiên đóng băng có nhãn (1 509 frame): **không đổi một frame nào** (56 ẩn / 64 chưa-xác-minh);
+#   • 7/7 ca báo ĐÚNG đã dán nhãn: **giữ nguyên**;
+#   • ca báo OAN đã xác nhận `085815#47`: **KHÔNG xoá** (`d/size = 1,16 > 0,3`) — luật này không "sửa"
+#     báo oan, đừng bán nó như vậy;
+#   • phiên bị phàn nán `100334`: ẩn **9 → 1**, chưa-xác-minh **33 → 0**.
+# `k=8` thì bắt đầu xoá cả ca thật ở `144057` (37/48 → 28/18) ⇒ **k=2** là mức đã đo là an toàn.
+# Vẫn CẤM dùng "N bước ổn định rồi tự tin lại" (24-11 D1): đó là tự phán quyết danh tính, khác hẳn.
+DEFAULT_ROUND_TRIP_STEPS = 2
+DEFAULT_ROUND_TRIP_THETA = 0.3          # × max(w,h) của ô tin cậy
+
+
+def _kich_thuoc(bbox) -> float:
+    return max(abs(bbox[2] - bbox[0]), abs(bbox[3] - bbox[1]))
+
 
 class IdentityWatch:
     """Cổng "nghi đổi đối tượng" **CÓ NHỚ** (latch) — báo một lần thì giữ trạng thái nghi.
@@ -165,7 +190,9 @@ class IdentityWatch:
     def __init__(self, max_jump_ratio=DEFAULT_MAX_JUMP_RATIO,
                  settle_steps=DEFAULT_SETTLE_STEPS,
                  lost_reset_streak=DEFAULT_LOST_RESET_STREAK,
-                 reacq_grace_steps=DEFAULT_REACQ_GRACE_STEPS):
+                 reacq_grace_steps=DEFAULT_REACQ_GRACE_STEPS,
+                 round_trip_steps=0,
+                 round_trip_theta=DEFAULT_ROUND_TRIP_THETA):
         """`settle_steps`: số bước ổn định để hạ `nghi` → `chua_xac_minh`. 0 = TẮT (hành vi cũ:
         ẩn tới hết phiên, chỉ `r`/`c` mới xoá) — dùng để tái lập số của các phiên trước 24-11.
 
@@ -177,6 +204,12 @@ class IdentityWatch:
         self.settle_steps = max(0, int(settle_steps))
         self.lost_reset_streak = max(0, int(lost_reset_streak))
         self.reacq_grace_steps = max(0, int(reacq_grace_steps))
+        # `round_trip_steps = 0` = TẮT: tái lập hành vi trước 25-11 (replay cũ vẫn khớp từng frame).
+        self.round_trip_steps = max(0, int(round_trip_steps))
+        self.round_trip_theta = max(0.0, float(round_trip_theta))
+        self._moc_nhay = None    # ô TIN CẬY ngay trước cú nhảy (mốc của luật round-trip)
+        self._sau_nhay = 0       # đã qua bao nhiêu bước kể từ cú nhảy
+        self.so_lan_round_trip = 0   # chẩn đoán: luật này đã xoá nghi bao nhiêu lần
         self._trang_thai = TRANG_THAI_OK
         self._settle = 0
         self._lost = 0          # số bước liên tiếp KHÔNG có mask
@@ -260,11 +293,36 @@ class IdentityWatch:
             # Mốc chưa đáng tin ⇒ KHÔNG chấm (và KHÔNG in cảnh báo — xem `vua_bao`).
             self._grace -= 1
             return self.nghi
+        da_nghi = self._trang_thai == TRANG_THAI_NGHI
+        # --- ROUND-TRIP (25-11): nhảy rồi QUAY VỀ chỗ cũ ⇒ chưa hề mất vật --------------------
+        # Chấm TRƯỚC nhánh `nhay` vì **cú quay về cũng là một cú nhảy** (đo `100334` f114→f115:
+        # 229 px rồi 217 px ngược lại). Chỉ chấm trong `round_trip_steps` bước ĐẦU của đợt nghi:
+        # về muộn hơn thì không còn là "rung một bước" (đo: k=8 bắt đầu xoá cả ca thật `144057`).
+        if (da_nghi and self._moc_nhay is not None and self.round_trip_steps > 0 and co_mask):
+            self._sau_nhay += 1
+            kich_thuoc = _kich_thuoc(self._moc_nhay)
+            cx, cy = (cur_bbox[0] + cur_bbox[2]) / 2.0, (cur_bbox[1] + cur_bbox[3]) / 2.0
+            mx, my = ((self._moc_nhay[0] + self._moc_nhay[2]) / 2.0,
+                      (self._moc_nhay[1] + self._moc_nhay[3]) / 2.0)
+            if (self._sau_nhay <= self.round_trip_steps and kich_thuoc > 0
+                    and math.hypot(cx - mx, cy - my) <= self.round_trip_theta * kich_thuoc):
+                self.so_lan_round_trip += 1
+                self.reset()
+                return self.nghi
+            if self._sau_nhay > self.round_trip_steps:
+                self._moc_nhay = None      # hết cửa sổ ⇒ thôi chấm
         if nhay:
             # Cú nhảy MỚI luôn đưa về `nghi` (kể cả đang `chua_xac_minh`) và đếm lại từ 0.
             self._trang_thai = TRANG_THAI_NGHI
             self._settle = 0
             self._vua_bao = True
+            # Mốc round-trip = ô **tin cậy ngay trước** cú nhảy ĐẦU TIÊN của đợt nghi này.
+            # Nếu mỗi cú nhảy lại lấy mốc mới thì mốc thành **vùng phantom** và luật không bao giờ
+            # khớp (test khoá ca `100334`: ẩn 9 → 1).
+            if not da_nghi:
+                self._moc_nhay = (tuple(prev_bbox)
+                                 if prev_bbox and tuple(prev_bbox) != (0, 0, 0, 0) else None)
+                self._sau_nhay = 0
             return self.nghi
         if self._trang_thai == TRANG_THAI_NGHI:
             if not co_mask:
@@ -283,3 +341,5 @@ class IdentityWatch:
         self._lost = 0
         self._grace = 0
         self._vua_bao = False
+        self._moc_nhay = None
+        self._sau_nhay = 0

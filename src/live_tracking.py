@@ -38,7 +38,7 @@ import numpy as np
 from src.device import normalize_device
 from src.drift_samples import DRIFT_CSV_NAME, DriftSampleLog
 from src import tracking_health
-from src.identity_guard import IdentityWatch
+from src.identity_guard import DEFAULT_ROUND_TRIP_STEPS, IdentityWatch
 from src.open_vocab_detector import OpenVocabDetector
 from src.track_identity import NeoDanhTinh, cos_voi_neo
 from src.light_tracker import DEFAULT_MAX_MAD, LkBoxTracker, shift_mask, warp_mask
@@ -797,7 +797,8 @@ class LiveTrackingSession:
         # Đo trên phiên thật: cổng nhảy báo đúng 1 lần rồi chuyển động lại mượt ⇒ nếu không nhớ thì
         # worker vẫn vẽ mask của vùng SAI. Xoá khi: API ghi `confirm.json` (`xac_nhan_doi_tuong`),
         # hoặc người dùng chọn ô mới (`start()`).
-        self._watch = IdentityWatch()
+        # 25-11: `round_trip_steps` MẶC ĐỊNH (2) — "nhảy rồi quay về chỗ cũ" ≠ mất vật.
+        self._watch = IdentityWatch(round_trip_steps=DEFAULT_ROUND_TRIP_STEPS)
         # 24-11 (review P1): cổng nghi chỉ được ăn **một BƯỚC VOS**, không phải mỗi frame phát.
         # `vos_every=3` ⇒ cùng một kết quả VOS được phát ~3,5 lần ⇒ đếm theo frame phát làm
         # `lost_reset_streak`/`reacq_grace_steps`/`settle_steps` co lại ~3,5 lần (xem docstring

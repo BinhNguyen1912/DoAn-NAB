@@ -461,3 +461,157 @@ class TestBuocVosDaiBatThuong:
         b = search_window_radius((100, 100, 200, 300), self.SHAPE, step_seconds=0.3)
         assert abs(a - b) < 1e-6
         assert is_suspect_switch(self.PREV, self.CUR, self.SHAPE) is True
+
+
+class TestRoundTripNhayRoiQuayVe:
+    """25-11: "cú nhảy RỒI QUAY VỀ chỗ cũ" ≠ "mất vật" ⇒ xoá nghi.
+
+    Vì sao: phiên `data/demoip_1125-100334` — cổng báo ở f114 (tâm nhảy **229 px** sang vùng
+    phantom) rồi **f115 quay lại cách chỗ cũ 47 px**; vật CHƯA hề đổi, nhưng đường `--no-reid` không
+    có re-ID reacquire nên latch **không có đường tự xoá** ⇒ **33 frame (20,6 %) chỉ vẽ viền nét đứt**.
+    Người dùng: *"nghi cũng đúng vật, chưa cập nhật thành box đỏ"*.
+
+    Số khoá trong test lấy từ replay trên **chính code này** (`IdentityWatch` + `_nhay` của
+    `scripts/eval_gate_rules.py`, dữ liệu `data/*_metrics.csv` đã commit) — không chép từ script /tmp.
+    """
+
+    SHAPE = (480, 640)
+
+    @staticmethod
+    def _replay(ten, k):
+        """Replay 1 CSV thật ⇒ (số frame nghi, số frame chưa-xác-minh, số lần bao, số lần round-trip)."""
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        import eval_gate_rules as E
+
+        from src.identity_guard import TRANG_THAI_CHUA_XAC_MINH, TRANG_THAI_NGHI, IdentityWatch
+
+        rows = E.doc_cot(str(Path(__file__).resolve().parents[1] / "data" / ten))
+        w = IdentityWatch(round_trip_steps=k)
+        an = chua = 0
+        fires = []
+        prev = None
+        for r in rows:
+            co = r["mask_area"] is not None and r["mask_area"] > 0
+            nhay = E._nhay(prev, r["bbox"], r["dt"], "hien_tai")
+            truoc = w.nghi
+            w.update(prev or E.ZERO, r["bbox"], E.FRAME_SHAPE, co_mask=co, nhay=nhay)
+            if w.nghi and not truoc:
+                fires.append(r["frame_idx"])
+            an += 1 if w.trang_thai == TRANG_THAI_NGHI else 0
+            chua += 1 if w.trang_thai == TRANG_THAI_CHUA_XAC_MINH else 0
+            prev = r["bbox"] if co else E.ZERO
+        return an, chua, fires, w.so_lan_round_trip
+
+    def test_phien_bi_phan_nan_an_9_thanh_1(self):
+        """100334: ẩn 9 → 1, chưa-xác-minh 33 → **0** (đây là toàn bộ khiếu nại của người dùng)."""
+        an0, chua0, fires0, rt0 = self._replay("demoip_1125-100334_metrics.csv", 0)
+        an2, chua2, fires2, rt2 = self._replay("demoip_1125-100334_metrics.csv", 2)
+        assert (an0, chua0, rt0) == (9, 33, 0)
+        assert (an2, chua2, rt2) == (1, 0, 1)
+        assert fires2 == fires0 == [114], "vẫn phải BÁO (không được nuốt cảnh báo), chỉ xoá khi quay về"
+
+    def test_khong_doi_mot_frame_nao_tren_10_phien_co_nhan(self):
+        """Điều kiện an toàn số 1: 10 phiên đóng băng (1 509 frame) phải Y HỆT.
+
+        Nếu luật này làm đổi bất kỳ frame nào trên bộ có nhãn thì nó đang xoá nghi ở chỗ không ai
+        kiểm được — dừng lại, đừng ship.
+        """
+        import json
+        from pathlib import Path
+
+        repo = Path(__file__).resolve().parents[1]
+        phien = json.loads((repo / "data" / "eval_gate_config_list.json").read_text(encoding="utf-8"))
+        tong = {0: 0, 2: 0}
+        for ten in phien["phien"]:
+            for k in (0, 2):
+                an, chua, _fires, _rt = self._replay(ten, k)
+                tong[k] += an + chua
+        assert tong[0] == tong[2] == 120, f"đổi số frame bị giảm hiển thị: {tong}"
+
+    def test_7_ca_bao_dung_giu_nguyen_va_ca_oan_khong_bi_xoa(self):
+        """Điều kiện an toàn số 2: 7/7 ca báo ĐÚNG giữ nguyên; ca báo OAN đã xác nhận (`085815#47`)
+        **vẫn báo** ⇒ cấm bán luật này như "đã sửa báo oan"."""
+        import sys
+        from pathlib import Path
+
+        sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+        import eval_gate_rules as E
+
+        for k in (0, 2):
+            giu = 0
+            for ten, f in E.CA_DUNG:
+                _an, _chua, fires, _rt = self._replay(ten, k)
+                giu += 1 if f in fires else 0
+            assert giu == 7, f"k={k}: mất ca báo đúng ({giu}/7)"
+        _an, _chua, fires_sai, _rt = self._replay("demoip_1125-085815_metrics.csv", 2)
+        assert 47 in fires_sai, "ca báo OAN đã xác nhận bị luật này XOÁ ⇒ luật đang xoá cả cảnh báo thật"
+
+    def test_k8_bat_dau_xoa_ca_that(self):
+        """`k=8` xoá ca thật ở `144057` (37/48 → 28/18) ⇒ 8 KHÔNG phải mức an toàn, đừng nâng."""
+        a0, c0, _f, _r = self._replay("demoip_1124-144057_metrics.csv", 0)
+        a8, c8, _f, _r = self._replay("demoip_1124-144057_metrics.csv", 8)
+        assert (a0, c0) == (37, 48)
+        assert (a8, c8) == (28, 18), "k=8 đổi hành vi ở phiên có ca báo đúng ⇒ phải khoá lại"
+
+    # ── unit: cơ chế ─────────────────────────────────────────────────────────────────────────
+    def test_don_gian_nhat_nhay_roi_ve(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(round_trip_steps=2)
+        goc = (340, 200, 480, 320)
+        w.update(goc, goc, self.SHAPE)                       # bước đầu: mốc
+        assert w.update(goc, (207, 383, 313, 479), self.SHAPE) is True    # nhảy đi (229 px)
+        assert w.nghi
+        assert w.update((207, 383, 313, 479), (350, 210, 470, 315), self.SHAPE) is False
+        assert not w.nghi, "quay về trong 0,3×kích thước ⇒ phải hết nghi"
+        assert w.so_lan_round_trip == 1
+
+    def test_hai_cu_nhay_lien_tiep_giu_moc_cu(self):
+        """Đo `100334` f114→f115: SAM nhảy ĐI rồi nhảy VỀ — hai cú nhảy liên tiếp. Nếu mỗi cú nhảy
+        lấy mốc mới thì mốc thành vùng phantom và luật không bao giờ khớp (ẩn 9 chứ không phải 1)."""
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(round_trip_steps=2)
+        goc = (379, 233, 554, 430)
+        w.update(goc, goc, self.SHAPE)
+        w.update(goc, (207, 383, 313, 479), self.SHAPE)       # nhảy đi
+        assert w.update((207, 383, 313, 479), (379, 160, 485, 436), self.SHAPE) is False
+        assert w.so_lan_round_trip == 1, "cú nhảy THỨ HAI chính là cú quay về ⇒ phải khớp mốc cũ"
+
+    def test_qua_cua_so_thi_thoi_cham(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(round_trip_steps=2)
+        goc = (340, 200, 480, 320)
+        w.update(goc, goc, self.SHAPE)
+        w.update(goc, (200, 380, 300, 476), self.SHAPE)        # nhảy
+        for _ in range(4):                                     # 4 bước ở xa
+            w.update((200, 380, 300, 476), (210, 380, 300, 476), self.SHAPE)
+        w.update((210, 380, 300, 476), (350, 210, 470, 315), self.SHAPE)   # về muộn
+        assert w.so_lan_round_trip == 0, "về sau cửa sổ ⇒ không được coi là 'rung một bước'"
+
+    def test_0_la_tat(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(round_trip_steps=0)
+        goc = (340, 200, 480, 320)
+        w.update(goc, goc, self.SHAPE)
+        w.update(goc, (207, 383, 313, 479), self.SHAPE)
+        w.update((207, 383, 313, 479), goc, self.SHAPE)
+        assert w.nghi or w.chua_xac_minh, "0 = TẮT ⇒ hành vi trước 25-11 (không tự xoá)"
+        assert w.so_lan_round_trip == 0
+
+    def test_buoc_moi_false_khong_doi_gi(self):
+        from src.identity_guard import IdentityWatch
+
+        w = IdentityWatch(round_trip_steps=2)
+        goc = (340, 200, 480, 320)
+        w.update(goc, goc, self.SHAPE)
+        w.update(goc, (207, 383, 313, 479), self.SHAPE)
+        truoc = w.so_lan_round_trip
+        for _ in range(5):
+            w.update((207, 383, 313, 479), goc, self.SHAPE, buoc_moi=False)
+        assert w.so_lan_round_trip == truoc, "cùng một kết quả VOS không mang thêm thông tin"

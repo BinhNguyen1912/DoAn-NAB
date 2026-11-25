@@ -355,7 +355,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                        visualizer=None, preselect_bbox=None,
                        on_result=None, reid_session=None, source_max_fps=None, *,
                        settle_steps=None, max_jump_ratio=None,
-                       lost_reset_streak=None, box_smooth_tau_ms=None) -> InteractiveSummary:
+                       lost_reset_streak=None, box_smooth_tau_ms=None,
+                       round_trip_steps=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
@@ -386,12 +387,16 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     # `settle_steps=None` ⇒ giữ mặc định của `IdentityWatch`. Có mặt để `--settle-steps` THẬT SỰ
     # đổi được hành vi: trước 24-11 `run_info` ghi `settle_steps=8` như một biến điều khiển trong khi
     # không tồn tại cờ nào (provenance giả — review độc lập 24-11, P1).
-    from src.identity_guard import DEFAULT_SETTLE_STEPS
+    from src.identity_guard import DEFAULT_ROUND_TRIP_STEPS, DEFAULT_SETTLE_STEPS
 
     watch = IdentityWatch(
         settle_steps=DEFAULT_SETTLE_STEPS if settle_steps is None else settle_steps,
         **({} if max_jump_ratio is None else {"max_jump_ratio": max_jump_ratio}),
         **({} if lost_reset_streak is None else {"lost_reset_streak": lost_reset_streak}),
+        # 25-11: "nhảy rồi quay về chỗ cũ" ⇒ chưa mất vật ⇒ xoá nghi (đo: `100334` ẩn 9→1,
+        # chưa-xác-minh 33→0; 10 phiên có nhãn KHÔNG đổi; 7/7 ca báo đúng giữ nguyên).
+        round_trip_steps=(DEFAULT_ROUND_TRIP_STEPS if round_trip_steps is None
+                          else round_trip_steps),
     )
     switch = False
     # Bước VOS dài bao nhiêu GIÂY (đo bằng đồng hồ thực giữa 2 kết quả liên tiếp) — cổng nghi dùng để nới
