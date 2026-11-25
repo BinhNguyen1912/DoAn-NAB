@@ -125,9 +125,44 @@
     `!data/nhan/*.jsonl` + `!data/nhan/*_tonghop.json` vào `.gitignore`.
   - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
     **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
-- **Sau khi sửa:** `./run lint` xanh · `tests/test_label_ui.py` **58 test** · `./run labeluie2e`
-  **PASS 27/27** trên Chrome thật, không phụ thuộc `data/`.
-- Vòng review đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
+- **Sau khi sửa (vòng 1 + vòng 2):** `./run lint` xanh · `./run test` **2 156 passed** ·
+  `tests/test_label_ui.py` **71 test** · `./run labeluie2e` **PASS 27/27** trên Chrome thật, không phụ
+  thuộc `data/`.
+### Review vòng 2 (task `mwvq1i7z-26e0`) — bắt 3 P1 mà vòng 1 bỏ qua
+
+Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiển thị, và bắt đúng 3 lỗi làm **số liệu sai
+âm thầm**:
+
+- **P1-A tên người dán là đồ trang trí**: `ghi_nhan(... self.nguoi_gan)` ⇒ gõ tên gì trong UI cũng ghi
+  tên của cờ `--nguoi-gan` lúc khởi động. Hệ quả: 2 người dùng **cùng một server** (đúng như tài liệu
+  hướng dẫn) ⇒ `so_nguoi = 1`, `dong_y_2_nguoi = null` ⇒ **không bao giờ** có được con số "2 người đồng
+  ý" để nộp bài. Và assertion của e2e cũ xanh **kể cả khi UI bị bỏ qua hoàn toàn** (vì server chạy
+  `--nguoi-gan e2e` và test gõ `e2e`). Đã sửa: tên đi cùng body nhãn, server dùng tên đó; `/api/frames`
+  lọc theo `?nguoi=`; e2e gõ tên **khác** (`nguoi-tu-ui`) nên assertion mới có hiệu lực; test Python
+  `--nguoi-gan Binh` + body `An` ⇒ file ghi `An`.
+- **P1-B `veO.buoc` được GHI mà không chỗ nào ĐỌC** ⇒ ô vẽ vẫn dính sang bước sau trong 3 đường: (1) tua
+  bằng `<video controls>` vì `capNhat` chỉ chạy ~4 lần/s, (2) `→` rồi bấm phím ngay (< độ trễ `seeked`),
+  (3) **đổi phiên** không reset `veO`. Đã sửa: `bbox_dung` chỉ gửi khi `veO.buoc === i` (đọc tại chỗ
+  ghi), reset `veO`/`buocTruoc`/`nhanChon` trong `chonPhien`.
+- **P1-C `s` mang nhãn của BƯỚC TRƯỚC**: guard chỉ bảo vệ lần bấm đầu của cả phiên ⇒ bấm `2` ở bước *k*,
+  `→`, bấm `s` là ghi `sai` cho bước *k+1* dù chưa phán quyết. Đã sửa: `nhanChon = {buoc, nhan}` và
+  `luuVaTiep` chỉ dùng lại khi `nhanChon.buoc === bước hiện tại`.
+- **P2 đã sửa**: ô 0 px (bấm `b` rồi **click**) từng làm POST 400 và **khoá cả phiên** tới khi Esc; `bo_qua`
+  bị tính là "2 người đồng ý" (nay tách `so_buoc_ca_hai_co_ket_luan`); dòng JSON rác làm `tong_hop` ném
+  **sau khi** nhãn đã ghi (nay đếm `so_nhan_loi`, `so_nhan_trung` chỉ trên dòng hợp lệ); trộn không-gian
+  khoá `buoc`/`frame_vos` (nay có tiền tố `("buoc",n)`/`("frame",n)`); server **không đối chiếu `buoc`
+  với CSV** (nay 400 nếu ngoài dải hoặc `frame_vos` lệch); doc hứa UI hiện `chua_xac_minh_n` mà code
+  không hiện (nay hiện); e2e "phím số khi con trỏ ở ô tên" **không hề được test** (`type('')` + Enter
+  trước) → nay bấm `1` khi con trỏ còn trong ô tên.
+- **P3 đã sửa**: `Origin: "null"` là trọng lượng chết (bỏ) — thay bằng **allowlist `Host`** vì đường còn
+  hở là **DNS rebinding** (Origin == Host); `trap` trong `run` đặt trước lệnh có thể fail + kiểm server
+  có lên; `--tong-hop` trả mã 1 khi chưa trích được (1 người / 0 bước trùng có kết luận); fixture: vật
+  chạy ra ngoài khung từ frame 56 (nay `i % 56`) và docstring sai số frame; POST **serialize** trong UI
+  để "dòng cuối thắng" đúng thứ tự bấm; bỏ dead code `_trong_repo`.
+- Reviewer ghi rõ **không có shell** nên lint/test/e2e là số của tôi, không tái lập được — đúng quy ước
+  "ghi rõ môi trường đo".
+
+- Vòng review vòng 1 đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
   ⇒ các mục P1 đã sửa cần **review vòng 2** trước khi merge.
 
 ## 📌 Việc cần làm tiếp (Next steps)

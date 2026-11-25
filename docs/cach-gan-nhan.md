@@ -7,8 +7,12 @@
 
 ```bash
 cd /mnt/d/doan-nab
-./run labelui --nguoi-gan Binh          # tên bạn — BẮT BUỘC, không có thì nhãn ghi "?" và không dùng được
+./run labelui --nguoi-gan Binh          # tên MẶC ĐỊNH (điền sẵn vào ô "Người gán")
 ```
+**Tên trong ô "Người gán" là tên được ghi vào file** — sửa ô đó là đổi người dán. Vì vậy **hai người
+dùng chung một server cũng đúng**: mỗi người gõ tên mình, nhãn ghi đúng tên đó (`--nguoi-gan` chỉ là
+giá trị điền sẵn). Nhãn của người khác **không** được gửi về trình duyệt (server chỉ trả nhãn của tên
+đang hỏi + số lượng của người khác).
 Rồi mở link script in ra: **http://127.0.0.1:8770** (mở bằng Chrome/Edge trên Windows; WSL chia cổng
 với Windows nên `127.0.0.1` thường vào được — nếu không, xem mục 5).
 
@@ -51,7 +55,7 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
   quyết. Ô được **xoá khi sang bước khác**: nó thuộc về đúng bước bạn vẽ, không đi theo.
 - Enter ở ô "Người gán" = nhả focus (sau đó phím tắt mới ăn; bạn cũng không cần click ra ngoài).
 
-## 3. Ba cái bẫy phải biết (đã từng làm sai số của repo)
+## 3. Bốn cái bẫy phải biết (đã từng làm sai số của repo)
 
 1. **Thời điểm frame ↔ giây KHÔNG chia đều.** Tool tính `t≈` bằng cách **cộng dồn `latency_ms`** của
    từng bước. Trên phiên `demoip_1125-121456` (295 bước / 98,3 s), chia đều cho bước 141 ra **46,6 s**
@@ -82,6 +86,10 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 | Kiểm một ca cụ thể (1 lần cổng báo) | 5 bước trước + lúc báo + 5 bước sau |
 | Tỉ lệ "bắt đúng" của một phiên | mọi bước có vật trong khung (bỏ `4`) |
 | Đối chứng 2 người cho báo cáo | **cùng một tập** bước, 2 người dán độc lập ⇒ `--tong-hop` cho số đồng ý |
+
+Bước có `latency_ms = 0` (frame bị đóng băng ở phiên bật re-ID) có `t≈` **trùng** bước trước ⇒ tool
+không bao giờ nhảy tới đúng bước đó; phiên demo (`--no-reid`) không có ca này, nhưng nếu chấm phiên bật
+re-ID thì dùng `,`/`.` để chỉnh tay.
 
 Ghi nhãn **từng bước VOS**, không phải từng frame video — video 30 fps có ~9 frame cho mỗi bước.
 Bộ đếm trên UI đếm **bước đã dán** (một bước dán lại chỉ tính 1), còn `--tong-hop` báo cả

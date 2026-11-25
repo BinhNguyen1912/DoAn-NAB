@@ -4,7 +4,7 @@
 Vì sao cần: `data/*` bị `.gitignore` (video demo nặng), nên bản e2e trỏ vào một phiên thật
 (`data/demoip_1125-121456_metrics.csv` + `_web.mp4`) chỉ chạy được **trên máy đã quay phiên đó**.
 Trên clone sạch/CI nó đỏ với "Option not found" — đúng bài học AGENTS §6 (`test_bench_gpu_binh2` từng
-đỏ vì đọc `data/binh2.mp4` không được track). Ở đây tự sinh CSV + mp4 nhỏ (~40 frame, 8 s).
+đỏ vì đọc `data/binh2.mp4` không được track). Ở đây tự sinh CSV + mp4 nhỏ (mặc định 300 frame / 30 s @10 fps).
 
 Chạy (thường do `./run labeluie2e` gọi):
     python scripts/make_labelui_fixture.py --out-dir /tmp/labelui_data
@@ -51,7 +51,9 @@ def tao(out_dir: Path, so_frame: int = 300, fps: int = 10) -> Path:
     try:
         for i in range(so_frame):
             khung = np.full((h, w, 3), 40, dtype=np.uint8)
-            x = 20 + i * 5
+            # Vật LUÔN nằm trong khung: `i*5` chạy ra ngoài 320 px từ frame 56 ⇒ bbox CSV vô nghĩa với
+            # 80 % frame mẫu (review vòng 2, P3-5).
+            x = 20 + (i % 56) * 5
             cv2.rectangle(khung, (x, 90), (x + 40, 150), (30, 200, 240), -1)   # "vật" màu vàng
             cv2.rectangle(khung, (x, 90), (x + 40, 150), (255, 255, 255), 1)   # viền = "ô của hệ"
             cv2.putText(khung, f"#{i}", (6, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (220, 220, 220), 1)
@@ -73,7 +75,7 @@ def tao(out_dir: Path, so_frame: int = 300, fps: int = 10) -> Path:
                        "mask_area", "nghi_doi_tuong"])
         for i in range(so_frame):
             lat = 2000.0 if i == 150 else 100.0
-            x = 20 + i * 5
+            x = 20 + (i % 56) * 5
             wcsv.writerow([i, lat, x + 20, 120, 40, 60, 2400, "1" if i == 30 else ""])
     return csv_path
 

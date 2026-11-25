@@ -148,14 +148,6 @@ def duong_dan_gon(p: Path) -> str:
         return str(p)
 
 
-def _trong_repo(p: Path) -> bool:
-    try:
-        Path(p).resolve().relative_to(REPO_ROOT)
-        return True
-    except ValueError:
-        return False
-
-
 def liet_ke_phien() -> list[dict]:
     """Các phiên có cả CSV + video, mới nhất trước, kèm số nhãn đã có.
 
@@ -219,10 +211,25 @@ def doc_nhan(phien: str, thu_muc: Path | None = None) -> list[dict]:
     return ra
 
 
+def chuan_hoa_ten(ten) -> str:
+    """Tên người dán: bắt buộc, ≤ 40 ký tự, không được là `?`.
+
+    KHÔNG phải ranh giới an ninh (ai cũng khai được tên bất kỳ — ranh giới an ninh là `ten_hop_le` cho
+    đường dẫn). Đây là để FILE BẰNG CHỨNG có provenance đọc được, và để `tong_hop` đếm đúng số người.
+    """
+    t = str(ten or "").strip()
+    if not t:
+        raise ValueError("thiếu `nguoi_gan` — số dán mà không nói ai dán thì không trích được (AGENTS §9.1)")
+    if t == "?":
+        raise ValueError("`nguoi_gan` không được là '?' — hãy khai tên thật")
+    if len(t) > 40:
+        raise ValueError("`nguoi_gan` quá dài (>40 ký tự)")
+    return t
+
+
 def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = None) -> dict:
     """Ghi MỘT nhãn (append-only). Trả record đã chuẩn hoá (để UI hiện lại được)."""
-    if not nguoi_gan or not str(nguoi_gan).strip():
-        raise ValueError("thiếu `nguoi_gan` — số dán mà không nói ai dán thì không trích được (AGENTS §9.1)")
+    nguoi_gan = chuan_hoa_ten(nguoi_gan)
     nhan = str(record.get("nhan") or "").strip()
     if nhan not in NHAN:
         raise ValueError(f"nhãn không hợp lệ: {nhan!r}; chỉ nhận {sorted(NHAN)}")
@@ -271,10 +278,24 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
     """
     rows = doc_nhan(phien, thu_muc)
     hieu_luc: dict[tuple, str] = {}
+    so_nhan_loi = so_thieu_buoc = so_hop_le = 0
     for r in rows:
-        if r.get("nhan") in NHAN:
-            khoa = r.get("buoc") if r.get("buoc") is not None else int(r["frame_vos"])
-            hieu_luc[(khoa, r.get("nguoi_gan") or "?")] = r["nhan"]
+        if not isinstance(r, dict) or r.get("nhan") not in NHAN or not r.get("nguoi_gan"):
+            so_nhan_loi += 1               # dòng JSON hợp lệ nhưng không phải nhãn ⇒ KHÔNG được làm sập
+            continue
+        so_hop_le += 1
+        # Hai KHÔNG GIAN KHOÁ khác nhau phải mang tiền tố, nếu không một dòng legacy (`frame_vos=7`,
+        # không có `buoc`) sẽ ghi đè một bước khác (`buoc=7`) — đúng loại lỗi trộn schema (review P2-4).
+        if r.get("buoc") is not None:
+            khoa = ("buoc", int(r["buoc"]))
+        elif r.get("frame_vos") not in (None, ""):
+            khoa = ("frame", int(r["frame_vos"]))
+            so_thieu_buoc += 1
+        else:
+            so_nhan_loi += 1
+            so_hop_le -= 1
+            continue
+        hieu_luc[(khoa, r["nguoi_gan"])] = r["nhan"]
     theo_nguoi: dict[str, dict] = {}
     ban: dict[object, dict[str, str]] = {}
     for (buoc, nguoi), nhan in hieu_luc.items():
@@ -285,12 +306,18 @@ def tong_hop(phien: str, thu_muc: Path | None = None) -> dict:
     dong_y = None
     if len(theo_nguoi) >= 2:
         chung = [v for v in ban.values() if len(v) >= 2]
+        # `bo_qua` KHÔNG phải một kết luận: hai người cùng bấm "không kết luận được" mà tính là "đồng ý"
+        # sẽ thổi phồng đúng con số đem đi trích (review vòng 2, P2-2).
+        ket_luan = [v for v in chung if all(x != "bo_qua" for x in v.values())]
         dong_y = {
             "so_buoc_ca_hai": len(chung),
-            "so_buoc_dong_y": sum(1 for v in chung if len(set(v.values())) == 1),
+            "so_buoc_ca_hai_co_ket_luan": len(ket_luan),
+            "so_buoc_dong_y": sum(1 for v in ket_luan if len(set(v.values())) == 1),
         }
     return {"phien": phien, "tong_nhan": len(rows), "so_nhan_hieu_luc": len(hieu_luc),
-            "so_nhan_trung": len(rows) - len(hieu_luc), "so_buoc_da_dan": len(ban),
+            "so_nhan_trung": max(0, so_hop_le - len(hieu_luc)),
+            "so_nhan_loi": so_nhan_loi, "so_nhan_thieu_buoc": so_thieu_buoc,
+            "so_buoc_da_dan": len(ban),
             "theo_nguoi": theo_nguoi, "so_nguoi": len(theo_nguoi), "dong_y_2_nguoi": dong_y}
 
 
@@ -400,18 +427,43 @@ class _Handler(BaseHTTPRequestHandler):
                 return self._json({"loi": str(e)}, 400)
             # ĐỘC LẬP THẬT: chỉ trả nhãn của CHÍNH người đang dán; nhãn người khác chỉ đi kèm SỐ LƯỢNG.
             # Trước đây server trả hết rồi UI ẩn bằng CSS ⇒ mở DevTools là thấy, "2 người độc lập" thành giả.
-            tat_ca = doc_nhan(ten)
-            cua_toi = [r for r in tat_ca if (r.get("nguoi_gan") or "") == self.nguoi_gan]
+            # Tên người dán nay do CLIENT khai (`?nguoi=`) vì 2 người có thể dùng CHUNG một server (đó là
+            # cách làm đúng tài liệu) — mặc định là tên cấu hình lúc khởi động.
+            toi = (q.get("nguoi") or [self.nguoi_gan])[0].strip() or self.nguoi_gan
+            tat_ca = [r for r in doc_nhan(ten) if isinstance(r, dict)]
+            cua_toi = [r for r in tat_ca if (r.get("nguoi_gan") or "") == toi]
+            d["nguoi_dang_dan"] = toi
             d["da_gan"] = cua_toi
             d["so_nhan_nguoi_khac"] = len(tat_ca) - len(cua_toi)
             d["nguoi_khac"] = sorted({r.get("nguoi_gan") for r in tat_ca
-                                      if (r.get("nguoi_gan") or "") != self.nguoi_gan} - {None})
+                                      if (r.get("nguoi_gan") or "") != toi} - {None})
             return self._json(d)
         return self._json({"loi": "không có route"}, 404)
 
     # Origin được phép: server chỉ phục vụ đúng trang của nó. Trang web khác KHÔNG được ghi nhãn vào
     # phiên đang dán — file nhãn là BẰNG CHỨNG, bị chèn dòng là hỏng cả kết luận (review độc lập P1).
-    ORIGIN_CHO = {"", "null"}          # "" = không gửi Origin (curl/tool), "null" = file://
+    ORIGIN_CHO = {""}          # "" = không gửi Origin (curl/tool). KHÔNG nhận "null": mọi POST
+    # `application/json` cross-origin đều phải preflight, mà server không có `do_OPTIONS` ⇒ browser
+    # không gửi POST. Ngược lại, DNS rebinding thì Origin == Host nên allowlist `Host` mới chặn được.
+    HOST_CHO = ("", "127.0.0.1", "localhost", "::1")
+
+    def _host_hop_le(self) -> bool:
+        """Chặn DNS rebinding: kẻ tấn công khiến Origin == Host nên chỉ kiểm Origin là vô ích."""
+        host = (self.headers.get("Host") or "").strip().lower()
+        if not host:
+            return True                      # curl không gửi Host (HTTP/1.0) — không phải đường browser
+        ten, _, cong = host.rpartition(":") if host.count(":") == 1 else (host, "", "")
+        ten = ten.strip("[]")
+        if ten in self.HOST_CHO:
+            return True
+        # bind 0.0.0.0 ⇒ chấp nhận IP LAN của chính máy này (người dùng mở từ máy khác)
+        try:
+            import socket
+            if ten == socket.gethostbyname(socket.gethostname()):
+                return True
+        except OSError:
+            pass
+        return False
 
     def _origin_hop_le(self) -> bool:
         o = self.headers.get("Origin") or ""
@@ -423,6 +475,8 @@ class _Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path != "/api/label":
             return self._json({"loi": "không có route"}, 404)
+        if not self._host_hop_le():
+            return self._json({"loi": "Host lạ — không nhận (chống DNS rebinding)"}, 403)
         if not self._origin_hop_le():
             return self._json({"loi": "Origin lạ — không nhận nhãn từ trang web khác"}, 403)
         # Bắt buộc `application/json`: một request "simple" (text/plain, no-cors) KHÔNG được phép đổi
@@ -449,8 +503,35 @@ class _Handler(BaseHTTPRequestHandler):
             return self._json({"loi": "thiếu `phien`"}, 400)
         if not ten_hop_le(phien):
             return self._json({"loi": "tên phiên không hợp lệ"}, 400)
+        # ĐỐI CHIẾU với CSV server đang giữ: `buoc` phải nằm trong dải và `frame_vos` phải khớp dòng
+        # đó. Không có bước này thì client ghi được `buoc = 999999` hoặc `frame_vos` cũ (CSV sinh lại
+        # cùng tên), mà đây là file BẰNG CHỨNG (review vòng 2, P2-5).
+        csv_path = DATA_DIR / f"{phien}_metrics.csv"
         try:
-            rec = ghi_nhan(phien, body, self.nguoi_gan)
+            khung = doc_phien(csv_path)["frames"]
+        except (OSError, ValueError) as e:
+            return self._json({"loi": f"không đọc được CSV của phiên: {e}"}, 400)
+        buoc = body.get("buoc")
+        if buoc not in (None, ""):
+            try:
+                buoc = int(buoc)
+            except (TypeError, ValueError):
+                return self._json({"loi": "`buoc` phải là số nguyên"}, 400)
+            if not 0 <= buoc < len(khung):
+                return self._json({"loi": f"`buoc` ngoài dải 0..{len(khung) - 1}"}, 400)
+            fv = body.get("frame_vos")
+            if fv not in (None, ""):
+                try:
+                    if int(fv) != int(khung[buoc]["frame_vos"]):
+                        return self._json({"loi": "`frame_vos` không khớp dòng CSV của `buoc`"}, 400)
+                except (TypeError, ValueError):
+                    return self._json({"loi": "`frame_vos` phải là số nguyên"}, 400)
+        # P1-A: TÊN NGƯỜI DÁN LẤY TỪ CHÍNH NHÃN (body), không phải cờ lúc khởi động. Trước đây
+        # `--nguoi-gan` quyết định toàn bộ ⇒ 2 người mở cùng URL thì mọi nhãn ghi 1 tên ⇒ "2 người
+        # đồng ý" không bao giờ đạt được bằng cách làm đúng tài liệu.
+        nguoi = body.get("nguoi_gan") or self.nguoi_gan
+        try:
+            rec = ghi_nhan(phien, body, nguoi)
         except ValueError as e:
             return self._json({"loi": str(e)}, 400)
         return self._json({"ok": True, "record": rec, "tong_hop": tong_hop(phien)})
@@ -489,7 +570,16 @@ def main(argv=None) -> int:
                                    "do_luc": datetime.now().astimezone().isoformat(timespec="seconds"),
                                    **d}, ensure_ascii=False, indent=2) + "\n", encoding="utf-8")
         print(f"\n[artifact] {duong_dan_gon(out)}")
-        return 0 if d["tong_nhan"] else 1
+        if not d["tong_nhan"]:
+            print("[tong-hop] KHÔNG có nhãn nào — chưa đo được gì")
+            return 1
+        if d["so_nguoi"] < 2:
+            print(f"[tong-hop] CHỈ {d['so_nguoi']} người dán ⇒ CHƯA trích được (cần 2 người độc lập)")
+            return 1
+        if d["dong_y_2_nguoi"] and d["dong_y_2_nguoi"]["so_buoc_ca_hai_co_ket_luan"] == 0:
+            print("[tong-hop] hai người KHÔNG dán trùng bước nào có kết luận ⇒ chưa so được")
+            return 1
+        return 0
 
     nguoi = (args.nguoi_gan or "").strip() or "?"
     if nguoi == "?":

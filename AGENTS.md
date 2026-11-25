@@ -397,9 +397,11 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   `thời lượng video / tổng latency`** (phiên `121456`: 94,76 s vs video 98,0 s ⇒ 1,034; không bù thì
   cuối video lệch ~3 s và nhãn rơi sang bước khác) — nên **nhãn luôn lưu `t_video` thật** để truy ngược;
   (b) `3` và `4` là hai chuyện khác nhau, gộp lại là biến "hệ mất dấu" thành "người dùng cất vật"; (c) UI
-  **ẩn nhãn của người khác** (chỉ hiện số lượng) — nếu không, "2 người đồng ý" chỉ là 1 người dán 2 lần.
-  Nhãn nằm trong `data/` (gitignore): muốn dùng làm **bằng chứng nộp bài** thì `git add -f` file
-  `.jsonl` + `_tonghop.json` (*đã* có ngoại lệ trong `.gitignore`). E2E: `./run labeluie2e` (Chrome thật,
+  **không nhận nội dung nhãn của người khác** (server chỉ trả nhãn của tên đang hỏi + **số lượng** và tên
+  người khác) — nếu không, "2 người đồng ý" chỉ là 1 người dán 2 lần. **Tên người dán là ô trong UI và đi
+  cùng từng nhãn** (không phải `--nguoi-gan`; cờ đó chỉ là giá trị điền sẵn) ⇒ 2 người dùng chung 1 server
+  vẫn ra `so_nguoi = 2`. Nhãn nằm trong `data/` và **đã** có ngoại lệ trong `.gitignore` ⇒ `git add
+  data/nhan/` (đừng `-f`). E2E: `./run labeluie2e` (Chrome thật,
   **27 mục**, tự sinh fixture H.264 vào thư mục tạm — `data/*` bị gitignore nên e2e trỏ vào phiên thật sẽ
   đỏ trên clone sạch; **mp4v Chrome không phát được** nên phải qua `transcode_for_web`). Nhãn của người
   khác **không được server gửi về trình duyệt** (chỉ số lượng) — ẩn bằng CSS là "độc lập" giả. Vẫn **không** thay được mIoU mask vs GT: nhãn này là *phán

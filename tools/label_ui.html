@@ -176,16 +176,30 @@ function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.f
 async function chonPhien(ten){
   state.phien = ten;
   state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
-  const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten));
+  veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+  buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
+  const toi = ($('nguoi').value || '').trim();
+  const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
+                          + '&nguoi=' + encodeURIComponent(toi));
   state.frames = d.frames;
   state.tongLatency = d.tong_latency_s;
+  state.chuaXacMinh = (await getJSON('/api/sessions')).phien
+    .find(p => p.phien === ten)?.chua_xac_minh_n || null;
   state.daGan = d.da_gan || [];
   state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
   state.nguoiKhac = d.nguoi_khac || [];
   const v = $('v');
-  v.src = '/video?v=' + encodeURIComponent(d.video);
-  v.load();
+  // Chỉ nạp lại khi ĐÚNG là video khác: đổi tên người dán cũng gọi lại `chonPhien` (để server lọc
+  // nhãn theo người) mà nạp lại video thì `currentTime` về 0 ⇒ nút "bước sau" như chết.
+  const nguon = '/video?v=' + encodeURIComponent(d.video);
+  if (v.getAttribute('src') !== nguon){
+    v.src = nguon;
+    v.load();
+  }
+  const cxm = state.chuaXacMinh;
   $('meta').innerHTML = `${d.video} · ${d.frames.length} bước VOS · ${d.tong_latency_s}s (ước lượng)`
+    + (cxm ? ` · <span class="pill warn" title="đếm từ run_info; CSV KHÔNG có cột theo từng bước">`
+        + `CHUA XAC MINH: ${cxm} frame</span>` : '')
     + (d.canh_bao ? ` <span class="pill bad" title="${d.canh_bao}">CSV: frame_idx lặp</span>` : '');
   window.__labelui = state;          // để E2E/điều tra đọc được (không phải API công khai)
   veTienDo(); veBang();
@@ -214,6 +228,7 @@ function capNhat(){
     state.nhanChon = null;                    // nhãn đã chọn thuộc bước khác ⇒ `s` phải từ chối
     flash('Đã sang bước khác — bấm 1/2/3/4 để chọn nhãn cho bước này');
   }
+  void 0;
   buocTruoc = i;
   const f = state.frames[i] || {};
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
@@ -275,26 +290,46 @@ $('c').addEventListener('mouseup', () => {
   veO.dang = false;
   $('drawHint').style.display = 'none';
   $('c').classList.remove('dang-ve');       // trả chuột lại cho <video controls>
+  // Click mà không kéo ⇒ ô 0 px. Server từ chối (`x2 > x1`), và bản cũ còn GIỮ ô đó ⇒ MỌI nhãn sau
+  // đều 400 tới khi bấm Esc (review vòng 2, P2-1). Bỏ ô ngay tại đây.
+  if (Math.abs(veO.x1 - veO.x0) < 3 || Math.abs(veO.y1 - veO.y0) < 3){
+    veO.co = false; veO.buoc = null; veCanvas();
+  }
 });
 
 // ── ghi nhãn ────────────────────────────────────────────────────────────────
+// HÀNG ĐỢI cho POST: hai lần bấm phím sát nhau mở 2 connection song song ⇒ server có thể nhận SAI THỨ
+// TỰ, và quy tắc "nhãn CUỐI của mỗi bước là nhãn có hiệu lực" sẽ chọn phím bấm TRƯỚC (review vòng 2).
+let hangDoi = Promise.resolve();
+
 async function ghiNhan(nhan){
+  hangDoi = hangDoi.then(() => ghiNhanThat(nhan)).catch(() => {});
+  return hangDoi;
+}
+
+async function ghiNhanThat(nhan){
   const nguoi = ($('nguoi').value || '').trim();
+  state.nguoi = nguoi;
   if (!nguoi){ alert('Nhập "Người gán" trước (cần biết ai dán để so 2 người độc lập).'); $('nguoi').focus(); return; }
   localStorage.setItem('labelui_nguoi', nguoi);
   const v = $('v'), i = chiSoHienTai(), f = state.frames[i] || {};
   const body = {
     phien: state.phien, nhan,
+    nguoi_gan: nguoi,        // P1-A: tên người dán đi CÙNG nhãn; server lấy tên này, không lấy cờ CLI
     // `buoc` = danh tính bước (duy nhất); `frame_vos` chỉ để người đọc đối chiếu CSV.
     buoc: f.buoc, frame_vos: f.frame_vos, t_video: v.currentTime, t_uoc_luong: f.t_uoc_luong,
-    bbox_dung: veO.co ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
-                         Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null
+    // Ô chỉ được gửi nếu nó được vẽ TRÊN CHÍNH BƯỚC NÀY. Xoá ô trong `capNhat` là chưa đủ: `capNhat`
+    // chạy theo event (~4 lần/s với `timeupdate`) nên bấm phím trong khe giữa hai event vẫn gửi ô cũ
+    // (review vòng 2, P1-B). Đây mới là chỗ ĐỌC `veO.buoc`.
+    bbox_dung: (veO.co && veO.buoc === i)
+      ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
+         Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null
   };
   const r = await fetch('/api/label', {method:'POST', headers:{'Content-Type':'application/json'},
                                        body: JSON.stringify(body)});
   const d = await r.json();
   if (!r.ok){ alert('Lỗi: ' + (d.loi || r.status)); return; }
-  state.nhanChon = nhan;          // để `s` / nút "Lưu & bước kế" lưu ĐÚNG nhãn vừa chọn
+  state.nhanChon = {buoc: i, nhan};   // nhớ cả BƯỚC: `s` chỉ được lưu lại nhãn của ĐÚNG bước này
   state.daGan.push(d.record);
   veO.co = false; veO.buoc = null; veCanvas();
   veTienDo(); veBang();
@@ -351,16 +386,23 @@ $('prev').onclick = () => nhayBuoc(-1);
 // "Lưu & bước kế": nếu đã bấm 1/2/3/4 ở bước này thì ghi LẠI CHÍNH nhãn đó (bản ghi trùng được
 // `tong_hop` gộp theo nhãn CUỐI), nếu chưa chọn gì thì TỪ CHỐI thay vì ngầm ghi 'dung'.
 async function luuVaTiep(){
-  if (!state.nhanChon){
-    flash('Chưa chọn nhãn: bấm 1/2/3/4 trước rồi mới "Lưu & bước kế"');
+  const i = chiSoHienTai();
+  // Chỉ dùng lại nhãn nếu nó được bấm Ở CHÍNH BƯỚC NÀY. Trước đây `s` mang nhãn của bước trước sang
+  // bước mới (guard chỉ bảo vệ lần bấm đầu của cả phiên) — review vòng 2, P1-C.
+  if (!state.nhanChon || state.nhanChon.buoc !== i){
+    flash('Bước này chưa chọn nhãn: bấm 1/2/3/4 rồi mới "Lưu & bước kế"');
     return;
   }
-  await ghiNhan(state.nhanChon);
+  await ghiNhan(state.nhanChon.nhan);
   nhayBuoc(1);
 }
 $('btnLuu').onclick = luuVaTiep;
 $('phien').onchange = e => chonPhien(e.target.value);
-$('nguoi').onchange = () => { veTienDo(); veBang(); };
+$('nguoi').onchange = async () => {
+  // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
+  // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).
+  if (state.phien) await chonPhien(state.phien);
+};
 
 // Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và
 // KHÔNG ghi nhãn nào; tệ hơn: mọi nhãn sau đó mang tên sai ⇒ `tong_hop` báo "2 người" cho 1 người

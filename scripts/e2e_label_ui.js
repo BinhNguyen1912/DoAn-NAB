@@ -31,7 +31,9 @@ const DATA_DIR = process.env.LABELUI_DATA_DIR || path.join('data')
 // Server e2e ghi nhãn vào thư mục TẠM (`LABELUI_NHAN_DIR`) ⇒ script phải trỏ đúng chỗ đó.
 const FILE_NHAN = path.join(process.env.LABELUI_NHAN_DIR || path.join(DATA_DIR, 'nhan'),
                             `${PHIEN}.jsonl`)
-const NGUOI = 'e2e'
+// CỐ Ý khác tên server (`--nguoi-gan e2e`): nếu trùng thì không phân biệt được "tên lấy từ UI" với
+// "tên lấy từ cờ CLI" (review vòng 2, P1-A: assertion cũ xanh kể cả khi UI bị bỏ qua hoàn toàn).
+const NGUOI = 'nguoi-tu-ui'
 
 let hong = 0
 function kiem(ok, moTa, chiTiet) {
@@ -93,6 +95,12 @@ function docNhan() {
   const vos = await page.$eval('#fVos', el => el.textContent)
   kiem(/^#\d+$/.test(vos.trim()), 'panel bước VOS cập nhật', vos)
 
+  // 2b) Enter ở ô tên = nhả focus (không gõ ký tự nào vào tên)
+  await page.click('#nguoi')
+  await page.keyboard.press('Enter')
+  const tenSauEnter = await page.$eval('#nguoi', el => el.value)
+  kiem(tenSauEnter === NGUOI, 'Enter ở ô tên KHÔNG gõ ký tự vào tên', tenSauEnter)
+
   // 3b) hệ số bù đã áp: video 98,0 s vs tổng latency 94,76 s ⇒ hệ số ≈ 1,034 (nếu KHÔNG bù thì cuối
   //     video lệch ~3 s và nhãn rơi sang bước khác)
   const heSo = await page.evaluate(() => (window.__labelui || {}).heSo)
@@ -127,12 +135,7 @@ function docNhan() {
 
   // 4) P1-1: phím 1 khi con trỏ VẪN Ở Ô TÊN ⇒ phải ghi nhãn (bản cũ gõ "1" vào tên, không ghi gì và
   //    mọi nhãn sau mang tên "Binh1" ⇒ `tong_hop` bịa ra "2 người")
-  await page.click('#nguoi')
-  await page.keyboard.type('')
-  await page.keyboard.press('Enter')          // Enter ở ô tên = nhả focus
-  const tenSauEnter = await page.$eval('#nguoi', el => el.value)
-  kiem(tenSauEnter === NGUOI, 'Enter ở ô tên KHÔNG gõ ký tự vào tên', tenSauEnter)
-
+  await page.click('#nguoi')                  // con trỏ Ở TRONG ô tên, KHÔNG Enter
   const truoc = docNhan().length
   await page.keyboard.press('1')
   const coFile = await choFile(FILE_NHAN)
@@ -141,7 +144,9 @@ function docNhan() {
   kiem(sau1.length === truoc + 1, 'phím 1 ghi ĐÚNG 1 nhãn', `${truoc} → ${sau1.length}`)
   const rec = sau1[sau1.length - 1] || {}
   kiem(rec.nhan === 'dung', 'nhãn ghi đúng giá trị', rec.nhan)
-  kiem(rec.nguoi_gan === NGUOI, 'nhãn ghi đúng người gán', rec.nguoi_gan)
+  kiem(rec.nguoi_gan === NGUOI, 'nhãn ghi TÊN GÕ TRONG UI (không phải cờ --nguoi-gan)', rec.nguoi_gan)
+  const tenTrongO = await page.$eval('#nguoi', el => el.value)
+  kiem(tenTrongO === NGUOI, 'phím số KHÔNG lọt vào ô tên', tenTrongO)
   kiem(typeof rec.t_video === 'number' && rec.t_video >= 0, 'nhãn có t_video thật', String(rec.t_video))
   kiem('git_rev' in rec && 'do_luc' in rec, 'nhãn có provenance (git_rev, do_luc)')
 

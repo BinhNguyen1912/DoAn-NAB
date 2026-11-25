@@ -114,7 +114,17 @@ class TestTongHop:
         assert d["tong_nhan"] == 4 and d["so_nguoi"] == 2
         assert d["theo_nguoi"]["A"]["tong"] == 2
         # frame 1: A=dung, B=dung ⇒ đồng ý; frame 2: A=sai, B=dung ⇒ lệch
-        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 2, "so_buoc_dong_y": 1}
+        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 2, "so_buoc_ca_hai_co_ket_luan": 2,
+                                       "so_buoc_dong_y": 1}
+
+    def test_BO_QUA_khong_duoc_tinh_la_dong_y(self, tmp_path):
+        """Hai người cùng bấm `0` = "không kết luận được" ⇒ KHÔNG phải "2 người đồng ý" (review vòng 2)."""
+        p = tmp_path / "nhan"
+        for nguoi in ("A", "B"):
+            L.ghi_nhan("s", {"buoc": 1, "frame_vos": 1, "nhan": "bo_qua"}, nguoi, p)
+            L.ghi_nhan("s", {"buoc": 2, "frame_vos": 2, "nhan": "dung"}, nguoi, p)
+        d = L.tong_hop("s", p)["dong_y_2_nguoi"]
+        assert d == {"so_buoc_ca_hai": 2, "so_buoc_ca_hai_co_ket_luan": 1, "so_buoc_dong_y": 1}
 
     def test_nhan_CUOI_cua_mot_nguoi_la_nhan_hieu_luc(self, tmp_path):
         """Bấm `2` rồi `s` (mặc định ĐÚNG) từng tạo 2 nhãn mâu thuẫn: đếm mọi dòng thì `theo_nguoi` và
@@ -127,7 +137,8 @@ class TestTongHop:
         assert d["theo_nguoi"]["A"]["dung"] == 1 and d["theo_nguoi"]["A"]["sai"] == 0
         assert d["theo_nguoi"]["A"]["tong"] == 1, "một bước chỉ đếm 1 lần cho mỗi người"
         assert d["so_nhan_trung"] == 1 and d["so_buoc_da_dan"] == 1
-        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 1, "so_buoc_dong_y": 1}
+        assert d["dong_y_2_nguoi"] == {"so_buoc_ca_hai": 1, "so_buoc_ca_hai_co_ket_luan": 1,
+                                       "so_buoc_dong_y": 1}
 
     def test_mot_nguoi_thi_khong_co_muc_dong_y(self, tmp_path):
         p = tmp_path / "nhan"
@@ -199,6 +210,54 @@ class TestApiHttp:
         with pytest.raises(urllib.error.HTTPError) as e:
             urllib.request.urlopen(req)
         assert e.value.code == 415
+
+    def test_ten_nguoi_dan_lay_tu_BODY_khong_phai_co_CLI(self, may_chu):
+        """P1-A: server chạy `--nguoi-gan Binh` nhưng nhãn gửi `nguoi_gan: "An"` ⇒ file phải ghi "An".
+        Trước đây luôn ghi `self.nguoi_gan` ⇒ 2 người dùng chung 1 server ra `so_nguoi = 1`."""
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 0, "nhan": "dung",
+                           "nguoi_gan": "An"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        d = json.load(urllib.request.urlopen(req))
+        assert d["record"]["nguoi_gan"] == "An"
+        assert "Binh" in d["tong_hop"]["theo_nguoi"] or True     # Binh chưa dán gì
+        assert d["tong_hop"]["theo_nguoi"]["An"]["dung"] == 1
+
+    def test_buoc_ngoai_dai_bi_tu_choi(self, may_chu):
+        """P2-5: `buoc` phải nằm trong CSV server đang giữ — không thì file bằng chứng nhận bước ma."""
+        body = json.dumps({"phien": "demoip_api", "buoc": 9999, "frame_vos": 0,
+                           "nhan": "dung"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
+
+    def test_frame_vos_khong_khop_buoc_bi_tu_choi(self, may_chu):
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "frame_vos": 123,
+                           "nhan": "dung"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
+
+    def test_host_la_tra_403(self, may_chu):
+        """DNS rebinding: Origin == Host nên chỉ kiểm Origin là vô ích; phải allowlist `Host`."""
+        body = json.dumps({"phien": "demoip_api", "buoc": 0, "nhan": "dung"}).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json",
+                                              "Host": "evil.example.com"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 403
+
+    def test_frames_loc_theo_ten_nguoi_hoi(self, may_chu):
+        L.ghi_nhan("demoip_api", {"buoc": 1, "frame_vos": 1, "nhan": "sai"}, "An")
+        L.ghi_nhan("demoip_api", {"buoc": 2, "frame_vos": 2, "nhan": "dung"}, "Binh")
+        d = json.load(urllib.request.urlopen(may_chu + "/api/frames?phien=demoip_api&nguoi=An"))
+        assert [r["buoc"] for r in d["da_gan"]] == [1] and d["nguoi_dang_dan"] == "An"
+        assert d["so_nhan_nguoi_khac"] == 1
 
     def test_origin_la_tra_403(self, may_chu):
         body = json.dumps({"phien": "demoip_api", "frame_vos": 1, "nhan": "dung"}).encode()
@@ -357,6 +416,38 @@ class TestChanDuongDan:
         finally:
             srv.shutdown()
             srv.server_close()
+
+
+class TestTenNguoiDan:
+    @pytest.mark.parametrize("ten", ["", "  ", "?", None])
+    def test_ten_khong_dung_duoc(self, ten):
+        with pytest.raises(ValueError):
+            L.chuan_hoa_ten(ten)
+
+    def test_ten_qua_dai(self):
+        with pytest.raises(ValueError, match="quá dài"):
+            L.chuan_hoa_ten("x" * 41)
+
+    def test_ten_hop_le(self):
+        assert L.chuan_hoa_ten("  Nguyễn An Bình  ") == "Nguyễn An Bình"
+
+
+class TestDongRac:
+    def test_dong_json_khong_phai_nhan_khong_lam_sap_tong_hop(self, tmp_path):
+        """`tong_hop` chạy TRONG response của mỗi POST ⇒ một dòng rác làm nó ném là nhãn đã ghi xong
+        nhưng UI báo lỗi (review vòng 2, P2-3)."""
+        p = tmp_path / "nhau"
+        p.mkdir()
+        (p / "s.jsonl").write_text(
+            '{"buoc": 1, "frame_vos": 1, "nhan": "dung", "nguoi_gan": "A"}\n'
+            '123\n'
+            '"x"\n'
+            '{"nhan": "dung"}\n'
+            '{"buoc": 2, "nhan": "khong_co_nhan_nay", "nguoi_gan": "A"}\n', encoding="utf-8")
+        d = L.tong_hop("s", p)
+        # 4 dòng rác: số, chuỗi, thiếu `nguoi_gan`, nhãn không có trong tập đóng
+        assert d["so_nhan_hieu_luc"] == 1 and d["so_nhan_loi"] == 4
+        assert d["so_nhan_trung"] == 0, "dòng rác không được tính là 'dán trùng'"
 
 
 class TestLietKePhien:

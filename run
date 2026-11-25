@@ -525,6 +525,7 @@ EOF
     port="${LABELUI_PORT:-8772}"
     data_dir="$(mktemp -d)"
     nhan_dir="$(mktemp -d)"
+    trap 'rm -rf "$data_dir" "$nhan_dir"' EXIT     # đặt TRƯỚC mọi lệnh có thể fail (fixture)
     "$PYTHON" scripts/make_labelui_fixture.py --out-dir "$data_dir" >/dev/null || exit 1
     phien="${LABELUI_PHIEN:-e2e_labelui}"
     # Nhãn e2e ghi vào THƯ MỤC TẠM: không được lẫn vào data/nhan/ (nhãn thật của người dùng).
@@ -533,7 +534,15 @@ EOF
       > "$ROOT/data/labelui_e2e_server.log" 2>&1 &
     srv=$!
     trap 'kill "$srv" 2>/dev/null; rm -rf "$data_dir" "$nhan_dir"' EXIT
-    for _ in $(seq 1 25); do curl -sf "localhost:$port/api/sessions" >/dev/null && break; sleep 1; done
+    len_roi=1
+    for _ in $(seq 1 25); do
+      if curl -sf "localhost:$port/api/sessions" >/dev/null; then len_roi=0; break; fi
+      sleep 1
+    done
+    if [ "$len_roi" != 0 ]; then
+      echo "[labeluie2e] server KHÔNG lên ở cổng $port (bận?) — xem data/labelui_e2e_server.log"
+      exit 1
+    fi
     # Node + Chrome phải là bản WINDOWS (chạy từ WSL: node Linux không thấy Chrome của Windows).
     win_root="$(wslpath -w "$ROOT")"
     win_nhan="$(wslpath -w "$nhan_dir")"
