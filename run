@@ -330,9 +330,15 @@ EOF
     #   KHÔNG bịa mask khi vật vắng (0/5 frame GT rỗng ở cả 6 mức). Đừng đẩy tới −2.0: clip_be2
     #   bắt đầu tệ (−0,0160). Ngưỡng này KHÔNG đổi `tools/run_live.py` mặc định (0.0) để artifact
     #   cũ tái lập được — chỉ đường `demoip` (cầm tay, vật sát biên) dùng.
+    # `--box-smooth-tau-ms 125` (25-11): làm mượt Ô VẼ RA trên đường CLI (không có LK như đường web).
+    # Đo trên video HUD phiên `demoip_1125-100334` (ô đỏ dò theo màu, 241 frame hiển thị): ô đứng yên
+    # med **9 frame (~300 ms)** rồi NHẢY med 22,7 px / max 118 px ⇒ người dùng gọi là "dựt lag".
+    # Mô phỏng lại chính dãy ô đó với EMA τ=125 ms: dịch chuyển/frame med 0 → **1,35 px**,
+    # max 118 → **41,8 px**, tương quan chéo cực đại ở **lag 0** ⇒ trễ ổn định ~0 (xem
+    # `src/box_smoother.py`). KHÔNG đổi `result.bbox` (cổng nghi/metrics/mIoU dùng số model thật).
     exec "$PYTHON" tools/run_live.py --source "$_url" --display --smooth --no-reid \
       --trajectory-seconds 5 --reid-cue object --reid-obj-ncc-min "$_ncc" --reid-obj-threshold "$_objth" --image-size 192 \
-      --mask-threshold -1.0 \
+      --mask-threshold -1.0 --box-smooth-tau-ms 125 \
       --record "data/demoip_${_stamp}.mp4" \
       --metrics-csv "data/demoip_${_stamp}_metrics.csv" \
       --metrics-summary "data/demoip_${_stamp}_summary.json" "$@"

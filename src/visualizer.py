@@ -34,6 +34,10 @@ _COLOR_LOST = (0, 0, 255)        # BGR đỏ — banner mất dấu
 _COLOR_NGHI = (0, 215, 255)      # BGR vàng — ô NÉT ĐỨT khi "nghi đổi đối tượng" (ticket #45)
 _MASK_ALPHA = 0.35
 _LINE_THICKNESS = 2
+# Dải HUD phía trên (FPS / độ trễ / điểm tin cậy / Overlay / banner) chiếm tới ~y=110 ở khung 480p.
+# Nhãn dán trên ĐỈNH ô (`y1 - 6`) rơi vào dải này khi vật ở nửa trên khung ⇒ **chữ đè chữ** (đo 25-11,
+# phiên `demoip_1125-100334` t≈37,8 s: "CHUA XAC MINH" của ô chồng lên dòng banner cùng câu).
+_HUD_DAY = 130
 _LATENCY_WINDOW = 30             # cửa sổ trượt để tính FPS/độ trễ trên HUD
 
 # Danh sách font TTF phổ biến hỗ trợ tiếng Việt (Linux/windows/macOS) — thử lần lượt
@@ -308,14 +312,21 @@ class Visualizer:
         # 2) ô bao — CHỈ khi còn bằng chứng (xem mục 0); đang NGHI thì nét đứt để không ai đọc
         #    nhầm đây là kết quả đã kiểm.
         x1, y1, x2, y2 = [int(v) for v in result.bbox]
+        # Nhãn dán TRÊN đỉnh ô — CHỈ khi đỉnh ô nằm dưới dải HUD. Nếu không thì BỎ nhãn (25-11):
+        # dán xuống trong ô sẽ đè lên mask, còn dán ở `y1 - 6` sẽ chồng lên dòng banner cùng câu (đo
+        # phiên `demoip_1125-100334` t≈37,8 s). Banner dài ở `y=104` LUÔN được vẽ ở cả hai trạng thái
+        # này, nên bỏ nhãn ngắn không mất thông tin.
+        co_cho_nhan = (y1 - 6) >= _HUD_DAY
         if not dang_mat_dau and not dang_nghi and dang_chua_xac_minh and x2 > x1 and y2 > y1:
             ve_o_net_dut(img, x1, y1, x2, y2)
-            self._put_text(img, "CHUA XAC MINH", (x1, max(18, y1 - 6)))
+            if co_cho_nhan:
+                self._put_text(img, "CHUA XAC MINH", (x1, y1 - 6))
         elif not dang_mat_dau and not dang_nghi and x2 > x1 and y2 > y1:
             cv2.rectangle(img, (x1, y1), (x2, y2), _COLOR_BOX, _LINE_THICKNESS)
         elif dang_nghi and x2 > x1 and y2 > y1:
             ve_o_net_dut(img, x1, y1, x2, y2)
-            self._put_text(img, "NGHI", (x1, max(18, y1 - 6)))
+            if co_cho_nhan:
+                self._put_text(img, "NGHI", (x1, y1 - 6))
 
         # 3) quỹ đạo — CHỈ vẽ (việc thêm điểm nằm ở consume(), mỗi lần suy luận 1 lần).
         #    `chua_xac_minh` cũng KHÔNG vẽ: quỹ đạo là "dấu vết của vật ĐANG được quan sát".

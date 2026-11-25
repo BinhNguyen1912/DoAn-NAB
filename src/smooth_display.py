@@ -19,12 +19,14 @@ Input  : VideoSource (webcam/RTSP/file), TrackerEngine, PromptSelector, callback
          Visualizer, MetricsLogger.
 Output : InteractiveSummary(processed = số lần suy luận đã chạy).
 """
+import dataclasses
 import threading
 import time
 from dataclasses import dataclass
 
 import cv2
 
+from src.box_smoother import BoxSmoother
 from src.live_pipeline import (
     InteractiveSummary, QUIT_KEYS, RESET_KEY, _record_from, _HINT_SELECT, _HINT_TRACK,
     CONTINUE_KEY, IdentityWatch, _switch_warning, warn_if_bad_selection, chuan_hoa_phim,
@@ -353,11 +355,17 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                        visualizer=None, preselect_bbox=None,
                        on_result=None, reid_session=None, source_max_fps=None, *,
                        settle_steps=None, max_jump_ratio=None,
-                       lost_reset_streak=None) -> InteractiveSummary:
+                       lost_reset_streak=None, box_smooth_tau_ms=None) -> InteractiveSummary:
     """Vòng lặp hiển thị mượt: video ~30 FPS, overlay cập nhật mỗi lần suy luận xong.
 
     display: callable(img, mode) -> key (int) — với chạy thật là cv2.imshow + waitKey.
     Trả InteractiveSummary(processed = số lần suy luận).
+
+    `box_smooth_tau_ms`: làm mượt **ô VẼ RA** (hằng số thời gian, ms; `None`/0 = TẮT, hành vi cũ).
+    Mặc định TẮT để số của artifact cũ tái lập được; `./run demoip` bật 125 ms — đo trên video HUD
+    phiên 25-11: cú nhảy lớn nhất 118 → 42 px, dịch chuyển/frame med 0 → 1,35 px, trễ ổn định ~0
+    (xem `src/box_smoother.py`). KHÔNG đổi `result.bbox` ⇒ cổng nghi / metrics / quỹ đạo / mIoU
+    vẫn dùng số model thật.
     """
     summary = InteractiveSummary()
     if visualizer is not None:
@@ -370,6 +378,10 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
     worker = InferenceWorker(engine, frames, reid_session=reid_session).start()
     consumed_seq = 0
     last_bbox = None
+    # Ô VẼ RA được làm mượt (chỉ đường hiển thị; xem `src/box_smoother.py`). Tách khỏi `last_bbox`
+    # (mốc của cổng nghi, phải là SỐ MODEL THẬT — làm mượt nó sẽ đổi hành vi cổng).
+    box_smoother = BoxSmoother(tau_ms=box_smooth_tau_ms) if box_smooth_tau_ms else None
+    _truoc_ve = None          # mốc thời gian frame hiển thị trước (để τ không phụ thuộc FPS)
     # Cổng "nghi đổi đối tượng" CÓ NHỚ (21-11) — xem `src/identity_guard.IdentityWatch`.
     # `settle_steps=None` ⇒ giữ mặc định của `IdentityWatch`. Có mặt để `--settle-steps` THẬT SỰ
     # đổi được hành vi: trước 24-11 `run_info` ghi `settle_steps=8` như một biến điều khiển trong khi
@@ -507,7 +519,19 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 if visualizer is not None:
                     elapsed = max(time.monotonic() - disp_t0, 1e-6)
                     display_fps = disp_count / elapsed if disp_count else 0.0
-                    img = visualizer.render(frame, stamped.result,
+                    ve = stamped.result
+                    if box_smoother is not None:
+                        _bay_gio_ve = time.monotonic()
+                        _dt_ve = None if _truoc_ve is None else (_bay_gio_ve - _truoc_ve)
+                        _truoc_ve = _bay_gio_ve
+                        if switch or ve.mask is None or not ve.mask.any():
+                            # Đang NGHI hoặc mất dấu ⇒ không tráng: ô kế tiếp phải xuất hiện đúng chỗ
+                            # (tráng một cú nhảy 200 px thành vệt quét ngang khung).
+                            box_smoother.reset()
+                        else:
+                            ve = dataclasses.replace(
+                                ve, bbox=box_smoother.update(ve.bbox, frame.shape[:2], dt_s=_dt_ve))
+                    img = visualizer.render(frame, ve,
                                             overlay_age_ms=stamped.age_ms,
                                             display_fps=display_fps,
                                             switch_warning=switch,
@@ -556,6 +580,8 @@ def run_smooth_display(source, engine, selector, display, max_frames=None, metri
                 continue
             if key == RESET_KEY:
                 watch.reset()          # chọn lại ⇒ xoá nghi của phiên trước
+                if box_smoother is not None:
+                    box_smoother.reset()   # chọn ô mới ⇒ ô vẽ phải bám ô mới ngay, không bò từ ô cũ
                 _bao_nghi(False)
                 switch = False
                 last_bbox = None

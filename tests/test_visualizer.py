@@ -604,6 +604,31 @@ class TestNghiDoiTuongVeONetDut:
         trong = img[120:160, 120:180]
         assert np.allclose(trong, frame[120:160, 120:180]), "mask bị tô khi đang nghi"
 
+    def test_o_sat_dai_hud_thi_khong_dan_nhan_de_len_mask(self):
+        """25-11: nhãn ngắn ở `y1 - 6` rơi vào dải HUD ⇒ **chữ đè chữ** với banner dài.
+
+        Đo phiên `demoip_1125-100334` t≈37,8 s: "CHUA XAC MINH" (nhãn của ô) chồng lên
+        "CHUA XAC MINH — c: van dung..." (banner ở y=104). Banner vẽ từ `y=104` XUỐNG nên nó chiếm
+        tới ~y=122 ở khung 480p; ô có đỉnh ~115 ⇒ hai dòng cùng câu đè nhau.
+
+        Luật: đỉnh ô nằm trong dải HUD ⇒ BỎ nhãn ngắn (banner đã nói cùng câu), KHÔNG dán xuống
+        trong ô. Kiểm bằng spy để không phụ thuộc điểm ảnh (banner vẫn được phép đè lên viền ô).
+        """
+        viz = Visualizer()
+        goi = []
+        viz._put_text = lambda img, text, org: goi.append((text, org))   # spy
+        frame = _frame()
+        viz.render(frame, _result(frame_idx=0, bbox=(100, 100, 200, 180)), switch_warning=True)
+        assert not [t for t, _ in goi if t in ("NGHI", "CHUA XAC MINH")], \
+            f"nhãn ngắn vẫn được dán khi đỉnh ô nằm trong dải HUD: {goi}"
+        assert any(t.startswith("NGHI DOI TUONG") for t, _ in goi), "banner dài phải có"
+
+        # Khung cao, đỉnh ô dưới dải HUD ⇒ nhãn PHẢI có (mất nó là mất thông tin ngay tại vật).
+        goi.clear()
+        frame2 = np.full((480, 640, 3), 40, dtype=np.uint8)
+        viz.render(frame2, _result(frame_idx=0, bbox=(100, 300, 200, 420)), switch_warning=True)
+        assert [t for t, _ in goi if t == "NGHI"], f"thiếu nhãn 'NGHI' khi có chỗ dán: {goi}"
+
     def test_mat_dau_that_thi_khong_ve_gi(self):
         """Mất dấu thật (mask rỗng) KHÁC nghi: không có gì để vẽ ⇒ giữ nguyên như cũ."""
         viz = Visualizer()

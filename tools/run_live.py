@@ -862,6 +862,7 @@ def _run_display(engine, args):
                 settle_steps=_settle_steps(args),
                 lost_reset_streak=_lost_reset_streak(args),
                 max_jump_ratio=args.max_jump_ratio,
+                box_smooth_tau_ms=getattr(args, "box_smooth_tau_ms", None),
                 source_max_fps=30.0 if _la_nguon_live(getattr(args, "source", None)) else None,
             )
             args._prompt_bbox = summary.prompt_bbox
@@ -1089,6 +1090,12 @@ def build_parser():
                          "học đều hoặc bỏ ca báo đúng, hoặc chỉ dời chỗ báo (xem "
                          "docs/plan/24-11-2026-cong-nghi-bao-oan.md). Dùng để DIỄN TẬP có ghi số, "
                          "không dùng để tuyên bố 'đã sửa'.")
+    ap.add_argument("--box-smooth-tau-ms", type=float, default=None,
+                    help="làm mượt Ô VẼ RA trên đường `--smooth` (hằng số thời gian, ms). Mặc định "
+                         "TẮT để số artifact cũ tái lập được; `./run demoip` bật 125. Đo 25-11 trên "
+                         "video HUD: cú nhảy lớn nhất 118 → 42 px, dịch chuyển/frame med 0 → 1,35 px, "
+                         "trễ ổn định ~0. `result.bbox` KHÔNG đổi ⇒ cổng nghi/metrics/mIoU vẫn dùng "
+                         "số model thật. Chỉ có tác dụng khi `--smooth`.")
     ap.add_argument("--model-override", action="append", default=None, metavar="KEY=VALUE",
                     help="CHẨN ĐOÁN: đè siêu tham số motion-memory của SAMURAI (lặp được). Khoá hợp lệ: "
                          f"{', '.join(sorted(MODEL_OVERRIDE_CHO_PHEP))}. Ví dụ "
