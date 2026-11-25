@@ -5,6 +5,7 @@ Không cần trình duyệt: kiểm phần **số học + lưu nhãn + API** b�
 import json
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from pathlib import Path
 
@@ -160,6 +161,27 @@ class TestApiHttp:
             assert r.status == 206
             assert r.headers["Content-Range"] == "bytes 4-7/32"
             assert r.read() == b"\x00" * 4
+
+    def test_body_qua_lon_tra_413(self, may_chu):
+        """Nhãn chỉ vài trăm byte; `Content-Length` khổng lồ không được làm server cấp phát theo."""
+        import http.client
+        u = urllib.parse.urlparse(may_chu)
+        c = http.client.HTTPConnection(u.hostname, u.port, timeout=10)
+        c.putrequest("POST", "/api/label")
+        c.putheader("Content-Type", "application/json")
+        c.putheader("Content-Length", str(10 ** 8))
+        c.endheaders()
+        r = c.getresponse()
+        assert r.status == 413, r.status
+        c.close()
+
+    def test_body_khong_phai_object_tra_400(self, may_chu):
+        body = json.dumps(["dung"]).encode()
+        req = urllib.request.Request(may_chu + "/api/label", data=body,
+                                     headers={"Content-Type": "application/json"})
+        with pytest.raises(urllib.error.HTTPError) as e:
+            urllib.request.urlopen(req)
+        assert e.value.code == 400
 
     def test_host_0_0_0_0_bind_duoc(self, tmp_path, monkeypatch):
         """Doc bảo 'mở http://<IP-WSL>:8770' khi không vào được 127.0.0.1 ⇒ server PHẢI bind 0.0.0.0."""

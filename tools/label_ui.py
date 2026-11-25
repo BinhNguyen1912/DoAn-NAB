@@ -332,11 +332,21 @@ class _Handler(BaseHTTPRequestHandler):
         u = urlparse(self.path)
         if u.path != "/api/label":
             return self._json({"loi": "không có route"}, 404)
+        # Trần kích thước body: một nhãn chỉ vài trăm byte; không chặn thì client lỗi (hoặc ác ý) khai
+        # `Content-Length: 10^9` là server cấp phát theo ⇒ treo cả tiến trình đang dán nhãn.
+        TRAN_BODY = 64 * 1024
         try:
             n = int(self.headers.get("Content-Length") or 0)
+        except ValueError:
+            return self._json({"loi": "Content-Length không phải số"}, 400)
+        if n < 0 or n > TRAN_BODY:
+            return self._json({"loi": f"body quá lớn (>{TRAN_BODY} byte)"}, 413)
+        try:
             body = json.loads(self.rfile.read(n) or b"{}")
         except (ValueError, OSError):
             return self._json({"loi": "body không phải JSON"}, 400)
+        if not isinstance(body, dict):
+            return self._json({"loi": "body phải là object JSON"}, 400)
         phien = str(body.get("phien") or "").strip()
         if not phien:
             return self._json({"loi": "thiếu `phien`"}, 400)
