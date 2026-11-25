@@ -853,15 +853,29 @@ class TestAnhTungBuoc:
         return d, p
 
     def test_chi_so_khung_va_he_so_bu(self, tmp_path, monkeypatch):
-        self._video(tmp_path, monkeypatch)
+        """Phải khẳng định SỐ CỤ THỂ: bản đầu chỉ assert `0 <= idx < 30` nên xoá hẳn phép bù vẫn xanh."""
+        self._video(tmp_path, monkeypatch)          # video 3,0 s / CSV 15 bước × 100 ms = 1,5 s
+        d = L.doc_phien_cached(L.DATA_DIR / "phien1_metrics.csv")
+        he_so, bi_kep = L.he_so_bu(3.0, d["tong_latency_s"])
+        assert (round(he_so, 3), bi_kep) == (2.0, False), "3,0/1,5 = 2,0 vừa đúng biên, chưa bị kẹp"
         idx, loi = L.chi_so_khung("phien1", 0)
         assert loi is None and idx == 0
-        idx_cuoi, loi_cuoi = L.chi_so_khung("phien1", L.doc_phien_cached(
-            L.DATA_DIR / "phien1_metrics.csv")["frames"].__len__() - 1)
-        assert loi_cuoi is None and 0 <= idx_cuoi < 30
-        # ngoài dải bước ⇒ None + lý do, KHÔNG được trả 0 (bẫy "0/None ≠ đã đo")
-        assert L.chi_so_khung("phien1", 999) == (None, L.chi_so_khung("phien1", 999)[1])
-        assert L.chi_so_khung("phien1", 999)[0] is None
+        buoc_cuoi = len(d["frames"]) - 1
+        idx_cuoi, loi_cuoi = L.chi_so_khung("phien1", buoc_cuoi)
+        assert loi_cuoi is None
+        # 1,4 s × 2,0 × 10 fps = 28 — CON SỐ THẬT (không phải "0..30")
+        assert idx_cuoi == 28, f"phải bù thời gian: 1,4s×2,0×10fps = 28, được {idx_cuoi}"
+        # ngoài dải bước ⇒ None + LÝ DO (không trả ảnh bước 0)
+        idx_xau, loi_xau = L.chi_so_khung("phien1", 999)
+        assert idx_xau is None and "ngoài dải" in loi_xau
+
+    def test_he_so_bu_bi_kep_duoc_bao(self):
+        """Kẹp hệ số là lỗi mapping ⇒ phải có cờ, không im lặng (review 25-11, F10)."""
+        assert L.he_so_bu(100.0, 1.5) == (2.0, True)      # 66× ⇒ kẹp trần
+        assert L.he_so_bu(2.0, 100.0) == (0.5, True)      # 0,02× ⇒ kẹp sàn
+        assert L.he_so_bu(1.0, 100.0) == (1.0, False)     # video ≤ 1 s ⇒ chưa đủ tin để bù
+        assert L.he_so_bu(0.0, 10.0) == (1.0, False)      # không có video ⇒ không áp
+        assert L.he_so_bu(10.0, 0.0) == (1.0, False)      # không có latency ⇒ không áp
 
     def test_anh_buoc_tra_jpeg_va_cache(self, tmp_path, monkeypatch):
         self._video(tmp_path, monkeypatch)
@@ -917,6 +931,50 @@ class TestAnhTungBuoc:
         assert "data/nhan/.anh/" in gi, "cache ảnh phải bị gitignore"
         assert L.ANH_DIR_NAME == ".anh", "tên thư mục cache trong code phải khớp `.gitignore`"
 
+    def test_cache_cu_cua_buoc_ngoai_dai_khong_duoc_phuc_vu(self, tmp_path, monkeypatch):
+        """CSV sinh lại còn ít bước mà cache cũ có `000999.jpg` ⇒ phải 404, không trả 200."""
+        self._video(tmp_path, monkeypatch)
+        d = L.THU_MUC_NHAN / L.ANH_DIR_NAME / "phien1"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "000999.jpg").write_bytes(b"\xff\xd8\xff\xd9")
+        du_lieu, loi = L.anh_buoc("phien1", 999)
+        assert du_lieu is None and "ngoài dải" in loi
+
+    def test_cache_cut_duoc_cat_lai(self, tmp_path, monkeypatch):
+        """Ghi cache không atomic từng để lại file cụt ⇒ mọi request sau trả ảnh HỎNG vĩnh viễn."""
+        self._video(tmp_path, monkeypatch)
+        d = L.THU_MUC_NHAN / L.ANH_DIR_NAME / "phien1"
+        d.mkdir(parents=True, exist_ok=True)
+        (d / "000001.jpg").write_bytes(b"\xff\xd8abc")
+        du_lieu, loi = L.anh_buoc("phien1", 1)
+        assert loi is None and du_lieu[:2] == b"\xff\xd8" and du_lieu[-2:] == b"\xff\xd9"
+        assert (d / "000001.jpg").stat().st_size > 100, "phải ghi lại cache đầy đủ"
+
+    def test_doi_nguon_thi_cat_lai_anh(self, tmp_path, monkeypatch):
+        """CSV/video sinh lại ⇒ ảnh cache cũ KHÔNG còn đúng (fingerprint trong manifest)."""
+        import os
+        self._video(tmp_path, monkeypatch)
+        d = L.THU_MUC_NHAN / L.ANH_DIR_NAME / "phien1"
+        a, _ = L.anh_buoc("phien1", 2)
+        csv_path = L.DATA_DIR / "phien1_metrics.csv"
+        os.utime(csv_path, (1, 1))                  # mtime đổi ⇒ nguồn khác
+        (d / "000002.jpg").write_bytes(b"\xff\xd8\xff\xd9")   # cache bẩn
+        b, loi = L.anh_buoc("phien1", 2)
+        assert loi is None and b != b"\xff\xd8\xff\xd9", "phải bỏ cache cũ, cắt lại từ video"
+
+    def test_route_anh_thieu_buoc_400(self, tmp_path, monkeypatch):
+        self._video(tmp_path, monkeypatch)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            with pytest.raises(urllib.error.HTTPError) as e:
+                urllib.request.urlopen(
+                    f"http://127.0.0.1:{srv.server_address[1]}/anh?phien=phien1")
+            assert e.value.code == 400, "thiếu `buoc` KHÔNG được mặc định về bước 0"
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
     def test_route_anh_tra_jpeg_va_404(self, tmp_path, monkeypatch):
         self._video(tmp_path, monkeypatch)
         srv = L.tao_server(0, "B", None)
@@ -947,8 +1005,24 @@ class TestAnhTungBuoc:
             srv.server_close()
 
     def test_cap_khong_bi_dung_song_song(self, tmp_path, monkeypatch):
-        """FFmpeg không thread-safe: prefetch nhiều ảnh song song từng làm abort cả tiến trình."""
+        """FFmpeg không thread-safe ⇒ chỉ được mở **MỘT** `VideoCapture` cho một phiên.
+
+        Bản đầu chỉ assert "không ném": bỏ hẳn `_CAP_LOCK` mà FFmpeg không assert lần đó thì test vẫn
+        xanh. Nay đếm constructor (review 25-11, F11).
+        """
+        import cv2
         self._video(tmp_path, monkeypatch, n_frame=40)
+        so_lan_mo = []
+        that = cv2.VideoCapture
+
+        class Dem:
+            def __init__(self, *a, **k):
+                so_lan_mo.append(a[0] if a else "")
+                self._c = that(*a, **k)
+            def __getattr__(self, n):
+                return getattr(self._c, n)
+
+        monkeypatch.setattr(cv2, "VideoCapture", Dem)
         ket, loi = [], []
         def mot(b):
             d, e = L.anh_buoc("phien1", b)
@@ -957,6 +1031,39 @@ class TestAnhTungBuoc:
         [t.start() for t in ts]
         [t.join() for t in ts]
         assert not loi and len(ket) == 12
+        assert len(so_lan_mo) == 1, f"phải mở đúng 1 capture, đã mở {len(so_lan_mo)}"
+        assert ket[0] != ket[-1], "12 bước khác nhau phải ra ảnh khác nhau"
+
+    def test_cap_cu_duoc_release_khi_duoi(self, tmp_path, monkeypatch):
+        """`_CAP.clear()` trần để rò file descriptor — phải `release()` cái bị đuổi."""
+        import cv2
+        self._video(tmp_path, monkeypatch, n_frame=10)
+        so_release = []
+        that = cv2.VideoCapture
+
+        class Dem:
+            def __init__(self, *a, **k):
+                self._c = that(*a, **k)
+            def __getattr__(self, n):
+                return getattr(self._c, n)
+            def release(self):
+                so_release.append(1)
+                return self._c.release()
+
+        monkeypatch.setattr(cv2, "VideoCapture", Dem)
+        monkeypatch.setattr(L, "_CAP_MAX", 1)
+        for ten in ("phien1", "phien1", "phien1"):
+            L._CAP.clear() if False else None
+        # mở 3 phiên khác tên ⇒ với _CAP_MAX = 1 thì 2 cái đầu bị đuổi
+        for k, ten in enumerate(["phien1", "phienB", "phienC"]):
+            (L.DATA_DIR / f"{ten}.mp4").write_bytes((L.DATA_DIR / "phien1.mp4").read_bytes())
+            (L.DATA_DIR / f"{ten}_metrics.csv").write_text(
+                (L.DATA_DIR / "phien1_metrics.csv").read_text(encoding="utf-8"), encoding="utf-8")
+        L._CAP.clear()
+        for ten in ("phien1", "phienB", "phienC"):
+            L.anh_buoc(ten, 0)
+        assert len(L._CAP) == 1, f"chỉ giữ _CAP_MAX=1, đang giữ {len(L._CAP)}"
+        assert len(so_release) >= 2, f"capture bị đuổi phải release(), mới release {len(so_release)}"
 
 
 class TestClientHuyKetNoi:

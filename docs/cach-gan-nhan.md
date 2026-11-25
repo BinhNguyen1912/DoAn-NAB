@@ -55,8 +55,9 @@ cắt sẵn thành **một ảnh JPEG** (có sẵn cả HUD: ô, mask, quỹ đ�
   Cảnh báo `LỆCH` chỉ có nghĩa ở chế độ Video (ở chế độ Ảnh bạn luôn đứng đúng bước).
 - `→` / `←`: nhảy tới **bước suy luận** kế/trước. Đây là nhịp cần chấm (mỗi bước ~0,2–0,3 s), không
   phải từng frame video. Thanh bên phải hiện `#frame_vos` và `bước … ms`.
-- `Space`: phát/dừng. `,` `.`: nhích ±0,2 s khi hình đã đổi mà thời điểm ước lượng còn lệch.
-  (Thanh tua/play của chính video vẫn bấm được — canvas không nuốt chuột trừ khi đang vẽ ô.)
+- **Chỉ ở chế độ "Video"**: `Space` phát/dừng, `,` `.` nhích ±0,2 s khi hình đã đổi mà thời điểm ước
+  lượng còn lệch, và thanh tua/play của chính video bấm được (canvas không nuốt chuột trừ khi đang vẽ
+  ô). Ở chế độ "Ảnh từng bước" (mặc định) ba thứ này **không có tác dụng** vì không có video đang chạy.
 - Bấm phím số là **ghi ngay** (append vào `data/nhan/<phiên>.jsonl`), không cần bấm Lưu.
 - Nếu header hiện nhãn đỏ **`CSV: frame_idx lặp`**: CSV của phiên này có `frame_idx` lặp/không tăng
   (nguồn file lặp quay về 0, hoặc artifact cũ như `data/gpu_metrics.csv`). Vẫn dán bình thường — mỗi

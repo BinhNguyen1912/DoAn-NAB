@@ -35,13 +35,17 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
 
 ## 4. Output / Kết quả
 
+Số đo có **artifact** (`scripts/do_toc_do_anh.py` → `data/labelui_anh_2026-11-25_metrics.json`,
+`git_dirty_code = false` khi chạy lại trên cây sạch; 10 bước × 3 lần, cache xoá trước khi đo, `loadavg_1m 0,99`):
+
 | Chỉ số | Số đo |
 |---|---|
-| Ảnh bước mới (lần đầu) | 62–346 ms (3 bước đo: 0 → 346, 141 → 62, 294 → 153) |
-| Ảnh đã cache | **9 ms** |
-| 8 request ảnh **song song** (prefetch) | 0,83 s, 8/8 thành công |
-| `./run test` | **2 202 passed**, 6 deselected (217 s) |
-| `./run labeluie2e` | **PASS 30/30** (thêm 5 mục mới cho chế độ ảnh) |
+| Ảnh bước **chưa cache** (seek + decode + nén + ghi) | mean **34,4 ms** · p95 **167,8 ms** (lần đầu mở capture) |
+| Ảnh **đã cache** (đọc file) | mean **9,4 ms** · p95 **14,3 ms** (n = 20) |
+| Kích thước JPEG | 29 980–40 018 B (mean 34 773) |
+| 8 request ảnh **song song** (prefetch) | 0,83 s, 8/8 thành công, mở đúng **1** `VideoCapture` |
+| `./run test` | **2 211 passed**, 6 deselected (198 s) |
+| `./run labeluie2e` | **PASS 37/37** (thêm 7 mục: ảnh tải được, ←/→ đổi ảnh, CLICK nút nhãn, giữ bước khi đổi chế độ…) |
 | `./run lint` | sạch |
 
 ## 5. Vấn đề & cách xử lý
@@ -72,6 +76,29 @@ Yêu cầu: dán nhãn `đúng/sai` cho từng bước suy luận mà **không p
    gốc mới đi qua đường chuyển mã. Test `test_khong_transcode_khi_lay_anh`.
 7. Test cũ `test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc` ghim chuỗi `if (!state.videoOk)` ⇒
    cập nhật sang điều kiện theo chế độ (hợp đồng mới: *nguồn đang xem* phải hiện được).
+
+## 5b. Review độc lập (bắt buộc §9.1) — 1 vòng, P0 = 0
+
+Reviewer độc lập (task `mwvuydnk-47f9`) kết luận **P0 = 0** nhưng bắt 2 **P1** và 11 P2/P3. Đã sửa hết
+P1 + các P2 ảnh hưởng dữ liệu:
+
+| Mức | Lỗi | Sửa |
+|---|---|---|
+| P1 | Nút nhãn **chết** sau mỗi `←/→`: `napAnh` disable 5 nút, `onload` không bật lại (`capNhat` không gọi `capNhatKhoa`) — e2e cũ chỉ bấm PHÍM nên không thấy | `capNhatKhoa()` trong `onload`; **thêm mục e2e CLICK nút** (bắt được hồi quy) |
+| P1 | `_CAP_LOCK` hở: docstring khai "gọi dưới khoá" nhưng `chi_so_khung` + `/api/frames` không khoá ⇒ mở trùng `VideoCapture`, cái bị đuổi **không `release()`** | Khoá nằm **trong** `_mo_video` (`RLock`), `release()` khi đuổi, cache luôn `rong/cao`; test đếm constructor (12 thread ⇒ **1** capture) |
+| P2 | `t_video` ở chế độ ảnh là `t_uoc_luong × he_so` (giá trị SUY RA); nếu `<video>` không có metadata thì công thức **không bù** trong khi ảnh đã bù ⇒ nhãn lệch vài giây | Server trả `idx` + `t_video_thuc` (= `idx/fps` của đúng frame đã cắt); UI ghi số đó |
+| P2 | Đổi ảnh↔video **mất vị trí** (video về 0 s) | `datCheDo` đồng bộ hai chiều + mục e2e |
+| P2 | Đổi TÊN người dán gọi `chonPhien` ⇒ nạp lại cả phiên, `dangTai = true` ⇒ **nuốt phím nhãn** | Tách `capNhatNhanCuaToi()` (chỉ làm mới nhãn, nhớ `veTienDo`) |
+| P2 | `/anh` không qua chốt chống DNS-rebinding | thêm vào điều kiện `_host_hop_le()` |
+| P2 | Cache trả ảnh cho bước **ngoài dải** (CSV sinh lại); cache **cụt** do ghi không atomic; cache không biết nguồn đã đổi | kiểm dải TRƯỚC cache; ghi `*.tmp` + `os.replace`; `manifest.json` chứa fingerprint (`mtime_ns` CSV + size video) |
+| P2 | `cap.set()` thất bại bị bỏ qua ⇒ cắt **frame của bước khác** rồi cache | kiểm giá trị trả về; kẹp `idx` ngay trong `chi_so_khung`; `he_so_bu()` trả `bi_kep` và UI hiện cảnh báo |
+| P2 | 2 test **giả** (`0 <= idx < 30` vẫn xanh khi xoá phép bù; test song song chỉ "không ném") | assert số thật (`idx_cuoi == 28`), test đếm constructor/release, thêm test cache cũ/cụt/đổi nguồn |
+| P2 | Số ms trong log **không có artifact** (AGENTS §6) | `scripts/do_toc_do_anh.py` → `data/labelui_anh_2026-11-25_metrics.json` |
+| P3 | `/anh` thiếu `buoc` mặc định về bước 0; `/api/frames` dùng `doc_phien` không cache; AGENTS ghim "29 mục" | 400 khi thiếu `buoc`; dùng `doc_phien_cached`; AGENTS bỏ số ghim |
+
+**Bài học quy trình**: 5 lần `str.replace` của tôi **không khớp** nhưng script vẫn in "ok" ⇒ khối e2e
+"chế độ ảnh" tưởng đã có mà thực ra **chưa bao giờ được chèn**, và reviewer đếm ra 30 mục thay vì 35.
+Từ nay: sau mỗi lần thay chuỗi phải `assert` chuỗi mới **có trong file** rồi mới tin.
 
 ## 6. Next steps
 

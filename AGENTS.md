@@ -405,7 +405,7 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
   data/nhan/` (đừng `-f`). Tên người dán được gộp theo NFC + không phân biệt hoa/thường, nhưng đó là
   gộp **chuỗi tên**: tool chứng được "2 tên", **không** chứng được "2 con người" — đừng trích
   "2 người đồng ý" mà không nêu ai ngồi dán. E2E: `./run labeluie2e` (Chrome thật,
-  **29 mục**, script tự in `PASS n/n`), tự sinh fixture H.264 vào thư mục tạm — `data/*` bị gitignore nên e2e trỏ vào phiên thật sẽ
+  37 mục — đọc số thật ở dòng `PASS n/n` script tự in, đừng ghim số), tự sinh fixture H.264 vào thư mục tạm — `data/*` bị gitignore nên e2e trỏ vào phiên thật sẽ
   đỏ trên clone sạch; **mp4v Chrome không phát được** nên phải qua `transcode_for_web`). Nhãn của người
   khác **không được server gửi về trình duyệt** (chỉ số lượng) — ẩn bằng CSS là "độc lập" giả. Vẫn **không** thay được mIoU mask vs GT: nhãn này là *phán
   quyết*, không phải mask.

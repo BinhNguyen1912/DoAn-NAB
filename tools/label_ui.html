@@ -236,6 +236,7 @@ function napAnh(i, prefetch = 4){
       state.anhOk = true;
       $('dangTaiAnh').style.display = 'none';
       $('dangTaiAnh').textContent = 'đang lấy ảnh…';
+      capNhatKhoa();          // PHẢI có: thiếu chỗ này thì nút nhãn chết sau mỗi ←/→ (review 25-11, P1)
       capNhat();
     };
     im.onerror = () => {
@@ -258,8 +259,24 @@ function napAnh(i, prefetch = 4){
 }
 
 function datCheDo(cheDo){
+  const cheDoCu = state.cheDo;
   state.cheDo = cheDo;
   const anhMode = cheDo === 'anh';
+  // Đồng bộ VỊ TRÍ hai chiều: đang xem ảnh bước 200 mà đổi sang Video thì video phải nhảy tới bước
+  // 200 (bản đầu để nguyên 0 s ⇒ panel về bước 0 và người dán tưởng mất chỗ).
+  if (cheDoCu !== cheDo){
+    if (!anhMode){
+      // ảnh → video: video phải NHẢY tới bước đang xem (chỉ gán `state.i` là vô nghĩa: chế độ video
+      // suy bước từ `currentTime`).
+      const i = chiSoAnh();
+      capNhatHeSo();
+      if (state.videoOk && state.mapT && typeof state.mapT[i] === 'number') $('v').currentTime = state.mapT[i];
+      $('v').pause();
+    } else {
+      // video → ảnh: lấy bước đang đứng, KHÔNG nhảy về 0.
+      state.i = chiSoHienTai();
+    }
+  }
   $('anh').style.display = anhMode ? 'block' : 'none';
   $('v').style.display = anhMode ? 'none' : 'block';
   $('v').controls = !anhMode;
@@ -286,9 +303,11 @@ async function chonPhien(ten){
     state.chuaXacMinh = (await getJSON('/api/sessions')).phien
       .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
     state.rong = d.rong || 640;
-  state.cao = d.cao || 480;
-  state.i = 0;
-  state.daGan = d.da_gan || [];
+    state.cao = d.cao || 480;
+    state.fps = d.fps || 0;
+    state.heSoBiKep = !!d.he_so_bu_bi_kep;
+    if (state.phien !== ten) state.i = 0;    // đổi TÊN không phải đổi phiên ⇒ giữ nguyên bước đang xem
+    state.daGan = d.da_gan || [];
     state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
     state.nguoiKhac = d.nguoi_khac || [];
     const v = $('v');
@@ -344,8 +363,15 @@ function capNhat(){
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
   // CẢNH BÁO LỆCH: nếu người gán tua tay đi xa thì nhãn sẽ gắn vào BƯỚC GẦN NHẤT (có thể sai bước).
   // Phải hiện ra, nếu không nhãn đúng ý người mà rơi vào frame khác — đúng bẫy "0/None ≠ đã đo".
-  const tHienTai = (state.cheDo === 'anh') ? (state.frames[i] ? tMap(i) : 0) : v.currentTime;
+  const tHienTai = (state.cheDo === 'anh')
+    ? (typeof f.t_video_thuc === 'number' ? f.t_video_thuc : (f ? tMap(i) : 0))
+    : v.currentTime;
   const lech = Math.abs(tMap(i) - tHienTai);
+  // Chế độ ẢNH không bao giờ "lệch" (luôn đứng đúng bước) ⇒ thiếu tín hiệu khi mapping bị ÉP hệ số.
+  // Hiện thẳng cảnh báo đó thay vì im lặng (review 25-11, F10).
+  const canhBaoKep = state.heSoBiKep
+    ? '<div class="pill bad" id="kep" style="margin-top:4px">hệ số bù bị ÉP (2.00) — vị trí bước có thể ' +
+      'không khớp video; đối chiếu bằng ảnh trước khi tin</div>' : '';
   const canhBaoLech = lech > 0.5
     ? `<div class="pill bad" id="lech" style="margin-top:4px">lệch ${lech.toFixed(2)} s so với bước này —
        nhãn sẽ gắn vào bước GẦN NHẤT (#${f.frame_vos}); bấm ←/→ cho khớp</div>` : '';
@@ -355,7 +381,7 @@ function capNhat(){
     + (f.bbox ? `<br><span class="muted">ô CSV: ${f.bbox.join(', ')}</span>` : '')
     + '<br><span class="muted">t video: ' + tHienTai.toFixed(2) + 's · bù hệ số '
       + (state.heSo || 1).toFixed(3) + '</span>'
-    + canhBaoLech;
+    + canhBaoLech + canhBaoKep;
   $('viTri').textContent = `${i+1}/${state.frames.length}`;
   veCanvas();
 }
@@ -435,8 +461,13 @@ function ghimBuoc(){
   // Chế độ ẢNH: bước do `state.i` quyết định (`currentTime` của <video> đứng yên ⇒ ghim nhầm bước).
   const anhMode = state.cheDo === 'anh';
   const i = chiSoDangXem(), f = state.frames[i] || {};
+  // `t_video_thuc` do SERVER tính (`idx/fps` của đúng frame đã cắt ra). Đừng dùng `tMap(i)` — nếu
+  // <video> không nạp được metadata thì `tMap` KHÔNG bù, còn ảnh thì đã bù ⇒ nhãn lệch vài giây.
+  const tVideo = anhMode
+    ? (typeof f.t_video_thuc === 'number' ? f.t_video_thuc : tMap(i))
+    : $('v').currentTime;
   return { i, phien: state.phien, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
-           t_video: anhMode ? tMap(i) : $('v').currentTime,
+           t_video: tVideo,
            bbox: (veO.co && veO.buoc === i)
              ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
                 Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null };
@@ -572,13 +603,25 @@ $('nguoi').oninput = () => {
   if (t && t !== '?') localStorage.setItem('labelui_nguoi', t);   // nhớ NGAY, không đợi nhãn đầu
   $('dangDan').textContent = t || '?';
 };
+// Đổi TÊN người dán = làm mới RIÊNG phần nhãn (server lọc theo `?nguoi=`), KHÔNG nạp lại phiên.
+// Nạp lại cả phiên ở đây từng làm: gõ tên → bấm phím nhãn ⇒ `blur` bắn `change` ⇒ `dangTai = true`
+// ⇒ `ghiNhan` từ chối, NHÃN BỊ NUỐT (e2e bắt được 25-11 sau khi thêm mục click/bước-thật).
+async function capNhatNhanCuaToi(){
+  if (!state.phien) return;
+  const toi = ($('nguoi').value || '').trim();
+  const d = await getJSON('/api/frames?phien=' + encodeURIComponent(state.phien)
+                          + '&nguoi=' + encodeURIComponent(toi));
+  state.daGan = d.da_gan || [];
+  state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
+  state.nguoiKhac = d.nguoi_khac || [];
+  $('dangDan').textContent = d.nguoi_dang_dan || '?';
+  veBang();
+  veTienDo();      // bộ đếm + "N nhãn của người khác" cũng phải vẽ lại (quên chỗ này ⇒ số CŨ nằm lại)
+}
+
 $('nguoi').onchange = async () => {
-  // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
-  // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).
-  if (state.phien) {
-    try { await chonPhien(state.phien); }
-    catch (e) { flash('LỖI tải phiên: ' + (e.message || e)); }
-  }
+  try { await capNhatNhanCuaToi(); }
+  catch (e) { flash('LỖI tải nhãn: ' + (e.message || e)); }
 };
 
 // Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và
