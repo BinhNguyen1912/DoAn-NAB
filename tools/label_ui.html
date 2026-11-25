@@ -315,7 +315,7 @@ let loiGanNhan = null;
 // quyết của bước k bị ghi cho bước k+1 (review vòng 3, P2-4).
 function ghimBuoc(){
   const i = chiSoHienTai(), f = state.frames[i] || {};
-  return { i, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
+  return { i, phien: state.phien, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
            t_video: $('v').currentTime,
            bbox: (veO.co && veO.buoc === i)
              ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
@@ -331,7 +331,7 @@ async function ghiNhan(nhan){
 async function ghiNhanThat(nhan, g){
   const nguoi = ($('nguoi').value || '').trim();
   const body = {
-    phien: state.phien, nhan, nguoi_gan: nguoi,     // P1-A: tên đi CÙNG nhãn
+    phien: g.phien, nhan, nguoi_gan: nguoi,         // P1-A: tên đi CÙNG nhãn; phiên GHIM lúc bấm
     buoc: g.buoc, frame_vos: g.frame_vos,
     t_video: g.t_video, t_uoc_luong: g.t_uoc_luong,
     bbox_dung: g.bbox,
@@ -423,6 +423,11 @@ async function luuVaTiep(){
 }
 $('btnLuu').onclick = luuVaTiep;
 $('phien').onchange = e => chonPhien(e.target.value);
+$('nguoi').oninput = () => {
+  const t = ($('nguoi').value || '').trim();
+  if (t && t !== '?') localStorage.setItem('labelui_nguoi', t);   // nhớ NGAY, không đợi nhãn đầu
+  $('dangDan').textContent = t || '?';
+};
 $('nguoi').onchange = async () => {
   // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
   // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).

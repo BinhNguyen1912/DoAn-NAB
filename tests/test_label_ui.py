@@ -592,6 +592,18 @@ class TestChanHoiQuyVong3:
         i_md = h.index("d.nguoi_gan !== '?'")
         assert i_luu < i_md, "ưu tiên mặc định server ⇒ người thứ 2 ghi đè nhãn người thứ 1 (P1 vòng 3)"
 
+    def test_phien_duoc_GHIM_cung_buoc(self):
+        """Hàng đợi có thể tới lượt SAU khi người dùng đổi phiên ⇒ nhãn không được ghi sang phiên mới."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "phien: g.phien" in h and "phien: state.phien, nhan" not in h
+        assert "i, phien: state.phien, buoc" in h
+
+    def test_ten_duoc_luu_ngay_khi_go(self):
+        """Không đợi nhãn đầu thành công: người thứ 2 gõ tên rồi reload vẫn phải thấy tên MÌNH."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        i = h.index("$('nguoi').oninput")
+        assert "localStorage.setItem('labelui_nguoi'" in h[i:i + 300]
+
     def test_server_tu_dien_frame_vos(self):
         p = (REPO / "tools" / "label_ui.py").read_text(encoding="utf-8")
         assert "\"frame_vos\": int(khung[buoc][\"frame_vos\"])" in p, \
