@@ -125,8 +125,25 @@
     `!data/nhan/*.jsonl` + `!data/nhan/*_tonghop.json` vào `.gitignore`.
   - **Reviewer báo sai 1 chỗ**: P2-6 nói `data/demoip_1125-121456_web.mp4` "absent" — trên máy này file
     **có** (e2e cũ vẫn PASS), nhưng **lập luận về clone sạch là đúng** nên vẫn sửa theo hướng tự sinh.
-- **Sau khi sửa (3 vòng review):** `./run lint` xanh · `./run test` **2 165 passed** ·
-  `tests/test_label_ui.py` **82 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
+### Review vòng 4 (task `mwvr3px9-ad67`) — 1 P1 + 6 P2
+
+P1 **cùng lớp với vòng 3 nhưng ở phía SERVER**: ô "Người gán" để **trống** thì `do_POST` lấy
+`self.nguoi_gan` thay thế, và `/api/frames?nguoi=` rỗng cũng fallback về tên cấu hình ⇒ người thứ 2 xoá ô
+tên rồi bấm phím là nhãn ghi dưới tên người thứ 1 **và** trình duyệt của cô ấy tải về đúng nhãn của
+người thứ 1 (đếm thành tiến độ của mình). Đã sửa: trống ⇒ **400**, `/api/frames` rỗng ⇒ **không trả nhãn
+ai**, lọc theo `khoa_ten` (NFC+casefold) ở cả 3 chỗ.
+P2 đã sửa: `flash()` nối "(đã ghi)" vào **cả** hai nhánh không ghi gì; hàng đợi POST không có `.catch`
+⇒ `localStorage` ném là **mọi phím sau im lặng**; `--tong-hop` chỉ cảnh báo khi `buoc` ngoài dải mà vẫn
+`exit 0` (nay `exit 1` + artifact `ket_qua=false`); `do_GET` **không** kiểm Host ⇒ DNS rebinding **đọc**
+được nhãn người khác; và **không có test đường thất bại** cho `--tong-hop` (xoá cả cổng mà suite vẫn
+xanh) — nay có.
+P3 đã sửa: `t_video` kiểu lạ ⇒ 400 (trước 500); `Infinity`/`NaN` bị `json.dumps` ghi thành `Infinity`
+(**JSON không hợp lệ** — parser strict chết) ⇒ chặn; `frame_vos` bắt buộc; artifact chỉ ghi ở **một**
+chỗ kèm `ket_qua`/`ly_do`; in `so_nhan_thieu_buoc` khi hai người ở hai không-gian khoá; bỏ `assert … or
+True`; test khẳng định **đúng tập 5 nhãn**; chưa tải xong phiên thì không cho ghi.
+
+- **Sau khi sửa (4 vòng review):** `./run lint` xanh · `./run test` **2 174 passed** ·
+  `tests/test_label_ui.py` **91 test** · `./run labeluie2e` **PASS 30/30** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 
