@@ -153,8 +153,8 @@ rỗng dù bộ đếm đầy (nay so theo NFC+lowercase như server); `/api/fra
 (`json.dumps` mặc định in ra — **không phải JSON**, Chrome `JSON.parse` ném ⇒ UI chết) ⇒ nay `allow_nan=False`
 + thay số méo bằng `null`; test khẳng định thêm `kiem_dai_buoc` và "payload không có `: NaN`".
 
-- **Sau khi sửa (5 vòng review + 2 vòng dọn nốt P3):** `./run lint` xanh · `./run test` **2 184 passed** ·
-  `tests/test_label_ui.py` **99 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
+- **Sau khi sửa (5 vòng review + 2 vòng dọn nốt P3):** `./run lint` xanh · `./run test` **2 190 passed** ·
+  `tests/test_label_ui.py` **105 test** · `./run labeluie2e` **PASS 29/29** trên Chrome thật, không phụ
   thuộc `data/`.
 ### Review vòng 3 (task `mwvql7bu-0455`) — 1 P1 + 7 P2 + 9 P3, đã sửa hết
 
@@ -230,7 +230,24 @@ Vòng 2 đọc **đường ghi xuống file** chứ không chỉ đường hiể
 - Vòng review vòng 1 đã chạy **trên cây đang đổi** (reviewer ghi rõ "the tree changed three times mid-review")
   ⇒ các mục P1 đã sửa cần **review vòng 2** trước khi merge.
 
-### Dùng thật lần đầu (25-11 tối) — rác log `ConnectionResetError`
+### Dùng thật lần đầu (25-11 tối) — ảnh ĐEN vì codec `mp4v`, mà tool vẫn cho dán nhãn MÙ
+
+Người dùng chọn phiên `fast_1101-154036` ⇒ khung hình **đen hoàn toàn**, panel ghi `–`, `0:00`, **nhưng
+vẫn ghi được 1 nhãn "ĐÚNG #0"** (đã xoá). Nguyên nhân: bản ghi cũ là **mpeg4/mp4v**, Chrome **không giải
+mã** (đúng bug đã ghi ở AGENTS §5 — e2e 08-11); **93/130 file `.mp4` trong `data/` chưa có bản
+`_web.mp4` (H.264)** ⇒ không chỉ một phiên.
+
+Sửa 2 lớp:
+1. **Server** `video_de_phat()`: ưu tiên `_web.mp4`; thiếu thì **chuyển mã tại chỗ** bằng chính
+   `transcode_for_web` của repo (đo phiên của người dùng: **0,9 s**, ra `fast_1101-154036_web.mp4` 1,2 MB,
+   Range 206 OK); không chuyển được (thiếu ffmpeg) ⇒ trả `video_phat_duoc = false` + lý do nêu rõ `mp4v`.
+2. **UI**: `datTrangThaiVideo()` + bắt `error`/`loadedmetadata` ⇒ banner đỏ "KHÔNG PHÁT ĐƯỢC VIDEO", **khoá
+   các nút nhãn**, và `ghiNhan` **từ chối ghi** khi `!state.videoOk`. Nhãn mù tệ hơn không có nhãn.
+
+Bài học (đã thêm vào `docs/cach-gan-nhan.md`): trước khi dán **phải thấy hình**; nếu banner đỏ hiện thì
+không dán, chọn phiên khác.
+
+### Rác log `ConnectionResetError` (cùng buổi, đã sửa trước)
 
 Người dùng chạy `./run labelui --nguoi-gan binh`: UI mở được nhưng terminal in **2 traceback 20 dòng**
 `ConnectionResetError: [Errno 104] Connection reset by peer` tại `self.wfile.write(chunk)`.

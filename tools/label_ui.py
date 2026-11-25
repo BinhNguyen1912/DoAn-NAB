@@ -43,6 +43,8 @@ from pathlib import Path
 from urllib.parse import parse_qs, urlparse
 
 REPO_ROOT = Path(__file__).resolve().parents[1]
+if str(REPO_ROOT) not in sys.path:      # `python tools/label_ui.py` ⇒ sys.path[0] là tools/
+    sys.path.insert(0, str(REPO_ROOT))
 
 # `LABELUI_DATA_DIR`/`LABELUI_NHAN_DIR` chỉ phục vụ E2E: bộ dữ liệu mẫu KHÔNG được track (data/* bị
 # gitignore) nên `./run labeluie2e` phải tự dựng data dir tạm, nếu không nó đỏ trên clone sạch/CI.
@@ -169,6 +171,34 @@ def duong_dan_gon(p: Path) -> str:
         return str(p)
 
 
+def video_de_phat(ten: str) -> tuple[str | None, bool | None, str | None]:
+    """Trả `(tên file cho <video>, là_H.264, ghi chú)`.
+
+    Chrome **không giải mã `mp4v`** (bản ghi cũ, 93/130 phiên không có `_web.mp4`) ⇒ `<video>` đen thui
+    nhưng tool vẫn cho dán nhãn "mù" lên bước 0 (gặp thật 25-11, người dùng gửi ảnh). Nay: thiếu bản H.264
+    thì **chuyển mã ngay** bằng chính `transcode_for_web` của repo (đã dùng cho `_web.mp4`), và nói rõ nếu
+    không chuyển được (thiếu ffmpeg) để UI CHẶN dán nhãn.
+    """
+    web = DATA_DIR / f"{ten}_web.mp4"
+    if web.is_file() and web.stat().st_size > 0:
+        return web.name, True, None
+    goc = DATA_DIR / f"{ten}.mp4"
+    if not goc.is_file():
+        return None, None, f"không có file mp4 cho phiên {ten}"
+    try:
+        from src.worker import transcode_for_web
+        ra = transcode_for_web(goc, web)
+    except (ImportError, OSError) as e:                  # pragma: no cover - phụ thuộc môi trường
+        ra = None
+        ghi_chu = f"lỗi khi chuyển mã: {e}"
+    else:
+        ghi_chu = None
+    if ra and web.is_file() and web.stat().st_size > 0:
+        return web.name, True, f"đã chuyển mã {goc.name} → {web.name} (H.264) để trình duyệt phát được"
+    return goc.name, False, (ghi_chu or "KHÔNG chuyển mã được (thiếu ffmpeg?) — file gốc là mp4v, "
+                                       "Chrome KHÔNG phát được")
+
+
 def liet_ke_phien() -> list[dict]:
     """Các phiên có cả CSV + video, mới nhất trước, kèm số nhãn đã có.
 
@@ -195,7 +225,9 @@ def liet_ke_phien() -> list[dict]:
         except (OSError, ValueError):
             pass
         ra.append({"phien": ten, "csv": csv_path.name, "video": video.name, "da_gan": da_gan,
-                   "chua_xac_minh_n": cxm})
+                   "chua_xac_minh_n": cxm,
+                   # `web` = đã có bản H.264? Nếu False thì lần mở tới sẽ phải chuyển mã (vài giây)
+                   "web": (csv_path.with_name(ten + "_web.mp4")).is_file()})
     return ra
 
 
@@ -568,6 +600,10 @@ class _Handler(BaseHTTPRequestHandler):
             khoa_toi = khoa_ten(toi) if toi else None
             cua_toi = ([r for r in tat_ca if khoa_ten(r.get("nguoi_gan") or "") == khoa_toi]
                        if khoa_toi else [])
+            ten_video, la_h264, ghi_chu_video = video_de_phat(ten)
+            d["video"] = ten_video
+            d["video_phat_duoc"] = bool(la_h264)
+            d["canh_bao_video"] = ghi_chu_video
             d["nguoi_dang_dan"] = toi or None
             d["da_gan"] = cua_toi
             d["so_nhan_nguoi_khac"] = len(tat_ca) - len(cua_toi)

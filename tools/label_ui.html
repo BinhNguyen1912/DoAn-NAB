@@ -73,6 +73,8 @@
       <video id="v" controls preload="auto"></video>
       <canvas id="c"></canvas>
       <div id="drawHint">Đang vẽ ô đúng — kéo chuột, <kbd>Esc</kbd> để bỏ</div>
+      <div id="loiVideo" style="display:none; position:absolute; inset:0; background:rgba(20,0,0,.92);
+           color:#ffb4a8; padding:22px; overflow:auto; font-size:15px; line-height:1.6"></div>
     </div>
     <div class="row" style="margin-top:10px">
       <button id="prev" class="ghost">◀ bước trước <span class="hint">(←)</span></button>
@@ -177,6 +179,23 @@ function capNhatHeSo(){
   state.mapT = (state.frames || []).map(f => f.t_uoc_luong * state.heSo);
 }
 function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.frames[i].t_uoc_luong : 0); }
+
+// ── video có PHÁT ĐƯỢC không ────────────────────────────────────────────────
+// Chrome không giải mã `mp4v`; nếu video không tải được thì tool cũ vẫn cho bấm phím và ghi nhãn vào
+// BƯỚC 0 (gặp thật 25-11). Nhãn mù tệ hơn không có nhãn ⇒ chặn hẳn đường ghi.
+function datTrangThaiVideo(ok, lyDo){
+  state.videoOk = !!ok;
+  const el = $('loiVideo');
+  if (ok){ el.style.display = 'none'; el.innerHTML = ''; }
+  else {
+    el.style.display = 'block';
+    el.innerHTML = `<b>KHÔNG PHÁT ĐƯỢC VIDEO</b><br>${lyDo || ''}<br><br>
+      Tool <b>khoá việc ghi nhãn</b> vì nhãn ghi khi không thấy hình là nhãn rác.<br>
+      Thử: chọn phiên khác, hoặc bấm tải lại trang (Ctrl+R) để tool chuyển mã H.264 lại.`;
+  }
+  document.querySelectorAll('button[data-n]').forEach(b => b.disabled = !state.videoOk);
+  $('btnLuu').disabled = !state.videoOk;
+}
 
 async function chonPhien(ten){
   state.dangTai = true;
@@ -329,6 +348,10 @@ function ghimBuoc(){
 
 async function ghiNhan(nhan){
   if (state.dangTai) { flash('Đang tải phiên — chờ xong rồi bấm nhãn'); return false; }
+  if (!state.videoOk){
+    flash('KHÔNG phát được video — KHÔNG ghi nhãn (nhãn mù làm hỏng bằng chứng). Chọn phiên khác hoặc Ctrl+R.');
+    return false;
+  }
   const g = ghimBuoc();
   hangDoi = hangDoi.then(() => ghiNhanThat(nhan, g))
                    .catch(e => {           // ném NGOÀI try/catch của ghiNhanThat (vd localStorage)
@@ -492,7 +515,18 @@ document.addEventListener('keydown', ev => {
   }
 });
 
-$('v').addEventListener('loadedmetadata', () => { capNhatHeSo(); capNhat(); });
+$('v').addEventListener('loadedmetadata', () => {
+  const v = $('v');
+  capNhatHeSo(); capNhat();
+  datTrangThaiVideo(v.videoWidth > 0 && v.duration > 0,
+                    'Trình duyệt đọc được file nhưng không có khung hình (codec lạ/0 byte).');
+});
+$('v').addEventListener('error', () => {
+  const v = $('v');
+  const ma = v.error ? v.error.code : '?';
+  datTrangThaiVideo(false, `Trình duyệt báo lỗi giải mã (code ${ma}) cho ${v.getAttribute('src')}. ` +
+    'Thường là codec mp4v của bản ghi cũ — tool đã thử chuyển sang H.264, nếu vẫn lỗi thì thiếu ffmpeg.');
+});
 ['seeked','timeupdate','play','pause'].forEach(e => $('v').addEventListener(e, () => capNhat()));
 window.addEventListener('resize', veCanvas);
 napDanhSach().catch(e => { $('meta').textContent = 'Lỗi: ' + e.message; });

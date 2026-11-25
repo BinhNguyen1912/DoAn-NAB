@@ -60,6 +60,15 @@ thành "người dùng cất vật" và làm hỏng mọi kết luận về đ�
 - `Enter` ở ô "Người gán" = nhả focus. Phím `1/2/3/4/0` **vẫn ăn** khi con trỏ đang ở trong ô tên
   (không lọt ký tự vào tên), nên bấm Enter chỉ để tiện gõ tiếp.
 
+## 2b. Nếu banner đỏ "KHÔNG PHÁT ĐƯỢC VIDEO" hiện
+
+Đừng dán. Bản ghi cũ dùng codec `mp4v` mà Chrome không giải mã; tool tự chuyển sang H.264 (~1 giây,
+ghi ra `<phiên>_web.mp4`) nên **thường chỉ cần tải lại trang (Ctrl+R)**. Nếu vẫn đỏ: máy thiếu `ffmpeg`
+hoặc file hỏng — chọn phiên khác.
+
+Tool **khoá nút nhãn** trong tình trạng này, vì nhãn ghi khi không thấy hình là **nhãn rác** (đúng ca
+25-11: ảnh đen hoàn toàn mà vẫn ghi được một nhãn "ĐÚNG").
+
 ## 3. Bốn cái bẫy phải biết (đã từng làm sai số của repo)
 
 1. **Thời điểm frame ↔ giây KHÔNG chia đều.** Tool tính `t≈` bằng cách **cộng dồn `latency_ms`** của

@@ -756,6 +756,72 @@ class TestChanHoiQuyVong3:
         assert "thiếu `buoc` — client phải gửi" in p, "thiếu `buoc` mà bỏ qua kiểm là lỗ (P3-10)"
 
 
+class TestVideoPhatDuoc:
+    """Chrome KHÔNG giải mã `mp4v` ⇒ `<video>` đen, mà bản cũ vẫn cho dán nhãn vào bước 0.
+
+    Gặp thật 25-11: người dùng chọn `fast_1101-154036` (mpeg4/mp4v, 93/130 phiên cũ chưa có `_web.mp4`)
+    ⇒ ảnh đen, không có bước VOS, nhưng vẫn ghi được 1 nhãn "ĐÚNG #0".
+    """
+
+    def test_dung_ban_web_neu_co(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        (tmp_path / "s_web.mp4").write_bytes(b"\x00" * 100)
+        (tmp_path / "s.mp4").write_bytes(b"\x00" * 100)
+        assert L.video_de_phat("s") == ("s_web.mp4", True, None)
+
+    def test_thieu_ban_web_thi_Chuyen_ma(self, tmp_path, monkeypatch):
+        """Không có H.264 ⇒ phải chuyển mã tại chỗ (dùng chính `transcode_for_web` của repo)."""
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        (tmp_path / "s.mp4").write_bytes(b"\x00" * 100)
+        goi = {}
+
+        def gia(src, dst=None, **k):
+            goi["src"] = str(src)
+            Path(dst).write_bytes(b"\x00" * 200)
+            return str(dst)
+
+        import src.worker as W
+        monkeypatch.setattr(W, "transcode_for_web", gia)
+        ten, ok, ghi_chu = L.video_de_phat("s")
+        assert (ten, ok) == ("s_web.mp4", True) and ghi_chu and "chuyển mã" in ghi_chu
+        assert goi["src"].endswith("s.mp4")
+
+    def test_chuyen_ma_that_bai_thi_bao_RO(self, tmp_path, monkeypatch):
+        """Thiếu ffmpeg ⇒ trả file gốc + `ok=False` + lý do; UI dùng cờ này để CHẶN ghi nhãn."""
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        (tmp_path / "s.mp4").write_bytes(b"\x00" * 100)
+        import src.worker as W
+        monkeypatch.setattr(W, "transcode_for_web", lambda *a, **k: None)
+        ten, ok, ghi_chu = L.video_de_phat("s")
+        assert ten == "s.mp4" and ok is False
+        assert "mp4v" in ghi_chu and "KHÔNG phát" in ghi_chu
+
+    def test_khong_co_file_mp4(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path)
+        assert L.video_de_phat("s") == (None, None, "không có file mp4 cho phiên s")
+
+    def test_api_frames_tra_co_video_phat_duoc(self, tmp_path, monkeypatch):
+        (tmp_path / "data").mkdir()
+        (tmp_path / "data" / "v_metrics.csv").write_text(
+            "frame_idx,latency_ms,center_x,center_y,bbox_w,bbox_h,mask_area\n0,100,10,10,4,4,9\n",
+            encoding="utf-8")
+        (tmp_path / "data" / "v.mp4").write_bytes(b"\x00" * 100)
+        monkeypatch.setattr(L, "DATA_DIR", tmp_path / "data")
+        monkeypatch.setattr(L, "THU_MUC_NHAN", tmp_path / "data" / "nhan")
+        import src.worker as W
+        monkeypatch.setattr(W, "transcode_for_web", lambda *a, **k: None)
+        srv = L.tao_server(0, "B", None)
+        threading.Thread(target=srv.serve_forever, daemon=True).start()
+        try:
+            d = json.load(urllib.request.urlopen(
+                f"http://127.0.0.1:{srv.server_address[1]}/api/frames?phien=v"))
+            assert d["video"] == "v.mp4" and d["video_phat_duoc"] is False
+            assert "mp4v" in d["canh_bao_video"]
+        finally:
+            srv.shutdown()
+            srv.server_close()
+
+
 class TestClientHuyKetNoi:
     """Chrome huỷ request Range khi tua video ⇒ `write()` ném ConnectionResetError và `http.server` in
     traceback 20 dòng vào terminal đang dán nhãn (người dùng báo 25-11). Video vẫn phát bình thường —
@@ -834,6 +900,14 @@ class TestHangSoVaTaiLieu:
         assert "CHUA XAC MINH" in s and "KHÔNG có cột" in s, \
             "phải nói rõ `chua_xac_minh` KHÔNG có cột trong CSV (bản đầu mô tả sai là 'không vẽ')"
         assert "so_buoc_dong_y" in s, "khoá JSON trong doc phải khớp `tong_hop` thật"
+
+    def test_html_CHAN_ghi_nhan_khi_video_khong_phat_duoc(self):
+        """Nhãn mù tệ hơn không có nhãn — đúng ca 25-11 (ảnh đen mà vẫn ghi được "ĐÚNG #0")."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "function datTrangThaiVideo" in h
+        assert "if (!state.videoOk)" in h, "ghiNhan phải từ chối khi video chưa phát được"
+        assert "addEventListener('error'" in h, "phải bắt lỗi giải mã để báo, không im lặng"
+        assert "KHÔNG PHÁT ĐƯỢC VIDEO" in h
 
     def test_html_khong_hua_phim_khong_ton_tai(self):
         """Doc/comment hứa `Space` = phát/dừng ⇒ file HTML phải thật sự có nhánh xử lý Space."""
