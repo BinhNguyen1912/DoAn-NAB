@@ -860,3 +860,21 @@ hoặc khi hai phương án đều "có lý" và chọn sai sẽ tốn ≥ 1 ng�
   buoc_moi=)` + `live_tracking._watch_seq` chỉ đẩy cổng khi **seq VOS đổi** — review độc lập 24-11 bắt
   P1 này, số §4 (replay CLI) **không** phát hiện được. Log:
   `docs/task/24-11-2026-vat-roi-khung-khong-bi-nghi.md`.
+- **BƯỚC VOS DÀI BẤT THƯỜNG LÀM CỔNG BÁO OAN — nới theo THỜI GIAN chỉ khi bước > 0,5 s.** Người dùng
+  báo 25-11 (phiên `demoip_1125-084425`): *"sao nó lag dữ vậy, đưa vật vào 1 hồi mới có bỏ đỏ"* — log
+  **6 frame / 10,4 s, mean 2004 ms** (bình thường 137–141 ms). Tách hai chuyện: (a) **lag là môi trường,
+  không phải regression**: cùng commit, 15 phút sau, headless cùng clip = **137 ms** (n = 15);
+  `loadavg_1m 2,02`, `live_workers_khac 0`, `image_size 192` ⇒ nghi Windows Update/Defender lúc 8h45 —
+  **`loadavg` của WSL KHÔNG thấy tiến trình phía Windows**, muốn chắc phải xem Task Manager;
+  (b) **lỗi thật bị phơi ra**: ngưỡng cổng tính **px/BƯỚC**, nên `f3` báo oan vì tâm nhảy **239 px** >
+  trần **200 px** — mà 239 px trong **851 ms** chỉ là **281 px/s** (tay đi bình thường). Nay
+  `identity_guard` có `DT_CHAM_BI_THUONG_S = 0,5` · `TOC_DO_TOI_DA_PX_S = 1500` · `TRAN_CHAM_RATIO =
+  0,35`: **chỉ khi `step_seconds > 0,5 s`** mới `radius = max(base, 1500 × dt)` với trần `0,35·diag`, và
+  **không** áp dụng khi người dùng tự siết `--max-jump-ratio`. Ba đường runtime đo `step_seconds` bằng
+  **`time.monotonic()`** giữa 2 lần đẩy cổng (KHÔNG dùng `elapsed_ms`: ở frame nội suy LK đó là `lk_ms`).
+  Đo (`data/eval_gate_rules_2026-11-25_metrics.json`, `git_rev 3591f19`, `git_dirty_code=false`): nhóm 10
+  phiên đóng băng **y hệt** luật cũ (6 báo, chưa-xác-minh 4,24 %, **7/7** ca đúng — bước của chúng
+  131–352 ms < 500 ms nên luật **không kích hoạt**); phiên 25-11 `fire=[3] → []`. Đây **KHÔNG** phải nới
+  trần vô điều kiện (24-11 đã đo 0,25→0,30 làm **mất** ca đúng `092343#264`, đuôi 146→159). Hệ quả phải
+  nói kèm: máy rất chậm thì bán kính chạm trần 280 px ⇒ **mất độ nhạy** cổng với cú nhảy < 280 px/bước.
+  Log: `docs/task/25-11-2026-lag-2004ms-va-cong-bao-oan-khi-may-cham.md`.
