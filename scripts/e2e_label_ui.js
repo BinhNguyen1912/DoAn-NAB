@@ -54,6 +54,29 @@ function docNhan() {
   return fs.readFileSync(FILE_NHAN, 'utf8').split('\n').filter(Boolean).map(s => JSON.parse(s))
 }
 
+// Chờ ảnh của bước ĐANG CHỌN hiện xong: `state.anhOk` chỉ bật sau `onload`, và lúc đang tải thì
+// `ghiNhan` từ chối (nhãn phải gắn với ảnh người dán ĐANG THẤY) — e2e phải chờ, đừng bấm mù.
+async function choAnhSanSang(page, timeout = 8000){
+  await page.waitForFunction(() => {
+    const s = window.__labelui
+    if (!s || s.cheDo !== 'anh') return true
+    const im = document.getElementById('anh')
+    const f = s.frames[s.i] || {}
+    return s.anhOk && im && im.complete && im.naturalWidth > 0 &&
+           (im.getAttribute('src') || '').indexOf('buoc=' + (f.buoc ?? s.i)) >= 0
+  }, { timeout })
+}
+
+// Chờ số dòng nhãn TĂNG (POST là async; `choFile` chỉ chờ file tồn tại nên không đủ khi file đã có).
+async function choThemNhan(truoc, timeout = 8000){
+  const het = Date.now() + timeout
+  while (Date.now() < het){
+    if (docNhan().length > truoc) return true
+    await new Promise(z => setTimeout(z, 50))
+  }
+  return docNhan().length > truoc
+}
+
 let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` dọn thư mục tạm)
 
 ;(async () => {
@@ -102,12 +125,66 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   const dur = await page.evaluate(() => document.getElementById('v').duration || 0)
   kiem(dur > 3, 'video có thời lượng', `${dur.toFixed(1)} s`)
 
+  // 2c) CHẾ ĐỘ ẢNH (mặc định): mỗi bước là một ảnh thật, không cần video
+  const cheDo = await page.$eval('#cheDo', el => el.value)
+  kiem(cheDo === 'anh', 'mặc định là chế độ ẢNH từng bước (dán nhanh)', cheDo)
+  const okAnh = await page.evaluate(() => new Promise(res => {
+    const im = document.getElementById('anh')
+    const xong = () => res(im.complete && im.naturalWidth > 0)
+    if (im.complete && im.naturalWidth > 0) return res(true)
+    im.addEventListener('load', () => res(im.naturalWidth > 0), { once: true })
+    im.addEventListener('error', () => res(false), { once: true })
+    setTimeout(() => res(false), 15000)
+  }))
+  kiem(okAnh, 'ảnh bước đầu tiên tải được (server cắt frame từ video)')
+  const srcDau = await page.$eval('#anh', el => el.getAttribute('src'))
+  await page.click('#next')
+  await page.waitForTimeout(800)
+  const srcSau = await page.$eval('#anh', el => el.getAttribute('src'))
+  kiem(srcDau !== srcSau && /buoc=1/.test(srcSau), '←/→ đổi ẢNH (không cần bấm dừng video)',
+       `${srcDau} → ${srcSau}`)
+  const soAnh = await page.$$eval('#anh', els => els.length)
+  kiem(soAnh === 1, 'chỉ một khung ảnh (không nhân bản khi bấm nhiều lần)', String(soAnh))
+
+  // 2d) NÚT nhãn phải bấm được — e2e cũ chỉ bấm PHÍM nên không bắt được lỗi "nút chết" (review 25-11 P1)
+  await page.waitForFunction(() => {
+    const im = document.getElementById('anh')
+    return im && im.complete && im.naturalWidth > 0
+  }, { timeout: 15000 })
+  await page.waitForTimeout(300)
+  const nutTat = await page.$$eval('button[data-n]', els => els.filter(b => b.disabled).length)
+  kiem(nutTat === 0, 'ảnh hiện rồi thì KHÔNG nút nhãn nào bị disable (bắt lỗi "nút chết")',
+       `${nutTat} nút tắt`)
+  const truocClick = docNhan().length
+  await page.click('button[data-n="dung"]')
+  await page.waitForTimeout(1500)
+  kiem(docNhan().length === truocClick + 1, 'CLICK nút nhãn ghi được (không chỉ phím)',
+       `${truocClick} → ${docNhan().length}`)
+
+  // 2e) đổi ảnh↔video phải GIỮ NGUYÊN bước đang xem
+  await page.click('#next'); await page.waitForTimeout(700)
+  await page.click('#next'); await page.waitForTimeout(900)
+  const buocTruocDoi = await page.$eval('#fVos', el => el.textContent)
+  await page.selectOption('#cheDo', 'video')
+  await choAnhSanSang(page, 3000)          // chờ ảnh mới (nếu có) rồi mới đọc panel
+  const buocSauDoi = await page.$eval('#fVos', el => el.textContent)
+  await page.selectOption('#cheDo', 'anh')
+  await choAnhSanSang(page, 8000)
+  const buocVeLai = await page.$eval('#fVos', el => el.textContent)
+  kiem(buocTruocDoi === buocSauDoi && buocSauDoi === buocVeLai,
+       'đổi ảnh↔video GIỮ NGUYÊN bước đang xem', `${buocTruocDoi} → ${buocSauDoi} → ${buocVeLai}`)
+
   // 3) "bước sau" phải TUA được (bắt bug Range/seek)
+  await page.selectOption('#cheDo', 'video')
+  await page.waitForTimeout(400)
   const t0 = await page.evaluate(() => document.getElementById('v').currentTime)
   await page.click('#next')
   await page.waitForTimeout(900)
   const t1 = await page.evaluate(() => document.getElementById('v').currentTime)
-  kiem(Math.abs(t1 - t0) > 0.05, 'nút "bước sau" tua được video', `${t0.toFixed(2)} → ${t1.toFixed(2)} s`)
+  kiem(Math.abs(t1 - t0) > 0.05, 'chế độ VIDEO: nút "bước sau" tua được video',
+       `${t0.toFixed(2)} → ${t1.toFixed(2)} s`)
+  await page.selectOption('#cheDo', 'anh')
+  await choAnhSanSang(page, 8000)
   const vos = await page.$eval('#fVos', el => el.textContent)
   kiem(/^#\d+$/.test(vos.trim()), 'panel bước VOS cập nhật', vos)
 
@@ -129,7 +206,10 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
        'hệ số bù = thời lượng video / tổng latency (khác 1 nghĩa là THẬT SỰ có bù)',
        `heSo ${heSo.toFixed(3)}, kỳ vọng ${kyVong.toFixed(3)} (video ${dur.toFixed(1)} s / ${tongLat} s)`)
 
-  // 3c) tua vào GIỮA hai bước xa nhau nhất (bước 197 có 1771 ms) ⇒ phải hiện cảnh báo LỆCH
+  // 3c) tua vào GIỮA hai bước xa nhau nhất (bước 197 có 1771 ms) ⇒ phải hiện cảnh báo LỆCH.
+  //     Cảnh báo này thuộc chế độ VIDEO (ở chế độ ẢNH, vị trí luôn đúng bước nên không có gì lệch).
+  await page.selectOption('#cheDo', 'video')
+  await page.waitForTimeout(300)
   const giua = await page.evaluate(() => {
     const s = window.__labelui, m = s.mapT || []
     let best = 0, gapMax = 0
@@ -148,17 +228,25 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   await page.waitForTimeout(800)
   const hetCanhBao = await page.evaluate(() => !document.getElementById('lech'))
   kiem(hetCanhBao, 'cảnh báo lệch TẮT sau khi bấm ←')
+  await page.selectOption('#cheDo', 'anh')       // trở lại chế độ dán nhanh cho các mục sau
+  await choAnhSanSang(page, 8000)               // chờ ảnh của bước đang chọn (nếu chưa, `ghiNhan` từ chối)
 
   // 4) P1-1: phím 1 khi con trỏ VẪN Ở Ô TÊN ⇒ phải ghi nhãn (bản cũ gõ "1" vào tên, không ghi gì và
   //    mọi nhãn sau mang tên "Binh1" ⇒ `tong_hop` bịa ra "2 người")
   await page.click('#nguoi')                  // con trỏ Ở TRONG ô tên, KHÔNG Enter
   const truoc = docNhan().length
+  const truocBam = docNhan().length
   await page.keyboard.press('1')
-  const coFile = await choFile(FILE_NHAN)
-  daTaoFileNhan = coFile
+  const coFile = await choThemNhan(truocBam)     // POST là async: phải CHỜ ĐẾM, đọc ngay là race
+  daTaoFileNhan = coFile && !process.env.LABELUI_GIU_NHAN   // debug: giữ file để soi
   kiem(coFile, 'file nhãn được tạo', FILE_NHAN)
   const sau1 = docNhan()
   kiem(sau1.length === truoc + 1, 'phím 1 ghi ĐÚNG 1 nhãn', `${truoc} → ${sau1.length}`)
+  const buocDangXem = await page.evaluate(() => window.__labelui.i)
+  const nhanMoi = sau1[sau1.length - 1]
+  kiem(nhanMoi.buoc === buocDangXem,
+       'chế độ ẢNH: nhãn mang ĐÚNG bước đang xem (không lấy giờ video đứng yên)',
+       `buoc nhãn ${nhanMoi.buoc} vs đang xem ${buocDangXem}`)
   const rec = sau1[sau1.length - 1] || {}
   kiem(rec.nhan === 'dung', 'nhãn ghi đúng giá trị', rec.nhan)
   kiem(rec.nguoi_gan === NGUOI, 'nhãn ghi TÊN GÕ TRONG UI (không phải cờ --nguoi-gan)', rec.nguoi_gan)
@@ -207,8 +295,13 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
 
   // 6) bảng + bộ đếm cập nhật trên giao diện
   const dem = await page.$eval('#demNguoi', el => el.textContent)
-  // 3 dòng nhãn nhưng chỉ 2 BƯỚC (hai nhãn đầu cùng một bước) ⇒ bộ đếm theo bước phải là 2.
-  kiem(Number(dem) === 2, 'bộ đếm đếm theo BƯỚC đã dán, không phải số dòng nhãn', dem)
+  // Đếm theo BƯỚC, không theo số DÒNG: lấy kỳ vọng từ CHÍNH file (số bước khác nhau của tôi), để thêm
+  // một nhãn ở bước mới không làm hỏng mục này (bản đầu hard-code 2).
+  const dongCuaToi = docNhan().filter(r => (r.nguoi_gan || '') === NGUOI)
+  const soBuoc = new Set(dongCuaToi.map(r => r.buoc ?? r.frame_vos)).size
+  kiem(Number(dem) === soBuoc && soBuoc > 0,
+       'bộ đếm đếm theo BƯỚC đã dán, không phải số dòng nhãn',
+       `dem ${dem} vs ${soBuoc} bước / ${dongCuaToi.length} dòng`)
   const soDong = await page.$$eval('#bang tr', tr => tr.length)
   kiem(soDong >= 2, 'bảng nhãn gần nhất có dòng', `${soDong} dòng`)
 
@@ -238,6 +331,11 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
 
   // Chạy TAY (`node scripts/e2e_label_ui.js`) không có trap của `./run` ⇒ tự xoá file nhãn đã tạo,
   // nếu không nó nằm lại trong `data/nhan/` (nay thư mục đó ĐƯỢC track).
+  if (process.env.LABELUI_GIU_NHAN && fs.existsSync(FILE_NHAN)) {
+    // debug: thư mục tạm bị trap của `./run` xoá ⇒ chép ra chỗ xem được
+    fs.copyFileSync(FILE_NHAN, path.join('data', 'tmp_e2e_nhan.jsonl'))
+    console.log('  (đã chép nhãn e2e ra data/tmp_e2e_nhan.jsonl)')
+  }
   if (daTaoFileNhan && fs.existsSync(FILE_NHAN)) fs.unlinkSync(FILE_NHAN)
   await browser.close()
   // In `đạt/tổng` để con số trong AGENTS/doc KIỂM ĐƯỢC từ output (trước đây khai "30/30" mà script

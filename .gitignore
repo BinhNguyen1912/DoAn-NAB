@@ -86,3 +86,7 @@ data/gte2e_server.log
 .env
 .env.*
 !.env.example
+# Cache ảnh từng bước của UI gán nhãn (sinh lại được từ video, ~13 JPEG/phiên) — đặt SAU các ngoại lệ
+# `!data/nhan/...` vì git lấy mẫu khớp CUỐI CÙNG: để trước thì ngoại lệ `!data/nhan/` thắng và 13 JPEG
+# đã lỡ vào repo ngày 25-11.
+data/nhan/.anh/

@@ -37,6 +37,7 @@ import re
 import unicodedata
 import subprocess
 import sys
+import threading
 from datetime import datetime
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from pathlib import Path
@@ -199,6 +200,203 @@ def video_de_phat(ten: str) -> tuple[str | None, bool | None, str | None]:
                                        "Chrome KHÔNG phát được")
 
 
+# ── ẢNH TỪNG BƯỚC (dán nhanh: không phải bấm dừng video) ──────────────────────────────────────────
+# Vì sao: tua + dừng video rồi chấm từng bước rất chậm (mỗi lần seek 40–60 ms + phải bấm Space hai lần),
+# và bản ghi cũ (mp4v) thì Chrome không phát được luôn. Ảnh tĩnh lấy sẵn ra JPEG: `←/→` là đổi ảnh ngay,
+# không có khái niệm "đang phát".
+ANH_DIR_NAME = ".anh"          # nằm trong thư mục nhãn; bắt đầu bằng "." để không bị liệt kê là phiên
+_CAP: dict[str, tuple] = {}    # ten -> (VideoCapture, fps, n_frames, rong, cao)
+# OpenCV/FFmpeg **KHÔNG thread-safe** cho một `VideoCapture`: prefetch 4 ảnh song song (4 request của
+# `ThreadingHTTPServer`) từng làm `Assertion fctx->async_lock failed at libavcodec/pthread_frame.c:174`
+# và **abort cả tiến trình**. **MỌI** truy cập capture (kể cả `cap.get(WIDTH/HEIGHT)`) đi qua khoá này.
+# `RLock` vì `anh_buoc` giữ khoá rồi gọi `_mo_video`/`chi_so_khung` (cũng cần khoá).
+_CAP_LOCK = threading.RLock()
+_CAP_MAX = 3                   # số phiên mở song song; vượt thì đuổi cái cũ NHẤT và release()
+
+
+def _mo_video(ten: str):
+    """Mở (và giữ) `VideoCapture` cho phiên; trả `(cap, fps, n_frames, rong, cao)` hoặc `None`.
+
+    Tự giữ `_CAP_LOCK` (RLock) — nơi gọi không phải khoá lại.
+    """
+    with _CAP_LOCK:
+        return _mo_video_khoa(ten)
+
+
+def _mo_video_khoa(ten: str):
+    """Phần trong của `_mo_video`: giả định ĐANG giữ `_CAP_LOCK` (tránh mở 2 lần cùng phiên)."""
+    import cv2
+    if ten in _CAP:
+        return _CAP[ten]
+    # Ưu tiên FILE GỐC: `cv2` đọc được cả `mp4v` (Chrome thì không), nên KHÔNG cần chuyển mã.
+    # `video_de_phat()` có thể transcode cả clip (0,5–30 s) — gọi nó ở đây sẽ làm ảnh ĐẦU TIÊN treo
+    # lâu vô ích, đúng thứ chế độ ảnh sinh ra để tránh.
+    ung_vien = [DATA_DIR / f"{ten}.mp4"]
+    if not ung_vien[0].is_file():
+        ten_video, _, _ = video_de_phat(ten)
+        if ten_video:
+            ung_vien.append(DATA_DIR / ten_video)
+    cap = None
+    for p in ung_vien:
+        if not p.is_file():
+            continue
+        cap = cv2.VideoCapture(str(p))
+        if cap.isOpened():
+            break
+        cap.release()
+        cap = None
+    if cap is None:
+        return None
+    fps = cap.get(cv2.CAP_PROP_FPS) or 0.0
+    n = cap.get(cv2.CAP_PROP_FRAME_COUNT) or 0
+    if fps <= 0 or n <= 0:
+        cap.release()
+        return None
+    rong = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH) or 0)
+    cao = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT) or 0)
+    if len(_CAP) >= _CAP_MAX:               # đuổi cái cũ nhất và RELEASE (bản đầu chỉ `clear()` ⇒ rò fd)
+        for ten_cu in list(_CAP)[:len(_CAP) - _CAP_MAX + 1]:
+            cap_cu = _CAP.pop(ten_cu, (None,))[0]
+            if cap_cu is not None:
+                cap_cu.release()
+    _CAP[ten] = (cap, fps, n, rong, cao)
+    return _CAP[ten]
+
+
+HE_SO_MIN, HE_SO_MAX = 0.5, 2.0
+
+
+def he_so_bu(thoi_luong: float, tong_latency: float) -> tuple[float, bool]:
+    """Hệ số bù `t_map = t_uoc_luong × he_so`; trả `(he_so, bi_kep)`.
+
+    `bi_kep = True` nghĩa là mapping đang bị ép về dải [`HE_SO_MIN`, `HE_SO_MAX`] ⇒ **phải hiện cảnh
+    báo** cho người dán, đừng im lặng (ca dễ chạm: phiên re-ID có nhiều bước `latency_ms = 0`).
+    """
+    if tong_latency <= 1 or thoi_luong <= 1:
+        return 1.0, False
+    tho = thoi_luong / tong_latency
+    return min(HE_SO_MAX, max(HE_SO_MIN, tho)), not (HE_SO_MIN <= tho <= HE_SO_MAX)
+
+
+def chi_so_khung(phien: str, buoc: int) -> tuple[int | None, str | None]:
+    """Bước VOS `buoc` ⇒ CHỈ SỐ FRAME trong video (kèm lý do nếu không tính được).
+
+    Dùng đúng phép bù của UI: `t_map = t_uoc_luong × (thời lượng video / tổng latency)` — chia đều
+    `thời lượng/số_bước` lệch tới 12 s trên phiên 98 s (AGENTS §6).
+    """
+    mo = _mo_video(phien)
+    if not mo:
+        return None, "không mở được video"
+    _, fps, n, _, _ = mo
+    try:
+        d = doc_phien_cached(DATA_DIR / f"{phien}_metrics.csv")
+    except (OSError, ValueError) as e:
+        return None, f"không đọc được CSV: {e}"
+    if not 0 <= buoc < len(d["frames"]):
+        return None, f"buoc ngoài dải 0..{len(d['frames']) - 1}"
+    he_so, _ = he_so_bu(n / fps, d["tong_latency_s"] or 0.0)
+    t = d["frames"][buoc]["t_uoc_luong"] * he_so
+    return max(0, min(int(n) - 1, int(round(t * fps)))), None      # KẸP ngay trong hàm
+
+
+MANIFEST = "manifest.json"
+
+
+def _dau_van_tay(phien: str) -> str:
+    """Dấu vân tay của NGUỒN: `mtime_ns` CSV + `size` video. Đổi ⇒ ảnh cache không còn đúng."""
+    dau = []
+    for p in (DATA_DIR / f"{phien}_metrics.csv", DATA_DIR / f"{phien}.mp4"):
+        try:
+            st = p.stat()
+            dau.append(f"{st.st_mtime_ns}:{st.st_size}")
+        except OSError:
+            dau.append("-")
+    return "|".join(dau)
+
+
+def _doc_dau_van_tay(thu_muc) -> str | None:
+    try:
+        return json.loads((thu_muc / MANIFEST).read_text(encoding="utf-8")).get("dau_van_tay")
+    except (OSError, ValueError):
+        return None
+
+
+def _ghi_cache(thu_muc, tep, du_lieu: bytes, dau_van_tay: str, phien: str) -> None:
+    """Ghi cache **atomic**: file tạm riêng + `os.replace` (thread khác không thấy file ghi dở)."""
+    try:
+        # Nguồn đã đổi TRONG LÚC cắt ⇒ ảnh này là của nguồn CŨ, đừng gắn nhãn fingerprint MỚI cho nó
+        # (nếu không, lần sau fingerprint khớp và cache phục vụ ảnh cũ VĨNH VIỄN — review vòng 2, P2-5).
+        if _dau_van_tay(phien) != dau_van_tay:
+            return
+        thu_muc.mkdir(parents=True, exist_ok=True)
+        import tempfile
+        fd, ten_tam = tempfile.mkstemp(dir=str(thu_muc), prefix=".tmp-", suffix=".jpg")
+        try:
+            with os.fdopen(fd, "wb") as fh:
+                fh.write(du_lieu)
+            os.replace(ten_tam, tep)
+        finally:
+            if os.path.exists(ten_tam):
+                os.unlink(ten_tam)          # `os.replace` đã chuyển đi thì nhánh này không chạy
+        (thu_muc / MANIFEST).write_text(
+            json.dumps({"phien": phien, "dau_van_tay": dau_van_tay}), encoding="utf-8")
+    except OSError:
+        pass                                  # cache là tiện ích; không ghi được vẫn phải trả ảnh
+
+
+def anh_buoc(phien: str, buoc: int) -> tuple[bytes | None, str | None]:
+    """JPEG của khung hình tại bước `buoc` (cache trên đĩa, lần 2 trả ngay)."""
+    if not ten_hop_le(phien):
+        return None, "tên phiên không hợp lệ"
+    try:
+        buoc = int(buoc)
+    except (TypeError, ValueError):
+        return None, "buoc phải là số nguyên"
+    # Kiểm DẢI trước khi đọc cache: cache cũ còn `000300.jpg` trong khi CSV đã sinh lại chỉ 100 bước
+    # từng trả 200 cho bước không tồn tại (review độc lập 25-11, F7).
+    idx, loi = chi_so_khung(phien, buoc)
+    if idx is None:
+        return None, loi
+    thu_muc = THU_MUC_NHAN / ANH_DIR_NAME / phien
+    tep = thu_muc / f"{buoc:06d}.jpg"
+    # Fingerprint (mtime CSV + size video): CSV/video sinh lại ⇒ ảnh cũ KHÔNG còn đúng, phải cắt lại.
+    dau_van_tay = _dau_van_tay(phien)
+    if tep.is_file() and tep.stat().st_size > 0 and dau_van_tay == _doc_dau_van_tay(thu_muc):
+        try:
+            du_lieu = tep.read_bytes()
+            if du_lieu[:2] == b"\xff\xd8" and du_lieu[-2:] == b"\xff\xd9":   # JPEG trọn vẹn
+                return du_lieu, None
+        except OSError:
+            pass
+    import cv2
+    with _CAP_LOCK:                      # seek+read TUẦN TỰ: FFmpeg không chịu được truy cập song song
+        mo = _mo_video(phien)
+        if not mo:
+            return None, "không mở được video"
+        cap, _, n, _, _ = mo
+        dich = max(0, min(idx, int(n) - 1))
+        if not cap.set(cv2.CAP_PROP_POS_FRAMES, dich):
+            return None, f"seek tới frame {dich} thất bại"     # đừng trả frame của bước KHÁC rồi cache
+        # `set()` có thể trả True mà vẫn đứng ở keyframe gần nhất (tuỳ backend) ⇒ đọc lại vị trí.
+        # Sai lệch > 1 frame = ảnh của BƯỚC KHÁC, không được cache.
+        vi_tri = int(round(cap.get(cv2.CAP_PROP_POS_FRAMES) or dich))
+        if abs(vi_tri - dich) > 1:
+            return None, f"seek lệch: muốn frame {dich}, đứng ở {vi_tri}"
+        ok, khung = cap.read()
+    if not ok or khung is None:
+        return None, f"không đọc được frame {idx} của video"
+    # Thu nhỏ còn ≤ 960 px ngang: đủ nét để thấy ô/mask, nhẹ để `←/→` không phải chờ.
+    h, w = khung.shape[:2]
+    if w > 960:
+        khung = cv2.resize(khung, (960, int(round(h * 960 / w))), interpolation=cv2.INTER_AREA)
+    ok, buf = cv2.imencode(".jpg", khung, [int(cv2.IMWRITE_JPEG_QUALITY), 85])
+    if not ok:
+        return None, "không nén được JPEG"
+    du_lieu = buf.tobytes()
+    _ghi_cache(thu_muc, tep, du_lieu, dau_van_tay, phien)
+    return du_lieu, None
+
+
 def liet_ke_phien() -> list[dict]:
     """Các phiên có cả CSV + video, mới nhất trước, kèm số nhãn đã có.
 
@@ -329,12 +527,18 @@ def ghi_nhan(phien: str, record: dict, nguoi_gan: str, thu_muc: Path | None = No
         bbox = b
     else:
         b = None
+    che_do = record.get("che_do")
+    if che_do not in (None, "", "anh", "video"):
+        raise ValueError(f"`che_do` chỉ nhận 'anh'/'video'; nhận {che_do!r}")
     rec = {
         "phien": phien,
         # `buoc` = số thứ tự dòng trong CSV = DANH TÍNH của bước (duy nhất kể cả khi frame_idx lặp).
         "buoc": None if record.get("buoc") in (None, "") else int(record["buoc"]),
         "frame_vos": int(record.get("frame_vos") or 0),
         "t_video": round(_so_huu_han(record.get("t_video"), "t_video"), 3),
+        # `t_video` có hai nguồn: chế độ Ảnh = `idx/fps` của frame server cắt ra; chế độ Video =
+        # `currentTime`. Không ghi lại thì file bằng chứng không phân biệt được (review vòng 2, P3-8).
+        "che_do": che_do or None,
         "t_uoc_luong": (None if record.get("t_uoc_luong") is None
                         else round(_so_huu_han(record["t_uoc_luong"], "t_uoc_luong"), 2)),
         "nhan": nhan,
@@ -562,7 +766,7 @@ class _Handler(BaseHTTPRequestHandler):
     def do_GET(self):
         u = urlparse(self.path)
         q = parse_qs(u.query)
-        if (u.path == "/video" or u.path.startswith("/api/")) and not self._host_hop_le():
+        if (u.path in ("/video", "/anh") or u.path.startswith("/api/")) and not self._host_hop_le():
             return self._json({"loi": "Host lạ — không nhận (chống DNS rebinding)"}, 403)
         if u.path in ("/", "/index.html"):
             if not HTML.is_file():
@@ -575,6 +779,24 @@ class _Handler(BaseHTTPRequestHandler):
             return
         if u.path == "/video":
             return self._video(q)
+        if u.path == "/anh":
+            ten = (q.get("phien") or [""])[0]
+            if not (q.get("buoc") or [""])[0].strip():
+                return self._json({"loi": "thiếu tham số buoc"}, 400)
+            buoc = (q.get("buoc") or [""])[0]
+            du_lieu, loi = anh_buoc(ten, buoc)
+            if du_lieu is None:
+                return self._json({"loi": loi or "không lấy được ảnh"}, 404)
+            self.send_response(200)
+            self.send_header("Content-Type", "image/jpeg")
+            self.send_header("Content-Length", str(len(du_lieu)))
+            # `no-cache` + ETag theo fingerprint: ảnh của một bước là bất biến TRONG một nguồn, nhưng
+            # CSV/video sinh lại thì KHÔNG — `max-age=86400` từng khiến browser hiện ảnh cũ suốt 24 h
+            # trong khi `t_video` lấy từ CSV mới (review vòng 2, P2-4). Đọc lại cache chỉ 9,2 ms.
+            self.send_header("Cache-Control", "no-cache")
+            self.end_headers()
+            ghi_an_toan(self.wfile, du_lieu)
+            return
         if u.path == "/api/sessions":
             return self._json({"phien": liet_ke_phien(), "phien_mac_dinh": self.phien_mac_dinh,
                                "nguoi_gan": self.nguoi_gan, "nhan": NHAN})
@@ -586,9 +808,15 @@ class _Handler(BaseHTTPRequestHandler):
             if not p.is_file():
                 return self._json({"loi": f"không có {p.name}"}, 404)
             try:
-                d = doc_phien(p)
+                goc = doc_phien_cached(p)              # cache: 50 000 dòng parse 169 ms mỗi lần mở phiên
             except ValueError as e:                    # CSV bẩn (BOM, thiếu cột, không tăng dần)
                 return self._json({"loi": str(e)}, 400)
+            # COPY-ON-READ: object trong cache được DÙNG CHUNG giữa các thread; trang trí (`da_gan`,
+            # `rong`, `idx`...) lên chính nó thì hai request cùng phiên ghi đè nhau ⇒ người này nhận
+            # NHÃN CỦA NGƯỜI KIA (đúng thứ tool phải chống), và `rong/cao` có thể mất key ⇒ ô vẽ sai
+            # tỉ lệ. Chép nông dict + chép từng frame (review vòng 2, P1-1).
+            d = {k: v for k, v in goc.items() if k != "frames"}
+            d["frames"] = [dict(f) for f in goc["frames"]]
             # ĐỘC LẬP THẬT: chỉ trả nhãn của CHÍNH người đang dán; nhãn người khác chỉ đi kèm SỐ LƯỢNG.
             # Trước đây server trả hết rồi UI ẩn bằng CSS ⇒ mở DevTools là thấy, "2 người độc lập" thành giả.
             # Tên người dán nay do CLIENT khai (`?nguoi=`) vì 2 người có thể dùng CHUNG một server (đó là
@@ -603,6 +831,23 @@ class _Handler(BaseHTTPRequestHandler):
             ten_video, la_h264, ghi_chu_video = video_de_phat(ten)
             d["video"] = ten_video
             d["video_phat_duoc"] = bool(la_h264)
+            mo = _mo_video(ten)
+            if mo:
+                _, fps, n, rong, cao = mo
+                d["rong"] = rong or 640
+                d["cao"] = cao or 480
+                d["fps"] = fps
+                he_so, bi_kep = he_so_bu((n / fps) if fps else 0.0, d["tong_latency_s"] or 0.0)
+                d["he_so_bu"] = round(he_so, 4)
+                d["he_so_bu_bi_kep"] = bi_kep            # True ⇒ mapping bị ép, phải cảnh báo người dán
+                # `t_video_thuc` = thời điểm THẬT của frame mà `/anh` cắt ra (`idx/fps`). UI ghi số này
+                # vào nhãn thay vì `t_uoc_luong × he_so` — nếu <video> không nạp được metadata (ca mp4v)
+                # thì công thức của UI KHÔNG bù, còn ảnh thì đã bù ⇒ nhãn lệch vài giây (review 25-11, F3).
+                for f in d["frames"]:
+                    idx = int(round((f.get("t_uoc_luong") or 0.0) * he_so * fps))
+                    f["idx"] = max(0, min(int(n) - 1, idx))
+                    f["t_video_thuc"] = round(f["idx"] / fps, 3) if fps else None
+            d["che_do_mac_dinh"] = "anh"
             d["canh_bao_video"] = ghi_chu_video
             d["nguoi_dang_dan"] = toi or None
             d["da_gan"] = cua_toi

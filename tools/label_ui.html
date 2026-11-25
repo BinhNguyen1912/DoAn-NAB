@@ -61,6 +61,12 @@
   <b>Gán nhãn “bắt đúng / sai”</b>
   <label>Phiên <select id="phien"></select></label>
   <label>Người gán <input id="nguoi" size="12" placeholder="tên của bạn"></label>
+  <label title="Ảnh = mỗi bước một ảnh tĩnh (nhanh); Video = xem liền mạch">
+    <select id="cheDo">
+      <option value="anh" selected>Ảnh từng bước</option>
+      <option value="video">Video</option>
+    </select>
+  </label>
   <span id="dangDan" class="pill ok">?</span>
   <span id="tienDo" class="muted"></span>
   <span style="flex:1"></span>
@@ -71,6 +77,10 @@
   <div>
     <div id="wrap">
       <video id="v" controls preload="auto"></video>
+      <!-- CHẾ ĐỘ ẢNH: mỗi bước = 1 ảnh JPEG lấy sẵn từ video ⇒ ←/→ đổi ảnh NGAY, không phải bấm dừng. -->
+      <img id="anh" alt="" style="display:none; display:none; width:100%; height:auto">
+      <div id="dangTaiAnh" style="display:none; position:absolute; inset:0; display:none;
+           align-items:center; justify-content:center; color:#9aa4b2; background:rgba(0,0,0,.55)">đang lấy ảnh…</div>
       <canvas id="c"></canvas>
       <div id="drawHint">Đang vẽ ô đúng — kéo chuột, <kbd>Esc</kbd> để bỏ</div>
       <div id="loiVideo" style="display:none; position:absolute; inset:0; background:rgba(20,0,0,.92);
@@ -136,7 +146,9 @@ const NHAN_VI = { dung:"ĐÚNG", sai:"SAI", mat_dau:"MẤT DẤU", khong_co_vat:
 const PILL = { dung:"ok", sai:"bad", mat_dau:"warn", khong_co_vat:"warn", bo_qua:"warn" };
 
 // `nhanChon` = nhãn vừa bấm ở BƯỚC NÀY (để `s` lưu lại đúng nhãn đó). Đặt `null` khi đổi phiên/bước.
-let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:null };
+// `cheDo`: "anh" (mặc định — dán nhanh) hoặc "video" (xem chuyển động).
+let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:null,
+              cheDo:'anh', i:0, rong:640, cao:480, videoOk:false, anhOk:false };
 // `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
 // sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
 let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
@@ -183,18 +195,99 @@ function tMap(i){ return state.mapT ? state.mapT[i] : (state.frames[i] ? state.f
 // ── video có PHÁT ĐƯỢC không ────────────────────────────────────────────────
 // Chrome không giải mã `mp4v`; nếu video không tải được thì tool cũ vẫn cho bấm phím và ghi nhãn vào
 // BƯỚC 0 (gặp thật 25-11). Nhãn mù tệ hơn không có nhãn ⇒ chặn hẳn đường ghi.
+// Có được ghi nhãn hay không phụ thuộc NGUỒN ĐANG XEM: ảnh ⇒ `anhOk`; video ⇒ `videoOk`.
+// (Bản đầu khoá theo `videoOk` cho cả hai chế độ ⇒ phiên mp4v vẫn bị khoá oan ở chế độ ảnh.)
+function capNhatKhoa(){
+  const cho = (state.cheDo === 'anh') ? state.anhOk : state.videoOk;
+  document.querySelectorAll('button[data-n]').forEach(b => b.disabled = !cho);
+  $('btnLuu').disabled = !cho;
+  $('next').disabled = state.frames.length === 0;
+  $('prev').disabled = state.frames.length === 0;
+}
+
 function datTrangThaiVideo(ok, lyDo){
   state.videoOk = !!ok;
+  // Chế độ ẢNH không cần <video>: banner/lỗi video KHÔNG được phủ lên ảnh (mp4v vẫn dán được).
   const el = $('loiVideo');
-  if (ok){ el.style.display = 'none'; el.innerHTML = ''; }
+  if (ok || state.cheDo === 'anh'){ el.style.display = 'none'; el.innerHTML = ''; }
   else {
     el.style.display = 'block';
     el.innerHTML = `<b>KHÔNG PHÁT ĐƯỢC VIDEO</b><br>${lyDo || ''}<br><br>
       Tool <b>khoá việc ghi nhãn</b> vì nhãn ghi khi không thấy hình là nhãn rác.<br>
       Thử: chọn phiên khác, hoặc bấm tải lại trang (Ctrl+R) để tool chuyển mã H.264 lại.`;
   }
-  document.querySelectorAll('button[data-n]').forEach(b => b.disabled = !state.videoOk);
-  $('btnLuu').disabled = !state.videoOk;
+  capNhatKhoa();
+}
+
+// ── chế độ ẢNH: chỉ số bước là nguồn sự thật, không có `currentTime` ──────────
+function urlAnh(i){
+  const f = state.frames[i] || {};
+  return `/anh?phien=${encodeURIComponent(state.phien)}&buoc=${f.buoc ?? i}`;
+}
+
+function napAnh(i, prefetch = 4){
+  const im = $('anh');
+  state.anhOk = false;
+  $('dangTaiAnh').textContent = 'đang lấy ảnh…';
+  $('dangTaiAnh').style.display = 'flex';
+  const src = urlAnh(i);
+  if (im.getAttribute('src') !== src){
+    im.onload = () => {
+      state.anhOk = true;
+      $('dangTaiAnh').style.display = 'none';
+      $('dangTaiAnh').textContent = 'đang lấy ảnh…';
+      capNhatKhoa();          // PHẢI có: thiếu chỗ này thì nút nhãn chết sau mỗi ←/→ (review 25-11, P1)
+      capNhat();
+    };
+    im.onerror = () => {
+      state.anhOk = false;
+      $('dangTaiAnh').textContent = 'không lấy được ảnh của bước này';
+      $('dangTaiAnh').style.display = 'flex';
+      capNhatKhoa();
+    };
+    im.src = src;
+  } else {
+    // KHÔNG được tin `src` không đổi là ảnh đang hiện: ảnh lỗi trước đó (`onerror`) vẫn giữ src cũ ⇒
+    // bật khoá ghi nhãn = cho phép NHÃN MÙ (review vòng 2, P2-2).
+    state.anhOk = !!(im.complete && im.naturalWidth > 0);
+    $('dangTaiAnh').style.display = state.anhOk ? 'none' : 'flex';
+  }
+  capNhatKhoa();
+  // Prefetch vài ảnh kế: `←/→` thành tức thì thay vì chờ 60–350 ms/ảnh.
+  for (let k = 1; k <= prefetch; k++){
+    const j = i + k;
+    if (j < state.frames.length) { const x = new Image(); x.src = urlAnh(j); }
+  }
+}
+
+function datCheDo(cheDo){
+  const cheDoCu = state.cheDo;
+  state.cheDo = cheDo;
+  const anhMode = cheDo === 'anh';
+  // Đồng bộ VỊ TRÍ hai chiều: đang xem ảnh bước 200 mà đổi sang Video thì video phải nhảy tới bước
+  // 200 (bản đầu để nguyên 0 s ⇒ panel về bước 0 và người dán tưởng mất chỗ).
+  if (cheDoCu !== cheDo){
+    if (!anhMode){
+      // ảnh → video: video phải NHẢY tới bước đang xem (chỉ gán `state.i` là vô nghĩa: chế độ video
+      // suy bước từ `currentTime`).
+      const i = chiSoAnh();
+      capNhatHeSo();
+      if (state.videoOk && state.mapT && typeof state.mapT[i] === 'number') $('v').currentTime = state.mapT[i];
+      $('v').pause();
+    } else {
+      // video → ảnh: lấy bước đang đứng, KHÔNG nhảy về 0.
+      state.i = chiSoHienTai();
+    }
+  }
+  $('anh').style.display = anhMode ? 'block' : 'none';
+  $('v').style.display = anhMode ? 'none' : 'block';
+  $('v').controls = !anhMode;
+  if (anhMode) { const el = $('loiVideo'); el.style.display = 'none'; el.innerHTML = ''; }
+  capNhatKhoa();
+  if (anhMode) { $('v').pause(); napAnh(state.i); }
+  else { capNhatHeSo(); }
+  capNhat();
+  veCanvas();
 }
 
 async function chonPhien(ten){
@@ -206,11 +299,19 @@ async function chonPhien(ten){
     const toi = ($('nguoi').value || '').trim();
     const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
                             + '&nguoi=' + encodeURIComponent(toi));
+    const tenCu = state.phien;
     state.phien = ten;               // chỉ nhận phiên MỚI khi đã tải được (lỗi ⇒ giữ nguyên phiên cũ)
     state.frames = d.frames;
     state.tongLatency = d.tong_latency_s;
     state.chuaXacMinh = (await getJSON('/api/sessions')).phien
       .find(p => p.phien === ten)?.chua_xac_minh_n ?? null;   // `|| null` biến 0 thành "không có"
+    state.rong = d.rong || 640;
+    state.cao = d.cao || 480;
+    state.fps = d.fps || 0;
+    state.heSoBiKep = !!d.he_so_bu_bi_kep;
+    // Đổi PHIÊN thì về bước 0 (phiên mới có thể NGẮN hơn ⇒ `state.i` cũ vượt dải ⇒ /anh 404 ⇒
+    // khoá sạch nút). Đổi TÊN người dán thì giữ nguyên bước (nên `#nguoi` không đi qua đây nữa).
+    if (tenCu !== ten) state.i = 0;
     state.daGan = d.da_gan || [];
     state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
     state.nguoiKhac = d.nguoi_khac || [];
@@ -232,6 +333,7 @@ async function chonPhien(ten){
   } finally {
     state.dangTai = false;          // lỗi giữa đường KHÔNG được khoá vĩnh viễn mọi phím
   }
+  datCheDo(state.cheDo);            // ảnh (mặc định) hay video
   $('phien').blur();
 }
 
@@ -245,11 +347,15 @@ function buocGanNhat(t){
   return best;
 }
 function chiSoHienTai(){ return buocGanNhat($('v').currentTime); }
+function chiSoAnh(){ return Math.max(0, Math.min(state.frames.length - 1, state.i | 0)); }
+// MỘT nguồn sự thật cho "đang xem bước nào": ảnh = `state.i`; video = suy từ `currentTime`.
+// (Ba chỗ từng tự gọi `chiSoHienTai()` nên ở chế độ ẢNH ghim nhầm bước — e2e bắt được.)
+function chiSoDangXem(){ return (state.cheDo === 'anh') ? chiSoAnh() : chiSoHienTai(); }
 
 let buocTruoc = null;
 function capNhat(){
   const v = $('v');
-  const i = chiSoHienTai();
+  const i = chiSoDangXem();
   if (buocTruoc !== null && i !== buocTruoc && veO.co){
     veO.co = false; veO.buoc = null;          // ô thuộc bước khác ⇒ bỏ, không lưu hộ
   }
@@ -262,7 +368,19 @@ function capNhat(){
   $('fVos').textContent = `#${f.frame_vos ?? '–'}`;
   // CẢNH BÁO LỆCH: nếu người gán tua tay đi xa thì nhãn sẽ gắn vào BƯỚC GẦN NHẤT (có thể sai bước).
   // Phải hiện ra, nếu không nhãn đúng ý người mà rơi vào frame khác — đúng bẫy "0/None ≠ đã đo".
-  const lech = Math.abs(tMap(i) - v.currentTime);
+  const tHienTai = (state.cheDo === 'anh')
+    ? (typeof f.t_video_thuc === 'number' ? f.t_video_thuc : (f ? tMap(i) : 0))
+    : v.currentTime;
+  // Chế độ ẢNH: vị trí LUÔN đúng bước (ảnh do server cắt theo `t_uoc_luong × he_so`) ⇒ `lech` phải là 0.
+  // Trước đây nó so `tMap` (dùng `heSo` của UI, KHÔNG có khi <video> thiếu metadata — ca mp4v) với
+  // `t_video_thuc` (đã bù) ⇒ pill "lệch 1.19 s" hiện mãi và bấm ←/→ không tắt được (review vòng 2, P2-3).
+  const lech = (state.cheDo === 'anh') ? 0 : Math.abs(tMap(i) - tHienTai);
+  // Chế độ ẢNH không bao giờ "lệch" (luôn đứng đúng bước) ⇒ thiếu tín hiệu khi mapping bị ÉP hệ số.
+  // Hiện thẳng cảnh báo đó thay vì im lặng (review 25-11, F10).
+  const canhBaoKep = state.heSoBiKep
+    ? '<div class="pill bad" id="kep" style="margin-top:4px">hệ số bù bị ÉP (' +
+      Number(state.heSo || 0).toFixed(2) + ') — vị trí bước có thể không khớp video; đối chiếu bằng ' +
+      'ảnh trước khi tin</div>' : '';
   const canhBaoLech = lech > 0.5
     ? `<div class="pill bad" id="lech" style="margin-top:4px">lệch ${lech.toFixed(2)} s so với bước này —
        nhãn sẽ gắn vào bước GẦN NHẤT (#${f.frame_vos}); bấm ←/→ cho khớp</div>` : '';
@@ -270,24 +388,24 @@ function capNhat(){
     + (f.latency_ms!=null ? ` · bước ${Math.round(f.latency_ms)} ms` : '')
     + (f.may_an_mask ? ` <span class="pill warn">hệ đang ẩn mask</span>` : '')
     + (f.bbox ? `<br><span class="muted">ô CSV: ${f.bbox.join(', ')}</span>` : '')
-    + '<br><span class="muted">t video: ' + v.currentTime.toFixed(2) + 's · bù hệ số '
+    + '<br><span class="muted">t video: ' + tHienTai.toFixed(2) + 's · bù hệ số '
       + (state.heSo || 1).toFixed(3) + '</span>'
-    + canhBaoLech;
+    + canhBaoLech + canhBaoKep;
   $('viTri').textContent = `${i+1}/${state.frames.length}`;
   veCanvas();
 }
 
 // ── canvas: ô đang vẽ ────────────────────────────────────────────────────────
 function veCanvas(){
-  const v = $('v'), c = $('c');
-  const r = v.getBoundingClientRect();
+  const c = $('c'), n = nguonHienTai();
+  const r = n.el.getBoundingClientRect();
   if (c.width !== Math.round(r.width) || c.height !== Math.round(r.height)){
     c.width = Math.round(r.width); c.height = Math.round(r.height);
   }
   const g = c.getContext('2d');
   g.clearRect(0,0,c.width,c.height);
   if (!veO.co) return;
-  const kx = c.width / (v.videoWidth || 640), ky = c.height / (v.videoHeight || 480);
+  const kx = c.width / (state.rong || 640), ky = c.height / (state.cao || 480);
   g.strokeStyle = '#2ecc71'; g.lineWidth = 2; g.setLineDash([]);
   const x = Math.min(veO.x0,veO.x1)*kx, y = Math.min(veO.y0,veO.y1)*ky;
   const w = Math.abs(veO.x1-veO.x0)*kx, h = Math.abs(veO.y1-veO.y0)*ky;
@@ -295,10 +413,21 @@ function veCanvas(){
   g.fillStyle = 'rgba(46,204,113,.12)'; g.fillRect(x,y,w,h);
 }
 
+// Kích thước NGUỒN đang hiện: ảnh (có thể đã thu nhỏ ≤960 px) hay video. `bbox_dung` luôn lưu theo
+// pixel của VIDEO GỐC nên phải quy đổi, không dùng thẳng toạ độ chuột.
+function nguonHienTai(){
+  if (state.cheDo === 'anh'){
+    const im = $('anh');
+    return { el: im, w: im.naturalWidth || state.rong, h: im.naturalHeight || state.cao };
+  }
+  const v = $('v');
+  return { el: v, w: v.videoWidth || state.rong, h: v.videoHeight || state.cao };
+}
+
 function toaDoVideo(ev){
-  const v = $('v'), r = v.getBoundingClientRect();
-  const W = v.videoWidth || 640, H = v.videoHeight || 480;
-  const x = (ev.clientX - r.left) * W / r.width;
+  const n = nguonHienTai(), r = n.el.getBoundingClientRect();
+  const W = state.rong || 640, H = state.cao || 480;      // pixel của video gốc
+  const x = (ev.clientX - r.left) * W / r.width;          // ảnh đã scale ⇒ quy đổi theo bề rộng hiển thị
   const y = (ev.clientY - r.top) * H / r.height;
   // kẹp CẢ HAI biên: kéo ra ngoài khung từng lưu toạ độ âm/vượt kích thước frame
   return [Math.min(W, Math.max(0, Math.round(x))), Math.min(H, Math.max(0, Math.round(y)))];
@@ -307,7 +436,7 @@ function toaDoVideo(ev){
 $('c').addEventListener('mousedown', ev => {
   if (!veO.dang) return;
   [veO.x0, veO.y0] = toaDoVideo(ev); veO.x1 = veO.x0; veO.y1 = veO.y0; veO.co = true;
-  veO.buoc = chiSoHienTai(); veCanvas();
+  veO.buoc = chiSoDangXem(); veCanvas();
 });
 $('c').addEventListener('mousemove', ev => {
   if (!veO.dang || !veO.co) return;
@@ -338,9 +467,16 @@ let loiGanNhan = null;
 // tới lượt nó ⇒ video đang phát (hoặc POST trước chậm 2 s) làm `currentTime` đã sang bước k+1, và phán
 // quyết của bước k bị ghi cho bước k+1 (review vòng 3, P2-4).
 function ghimBuoc(){
-  const i = chiSoHienTai(), f = state.frames[i] || {};
+  // Chế độ ẢNH: bước do `state.i` quyết định (`currentTime` của <video> đứng yên ⇒ ghim nhầm bước).
+  const anhMode = state.cheDo === 'anh';
+  const i = chiSoDangXem(), f = state.frames[i] || {};
+  // `t_video_thuc` do SERVER tính (`idx/fps` của đúng frame đã cắt ra). Đừng dùng `tMap(i)` — nếu
+  // <video> không nạp được metadata thì `tMap` KHÔNG bù, còn ảnh thì đã bù ⇒ nhãn lệch vài giây.
+  const tVideo = anhMode
+    ? (typeof f.t_video_thuc === 'number' ? f.t_video_thuc : tMap(i))
+    : $('v').currentTime;
   return { i, phien: state.phien, buoc: f.buoc, frame_vos: f.frame_vos, t_uoc_luong: f.t_uoc_luong,
-           t_video: $('v').currentTime,
+           t_video: tVideo,
            bbox: (veO.co && veO.buoc === i)
              ? [Math.min(veO.x0,veO.x1), Math.min(veO.y0,veO.y1),
                 Math.max(veO.x0,veO.x1), Math.max(veO.y0,veO.y1)] : null };
@@ -348,8 +484,10 @@ function ghimBuoc(){
 
 async function ghiNhan(nhan){
   if (state.dangTai) { flash('Đang tải phiên — chờ xong rồi bấm nhãn'); return false; }
-  if (!state.videoOk){
-    flash('KHÔNG phát được video — KHÔNG ghi nhãn (nhãn mù làm hỏng bằng chứng). Chọn phiên khác hoặc Ctrl+R.');
+  if (state.cheDo === 'anh' ? !state.anhOk : !state.videoOk){
+    flash(state.cheDo === 'anh'
+      ? 'Chưa có ảnh của bước này — chờ một nhịp rồi bấm lại (ảnh đang được lấy từ video).'
+      : 'KHÔNG phát được video — KHÔNG ghi nhãn (nhãn mù làm hỏng bằng chứng). Chọn phiên khác hoặc Ctrl+R.');
     return false;
   }
   const g = ghimBuoc();
@@ -366,7 +504,7 @@ async function ghiNhanThat(nhan, g){
   const body = {
     phien: g.phien, nhan, nguoi_gan: nguoi,         // P1-A: tên đi CÙNG nhãn; phiên GHIM lúc bấm
     buoc: g.buoc, frame_vos: g.frame_vos,
-    t_video: g.t_video, t_uoc_luong: g.t_uoc_luong,
+    t_video: g.t_video, t_uoc_luong: g.t_uoc_luong, che_do: state.cheDo,
     bbox_dung: g.bbox,
   };
   let d = null, ok = false;
@@ -436,6 +574,13 @@ function veBang(){
 // ── điều khiển ──────────────────────────────────────────────────────────────
 function nhayBuoc(delta){
   const v = $('v');
+  if (state.cheDo === 'anh'){
+    const cu = chiSoAnh();
+    state.i = Math.max(0, Math.min(state.frames.length - 1, cu + delta));
+    if (state.i !== cu) napAnh(state.i);      // ảnh đã prefetch ⇒ hiện gần như tức thì
+    capNhat();
+    return;
+  }
   let i = chiSoHienTai() + delta;
   i = Math.max(0, Math.min(state.frames.length-1, i));
   v.currentTime = tMap(i);
@@ -449,7 +594,7 @@ $('prev').onclick = () => nhayBuoc(-1);
 // "Lưu & bước kế": nếu đã bấm 1/2/3/4 ở bước này thì ghi LẠI CHÍNH nhãn đó (bản ghi trùng được
 // `tong_hop` gộp theo nhãn CUỐI), nếu chưa chọn gì thì TỪ CHỐI thay vì ngầm ghi 'dung'.
 async function luuVaTiep(){
-  const i = chiSoHienTai();
+  const i = chiSoDangXem();
   // Chỉ dùng lại nhãn nếu nó được bấm Ở CHÍNH BƯỚC NÀY. Trước đây `s` mang nhãn của bước trước sang
   // bước mới (guard chỉ bảo vệ lần bấm đầu của cả phiên) — review vòng 2, P1-C.
   if (!state.nhanChon || state.nhanChon.buoc !== i){
@@ -459,6 +604,7 @@ async function luuVaTiep(){
   if (await ghiNhan(state.nhanChon.nhan)) nhayBuoc(1);   // lỗi ⇒ Ở LẠI bước này
 }
 $('btnLuu').onclick = luuVaTiep;
+$('cheDo').onchange = e => datCheDo(e.target.value);
 $('phien').onchange = e => chonPhien(e.target.value)
   .catch(err => flash('LỖI tải phiên: ' + (err.message || err)));
 $('nguoi').oninput = () => {
@@ -466,13 +612,25 @@ $('nguoi').oninput = () => {
   if (t && t !== '?') localStorage.setItem('labelui_nguoi', t);   // nhớ NGAY, không đợi nhãn đầu
   $('dangDan').textContent = t || '?';
 };
+// Đổi TÊN người dán = làm mới RIÊNG phần nhãn (server lọc theo `?nguoi=`), KHÔNG nạp lại phiên.
+// Nạp lại cả phiên ở đây từng làm: gõ tên → bấm phím nhãn ⇒ `blur` bắn `change` ⇒ `dangTai = true`
+// ⇒ `ghiNhan` từ chối, NHÃN BỊ NUỐT (e2e bắt được 25-11 sau khi thêm mục click/bước-thật).
+async function capNhatNhanCuaToi(){
+  if (!state.phien) return;
+  const toi = ($('nguoi').value || '').trim();
+  const d = await getJSON('/api/frames?phien=' + encodeURIComponent(state.phien)
+                          + '&nguoi=' + encodeURIComponent(toi));
+  state.daGan = d.da_gan || [];
+  state.soNhanKhac = d.so_nhan_nguoi_khac || 0;
+  state.nguoiKhac = d.nguoi_khac || [];
+  $('dangDan').textContent = d.nguoi_dang_dan || '?';
+  veBang();
+  veTienDo();      // bộ đếm + "N nhãn của người khác" cũng phải vẽ lại (quên chỗ này ⇒ số CŨ nằm lại)
+}
+
 $('nguoi').onchange = async () => {
-  // Tên người dán là DANH TÍNH của dữ liệu hiển thị (server lọc theo `?nguoi=`) ⇒ phải nạp lại,
-  // không chỉ vẽ lại: nếu không, đổi tên sẽ đếm theo dữ liệu cũ (review vòng 2, P1-A).
-  if (state.phien) {
-    try { await chonPhien(state.phien); }
-    catch (e) { flash('LỖI tải phiên: ' + (e.message || e)); }
-  }
+  try { await capNhatNhanCuaToi(); }
+  catch (e) { flash('LỖI tải nhãn: ' + (e.message || e)); }
 };
 
 // Enter ở ô "Người gán" ⇒ nhả focus, nếu không thì bấm `1` sẽ gõ "1" vào tên (thành "Binh1") và
