@@ -182,7 +182,21 @@ def test_o_chon_khong_co_vat_nao(tmp_path):
 
 
 # ── P1 (review vòng 2): dòng THÀNH CÔNG phải mang `lenh_rieng` non-empty ────────────────────────
-def test_dong_thanh_cong_co_lenh_rieng(tmp_path, monkeypatch):
+@pytest.fixture
+def clip_gia(tmp_path):
+    """Clip GIẢ để test chạy được trong CI.
+
+    Vì sao cần (CI đỏ từ 22-11): `bench_gpu_binh2` chặn ở cửa vào nếu không thấy `--clip`, còn
+    `data/*.mp4` bị `.gitignore` chặn ⇒ checkout của CI **không có** `data/binh2.mp4` ⇒ hai test dưới
+    fail ở CI trong khi xanh trên máy dev (nơi có video thật). Test chỉ cần file **tồn tại**
+    (`_so_frame_cua_clip` và `chay_mot_cau_hinh` đều được monkeypatch).
+    """
+    p = tmp_path / "binh2.mp4"
+    p.write_bytes(b"\x00" * 16)
+    return str(p)
+
+
+def test_dong_thanh_cong_co_lenh_rieng(tmp_path, monkeypatch, clip_gia):
     import scripts.bench_gpu_binh2 as mod
 
     def _gia(**kw):
@@ -193,7 +207,8 @@ def test_dong_thanh_cong_co_lenh_rieng(tmp_path, monkeypatch):
 
     monkeypatch.setattr(mod, "chay_mot_cau_hinh", _gia)
     monkeypatch.setattr(mod, "_so_frame_cua_clip", lambda _p: 10)
-    rc = main(["--device", "cpu", "--sizes", "192", "--out", str(tmp_path / "a.json")])
+    rc = main(["--device", "cpu", "--sizes", "192", "--clip", clip_gia,
+               "--out", str(tmp_path / "a.json")])
     assert rc == 0
     d = json.loads((tmp_path / "a.json").read_text(encoding="utf-8"))
     assert d["ket_qua"][0]["lenh_rieng"] == "lenh-that"
@@ -201,7 +216,7 @@ def test_dong_thanh_cong_co_lenh_rieng(tmp_path, monkeypatch):
 
 
 # ── P2 (review vòng 2): mã thoát chỉ nói về LẦN NÀY, không bị dòng lỗi cũ làm nhiễu ────────────
-def test_ma_thoat_chi_tinh_lan_nay(tmp_path, monkeypatch):
+def test_ma_thoat_chi_tinh_lan_nay(tmp_path, monkeypatch, clip_gia):
     import scripts.bench_gpu_binh2 as mod
 
     out = tmp_path / "a.json"
@@ -214,13 +229,14 @@ def test_ma_thoat_chi_tinh_lan_nay(tmp_path, monkeypatch):
     monkeypatch.setattr(mod, "chay_mot_cau_hinh", _ok)
     monkeypatch.setattr(mod, "_so_frame_cua_clip", lambda _p: 10)
     # Lần 1: artifact HỢP LỆ (meta tính từ GT thật, nên không phải bịa).
-    assert main(["--device", "cpu", "--sizes", "192", "--out", str(out)]) == 0
+    assert main(["--device", "cpu", "--sizes", "192", "--clip", clip_gia,
+                 "--out", str(out)]) == 0
     # Chèn một dòng LỖI của "lần chạy trước" rồi chạy một size KHÁC.
     d = json.loads(out.read_text(encoding="utf-8"))
     d["ket_qua"].append({"image_size": 512, "ma_thoat": 1, "status_message": "nổ"})
     out.write_text(json.dumps(d, ensure_ascii=False), encoding="utf-8")
 
-    rc = main(["--device", "cpu", "--sizes", "320", "--out", str(out)])
+    rc = main(["--device", "cpu", "--sizes", "320", "--clip", clip_gia, "--out", str(out)])
     assert rc == 0, "dòng lỗi CŨ không được làm lần chạy sạch exit 1"
     d = json.loads(out.read_text(encoding="utf-8"))
     assert [r["image_size"] for r in d["ket_qua"]] == [192, 320, 512]

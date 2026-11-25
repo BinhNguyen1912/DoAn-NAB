@@ -63,13 +63,37 @@ def phan_loai(rev: str | None) -> str:
     """`ok` / `lech` / `chet` — xem docstring đầu file."""
     # `git_rev = "--help"` từng được chấm `ok`: git hiểu `--help` ở tầng trên ⇒ rc 0 cho cả hai lệnh
     # (âm tính giả). Chỉ nhận hex ngắn/dài hợp lệ (P3 review 17-11).
-    if not rev or not re.fullmatch(r"[0-9a-fA-F]{7,40}", rev):
+    if not rev:
+        # Artifact SCHEMA CŨ (trước luật provenance 08-11): không có field `git_rev` ⇒ đây KHÔNG phải
+        # "rev chết" (rev từng tồn tại rồi mất) mà là "chưa từng khai". Tách nhãn để không gộp hai
+        # chuyện khác nhau (bài học P2 18-11) và để allowlist được theo NHÓM mà cổng vẫn bắt file MỚI.
+        return "thieu-rev"
+    if not re.fullmatch(r"[0-9a-fA-F]{7,40}", rev):
         return "chet"
     rc, _ = _git("rev-parse", "--verify", "--end-of-options", f"{rev}^{{commit}}")
     if rc != 0:
         return "chet"
     rc, _ = _git("merge-base", "--is-ancestor", rev, "HEAD")
     return "ok" if rc == 0 else "lech"
+
+
+# Artifact SINH TRƯỚC luật provenance (schema cũ, KHÔNG có field `git_rev`) — giữ nguyên bằng chứng đã
+# commit, không sửa tay số, nhưng **CẤM trích rev** (không có rev). Liệt kê theo TÊN để cổng vẫn bắt
+# được file MỚI thiếu `git_rev` (đúng lớp lỗi 22-11: thêm 2 test/artifact mà quên khai).
+# Vì sao phải có danh sách này: `main` đỏ job "git_rev của artifact" từ 22-11 chỉ vì 9 file dưới ⇒ cổng
+# mất tác dụng (đỏ mãi = không ai đọc).
+CHO_PHEP_KHONG_REV = {
+    "identity_latch_chi_phi_2026-11-21_metrics.json":
+        "đo 21-11 (chi phí latch) — schema cũ, không khai `git_rev`; số đã dùng trong AGENTS §6 "
+        "nhưng KHÔNG được trích rev",
+    "jump_gate_replay_2026-11-21_metrics.json":
+        "đo 21-11 (replay cổng nhảy) — schema cũ, không khai `git_rev`; cấm trích rev",
+    "remote_trang_comparison_metrics.json":
+        "so sánh remote trắng (trước 21-11) — schema cũ, không khai `git_rev`; cấm trích rev",
+    **{f"sach_binh{k}_lan{i}_metrics.json":
+       "đo 'sạch' binh1/binh2 (trước 21-11) — schema cũ, không khai `git_rev`; cấm trích rev"
+       for k in (1, 2) for i in (1, 2, 3)},
+}
 
 
 def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
@@ -97,6 +121,8 @@ def quet(thu_muc: Path, cho_phep=None) -> list[dict]:
         # rebase trước khi push) ⇒ chúng `lech` vĩnh viễn trên máy này, và dòng "2 lệch" cố định sẽ
         # **che mất một `lech` MỚI** (cổng phải kêu khi có chuyện mới, không kêu mãi một chuyện cũ).
         goc = trang_thai                               # nhãn GỐC — không được mất khi hạ allowlist
+        if trang_thai == "thieu-rev" and f.name in CHO_PHEP_KHONG_REV:
+            trang_thai, ghi_chu = "ok-da-biet", CHO_PHEP_KHONG_REV[f.name]
         if trang_thai in ("chet", "lech") and (f.name, rev) in cho_phep:
             trang_thai, ghi_chu = "ok-da-biet", cho_phep[(f.name, rev)]
         ra.append({"file": f.name, "git_rev": rev, "trang_thai": trang_thai, "goc": goc,
