@@ -215,6 +215,7 @@ class TrackerEngine:
         """
         if self._state is not None:
             self.reset()
+        self._xoa_trang_thai_kalman()
         self._video_hw = (frame_bgr.shape[0], frame_bgr.shape[1])
         h, w = self._video_hw
 
@@ -288,6 +289,34 @@ class TrackerEngine:
         self._images.free(idx)  # đã xử lý xong — không còn dùng tensor gốc
         result.pre_ms = pre_ms   # KHÔNG cộng vào `elapsed_ms` (giữ tương thích số cũ)
         return result
+
+    def _xoa_trang_thai_kalman(self) -> bool:
+        """Xoá **trạng thái Kalman của SAMURAI** trên model (25-11) — KHÔNG thuộc `inference_state`.
+
+        Bug thật (đo trên máy này, 13 frame `data/binh1.mp4`, cùng engine, cùng ô `(300,275,450,685)`):
+        phiên 2 chạy ngay sau phiên 1 **lệch từ frame thứ 6**, `IoU` xuống **0,8253**; zero 3 field
+        `kf_mean`/`kf_covariance`/`stable_frames` rồi chạy lại ⇒ **13/13 frame IoU = 1,0000**.
+        Nguyên nhân: `reset()`/`init_state()` chỉ dọn `inference_state`, còn `sam2_base.py:203-205`
+        (`self.kf_mean`, `self.kf_covariance`, `self.stable_frames`) **nằm trên MODEL** và được dùng lại
+        (`sam2_base.py:421-441`) nên phiên sau **mồi Kalman từ vật CŨ**.
+
+        Hai hệ quả người dùng thấy được:
+          1. **Bấm `r` chọn vật KHÁC** trong cùng phiên ⇒ Kalman mồi từ vật cũ (đúng thao tác của người
+             dùng khi cổng báo nghi!).
+          2. **Hai phiên trong cùng một process KHÔNG tái lập** ⇒ mọi A/B chạy nhiều phiên một process
+             bị nhiễm, và `tests/conftest.py` dùng engine session-scoped ⇒ kết quả test phụ thuộc thứ tự.
+
+        Trả `True` nếu đã xoá (model là thật), `False` nếu không có 3 field (engine giả trong test).
+        """
+        predictor = getattr(self, "_predictor", None)
+        if predictor is None:
+            return False
+        da_xoa = False
+        for ten in ("kf_mean", "kf_covariance", "stable_frames"):
+            if hasattr(predictor, ten):
+                setattr(predictor, ten, None if ten != "stable_frames" else 0)
+                da_xoa = True
+        return da_xoa
 
     def reset(self) -> None:
         """Dọn phiên hiện tại (khi chọn lại đối tượng)."""

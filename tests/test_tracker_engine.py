@@ -325,3 +325,82 @@ class TestModelOverrides:
             ra = build_overrides(None, None, {key: gia})
             assert ra and ra[0].startswith(f"++model.{key}="), key
             assert "'" not in ra[0], f"{key}: repr lọt dấu nháy ⇒ hydra parse sai"
+
+
+class TestXoaKalmanGiuaHaiPhien:
+    """25-11: trạng thái **Kalman của SAMURAI** nằm trên MODEL, không thuộc `inference_state`.
+
+    Đo trên máy này (13 frame `data/binh1.mp4`, cùng engine, cùng ô `(300,275,450,685)`):
+    phiên 2 chạy ngay sau phiên 1 **lệch từ frame thứ 6**, `IoU` xuống **0,8253**; zero 3 field
+    `kf_mean`/`kf_covariance`/`stable_frames` ⇒ **13/13 frame IoU = 1,0000**.
+
+    Hệ quả người dùng thấy: bấm `r` chọn **vật khác** trong cùng phiên ⇒ Kalman mồi từ vật CŨ.
+    """
+
+    def test_ham_xoa_3_field_tren_predictor_gia(self):
+        """Test NHANH (không cần model): hàm phải zero đúng 3 field và báo `True`."""
+        from types import SimpleNamespace
+
+        from src.tracker_engine import TrackerEngine
+
+        gia = SimpleNamespace(kf_mean="x", kf_covariance="y", stable_frames=7, khac=1)
+        eng = TrackerEngine.__new__(TrackerEngine)
+        eng._predictor = gia
+        assert eng._xoa_trang_thai_kalman() is True
+        assert gia.kf_mean is None and gia.kf_covariance is None and gia.stable_frames == 0
+        assert gia.khac == 1, "không được đụng field khác"
+
+    def test_engine_khong_co_predictor_thi_khong_no(self):
+        from src.tracker_engine import TrackerEngine
+
+        eng = TrackerEngine.__new__(TrackerEngine)
+        assert eng._xoa_trang_thai_kalman() is False
+
+    @pytest.mark.slow
+    # 26 lượt propagate ở image_size 1024 (fixture `samurai_engine` dựng mặc định) trên CPU vượt
+    # hạn 120 s của `pytest.ini` ⇒ nới cho riêng test này (chỉ chạy trong `./run testall`).
+    @pytest.mark.timeout(900)
+    def test_hai_phien_lien_tiep_cho_mask_giong_tuyet_doi(self, samurai_engine):
+        """Test KHOÁ hành vi thật (cần checkpoint + clip `data/binh1.mp4`, KHÔNG commit).
+
+        Thiếu clip ⇒ skip (CI không có video — bài học 25-11: test phụ thuộc file không commit làm
+        CI đỏ suốt 3 ngày).
+        """
+        import os
+
+        import cv2
+
+        clip = "data/binh1.mp4"
+        if not os.path.isfile(clip):
+            pytest.skip("cần data/binh1.mp4 (video KHÔNG commit)")
+
+        cap = cv2.VideoCapture(clip)
+        frames = []
+        # Đo được: lệch bắt đầu từ frame thứ 6 (13 frame ⇒ min IoU 0,8253). 8 frame là đủ để bắt,
+        # và giảm một nửa thời gian so với 13 (mỗi lượt propagate ~0,5 s ở 1024 trên CPU).
+        while len(frames) < 8:
+            ok, f = cap.read()
+            if not ok:
+                break
+            frames.append(f)
+        cap.release()
+        if len(frames) < 8:
+            pytest.skip("clip quá ngắn")
+        box = (300, 275, 450, 685)
+
+        def chay():
+            out = []
+            for i, f in enumerate(frames):
+                r = samurai_engine.start(f, box) if i == 0 else samurai_engine.process(f)
+                out.append(r.mask)
+            return out
+
+        lan1 = chay()
+        lan2 = chay()
+        for i, (a, b) in enumerate(zip(lan1, lan2)):
+            inter = np.logical_and(a, b).sum()
+            union = np.logical_or(a, b).sum()
+            iou_mask = 1.0 if union == 0 else float(inter / union)
+            assert iou_mask >= 0.999, (
+                f"frame {i}: hai phiên liên tiếp lệch (IoU {iou_mask:.4f}) ⇒ Kalman rò giữa phiên; "
+                "`start()` phải gọi `_xoa_trang_thai_kalman()`")
