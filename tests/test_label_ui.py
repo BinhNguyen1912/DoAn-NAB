@@ -3,6 +3,7 @@
 Không cần trình duyệt: kiểm phần **số học + lưu nhãn + API** bằng HTTP thật trên cổng 0.
 """
 import json
+import re
 import threading
 import urllib.error
 import urllib.parse
@@ -1221,6 +1222,11 @@ class TestHangSoVaTaiLieu:
         assert "lệch" in s, "phải cảnh báo người dán khi đứng giữa 2 bước"
         assert "--host" in s, "hướng dẫn mở từ Windows phải khớp cờ THẬT của tool (--host 0.0.0.0)"
         assert "Space" in s, "hướng dẫn nhắc Space thì CODE phải có nhánh Space"
+        assert "`E` rồi kéo chuột" in s, "hướng dẫn phải nói phím vẽ ô là E"
+        # AGENTS §6 là bộ nhớ cho agent sau: còn hứa `b` mà không nói `E` là tài liệu lệch code
+        agents = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+        assert "`E` + kéo chuột" in agents, "AGENTS §6 phải nói phím vẽ ô là E"
+        assert '"Nguyen"' in s, "phải cảnh báo: `e` không ăn khi gõ tên"
         assert "CHUA XAC MINH" in s and "KHÔNG có cột" in s, \
             "phải nói rõ `chua_xac_minh` KHÔNG có cột trong CSV (bản đầu mô tả sai là 'không vẽ')"
         assert "so_buoc_dong_y" in s, "khoá JSON trong doc phải khớp `tong_hop` thật"
@@ -1258,6 +1264,34 @@ class TestHangSoVaTaiLieu:
         # banner đỏ chỉ dành cho chế độ video
         assert "if (ok || state.cheDo === 'anh')" in h, \
             "chế độ ảnh không được phủ banner 'KHÔNG PHÁT ĐƯỢC VIDEO' lên ảnh"
+
+    def test_html_phim_ve_o_la_E_va_khong_pha_go_ten(self):
+        """`E` = phím vẽ ô (gần cụm 1/2/3/4); `e` KHÔNG được ăn khi gõ tên ("Nguyen" có chữ e)."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        def mang(ten):
+            """Các phần tử của mảng JS `const <ten> = [...]` — parse CẢ MẢNG, không grep 1 dòng.
+
+            Bản đầu chỉ grep một dòng nên ai viết `"e"` bằng nháy kép, format mảng xuống nhiều dòng,
+            hoặc chỉ thêm lại `'E'`/`'B'` là test vẫn xanh dù hồi quy quay lại (review 26-11).
+            """
+            m = re.search(r"const " + ten + r"\s*=\s*\[(.*?)\]", h, re.S)
+            assert m, f"không thấy `const {ten} = [...]`"
+            return {x.strip().strip("'\"").lower() for x in m.group(1).split(",") if x.strip()}
+
+        phim_nhan, phim_ve = mang("laPhimNhan"), mang("laPhimVeO")
+        assert {"e", "b"} <= phim_ve, f"E (và b cũ) phải là phím vẽ ô: {phim_ve}"
+        assert not ({"e", "b"} & phim_nhan), \
+            f"laPhimNhan KHÔNG được chứa phím vẽ ô (gõ tên 'Nguyen' sẽ thành vẽ): {phim_nhan}"
+        assert phim_nhan == {"1", "2", "3", "4", "0", "s"}, f"phím nhãn đổi ngoài dự kiến: {phim_nhan}"
+        assert "else if (laPhimVeO) {" in h, "nhánh vẽ ô phải dùng laPhimVeO"
+        assert "if (trongOText && !laPhimNhan) return;" in h, "phải chặn phím vẽ khi đang gõ tên"
+        assert "if (ev.ctrlKey || ev.metaKey || ev.altKey) return;" in h, \
+            "tổ hợp Ctrl/Cmd phải đi qua (Ctrl+E = thanh địa chỉ Chrome)"
+        assert "<kbd>E</kbd> rồi kéo chuột" in h, "hướng dẫn trong UI phải nói E"
+        assert "b = vẽ ô đúng" not in h, "bảng phím tắt ở đầu file còn hứa `b = vẽ ô đúng`"
+        assert "E = vẽ ô đúng" in h, "bảng phím tắt ở đầu file phải nói E"
+        assert "function huyVeO" in h and "huyVeO();" in h, \
+            "huỷ vẽ ô phải gỡ đủ cờ + banner + class (đổi phiên giữa lúc vẽ từng làm canvas nuốt chuột)"
 
     def test_html_khong_hua_phim_khong_ton_tai(self):
         """Doc/comment hứa `Space` = phát/dừng ⇒ file HTML phải thật sự có nhánh xử lý Space."""

@@ -1,5 +1,9 @@
 # Ngày 25-11-2026 — UI gán nhãn "bắt ĐÚNG / SAI" cho phiên đã quay
 
+> **ĐÍNH CHÍNH 26-11-2026:** phím vẽ ô GT nay là **`E`** (gần cụm `1/2/3/4`); `b` cũ vẫn dùng
+> được như bí danh. Mọi chỗ trong log này ghi `b` vẫn đúng chức năng, chỉ khác phím. Xem
+> `docs/task/26-11-2026-phim-e-ve-o.md`.
+
 ## 🎯 Mục tiêu
 - Người dùng yêu cầu: *"bây giờ tôi có thể gán nhãn, làm UI cho tôi gán đi, với hướng dẫn cách gán
   nhãn"* — và nêu rõ trọng tâm đã đổi: **không cần bám phạm vi đồ án, miễn là hệ bắt đúng / focus lại /

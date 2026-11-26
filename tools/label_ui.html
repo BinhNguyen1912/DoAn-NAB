@@ -10,7 +10,8 @@
   Phím tắt (để dán nhanh, không phải rời tay khỏi bàn phím):
     1 = ĐÚNG   2 = SAI   3 = MẤT DẤU   4 = KHÔNG CÓ VẬT   0 = BỎ QUA
     Space = phát/dừng · ←/→ = về bước VOS trước/sau · ,/. = nudge ±0.2 s
-    b = vẽ ô đúng (kéo chuột) · Esc = bỏ ô đang vẽ · s = lưu nhãn + sang bước kế
+    E = vẽ ô đúng (kéo chuột; b cũ vẫn dùng được) · Esc = bỏ ô đang vẽ · s = lưu nhãn + sang bước kế
+    (phím E KHÔNG ăn khi đang gõ ô "Người gán": 'e' có trong hầu hết tên người — xem laPhimVeO)
 -->
 <html lang="vi">
 <head>
@@ -30,7 +31,7 @@
   video { display:block; width:100%; height:auto; }
   /* `pointer-events:none` để <video controls> còn bấm được (play/scrub/volume). Bản đầu để
      `auto` ⇒ canvas trong suốt phủ lên video, mọi click vào thanh tua bị nuốt (review độc lập P2).
-     Chỉ bật khi ĐANG vẽ ô (phím b). */
+     Chỉ bật khi ĐANG vẽ ô (phím E; `b` là bí danh). */
   canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   canvas.dang-ve { pointer-events:auto; cursor:crosshair; }
   aside { display:flex; flex-direction:column; gap:10px; }
@@ -121,7 +122,8 @@
         dùng khi đã vẽ <b>ô đúng</b> hoặc muốn đi tiếp nhanh.
       </p>
       <p class="hint" id="drawHint2" style="margin:4px 0 0">
-        <kbd>b</kbd> rồi kéo chuột để vẽ <b>ô đúng</b> (dùng khi nhãn là SAI/ĐÚNG mà muốn GT ô).
+        <kbd>E</kbd> rồi kéo chuột để vẽ <b>ô đúng</b> (dùng khi nhãn là SAI/ĐÚNG mà muốn GT ô).
+        <span class="muted">(<kbd>b</kbd> cũ vẫn dùng được)</span>
       </p>
     </div>
 
@@ -152,6 +154,15 @@ let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:
 // `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
 // sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
 let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+
+// Huỷ chế độ vẽ ô: phải gỡ ĐỦ ba thứ (cờ, banner hướng dẫn, class cho canvas nhận chuột). Bản cũ
+// `chonPhien` chỉ thay object `veO` ⇒ class `dang-ve` nằm lại ⇒ canvas nuốt chuột của thanh tua
+// (review 26-11, bug có sẵn).
+function huyVeO(){
+  veO.dang = false; veO.co = false; veO.buoc = null;
+  $('drawHint').style.display = 'none';
+  $('c').classList.remove('dang-ve');
+}
 const $ = id => document.getElementById(id);
 
 async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -294,7 +305,7 @@ async function chonPhien(ten){
   state.dangTai = true;
   try {
     state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
-    veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+    huyVeO();                        // đổi phiên giữa lúc đang vẽ: gỡ luôn class + banner
     buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
     const toi = ($('nguoi').value || '').trim();
     const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
@@ -641,14 +652,22 @@ $('nguoi').addEventListener('keydown', ev => {
 });
 
 document.addEventListener('keydown', ev => {
+  // Tổ hợp phím của TRÌNH DUYỆT phải đi qua: Ctrl+E (thanh địa chỉ), Ctrl+S (lưu trang),
+  // Cmd+* trên Mac. Không lọc thì `Ctrl+E` vào chế độ vẽ + `preventDefault` (review 26-11, P3).
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   const trongOText = ['INPUT','TEXTAREA'].includes(ev.target.tagName);
   const k = ev.key;
   // Phím nhãn vẫn phải ăn kể cả khi con trỏ đang ở ô tên / select (người dùng không biết phải click
   // ra ngoài). Với <select>, ArrowUp/Down là của select nên chỉ nhận phím nhãn.
-  const laPhimNhan = ['1','2','3','4','0','s','S','b','B'].includes(k);
+  const laPhimNhan = ['1','2','3','4','0','s','S'].includes(k);
+  // Phím VẼ Ô (E, giữ `b` làm bí danh cho quen tay) tách RIÊNG: nó KHÔNG được ăn khi đang gõ ở ô
+  // tên, vì `e` nằm trong gần như mọi tên người ("Nguyen", "Binh Le"…) — cho ăn là gõ tên thành vẽ.
+  const laPhimVeO = ['e','E','b','B'].includes(k);
   if (trongOText && !laPhimNhan) return;
-  if (ev.target.tagName === 'SELECT' && !laPhimNhan) return;
+  if (ev.target.tagName === 'SELECT' && !laPhimNhan && !laPhimVeO) return;
   if (laPhimNhan && trongOText) { $('nguoi').blur(); }
+  // Vừa chọn chế độ ở <select> thì con trỏ còn ở đó ⇒ nhả ra để phím vẽ dùng được ngay.
+  if (laPhimVeO && ev.target.tagName === 'SELECT') { ev.target.blur(); }
   if (k === '1') { ghiNhan('dung'); ev.preventDefault(); }
   else if (k === '2') { ghiNhan('sai'); ev.preventDefault(); }
   else if (k === '3') { ghiNhan('mat_dau'); ev.preventDefault(); }
@@ -660,15 +679,13 @@ document.addEventListener('keydown', ev => {
   else if (k === 'ArrowLeft') { nhayBuoc(-1); ev.preventDefault(); }
   else if (k === ',') { $('v').currentTime = Math.max(0, $('v').currentTime - 0.2); capNhat(); ev.preventDefault(); }
   else if (k === '.') { $('v').currentTime = $('v').currentTime + 0.2; capNhat(); ev.preventDefault(); }
-  else if (k === 'b' || k === 'B') {
+  else if (laPhimVeO) {
     veO.dang = true; veO.co = false;
     $('drawHint').style.display = 'block';
     $('c').classList.add('dang-ve');        // chỉ LÚC NÀY canvas mới nhận chuột
     ev.preventDefault();
   } else if (k === 'Escape') {
-    veO.dang = false; veO.co = false; veO.buoc = null;
-    $('drawHint').style.display = 'none';
-    $('c').classList.remove('dang-ve');
+    huyVeO();
     veCanvas();
   }
 });

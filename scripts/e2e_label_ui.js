@@ -255,8 +255,8 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   kiem(typeof rec.t_video === 'number' && rec.t_video >= 0, 'nhãn có t_video thật', String(rec.t_video))
   kiem('git_rev' in rec && 'do_luc' in rec, 'nhãn có provenance (git_rev, do_luc)')
 
-  // 5) vẽ ô (b) + phím 2 ⇒ nhãn SAI kèm bbox_dung
-  await page.keyboard.press('b')
+  // 5) vẽ ô (E) + phím 2 ⇒ nhãn SAI kèm bbox_dung
+  await page.keyboard.press('e')
   const box = await page.$eval('#c', el => {
     const r = el.getBoundingClientRect()
     return { x: r.x, y: r.y, w: r.width, h: r.height }
@@ -279,6 +279,7 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   kiem(dungToaDo, 'ô vẽ lưu ĐÚNG toạ độ video (30%..60% × 30%..70%)', JSON.stringify(b))
 
   // 5b) P1-2: vẽ ô ở bước này rồi sang bước kế ⇒ nhãn phải KHÔNG còn ô (ô của bước trước)
+  //     (giữ `b` ở đây để chứng minh BÍ DANH cũ vẫn hoạt động)
   await page.keyboard.press('b')
   await page.mouse.move(box.x + box.w * 0.2, box.y + box.h * 0.2)
   await page.mouse.down()
@@ -292,6 +293,31 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
   const rec3 = sau3[sau3.length - 1] || {}
   kiem(rec3.nhan === 'mat_dau' && rec3.bbox_dung === null,
        'ô vẽ bị XOÁ khi sang bước khác (không lưu ô của bước trước)', JSON.stringify(rec3.bbox_dung))
+
+  // 5c) `E` = phím vẽ ô, và gõ `e` trong ô TÊN không được biến thành vẽ
+  await page.keyboard.press('Shift+E')           // E HOA = đúng phím người dùng bấm
+  const dangVe = await page.$eval('#c', el => el.classList.contains('dang-ve'))
+  kiem(dangVe, 'phím E (hoa) vào chế độ vẽ ô')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Control+e')         // Ctrl+E = thanh địa chỉ của Chrome: KHÔNG được vẽ
+  await page.waitForTimeout(200)
+  kiem(!(await page.$eval('#c', el => el.classList.contains('dang-ve'))),
+       'Ctrl+E KHÔNG vào chế độ vẽ (tổ hợp của trình duyệt phải đi qua)')
+  await page.keyboard.press('e')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  kiem(!(await page.$eval('#c', el => el.classList.contains('dang-ve'))), 'Esc thoát chế độ vẽ')
+  await page.click('#nguoi')
+  await page.keyboard.press('e')                 // gõ chữ "e" trong tên, KHÔNG được vẽ
+  await page.waitForTimeout(200)
+  const sauGoE = await page.$eval('#nguoi', el => el.value)
+  const veKhiGo = await page.$eval('#c', el => el.classList.contains('dang-ve'))
+  kiem(!veKhiGo, 'gõ `e` trong ô tên KHÔNG vào chế độ vẽ')
+  kiem(sauGoE.includes('e'), 'gõ `e` vẫn vào được ô tên', sauGoE)
+  await page.fill('#nguoi', NGUOI)               // trả tên về như cũ cho các mục sau
+  await page.dispatchEvent('#nguoi', 'change')
+  await page.keyboard.press('Enter')
 
   // 6) bảng + bộ đếm cập nhật trên giao diện
   const dem = await page.$eval('#demNguoi', el => el.textContent)
