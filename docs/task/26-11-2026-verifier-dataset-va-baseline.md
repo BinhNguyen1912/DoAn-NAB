@@ -133,6 +133,13 @@ qua cổng ⇒ "không nhóm nào chấm được" vẫn ghi artifact + exit 0; 
 `so_nhom < 2`; `ngong` đo **trên chính fold** và ghi từng ngày — chính vì (d) mà câu kết luận đổi thành
 "**chỉ hơn ngố 0,065 ⇒ chưa chứng minh được**" (mạnh hơn, không yếu đi).
 
+**Cách kiểm các sửa đó** (chạy đúng 3 phép kiểm mà reviewer vòng 3 đề nghị, vì nó chưa chạy được):
+manifest dựng `--chia-theo phien` + `--loao --nhom-theo ngay` ⇒ `nhom_cham_duoc == ["1123","1124","1125"]`;
+`--loao --min-am-nhom 99999` ⇒ **exit 1, không có artifact**; `auc_theo_cum` với **1 nhóm ⇒ `ci95 = None`**.
+**Chưa có vòng review thứ 4** trên chính các sửa này: phiên `reviewer` kẹt (401 lặp của provider, 25 lượt
+không tiến triển) và taskforce `advisor` tự đóng sau khi trả kết quả ⇒ ghi lại đây để người sau biết
+*phần sửa vòng 3 được kiểm bằng test + 3 phép kiểm trên, không bằng một vòng review độc lập mới*.
+
 ## ➡️ Next steps
 
 - **Ưu tiên đổi hẳn**: dán ô ở bước SAI trên **NHIỀU NGÀY KHÁC NHAU** (hiện chỉ 3 ngày có âm ⇒ LOAO chỉ
