@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "che_do": "loao",
- "do_luc": "2026-11-26T18:48:14+0700",
+ "do_luc": "2026-11-26T21:24:24+0700",
  "lenh": "scripts/train_verifier.py --loao --nhom-theo ngay --metrics data/verifier_loao_ngay_metrics.json",
- "git_rev": "1301a29",
+ "git_rev": "04941af",
  "git_dirty": true,
  "git_dirty_code": false,
  "epochs": 12,
@@ -23,6 +23,38 @@
   "1124",
   "1125"
  ],
+ "nhom_bo_qua": {
+  "1104": {
+   "am": 0,
+   "duong": 99,
+   "ly_do": "0 mẫu âm"
+  },
+  "1105": {
+   "am": 0,
+   "duong": 237,
+   "ly_do": "0 mẫu âm"
+  },
+  "1114": {
+   "am": 0,
+   "duong": 90,
+   "ly_do": "0 mẫu âm"
+  },
+  "1121": {
+   "am": 0,
+   "duong": 11,
+   "ly_do": "0 mẫu âm"
+  },
+  "1029": {
+   "am": 0,
+   "duong": 274,
+   "ly_do": "0 mẫu âm"
+  },
+  "1101": {
+   "am": 0,
+   "duong": 113,
+   "ly_do": "0 mẫu âm"
+  }
+ },
  "theo_ngay": {
   "1123": {
    "so_mau": 494,
@@ -96,5 +128,5 @@
  "auc_min": 0.4198,
  "auc_max": 0.7432,
  "so_lan_chay": 9,
- "chiet_giai": "Leave-one-DAY-out: mỗi lượt bỏ hẳn một ngày khỏi train rồi chấm trên đúng ngày đó ⇒ đây là con số DUY NHẤT đo được 'tổng quát sang ngày/cảnh mới' với dữ liệu hiện có. Vẫn là cận trên vì 3 ngày 1123/1124/1125 đều quay trong cùng một phòng."
+ "chiet_giai": "leave-one-NGÀY-out: mỗi lượt bỏ HẲN một ngày khỏi train rồi chấm trên đúng nhóm đó. Đây là con số dùng được cho 'ngày/cảnh mới' (3 ngày 1123/1124/1125 vẫn cùng một phòng ⇒ còn là cận trên cho 'cảnh mới')."
 }
