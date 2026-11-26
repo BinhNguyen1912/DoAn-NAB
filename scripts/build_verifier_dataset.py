@@ -116,6 +116,39 @@ def noi_o(box: list[int], rong: int, cao: int, margin: float = MARGIN) -> tuple[
     return (x1, y1, x2, y2)
 
 
+def dau_van_tay(margin: float) -> str:
+    """Vân tay của (tham số cắt + NGUỒN). Cache ảnh dùng lại theo `{loai}_b{buoc}` nên nếu không có
+    cái này: đổi `--margin` hoặc CSV được sinh lại (buoc dịch) ⇒ phục vụ **ảnh cũ + nhãn mới** mà
+    artifact vẫn ghi tham số mới (review độc lập 26-11, P2).
+
+    Đọc `mtime_ns` + `size` của MỌI CSV và video có nhãn ⇒ nguồn đổi là vân tay đổi.
+    """
+    h = hashlib.sha256(f"crop={CROP}|margin={margin}|".encode())
+    for tep in sorted(NHAN.glob("*.jsonl")):
+        phien = tep.stem
+        for f in (DATA / f"{phien}_metrics.csv", DATA / f"{phien}.mp4"):
+            try:
+                st = f.stat()
+                h.update(f"{f.name}:{st.st_mtime_ns}:{st.st_size};".encode())
+            except OSError:
+                h.update(f"{f.name}:-;".encode())
+    return h.hexdigest()[:16]
+
+
+def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> bool:
+    """Xoá `train/`+`val/` của lần dựng trước nếu vân tay khác. Trả True nếu ĐÃ xoá."""
+    tep = out_dir / ".dau_van_tay"
+    cu = tep.read_text(encoding="utf-8").strip() if tep.is_file() else None
+    if cu == van_tay:
+        return False
+    import shutil
+    for con in ("train", "val"):
+        shutil.rmtree(out_dir / con, ignore_errors=True)
+    out_dir.mkdir(parents=True, exist_ok=True)
+    tep.write_text(van_tay, encoding="utf-8")
+    return cu is not None
+
+
 def tach(theo_phien: str, ti_le_val: float) -> str:
     """train/val theo PHIÊN, tất định theo tên (chạy lại ra y hệt, không phụ thuộc thứ tự file)."""
     h = int(hashlib.sha256(theo_phien.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
@@ -124,7 +157,9 @@ def tach(theo_phien: str, ti_le_val: float) -> str:
 
 def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    mong_doi, bo_qua, thieu_video = [], {}, []
+    van_tay = dau_van_tay(margin)
+    da_xoa = don_cache_neu_can(out_dir, van_tay)
+    mong_doi, bo_qua, thieu_video, nhieu_nguoi = [], {}, [], {}
 
     for tep in sorted(NHAN.glob("*.jsonl")):
         phien = tep.stem
@@ -143,6 +178,12 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
         _, fps, n_frame, rong, cao = L._mo_video(phien)
         nhan = doc_nhan_hieu_luc(tep)
         split = tach(phien, ti_le_val)
+        # Gộp nhãn theo `buoc` là BỎ người dán ("dòng cuối thắng"). Hôm nay mọi phiên chỉ 1 người,
+        # nhưng khi có người thứ 2 (đúng quy trình 2 người của repo) thì trộn 2 phán quyết mà IM LẶNG
+        # ⇒ phải lộ ra (review 26-11, P2).
+        nguoi = {str(r.get("nguoi_gan") or "") for r in nhan.values()} - {""}
+        if len(nguoi) > 1:
+            nhieu_nguoi[phien] = sorted(nguoi)
 
         for buoc, r in nhan.items():
             nhan_b = r.get("nhan")
@@ -157,6 +198,14 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
                 bo_qua[f"khong-anh-xa-duoc: {loi}"] = bo_qua.get(f"khong-anh-xa-duoc: {loi}", 0) + 1
                 continue
             f = d["frames"][buoc]
+
+            # Đếm ĐÚNG lý do bị bỏ: 46/78 CSV sinh trước 21-11 không có `bbox_w/h` ⇒ mất rất nhiều
+            # mẫu. Không đếm thì không ai audit được "vì sao chỉ có 414 âm" (review 26-11, P2).
+            if nhan_b in (NHAN_DUNG, NHAN_SAI) and o_he_dang_ve(f) is None:
+                khoa = f"{nhan_b}-khong-co-o-he"
+                bo_qua[khoa] = bo_qua.get(khoa, 0) + 1
+            if nhan_b == "mat_dau" and not r.get("bbox_dung"):
+                bo_qua["mat_dau-khong-co-GT"] = bo_qua.get("mat_dau-khong-co-GT", 0) + 1
 
             for loai, box, nhan_so in (
                 ("pos_sys", o_he_dang_ve(f) if nhan_b == NHAN_DUNG else None, 1),
@@ -209,6 +258,8 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
         da_cat += 1
 
     mau = [m for m in mong_doi if m.get("anh") and (out_dir / m["anh"]).is_file()]
+    co_mau = {m["phien"] for m in mau}
+    phien_0_mau = sorted({p.stem for p in NHAN.glob("*.jsonl")} - co_mau)
     manifest = out_dir / "manifest.jsonl"
     manifest.write_text("".join(json.dumps(m, ensure_ascii=False) + "\n" for m in mau),
                         encoding="utf-8")
@@ -233,9 +284,15 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
             for (s, v) in sorted({(m["split"], m["nhan"]) for m in mau})},
         "so_phien": len({m["phien"] for m in mau}),
         "phien_thieu_video": thieu_video,
+        # Phiên có nhãn mà ra 0 mẫu (CSV cũ không có ô của hệ + không vẽ ô GT) — im lặng chỗ này làm
+        # "số phiên dùng được" không kiểm được (review 26-11, P2).
+        "phien_0_mau": phien_0_mau,
+        "phien_nhieu_nguoi_dan": nhieu_nguoi,
         "bo_qua": bo_qua,
         "crop_px": CROP,
         "margin": margin,
+        "dau_van_tay": van_tay,
+        "da_xoa_cache_cu": da_xoa,
         "ti_le_val": ti_le_val,
         "manifest": str(manifest.relative_to(ROOT)) if manifest.is_relative_to(ROOT) else str(manifest),
     }

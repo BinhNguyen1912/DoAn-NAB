@@ -62,6 +62,10 @@ def auc(y, diem) -> float:
     n1, n0 = int(y.sum()), int((1 - y).sum())
     if n1 == 0 or n0 == 0:
         return float("nan")
+    # Điểm NaN (vd model phân kỳ) từng cho ra AUC 0,75 "trông hợp lệ" vì NaN bị xếp xuống cuối —
+    # đó là báo xanh giả (review độc lập 26-11, P1).
+    if not np.all(np.isfinite(diem)):
+        return float("nan")
     hang = np.empty(len(diem))
     order = np.argsort(diem, kind="mergesort")
     i = 0
@@ -206,6 +210,9 @@ def chay_mot_seed(tr: list[dict], va: list[dict], args, seed: int) -> dict:
         p_tr = torch.sigmoid(model(xtr)).numpy()
         mot1 = float(torch.sigmoid(model(xva[:1])).item())
         mot2 = float(torch.sigmoid(model(xva[:1])).item())     # eval ⇒ phải giống hệt lần trước
+    if abs(mot1 - mot2) > 1e-9:
+        raise AssertionError(f"model.eval() không tất định: {mot1} vs {mot2} "
+                             "(BatchNorm/Dropout chưa tắt?)")
     nhom = np.array([m["phien"] for m in va])
     ngong = np.array([dac_trung_ngong(m["_anh"]) for m in va])
     return {
@@ -218,6 +225,25 @@ def chay_mot_seed(tr: list[dict], va: list[dict], args, seed: int) -> dict:
         "mot_anh_lap_lai": [round(mot1, 6), round(mot2, 6)],
         "lich": lich,
     }
+
+
+def kiem_tra_so(payload: dict) -> list[str]:
+    """Trả danh sách lỗi khiến số **không được công bố** (rỗng = công bố được).
+
+    Nguyên tắc của repo: "0/None ≠ đã đo" — NaN/None phải chặn, không được ghi thành số.
+    """
+    loi = []
+    aucs = payload.get("val_auc") or []
+    if not aucs:
+        loi.append("không có val_auc")
+    if any(a is None or a != a or not np.isfinite(a) for a in aucs):
+        loi.append(f"val_auc có NaN/None {aucs} — thường do val chỉ có MỘT lớp")
+    tb = payload.get("val_auc_trung_binh")
+    if tb is None or tb != tb or not np.isfinite(tb):
+        loi.append(f"val_auc_trung_binh không phải số ({tb!r})")
+    if not payload.get("so_mau", {}).get("val_am"):
+        loi.append("val không có mẫu ÂM nào ⇒ AUC vô nghĩa")
+    return loi
 
 
 def main() -> int:
@@ -269,9 +295,13 @@ def main() -> int:
         "train_auc": [c["train_auc"] for c in cac_lan],
         "cac_lan": [{k: c[k] for k in ("seed", "val", "train_auc", "ngong", "giay")}
                     for c in cac_lan],
-        "val_auc_theo_phien": cac_lan[0]["theo_phien"],
-        "val_am_theo_phien": {p: v["am"] for p, v in
-                              cac_lan[0]["theo_phien"]["tung_phien"].items()},
+        # Giữ cho MỌI seed: bản đầu chỉ giữ seed 0 nên bảng per-session trong log là seed 0 trong khi
+        # con số trung bình là 3 seed ⇒ trộn hai đại lượng (review 26-11, P2).
+        "val_auc_theo_phien": {str(c["seed"]): c["theo_phien"] for c in cac_lan},
+        "val_auc_trung_binh_phien_theo_seed": {str(c["seed"]):
+                                               c["theo_phien"]["auc_trung_binh_phien"]
+                                               for c in cac_lan},
+        "val_am_theo_phien": {p: v["am"] for p, v in cac_lan[0]["theo_phien"]["tung_phien"].items()},
         "lich_epoch_seed_dau": cac_lan[0]["lich"],
         "diem_mot_anh_lap_lai": cac_lan[0]["mot_anh_lap_lai"],
         "giay": round(sum(c["giay"] for c in cac_lan), 1),
@@ -285,9 +315,19 @@ def main() -> int:
             "seed) trước khi kết luận. Nhãn là phán quyết của MỘT người cho CẢ bước, không phải mask — "
             "hạn chế này phải nêu khi trích số."),
     }
+    # CỔNG: không có số thì KHÔNG ghi artifact công bố. `auc` cố ý trả NaN (thiếu lớp / điểm NaN);
+    # `np.mean` của NaN vẫn là NaN và `json.dumps` ghi literal `NaN` (không phải JSON chuẩn) — một lần
+    # train phân kỳ vẫn ra "artifact thành công" nếu không chặn (review 26-11, P1).
+    loi = kiem_tra_so(payload)
+    if loi:
+        print("KHÔNG CÔNG BỐ SỐ — " + "; ".join(loi), file=sys.stderr)
+        print(json.dumps({k: payload[k] for k in ("so_mau", "val_auc", "val_auc_trung_binh")},
+                         ensure_ascii=False, indent=1), file=sys.stderr)
+        return 1
+
     p = ROOT / args.metrics
     p.parent.mkdir(parents=True, exist_ok=True)
-    p.write_text(json.dumps(payload, ensure_ascii=False, indent=1), encoding="utf-8")
+    p.write_text(json.dumps(payload, ensure_ascii=False, indent=1, allow_nan=False), encoding="utf-8")
 
     print(json.dumps({"so_mau": payload["so_mau"], "val_auc": aucs,
                       "trung_binh": payload["val_auc_trung_binh"],

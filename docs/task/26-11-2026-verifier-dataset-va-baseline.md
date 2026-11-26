@@ -11,7 +11,7 @@ nằm trong dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào 
 
 ## 📥 Input
 
-- `data/nhan/*.jsonl` — 33 phiên, 14 261 nhãn, 1 490 ô GT (người dán: `binh`).
+- `data/nhan/*.jsonl` — **32** file phiên (33 nếu tính 1 phiên đã đánh dấu nhưng không có CSV), 14 261 nhãn, 1 490 ô GT (người dán: `binh`).
 - `data/<phiên>_metrics.csv` (tâm + cỡ ô của hệ mỗi bước) + video gốc.
 - Máy này **không có GPU** (`torch 2.14.1+cpu`), 8 lõi; **không có sklearn** ⇒ AUC tự viết.
 
@@ -34,13 +34,13 @@ nằm trong dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào 
    - Thêm **bộ phân loại NGỐ** (chỉ dùng độ lệch chuẩn pixel) làm mốc: nếu AUC của CNN không vượt rõ
      mốc đó thì nó chỉ học "vùng trơn = sai".
    - Kiểm `model.eval()` tất định: chấm **cùng một ảnh hai lần** phải ra cùng số.
-3. **`tests/test_verifier_dataset.py`** — 15 test: AUC (tách hoàn hảo/đảo/hoà/thiếu lớp), CI tất định,
+3. **`tests/test_verifier_dataset.py`** — 26 test: AUC (tách hoàn hảo/đảo/hoà/thiếu lớp), CI tất định,
    `noi_o` kẹp biên + ô suy biến, **nhãn dòng CUỐI thắng**, CSV cũ không có `bbox_w` ⇒ không bịa ô,
    tách split theo phiên, end-to-end trên fixture 2 phiên (1 có ô của hệ, 1 không).
 
 ## 📤 Output / Kết quả
 
-**Dataset** (`data/verifier_metrics.json`, `git_dirty_code = true` tại lúc dựng vì script chưa commit):
+**Dataset** (`data/verifier_metrics.json` — `git_rev fbfde31`, `git_dirty_code = true` (sinh lại trên cây sạch sau khi commit script)):
 
 | | số |
 |---|---|
@@ -75,8 +75,10 @@ Lịch epoch của seed 0 (dao động mạnh, không đơn điệu): 0,733 · 0
 | `fast_1101-153223` | **0** | 13 | `null` |
 | `fast_1101-154036` | **0** | 53 | `null` |
 
-Trung bình trên **2 phiên chấm được**: **0.8475**
-(min 0.8111). **Chỉ 2/6 phiên val có âm** ⇒ mọi trung bình đều tựa vào 2 phiên.
+Trung bình trên **2 phiên chấm được** (bảng trên là **seed 0**): **0,8475** (min 0,8111).
+Qua **cả 3 seed**: 0,8475 · 0,8049 · 0,8283 ⇒ **0,827 ± 0,021**; yếu nhất theo phiên **0,6942**
+(seed 1 · `1124-193026`). **Chỉ 2/6 phiên val có âm** ⇒ mọi trung bình tựa vào 2 phiên
+(`val_auc_theo_phien` + `val_auc_trung_binh_phien_theo_seed` trong artifact).
 
 ## ⚠️ Vấn đề & cách xử lý
 
@@ -92,12 +94,35 @@ Trung bình trên **2 phiên chấm được**: **0.8475**
    học "vùng bám nhầm". Vì thế artifact in thêm `val_auc_theo_phien` + `val_am_theo_phien`; số
    **0,8475** (TB 2 phiên) là số nên đọc, số gộp chỉ để so mốc ngố.
 5. **Đọc số cho đúng** (AGENTS §6): `n = 3 seed` nhưng **chỉ 1 lần dựng dataset**; đây **chưa** phải
-   tuyên bố "verifier dùng được". Điều đo được **chắc chắn** là: *cả 3 seed đều ≥ 0,699, đều vượt mốc
-   ngố 0,519* ⇒ **có tín hiệu**, không phải 0,5 (đoán mò). Điều **không** được nói: "đã chặn được ca
+   tuyên bố "verifier dùng được". Điều đo được: **trung bình 0,76 ± 0,05** trên mốc ngố **0,519**;
+   nhưng **CI của seed yếu nhất [0,566; 0,945] CHỒNG CI của mốc ngố [0,377; 0,597]** ⇒ theo luật
+   "chênh < `±` thì không phân biệt được" của repo, câu đúng là: *2/3 seed tách rõ khỏi mốc ngố,
+   seed còn lại **chưa tách được*** — không được viết "cả 3 seed đều vượt". Điều **không** được nói: "đã chặn được ca
    bám sang tường" — chưa đo trên đúng nhóm ca đó.
-5. **Chưa đưa vào pipeline** — đây là quyết định có chủ ý: chạm `IdentityWatch`/hiển thị là vùng đã 3
+6. **Chưa đưa vào pipeline** — đây là quyết định có chủ ý: chạm `IdentityWatch`/hiển thị là vùng đã 3
    lần sinh P0/P1 trong 2 tuần (AGENTS §6), và việc > 4 h ⇒ phải lập plan 3 ý kiến (AGENTS §9.2)
    trước khi nối.
+
+## 🧾 Các khoản BỊ BỎ (audit được, không phải suy đoán)
+
+`data/verifier_metrics.json → bo_qua`:
+
+| lý do | số |
+|---|---|
+| `dung-khong-co-o-he` (CSV trước 21-11 không có `bbox_w/h`) | **1 156** |
+| `sai-khong-co-o-he` | **859** |
+| `mat_dau-khong-co-GT` (không có ô người vẽ) | **1 327** |
+| `khong_co_vat` | 643 |
+| `bo_qua` | 2 |
+
+Phiên có nhãn mà ra **0 mẫu**: `demoip_1120-224057` (CSV cũ + không vẽ ô GT) —
+`phien_0_mau` trong artifact. `phien_nhieu_nguoi_dan` = rỗng (mọi phiên 1 người dán).
+
+**Hai cảnh báo thêm** (review độc lập 26-11):
+- **20/401** cặp (phiên, bước) có ô hệ ≈ ô người (IoU > 0,7) ⇒ **cùng pixel mang cả nhãn 0 và 1**
+  (≈0,6 % mẫu) — nhiễu nhãn nhỏ nhưng có thật.
+- Crop 64×64 **xoá thông tin cỡ ô**: đã kiểm confound "blockiness" (trung vị cạnh ngắn nguồn 125–150 px,
+  chỉ 5/3 230 mẫu phải phóng > 2×) ⇒ **không** phải lỗi; ghi lại để người sau khỏi đo lại.
 
 ## ➡️ Next steps
 

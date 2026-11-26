@@ -43,6 +43,31 @@ class TestAuc:
         """Mọi điểm bằng nhau ⇒ AUC = 0,5 (hạng trung bình). Bẫy: `argsort` không xử lý hoà sẽ ra 1,0."""
         assert train.auc([0, 1, 0, 1], [0.5] * 4) == 0.5
 
+    def test_diem_nan_tra_nan(self):
+        """Model phân kỳ ⇒ điểm NaN. Bản cũ xếp NaN xuống cuối và trả AUC 0,75 'trông hợp lệ'."""
+        v = train.auc([0, 1, 0, 1], [0.1, float("nan"), 0.3, 0.9])
+        assert v != v, "NaN trong điểm phải ra NaN, không được ra số"
+
+    def test_bootstrap_theo_NHOM_rong_hon_theo_dong(self):
+        """Bootstrap theo DÒNG cho CI hẹp giả khi các frame trong một phiên phụ thuộc nhau.
+
+        Đây là tính chất mà docstring/log của script bán — phải có test, nếu không ai đổi sang
+        resample từng dòng thì cả bộ test vẫn xanh (review độc lập 26-11).
+        """
+        rng = np.random.default_rng(0)
+        # 4 "phiên", mỗi phiên 20 frame: trong phiên điểm gần như trùng nhau (tương quan cao)
+        diem, y, nhom = [], [], []
+        for g, nen in enumerate([0.1, 0.1, 0.9, 0.9]):
+            for k in range(20):
+                nhom.append(f"p{g}")
+                y.append(1 if (g % 2 == 0) else 0)      # phiên 0,2 dương; 1,3 âm
+                diem.append(nen + rng.normal(0, 0.005))
+        theo_nhom = train.auc_theo_cum(y, diem, nhom, n_lan=300, seed=0)
+        theo_dong = train.auc_theo_cum(y, diem, list(range(len(y))), n_lan=300, seed=0)
+        rong = lambda d: d["ci95"][1] - d["ci95"][0]     # noqa: E731
+        assert rong(theo_nhom) > rong(theo_dong), (
+            f"CI theo nhóm phải RỘNG hơn theo dòng: {theo_nhom['ci95']} vs {theo_dong['ci95']}")
+
     def test_mot_lop_tra_nan(self):
         """Thiếu lớp âm ⇒ NaN, KHÔNG được trả 0,5 rồi bị đọc thành 'model đạt 50 %'."""
         v = train.auc([1, 1, 1], [0.1, 0.5, 0.9])
@@ -85,6 +110,32 @@ class TestAuc:
         # gộp vẫn ra 1,0 (mọi dương đều trên âm duy nhất) — đúng cái làm người đọc tưởng "hoàn hảo"
         # trong khi chỉ chấm được MỘT phiên. Đây là lý do artifact phải in cả hai con số.
         assert train.auc(y, diem) == 1.0
+
+    def test_cong_chan_so_khong_cong_bo_duoc(self):
+        """`kiem_tra_so` phải CHẶN: NaN, val không có âm, None — nếu không, artifact ghi `NaN`."""
+        ok = {"val_auc": [0.8, 0.7], "val_auc_trung_binh": 0.75, "so_mau": {"val_am": 57}}
+        assert train.kiem_tra_so(ok) == []
+
+        assert train.kiem_tra_so({"val_auc": [float("nan")], "val_auc_trung_binh": 0.5,
+                                  "so_mau": {"val_am": 5}}), "NaN phải bị chặn"
+        assert train.kiem_tra_so({"val_auc": [0.8], "val_auc_trung_binh": 0.8,
+                                  "so_mau": {"val_am": 0}}), "val 0 âm ⇒ AUC vô nghĩa, phải chặn"
+        assert train.kiem_tra_so({"val_auc": [], "val_auc_trung_binh": None,
+                                  "so_mau": {"val_am": 5}}), "thiếu số phải bị chặn"
+        assert train.kiem_tra_so({"val_auc": [0.8], "val_auc_trung_binh": float("nan"),
+                                  "so_mau": {"val_am": 3}}), "TB NaN phải bị chặn"
+
+    def test_model_eval_tat_dinh(self):
+        """`eval()` phải cho cùng output cho cùng input; `chay_mot_seed` còn raise nếu lệch."""
+        import torch as th
+        m = train.Verifier().eval()
+        x = th.zeros(2, 3, 64, 64)
+        with th.no_grad():
+            a, b = m(x).numpy(), m(x).numpy()
+        assert np.array_equal(a, b)
+        import inspect
+        assert "model.eval() không tất định" in inspect.getsource(train.chay_mot_seed), \
+            "phải ASSERT (raise), không chỉ ghi số như bản đầu"
 
     def test_ngong_dung_do_lech_chuan(self, tmp_path):
         tron = tmp_path / "tron.jpg"
@@ -240,6 +291,54 @@ class TestDungDataset:
         b4 = [m for m in man if m["phien"] == "moi_phien" and m["buoc"] == 4]
         assert [m["loai"] for m in b4] == ["neg_sys"], b4
         assert b4[0]["nhan"] == 0
+
+    def test_dem_ly_do_bi_bo(self, fixture):
+        """Không đếm thì không ai audit được "vì sao chỉ có 414 âm" (review 26-11).
+
+        `cu_phien` (CSV cũ) có 1 bước `dung` + 1 bước `sai` mà CSV KHÔNG có ô của hệ ⇒ phải lộ ra.
+        """
+        tmp_path, _, _ = fixture
+        kq = build.dung_dataset(tmp_path / "out", 0.25, 0.15)
+        assert kq["bo_qua"].get("dung-khong-co-o-he") == 1, kq["bo_qua"]
+        assert kq["bo_qua"].get("sai-khong-co-o-he") == 1, kq["bo_qua"]
+
+    def test_phien_khong_ra_mau_nao_duoc_bao(self, fixture):
+        tmp_path, data, nhan = fixture
+        (nhan / "trong.jsonl").write_text(
+            json.dumps({"buoc": 0, "nhan": "khong_co_vat"}) + "\n", encoding="utf-8")
+        import src.worker as W
+        from tools import label_ui as L
+        import shutil
+        shutil.copy(data / "moi_phien.mp4", data / "trong.mp4")
+        shutil.copy(data / "moi_phien_metrics.csv", data / "trong_metrics.csv")
+        _ = (W, L)
+        kq = build.dung_dataset(tmp_path / "out", 0.25, 0.15)
+        assert "trong" in kq["phien_0_mau"], kq["phien_0_mau"]
+
+    def test_doi_margin_phai_cat_lai_anh(self, fixture):
+        """Cache ảnh khoá `{loai}_b{buoc}` ⇒ đổi `--margin` mà không xoá cache là
+        **ảnh cũ + artifact ghi tham số mới** (review 26-11, P2)."""
+        tmp_path, _, _ = fixture
+        kq1 = build.dung_dataset(tmp_path / "out", 0.25, 0.0)
+        assert kq1["da_xoa_cache_cu"] is False
+        goc = [p.stat().st_size for p in sorted((tmp_path / "out").rglob("*.jpg"))]
+        kq2 = build.dung_dataset(tmp_path / "out", 0.25, 0.5)
+        assert kq2["da_xoa_cache_cu"] is True, "vân tay đổi ⇒ phải xoá cache cũ"
+        moi = [p.stat().st_size for p in sorted((tmp_path / "out").rglob("*.jpg"))]
+        assert moi and moi != goc, "margin đổi ⇒ ảnh phải được cắt LẠI (nội dung khác)"
+        assert kq2["dau_van_tay"] != kq1["dau_van_tay"]
+
+    def test_phien_co_hai_nguoi_dan_duoc_bao(self, fixture):
+        """Gộp nhãn 'dòng cuối thắng' bỏ người dán ⇒ phải LỘ ra khi một phiên có >1 người."""
+        tmp_path, data, nhan = fixture
+        # Hai BƯỚC có nhãn hiệu lực của HAI người khác nhau (dòng cuối mỗi bước thắng)
+        rows = [{"buoc": 0, "nhan": "dung", "nguoi_gan": "binh"},
+                {"buoc": 2, "nhan": "sai", "nguoi_gan": "nguoi_thu_hai"}]
+        (nhan / "moi_phien.jsonl").write_text(
+            "\n".join(json.dumps(r) for r in rows) + "\n", encoding="utf-8")
+        kq = build.dung_dataset(tmp_path / "out", 0.25, 0.15)
+        assert sorted(kq["phien_nhieu_nguoi_dan"].get("moi_phien", [])) == ["binh", "nguoi_thu_hai"], \
+            kq["phien_nhieu_nguoi_dan"]
 
     def test_phien_thieu_video_bi_bao_khong_im_lang(self, fixture):
         """Thiếu nguồn ⇒ phải nêu tên phiên, KHÔNG được lặng lẽ ra dataset nhỏ hơn."""
