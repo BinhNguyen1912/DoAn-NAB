@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "che_do": "loao",
- "do_luc": "2026-11-26T16:24:43+0700",
+ "do_luc": "2026-11-26T19:25:40+0700",
  "lenh": "scripts/train_verifier.py --loao --nhom-theo phien --metrics data/verifier_loao_phien_metrics.json",
- "git_rev": "eae5def",
+ "git_rev": "1301a29",
  "git_dirty": true,
  "git_dirty_code": false,
  "epochs": 12,
@@ -17,6 +17,7 @@
  "min_am_nhom": 15,
  "nhom_theo": "phien",
  "so_mau_tong": 3230,
+ "so_anh_thieu": 0,
  "nhom_cham_duoc": [
   "demoip_1123-162154",
   "demoip_1124-110536",
@@ -40,10 +41,14 @@
     0.627
    ],
    "auc_trung_binh": 0.4958,
-   "ci95": [
-    0.4406,
-    0.4406
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.3732,
+    0.3732,
+    0.3732
+   ],
+   "ngong_auc_trung_binh": 0.3732
   },
   "demoip_1124-110536": {
    "so_mau": 172,
@@ -55,10 +60,14 @@
     0.6887
    ],
    "auc_trung_binh": 0.7326,
-   "ci95": [
-    0.7536,
-    0.7536
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.5281,
+    0.5281,
+    0.5281
+   ],
+   "ngong_auc_trung_binh": 0.5281
   },
   "demoip_1124-125109": {
    "so_mau": 234,
@@ -70,10 +79,14 @@
     0.7349
    ],
    "auc_trung_binh": 0.7643,
-   "ci95": [
-    0.7257,
-    0.7257
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.789,
+    0.789,
+    0.789
+   ],
+   "ngong_auc_trung_binh": 0.789
   },
   "demoip_1124-141352": {
    "so_mau": 87,
@@ -85,10 +98,14 @@
     0.8754
    ],
    "auc_trung_binh": 0.8689,
-   "ci95": [
-    0.8382,
-    0.8382
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.7005,
+    0.7005,
+    0.7005
+   ],
+   "ngong_auc_trung_binh": 0.7005
   },
   "demoip_1124-144057": {
    "so_mau": 194,
@@ -100,10 +117,14 @@
     0.8485
    ],
    "auc_trung_binh": 0.8439,
-   "ci95": [
-    0.8311,
-    0.8311
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.8014,
+    0.8014,
+    0.8014
+   ],
+   "ngong_auc_trung_binh": 0.8014
   },
   "demoip_1124-162458": {
    "so_mau": 129,
@@ -115,10 +136,14 @@
     0.8614
    ],
    "auc_trung_binh": 0.8361,
-   "ci95": [
-    0.774,
-    0.774
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.8519,
+    0.8519,
+    0.8519
+   ],
+   "ngong_auc_trung_binh": 0.8519
   },
   "demoip_1124-193026": {
    "so_mau": 318,
@@ -130,10 +155,14 @@
     0.7803
    ],
    "auc_trung_binh": 0.7733,
-   "ci95": [
-    0.7817,
-    0.7817
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.5847,
+    0.5847,
+    0.5847
+   ],
+   "ngong_auc_trung_binh": 0.5847
   },
   "demoip_1125-085815": {
    "so_mau": 309,
@@ -145,10 +174,14 @@
     0.7527
    ],
    "auc_trung_binh": 0.7444,
-   "ci95": [
-    0.7141,
-    0.7141
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.475,
+    0.475,
+    0.475
+   ],
+   "ngong_auc_trung_binh": 0.475
   },
   "demoip_1125-100334": {
    "so_mau": 167,
@@ -160,10 +193,14 @@
     0.6648
    ],
    "auc_trung_binh": 0.6689,
-   "ci95": [
-    0.6796,
-    0.6796
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.6228,
+    0.6228,
+    0.6228
+   ],
+   "ngong_auc_trung_binh": 0.6228
   },
   "demoip_1125-121456": {
    "so_mau": 292,
@@ -175,12 +212,20 @@
     0.6917
    ],
    "auc_trung_binh": 0.6629,
-   "ci95": [
-    0.7255,
-    0.7255
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.4457,
+    0.4457,
+    0.4457
+   ],
+   "ngong_auc_trung_binh": 0.4457
   }
  },
+ "so_seed_loai_nan": 0,
+ "ngong_auc_trung_binh": 0.6172,
+ "auc_trung_binh_ngay": 0.7391,
+ "la_trung_binh_cong_theo_ngay": true,
  "auc_trung_binh": 0.7391,
  "auc_min": 0.4198,
  "auc_max": 0.8932,

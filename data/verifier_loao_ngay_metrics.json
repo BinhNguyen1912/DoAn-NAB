@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "che_do": "loao",
- "do_luc": "2026-11-26T15:57:47+0700",
+ "do_luc": "2026-11-26T18:48:14+0700",
  "lenh": "scripts/train_verifier.py --loao --nhom-theo ngay --metrics data/verifier_loao_ngay_metrics.json",
- "git_rev": "eae5def",
+ "git_rev": "1301a29",
  "git_dirty": true,
  "git_dirty_code": false,
  "epochs": 12,
@@ -17,6 +17,7 @@
  "min_am_nhom": 15,
  "nhom_theo": "ngay",
  "so_mau_tong": 3230,
+ "so_anh_thieu": 0,
  "nhom_cham_duoc": [
   "1123",
   "1124",
@@ -33,10 +34,14 @@
     0.627
    ],
    "auc_trung_binh": 0.4958,
-   "ci95": [
-    0.4406,
-    0.4406
-   ]
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.3732,
+    0.3732,
+    0.3732
+   ],
+   "ngong_auc_trung_binh": 0.3732
   },
   "1124": {
    "so_mau": 1134,
@@ -51,7 +56,14 @@
    "ci95": [
     0.7149,
     0.7862
-   ]
+   ],
+   "so_nhom": 6,
+   "ngong_auc_theo_seed": [
+    0.6745,
+    0.6745,
+    0.6745
+   ],
+   "ngong_auc_trung_binh": 0.6745
   },
   "1125": {
    "so_mau": 778,
@@ -66,9 +78,20 @@
    "ci95": [
     0.505,
     0.5846
-   ]
+   ],
+   "so_nhom": 5,
+   "ngong_auc_theo_seed": [
+    0.5129,
+    0.5129,
+    0.5129
+   ],
+   "ngong_auc_trung_binh": 0.5129
   }
  },
+ "so_seed_loai_nan": 0,
+ "ngong_auc_trung_binh": 0.5202,
+ "auc_trung_binh_ngay": 0.5846,
+ "la_trung_binh_cong_theo_ngay": true,
  "auc_trung_binh": 0.5846,
  "auc_min": 0.4198,
  "auc_max": 0.7432,

@@ -1,8 +1,8 @@
 {
  "schema": 1,
- "do_luc": "2026-11-26T16:29:04+0700",
+ "do_luc": "2026-11-26T18:52:53+0700",
  "lenh": "scripts/train_verifier.py --manifest data/verifier_phien/manifest.jsonl --goc data/verifier_phien --metrics data/verifier_chiaphien_metrics.json",
- "git_rev": "eae5def",
+ "git_rev": "1301a29",
  "git_dirty": true,
  "git_dirty_code": false,
  "epochs": 12,
@@ -70,7 +70,7 @@
      0.5898
     ]
    },
-   "giay": 45.6
+   "giay": 43.6
   },
   {
    "seed": 1,
@@ -120,7 +120,7 @@
      0.5965
     ]
    },
-   "giay": 34.7
+   "giay": 39.3
   }
  ],
  "val_auc_theo_phien": {
@@ -131,20 +131,14 @@
      "am": 19,
      "duong": 68,
      "auc": 0.8839,
-     "ci95": [
-      0.8839,
-      0.8839
-     ]
+     "ci95": null
     },
     "demoip_1124-193026": {
      "n": 318,
      "am": 38,
      "duong": 280,
      "auc": 0.8111,
-     "ci95": [
-      0.8111,
-      0.8111
-     ]
+     "ci95": null
     },
     "fast_1029-210004": {
      "n": 26,
@@ -186,20 +180,14 @@
      "am": 19,
      "duong": 68,
      "auc": 0.9156,
-     "ci95": [
-      0.9156,
-      0.9156
-     ]
+     "ci95": null
     },
     "demoip_1124-193026": {
      "n": 318,
      "am": 38,
      "duong": 280,
      "auc": 0.6942,
-     "ci95": [
-      0.6942,
-      0.6942
-     ]
+     "ci95": null
     },
     "fast_1029-210004": {
      "n": 26,
@@ -241,20 +229,14 @@
      "am": 19,
      "duong": 68,
      "auc": 0.8746,
-     "ci95": [
-      0.8746,
-      0.8746
-     ]
+     "ci95": null
     },
     "demoip_1124-193026": {
      "n": 318,
      "am": 38,
      "duong": 280,
      "auc": 0.782,
-     "ci95": [
-      0.782,
-      0.782
-     ]
+     "ci95": null
     },
     "fast_1029-210004": {
      "n": 26,
@@ -369,6 +351,6 @@
   0.992647,
   0.992647
  ],
- "giay": 118.2,
+ "giay": 120.8,
  "chiet_giai": "`ngong_auc` = AUC của bộ phân loại NGỐ chỉ dùng độ lệch chuẩn pixel (vùng trơn ⇒ thấp); `val_auc` không vượt rõ con số này thì mô hình chỉ học 'tường trơn = sai'. `val_auc_theo_phien` là con số ĐÚNG ĐỂ ĐỌC: âm và dương cùng một phiên ⇒ không rò rỉ miền; `val_auc` gộp thì trộn nền của nhiều phiên với âm của vài phiên nên có thể cao/giả. `val_am_theo_phien` cho thấy âm dồn vào phiên nào — phiên 0 âm thì không chấm được (auc null). CI95 bootstrap theo PHIÊN val. `val_am` nhỏ ⇒ CI rộng; đọc `val_auc_std` (giữa seed) trước khi kết luận. Nhãn là phán quyết của MỘT người cho CẢ bước, không phải mask — hạn chế này phải nêu khi trích số."
 }
