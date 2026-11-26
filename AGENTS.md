@@ -387,7 +387,8 @@ model, (b) sửa `src/reid.py`, (c) hứa một con số FPS trong báo cáo.
 - **Nhãn "bắt đúng/sai" phải do 2 người dán ĐỘC LẬP — nay có UI để dán: `./run labelui`.**
   `tools/label_ui.py` (+ `label_ui.html`) mở trên trình duyệt: chọn phiên đã quay, phím `1` ĐÚNG · `2` SAI
   · `3` MẤT DẤU (vật còn trong khung mà hệ không vẽ) · `4` KHÔNG CÓ VẬT (đã đưa ra ngoài) · `0` BỎ QUA;
-  `b` + kéo chuột = vẽ **ô đúng**. Nhãn append-only vào `data/nhan/<phiên>.jsonl` kèm `nguoi_gan`/
+  `E` + kéo chuột = vẽ **ô đúng** (`b` cũ vẫn dùng được; `E` **không** ăn khi đang gõ ô tên vì
+  `e` có trong hầu hết tên người — đừng đưa `e` trở lại danh sách "phím ăn cả khi ở ô tên"). Nhãn append-only vào `data/nhan/<phiên>.jsonl` kèm `nguoi_gan`/
   `git_rev`/`do_luc`/`t_video`; tổng hợp + mức đồng ý 2 người: `python tools/label_ui.py --tong-hop
   data/<phiên>_metrics.csv`. Hướng dẫn người dán: `docs/cach-gan-nhan.md`.
   Danh tính của một bước là `buoc` (số thứ tự dòng CSV), **không** phải `frame_vos`: `frame_idx` lặp là

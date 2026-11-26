@@ -1222,6 +1222,9 @@ class TestHangSoVaTaiLieu:
         assert "--host" in s, "hướng dẫn mở từ Windows phải khớp cờ THẬT của tool (--host 0.0.0.0)"
         assert "Space" in s, "hướng dẫn nhắc Space thì CODE phải có nhánh Space"
         assert "`E` rồi kéo chuột" in s, "hướng dẫn phải nói phím vẽ ô là E"
+        # AGENTS §6 là bộ nhớ cho agent sau: còn hứa `b` mà không nói `E` là tài liệu lệch code
+        agents = (REPO / "AGENTS.md").read_text(encoding="utf-8")
+        assert "`E` + kéo chuột" in agents, "AGENTS §6 phải nói phím vẽ ô là E"
         assert '"Nguyen"' in s, "phải cảnh báo: `e` không ăn khi gõ tên"
         assert "CHUA XAC MINH" in s and "KHÔNG có cột" in s, \
             "phải nói rõ `chua_xac_minh` KHÔNG có cột trong CSV (bản đầu mô tả sai là 'không vẽ')"
