@@ -57,6 +57,35 @@ class TestAuc:
         assert a == b, "cùng seed phải ra cùng số (artifact tái lập được)"
         assert a["ci95"][0] <= a["auc"] <= a["ci95"][1]
 
+    def test_auc_tung_phien_bo_qua_phien_thieu_lop(self):
+        """AUC gộp trộn nền nhiều phiên với âm của vài phiên (rò rỉ MIỀN) ⇒ phải có số theo phiên.
+
+        Phiên chỉ có dương không chấm được ⇒ `auc=None` và KHÔNG được tính vào trung bình.
+        """
+        y = np.array([0, 0, 1, 1, 1, 1])
+        diem = np.array([0.1, 0.2, 0.8, 0.9, 0.3, 0.4])
+        nhom = np.array(["a", "a", "a", "a", "b", "b"])
+        kq = train.auc_tung_phien(y, diem, nhom)
+        assert kq["tung_phien"]["a"]["auc"] == 1.0
+        assert kq["tung_phien"]["b"] == {"n": 2, "am": 0, "duong": 2, "auc": None}
+        assert kq["so_phien_co_hai_lop"] == 1
+        assert kq["auc_trung_binh_phien"] == 1.0, "phiên thiếu lớp không được kéo trung bình"
+
+    def test_auc_tung_phien_phoi_bay_so_phien_cham_duoc(self):
+        """`so_phien_co_hai_lop` phải lộ ra chuyện "chỉ 2 phiên chấm được" — nếu không, người đọc
+        tưởng `auc_trung_binh_phien` là trung bình trên 6 phiên val (thực tế 4 phiên không có âm).
+        """
+        y = np.array([0, 1, 1, 1, 1, 1])
+        nhom = np.array(["a", "a", "b", "b", "c", "c"])   # chỉ phiên 'a' có âm
+        diem = np.array([0.2, 0.9, 0.9, 0.95, 0.9, 0.8])
+        kq = train.auc_tung_phien(y, diem, nhom)
+        assert kq["so_phien_co_hai_lop"] == 1, "phải đếm đúng số phiên CHẤM ĐƯỢC"
+        assert kq["auc_trung_binh_phien"] == kq["tung_phien"]["a"]["auc"]
+        assert kq["tung_phien"]["b"]["auc"] is None and kq["tung_phien"]["c"]["auc"] is None
+        # gộp vẫn ra 1,0 (mọi dương đều trên âm duy nhất) — đúng cái làm người đọc tưởng "hoàn hảo"
+        # trong khi chỉ chấm được MỘT phiên. Đây là lý do artifact phải in cả hai con số.
+        assert train.auc(y, diem) == 1.0
+
     def test_ngong_dung_do_lech_chuan(self, tmp_path):
         tron = tmp_path / "tron.jpg"
         import cv2

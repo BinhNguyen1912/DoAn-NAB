@@ -95,6 +95,28 @@ def auc_theo_cum(y, diem, nhom, n_lan: int = 1000, seed: int = 0) -> dict:
     return ra
 
 
+def auc_tung_phien(y, diem, nhom) -> dict:
+    """AUC **trong từng phiên** — chỉ phiên có CẢ hai lớp mới chấm được.
+
+    Vì sao cần: AUC gộp trộn ảnh của 6 phiên dương với âm của 2 phiên ⇒ mô hình có thể chỉ học
+    "nền của phiên này = âm" (rò rỉ MIỀN) mà vẫn điểm cao. Trong một phiên, âm và dương cùng nền/cùng
+    vật ⇒ đây mới là con số phản ánh việc dùng thật (so sánh trong một buổi quay).
+    """
+    y, diem, nhom = np.asarray(y), np.asarray(diem), np.asarray(nhom)
+    ra, hop_le = {}, []
+    for g in sorted(set(nhom.tolist())):
+        sel = nhom == g
+        a = auc(y[sel], diem[sel])
+        ra[str(g)] = {"n": int(sel.sum()), "am": int((y[sel] == 0).sum()),
+                      "duong": int((y[sel] == 1).sum()),
+                      "auc": (round(float(a), 4) if a == a else None)}
+        if a == a:
+            hop_le.append(float(a))
+    return {"tung_phien": ra, "so_phien_co_hai_lop": len(hop_le),
+            "auc_trung_binh_phien": round(float(np.mean(hop_le)), 4) if hop_le else None,
+            "auc_min_phien": round(min(hop_le), 4) if hop_le else None}
+
+
 def dac_trung_ngong(path: pathlib.Path) -> float:
     """Bộ phân loại NGỐ: độ lệch chuẩn pixel (vùng trơn ⇒ thấp). Dùng để phát hiện mẹo."""
     anh = cv2.imread(str(path), cv2.IMREAD_GRAYSCALE)
@@ -171,7 +193,7 @@ def chay_mot_seed(tr: list[dict], va: list[dict], args, seed: int) -> dict:
             loss = loss_fn(model(xtr[idx]), ytr[idx])
             loss.backward()
             opt.step()
-            tong += float(loss) * len(idx)
+            tong += loss.item() * len(idx)
         model.eval()
         with torch.no_grad():
             p = torch.sigmoid(model(xva)).numpy()
@@ -192,6 +214,7 @@ def chay_mot_seed(tr: list[dict], va: list[dict], args, seed: int) -> dict:
         "val": auc_theo_cum(yva.numpy(), p_va, nhom, seed=seed),
         "train_auc": round(float(auc(ytr.numpy(), p_tr)), 4),
         "ngong": auc_theo_cum(yva.numpy(), ngong, nhom, seed=seed),
+        "theo_phien": auc_tung_phien(yva.numpy(), p_va, nhom),
         "mot_anh_lap_lai": [round(mot1, 6), round(mot2, 6)],
         "lich": lich,
     }
@@ -244,16 +267,23 @@ def main() -> int:
         "ngong_auc": ngong,
         "ngong_auc_trung_binh": round(float(np.mean(ngong)), 4),
         "train_auc": [c["train_auc"] for c in cac_lan],
-        "cac_lan": [{k: c[k] for k in ("seed", "val", "train_auc", "ngong", "giay")} for c in cac_lan],
+        "cac_lan": [{k: c[k] for k in ("seed", "val", "train_auc", "ngong", "giay")}
+                    for c in cac_lan],
+        "val_auc_theo_phien": cac_lan[0]["theo_phien"],
+        "val_am_theo_phien": {p: v["am"] for p, v in
+                              cac_lan[0]["theo_phien"]["tung_phien"].items()},
         "lich_epoch_seed_dau": cac_lan[0]["lich"],
         "diem_mot_anh_lap_lai": cac_lan[0]["mot_anh_lap_lai"],
         "giay": round(sum(c["giay"] for c in cac_lan), 1),
         "chiet_giai": (
             "`ngong_auc` = AUC của bộ phân loại NGỐ chỉ dùng độ lệch chuẩn pixel (vùng trơn ⇒ thấp); "
-            "`val_auc` không vượt rõ con số này thì mô hình chỉ học 'tường trơn = sai'. CI95 bootstrap "
-            "theo PHIÊN val (frame trong một phiên phụ thuộc nhau). `val_am` nhỏ ⇒ CI rộng; đọc "
-            "`val_auc_std` (giữa các seed) trước khi kết luận. Nhãn là phán quyết của MỘT người cho CẢ "
-            "bước, không phải mask — hạn chế này phải nêu khi trích số."),
+            "`val_auc` không vượt rõ con số này thì mô hình chỉ học 'tường trơn = sai'. "
+            "`val_auc_theo_phien` là con số ĐÚNG ĐỂ ĐỌC: âm và dương cùng một phiên ⇒ không rò rỉ "
+            "miền; `val_auc` gộp thì trộn nền của nhiều phiên với âm của vài phiên nên có thể cao/giả. "
+            "`val_am_theo_phien` cho thấy âm dồn vào phiên nào — phiên 0 âm thì không chấm được (auc "
+            "null). CI95 bootstrap theo PHIÊN val. `val_am` nhỏ ⇒ CI rộng; đọc `val_auc_std` (giữa "
+            "seed) trước khi kết luận. Nhãn là phán quyết của MỘT người cho CẢ bước, không phải mask — "
+            "hạn chế này phải nêu khi trích số."),
     }
     p = ROOT / args.metrics
     p.parent.mkdir(parents=True, exist_ok=True)

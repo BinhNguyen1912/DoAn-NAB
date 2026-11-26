@@ -64,6 +64,20 @@ nằm trong dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào 
 Lịch epoch của seed 0 (dao động mạnh, không đơn điệu): 0,733 · 0,693 · 0,658 · 0,682 · 0,625 ·
 0,772 · 0,723 · 0,756 · 0,634 · 0,731 · 0,610 · **0,789**.
 
+**AUC theo TỪNG PHIÊN val** (âm và dương cùng nền ⇒ không trộn miền; đây là con số nên đọc):
+
+| phiên | âm | dương | AUC |
+|---|---|---|---|
+| `demoip_1124-141352` | 19 | 68 | **0,8839** |
+| `demoip_1124-193026` | 38 | 280 | **0,8111** |
+| `fast_1029-210004` | **0** | 26 | `null` (không chấm được) |
+| `fast_1029-212632` | **0** | 134 | `null` |
+| `fast_1101-153223` | **0** | 13 | `null` |
+| `fast_1101-154036` | **0** | 53 | `null` |
+
+Trung bình trên **2 phiên chấm được**: **0.8475**
+(min 0.8111). **Chỉ 2/6 phiên val có âm** ⇒ mọi trung bình đều tựa vào 2 phiên.
+
 ## ⚠️ Vấn đề & cách xử lý
 
 1. **`46/78` CSV trong `data/` không có cột `bbox_w/bbox_h`** (chỉ được thêm vào `CSV_HEADER` từ 21-11)
@@ -73,7 +87,11 @@ Lịch epoch của seed 0 (dao động mạnh, không đơn điệu): 0,733 · 0
    (seed 1: [0,566, 0,945]).
 3. **Overfit rõ**: train AUC 0,95–0,98 vs val 0,70–0,79. Muốn giảm phải có **thêm âm** (chính là
    "vẽ ô ở bước SAI trên các phiên có CSV mới") — việc này người dùng làm tiếp được, không cần GPU.
-4. **Đọc số cho đúng** (AGENTS §6): `n = 3 seed` nhưng **chỉ 1 lần dựng dataset**; đây **chưa** phải
+4. **Âm DỒN vào 2 phiên val** (`1124-141352` 19 · `1124-193026` 38), 4 phiên val còn lại **0 âm**
+   ⇒ AUC gộp (0,7596) trộn nền của 6 phiên dương với âm của 2 phiên, có thể bị "học nền" chứ không
+   học "vùng bám nhầm". Vì thế artifact in thêm `val_auc_theo_phien` + `val_am_theo_phien`; số
+   **0,8475** (TB 2 phiên) là số nên đọc, số gộp chỉ để so mốc ngố.
+5. **Đọc số cho đúng** (AGENTS §6): `n = 3 seed` nhưng **chỉ 1 lần dựng dataset**; đây **chưa** phải
    tuyên bố "verifier dùng được". Điều đo được **chắc chắn** là: *cả 3 seed đều ≥ 0,699, đều vượt mốc
    ngố 0,519* ⇒ **có tín hiệu**, không phải 0,5 (đoán mò). Điều **không** được nói: "đã chặn được ca
    bám sang tường" — chưa đo trên đúng nhóm ca đó.
