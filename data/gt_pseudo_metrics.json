@@ -1,8 +1,8 @@
 {
  "schema": 1,
- "do_luc": "2026-11-26T22:55:06+0700",
+ "do_luc": "2026-11-27T00:54:22+0700",
  "lenh": "scripts/make_pseudo_masks.py --image-size 512",
- "git_rev": "127f428",
+ "git_rev": "ab318b1",
  "git_dirty": true,
  "git_dirty_code": false,
  "image_size_yeu_cau": 512,
@@ -10,15 +10,35 @@
  "checkpoint": "samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt",
  "so_o_hop_le": 1251,
  "so_mask": 1251,
- "so_mask_moi_sinh": 20,
- "co_cache": 1231,
+ "so_mask_moi_sinh": 0,
+ "co_cache": 1251,
  "loi_doc_frame": 0,
  "loi_mask": 0,
- "ms_moi_mask": 440.3,
+ "ms_moi_mask": null,
  "qc_dem": {
-  "cham_bien": 337,
-  "nho": 38
+  "rong": 0,
+  "nho": 38,
+  "tran": 0,
+  "cham_bien": 274
  },
- "so_mask_nghi": 369,
+ "so_mask_nhieu_co": 4,
+ "so_mask_nghi": 308,
+ "phan_bo_ty_le_dien_tich": {
+  "n": 1251,
+  "median": 0.622,
+  "p05": 0.239,
+  "p95": 0.899,
+  "ghi_chu": "p05/p95 chỉ phát khi n >= 30 (AGENTS §6)"
+ },
+ "so_frame_khac_nhau": 1018,
+ "so_phien": 30,
+ "giay_tong": 13.9,
+ "dau_van_tay": "9f88b1a54038c9bb",
+ "da_xoa_cache_cu": false,
+ "bo_qua_muc_tieu": {},
+ "so_o_co_bbox": 1251,
+ "so_dong_co_bbox_tho": 1490,
+ "mat_do_gop_buoc": 239,
+ "ghi_chu_gop_buoc": "Nhãn là append-only: một bước có thể có NHIỀU dòng có `bbox_dung`; nhãn/dòng CUỐI của bước mới là hiệu lực (`tong_hop` cũng gộp như vậy) ⇒ số hộp thô > số mask sinh được là bình thường, KHÔNG phải mất dữ liệu.",
  "chiet_giai": "Đây là MASK GIẢ: SAM 2 tự cắt từ HỘP của người dùng, không phải GT do người tô. Dùng để mở rộng phép đo và làm dữ liệu sửa tay; KHÔNG dùng để tuyên bố chất lượng model (mask do chính model sinh). `qc_dem` đếm các ca nghi (rỗng / <20% / >150% diện tích hộp / chạm biên khung mà hộp không chạm) — phải xem bằng mắt trước khi coi là GT."
 }
