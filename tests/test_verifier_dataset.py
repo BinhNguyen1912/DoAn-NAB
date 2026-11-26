@@ -162,6 +162,58 @@ class TestAuc:
         with pytest.raises(AssertionError):
             train.chay_mot_seed(tr * 4, tr * 2, A, 0)
 
+    def test_ci95_none_khi_chi_mot_nhom(self):
+        """1 nhóm ⇒ mọi resample trùng nhau ⇒ ci95 = [auc, auc] (rộng 0) đọc thành "rất chính xác".
+
+        Đây là dạng "0/None ≠ đã đo": không đo được độ bất định thì phải trả None (review vòng 3, P1).
+        """
+        kq = train.auc_theo_cum([0, 1, 0, 1], [0.1, 0.9, 0.2, 0.8], ["mot"] * 4, n_lan=50, seed=0)
+        assert kq["ci95"] is None, kq["ci95"]
+        assert kq["so_nhom"] == 1
+        nhieu = train.auc_theo_cum([0, 1, 0, 1], [0.1, 0.9, 0.2, 0.8], ["a", "a", "b", "b"],
+                                   n_lan=50, seed=0)
+        assert nhieu["ci95"] is not None and nhieu["so_nhom"] == 2
+
+    def test_loao_bo_han_nhom_va_gom_theo_ngay(self, monkeypatch):
+        """`--loao --nhom-theo ngay` phải bỏ HẲN nhóm (ngày) khỏi train và gom theo tiền tố ngày.
+
+        Bản trước lấy `m["nhom"]` do lúc DỰNG quyết định ⇒ manifest dựng `--chia-theo phien` thì
+        `--loao` lặng lẽ chạy theo PHIÊN mà artifact vẫn ghi `nhom_theo: "ngay"` (review vòng 3, P1).
+        """
+        import types
+        mau = ([{"phien": "demoip_1124-110536", "nhom": "demoip_1124-110536", "nhan": 0}] * 20
+               + [{"phien": "demoip_1124-110536", "nhom": "demoip_1124-110536", "nhan": 1}] * 20
+               + [{"phien": "demoip_1124-141352", "nhom": "demoip_1124-141352", "nhan": 0}] * 20
+               + [{"phien": "demoip_1124-141352", "nhom": "demoip_1124-141352", "nhan": 1}] * 20
+               + [{"phien": "fast_1029-193552", "nhom": "fast_1029-193552", "nhan": 1}] * 40)
+        da_goi = []
+
+        def gia(tr, va, a, sd):
+            da_goi.append((sd, {x["phien"] for x in va}, {x["phien"] for x in tr}))
+            return {"val": {"auc": 0.8, "ci95": None, "so_nhom": 1}, "ngong": {"auc": 0.5},
+                    "seed": sd, "giay": 0.0, "train_auc": 0.9, "theo_phien": {}, "lich": []}
+
+        monkeypatch.setattr(train, "chay_mot_seed", gia)
+        args = types.SimpleNamespace(nhom_theo="ngay", min_am_nhom=15, seeds="0,1")
+        kq = train.chay_loao(mau, args, [0, 1])
+        # `nhom` trong manifest là TÊN PHIÊN (dựng bằng --chia-theo phien) ⇒ phải gom lại thành NGÀY
+        assert set(kq["nhom_cham_duoc"]) == {"1124"}, kq["nhom_cham_duoc"]
+        for _sd, ten_va, ten_tr in da_goi:
+            assert ten_va == {"demoip_1124-110536", "demoip_1124-141352"}
+            assert not (ten_va & ten_tr), "nhóm được chấm KHÔNG được có mặt trong train"
+
+    def test_cong_loao_chan_khi_khong_co_so(self):
+        """`--loao` từng KHÔNG đi qua cổng ⇒ "không nhóm nào chấm được" vẫn ghi artifact + exit 0."""
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": [], "so_lan_chay": 0,
+                                       "auc_trung_binh": None}), "rỗng phải bị chặn"
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": ["1124"], "so_lan_chay": 3,
+                                       "auc_trung_binh": float("nan")}), "NaN phải bị chặn"
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": ["1124"], "so_lan_chay": 3,
+                                       "auc_trung_binh": 0.6, "theo_ngay": {"1124": {}}})
+        ok = {"nhom_cham_duoc": ["1124"], "so_lan_chay": 3, "auc_trung_binh": 0.6,
+              "theo_ngay": {"1124": {"auc_theo_seed": [0.6]}}}
+        assert train.kiem_tra_so_loao(ok) == []
+
     def test_ngong_dung_do_lech_chuan(self, tmp_path):
         tron = tmp_path / "tron.jpg"
         import cv2

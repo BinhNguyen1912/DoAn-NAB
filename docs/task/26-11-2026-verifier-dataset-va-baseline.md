@@ -1,8 +1,9 @@
 # Ngày 26-11-2026 — Bước 1: dataset + baseline cho "bộ kiểm bám đúng" (verifier)
 
 > **Kết luận một dòng:** nhãn hiện có **chưa đủ train lại** SAM 2 (thiếu mask pixel); nhưng đủ để thử
-> một verifier — và khi đo **đúng cách** (bỏ hẳn một NGÀY khỏi train) thì verifier **gần như không tổng
-> quát**: AUC **0,585** (0,42–0,74). Con số 0,83 chỉ đúng khi val nằm **cùng ngày/cùng cảnh**.
+> một verifier — và khi đo **đúng cách** (bỏ hẳn một NGÀY khỏi train) thì verifier **chỉ hơn mốc ngố
+> 0,065** (AUC **0,585** so với ngố **0,520** trên **cùng 3 ngày**), tức **chưa chứng minh được** là tổng
+> quát. Con số 0,83 chỉ đúng khi val nằm **cùng ngày/cùng cảnh**.
 
 ## 🎯 Mục tiêu
 
@@ -41,7 +42,8 @@ dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách đư�
    - **Bộ phân loại NGỐ** (chỉ độ lệch chuẩn pixel) làm mốc.
    - **`--loao`**: leave-one-**day**-out / leave-one-**session**-out — mỗi lượt bỏ hẳn một nhóm, train
      trên phần còn lại, chấm trên đúng nhóm đó.
-   - **Cổng `kiem_tra_so()`**: không có số (NaN / val 0 âm / thiếu) thì **không ghi artifact** + exit 1.
+   - **Cổng `kiem_tra_so()` / `kiem_tra_so_loao()`**: không có số (NaN / val 0 âm / không nhóm nào
+     chấm được) thì **không ghi artifact** + exit 1 — áp cho **cả** chế độ chia-split **và** `--loao`.
 3. **`tests/test_verifier_dataset.py`** — **30 test**: AUC (hoàn hảo/đảo/hoà/thiếu lớp/NaN), CI theo
    nhóm phải **rộng hơn** theo dòng, nhãn **dòng cuối thắng**, CSV cũ thiếu `bbox_w` ⇒ không bịa ô,
    **ảnh crop ứng đúng frame** (fixture đổi màu theo frame), đổi `--margin`/`--ti-le-val`/`--chia-theo`
@@ -63,10 +65,21 @@ dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách đư�
 |---|---|---|---|
 | 1 | train/val theo **phiên** (val 6 phiên, 57 âm) | **0,7596 ± 0,0528** (gộp) · **0,827 ± 0,021** (trong phiên) | **CẬN TRÊN** — 6/6 phiên val có phiên **cùng ngày** trong train (cùng phòng, cùng vật, cùng ánh sáng) |
 | 2 | leave-one-**session**-out (10 phiên, 30 lần chạy) | **0,7391** (min **0,4198**, max 0,8932) | phiên mới, **cùng ngày** ⇒ vẫn lạc quan |
-| 3 | **leave-one-DAY-out** (3 ngày có âm, 9 lần chạy) | **0,5846** (min **0,4198**, max 0,7432) | **số đúng**: cảnh/ngày chưa thấy |
+| 3 | **leave-one-DAY-out** (3 ngày có âm, 9 lần chạy) | **0,5846** (min 0,4198 · max 0,7432 **trên ngày×seed**, không phải CI) | **số dùng được**: *ngày* chưa thấy (khả năng cao vẫn **cùng phòng** ⇒ còn là cận trên cho "cảnh mới") |
 
-Chi tiết tầng 3: ngày `1123` **0,4958** (≈ đoán mò) · `1124` 0,6890 · `1125` 0,5688.
-Mốc **NGỐ** (độ lệch chuẩn pixel): **0,5194**. Train AUC 0,95–0,98 ⇒ **overfit nặng**.
+Chi tiết tầng 3 — mỗi ngày kèm **mốc ngố đo trên CHÍNH fold đó** (0,5846 là **trung bình CỘNG theo
+ngày**; trọng số theo số mẫu sẽ là 0,6105 vì `1124` chiếm 1 134/2 406):
+
+| ngày | âm/dương | verifier | **ngố (cùng fold)** | chênh |
+|---|---|---|---|---|
+| `1123` | 65 / 429 | **0,4958** | 0,3732 | +0,123 |
+| `1124` | 208 / 926 | 0,6890 | 0,6745 | **+0,014** |
+| `1125` | 141 / 637 | 0,5688 | 0,5129 | +0,056 |
+| **trung bình** | | **0,5846** | **0,5202** | **+0,065** |
+
+⇒ Trên `1124` (ngày nhiều mẫu nhất) verifier **không tách được** khỏi mốc ngố. Train AUC 0,95–0,98 ⇒
+**overfit nặng**. Mốc ngố **0,5194** ở tầng 1 được đo trên tập val của cách chia-theo-phiên — **không**
+đem so chéo với tầng 3 (AGENTS §6).
 
 **Các khoản BỊ BỎ** (`data/verifier_metrics.json → bo_qua`):
 
@@ -111,16 +124,36 @@ so với artifact; (b) **rò rỉ cảnh** (mục ⚠️1) — không nêu trong
 `chia_theo` vào vân tay; port kiểm seek; per-session có CI; `so_anh_thieu`; 3 test giả (grep-source,
 `>= 1`, split 2 phiên 50 % xanh vô nghĩa) thay bằng test hành vi; bỏ import rác.
 
+**Vòng 3** (`advisor`, sau khi sửa vòng 2): **P0 = 0** nhưng **4 P1 mới do chính các sửa sinh ra**:
+(a) `--loao --nhom-theo ngay` lấy nhóm từ `m["nhom"]` do lúc **dựng** quyết định ⇒ manifest dựng
+`--chia-theo phien` thì nó lặng lẽ chạy theo PHIÊN mà artifact vẫn ghi `ngay`; (b) `--loao` **không** đi
+qua cổng ⇒ "không nhóm nào chấm được" vẫn ghi artifact + exit 0; (c) chỉ 1 nhóm ⇒ `ci95 = [auc, auc]`
+(rộng 0) bị đọc thành "rất chính xác"; (d) so 0,5846 với mốc ngố **của tập val khác** (so chéo artifact).
+Đã sửa cả bốn: `khoa()` dùng lại **một** `nhom_cua()`; thêm `kiem_tra_so_loao()`; `ci95 = None` khi
+`so_nhom < 2`; `ngong` đo **trên chính fold** và ghi từng ngày — chính vì (d) mà câu kết luận đổi thành
+"**chỉ hơn ngố 0,065 ⇒ chưa chứng minh được**" (mạnh hơn, không yếu đi).
+
 ## ➡️ Next steps
 
-- **Ưu tiên đổi hẳn**: dán ô ở bước SAI trên **NHIỀU NGÀY KHÁC NHAU** (hiện chỉ 3 ngày có âm). Thêm ô
-  trong cùng một ngày **không** cải thiện con số LOAO.
+- **Ưu tiên đổi hẳn**: dán ô ở bước SAI trên **NHIỀU NGÀY KHÁC NHAU** (hiện chỉ 3 ngày có âm ⇒ LOAO chỉ
+  có n = 3). Thêm ô trong cùng một ngày làm fold đó **chắc hơn** nhưng **không** thêm ngày nào — mà
+  chính số ngày mới là thứ đang thiếu để tuyên bố (chưa đo được điều này).
 - Nếu muốn dùng verifier **trong một phiên** (hiệu chỉnh tại chỗ bằng chính các bước đầu của phiên) thì
   đây là bài toán khác — cần đo riêng (LOO-session cho 0,74, chưa phải "tổng quát").
 - Muốn nói "verifier tốt hơn ngưỡng cos": phải chấm riêng nhóm "bám sang nền cùng tông" (cần cột gắn
   nhãn **ca** cho từng bước, chưa có) và trên ≥ 5 ngày.
 - Chỉ sau khi LODO ≥ 0,75 ổn định qua ≥ 2 lần dựng dataset mới lập **plan 3 ý kiến** (§9.2) để nối vào
   cổng nghi.
+
+## 🧷 Ghi chú tái lập
+
+- `data/verifier/**` (3 230 JPEG) **bị `.gitignore`** ⇒ con số tái lập được **trên máy có video gốc**;
+  từ clone sạch phải chạy `scripts/build_verifier_dataset.py` (32–79 s) trước.
+- Manifest dựng bằng `--chia-theo phien` (dùng để chứng minh "6/6 phiên val có phiên cùng ngày trong
+  train") **không còn trên đĩa**; luận điểm đó dẫn từ review vòng 2 và tái kiểm được bằng
+  `nhom_cua(phien, "ngay")` trên danh sách phiên.
+- `--chia-theo ngay` **ngẫu nhiên** thì val có thể **0 âm** (chỉ 3/9 ngày có âm) ⇒ đừng dùng cách đó để
+  "chia cho nhanh"; phải LOAO.
 
 ## 📚 Tài liệu tham khảo
 
