@@ -10,7 +10,8 @@
   Phím tắt (để dán nhanh, không phải rời tay khỏi bàn phím):
     1 = ĐÚNG   2 = SAI   3 = MẤT DẤU   4 = KHÔNG CÓ VẬT   0 = BỎ QUA
     Space = phát/dừng · ←/→ = về bước VOS trước/sau · ,/. = nudge ±0.2 s
-    b = vẽ ô đúng (kéo chuột) · Esc = bỏ ô đang vẽ · s = lưu nhãn + sang bước kế
+    E = vẽ ô đúng (kéo chuột; b cũ vẫn dùng được) · Esc = bỏ ô đang vẽ · s = lưu nhãn + sang bước kế
+    (phím E KHÔNG ăn khi đang gõ ô "Người gán": 'e' có trong hầu hết tên người — xem laPhimVeO)
 -->
 <html lang="vi">
 <head>
@@ -30,7 +31,7 @@
   video { display:block; width:100%; height:auto; }
   /* `pointer-events:none` để <video controls> còn bấm được (play/scrub/volume). Bản đầu để
      `auto` ⇒ canvas trong suốt phủ lên video, mọi click vào thanh tua bị nuốt (review độc lập P2).
-     Chỉ bật khi ĐANG vẽ ô (phím b). */
+     Chỉ bật khi ĐANG vẽ ô (phím E; `b` là bí danh). */
   canvas { position:absolute; inset:0; width:100%; height:100%; pointer-events:none; }
   canvas.dang-ve { pointer-events:auto; cursor:crosshair; }
   aside { display:flex; flex-direction:column; gap:10px; }
@@ -153,6 +154,15 @@ let state = { phien:null, frames:[], video:null, nguoi:null, daGan:[], nhanChon:
 // `buoc` = chỉ số bước mà ô được vẽ TRÊN ĐÓ. Đổi bước mà giữ ô là lưu toạ độ của bước trước cho bước
 // sau (review độc lập P1-2) — nên `capNhat` xoá ô ngay khi bước đổi.
 let veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+
+// Huỷ chế độ vẽ ô: phải gỡ ĐỦ ba thứ (cờ, banner hướng dẫn, class cho canvas nhận chuột). Bản cũ
+// `chonPhien` chỉ thay object `veO` ⇒ class `dang-ve` nằm lại ⇒ canvas nuốt chuột của thanh tua
+// (review 26-11, bug có sẵn).
+function huyVeO(){
+  veO.dang = false; veO.co = false; veO.buoc = null;
+  $('drawHint').style.display = 'none';
+  $('c').classList.remove('dang-ve');
+}
 const $ = id => document.getElementById(id);
 
 async function getJSON(url){ const r = await fetch(url); if(!r.ok) throw new Error(await r.text()); return r.json(); }
@@ -295,7 +305,7 @@ async function chonPhien(ten){
   state.dangTai = true;
   try {
     state.nhanChon = null;           // nhãn của phiên/bước trước KHÔNG được dùng cho phiên mới
-    veO = { dang:false, x0:0, y0:0, x1:0, y1:0, co:false, buoc:null };
+    huyVeO();                        // đổi phiên giữa lúc đang vẽ: gỡ luôn class + banner
     buocTruoc = null;                // ô của phiên A không được đi sang phiên B (review vòng 2, P1-B)
     const toi = ($('nguoi').value || '').trim();
     const d = await getJSON('/api/frames?phien=' + encodeURIComponent(ten)
@@ -642,6 +652,9 @@ $('nguoi').addEventListener('keydown', ev => {
 });
 
 document.addEventListener('keydown', ev => {
+  // Tổ hợp phím của TRÌNH DUYỆT phải đi qua: Ctrl+E (thanh địa chỉ), Ctrl+S (lưu trang),
+  // Cmd+* trên Mac. Không lọc thì `Ctrl+E` vào chế độ vẽ + `preventDefault` (review 26-11, P3).
+  if (ev.ctrlKey || ev.metaKey || ev.altKey) return;
   const trongOText = ['INPUT','TEXTAREA'].includes(ev.target.tagName);
   const k = ev.key;
   // Phím nhãn vẫn phải ăn kể cả khi con trỏ đang ở ô tên / select (người dùng không biết phải click
@@ -672,9 +685,7 @@ document.addEventListener('keydown', ev => {
     $('c').classList.add('dang-ve');        // chỉ LÚC NÀY canvas mới nhận chuột
     ev.preventDefault();
   } else if (k === 'Escape') {
-    veO.dang = false; veO.co = false; veO.buoc = null;
-    $('drawHint').style.display = 'none';
-    $('c').classList.remove('dang-ve');
+    huyVeO();
     veCanvas();
   }
 });

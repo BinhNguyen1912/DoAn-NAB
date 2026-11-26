@@ -295,9 +295,16 @@ let daTaoFileNhan = false   // để dọn khi chạy tay (không có `./run` d�
        'ô vẽ bị XOÁ khi sang bước khác (không lưu ô của bước trước)', JSON.stringify(rec3.bbox_dung))
 
   // 5c) `E` = phím vẽ ô, và gõ `e` trong ô TÊN không được biến thành vẽ
-  await page.keyboard.press('e')
+  await page.keyboard.press('Shift+E')           // E HOA = đúng phím người dùng bấm
   const dangVe = await page.$eval('#c', el => el.classList.contains('dang-ve'))
-  kiem(dangVe, 'phím E vào chế độ vẽ ô')
+  kiem(dangVe, 'phím E (hoa) vào chế độ vẽ ô')
+  await page.keyboard.press('Escape')
+  await page.waitForTimeout(200)
+  await page.keyboard.press('Control+e')         // Ctrl+E = thanh địa chỉ của Chrome: KHÔNG được vẽ
+  await page.waitForTimeout(200)
+  kiem(!(await page.$eval('#c', el => el.classList.contains('dang-ve'))),
+       'Ctrl+E KHÔNG vào chế độ vẽ (tổ hợp của trình duyệt phải đi qua)')
+  await page.keyboard.press('e')
   await page.keyboard.press('Escape')
   await page.waitForTimeout(200)
   kiem(!(await page.$eval('#c', el => el.classList.contains('dang-ve'))), 'Esc thoát chế độ vẽ')
