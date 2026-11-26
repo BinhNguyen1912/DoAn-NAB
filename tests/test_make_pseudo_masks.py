@@ -107,6 +107,13 @@ class TestQc:
         q = psm.qc(m, [10, 10, 50, 47], 64, 48)   # hộp chạm đáy nhưng KHÔNG chạm trái
         assert q["cham_bien"], "mask chạm trái mà hộp không ⇒ phải cảnh báo"
 
+    def test_nguong_hop_sat_mep_la_2px(self):
+        """Khoá `SAT_MEP = 2`: ngưỡng này đổi 1 → 2 px từng làm 337 → 274 cờ mà không ai ghi lại (review 27-11)."""
+        m = self._mask()
+        m[10:40, 0] = True                          # mask chỉ chạm mép TRÁI (không chạm trên/dưới)
+        assert not psm.qc(m, [2, 10, 40, 40], 64, 48)["cham_bien"], "hộp cách mép 2 px ⇒ coi là hộp sát"
+        assert psm.qc(m, [3, 10, 40, 40], 64, 48)["cham_bien"], "hộp cách mép 3 px ⇒ phải báo"
+
 
 class TestSinhMask:
     def test_dung_cache_khong_goi_model_lai(self, tmp_path, monkeypatch):
@@ -127,6 +134,35 @@ class TestSinhMask:
         ban_ghi, dem = psm.sinh_mask(EngineChet(), [rec], tmp_path, ghi_de=True)
         assert dem["co_cache"] == 1 and dem["moi"] == 0
         assert ban_ghi[0]["qc"]["ty_le_dien_tich"] == 1.0
+
+    def test_imwrite_loi_khong_cong_bo(self, tmp_path, monkeypatch):
+        """`cv2.imwrite` trả False (đĩa đầy/quyền) mà không kiểm ⇒ artifact công bố `so_mask` > số PNG thật.
+
+        Review 27-11 (P2): cổng "không công bố khi lỗi" trước chỉ bắt lỗi model/đọc frame.
+        """
+        rec = {"phien": "p", "buoc": 0, "frame_idx": 0, "box": [10, 10, 50, 40],
+               "nhan": "sai", "video_rong": 64, "video_cao": 48, "fps": 10.0}
+
+        class CapGia:
+            def set(self, *a):
+                return True
+            def get(self, *a):
+                return 0
+            def read(self):
+                return True, np.zeros((48, 64, 3), np.uint8)
+
+        class EngineOk:
+            def start(self, *a, **k):
+                m = np.zeros((48, 64), bool)
+                m[10:40, 10:50] = True
+                return type("KQ", (), {"mask": m})()
+
+        monkeypatch.setattr(psm.L, "_mo_video", lambda ten: (CapGia(), 10.0, 20, 64, 48))
+        monkeypatch.setattr(psm.L, "_CAP_LOCK", __import__("contextlib").nullcontext())
+        monkeypatch.setattr(psm.cv2, "imwrite", lambda *a, **k: False)
+        ban_ghi, dem = psm.sinh_mask(EngineOk(), [rec], tmp_path, ghi_de=True)
+        assert dem["loi_ghi"] == 1 and dem["moi"] == 0, dem
+        assert ban_ghi == [], "không được công bố mask chưa ghi được ra đĩa"
 
     def test_model_loi_khong_lam_chet_ca_lo(self, tmp_path, monkeypatch):
         """Một frame lỗi phải được ĐẾM vào `loi_mask` và bỏ qua, không ném ra ngoài.
@@ -168,20 +204,88 @@ class TestSinhMask:
         assert a != b, "đổi image_size mà vân tay không đổi ⇒ phục vụ mask sai cấu hình"
 
 
-class TestThuThap:
-    def test_khong_co_nhan_thi_tra_rong(self, tmp_path, monkeypatch):
-        monkeypatch.setattr(psm, "NHAN", tmp_path / "nhan")
-        (tmp_path / "nhan").mkdir()
-        viec, bo_qua = psm.thu_thap_muc_tieu()
-        assert viec == [] and bo_qua == {}
+class TestDonCache:
+    def test_xoa_va_DEM_file_khi_van_tay_doi(self, tmp_path):
+        import cv2
+        (tmp_path / ".dau_van_tay").write_text("cu", encoding="utf-8")
+        d = tmp_path / "p"
+        d.mkdir()
+        for i in range(3):
+            cv2.imwrite(str(d / f"{i:05d}.png"), np.zeros((4, 4), np.uint8))
+        assert psm.don_cache_neu_can(tmp_path, "moi") == 3
+        assert not d.exists() and (tmp_path / ".dau_van_tay").read_text() == "moi"
 
-    def test_phien_thieu_video_duoc_DEM(self, tmp_path, monkeypatch):
-        """Mục tiêu bị bỏ phải ĐẾM theo lý do (bản đầu im lặng ⇒ `loi_* = 0` bị đọc là 'không mất gì')."""
+    def test_van_tay_khong_doi_thi_khong_dung(self, tmp_path):
+        (tmp_path / ".dau_van_tay").write_text("same", encoding="utf-8")
+        (tmp_path / "p").mkdir()
+        assert psm.don_cache_neu_can(tmp_path, "same") == 0
+        assert (tmp_path / "p").is_dir()
+
+    def test_tu_choi_thu_muc_KHONG_phai_cache(self, tmp_path):
+        """`--out data` từng xoá `data/nhan` vì hàm dọn không kiểm đây có phải thư mục cache (review 27-11, P1)."""
+        quan_trong = tmp_path / "nhan"
+        quan_trong.mkdir()
+        (quan_trong / "p.jsonl").write_text("{}", encoding="utf-8")
+        with pytest.raises(ValueError):
+            psm.don_cache_neu_can(tmp_path, "moi")
+        assert (quan_trong / "p.jsonl").is_file(), "không được xoá thư mục không phải cache"
+
+    def test_thu_muc_chua_ton_tai_thi_tao_moi(self, tmp_path):
+        assert psm.don_cache_neu_can(tmp_path / "moi", "v1") == 0
+        assert (tmp_path / "moi" / ".dau_van_tay").read_text() == "v1"
+
+
+class TestThuThap:
+    def _dat(self, tmp_path, monkeypatch, dong: list[dict], co_csv=True, co_video=True):
         monkeypatch.setattr(psm, "NHAN", tmp_path / "nhan")
         monkeypatch.setattr(psm, "DATA", tmp_path)
         (tmp_path / "nhan").mkdir()
         (tmp_path / "nhan" / "p.jsonl").write_text(
-            json.dumps({"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]}) + "\n",
-            encoding="utf-8")
-        viec, bo_qua = psm.thu_thap_muc_tieu()
-        assert viec == [] and bo_qua.get("thieu_csv") == 1, bo_qua
+            "".join(json.dumps(r) + "\n" for r in dong), encoding="utf-8")
+        if co_csv:
+            (tmp_path / "p_metrics.csv").write_text("frame_idx\n0\n", encoding="utf-8")
+            monkeypatch.setattr(psm.L, "doc_phien_cached", lambda p: {"frames": [{}] * 3})
+        monkeypatch.setattr(psm.L, "_mo_video",
+                            lambda ten: (object(), 10.0, 3, 64, 48) if co_video else None)
+        monkeypatch.setattr(psm.L, "chi_so_khung", lambda phien, buoc: (0, None))
+
+    def test_khong_co_nhan_thi_tra_rong(self, tmp_path, monkeypatch):
+        monkeypatch.setattr(psm, "NHAN", tmp_path / "nhan")
+        (tmp_path / "nhan").mkdir()
+        viec, bo_qua, dong = psm.thu_thap_muc_tieu()
+        assert viec == [] and bo_qua == {"file": {}, "buoc": {}} and dong["tho"] == 0
+
+    def test_phien_thieu_csv_duoc_DEM(self, tmp_path, monkeypatch):
+        """Mục tiêu bị bỏ phải ĐẾM theo lý do (bản đầu im lặng ⇒ `loi_* = 0` bị đọc là 'không mất gì')."""
+        self._dat(tmp_path, monkeypatch, [{"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]}],
+                  co_csv=False)
+        viec, bo_qua, _ = psm.thu_thap_muc_tieu()
+        assert viec == [] and bo_qua["file"].get("thieu_csv") == 1, bo_qua
+
+    def test_phien_thieu_video_duoc_DEM(self, tmp_path, monkeypatch):
+        """Phải chạm nhánh `thieu_video`: bản đầu ca này thiếu luôn CSV nên nhánh không bao giờ chạy."""
+        self._dat(tmp_path, monkeypatch, [{"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]}],
+                  co_video=False)
+        viec, bo_qua, _ = psm.thu_thap_muc_tieu()
+        assert viec == [] and bo_qua["file"].get("thieu_video") == 1, bo_qua
+
+    def test_nhan_cuoi_bo_hop_duoc_DEM(self, tmp_path, monkeypatch):
+        """Bước TỪNG có hộp nhưng nhãn CUỐI bỏ `bbox_dung` bị `continue` im lặng (review 27-11)."""
+        self._dat(tmp_path, monkeypatch, [
+            {"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]},
+            {"buoc": 0, "nhan": "dung"},
+        ])
+        viec, bo_qua, dong = psm.thu_thap_muc_tieu()
+        assert viec == [] and bo_qua["buoc"].get("nhan_cuoi_khong_co_hop") == 1, bo_qua
+        assert dong == {"tho": 1, "trung_lap": 0, "cua_buoc_bi_bo": 1}, dong
+
+    def test_so_hoc_dong_va_buoc(self, tmp_path, monkeypatch):
+        """`tho − trung_lap − cua_buoc_bi_bo` phải bằng số BƯỚC sinh được ("1 490 dòng → 1 251 mask")."""
+        self._dat(tmp_path, monkeypatch, [
+            {"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]},
+            {"buoc": 0, "nhan": "sai", "bbox_dung": [2, 2, 9, 9]},
+            {"buoc": 1, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]},
+        ])
+        viec, _, dong = psm.thu_thap_muc_tieu()
+        assert len(viec) == 2, viec
+        assert dong == {"tho": 3, "trung_lap": 1, "cua_buoc_bi_bo": 0}, dong

@@ -29,7 +29,9 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import os
 import pathlib
+import shutil
 import subprocess
 import sys
 import time
@@ -40,7 +42,6 @@ sys.path.insert(0, str(ROOT / "scripts"))
 
 import cv2  # noqa: E402
 import numpy as np  # noqa: E402
-import os  # noqa: E402
 
 from build_verifier_dataset import doc_nhan_hieu_luc  # noqa: E402  (một định nghĩa "nhãn hiệu lực")
 from tools import label_ui as L  # noqa: E402             (một định nghĩa "bước → frame")
@@ -50,6 +51,7 @@ NHAN = DATA / "nhan"
 DEFAULT_OUT = DATA / "gt_pseudo"
 
 NHO, TRAN = 0.20, 1.50          # ngưỡng QC theo tỉ lệ diện tích mask / diện tích hộp
+SAT_MEP = 2                     # hộp cách mép khung ≤ 2 px thì coi là "hộp cũng sát mép" (xem `qc`)
 
 
 def git(*args: str) -> str:
@@ -87,19 +89,31 @@ def dau_van_tay(image_size: int, checkpoint: str, model_cfg: str) -> str:
     return h.hexdigest()[:16]
 
 
-def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> bool:
-    """Xoá mask của lần chạy trước nếu vân tay khác. Trả True nếu ĐÃ xoá."""
+def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> int:
+    """Xoá mask của lần chạy trước nếu vân tay khác. Trả **số file PNG đã xoá**.
+
+    Chỉ dọn khi `out_dir` đúng là thư mục cache do script này tạo (có `.dau_van_tay`) hoặc đang rỗng:
+    bản trước xoá **mọi** thư mục con của `--out` mà không kiểm ⇒ `--out data` xoá `data/nhan`, `--out .`
+    xoá cả `src/`, `.git/` (review độc lập 27-11, P1). `--limit` không được gọi hàm này.
+    """
     tep = out_dir / ".dau_van_tay"
-    cu = tep.read_text(encoding="utf-8").strip() if tep.is_file() else None
+    da_co_van_tay = tep.is_file()
+    cu = tep.read_text(encoding="utf-8").strip() if da_co_van_tay else None
     if cu == van_tay:
-        return False
-    import shutil
-    for con in list(out_dir.iterdir()) if out_dir.is_dir() else []:
-        if con.is_dir():                       # giữ file ở gốc (manifest/artifact không nằm ở đây)
-            shutil.rmtree(con, ignore_errors=True)
+        return 0
+    con = list(out_dir.iterdir()) if out_dir.is_dir() else []
+    thu_muc_con = [c for c in con if c.is_dir()]
+    if thu_muc_con and not da_co_van_tay:
+        raise ValueError(
+            f"{out_dir} có {len(thu_muc_con)} thư mục con nhưng KHÔNG có `.dau_van_tay` ⇒ không dám coi "
+            f"là thư mục cache để xoá ({', '.join(c.name for c in thu_muc_con[:3])}…). Dùng `--out` mới "
+            f"hoặc xoá tay.")
+    so_file = sum(1 for d in thu_muc_con for _ in d.rglob("*.png"))
+    for d in thu_muc_con:                     # giữ file ở gốc (manifest/artifact không nằm ở đây)
+        shutil.rmtree(d, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     tep.write_text(van_tay, encoding="utf-8")
-    return cu is not None
+    return so_file
 
 
 def o_hop_le(b: object, rong: int, cao: int) -> bool:
@@ -116,7 +130,12 @@ def o_hop_le(b: object, rong: int, cao: int) -> bool:
 
 
 def qc(mask: np.ndarray, box: list[int], rong: int, cao: int) -> dict:
-    """Cờ nghi ngờ cho một mask. Trả dict — `rong` là cờ boolean, số liệu để đọc lại."""
+    """Cờ nghi ngờ cho một mask. Trả dict — `rong` là cờ boolean, số liệu để đọc lại.
+
+    `cham_bien` coi mép HỘP là "sát mép khung" khi cách ≤ `SAT_MEP` px (2 px: hộp do người vẽ trên ảnh
+    phóng to rồi làm tròn về pixel video nên hộp "chạm" mép thường lệch 1–2 px — ngưỡng 1 px báo oan 63
+    ca trên 1 251 mask, đo 27-11).
+    """
     dien_tich = int(mask.sum())
     x1, y1, x2, y2 = box
     d_h = max(1, (x2 - x1) * (y2 - y1))
@@ -128,65 +147,96 @@ def qc(mask: np.ndarray, box: list[int], rong: int, cao: int) -> dict:
     # (review độc lập 26-11, P2).
     phia = {"tren": mask[0, :].any(), "duoi": mask[-1, :].any(),
             "trai": mask[:, 0].any(), "phai": mask[:, -1].any()}
-    hop_sat = {"tren": y1 <= 2, "duoi": y2 >= cao - 2, "trai": x1 <= 2, "phai": x2 >= rong - 2}
+    hop_sat = {"tren": y1 <= SAT_MEP, "duoi": y2 >= cao - SAT_MEP,
+               "trai": x1 <= SAT_MEP, "phai": x2 >= rong - SAT_MEP}
     co["cham_bien"] = any(phia[k] and not hop_sat[k] for k in phia)
     co["nghi"] = co["rong"] or co["nho"] or co["tran"] or co["cham_bien"]
     return co
 
 
-def thu_thap_muc_tieu() -> tuple[list[dict], dict]:
-    """Mọi (phiên, bước) có `bbox_dung` ⇒ (việc cần làm, đếm lý do BỊ BỎ).
+def thu_thap_muc_tieu() -> tuple[list[dict], dict, dict]:
+    """Mọi (phiên, bước) có `bbox_dung` ⇒ (việc cần làm, đếm lý do BỊ BỎ, đếm DÒNG nhãn).
 
     Đếm là bắt buộc: `so_o_hop_le` là mẫu số SAU lọc, nên nếu không đếm thì câu "1 490 ô → 1 251" không
     kiểm được và `loi_* = 0` bị đọc thành "không mất gì" (review độc lập 26-11, P2).
-    """
-    viec, bo_qua = [], {}
 
-    def bo(khoa: str) -> None:
-        bo_qua[khoa] = bo_qua.get(khoa, 0) + 1
+    Lý do bỏ phải **tách đơn vị**: `file` đếm theo *phiên* (không đọc được CSV/video ⇒ không biết phiên
+    đó có bao nhiêu bước), `buoc` đếm theo *bước*. Bản trước gộp hai đơn vị vào một dict rồi cộng dồn ⇒
+    một phiên thiếu CSV chỉ bị trừ 1 còn 59 bước của nó bị tính thành "gộp bước" (review 27-11, P2).
+    """
+    viec = []
+    bo_qua: dict[str, dict[str, int]] = {"file": {}, "buoc": {}}
+    dong_theo_buoc: dict[tuple[str, int], int] = {}
+
+    def bo(muc: str, khoa: str) -> None:
+        bo_qua[muc][khoa] = bo_qua[muc].get(khoa, 0) + 1
 
     for tep in sorted(NHAN.glob("*.jsonl")):
         phien = tep.stem
+        for dong in tep.read_text(encoding="utf-8").splitlines():
+            if not dong.strip():
+                continue
+            try:
+                r = json.loads(dong)
+            except ValueError:
+                continue
+            if isinstance(r, dict) and r.get("bbox_dung"):
+                k = (phien, int(r.get("buoc") or 0))
+                dong_theo_buoc[k] = dong_theo_buoc.get(k, 0) + 1
         csv_p = DATA / f"{phien}_metrics.csv"
         if not csv_p.is_file():
-            bo("thieu_csv")
+            bo("file", "thieu_csv")
             continue
         try:
             d = L.doc_phien_cached(csv_p)
         except (OSError, ValueError):
-            bo("csv_hong")
+            bo("file", "csv_hong")
             continue
         mo = L._mo_video(phien)
         if not mo:
-            bo("thieu_video")
+            bo("file", "thieu_video")
             continue
         fps, video_rong, video_cao = mo[1], mo[3], mo[4]
         for buoc, r in sorted(doc_nhan_hieu_luc(tep).items()):
             box = r.get("bbox_dung")
             if not box:
+                if (phien, buoc) in dong_theo_buoc:   # bước TỪNG có hộp nhưng nhãn CUỐI bỏ hộp
+                    bo("buoc", "nhan_cuoi_khong_co_hop")
                 continue
             if not 0 <= buoc < len(d["frames"]):
-                bo("buoc_ngoai_dai")
+                bo("buoc", "buoc_ngoai_dai")
                 continue
             box = [int(round(float(v))) for v in box]
             if not o_hop_le(box, video_rong, video_cao):
-                bo("hop_khong_hop_le")
+                bo("buoc", "hop_khong_hop_le")
                 continue
             idx, _loi = L.chi_so_khung(phien, buoc)
             if idx is None:
-                bo("khong_anh_xa_duoc_frame")
+                bo("buoc", "khong_anh_xa_duoc_frame")
                 continue
             viec.append({"phien": phien, "buoc": buoc, "frame_idx": idx, "box": box,
                          "nhan": r.get("nhan"), "video_rong": video_rong,
                          "video_cao": video_cao, "fps": fps,
                          "check_do": r.get("che_do")})
-    return viec, bo_qua
+    return viec, bo_qua, dem_dong(dong_theo_buoc, viec)
+
+
+def dem_dong(dong_theo_buoc: dict[tuple[str, int], int], viec: list[dict]) -> dict:
+    """Đối chiếu 1 490 DÒNG nhãn với 1 251 BƯỚC sinh được mask — hai đơn vị khác nhau, phải tách.
+
+    `trung_lap` = dòng của bước CÒN hiệu lực bị dòng sau thay thế; `cua_buoc_bi_bo` = dòng của bước
+    không sinh được mask (nhãn cuối bỏ hộp, hộp sai, không ánh xạ được frame). `tho − trung_lap −
+    cua_buoc_bi_bo == số bước làm được` ⇒ câu "1 490 ô → 1 251 mask" kiểm được bằng số học.
+    """
+    tho = sum(dong_theo_buoc.values())
+    giu = sum(dong_theo_buoc.get((v["phien"], v["buoc"]), 0) for v in viec)
+    return {"tho": tho, "trung_lap": giu - len(viec), "cua_buoc_bi_bo": tho - giu}
 
 
 def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> tuple[list, dict]:
     """Chạy SAM 2 cho từng mục tiêu. Trả (bản ghi, đếm)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    ban_ghi, dem = [], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0, "loi_mask": 0}
+    ban_ghi, dem = [], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0, "loi_mask": 0, "loi_ghi": 0}
     tong_ms = 0.0
     for k, v in enumerate(viec, 1):
         phien, buoc = v["phien"], v["buoc"]
@@ -228,14 +278,20 @@ def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> 
             if dem["loi_mask"] <= 3:
                 print(f"  LỖI model {phien}#{buoc}: {type(e).__name__}: {e}", file=sys.stderr)
             continue
-        tong_ms += (time.perf_counter() - t0) * 1000
-        dem["moi"] += 1
         rec = dict(v)
         rec["qc"] = qc(mask, v["box"], v["video_rong"], v["video_cao"])
         if ghi_de:
             thu_muc.mkdir(parents=True, exist_ok=True)
-            cv2.imwrite(str(dich), (mask.astype(np.uint8) * 255))
+            # `cv2.imwrite` trả False khi đĩa đầy/quyền hỏng; bỏ qua giá trị trả thì artifact công bố
+            # `so_mask` > số PNG thật trên đĩa mà `loi_* = 0` (review 27-11, P2).
+            if not cv2.imwrite(str(dich), (mask.astype(np.uint8) * 255)):
+                dem["loi_ghi"] += 1
+                if dem["loi_ghi"] <= 3:
+                    print(f"  LỖI ghi {dich}", file=sys.stderr)
+                continue
             rec["mask"] = str(dich.relative_to(out_dir))
+        tong_ms += (time.perf_counter() - t0) * 1000
+        dem["moi"] += 1
         ban_ghi.append(rec)
         if k % 50 == 0:
             print(f"  {k}/{len(viec)} … {tong_ms / max(dem['moi'], 1):.0f} ms/mask", file=sys.stderr)
@@ -258,11 +314,7 @@ def main() -> int:
     out_dir = pathlib.Path(args.out)
     if not out_dir.is_absolute():
         out_dir = ROOT / out_dir
-    so_dong_tho = sum(1 for t in sorted(NHAN.glob("*.jsonl"))
-                      for r in (json.loads(x) for x in t.read_text(encoding="utf-8").splitlines()
-                                if x.strip())
-                      if r.get("bbox_dung"))
-    viec, bo_qua = thu_thap_muc_tieu()
+    viec, bo_qua, dem_dong_nhan = thu_thap_muc_tieu()
     if args.limit:
         viec = viec[:args.limit]
     if not viec:
@@ -297,9 +349,15 @@ def main() -> int:
         return 1
 
     van_tay = dau_van_tay(args.image_size, args.checkpoint, args.model_cfg)
-    da_xoa = don_cache_neu_can(out_dir, van_tay)
-    if da_xoa:
-        print("vân tay nguồn/tham số đổi ⇒ đã xoá cache mask cũ", file=sys.stderr)
+    so_da_xoa = 0
+    if not args.limit:      # `--limit` chỉ đo tốc độ ⇒ không được xoá cache (review 27-11, P1)
+        try:
+            so_da_xoa = don_cache_neu_can(out_dir, van_tay)
+        except ValueError as e:
+            print(f"LỖI: {e} — không công bố số", file=sys.stderr)
+            return 1
+        if so_da_xoa:
+            print(f"vân tay nguồn/tham số đổi ⇒ đã xoá {so_da_xoa} mask cũ", file=sys.stderr)
 
     t_lo = time.perf_counter()
     ban_ghi, dem = sinh_mask(engine, viec, out_dir, ghi_de=not args.limit)
@@ -322,7 +380,7 @@ def main() -> int:
     phan_bo = {"n": len(ty),
                "median": round(float(sorted(ty)[len(ty) // 2]), 3) if ty else None,
                "p05": _pct(ty, 0.05), "p95": _pct(ty, 0.95),
-               "ghi_chu": "p05/p95 chỉ phát khi n >= 30 (AGENTS §6)"}
+               "ghi_chu": "n = số mask KHÔNG rỗng; p05/p95 chỉ phát khi n >= 30 (AGENTS §6)"}
     payload = {
         "schema": 1,
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
@@ -339,7 +397,9 @@ def main() -> int:
         "co_cache": dem["co_cache"],
         "loi_doc_frame": dem["loi_doc_frame"],
         "loi_mask": dem["loi_mask"],
+        "loi_ghi": dem["loi_ghi"],
         "ms_moi_mask": dem["ms_moi_mask"],
+        "do_toc_do": dem["moi"] > 0,
         "qc_dem": dem_co,
         "so_mask_nhieu_co": so_nhieu_co,
         "so_mask_nghi": sum(1 for r in ban_ghi if r["qc"]["nghi"]),
@@ -347,26 +407,33 @@ def main() -> int:
         "so_frame_khac_nhau": len({(r["phien"], r["frame_idx"]) for r in ban_ghi}),
         "so_phien": len({r["phien"] for r in ban_ghi}),
         "giay_tong": giay_tong,
+        "ghi_chu_giay_tong": ("gồm cả thời gian đọc cache; khi `do_toc_do` false thì đây KHÔNG phải thời "
+                              "gian sinh mask (đừng lấy giay_tong / so_mask ra làm ms/mask)"),
         "dau_van_tay": van_tay,
-        "da_xoa_cache_cu": da_xoa,
-        "bo_qua_muc_tieu": bo_qua,
-        "so_o_co_bbox": sum(bo_qua.values()) + len(viec),
-        "so_dong_co_bbox_tho": so_dong_tho,
-        "mat_do_gop_buoc": max(0, so_dong_tho - (sum(bo_qua.values()) + len(viec))),
-        "ghi_chu_gop_buoc": (
-            "Nhãn là append-only: một bước có thể có NHIỀU dòng có `bbox_dung`; nhãn/dòng CUỐI của bước "
-            "mới là hiệu lực (`tong_hop` cũng gộp như vậy) ⇒ số hộp thô > số mask sinh được là bình "
-            "thường, KHÔNG phải mất dữ liệu."),
+        "so_mask_da_xoa": so_da_xoa,
+        "da_xoa_cache_cu": so_da_xoa > 0,
+        "bo_qua_file": bo_qua["file"],
+        "bo_qua_buoc": bo_qua["buoc"],
+        "so_o_co_bbox": len(viec) + sum(bo_qua["buoc"].values()),
+        "so_dong_co_bbox_tho": dem_dong_nhan["tho"],
+        "so_dong_trung_lap": dem_dong_nhan["trung_lap"],
+        "so_dong_cua_buoc_bi_bo": dem_dong_nhan["cua_buoc_bi_bo"],
+        "ghi_chu_dem_dong": (
+            "`so_dong_co_bbox_tho − so_dong_trung_lap − so_dong_cua_buoc_bi_bo` = số BƯỚC sinh được mask. "
+            "Nhãn là append-only nên một bước có thể có NHIỀU dòng có `bbox_dung`: dòng CUỐI mới hiệu lực "
+            "(`tong_hop` gộp như vậy) ⇒ `trung_lap` là dòng bị thay thế, KHÔNG phải mất dữ liệu. "
+            "`bo_qua_file` đếm theo PHIÊN (không biết số bước của phiên đó), `bo_qua_buoc` đếm theo BƯỚC."),
         "chiet_giai": (
             "Đây là MASK GIẢ: SAM 2 tự cắt từ HỘP của người dùng, không phải GT do người tô. Dùng để "
             "mở rộng phép đo và làm dữ liệu sửa tay; KHÔNG dùng để tuyên bố chất lượng model (mask do "
             "chính model sinh). `qc_dem` đếm các ca nghi (rỗng / <20% / >150% diện tích hộp / chạm "
             "biên khung mà hộp không chạm) — phải xem bằng mắt trước khi coi là GT."),
     }
-    # P2-9: lỗi model / đọc frame ⇒ KHÔNG công bố, và KHÔNG ghi đè manifest + artifact đã có.
-    if dem["loi_mask"] or dem["loi_doc_frame"] or len(ban_ghi) < len(viec):
+    # P2-9: lỗi model / đọc frame / GHI file ⇒ KHÔNG công bố, và KHÔNG ghi đè manifest + artifact đã có.
+    if (dem["loi_mask"] or dem["loi_doc_frame"] or dem["loi_ghi"]
+            or len(ban_ghi) < len(viec)):
         print(f"KHÔNG CÔNG BỐ — lỗi model {dem['loi_mask']}, lỗi đọc frame {dem['loi_doc_frame']}, "
-              f"mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
+              f"lỗi ghi {dem['loi_ghi']}, mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
         return 1
 
     if not args.limit:
