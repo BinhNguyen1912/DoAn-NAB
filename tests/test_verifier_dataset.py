@@ -92,7 +92,8 @@ class TestAuc:
         nhom = np.array(["a", "a", "a", "a", "b", "b"])
         kq = train.auc_tung_phien(y, diem, nhom)
         assert kq["tung_phien"]["a"]["auc"] == 1.0
-        assert kq["tung_phien"]["b"] == {"n": 2, "am": 0, "duong": 2, "auc": None}
+        assert kq["tung_phien"]["b"]["auc"] is None and kq["tung_phien"]["b"]["am"] == 0
+        assert kq["tung_phien"]["b"]["n"] == 2
         assert kq["so_phien_co_hai_lop"] == 1
         assert kq["auc_trung_binh_phien"] == 1.0, "phiên thiếu lớp không được kéo trung bình"
 
@@ -126,16 +127,92 @@ class TestAuc:
                                   "so_mau": {"val_am": 3}}), "TB NaN phải bị chặn"
 
     def test_model_eval_tat_dinh(self):
-        """`eval()` phải cho cùng output cho cùng input; `chay_mot_seed` còn raise nếu lệch."""
+        """Phải là test HÀNH VI: `train()` mode cho kết quả khác (BatchNorm), `eval()` cho lặp lại.
+
+        Bản đầu chỉ grep chuỗi trong source ⇒ luôn xanh (review 26-11 vòng 2, P3).
+        """
         import torch as th
-        m = train.Verifier().eval()
-        x = th.zeros(2, 3, 64, 64)
+        m = train.Verifier()
+        x = th.randn(8, 3, 32, 32)
+        m.train()
         with th.no_grad():
-            a, b = m(x).numpy(), m(x).numpy()
-        assert np.array_equal(a, b)
-        import inspect
-        assert "model.eval() không tất định" in inspect.getsource(train.chay_mot_seed), \
-            "phải ASSERT (raise), không chỉ ghi số như bản đầu"
+            a = m(x).numpy()
+        m.eval()
+        with th.no_grad():
+            b, c = m(x).numpy(), m(x).numpy()
+        assert np.array_equal(b, c), "eval() phải tất định"
+        assert not np.allclose(a, b, atol=1e-6), \
+            "train() != eval() nghĩa là BatchNorm CÓ tác dụng — nếu bằng nhau thì test này vô nghĩa"
+
+    def test_chay_mot_seed_raise_khi_khong_tat_dinh(self, monkeypatch):
+        """Nếu `eval()` lệch giữa hai lần chấm thì `chay_mot_seed` phải RAISE, không ghi số."""
+        goi = {"n": 0}
+
+        class LuaDao(train.Verifier):
+            def forward(self, x):
+                goi["n"] += 1
+                # lệch 1e-3 mỗi lần gọi ⇒ hai lần chấm "cùng" ảnh KHÔNG giống nhau
+                return super().forward(x) + goi["n"] * 1e-3
+
+        monkeypatch.setattr(train, "Verifier", LuaDao)
+
+        class A:
+            epochs, batch, lr = 1, 4, 1e-3
+        tr = [{"_anh": pathlib.Path("x"), "nhan": 1, "phien": "p"}]
+        with pytest.raises(AssertionError):
+            train.chay_mot_seed(tr * 4, tr * 2, A, 0)
+
+    def test_ci95_none_khi_chi_mot_nhom(self):
+        """1 nhóm ⇒ mọi resample trùng nhau ⇒ ci95 = [auc, auc] (rộng 0) đọc thành "rất chính xác".
+
+        Đây là dạng "0/None ≠ đã đo": không đo được độ bất định thì phải trả None (review vòng 3, P1).
+        """
+        kq = train.auc_theo_cum([0, 1, 0, 1], [0.1, 0.9, 0.2, 0.8], ["mot"] * 4, n_lan=50, seed=0)
+        assert kq["ci95"] is None, kq["ci95"]
+        assert kq["so_nhom"] == 1
+        nhieu = train.auc_theo_cum([0, 1, 0, 1], [0.1, 0.9, 0.2, 0.8], ["a", "a", "b", "b"],
+                                   n_lan=50, seed=0)
+        assert nhieu["ci95"] is not None and nhieu["so_nhom"] == 2
+
+    def test_loao_bo_han_nhom_va_gom_theo_ngay(self, monkeypatch):
+        """`--loao --nhom-theo ngay` phải bỏ HẲN nhóm (ngày) khỏi train và gom theo tiền tố ngày.
+
+        Bản trước lấy `m["nhom"]` do lúc DỰNG quyết định ⇒ manifest dựng `--chia-theo phien` thì
+        `--loao` lặng lẽ chạy theo PHIÊN mà artifact vẫn ghi `nhom_theo: "ngay"` (review vòng 3, P1).
+        """
+        import types
+        mau = ([{"phien": "demoip_1124-110536", "nhom": "demoip_1124-110536", "nhan": 0}] * 20
+               + [{"phien": "demoip_1124-110536", "nhom": "demoip_1124-110536", "nhan": 1}] * 20
+               + [{"phien": "demoip_1124-141352", "nhom": "demoip_1124-141352", "nhan": 0}] * 20
+               + [{"phien": "demoip_1124-141352", "nhom": "demoip_1124-141352", "nhan": 1}] * 20
+               + [{"phien": "fast_1029-193552", "nhom": "fast_1029-193552", "nhan": 1}] * 40)
+        da_goi = []
+
+        def gia(tr, va, a, sd):
+            da_goi.append((sd, {x["phien"] for x in va}, {x["phien"] for x in tr}))
+            return {"val": {"auc": 0.8, "ci95": None, "so_nhom": 1}, "ngong": {"auc": 0.5},
+                    "seed": sd, "giay": 0.0, "train_auc": 0.9, "theo_phien": {}, "lich": []}
+
+        monkeypatch.setattr(train, "chay_mot_seed", gia)
+        args = types.SimpleNamespace(nhom_theo="ngay", min_am_nhom=15, seeds="0,1")
+        kq = train.chay_loao(mau, args, [0, 1])
+        # `nhom` trong manifest là TÊN PHIÊN (dựng bằng --chia-theo phien) ⇒ phải gom lại thành NGÀY
+        assert set(kq["nhom_cham_duoc"]) == {"1124"}, kq["nhom_cham_duoc"]
+        for _sd, ten_va, ten_tr in da_goi:
+            assert ten_va == {"demoip_1124-110536", "demoip_1124-141352"}
+            assert not (ten_va & ten_tr), "nhóm được chấm KHÔNG được có mặt trong train"
+
+    def test_cong_loao_chan_khi_khong_co_so(self):
+        """`--loao` từng KHÔNG đi qua cổng ⇒ "không nhóm nào chấm được" vẫn ghi artifact + exit 0."""
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": [], "so_lan_chay": 0,
+                                       "auc_trung_binh": None}), "rỗng phải bị chặn"
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": ["1124"], "so_lan_chay": 3,
+                                       "auc_trung_binh": float("nan")}), "NaN phải bị chặn"
+        assert train.kiem_tra_so_loao({"nhom_cham_duoc": ["1124"], "so_lan_chay": 3,
+                                       "auc_trung_binh": 0.6, "theo_ngay": {"1124": {}}})
+        ok = {"nhom_cham_duoc": ["1124"], "so_lan_chay": 3, "auc_trung_binh": 0.6,
+              "theo_ngay": {"1124": {"auc_theo_seed": [0.6]}}}
+        assert train.kiem_tra_so_loao(ok) == []
 
     def test_ngong_dung_do_lech_chuan(self, tmp_path):
         tron = tmp_path / "tron.jpg"
@@ -268,7 +345,6 @@ class TestDungDataset:
         assert kq["so_mau"] == 6
         for d in (tmp_path / "out").rglob("*.jpg"):
             assert cv2.imread(str(d)).shape == (64, 64, 3)
-        assert len(kq["theo_split"]) >= 1
 
     def test_mot_phien_khong_nam_o_ca_hai_split(self, fixture):
         tmp_path, _, _ = fixture
@@ -306,12 +382,9 @@ class TestDungDataset:
         tmp_path, data, nhan = fixture
         (nhan / "trong.jsonl").write_text(
             json.dumps({"buoc": 0, "nhan": "khong_co_vat"}) + "\n", encoding="utf-8")
-        import src.worker as W
-        from tools import label_ui as L
         import shutil
         shutil.copy(data / "moi_phien.mp4", data / "trong.mp4")
         shutil.copy(data / "moi_phien_metrics.csv", data / "trong_metrics.csv")
-        _ = (W, L)
         kq = build.dung_dataset(tmp_path / "out", 0.25, 0.15)
         assert "trong" in kq["phien_0_mau"], kq["phien_0_mau"]
 
@@ -339,6 +412,40 @@ class TestDungDataset:
         kq = build.dung_dataset(tmp_path / "out", 0.25, 0.15)
         assert sorted(kq["phien_nhieu_nguoi_dan"].get("moi_phien", [])) == ["binh", "nguoi_thu_hai"], \
             kq["phien_nhieu_nguoi_dan"]
+
+    def test_nhom_cua_theo_ngay(self):
+        assert build.nhom_cua("demoip_1124-141352", "ngay") == "1124"
+        assert build.nhom_cua("fast_1029-193552", "ngay") == "1029"
+        assert build.nhom_cua("camtest", "ngay") == "camtest"      # không có ngày ⇒ giữ nguyên
+        assert build.nhom_cua("demoip_1124-141352", "phien") == "demoip_1124-141352"
+
+    def test_vân_tay_gom_cach_chia_va_ti_le(self, fixture):
+        """Đổi `--ti-le-val`/`--chia-theo` mà vân tay không đổi thì ảnh một phiên nằm ở CẢ HAI
+        thư mục split ⇒ audit sai (review 26-11 vòng 2, P2)."""
+        tmp_path, _, _ = fixture
+        kq1 = build.dung_dataset(tmp_path / "out", 0.25, 0.15, "phien")
+        kq2 = build.dung_dataset(tmp_path / "out", 0.5, 0.15, "phien")
+        kq3 = build.dung_dataset(tmp_path / "out", 0.25, 0.15, "ngay")
+        assert kq2["da_xoa_cache_cu"] is True and kq2["dau_van_tay"] != kq1["dau_van_tay"]
+        assert kq3["dau_van_tay"] != kq1["dau_van_tay"]
+
+    def test_anh_crop_ung_dung_frame(self, fixture):
+        """Fixture đổi MÀU theo số frame ⇒ phải kiểm được crop có đúng frame của bước.
+
+        Đây là test duy nhất bắt được lỗi "seek trả keyframe gần nhất" (review 26-11 vòng 2, P2).
+        """
+        import cv2
+        tmp_path, data, nhan = fixture
+        build.dung_dataset(tmp_path / "out", 0.25, 0.0, "phien")
+        man = [json.loads(x) for x in
+               (tmp_path / "out" / "manifest.jsonl").read_text(encoding="utf-8").splitlines() if x]
+        for m in man[:4]:
+            anh = cv2.imread(str(tmp_path / "out" / m["anh"]))
+            # `_video` tô khung bằng k*12 % 255 ⇒ kênh B (cv2) ~ frame_idx*12
+            kenh_b = int(anh[:, :, 0].mean())
+            ky_vong = (m["frame_idx"] * 12) % 255
+            assert abs(kenh_b - ky_vong) <= 12, \
+                f"ảnh không ứng frame {m['frame_idx']}: B={kenh_b} kỳ vọng {ky_vong}"
 
     def test_phien_thieu_video_bi_bao_khong_im_lang(self, fixture):
         """Thiếu nguồn ⇒ phải nêu tên phiên, KHÔNG được lặng lẽ ra dataset nhỏ hơn."""

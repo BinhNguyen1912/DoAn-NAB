@@ -1,0 +1,234 @@
+{
+ "schema": 1,
+ "che_do": "loao",
+ "do_luc": "2026-11-26T19:25:40+0700",
+ "lenh": "scripts/train_verifier.py --loao --nhom-theo phien --metrics data/verifier_loao_phien_metrics.json",
+ "git_rev": "1301a29",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "epochs": 12,
+ "batch": 64,
+ "lr": 0.001,
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "min_am_nhom": 15,
+ "nhom_theo": "phien",
+ "so_mau_tong": 3230,
+ "so_anh_thieu": 0,
+ "nhom_cham_duoc": [
+  "demoip_1123-162154",
+  "demoip_1124-110536",
+  "demoip_1124-125109",
+  "demoip_1124-141352",
+  "demoip_1124-144057",
+  "demoip_1124-162458",
+  "demoip_1124-193026",
+  "demoip_1125-085815",
+  "demoip_1125-100334",
+  "demoip_1125-121456"
+ ],
+ "theo_ngay": {
+  "demoip_1123-162154": {
+   "so_mau": 494,
+   "am": 65,
+   "duong": 429,
+   "auc_theo_seed": [
+    0.4406,
+    0.4198,
+    0.627
+   ],
+   "auc_trung_binh": 0.4958,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.3732,
+    0.3732,
+    0.3732
+   ],
+   "ngong_auc_trung_binh": 0.3732
+  },
+  "demoip_1124-110536": {
+   "so_mau": 172,
+   "am": 34,
+   "duong": 138,
+   "auc_theo_seed": [
+    0.7536,
+    0.7555,
+    0.6887
+   ],
+   "auc_trung_binh": 0.7326,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.5281,
+    0.5281,
+    0.5281
+   ],
+   "ngong_auc_trung_binh": 0.5281
+  },
+  "demoip_1124-125109": {
+   "so_mau": 234,
+   "am": 44,
+   "duong": 190,
+   "auc_theo_seed": [
+    0.7257,
+    0.8322,
+    0.7349
+   ],
+   "auc_trung_binh": 0.7643,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.789,
+    0.789,
+    0.789
+   ],
+   "ngong_auc_trung_binh": 0.789
+  },
+  "demoip_1124-141352": {
+   "so_mau": 87,
+   "am": 19,
+   "duong": 68,
+   "auc_theo_seed": [
+    0.8382,
+    0.8932,
+    0.8754
+   ],
+   "auc_trung_binh": 0.8689,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.7005,
+    0.7005,
+    0.7005
+   ],
+   "ngong_auc_trung_binh": 0.7005
+  },
+  "demoip_1124-144057": {
+   "so_mau": 194,
+   "am": 50,
+   "duong": 144,
+   "auc_theo_seed": [
+    0.8311,
+    0.8522,
+    0.8485
+   ],
+   "auc_trung_binh": 0.8439,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.8014,
+    0.8014,
+    0.8014
+   ],
+   "ngong_auc_trung_binh": 0.8014
+  },
+  "demoip_1124-162458": {
+   "so_mau": 129,
+   "am": 23,
+   "duong": 106,
+   "auc_theo_seed": [
+    0.774,
+    0.8728,
+    0.8614
+   ],
+   "auc_trung_binh": 0.8361,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.8519,
+    0.8519,
+    0.8519
+   ],
+   "ngong_auc_trung_binh": 0.8519
+  },
+  "demoip_1124-193026": {
+   "so_mau": 318,
+   "am": 38,
+   "duong": 280,
+   "auc_theo_seed": [
+    0.7817,
+    0.7579,
+    0.7803
+   ],
+   "auc_trung_binh": 0.7733,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.5847,
+    0.5847,
+    0.5847
+   ],
+   "ngong_auc_trung_binh": 0.5847
+  },
+  "demoip_1125-085815": {
+   "so_mau": 309,
+   "am": 39,
+   "duong": 270,
+   "auc_theo_seed": [
+    0.7141,
+    0.7663,
+    0.7527
+   ],
+   "auc_trung_binh": 0.7444,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.475,
+    0.475,
+    0.475
+   ],
+   "ngong_auc_trung_binh": 0.475
+  },
+  "demoip_1125-100334": {
+   "so_mau": 167,
+   "am": 36,
+   "duong": 131,
+   "auc_theo_seed": [
+    0.6796,
+    0.6624,
+    0.6648
+   ],
+   "auc_trung_binh": 0.6689,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.6228,
+    0.6228,
+    0.6228
+   ],
+   "ngong_auc_trung_binh": 0.6228
+  },
+  "demoip_1125-121456": {
+   "so_mau": 292,
+   "am": 62,
+   "duong": 230,
+   "auc_theo_seed": [
+    0.7255,
+    0.5715,
+    0.6917
+   ],
+   "auc_trung_binh": 0.6629,
+   "ci95": null,
+   "so_nhom": 1,
+   "ngong_auc_theo_seed": [
+    0.4457,
+    0.4457,
+    0.4457
+   ],
+   "ngong_auc_trung_binh": 0.4457
+  }
+ },
+ "so_seed_loai_nan": 0,
+ "ngong_auc_trung_binh": 0.6172,
+ "auc_trung_binh_ngay": 0.7391,
+ "la_trung_binh_cong_theo_ngay": true,
+ "auc_trung_binh": 0.7391,
+ "auc_min": 0.4198,
+ "auc_max": 0.8932,
+ "so_lan_chay": 30,
+ "chiet_giai": "Leave-one-DAY-out: mỗi lượt bỏ hẳn một ngày khỏi train rồi chấm trên đúng ngày đó ⇒ đây là con số DUY NHẤT đo được 'tổng quát sang ngày/cảnh mới' với dữ liệu hiện có. Vẫn là cận trên vì 3 ngày 1123/1124/1125 đều quay trong cùng một phòng."
+}

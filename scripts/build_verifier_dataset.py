@@ -116,14 +116,14 @@ def noi_o(box: list[int], rong: int, cao: int, margin: float = MARGIN) -> tuple[
     return (x1, y1, x2, y2)
 
 
-def dau_van_tay(margin: float) -> str:
+def dau_van_tay(margin: float, ti_le_val: float = 0.25, chia_theo: str = "ngay") -> str:
     """Vân tay của (tham số cắt + NGUỒN). Cache ảnh dùng lại theo `{loai}_b{buoc}` nên nếu không có
     cái này: đổi `--margin` hoặc CSV được sinh lại (buoc dịch) ⇒ phục vụ **ảnh cũ + nhãn mới** mà
     artifact vẫn ghi tham số mới (review độc lập 26-11, P2).
 
     Đọc `mtime_ns` + `size` của MỌI CSV và video có nhãn ⇒ nguồn đổi là vân tay đổi.
     """
-    h = hashlib.sha256(f"crop={CROP}|margin={margin}|".encode())
+    h = hashlib.sha256(f"crop={CROP}|margin={margin}|val={ti_le_val}|chia={chia_theo}|".encode())
     for tep in sorted(NHAN.glob("*.jsonl")):
         phien = tep.stem
         for f in (DATA / f"{phien}_metrics.csv", DATA / f"{phien}.mp4"):
@@ -149,15 +149,32 @@ def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> bool:
     return cu is not None
 
 
-def tach(theo_phien: str, ti_le_val: float) -> str:
-    """train/val theo PHIÊN, tất định theo tên (chạy lại ra y hệt, không phụ thuộc thứ tự file)."""
-    h = int(hashlib.sha256(theo_phien.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
+def nhom_cua(phien: str, chia_theo: str) -> str:
+    """Nhóm dùng để chia train/val.
+
+    `ngay` (mặc định): tiền tố NGÀY trong tên phiên (`demoip_1124-141352` ⇒ `1124`). Cần vì chia
+    theo phiên **không** cách ly cảnh: 6/6 phiên val từng có phiên CÙNG NGÀY ở train (cùng phòng,
+    cùng vật, cùng ánh sáng) ⇒ điểm val là **cận trên**, không phải "phiên chưa thấy" (review độc
+    lập 26-11 vòng 2).
+    `phien`: mỗi phiên một nhóm (giữ để so sánh hai cách chia).
+    """
+    if chia_theo != "ngay":
+        return phien
+    # `demoip_1124-141352` → `1124`; `fast_1029-193552` → `1029`; tên không có ngày ⇒ giữ nguyên
+    duoi = phien.split("_", 1)[1] if "_" in phien else phien
+    return duoi.split("-", 1)[0] if "-" in duoi else phien
+
+
+def tach(nhom: str, ti_le_val: float) -> str:
+    """train/val theo NHÓM (ngày hoặc phiên), tất định theo tên — chạy lại ra y hệt."""
+    h = int(hashlib.sha256(nhom.encode()).hexdigest()[:8], 16) / 0xFFFFFFFF
     return "val" if h < ti_le_val else "train"
 
 
-def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict:
+def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float,
+                 chia_theo: str = "ngay") -> dict:
     out_dir.mkdir(parents=True, exist_ok=True)
-    van_tay = dau_van_tay(margin)
+    van_tay = dau_van_tay(margin, ti_le_val, chia_theo)
     da_xoa = don_cache_neu_can(out_dir, van_tay)
     mong_doi, bo_qua, thieu_video, nhieu_nguoi = [], {}, [], {}
 
@@ -177,7 +194,8 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
             continue
         _, fps, n_frame, rong, cao = L._mo_video(phien)
         nhan = doc_nhan_hieu_luc(tep)
-        split = tach(phien, ti_le_val)
+        nhom = nhom_cua(phien, chia_theo)
+        split = tach(nhom, ti_le_val)
         # Gộp nhãn theo `buoc` là BỎ người dán ("dòng cuối thắng"). Hôm nay mọi phiên chỉ 1 người,
         # nhưng khi có người thứ 2 (đúng quy trình 2 người của repo) thì trộn 2 phán quyết mà IM LẶNG
         # ⇒ phải lộ ra (review 26-11, P2).
@@ -220,7 +238,7 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
                     continue
                 mong_doi.append({"phien": phien, "buoc": buoc, "frame_idx": idx,
                                  "loai": loai, "nhan": nhan_so, "nhan_nguoi": nhan_b,
-                                 "o_cat": list(h), "split": split})
+                                 "o_cat": list(h), "split": split, "nhom": nhom})
 
     # Cắt ảnh TẦN TỰ dưới một khoá: OpenCV/FFmpeg không thread-safe cho một VideoCapture
     # (AGENTS §6: prefetch song song từng làm `Assertion fctx->async_lock failed` và abort tiến trình).
@@ -240,6 +258,12 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
             continue
         with L._CAP_LOCK:
             if not cap.set(cv2.CAP_PROP_POS_FRAMES, m["frame_idx"]):
+                loi_cat += 1
+                continue
+            # `set()` có thể trả True mà vẫn đứng ở keyframe gần nhất ⇒ phải ĐỌC LẠI vị trí, nếu không
+            # crop của frame KHÁC được ghi với nhãn của bước này, im lặng (review 26-11 vòng 2, P2).
+            vi_tri = int(round(cap.get(cv2.CAP_PROP_POS_FRAMES) or m["frame_idx"]))
+            if abs(vi_tri - m["frame_idx"]) > 1:
                 loi_cat += 1
                 continue
             ok, khung = cap.read()
@@ -292,6 +316,9 @@ def dung_dataset(out_dir: pathlib.Path, ti_le_val: float, margin: float) -> dict
         "crop_px": CROP,
         "margin": margin,
         "dau_van_tay": van_tay,
+        "chia_theo": chia_theo,
+        "so_nhom": {"train": len({m["nhom"] for m in mau if m["split"] == "train"}),
+                    "val": len({m["nhom"] for m in mau if m["split"] == "val"})},
         "da_xoa_cache_cu": da_xoa,
         "ti_le_val": ti_le_val,
         "manifest": str(manifest.relative_to(ROOT)) if manifest.is_relative_to(ROOT) else str(manifest),
@@ -303,12 +330,14 @@ def main() -> int:
     ap.add_argument("--out", default="data/verifier", help="thư mục ra (mặc định data/verifier)")
     ap.add_argument("--ti-le-val", type=float, default=0.25, help="tỉ lệ PHIÊN dành cho val")
     ap.add_argument("--margin", type=float, default=MARGIN, help="nới ô trước khi cắt (0.15 = 15%%)")
+    ap.add_argument("--chia-theo", choices=("ngay", "phien"), default="ngay",
+                    help="chia train/val theo NGÀY (mặc định, cách ly cảnh) hay theo từng phiên")
     ap.add_argument("--metrics", help="file JSON artifact (mặc định: <out>_metrics.json)")
     args = ap.parse_args()
 
     t0 = time.time()
     out_dir = (ROOT / args.out) if not pathlib.Path(args.out).is_absolute() else pathlib.Path(args.out)
-    kq = dung_dataset(out_dir, args.ti_le_val, args.margin)
+    kq = dung_dataset(out_dir, args.ti_le_val, args.margin, args.chia_theo)
     payload = {
         "schema": 1,
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S%z"),

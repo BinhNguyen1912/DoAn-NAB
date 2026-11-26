@@ -1,0 +1,56 @@
+{
+ "schema": 1,
+ "do_luc": "2026-11-26T18:49:39+0700",
+ "lenh": "scripts/build_verifier_dataset.py --out data/verifier_phien --chia-theo phien --metrics data/verifier_phien_metrics.json",
+ "git_rev": "1301a29",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "giay": 83.1,
+ "chiet_giai": "pos_sys = ô HỆ vẽ ở bước nhãn 'dung' (nhãn 1); neg_sys = ô HỆ vẽ ở bước nhãn 'sai' (nhãn 0); pos_gt = ô NGƯỜI vẽ (bbox_dung) ở bất kỳ bước nào có nó (nhãn 1 — chống mẹo 'tường phẳng = sai'). Tách train/val THEO PHIÊN bằng sha256(tên phiên) ⇒ chạy lại ra y hệt, và cùng một phiên không nằm ở cả hai phía. Nhãn là phán quyết của MỘT người (`binh`) cho CẢ bước, không phải mask — hạn chế này phải nêu khi trích số.",
+ "so_mau": 3230,
+ "so_mau_du_kien": 3230,
+ "cat_loi": 0,
+ "theo_split": {
+  "train": 2599,
+  "val": 631
+ },
+ "theo_nhan": {
+  "1": 2816,
+  "0": 414
+ },
+ "theo_loai": {
+  "pos_gt": 1250,
+  "pos_sys": 1566,
+  "neg_sys": 414
+ },
+ "theo_split_va_nhan": {
+  "train/0": 357,
+  "train/1": 2242,
+  "val/0": 57,
+  "val/1": 574
+ },
+ "so_phien": 31,
+ "phien_thieu_video": [],
+ "phien_0_mau": [
+  "demoip_1120-224057"
+ ],
+ "phien_nhieu_nguoi_dan": {},
+ "bo_qua": {
+  "dung-khong-co-o-he": 1156,
+  "sai-khong-co-o-he": 859,
+  "khong_co_vat": 643,
+  "mat_dau-khong-co-GT": 1327,
+  "bo_qua": 2
+ },
+ "crop_px": 64,
+ "margin": 0.15,
+ "dau_van_tay": "6aee56341fea22ea",
+ "chia_theo": "phien",
+ "so_nhom": {
+  "train": 25,
+  "val": 6
+ },
+ "da_xoa_cache_cu": false,
+ "ti_le_val": 0.25,
+ "manifest": "data/verifier_phien/manifest.jsonl"
+}
