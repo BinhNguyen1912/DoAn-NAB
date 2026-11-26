@@ -396,8 +396,10 @@ def main() -> int:
         loi_loao = kiem_tra_so_loao(payload)
         if loi_loao:
             print("KHÔNG CÔNG BỐ SỐ — " + "; ".join(loi_loao), file=sys.stderr)
-            print(json.dumps({k: payload[k] for k in ("nhom_cham_duoc", "auc_trung_binh",
-                                                      "so_seed_loai_nan")},
+            # `.get`: khi `chay_loao` trả dict lỗi sớm thì payload KHÔNG có `auc_trung_binh`
+            # ⇒ `payload[k]` ném KeyError và thoát bằng traceback thay vì thông báo sạch.
+            print(json.dumps({k: payload.get(k) for k in ("nhom_cham_duoc", "auc_trung_binh",
+                                                          "so_seed_loai_nan")},
                              ensure_ascii=False, indent=1), file=sys.stderr)
             return 1
 
