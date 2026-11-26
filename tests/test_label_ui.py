@@ -1221,6 +1221,8 @@ class TestHangSoVaTaiLieu:
         assert "lệch" in s, "phải cảnh báo người dán khi đứng giữa 2 bước"
         assert "--host" in s, "hướng dẫn mở từ Windows phải khớp cờ THẬT của tool (--host 0.0.0.0)"
         assert "Space" in s, "hướng dẫn nhắc Space thì CODE phải có nhánh Space"
+        assert "`E` rồi kéo chuột" in s, "hướng dẫn phải nói phím vẽ ô là E"
+        assert '"Nguyen"' in s, "phải cảnh báo: `e` không ăn khi gõ tên"
         assert "CHUA XAC MINH" in s and "KHÔNG có cột" in s, \
             "phải nói rõ `chua_xac_minh` KHÔNG có cột trong CSV (bản đầu mô tả sai là 'không vẽ')"
         assert "so_buoc_dong_y" in s, "khoá JSON trong doc phải khớp `tong_hop` thật"
@@ -1258,6 +1260,18 @@ class TestHangSoVaTaiLieu:
         # banner đỏ chỉ dành cho chế độ video
         assert "if (ok || state.cheDo === 'anh')" in h, \
             "chế độ ảnh không được phủ banner 'KHÔNG PHÁT ĐƯỢC VIDEO' lên ảnh"
+
+    def test_html_phim_ve_o_la_E_va_khong_pha_go_ten(self):
+        """`E` = phím vẽ ô (gần cụm 1/2/3/4); `e` KHÔNG được ăn khi gõ tên ("Nguyen" có chữ e)."""
+        h = (REPO / "tools" / "label_ui.html").read_text(encoding="utf-8")
+        assert "const laPhimVeO = ['e','E','b','B']" in h, "E (và b cũ) phải là phím vẽ ô"
+        assert "else if (laPhimVeO) {" in h, "nhánh vẽ ô phải dùng laPhimVeO"
+        # `e`/`b` KHÔNG được nằm trong danh sách "ăn cả khi đang ở ô tên"
+        dong = [d for d in h.splitlines() if "const laPhimNhan =" in d]
+        assert dong and "b" not in dong[0] and "'e'" not in dong[0], \
+            f"laPhimNhan không được chứa phím vẽ ô: {dong}"
+        assert "if (trongOText && !laPhimNhan) return;" in h, "phải chặn phím vẽ khi đang gõ tên"
+        assert "<kbd>E</kbd> rồi kéo chuột" in h, "hướng dẫn trong UI phải nói E"
 
     def test_html_khong_hua_phim_khong_ton_tai(self):
         """Doc/comment hứa `Space` = phát/dừng ⇒ file HTML phải thật sự có nhánh xử lý Space."""

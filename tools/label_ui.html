@@ -121,7 +121,8 @@
         dùng khi đã vẽ <b>ô đúng</b> hoặc muốn đi tiếp nhanh.
       </p>
       <p class="hint" id="drawHint2" style="margin:4px 0 0">
-        <kbd>b</kbd> rồi kéo chuột để vẽ <b>ô đúng</b> (dùng khi nhãn là SAI/ĐÚNG mà muốn GT ô).
+        <kbd>E</kbd> rồi kéo chuột để vẽ <b>ô đúng</b> (dùng khi nhãn là SAI/ĐÚNG mà muốn GT ô).
+        <span class="muted">(<kbd>b</kbd> cũ vẫn dùng được)</span>
       </p>
     </div>
 
@@ -645,10 +646,15 @@ document.addEventListener('keydown', ev => {
   const k = ev.key;
   // Phím nhãn vẫn phải ăn kể cả khi con trỏ đang ở ô tên / select (người dùng không biết phải click
   // ra ngoài). Với <select>, ArrowUp/Down là của select nên chỉ nhận phím nhãn.
-  const laPhimNhan = ['1','2','3','4','0','s','S','b','B'].includes(k);
+  const laPhimNhan = ['1','2','3','4','0','s','S'].includes(k);
+  // Phím VẼ Ô (E, giữ `b` làm bí danh cho quen tay) tách RIÊNG: nó KHÔNG được ăn khi đang gõ ở ô
+  // tên, vì `e` nằm trong gần như mọi tên người ("Nguyen", "Binh Le"…) — cho ăn là gõ tên thành vẽ.
+  const laPhimVeO = ['e','E','b','B'].includes(k);
   if (trongOText && !laPhimNhan) return;
-  if (ev.target.tagName === 'SELECT' && !laPhimNhan) return;
+  if (ev.target.tagName === 'SELECT' && !laPhimNhan && !laPhimVeO) return;
   if (laPhimNhan && trongOText) { $('nguoi').blur(); }
+  // Vừa chọn chế độ ở <select> thì con trỏ còn ở đó ⇒ nhả ra để phím vẽ dùng được ngay.
+  if (laPhimVeO && ev.target.tagName === 'SELECT') { ev.target.blur(); }
   if (k === '1') { ghiNhan('dung'); ev.preventDefault(); }
   else if (k === '2') { ghiNhan('sai'); ev.preventDefault(); }
   else if (k === '3') { ghiNhan('mat_dau'); ev.preventDefault(); }
@@ -660,7 +666,7 @@ document.addEventListener('keydown', ev => {
   else if (k === 'ArrowLeft') { nhayBuoc(-1); ev.preventDefault(); }
   else if (k === ',') { $('v').currentTime = Math.max(0, $('v').currentTime - 0.2); capNhat(); ev.preventDefault(); }
   else if (k === '.') { $('v').currentTime = $('v').currentTime + 0.2; capNhat(); ev.preventDefault(); }
-  else if (k === 'b' || k === 'B') {
+  else if (laPhimVeO) {
     veO.dang = true; veO.co = false;
     $('drawHint').style.display = 'block';
     $('c').classList.add('dang-ve');        // chỉ LÚC NÀY canvas mới nhận chuột

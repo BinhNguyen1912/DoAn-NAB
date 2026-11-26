@@ -65,8 +65,10 @@ cắt sẵn thành **một ảnh JPEG** (có sẵn cả HUD: ô, mask, quỹ đ�
   thống kê theo `frame_vos` trong trường hợp này.
 - `s` (hoặc nút "Lưu & bước kế") = **ghi lại nhãn bạn vừa chọn** rồi sang bước kế. Chưa chọn nhãn nào
   thì nó **từ chối** và nhắc bạn bấm `1/2/3/4` trước — nó không tự đoán "ĐÚNG".
-- `b` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán
+- `E` rồi kéo chuột: vẽ **ô đúng** (lưu kèm nhãn) — dùng khi bạn muốn cả toạ độ đúng, không chỉ phán
   quyết. Ô được **xoá khi sang bước khác**: nó thuộc về đúng bước bạn vẽ, không đi theo.
+  Phím `E` **không** ăn khi con trỏ đang ở ô "Người gán" (nếu ăn thì gõ tên có chữ `e` —
+  "Nguyen" — sẽ nhảy sang chế độ vẽ). `b` cũ vẫn dùng được như bí danh.
 - `Enter` ở ô "Người gán" = nhả focus. Phím `1/2/3/4/0` **vẫn ăn** khi con trỏ đang ở trong ô tên
   (không lọt ký tự vào tên), nên bấm Enter chỉ để tiện gõ tiếp.
 
