@@ -38,13 +38,14 @@ gọi model, model lỗi không làm chết lô, không có nhãn ⇒ danh sách
 ## 📤 Output / Kết quả
 
 `data/gt_pseudo/` — **1 251 mask PNG** (5,4 MB) trên **1 018 frame khác nhau**, 30 phiên.
-Artifact: `data/gt_pseudo_metrics.json` (`git_dirty_code = false`, `image_size_hieu_luc = 512`).
+Artifact: `data/gt_pseudo_metrics.json` — `git_rev 127f428`, `git_dirty_code = false`,
+`image_size_hieu_luc = 512` (= `image_size_yeu_cau`, tức override hydra đã áp đúng).
 
 | | số |
 |---|---|
 | ô hợp lệ | **1 251** |
 | mask sinh được | **1 251** (lỗi đọc frame 0 · lỗi model 0) |
-| tốc độ | **518 ms/mask** @512 trên CPU ⇒ 12,5 phút cả lô |
+| tốc độ | **518 ms/mask** @512 (lô đầu, 1 251 mask mới = 12,5 phút); artifact đo lại **440.3 ms/mask** trên 20 mask sinh mới (`so_mask_moi_sinh = 20`, còn lại đọc cache) |
 | QC: mask rỗng | **0** |
 | QC: `nho` (<20 % hộp) | **38** |
 | QC: `tran` (>150 %) | **0** |
@@ -76,7 +77,10 @@ này là "cần xem lại hộp hoặc mask", không phải "mask sai".
 1024 chậm 5,5 s/mask ⇒ 1 251 ô = ~2 giờ. Đo được 518 ms/mask ở 512 nên chọn 512. Muốn nhanh hơn nữa
 phải chạy trên GPU (Colab T4 ~50 ms/frame đã đo 22-11).
 
-**4. Mask không được commit**: `data/gt_pseudo/**` bị `data/*` chặn (kiểm bằng `git check-ignore`),
+**4. **Chạy lại chỉ 24 giây** nhờ cache (`co_cache = 1 231`), nên con số trong artifact là của **20 mask
+   sinh mới** — muốn đo tốc độ đầy đủ thì xoá `data/gt_pseudo/` rồi chạy lại (~13 phút).
+
+5. Mask không được commit**: `data/gt_pseudo/**` bị `data/*` chặn (kiểm bằng `git check-ignore`),
 chỉ `data/gt_pseudo_metrics.json` vào repo. Từ clone sạch phải chạy lại script (~13 phút CPU).
 
 ## ➡️ Next steps

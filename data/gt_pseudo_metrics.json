@@ -1,0 +1,24 @@
+{
+ "schema": 1,
+ "do_luc": "2026-11-26T22:55:06+0700",
+ "lenh": "scripts/make_pseudo_masks.py --image-size 512",
+ "git_rev": "127f428",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "image_size_yeu_cau": 512,
+ "image_size_hieu_luc": 512,
+ "checkpoint": "samurai/sam2/checkpoints/sam2.1_hiera_tiny.pt",
+ "so_o_hop_le": 1251,
+ "so_mask": 1251,
+ "so_mask_moi_sinh": 20,
+ "co_cache": 1231,
+ "loi_doc_frame": 0,
+ "loi_mask": 0,
+ "ms_moi_mask": 440.3,
+ "qc_dem": {
+  "cham_bien": 337,
+  "nho": 38
+ },
+ "so_mask_nghi": 369,
+ "chiet_giai": "Đây là MASK GIẢ: SAM 2 tự cắt từ HỘP của người dùng, không phải GT do người tô. Dùng để mở rộng phép đo và làm dữ liệu sửa tay; KHÔNG dùng để tuyên bố chất lượng model (mask do chính model sinh). `qc_dem` đếm các ca nghi (rỗng / <20% / >150% diện tích hộp / chạm biên khung mà hộp không chạm) — phải xem bằng mắt trước khi coi là GT."
+}
