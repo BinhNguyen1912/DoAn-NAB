@@ -1,17 +1,22 @@
 # Ngày 26-11-2026 — Bước 1: dataset + baseline cho "bộ kiểm bám đúng" (verifier)
 
+> **Kết luận một dòng:** nhãn hiện có **chưa đủ train lại** SAM 2 (thiếu mask pixel); nhưng đủ để thử
+> một verifier — và khi đo **đúng cách** (bỏ hẳn một NGÀY khỏi train) thì verifier **gần như không tổng
+> quát**: AUC **0,585** (0,42–0,74). Con số 0,83 chỉ đúng khi val nằm **cùng ngày/cùng cảnh**.
+
 ## 🎯 Mục tiêu
 
-Trả lời bằng số, không bằng niềm tin: **nhãn người dán hiện có có đủ để dạy một bộ kiểm
-"ô hệ đang vẽ có đúng là vật không" hay không?** Đây là bước 1 trong lộ trình 4 bước đã trình bày
-sau khi đo rằng *train lại SAM 2 thì chưa đủ dữ liệu* (thiếu mask pixel, thiếu người dán thứ 2).
+Trả lời bằng số: **nhãn người dán có đủ để dạy một bộ kiểm "ô hệ đang vẽ có đúng là vật không"?**
 
-Lý do chọn hướng verifier: AGENTS §6 ghi, đo ngày 21-11, `mask-cos` của vùng SAI là **0,752–0,989**
-nằm trong dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách được**, phải **học** từ dữ liệu.
+Đây là bước 1 của lộ trình sau khi đã đo rằng train lại SAM 2 thì chưa đủ dữ liệu (thiếu mask pixel,
+GT mask lớn nhất trong repo 36 frame, chỉ 1 người dán).
+
+Lý do thử hướng verifier: AGENTS §6 ghi, đo 21-11, `mask-cos` của vùng SAI là **0,752–0,989** nằm trong
+dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách được** ⇒ phải học từ dữ liệu.
 
 ## 📥 Input
 
-- `data/nhan/*.jsonl` — **32** file phiên (33 nếu tính 1 phiên đã đánh dấu nhưng không có CSV), 14 261 nhãn, 1 490 ô GT (người dán: `binh`).
+- `data/nhan/*.jsonl` — 32 file phiên, **14 261 nhãn**, **1 490 ô GT** (người dán: `binh`).
 - `data/<phiên>_metrics.csv` (tâm + cỡ ô của hệ mỗi bước) + video gốc.
 - Máy này **không có GPU** (`torch 2.14.1+cpu`), 8 lõi; **không có sklearn** ⇒ AUC tự viết.
 
@@ -20,121 +25,105 @@ nằm trong dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào 
 1. **`scripts/build_verifier_dataset.py`** — dựng dataset ảnh cắt 64×64 từ nhãn:
    - `pos_sys` = ô **hệ** đang vẽ ở bước nhãn `dung` → nhãn **1**
    - `neg_sys` = ô **hệ** đang vẽ ở bước nhãn `sai` (vùng SAI) → nhãn **0**
-   - `pos_gt`  = ô **người** vẽ (`bbox_dung`) ở bất kỳ bước nào có nó → nhãn **1**
-     *(loại này chống mẹo "tường trơn = sai": buộc mô hình coi vật thật là dương **kể cả** trong phiên
-     hệ đang bám sai)*
-   - Bỏ `khong_co_vat`/`bo_qua`; `mat_dau` không có ô của hệ nên chỉ sinh `pos_gt` nếu có `bbox_dung`.
-   - Ánh xạ bước→frame dùng **chung** `tools.label_ui.chi_so_khung` (không viết lại phép bù — bài học
-     "hai định nghĩa" trong AGENTS §6).
-   - Cắt ảnh **tuần tự dưới `L._CAP_LOCK`** (OpenCV/FFmpeg không thread-safe — đã từng abort tiến trình).
-   - Tách **train/val theo PHIÊN** bằng `sha256(tên)`: tất định, cùng một phiên không nằm cả hai phía.
-2. **`scripts/train_verifier.py`** — CNN nhỏ (4 khối conv + GAP, ~60 k tham số), `BCEWithLogitsLoss`
-   có `pos_weight` (mất cân bằng ~6:1), 12 epoch, **3 seed** (`--seeds 0,1,2`) để có `mean ± std`.
-   - AUC tự viết (Mann–Whitney, hoà ⇒ hạng trung bình) + **CI95 bootstrap theo PHIÊN**.
-   - Thêm **bộ phân loại NGỐ** (chỉ dùng độ lệch chuẩn pixel) làm mốc: nếu AUC của CNN không vượt rõ
-     mốc đó thì nó chỉ học "vùng trơn = sai".
-   - Kiểm `model.eval()` tất định: chấm **cùng một ảnh hai lần** phải ra cùng số.
-3. **`tests/test_verifier_dataset.py`** — 26 test: AUC (tách hoàn hảo/đảo/hoà/thiếu lớp), CI tất định,
-   `noi_o` kẹp biên + ô suy biến, **nhãn dòng CUỐI thắng**, CSV cũ không có `bbox_w` ⇒ không bịa ô,
-   tách split theo phiên, end-to-end trên fixture 2 phiên (1 có ô của hệ, 1 không).
+   - `pos_gt`  = ô **người** vẽ (`bbox_dung`) → nhãn **1** *(chống mẹo "vùng trơn = sai")*
+   - Bỏ `khong_co_vat`/`bo_qua`; `mat_dau` không có ô của hệ nên chỉ sinh `pos_gt` — **dữ liệu hiện tại
+     0/1 327 bước `mat_dau` có ô GT** ⇒ nhánh đó chưa từng chạy.
+   - Ánh xạ bước→frame dùng **chung** `tools.label_ui.chi_so_khung`, **kèm** kiểm seek (đọc lại
+     `CAP_PROP_POS_FRAMES`; `set()` có thể trả True mà vẫn đứng ở keyframe gần nhất).
+   - Cắt ảnh **tuần tự dưới `L._CAP_LOCK`** (OpenCV/FFmpeg không thread-safe).
+   - **Chia train/val theo NGÀY** (`--chia-theo ngay`, mặc định) hoặc theo phiên (`--chia-theo phien`).
+   - **Dấu vân tay cache** = `CROP` + `margin` + `ti_le_val` + cách chia + `mtime_ns/size` của mọi
+     CSV/video ⇒ đổi bất cứ thứ gì là **cắt lại**, không phục vụ ảnh cũ với tham số mới.
+2. **`scripts/train_verifier.py`** — CNN nhỏ (4 khối conv + GAP, ~60 k tham số), `pos_weight` cho mất
+   cân bằng, 3 seed:
+   - AUC tự viết (Mann–Whitney, hoà = hạng trung bình); **NaN ⇒ NaN** (không ra "số trông hợp lệ").
+   - CI95 bootstrap **theo NHÓM** (phiên/ngày), không theo dòng.
+   - **Bộ phân loại NGỐ** (chỉ độ lệch chuẩn pixel) làm mốc.
+   - **`--loao`**: leave-one-**day**-out / leave-one-**session**-out — mỗi lượt bỏ hẳn một nhóm, train
+     trên phần còn lại, chấm trên đúng nhóm đó.
+   - **Cổng `kiem_tra_so()`**: không có số (NaN / val 0 âm / thiếu) thì **không ghi artifact** + exit 1.
+3. **`tests/test_verifier_dataset.py`** — **30 test**: AUC (hoàn hảo/đảo/hoà/thiếu lớp/NaN), CI theo
+   nhóm phải **rộng hơn** theo dòng, nhãn **dòng cuối thắng**, CSV cũ thiếu `bbox_w` ⇒ không bịa ô,
+   **ảnh crop ứng đúng frame** (fixture đổi màu theo frame), đổi `--margin`/`--ti-le-val`/`--chia-theo`
+   ⇒ cắt lại, phiên 0 mẫu, 2 người dán, `eval()` vs `train()` khác nhau và raise khi không tất định.
 
 ## 📤 Output / Kết quả
 
-**Dataset** (`data/verifier_metrics.json` — `git_rev fbfde31`, `git_dirty_code = true` (sinh lại trên cây sạch sau khi commit script)):
+**Dataset** (`data/verifier_metrics.json`, `git_dirty_code = false` sau khi commit script):
 
 | | số |
 |---|---|
 | mẫu | **3 230** (cắt lỗi 0) |
 | `pos_sys` / `pos_gt` / `neg_sys` | 1 566 / 1 250 / **414** |
 | phiên dùng được | 31 |
-| train / val | 2 599 / 631 |
-| **val: âm / dương** | **57 / 574** |
-| val: số phiên | **6** |
 
-**Baseline** (`data/verifier_baseline_metrics.json`, 3 seed, `torch` CPU, 107 s tổng):
+**Ba tầng đo — chỉ tầng 3 là số dùng được cho tuyên bố:**
 
-| seed | val AUC | CI95 (bootstrap theo phiên) | train AUC |
+| # | cách chia | AUC | nghĩa |
 |---|---|---|---|
-| 0 | 0,7890 | [0,7218, 0,8543] | 0,9487 |
-| 1 | 0,6987 | [0,5655, 0,9450] | 0,9797 |
-| 2 | 0,7912 | [0,7332, 0,8783] | 0,9676 |
-| **trung bình** | **0,7596 ± 0,0528** | | 0,965 (TB) |
-| **NGỐ (độ lệch chuẩn pixel)** | **0,5194** | [0,381, 0,590] | — |
+| 1 | train/val theo **phiên** (val 6 phiên, 57 âm) | **0,7596 ± 0,0528** (gộp) · **0,827 ± 0,021** (trong phiên) | **CẬN TRÊN** — 6/6 phiên val có phiên **cùng ngày** trong train (cùng phòng, cùng vật, cùng ánh sáng) |
+| 2 | leave-one-**session**-out (10 phiên, 30 lần chạy) | **0,7391** (min **0,4198**, max 0,8932) | phiên mới, **cùng ngày** ⇒ vẫn lạc quan |
+| 3 | **leave-one-DAY-out** (3 ngày có âm, 9 lần chạy) | **0,5846** (min **0,4198**, max 0,7432) | **số đúng**: cảnh/ngày chưa thấy |
 
-Lịch epoch của seed 0 (dao động mạnh, không đơn điệu): 0,733 · 0,693 · 0,658 · 0,682 · 0,625 ·
-0,772 · 0,723 · 0,756 · 0,634 · 0,731 · 0,610 · **0,789**.
+Chi tiết tầng 3: ngày `1123` **0,4958** (≈ đoán mò) · `1124` 0,6890 · `1125` 0,5688.
+Mốc **NGỐ** (độ lệch chuẩn pixel): **0,5194**. Train AUC 0,95–0,98 ⇒ **overfit nặng**.
 
-**AUC theo TỪNG PHIÊN val** (âm và dương cùng nền ⇒ không trộn miền; đây là con số nên đọc):
-
-| phiên | âm | dương | AUC |
-|---|---|---|---|
-| `demoip_1124-141352` | 19 | 68 | **0,8839** |
-| `demoip_1124-193026` | 38 | 280 | **0,8111** |
-| `fast_1029-210004` | **0** | 26 | `null` (không chấm được) |
-| `fast_1029-212632` | **0** | 134 | `null` |
-| `fast_1101-153223` | **0** | 13 | `null` |
-| `fast_1101-154036` | **0** | 53 | `null` |
-
-Trung bình trên **2 phiên chấm được** (bảng trên là **seed 0**): **0,8475** (min 0,8111).
-Qua **cả 3 seed**: 0,8475 · 0,8049 · 0,8283 ⇒ **0,827 ± 0,021**; yếu nhất theo phiên **0,6942**
-(seed 1 · `1124-193026`). **Chỉ 2/6 phiên val có âm** ⇒ mọi trung bình tựa vào 2 phiên
-(`val_auc_theo_phien` + `val_auc_trung_binh_phien_theo_seed` trong artifact).
-
-## ⚠️ Vấn đề & cách xử lý
-
-1. **`46/78` CSV trong `data/` không có cột `bbox_w/bbox_h`** (chỉ được thêm vào `CSV_HEADER` từ 21-11)
-   ⇒ không dựng lại được ô của hệ ⇒ các phiên đó **chỉ sinh `pos_gt`**, và đó là lý do `neg_sys` chỉ
-   còn **414**. **Không bịa ô từ trung vị phiên khác** — bịa là làm hỏng cả thử nghiệm.
-2. **Mất cân bằng nặng** 2 816 dương / 414 âm (6,8 : 1); val chỉ **57 âm**. CI vì thế rất rộng
-   (seed 1: [0,566, 0,945]).
-3. **Overfit rõ**: train AUC 0,95–0,98 vs val 0,70–0,79. Muốn giảm phải có **thêm âm** (chính là
-   "vẽ ô ở bước SAI trên các phiên có CSV mới") — việc này người dùng làm tiếp được, không cần GPU.
-4. **Âm DỒN vào 2 phiên val** (`1124-141352` 19 · `1124-193026` 38), 4 phiên val còn lại **0 âm**
-   ⇒ AUC gộp (0,7596) trộn nền của 6 phiên dương với âm của 2 phiên, có thể bị "học nền" chứ không
-   học "vùng bám nhầm". Vì thế artifact in thêm `val_auc_theo_phien` + `val_am_theo_phien`; số
-   **0,8475** (TB 2 phiên) là số nên đọc, số gộp chỉ để so mốc ngố.
-5. **Đọc số cho đúng** (AGENTS §6): `n = 3 seed` nhưng **chỉ 1 lần dựng dataset**; đây **chưa** phải
-   tuyên bố "verifier dùng được". Điều đo được: **trung bình 0,76 ± 0,05** trên mốc ngố **0,519**;
-   nhưng **CI của seed yếu nhất [0,566; 0,945] CHỒNG CI của mốc ngố [0,377; 0,597]** ⇒ theo luật
-   "chênh < `±` thì không phân biệt được" của repo, câu đúng là: *2/3 seed tách rõ khỏi mốc ngố,
-   seed còn lại **chưa tách được*** — không được viết "cả 3 seed đều vượt". Điều **không** được nói: "đã chặn được ca
-   bám sang tường" — chưa đo trên đúng nhóm ca đó.
-6. **Chưa đưa vào pipeline** — đây là quyết định có chủ ý: chạm `IdentityWatch`/hiển thị là vùng đã 3
-   lần sinh P0/P1 trong 2 tuần (AGENTS §6), và việc > 4 h ⇒ phải lập plan 3 ý kiến (AGENTS §9.2)
-   trước khi nối.
-
-## 🧾 Các khoản BỊ BỎ (audit được, không phải suy đoán)
-
-`data/verifier_metrics.json → bo_qua`:
+**Các khoản BỊ BỎ** (`data/verifier_metrics.json → bo_qua`):
 
 | lý do | số |
 |---|---|
 | `dung-khong-co-o-he` (CSV trước 21-11 không có `bbox_w/h`) | **1 156** |
 | `sai-khong-co-o-he` | **859** |
-| `mat_dau-khong-co-GT` (không có ô người vẽ) | **1 327** |
+| `mat_dau-khong-co-GT` | **1 327** |
 | `khong_co_vat` | 643 |
-| `bo_qua` | 2 |
 
-Phiên có nhãn mà ra **0 mẫu**: `demoip_1120-224057` (CSV cũ + không vẽ ô GT) —
-`phien_0_mau` trong artifact. `phien_nhieu_nguoi_dan` = rỗng (mọi phiên 1 người dán).
+Phiên ra 0 mẫu: `demoip_1120-224057` (`phien_0_mau`). `phien_nhieu_nguoi_dan` = rỗng.
 
-**Hai cảnh báo thêm** (review độc lập 26-11):
-- **20/401** cặp (phiên, bước) có ô hệ ≈ ô người (IoU > 0,7) ⇒ **cùng pixel mang cả nhãn 0 và 1**
-  (≈0,6 % mẫu) — nhiễu nhãn nhỏ nhưng có thật.
-- Crop 64×64 **xoá thông tin cỡ ô**: đã kiểm confound "blockiness" (trung vị cạnh ngắn nguồn 125–150 px,
-  chỉ 5/3 230 mẫu phải phóng > 2×) ⇒ **không** phải lỗi; ghi lại để người sau khỏi đo lại.
+## ⚠️ Vấn đề & cách xử lý
+
+1. **Rò rỉ CẢNH là lỗi lớn nhất của phép đo đầu** (review độc lập vòng 2 bắt): chia theo phiên không
+   cách ly phòng/vật/ánh sáng. Đã sửa bằng **leave-one-day-out**; chính vì thế con số đúng là **0,585**,
+   không phải 0,76–0,88. **Cấm trích 0,83 mà không nói "cùng ngày".**
+2. **Chỉ 3/9 ngày có mẫu âm** (1123 · 1124 · 1125) ⇒ chia ngẫu nhiên theo ngày cho val **0 âm** (đã thử:
+   cổng chặn đúng, AUC = NaN). LOAO trên 3 ngày là cách duy nhất đo được ⇒ **n = 3 ngày**, chưa đủ để
+   tuyên bố chắc.
+3. **46/78 CSV trong `data/` sinh trước 21-11 không có `bbox_w/bbox_h`** ⇒ không dựng lại được ô của hệ
+   ⇒ mất 1 156 bước `dung` + 859 bước `sai`. **Không bịa ô.**
+4. **`±` trong artifact là std GIỮA CÁC SEED**, không phải CI của ước lượng.
+5. **Bootstrap bỏ ~9 % resample** (`so_lan_hop_le` 898–919/1000: resample không rút được phiên có âm)
+   ⇒ CI95 **hơi hẹp** so với thực. Ghi trong artifact (`bootstrap.ghi_chu`).
+6. **20/401 cặp (phiên, bước) có ô hệ ≈ ô người (IoU > 0,7)** ⇒ cùng pixel mang cả nhãn 0 và 1
+   (≈**1,2 %** mẫu). Nhiễu nhãn nhỏ nhưng có thật.
+7. **Crop 64×64 xoá thông tin cỡ ô**: đã kiểm confound "blockiness" (trung vị cạnh ngắn nguồn 125–150 px,
+   chỉ 5/3 230 mẫu phải phóng > 2×) ⇒ **không** phải lỗi.
+8. **Chưa đưa vào pipeline** — có chủ ý: chạm `IdentityWatch`/hiển thị là vùng đã 3 lần sinh P0/P1 trong
+   2 tuần (AGENTS §6), và việc > 4 h ⇒ phải lập plan 3 ý kiến (AGENTS §9.2).
+
+## 🧭 Review độc lập (bắt buộc §9.1) — 2 vòng, P0 = 0 cả hai
+
+**Vòng 1** (taskforce `advisor`): 3 P1 + 4 P2 + 4 P3. Đã sửa: `auc()` trả NaN khi điểm có NaN (từng ra
+0,75 "trông hợp lệ"); **cổng `kiem_tra_so`** (val 1 lớp từng vẫn ghi artifact "thành công"); cache dùng
+vân tay; đếm khoản bị bỏ; giữ AUC theo phiên cho mọi seed; `assert` tính tất định của `eval()`; sửa log
+(rev/`dirty_code`, 33→32 phiên, 15→26 test, đánh số trùng).
+
+**Vòng 2** (`reviewer`): P0 = 0, nhưng bắt đúng **2 P1**: (a) log dẫn `git_rev`/`git_dirty_code` **sai**
+so với artifact; (b) **rò rỉ cảnh** (mục ⚠️1) — không nêu trong log. P2/P3 đã sửa: `ti_le_val` +
+`chia_theo` vào vân tay; port kiểm seek; per-session có CI; `so_anh_thieu`; 3 test giả (grep-source,
+`>= 1`, split 2 phiên 50 % xanh vô nghĩa) thay bằng test hành vi; bỏ import rác.
 
 ## ➡️ Next steps
 
-- **Rẻ nhất, giá trị cao nhất**: dán thêm ô ở các bước **SAI** trên phiên có CSV mới (`demoip_1120+`,
-  `1123`, `1124`, `1125`) ⇒ mỗi ô là 1 mẫu `neg_sys`. Cần cỡ **≥ 1 000 âm** để CI hẹp lại.
-- Muốn **tuyên bố** verifier tốt hơn ngưỡng cos: chấm riêng trên nhóm "bám sang nền cùng tông"
-  (cần gắn nhãn **ca** cho từng bước, chưa có cột này).
-- Sau khi có ≥ 1 000 âm và kết quả ổn định ≥ 2 lần dựng dataset: lập **plan 3 ý kiến** (§9.2) để nối
-  verifier vào cổng nghi — **không** tự ý nối trước.
+- **Ưu tiên đổi hẳn**: dán ô ở bước SAI trên **NHIỀU NGÀY KHÁC NHAU** (hiện chỉ 3 ngày có âm). Thêm ô
+  trong cùng một ngày **không** cải thiện con số LOAO.
+- Nếu muốn dùng verifier **trong một phiên** (hiệu chỉnh tại chỗ bằng chính các bước đầu của phiên) thì
+  đây là bài toán khác — cần đo riêng (LOO-session cho 0,74, chưa phải "tổng quát").
+- Muốn nói "verifier tốt hơn ngưỡng cos": phải chấm riêng nhóm "bám sang nền cùng tông" (cần cột gắn
+  nhãn **ca** cho từng bước, chưa có) và trên ≥ 5 ngày.
+- Chỉ sau khi LODO ≥ 0,75 ổn định qua ≥ 2 lần dựng dataset mới lập **plan 3 ý kiến** (§9.2) để nối vào
+  cổng nghi.
 
 ## 📚 Tài liệu tham khảo
 
-- AGENTS §6 (mask-cos 0,752–0,989; "không tồn tại θ tách được"; đã bác re-ID/đổi checkpoint/image_size)
-- `docs/task/26-11-2026-phim-e-ve-o.md` (cùng ngày: phím vẽ ô E)
+- AGENTS §6 (mask-cos 0,752–0,989 và "không tồn tại θ tách được"; đã bác re-ID, đổi checkpoint, `image_size`)
 - `scripts/build_verifier_dataset.py`, `scripts/train_verifier.py`, `tests/test_verifier_dataset.py`
+- `docs/task/26-11-2026-phim-e-ve-o.md` (cùng ngày: phím vẽ ô `E`)

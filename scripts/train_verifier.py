@@ -22,6 +22,10 @@ Ba con số phải đọc cùng nhau
 
 `--seeds 0,1,2` (mặc định) để artifact có `mean ± std`: một lần chạy (n=1) không cho phép kết luận gì.
 
+`±` trong artifact là **std GIỮA CÁC SEED**, không phải CI của ước lượng — đừng đọc thành khoảng tin cậy.
+Và `--chia-theo phien` (ở script dựng dataset) **không** cách ly cảnh: nhiều phiên trong một ngày là
+cùng phòng/cùng vật ⇒ điểm val khi đó là **cận trên**, phải dùng `--chia-theo ngay`.
+
     python scripts/train_verifier.py                       # 3 seed, 12 epoch
     python scripts/train_verifier.py --seeds 0 --epochs 20
 """
@@ -111,9 +115,14 @@ def auc_tung_phien(y, diem, nhom) -> dict:
     for g in sorted(set(nhom.tolist())):
         sel = nhom == g
         a = auc(y[sel], diem[sel])
+        ci = auc_theo_cum(y[sel], diem[sel], np.array([g] * int(sel.sum())),
+                          n_lan=500, seed=0)["ci95"] if a == a else None
         ra[str(g)] = {"n": int(sel.sum()), "am": int((y[sel] == 0).sum()),
                       "duong": int((y[sel] == 1).sum()),
-                      "auc": (round(float(a), 4) if a == a else None)}
+                      "auc": (round(float(a), 4) if a == a else None),
+                      # CI trong CHÍNH phiên đó: n âm = 19 mà báo "0,88" không kèm CI là bán độ
+                      # chính xác không có (review 26-11 vòng 2, P2).
+                      "ci95": ci}
         if a == a:
             hop_le.append(float(a))
     return {"tung_phien": ra, "so_phien_co_hai_lop": len(hop_le),
@@ -155,13 +164,19 @@ def nap_anh(duong: pathlib.Path) -> np.ndarray:
 
 
 def doc_manifest(p: pathlib.Path, goc: pathlib.Path) -> list[dict]:
-    ra = []
+    """Đọc manifest. Ảnh thiếu được ĐẾM (gắn `_thieu_anh`) — bản đầu bỏ im lặng nên dataset co lại
+    mà artifact không nói gì (review 26-11 vòng 2, P3)."""
+    ra, thieu = [], 0
     for dong in p.read_text(encoding="utf-8").splitlines():
         if dong.strip():
             m = json.loads(dong)
             m["_anh"] = goc / m["anh"]
             if m["_anh"].is_file():
                 ra.append(m)
+            else:
+                thieu += 1
+    if ra:
+        ra[0]["_so_anh_thieu"] = thieu
     return ra
 
 
@@ -227,6 +242,49 @@ def chay_mot_seed(tr: list[dict], va: list[dict], args, seed: int) -> dict:
     }
 
 
+def chay_loao(mau: list[dict], args, seeds: list[int]) -> dict:
+    """Leave-one-day-out: mỗi lượt bỏ HẲN một nhóm (ngày), train trên phần còn lại, chấm trên nhóm đó.
+
+    Vì sao cần: chia train/val theo **phiên** để 6/6 phiên val có phiên CÙNG NGÀY trong train (cùng
+    phòng, cùng vật, cùng ánh sáng) ⇒ điểm val là **cận trên**. Chia theo **ngày** ngẫu nhiên thì val
+    rơi vào toàn ngày không có mẫu âm (chỉ 3/9 ngày có âm) ⇒ `AUC = NaN`. Cách đo được là LOAO trên
+    các ngày có đủ cả hai lớp.
+    """
+    def khoa(m: dict) -> str:
+        if args.nhom_theo == "phien":
+            return m["phien"]
+        # `nhom` trong manifest = ngày khi dựng với `--chia-theo ngay`; nếu manifest cũ không có thì tự
+        # suy từ tên phiên để không phải dựng lại dataset (32.8 s) chỉ vì đổi cách gom nhóm.
+        return m.get("nhom") or (m["phien"].split("_", 1)[-1].split("-", 1)[0])
+
+    theo: dict[str, list[dict]] = {}
+    for m in mau:
+        theo.setdefault(khoa(m), []).append(m)
+    nhom_cham = sorted(g for g, ms in theo.items()
+                       if sum(1 for x in ms if x["nhan"] == 0) >= args.min_am_nhom
+                       and sum(1 for x in ms if x["nhan"] == 1) >= args.min_am_nhom)
+    if not nhom_cham:
+        return {"nhom_cham_duoc": [], "loi": "không nhóm nào đủ mẫu âm+dương để chấm LOAO"}
+    ra, aucs = {}, []
+    for g in nhom_cham:
+        va = theo[g]
+        tr = [m for m in mau if khoa(m) != g]
+        lan = [chay_mot_seed(tr, va, args, sd) for sd in seeds] if seeds else []
+        a = [c["val"]["auc"] for c in lan]
+        a = [x for x in a if x == x]
+        ra[g] = {"so_mau": len(va), "am": sum(1 for x in va if x["nhan"] == 0),
+                 "duong": sum(1 for x in va if x["nhan"] == 1),
+                 "auc_theo_seed": [round(x, 4) for x in a],
+                 "auc_trung_binh": round(float(np.mean(a)), 4) if a else None,
+                 "ci95": lan[0]["val"]["ci95"] if lan else None}
+        aucs.extend(a)
+    return {"nhom_cham_duoc": nhom_cham, "theo_ngay": ra,
+            "auc_trung_binh": round(float(np.mean(aucs)), 4) if aucs else None,
+            "auc_min": round(float(np.min(aucs)), 4) if aucs else None,
+            "auc_max": round(float(np.max(aucs)), 4) if aucs else None,
+            "so_lan_chay": len(aucs)}
+
+
 def kiem_tra_so(payload: dict) -> list[str]:
     """Trả danh sách lỗi khiến số **không được công bố** (rỗng = công bố được).
 
@@ -254,6 +312,13 @@ def main() -> int:
     ap.add_argument("--batch", type=int, default=64)
     ap.add_argument("--lr", type=float, default=1e-3)
     ap.add_argument("--seeds", default="0,1,2", help="nhiều seed ⇒ artifact có mean ± std")
+    ap.add_argument("--loao", action="store_true",
+                    help="leave-one-day-out: bỏ HẲN một NGÀY khỏi train rồi chấm trên đúng ngày đó "
+                         "(cách duy nhất đo được 'tổng quát sang cảnh/ngày mới' ở đây)")
+    ap.add_argument("--nhom-theo", choices=("ngay", "phien"), default="ngay",
+                    help="LOAO gom nhóm theo NGÀY (cách ly cảnh) hay theo từng PHIÊN")
+    ap.add_argument("--min-am-nhom", type=int, default=15,
+                    help="nhóm (ngày) phải có ít nhất chừng này mẫu ÂM mới chấm được")
     ap.add_argument("--metrics", default="data/verifier_baseline_metrics.json")
     args = ap.parse_args()
 
@@ -263,13 +328,42 @@ def main() -> int:
     if not mau:
         print("manifest rỗng — chạy scripts/build_verifier_dataset.py trước", file=sys.stderr)
         return 1
+    seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
+    if args.loao:
+        loao = chay_loao(mau, args, seeds)
+        payload = {
+            "schema": 1, "che_do": "loao",
+            "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
+            "lenh": " ".join(sys.argv),
+            "git_rev": git("rev-parse", "--short", "HEAD"),
+            "git_dirty": bool(git("status", "--porcelain")),
+            "git_dirty_code": bool(git("status", "--porcelain", "--", ".", ":!data")),
+            "epochs": args.epochs, "batch": args.batch, "lr": args.lr, "seeds": seeds,
+            "min_am_nhom": args.min_am_nhom, "nhom_theo": args.nhom_theo,
+            "so_mau_tong": len(mau), **loao,
+            "chiet_giai": (
+                "Leave-one-DAY-out: mỗi lượt bỏ hẳn một ngày khỏi train rồi chấm trên đúng ngày đó ⇒ "
+                "đây là con số DUY NHẤT đo được 'tổng quát sang ngày/cảnh mới' với dữ liệu hiện có. "
+                "Vẫn là cận trên vì 3 ngày 1123/1124/1125 đều quay trong cùng một phòng."),
+        }
+        p = ROOT / args.metrics
+        p.parent.mkdir(parents=True, exist_ok=True)
+        p.write_text(json.dumps(payload, ensure_ascii=False, indent=1, allow_nan=False),
+                     encoding="utf-8")
+        print(json.dumps({k: payload[k] for k in ("nhom_cham_duoc", "auc_trung_binh", "auc_min",
+                                                  "auc_max", "so_lan_chay")},
+                         ensure_ascii=False, indent=1))
+        for g, v in payload["theo_ngay"].items():
+            print(f"  ngày {g}: {v['so_mau']} mẫu (âm {v['am']}/dương {v['duong']}) "
+                  f"AUC {v['auc_theo_seed']} → {v['auc_trung_binh']}")
+        print(f"→ {p}")
+        return 0
     tr = [m for m in mau if m["split"] == "train"]
     va = [m for m in mau if m["split"] == "val"]
     if not tr or not va:
         print(f"thiếu split (train={len(tr)}, val={len(va)})", file=sys.stderr)
         return 1
 
-    seeds = [int(x) for x in args.seeds.split(",") if x.strip()]
     cac_lan = [chay_mot_seed(tr, va, args, sd) for sd in seeds]
     aucs = [c["val"]["auc"] for c in cac_lan]
     ngong = [c["ngong"]["auc"] for c in cac_lan]
@@ -282,6 +376,9 @@ def main() -> int:
         "git_dirty": bool(git("status", "--porcelain")),
         "git_dirty_code": bool(git("status", "--porcelain", "--", ".", ":!data")),
         "epochs": args.epochs, "batch": args.batch, "lr": args.lr, "seeds": seeds,
+        "so_anh_thieu": mau[0].get("_so_anh_thieu", 0),
+        "bootstrap": {"n_lan": 1000, "so_lan_hop_le_seed_dau": cac_lan[0]["val"]["so_lan_hop_le"],
+                      "ghi_chu": "resample không rút được phiên có ÂM bị bỏ ⇒ CI95 hơi HẸP so với thực"},
         "so_mau": {"train": len(tr), "val": len(va),
                    "val_am": sum(1 for m in va if m["nhan"] == 0),
                    "val_duong": sum(1 for m in va if m["nhan"] == 1),
