@@ -1,11 +1,11 @@
 {
  "schema": 1,
- "do_luc": "2026-11-26T13:38:20+0700",
+ "do_luc": "2026-11-26T14:01:08+0700",
  "lenh": "scripts/build_verifier_dataset.py",
- "git_rev": "4372e98",
+ "git_rev": "fe68b0a",
  "git_dirty": true,
  "git_dirty_code": false,
- "giay": 26.2,
+ "giay": 27.1,
  "chiet_giai": "pos_sys = ô HỆ vẽ ở bước nhãn 'dung' (nhãn 1); neg_sys = ô HỆ vẽ ở bước nhãn 'sai' (nhãn 0); pos_gt = ô NGƯỜI vẽ (bbox_dung) ở bất kỳ bước nào có nó (nhãn 1 — chống mẹo 'tường phẳng = sai'). Tách train/val THEO PHIÊN bằng sha256(tên phiên) ⇒ chạy lại ra y hệt, và cùng một phiên không nằm ở cả hai phía. Nhãn là phán quyết của MỘT người (`binh`) cho CẢ bước, không phải mask — hạn chế này phải nêu khi trích số.",
  "so_mau": 3230,
  "so_mau_du_kien": 3230,
@@ -31,12 +31,21 @@
  },
  "so_phien": 31,
  "phien_thieu_video": [],
+ "phien_0_mau": [
+  "demoip_1120-224057"
+ ],
+ "phien_nhieu_nguoi_dan": {},
  "bo_qua": {
+  "dung-khong-co-o-he": 1156,
+  "sai-khong-co-o-he": 859,
   "khong_co_vat": 643,
+  "mat_dau-khong-co-GT": 1327,
   "bo_qua": 2
  },
  "crop_px": 64,
  "margin": 0.15,
+ "dau_van_tay": "65fdc00d0d07c51a",
+ "da_xoa_cache_cu": false,
  "ti_le_val": 0.25,
  "manifest": "data/verifier/manifest.jsonl"
 }
