@@ -1,9 +1,9 @@
 {
  "schema": 1,
  "che_do": "loao",
- "do_luc": "2026-11-26T19:25:40+0700",
+ "do_luc": "2026-11-26T21:54:25+0700",
  "lenh": "scripts/train_verifier.py --loao --nhom-theo phien --metrics data/verifier_loao_phien_metrics.json",
- "git_rev": "1301a29",
+ "git_rev": "04941af",
  "git_dirty": true,
  "git_dirty_code": false,
  "epochs": 12,
@@ -30,6 +30,113 @@
   "demoip_1125-100334",
   "demoip_1125-121456"
  ],
+ "nhom_bo_qua": {
+  "demoip_1104-212328": {
+   "am": 0,
+   "duong": 29,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1104-214048": {
+   "am": 0,
+   "duong": 27,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1104-214922": {
+   "am": 0,
+   "duong": 31,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1104-220946": {
+   "am": 0,
+   "duong": 12,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1105-075326": {
+   "am": 0,
+   "duong": 18,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1105-124459": {
+   "am": 0,
+   "duong": 43,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1105-125828": {
+   "am": 0,
+   "duong": 48,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1105-131222": {
+   "am": 0,
+   "duong": 128,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1114-060249": {
+   "am": 0,
+   "duong": 90,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1121-080547": {
+   "am": 0,
+   "duong": 11,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1125-084257": {
+   "am": 0,
+   "duong": 1,
+   "ly_do": "0 mẫu âm"
+  },
+  "demoip_1125-084425": {
+   "am": 4,
+   "duong": 5,
+   "ly_do": "âm 4 < ngưỡng 15"
+  },
+  "fast_1029-193552": {
+   "am": 0,
+   "duong": 24,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1029-204458": {
+   "am": 0,
+   "duong": 10,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1029-210004": {
+   "am": 0,
+   "duong": 26,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1029-211544": {
+   "am": 0,
+   "duong": 64,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1029-212010": {
+   "am": 0,
+   "duong": 16,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1029-212632": {
+   "am": 0,
+   "duong": 134,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1101-153223": {
+   "am": 0,
+   "duong": 13,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1101-154036": {
+   "am": 0,
+   "duong": 53,
+   "ly_do": "0 mẫu âm"
+  },
+  "fast_1101-155053": {
+   "am": 0,
+   "duong": 47,
+   "ly_do": "0 mẫu âm"
+  }
+ },
  "theo_ngay": {
   "demoip_1123-162154": {
    "so_mau": 494,
@@ -230,5 +337,5 @@
  "auc_min": 0.4198,
  "auc_max": 0.8932,
  "so_lan_chay": 30,
- "chiet_giai": "Leave-one-DAY-out: mỗi lượt bỏ hẳn một ngày khỏi train rồi chấm trên đúng ngày đó ⇒ đây là con số DUY NHẤT đo được 'tổng quát sang ngày/cảnh mới' với dữ liệu hiện có. Vẫn là cận trên vì 3 ngày 1123/1124/1125 đều quay trong cùng một phòng."
+ "chiet_giai": "leave-one-PHIÊN-out: mỗi lượt bỏ HẲN một phiên khỏi train rồi chấm trên đúng nhóm đó. Nhóm là PHIÊN, nên các phiên CÙNG NGÀY vẫn nằm trong train ⇒ vẫn lạc quan về cảnh; dùng --nhom-theo ngay để cách ly cảnh."
 }

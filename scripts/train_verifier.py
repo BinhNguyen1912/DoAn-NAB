@@ -271,8 +271,19 @@ def chay_loao(mau: list[dict], args, seeds: list[int]) -> dict:
     nhom_cham = sorted(g for g, ms in theo.items()
                        if sum(1 for x in ms if x["nhan"] == 0) >= args.min_am_nhom
                        and sum(1 for x in ms if x["nhan"] == 1) >= args.min_am_nhom)
+    bo_qua = {}
+    for g, ms in theo.items():
+        if g in nhom_cham:
+            continue
+        am = sum(1 for x in ms if x["nhan"] == 0)
+        duong = sum(1 for x in ms if x["nhan"] == 1)
+        bo_qua[g] = {"am": am, "duong": duong,
+                     "ly_do": ("0 mẫu âm" if am == 0 else
+                               f"âm {am} < ngưỡng {args.min_am_nhom}" if am < args.min_am_nhom else
+                               f"dương {duong} < ngưỡng {args.min_am_nhom}")}
     if not nhom_cham:
-        return {"nhom_cham_duoc": [], "loi": "không nhóm nào đủ mẫu âm+dương để chấm LOAO"}
+        return {"nhom_cham_duoc": [], "nhom_bo_qua": bo_qua,
+                "loi": "không nhóm nào đủ mẫu âm+dương để chấm LOAO"}
     ra, aucs, ngong_all, so_seed_loai = {}, [], [], 0
     for g in nhom_cham:
         va = theo[g]
@@ -296,7 +307,7 @@ def chay_loao(mau: list[dict], args, seeds: list[int]) -> dict:
                  "ngong_auc_trung_binh": round(float(np.mean(ng)), 4) if ng else None}
         aucs.extend(a)
         ngong_all.extend(ng)
-    return {"nhom_cham_duoc": nhom_cham, "theo_ngay": ra,
+    return {"nhom_cham_duoc": nhom_cham, "nhom_bo_qua": bo_qua, "theo_ngay": ra,
             "so_seed_loai_nan": so_seed_loai,
             "ngong_auc_trung_binh": round(float(np.mean(ngong_all)), 4) if ngong_all else None,
             "auc_trung_binh_ngay": round(float(np.mean(aucs)), 4) if aucs else None,
@@ -387,9 +398,13 @@ def main() -> int:
             "so_mau_tong": len(mau), "so_anh_thieu": mau[0].get("_so_anh_thieu", 0) if mau else 0,
             **loao,
             "chiet_giai": (
-                "Leave-one-DAY-out: mỗi lượt bỏ hẳn một ngày khỏi train rồi chấm trên đúng ngày đó ⇒ "
-                "đây là con số DUY NHẤT đo được 'tổng quát sang ngày/cảnh mới' với dữ liệu hiện có. "
-                "Vẫn là cận trên vì 3 ngày 1123/1124/1125 đều quay trong cùng một phòng."),
+                f"leave-one-{'NGÀY' if args.nhom_theo == 'ngay' else 'PHIÊN'}-out: mỗi lượt bỏ HẲN "
+                f"một {'ngày' if args.nhom_theo == 'ngay' else 'phiên'} khỏi train rồi chấm trên đúng nhóm đó. "
+                + ("Đây là con số dùng được cho 'ngày/cảnh mới' (3 ngày 1123/1124/1125 vẫn cùng một "
+                   "phòng ⇒ còn là cận trên cho 'cảnh mới')."
+                   if args.nhom_theo == "ngay" else
+                   "Nhóm là PHIÊN, nên các phiên CÙNG NGÀY vẫn nằm trong train ⇒ vẫn lạc quan về cảnh; "
+                   "dùng --nhom-theo ngay để cách ly cảnh.")),
         }
         # CỔNG cho LOAO (bản trước chỉ có ở nhánh chia-theo-split ⇒ "không nhóm nào chấm được"
         # vẫn ghi artifact + exit 0 = đúng lỗi P1 vòng 1 quay lại — review 26-11 vòng 3).
