@@ -1,0 +1,332 @@
+{
+ "schema": 1,
+ "do_luc": "2026-11-26T14:03:37+0700",
+ "lenh": "scripts/train_verifier.py",
+ "git_rev": "fe68b0a",
+ "git_dirty": true,
+ "git_dirty_code": false,
+ "epochs": 12,
+ "batch": 64,
+ "lr": 0.001,
+ "seeds": [
+  0,
+  1,
+  2
+ ],
+ "so_mau": {
+  "train": 2599,
+  "val": 631,
+  "val_am": 57,
+  "val_duong": 574,
+  "val_phien": 6
+ },
+ "val_auc": [
+  0.789,
+  0.6987,
+  0.7912
+ ],
+ "val_auc_trung_binh": 0.7596,
+ "val_auc_std": 0.0528,
+ "val_auc_min": 0.6987,
+ "val_auc_max": 0.7912,
+ "ngong_auc": [
+  0.5194,
+  0.5194,
+  0.5194
+ ],
+ "ngong_auc_trung_binh": 0.5194,
+ "train_auc": [
+  0.9487,
+  0.9797,
+  0.9676
+ ],
+ "cac_lan": [
+  {
+   "seed": 0,
+   "val": {
+    "auc": 0.789,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 916,
+    "ci95": [
+     0.7218,
+     0.8543
+    ]
+   },
+   "train_auc": 0.9487,
+   "ngong": {
+    "auc": 0.5194,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 916,
+    "ci95": [
+     0.381,
+     0.5898
+    ]
+   },
+   "giay": 36.6
+  },
+  {
+   "seed": 1,
+   "val": {
+    "auc": 0.6987,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 919,
+    "ci95": [
+     0.5655,
+     0.945
+    ]
+   },
+   "train_auc": 0.9797,
+   "ngong": {
+    "auc": 0.5194,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 919,
+    "ci95": [
+     0.377,
+     0.5965
+    ]
+   },
+   "giay": 31.7
+  },
+  {
+   "seed": 2,
+   "val": {
+    "auc": 0.7912,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 898,
+    "ci95": [
+     0.7332,
+     0.8783
+    ]
+   },
+   "train_auc": 0.9676,
+   "ngong": {
+    "auc": 0.5194,
+    "n": 631,
+    "so_nhom": 6,
+    "so_lan_hop_le": 898,
+    "ci95": [
+     0.3984,
+     0.5965
+    ]
+   },
+   "giay": 31.6
+  }
+ ],
+ "val_auc_theo_phien": {
+  "0": {
+   "tung_phien": {
+    "demoip_1124-141352": {
+     "n": 87,
+     "am": 19,
+     "duong": 68,
+     "auc": 0.8839
+    },
+    "demoip_1124-193026": {
+     "n": 318,
+     "am": 38,
+     "duong": 280,
+     "auc": 0.8111
+    },
+    "fast_1029-210004": {
+     "n": 26,
+     "am": 0,
+     "duong": 26,
+     "auc": null
+    },
+    "fast_1029-212632": {
+     "n": 134,
+     "am": 0,
+     "duong": 134,
+     "auc": null
+    },
+    "fast_1101-153223": {
+     "n": 13,
+     "am": 0,
+     "duong": 13,
+     "auc": null
+    },
+    "fast_1101-154036": {
+     "n": 53,
+     "am": 0,
+     "duong": 53,
+     "auc": null
+    }
+   },
+   "so_phien_co_hai_lop": 2,
+   "auc_trung_binh_phien": 0.8475,
+   "auc_min_phien": 0.8111
+  },
+  "1": {
+   "tung_phien": {
+    "demoip_1124-141352": {
+     "n": 87,
+     "am": 19,
+     "duong": 68,
+     "auc": 0.9156
+    },
+    "demoip_1124-193026": {
+     "n": 318,
+     "am": 38,
+     "duong": 280,
+     "auc": 0.6942
+    },
+    "fast_1029-210004": {
+     "n": 26,
+     "am": 0,
+     "duong": 26,
+     "auc": null
+    },
+    "fast_1029-212632": {
+     "n": 134,
+     "am": 0,
+     "duong": 134,
+     "auc": null
+    },
+    "fast_1101-153223": {
+     "n": 13,
+     "am": 0,
+     "duong": 13,
+     "auc": null
+    },
+    "fast_1101-154036": {
+     "n": 53,
+     "am": 0,
+     "duong": 53,
+     "auc": null
+    }
+   },
+   "so_phien_co_hai_lop": 2,
+   "auc_trung_binh_phien": 0.8049,
+   "auc_min_phien": 0.6942
+  },
+  "2": {
+   "tung_phien": {
+    "demoip_1124-141352": {
+     "n": 87,
+     "am": 19,
+     "duong": 68,
+     "auc": 0.8746
+    },
+    "demoip_1124-193026": {
+     "n": 318,
+     "am": 38,
+     "duong": 280,
+     "auc": 0.782
+    },
+    "fast_1029-210004": {
+     "n": 26,
+     "am": 0,
+     "duong": 26,
+     "auc": null
+    },
+    "fast_1029-212632": {
+     "n": 134,
+     "am": 0,
+     "duong": 134,
+     "auc": null
+    },
+    "fast_1101-153223": {
+     "n": 13,
+     "am": 0,
+     "duong": 13,
+     "auc": null
+    },
+    "fast_1101-154036": {
+     "n": 53,
+     "am": 0,
+     "duong": 53,
+     "auc": null
+    }
+   },
+   "so_phien_co_hai_lop": 2,
+   "auc_trung_binh_phien": 0.8283,
+   "auc_min_phien": 0.782
+  }
+ },
+ "val_auc_trung_binh_phien_theo_seed": {
+  "0": 0.8475,
+  "1": 0.8049,
+  "2": 0.8283
+ },
+ "val_am_theo_phien": {
+  "demoip_1124-141352": 19,
+  "demoip_1124-193026": 38,
+  "fast_1029-210004": 0,
+  "fast_1029-212632": 0,
+  "fast_1101-153223": 0,
+  "fast_1101-154036": 0
+ },
+ "lich_epoch_seed_dau": [
+  {
+   "epoch": 1,
+   "loss_train": 0.1684,
+   "auc_val": 0.7334
+  },
+  {
+   "epoch": 2,
+   "loss_train": 0.1518,
+   "auc_val": 0.6926
+  },
+  {
+   "epoch": 3,
+   "loss_train": 0.1416,
+   "auc_val": 0.6584
+  },
+  {
+   "epoch": 4,
+   "loss_train": 0.1315,
+   "auc_val": 0.6821
+  },
+  {
+   "epoch": 5,
+   "loss_train": 0.1231,
+   "auc_val": 0.625
+  },
+  {
+   "epoch": 6,
+   "loss_train": 0.1192,
+   "auc_val": 0.7717
+  },
+  {
+   "epoch": 7,
+   "loss_train": 0.1054,
+   "auc_val": 0.7234
+  },
+  {
+   "epoch": 8,
+   "loss_train": 0.0987,
+   "auc_val": 0.7557
+  },
+  {
+   "epoch": 9,
+   "loss_train": 0.0924,
+   "auc_val": 0.6341
+  },
+  {
+   "epoch": 10,
+   "loss_train": 0.0904,
+   "auc_val": 0.7305
+  },
+  {
+   "epoch": 11,
+   "loss_train": 0.0817,
+   "auc_val": 0.6095
+  },
+  {
+   "epoch": 12,
+   "loss_train": 0.0782,
+   "auc_val": 0.789
+  }
+ ],
+ "diem_mot_anh_lap_lai": [
+  0.992647,
+  0.992647
+ ],
+ "giay": 99.9,
+ "chiet_giai": "`ngong_auc` = AUC của bộ phân loại NGỐ chỉ dùng độ lệch chuẩn pixel (vùng trơn ⇒ thấp); `val_auc` không vượt rõ con số này thì mô hình chỉ học 'tường trơn = sai'. `val_auc_theo_phien` là con số ĐÚNG ĐỂ ĐỌC: âm và dương cùng một phiên ⇒ không rò rỉ miền; `val_auc` gộp thì trộn nền của nhiều phiên với âm của vài phiên nên có thể cao/giả. `val_am_theo_phien` cho thấy âm dồn vào phiên nào — phiên 0 âm thì không chấm được (auc null). CI95 bootstrap theo PHIÊN val. `val_am` nhỏ ⇒ CI rộng; đọc `val_auc_std` (giữa seed) trước khi kết luận. Nhãn là phán quyết của MỘT người cho CẢ bước, không phải mask — hạn chế này phải nêu khi trích số."
+}
