@@ -46,8 +46,11 @@ dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách đư�
      chấm được) thì **không ghi artifact** + exit 1 — áp cho **cả** chế độ chia-split **và** `--loao`.
 3. **`tests/test_verifier_dataset.py`** — **30 test**: AUC (hoàn hảo/đảo/hoà/thiếu lớp/NaN), CI theo
    nhóm phải **rộng hơn** theo dòng, nhãn **dòng cuối thắng**, CSV cũ thiếu `bbox_w` ⇒ không bịa ô,
-   **ảnh crop ứng đúng frame** (fixture đổi màu theo frame), đổi `--margin`/`--ti-le-val`/`--chia-theo`
-   ⇒ cắt lại, phiên 0 mẫu, 2 người dán, `eval()` vs `train()` khác nhau và raise khi không tất định.
+   **ảnh crop ứng đúng frame** (fixture đổi màu theo frame — *dung sai đúng 1 bước màu, nên lệch 1 frame
+   vẫn XANH, trùng với ngưỡng `> 1` của phép kiểm seek: test này bắt được lệch ≥ 2 frame, không phải
+   mọi lệch*), đổi `--margin`/`--ti-le-val`/`--chia-theo` ⇒ cắt lại, phiên 0 mẫu, 2 người dán,
+   `eval()` vs `train()` khác nhau và raise khi không tất định, `chay_loao` bỏ hẳn nhóm, cổng LOAO,
+   `ci95 = None` khi 1 nhóm.
 
 ## 📤 Output / Kết quả
 
@@ -63,7 +66,7 @@ dải ca đúng (0,905) ⇒ **không tồn tại ngưỡng cos nào tách đư�
 
 | # | cách chia | AUC | nghĩa |
 |---|---|---|---|
-| 1 | train/val theo **phiên** (val 6 phiên, 57 âm) | **0,7596 ± 0,0528** (gộp) · **0,827 ± 0,021** (trong phiên) | **CẬN TRÊN** — 6/6 phiên val có phiên **cùng ngày** trong train (cùng phòng, cùng vật, cùng ánh sáng) |
+| 1 | train/val theo **phiên** (val 6 phiên, 57 âm) | **0,7596 ± 0,0528** (gộp) · **0,827 ± 0,021** (trong phiên — nhưng chỉ **2/6** phiên có đủ âm để chấm, **cả hai thuộc ngày 1124**) | **CẬN TRÊN** — 6/6 phiên val có phiên **cùng ngày** trong train (cùng phòng, cùng vật, cùng ánh sáng) |
 | 2 | leave-one-**session**-out (10 phiên, 30 lần chạy) | **0,7391** (min **0,4198**, max 0,8932) | phiên mới, **cùng ngày** ⇒ vẫn lạc quan |
 | 3 | **leave-one-DAY-out** (3 ngày có âm, 9 lần chạy) | **0,5846** (min 0,4198 · max 0,7432 **trên ngày×seed**, không phải CI) | **số dùng được**: *ngày* chưa thấy (khả năng cao vẫn **cùng phòng** ⇒ còn là cận trên cho "cảnh mới") |
 
@@ -151,6 +154,18 @@ không tiến triển) và taskforce `advisor` tự đóng sau khi trả kết q
   nhãn **ca** cho từng bước, chưa có) và trên ≥ 5 ngày.
 - Chỉ sau khi LODO ≥ 0,75 ổn định qua ≥ 2 lần dựng dataset mới lập **plan 3 ý kiến** (§9.2) để nối vào
   cổng nghi.
+
+## 🧷 Bẫy khi grep artifact
+
+- Chuỗi `0.5846` xuất hiện **hai lần** trong `data/verifier_loao_ngay_metrics.json`: `auc_trung_binh`
+  (con số headline) và **cận TRÊN của `ci95` ngày 1125**. Đừng `grep 0.5846` rồi kết luận.
+- `nhom_bo_qua` liệt kê **6 ngày không chấm được** (`1029·1101·1104·1105·1114·1121`, đều `0 mẫu âm`) —
+  trước đây artifact chỉ có nhóm "sống", nên không ai biết vì sao n = 3.
+- `min/max` trong `theo_ngay` là **min/max trên ngày × seed**, **không** phải khoảng tin cậy; `ci95`
+  của một ngày chỉ có khi ngày đó có ≥ 2 phiên (1123 chỉ 1 phiên ⇒ `ci95 = None`).
+- Ngày `1123` chỉ có **1 phiên** ⇒ fold LODO-1123 **trùng khít** fold LOO-phiên-1123 (cùng bộ ba
+  0,4406/0,4198/0,627) ⇒ tầng 2 và tầng 3 **không** phải hai bằng chứng độc lập.
+- 3 ngày 1123/1124/1125 là **3 ngày liền, cùng phòng** ⇒ 3 điểm tương quan, n = 3.
 
 ## 🧷 Ghi chú tái lập
 
