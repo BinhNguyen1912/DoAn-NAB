@@ -258,8 +258,24 @@ class TestDonCache:
         d.mkdir()
         for i in range(3):
             cv2.imwrite(str(d / f"{i:05d}.png"), np.zeros((4, 4), np.uint8))
-        assert psm.don_cache_neu_can(tmp_path, "moi") == 3
+        assert psm.don_cache_neu_can(tmp_path, "moi", cho_xoa=True) == 3
         assert not d.exists() and (tmp_path / ".dau_van_tay").read_text() == "moi"
+
+    def test_van_tay_doi_ma_KHONG_cho_xoa_thi_TU_CHOI(self, tmp_path):
+        """Từ chối thay vì xoá: vân tay gồm `mtime` của `data/nhan/*.jsonl` nên chỉ cần gán thêm MỘT
+        nhãn là vân tay đổi, và lần chạy đầy đủ kế tiếp sẽ xoá sạch mask cũ (kể cả mask đã sửa tay) mà
+        không ai bấm gì (review độc lập vòng 4, P1).
+        """
+        import cv2
+        (tmp_path / ".dau_van_tay").write_text("cu", encoding="utf-8")
+        d = tmp_path / "p"
+        d.mkdir()
+        for i in range(3):
+            cv2.imwrite(str(d / f"{i:05d}.png"), np.zeros((4, 4), np.uint8))
+        with pytest.raises(ValueError, match="xoa-cache"):
+            psm.don_cache_neu_can(tmp_path, "moi")
+        assert sorted(x.name for x in d.glob("*.png")) == ["00000.png", "00001.png", "00002.png"]
+        assert (tmp_path / ".dau_van_tay").read_text() == "cu", "từ chối thì không được đóng dấu vân tay mới"
 
     def test_van_tay_khong_doi_thi_khong_dung(self, tmp_path):
         (tmp_path / ".dau_van_tay").write_text("same", encoding="utf-8")
@@ -290,6 +306,44 @@ class TestDonCache:
         with pytest.raises(ValueError):
             psm.don_cache_neu_can(tmp_path, "moi")
         assert not (tmp_path / ".dau_van_tay").exists(), "không được đóng dấu cache lên thư mục lạ"
+
+
+class TestShapeLa:
+    def test_shape_la_bi_BO_va_DEM_khong_ghi_PNG(self, tmp_path, monkeypatch):
+        """Mask lệch chiều: `cv2.imwrite` VẪN nhận (đo 27-11: chỉ rỗng/scalar mới ném) ⇒ đi tiếp là ghi
+        ra PNG sai trong khi `qc` đã báo cờ. Review độc lập vòng 4 (P1): phải thành LỖI riêng
+        (`loi_shape`), không ghi file, không làm chết cả lô 1 251 mask.
+        """
+        rec = {"phien": "p", "buoc": 0, "frame_idx": 0, "box": [10, 10, 50, 40],
+               "nhan": "sai", "video_rong": 64, "video_cao": 48, "fps": 10.0}
+
+        class CapGia:
+            def set(self, *a):
+                return True
+
+            def get(self, *a):
+                return 0
+
+            def read(self):
+                return True, np.zeros((48, 64, 3), np.uint8)
+
+        class EngineShapeLa:
+            def start(self, *a, **k):
+                return type("KQ", (), {"mask": np.zeros(40, bool)})()
+
+        monkeypatch.setattr(psm.L, "_mo_video", lambda ten: (CapGia(), 10.0, 20, 64, 48))
+        monkeypatch.setattr(psm.L, "_CAP_LOCK", __import__("contextlib").nullcontext())
+        da_ghi = []
+        imwrite_that = psm.cv2.imwrite
+
+        def imwrite_theo_doi(duong, m):
+            da_ghi.append(str(duong))
+            return imwrite_that(duong, m)
+
+        monkeypatch.setattr(psm.cv2, "imwrite", imwrite_theo_doi)
+        ban_ghi, dem = psm.sinh_mask(EngineShapeLa(), [rec], tmp_path, ghi_de=True)
+        assert dem["loi_shape"] == 1 and dem["moi"] == 0 and dem["loi_mask"] == 0, dem
+        assert ban_ghi == [] and da_ghi == [], "mask lệch chiều không được ghi ra đĩa"
 
 
 class TestThuThap:
@@ -395,10 +449,59 @@ class TestMain:
                                      {"file": {}, "buoc": {}}, {"tho": 1, "trung_lap": 0, "cua_buoc_bi_bo": 0}))
         monkeypatch.setattr(psm, "sinh_mask",
                             lambda *a, **k: ([], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0,
-                                                  "loi_mask": 0, "loi_ghi": 1, "ms_moi_mask": None}))
+                                                  "loi_mask": 0, "loi_shape": 0, "loi_ghi": 1,
+                                                  "ms_moi_mask": None}))
         monkeypatch.setattr(sys, "argv", ["make_pseudo_masks.py", "--out", str(out),
                                           "--checkpoint", ck, "--model-cfg", cfg])
 
         assert psm.main() == 1
         assert man.read_text(encoding="utf-8") == '{"cu": 1}\n', "manifest cũ bị ghi đè"
         assert not (tmp_path / "gt_pseudo_metrics.json").exists(), "artifact không được ghi khi có lỗi"
+
+    def test_ghi_sinh_luc_khi_co_mask_moi(self, tmp_path, monkeypatch):
+        """Artifact của lần chỉ đọc cache khai `git_rev` của CHÍNH NÓ (và `so_mask_moi_sinh = 0`) ⇒
+        không chỗ nào ghi rev/checkpoint/image_size đã TẠO RA 1 251 PNG. Review độc lập vòng 4 (P1).
+        """
+        import types
+
+        ck, cfg = "ck.pt", "cfg.yaml"
+        nhan = tmp_path / "nhan"
+        nhan.mkdir()
+        monkeypatch.setattr(psm, "NHAN", nhan)
+        monkeypatch.setattr(psm, "DATA", tmp_path)
+        out = tmp_path / "gt_pseudo"
+        out.mkdir()
+        (out / ".dau_van_tay").write_text(psm.dau_van_tay(512, ck, cfg), encoding="utf-8")
+
+        class EngineGia:
+            image_size_hieu_luc = 512
+
+            @staticmethod
+            def build_default(**k):
+                return EngineGia()
+
+        gia = types.ModuleType("src.tracker_engine")
+        gia.TrackerEngine = EngineGia
+        monkeypatch.setitem(sys.modules, "src.tracker_engine", gia)
+        monkeypatch.setattr(psm, "thu_thap_muc_tieu",
+                            lambda: ([{"phien": "p", "buoc": 0, "frame_idx": 0, "box": [1, 1, 9, 9]}],
+                                     {"file": {}, "buoc": {}}, {"tho": 1, "trung_lap": 0, "cua_buoc_bi_bo": 0}))
+        qc_dong = {"rong": False, "nho": False, "tran": False, "cham_bien": False,
+                   "shape_la": False, "nghi": False, "ty_le_dien_tich": 0.5, "dien_tich": 800}
+        ban_ghi = [{"phien": "p", "buoc": 0, "frame_idx": 0, "box": [1, 1, 9, 9], "nhan": "sai",
+                    "mask": "gt_pseudo/p/00000_x.png", "qc": dict(qc_dong)}]
+        monkeypatch.setattr(psm, "sinh_mask",
+                            lambda *a, **k: (list(ban_ghi),
+                                             {"co_cache": 0, "moi": 1, "loi_doc_frame": 0, "loi_mask": 0,
+                                              "loi_shape": 0, "loi_ghi": 0, "ms_moi_mask": 518.0}))
+        monkeypatch.setattr(sys, "argv", ["make_pseudo_masks.py", "--out", str(out),
+                                          "--checkpoint", ck, "--model-cfg", cfg])
+
+        assert psm.main() == 0
+        dong = [json.loads(x) for x in
+                (out / "sinh_luc.jsonl").read_text(encoding="utf-8").splitlines()]
+        assert len(dong) == 1, dong
+        assert dong[0]["checkpoint"] == ck and dong[0]["image_size_hieu_luc"] == 512, dong
+        art = json.loads((tmp_path / "gt_pseudo_metrics.json").read_text(encoding="utf-8"))
+        assert art["phien_ban_sinh"] == dong[0] and art["schema"] == 2
+        assert art["loi_shape"] == 0 and "shape_la" in art["qc_dem"], art["qc_dem"]

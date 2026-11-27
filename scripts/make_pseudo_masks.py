@@ -90,12 +90,17 @@ def dau_van_tay(image_size: int, checkpoint: str, model_cfg: str) -> str:
     return h.hexdigest()[:16]
 
 
-def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> int:
+def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str, cho_xoa: bool = False) -> int:
     """Xoá mask của lần chạy trước nếu vân tay khác. Trả **số file PNG đã xoá**.
 
     Chỉ dọn khi `out_dir` đúng là thư mục cache do script này tạo (có `.dau_van_tay`) hoặc đang rỗng:
     bản trước xoá **mọi** thư mục con của `--out` mà không kiểm ⇒ `--out data` xoá `data/nhan`, `--out .`
     xoá cả `src/`, `.git/` (review độc lập 27-11, P1). `--limit` không được gọi hàm này.
+
+    `cho_xoa=False` (mặc định) ⇒ vân tay đổi thì **TỪ CHỐI** chứ không xoá: vân tay gồm `mtime_ns` của
+    `data/nhan/*.jsonl` nên chỉ cần gán thêm MỘT nhãn là vân tay đổi, và lần chạy đầy đủ kế tiếp sẽ
+    xoá sạch mask cũ (kể cả mask đã sửa tay) mà không ai bấm gì ⇒ bảo vệ phải nằm ở chỗ XOÁ, không
+    phải ở công thức vân tay. Muốn xoá thật thì truyền `--xoa-cache` (review độc lập vòng 4, P1).
     """
     tep = out_dir / ".dau_van_tay"
     da_co_van_tay = tep.is_file()
@@ -111,6 +116,11 @@ def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> int:
             f"{out_dir} có {len(con)} entry nhưng KHÔNG có `.dau_van_tay` ⇒ không dám coi là thư mục "
             f"cache để xoá ({', '.join(c.name for c in con[:3])}…). Dùng `--out` mới hoặc xoá tay.")
     so_file = sum(1 for d in con if d.is_dir() for _ in d.rglob("*.png"))   # chỉ đếm PNG, đếm trước khi xoá
+    if so_file and not cho_xoa:
+        raise ValueError(
+            f"vân tay nguồn/tham số đổi ⇒ lần chạy này SẼ XOÁ {so_file} mask trong {out_dir} (kể cả mask "
+            f"đã sửa tay). Chạy lại với `--xoa-cache` nếu thật sự muốn sinh lại từ đầu, hoặc dùng `--out` "
+            f"mới. Vân tay gồm mtime của `data/nhan/*.jsonl` nên chỉ cần thêm một nhãn là đổi.")
     for d in con:                             # giữ file ở gốc (manifest/artifact không nằm ở đây)
         if d.is_dir():
             shutil.rmtree(d, ignore_errors=True)
@@ -251,7 +261,8 @@ def dem_dong(dong_theo_buoc: dict[tuple[str, int], int], viec: list[dict]) -> di
 def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> tuple[list, dict]:
     """Chạy SAM 2 cho từng mục tiêu. Trả (bản ghi, đếm)."""
     out_dir.mkdir(parents=True, exist_ok=True)
-    ban_ghi, dem = [], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0, "loi_mask": 0, "loi_ghi": 0}
+    ban_ghi, dem = [], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0, "loi_mask": 0, "loi_shape": 0,
+                        "loi_ghi": 0}
     tong_ms = 0.0
     for k, v in enumerate(viec, 1):
         phien, buoc = v["phien"], v["buoc"]
@@ -293,6 +304,15 @@ def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> 
             if dem["loi_mask"] <= 3:
                 print(f"  LỖI model {phien}#{buoc}: {type(e).__name__}: {e}", file=sys.stderr)
             continue
+        # Mask lệch chiều KHÔNG được đi tiếp: `cv2.imwrite` NHẬN cả mảng 1-D và 3-D (đo 27-11:
+        # chỉ shape rỗng/scalar mới ném) ⇒ đi tiếp là ghi ra PNG SAI mà `qc` đã báo cờ. Ca lạ phải
+        # thành LỖI của riêng nó (đếm + bỏ) để cổng "không công bố" bắt được, không làm chết cả lô
+        # (review độc lập vòng 4, P1).
+        if mask.ndim != 2 or mask.size == 0:
+            dem["loi_shape"] += 1
+            if dem["loi_shape"] <= 3:
+                print(f"  LỖI shape mask {phien}#{buoc}: {mask.shape}", file=sys.stderr)
+            continue
         rec = dict(v)
         rec["qc"] = qc(mask, v["box"], v["video_rong"], v["video_cao"])
         if ghi_de:
@@ -329,6 +349,8 @@ def main() -> int:
     ap.add_argument("--model-cfg", default="configs/samurai/sam2.1_hiera_t.yaml")
     ap.add_argument("--limit", type=int, help="chỉ làm N ô đầu (để đo tốc độ)")
     ap.add_argument("--qc", action="store_true", help="chỉ IN danh sách mask cần xem lại, không chạy model")
+    ap.add_argument("--xoa-cache", action="store_true",
+                    help="CHO PHÉP xoá mask cũ khi vân tay nguồn/tham số đổi (mặc định: từ chối)")
     ap.add_argument("--metrics", help="file artifact JSON (mặc định <out>_metrics.json)")
     args = ap.parse_args()
 
@@ -377,7 +399,7 @@ def main() -> int:
     so_da_xoa = 0
     if not args.limit:      # `--limit` chỉ đo tốc độ ⇒ không được xoá cache (review 27-11, P1)
         try:
-            so_da_xoa = don_cache_neu_can(out_dir, van_tay)
+            so_da_xoa = don_cache_neu_can(out_dir, van_tay, cho_xoa=args.xoa_cache)
         except ValueError as e:
             print(f"LỖI: {e} — không công bố số", file=sys.stderr)
             return 1
@@ -391,7 +413,7 @@ def main() -> int:
 
     # P2-6: phát ĐỦ 4 khoá (0 tường minh) — nếu chỉ phát cờ > 0 thì "0 rỗng / 0 tràn" trong log là suy
     # từ code, không đọc được từ artifact (bẫy "0/None ≠ đã đo").
-    CO = ("rong", "nho", "tran", "cham_bien")
+    CO = ("rong", "nho", "tran", "cham_bien", "shape_la")
     dem_co = {k: sum(1 for r in ban_ghi if r["qc"][k]) for k in CO}
     so_nhieu_co = sum(1 for r in ban_ghi if sum(bool(r["qc"][k]) for k in CO) > 1)
 
@@ -404,7 +426,7 @@ def main() -> int:
                "p05": _pct(ty, 0.05), "p95": _pct(ty, 0.95),
                "ghi_chu": "n = số mask KHÔNG rỗng; p05/p95 chỉ phát khi n >= 30 (AGENTS §6)"}
     payload = {
-        "schema": 1,
+        "schema": 2,        # v2: qc_dem thêm `shape_la`; thêm `loi_shape` + `phien_ban_sinh`
         "do_luc": time.strftime("%Y-%m-%dT%H:%M:%S%z"),
         "lenh": " ".join(sys.argv),
         "git_rev": git("rev-parse", "--short", "HEAD"),
@@ -419,6 +441,7 @@ def main() -> int:
         "co_cache": dem["co_cache"],
         "loi_doc_frame": dem["loi_doc_frame"],
         "loi_mask": dem["loi_mask"],
+        "loi_shape": dem["loi_shape"],
         "loi_ghi": dem["loi_ghi"],
         "ms_moi_mask": dem["ms_moi_mask"],
         "ghi_chu_ms_moi_mask": ("đo từ ngay trước `engine.start()` tới sau khi ghi PNG + qc; KHÔNG gồm "
@@ -434,6 +457,11 @@ def main() -> int:
         "ghi_chu_giay_tong": ("gồm cả thời gian đọc cache; khi `do_toc_do` false thì đây KHÔNG phải thời "
                               "gian sinh mask (đừng lấy giay_tong / so_mask ra làm ms/mask)"),
         "dau_van_tay": van_tay,
+        "ghi_chu_pham_vi_dau_van_tay": (
+            "vân tay KHÔNG gồm: nội dung checkpoint (đổi ruột cùng đường dẫn), `src/tracker_engine.py`, "
+            "và đường prompt→mask; CÓ gồm `mtime` của nhãn/CSV/video nên chỉ cần gán thêm một nhãn là "
+            "đổi ⇒ đọc `sinh_luc.jsonl` để biết mask được sinh bằng rev/checkpoint/image_size nào."),
+        "phien_ban_sinh": None,     # điền SAU cổng "không công bố": dòng provenance của lần SINH mask
         "so_mask_da_xoa": so_da_xoa,
         "da_xoa_cache_cu": so_da_xoa > 0,
         "bo_qua_file": bo_qua["file"],
@@ -458,11 +486,25 @@ def main() -> int:
     # P2-9: lỗi model / đọc frame / GHI file ⇒ KHÔNG công bố, và KHÔNG ghi đè manifest + artifact đã có.
     # `manifest.jsonl` phải nằm DƯỚI cổng này: ghi trước thì một lần chạy lỗi để lại manifest rách và
     # `--qc` sau đó in theo bản rách (review 27-11 vòng 2, P2).
-    if (dem["loi_mask"] or dem["loi_doc_frame"] or dem["loi_ghi"]
+    if (dem["loi_mask"] or dem["loi_shape"] or dem["loi_doc_frame"] or dem["loi_ghi"]
             or len(ban_ghi) < len(viec)):
         print(f"KHÔNG CÔNG BỐ — lỗi model {dem['loi_mask']}, lỗi đọc frame {dem['loi_doc_frame']}, "
               f"lỗi ghi {dem['loi_ghi']}, mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
         return 1
+
+    # Nguồn gốc của mask ĐÃ SINH: lần chạy chỉ đọc cache khai `git_rev` của CHÍNH NÓ còn
+    # `so_mask_moi_sinh = 0` ⇒ không chỗ nào trong repo ghi rev/checkpoint/image_size đã tạo ra 1 251
+    # PNG (review độc lập vòng 4, P1). Một dòng mỗi lần có sinh mới; KHÔNG đưa nội dung file này vào
+    # `dau_van_tay` (đưa vào thì mỗi lần ghi lại tự phá vân tay ⇒ xoá cache).
+    if dem["moi"] > 0 and not args.limit:
+        dong = {"do_luc": payload["do_luc"], "git_rev": payload["git_rev"],
+                "git_dirty_code": payload["git_dirty_code"],
+                "image_size_hieu_luc": payload["image_size_hieu_luc"],
+                "checkpoint": args.checkpoint, "model_cfg": args.model_cfg,
+                "so_mask_moi_sinh": dem["moi"], "qc_schema": payload["schema"]}
+        with (out_dir / "sinh_luc.jsonl").open("a", encoding="utf-8") as f:
+            f.write(json.dumps(dong, ensure_ascii=False) + "\n")
+        payload["phien_ban_sinh"] = dong
 
     if not args.limit:
         man.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in ban_ghi),

@@ -162,7 +162,35 @@ File thay đổi:
    ⇒ `don_cache_neu_can` xoá **toàn bộ 1 251 PNG** trong `data/gt_pseudo/` — đúng thư mục đang là đích
    sửa tay của 308 ca "nghi" — rồi SAM 2 sinh lại **không tất định** (AGENTS §6) nên `rong/nho/tran/
    cham_bien` của artifact sẽ đổi mà **không phải mask tốt lên**. Việc này để dành đúng lúc sinh lại
-   mask (khi đó cache vô hiệu là ý định, không phải tai nạn).
+   mask (khi đó cache vô hiệu là ý định, không phải tai nạn). Nay đã có **bảo vệ chặn việc
+   xoá tự phát** — xem mục 9.
+
+9. **Review độc lập vòng 4** (trên `b10d356`) → **2 P1 + 2 P2, mọi mục đã sửa**:
+   - **P1 (chặn mất dữ liệu):** vân tay đổi ⇒ `don_cache_neu_can` **xoá** sạch mask cũ. Mà vân tay gồm
+     `mtime` của `data/nhan/*.jsonl` ⇒ chỉ cần gán thêm **một** nhãn, lần chạy đầy đủ kế tiếp là mất
+     1 251 PNG (kể cả mask đã sửa tay) mà **không ai bấm gì**. Nay `don_cache_neu_can(..., cho_xoa=False)`
+     **từ chối** bằng `ValueError` (in `LỖI: … — không công bố số`, thoát 1); chỉ `--xoa-cache` mới xoá.
+     Test `test_van_tay_doi_ma_KHONG_cho_xoa_thi_TU_CHOI` (PNG còn nguyên, `.dau_van_tay` không bị đóng
+     dấu mới).
+   - **P1 (mất nguồn gốc):** artifact của lần chỉ đọc cache khai `git_rev` của **chính nó** và
+     `so_mask_moi_sinh = 0` ⇒ **không chỗ nào** ghi rev/checkpoint/`image_size` đã tạo ra 1 251 PNG.
+     Nay có `data/gt_pseudo/sinh_luc.jsonl`: **một dòng mỗi lần có sinh mới** (`git_rev`,
+     `git_dirty_code`, `image_size_hieu_luc`, `checkpoint`, `model_cfg`, `so_mask_moi_sinh`) và
+     artifact có `phien_ban_sinh` (dòng đó, hoặc `null` khi lần chạy không sinh mask nào). File này
+     **không** vào `dau_van_tay`: đưa vào là mỗi lần ghi lại tự phá vân tay ⇒ xoá cache.
+   - **P1 (test):** `shape_la` mới chỉ "phòng thủ cho khỏi ném", mask lệch chiều vẫn **đi tiếp**. Đo lại:
+     `cv2.imwrite` **nhận** cả mảng 1-D và 3-D (chỉ rỗng/scalar mới ném) ⇒ hậu quả là **ghi PNG sai
+     trong im lặng**, tệ hơn là ném. Nay trong `sinh_mask`: `mask.ndim != 2 or mask.size == 0` ⇒
+     `dem["loi_shape"] += 1` + `continue` (in 3 ca đầu) và `loi_shape` vào cổng "không công bố" ⇒
+     **không ghi file, không chết cả lô 1 251 mask**. Test `test_shape_la_bi_BO_va_DEM_khong_ghi_PNG`
+     kiểm `imwrite` **không** được gọi.
+   - **P2:** `shape_la` vào tuple `CO` (4 → 5 khoá ⇒ artifact `qc_dem` phát đủ), `schema` 1 → **2**, và
+     `ghi_chu_pham_vi_dau_van_tay` nói rõ cái **không** gồm (nội dung checkpoint, `src/tracker_engine.py`,
+     đường prompt→mask) để không ai tưởng vân tay bảo vệ mọi thứ.
+   - Test của file: **36 → 40**; `./run lint` xanh.
+   - **Giới hạn phải nói kèm:** 1 251 mask hiện có được sinh **trước** khi có `sinh_luc.jsonl` ⇒ lần chạy
+     lại (chỉ đọc cache) cho `phien_ban_sinh: null`. Nguồn gốc của chúng chỉ còn trong log/commit
+     (`127f428`) — **không bịa** dòng provenance cho chúng.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 
@@ -177,6 +205,8 @@ File thay đổi:
 - [x] Làn nhanh xanh **trong env `samurai`** (conda): `./run lint` + `./run test` = 2 286 passed /
       6 deselected (230 s). `.venv` của WSL vẫn thiếu `fastapi/uvicorn/httpx/pydantic` ⇒ vẫn phải chạy
       qua `/home/msi/miniconda3/envs/samurai/bin/python`.
+- [x] Vòng 4 review (2 P1 + 2 P2) đã sửa + 4 test mới (36 → 40).
+- [ ] Sinh lại `data/gt_pseudo_metrics.json` trên rev mới (schema 2; chỉ đọc cache, KHÔNG sinh lại mask).
 - [ ] Mở PR `feat/mask-gia-tu-o-nguoi-ve` → `main` (merge commit, CI xanh trước khi merge).
 - [ ] (Tuỳ chọn) xoá `data/gt_pseudo` rồi chạy lại đủ để có `ms/mask` cho cả 1 251 mask trên cây sạch.
 - [ ] Sửa tay 308 mask "nghi" (38 ca `nho` + các ca xem mắt thấy ăn nền) ⇒ ~943 mask "tạm tin".
