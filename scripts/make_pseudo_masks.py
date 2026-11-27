@@ -462,6 +462,10 @@ def main() -> int:
             "và đường prompt→mask; CÓ gồm `mtime` của nhãn/CSV/video nên chỉ cần gán thêm một nhãn là "
             "đổi ⇒ đọc `sinh_luc.jsonl` để biết mask được sinh bằng rev/checkpoint/image_size nào."),
         "phien_ban_sinh": None,     # điền SAU cổng "không công bố": dòng provenance của lần SINH mask
+        "ghi_chu_phien_ban_sinh": (
+            "`null` = lần chạy này KHÔNG sinh mask mới (chỉ đọc cache hoặc `--limit`) ⇒ KHÔNG có dòng "
+            "provenance cho mask cũ, và artifact KHÔNG được suy ra nó là rev này; nguồn duy nhất "
+            "là `sinh_luc.jsonl` (một dòng mỗi lần sinh mới)."),
         "so_mask_da_xoa": so_da_xoa,
         "da_xoa_cache_cu": so_da_xoa > 0,
         "bo_qua_file": bo_qua["file"],
@@ -488,8 +492,12 @@ def main() -> int:
     # `--qc` sau đó in theo bản rách (review 27-11 vòng 2, P2).
     if (dem["loi_mask"] or dem["loi_shape"] or dem["loi_doc_frame"] or dem["loi_ghi"]
             or len(ban_ghi) < len(viec)):
-        print(f"KHÔNG CÔNG BỐ — lỗi model {dem['loi_mask']}, lỗi đọc frame {dem['loi_doc_frame']}, "
-              f"lỗi ghi {dem['loi_ghi']}, mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
+        # In ĐỦ mọi lỗi mà cổng đang xét: bản trước bỏ sót `loi_shape` ⇒ cổng có, thông điệp không
+        # (review độc lập vòng 5, P2) ⇒ người đọc log thấy "lỗi model 0, lỗi ghi 0" mà không hiểu vì
+        # sao không công bố.
+        print(f"KHÔNG CÔNG BỐ — lỗi model {dem['loi_mask']}, lỗi shape {dem['loi_shape']}, "
+              f"lỗi đọc frame {dem['loi_doc_frame']}, lỗi ghi {dem['loi_ghi']}, "
+              f"mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
         return 1
 
     # Nguồn gốc của mask ĐÃ SINH: lần chạy chỉ đọc cache khai `git_rev` của CHÍNH NÓ còn

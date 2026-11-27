@@ -414,7 +414,7 @@ class TestThuThap:
 
 
 class TestMain:
-    def test_loi_thi_KHONG_ghi_de_manifest_va_artifact(self, tmp_path, monkeypatch):
+    def test_loi_thi_KHONG_ghi_de_manifest_va_artifact(self, tmp_path, monkeypatch, capsys):
         """Lần chạy lỗi không được ghi đè `manifest.jsonl`/artifact của lần chạy tốt trước.
 
         Review 27-11 vòng 2 (P2): manifest được ghi **trước** cổng "không công bố" nên một lần lỗi để lại
@@ -457,6 +457,17 @@ class TestMain:
         assert psm.main() == 1
         assert man.read_text(encoding="utf-8") == '{"cu": 1}\n', "manifest cũ bị ghi đè"
         assert not (tmp_path / "gt_pseudo_metrics.json").exists(), "artifact không được ghi khi có lỗi"
+        # Cổng xét `loi_shape` từ vòng 4 nhưng THÔNG ĐIỆP bỏ sót nó (review vòng 5) ⇒ log ra
+        # "lỗi model 0, lỗi ghi 0" mà không ai hiểu vì sao không công bố.
+        assert "lỗi shape 0" in capsys.readouterr().err, "thông điệp KHÔNG CÔNG BỐ phải in cả lỗi shape"
+
+        # Và khi chính `loi_shape` > 0 thì con số đó phải hiện ra.
+        monkeypatch.setattr(psm, "sinh_mask",
+                            lambda *a, **k: ([], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0,
+                                                  "loi_mask": 0, "loi_shape": 1, "loi_ghi": 0,
+                                                  "ms_moi_mask": None}))
+        assert psm.main() == 1
+        assert "lỗi shape 1" in capsys.readouterr().err, "cổng phải nêu số mask lệch chiều"
 
     def test_ghi_sinh_luc_khi_co_mask_moi(self, tmp_path, monkeypatch):
         """Artifact của lần chỉ đọc cache khai `git_rev` của CHÍNH NÓ (và `so_mask_moi_sinh = 0`) ⇒
@@ -505,3 +516,7 @@ class TestMain:
         art = json.loads((tmp_path / "gt_pseudo_metrics.json").read_text(encoding="utf-8"))
         assert art["phien_ban_sinh"] == dong[0] and art["schema"] == 2
         assert art["loi_shape"] == 0 and "shape_la" in art["qc_dem"], art["qc_dem"]
+        # `phien_ban_sinh: null` là ca "chỉ đọc cache" — phải nói rõ ngay trong artifact, không để
+        # người đọc suy ra là mask sinh ở rev này (review độc lập vòng 5, P2).
+        assert "null" in art["ghi_chu_phien_ban_sinh"]
+        assert "sinh_luc.jsonl" in art["ghi_chu_phien_ban_sinh"], art["ghi_chu_phien_ban_sinh"]

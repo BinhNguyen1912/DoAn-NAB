@@ -192,6 +192,38 @@ File thay đổi:
      lại (chỉ đọc cache) cho `phien_ban_sinh: null`. Nguồn gốc của chúng chỉ còn trong log/commit
      (`127f428`) — **không bịa** dòng provenance cho chúng.
 
+### Vòng review 5 (taskforce `review-vong5`) — P0 = 0, không P1 mới
+
+### ba điều kiện merge, đã làm hết
+
+1. **Thông điệp "KHÔNG CÔNG BỐ" in cả `loi_shape`.** Cổng đã xét `loi_shape` từ vòng 4 nhưng câu
+   báo chỉ in `lỗi model / lỗi đọc frame / lỗi ghi` ⇒ log ra "lỗi model 0, lỗi ghi 0" mà người đọc
+   không hiểu vì sao không công bố. Test `test_loi_thi_KHONG_ghi_de_manifest_va_artifact` nay kiểm
+   cả hai chiều: `loi_shape 0` hiện ra, và ca `loi_shape 1` thì con số đó hiện ra (thêm `capsys`).
+2. **`ghi_chu_phien_ban_sinh` trong artifact** nói rõ `null` = lần chạy không sinh mask mới (chỉ đọc
+   cache hoặc `--limit`) ⇒ không có dòng provenance cho mask cũ, nguồn duy nhất là
+   `data/gt_pseudo/sinh_luc.jsonl`. Không bịa provenance cho 1 251 mask sinh trước `127f428`.
+3. **Ghi vào log:** vân tay (`dau_van_tay`) gồm **mtime của `data/nhan/*.jsonl`** ⇒ chỉ cần **thêm một
+   nhãn** là vân tay đổi và lần chạy sau đòi `--xoa-cache`. Đó là lý do `--xoa-cache` phải là phản xạ
+   có ý thức, không phải bấm cho hết lỗi: bấm là **xoá 1 251 mask đang sửa tay** rồi SAM 2 sinh lại
+   (không tất định).
+
+### đã kiểm, không phải lỗi (theo yêu cầu của vòng 5)
+
+- `grep -n "rmtree\|unlink\|os.remove\|imwrite"` trên `scripts/make_pseudo_masks.py`: chỉ 1 chỗ
+  `shutil.rmtree` (trong `don_cache_neu_can`, có 3 cổng chặn) và 1 chỗ `cv2.imwrite` (ghi qua file
+  tạm `.tmp.png` + `os.replace`, kiểm giá trị trả). `unlink(missing_ok=True)` chỉ xoá file tạm sau
+  khi `imwrite` trả False. Không có đường nào khác xoá/ghi đè.
+
+### P2 còn nợ (không chặn merge ⇒ ticket)
+
+- `loi_shape` **dùng chung cổng** với `loi_mask`: **một** mask lệch chiều chặn công bố **cả lô**.
+  Cùng thiết kế với `loi_ghi`/`loi_doc_frame` (có từ trước), nên giữ nguyên trong PR này; muốn đổi
+  thì phải bàn riêng (ngưỡng "bao nhiêu lỗi thì vẫn công bố" + cách đánh dấu lô thiếu).
+- Vân tay gồm mtime nhãn ⇒ `--xoa-cache` thành phản xạ (xem điều kiện 3). Hướng sửa: bỏ mtime khỏi
+  vân tay, thay bằng **nội dung** `(phien, buoc, bbox_dung)` của các dòng có hộp — nhưng đổi vân tay
+  là xoá 1 251 mask ⇒ để lúc sinh lại mask, đúng như P3 đã hoãn.
+
 ## 📌 Việc cần làm tiếp (Next steps)
 
 - [x] Review độc lập `ab318b1` (AGENTS §9.1): 1 P1 + 6 P2 + 4 P3; P1 và 5 P2 đã sửa ở `537760c`.
@@ -209,6 +241,10 @@ File thay đổi:
 - [x] Sinh lại `data/gt_pseudo_metrics.json` trên rev mới (schema 2; chỉ đọc cache, KHÔNG sinh lại mask):
       `git_rev c8ae393`, `git_dirty_code false`, `qc_dem` đủ 5 khoá (`shape_la 0`), `phien_ban_sinh null`
       (lần chạy không sinh mask mới ⇒ đúng giới hạn đã nêu, không bịa dòng provenance).
+- [x] Vòng review 5: P0 = 0, không P1 mới ⇒ đã làm 3 điều kiện merge (in `loi_shape`, thêm
+      `ghi_chu_phien_ban_sinh`, ghi cảnh báo mtime-nhãn). 40 → 40 test (sửa 2 test sẵn có), lint xanh.
+- [ ] P2 (ticket): `loi_shape` dùng chung cổng "không công bố" với `loi_mask` ⇒ 1 ca lạ chặn cả lô.
+- [ ] P2 (ticket): bỏ mtime nhãn khỏi `dau_van_tay`, dùng nội dung hộp — chỉ làm **cùng lúc** sinh lại mask.
 - [ ] Mở PR `feat/mask-gia-tu-o-nguoi-ve` → `main` (merge commit, CI xanh trước khi merge).
 - [ ] (Tuỳ chọn) xoá `data/gt_pseudo` rồi chạy lại đủ để có `ms/mask` cho cả 1 251 mask trên cây sạch.
 - [ ] Sửa tay 308 mask "nghi" (38 ca `nho` + các ca xem mắt thấy ăn nền) ⇒ ~943 mask "tạm tin".
