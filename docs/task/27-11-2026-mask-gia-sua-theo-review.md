@@ -61,9 +61,30 @@ Commit code `ab318b1` — `scripts/make_pseudo_masks.py`:
     giờ chạy), thêm ca "nhãn cuối bỏ hộp", số học dòng/bước, `don_cache` (từ chối thư mục không phải
     cache, đếm file đã xoá, vân tay không đổi thì không đụng), `imwrite` lỗi, ngưỡng `SAT_MEP`.
 
+**Vòng 3 — sau lượt review cuối trên `537760c`** (commit `b35c7fa`; reviewer bắt 4 mục P2 + các P3 còn
+nợ, mỗi cái ≤ 15 phút nên sửa ngay trong cùng PR):
+
+17. **P2 — `don_cache_neu_can` đếm MỌI entry**, không chỉ thư mục con: `--out docs/task` (chỉ có file)
+    trước đây được đóng dấu vân tay rồi lần sau bị coi là cache để xoá. Nay chỉ đếm PNG trong thư mục
+    con (`so_mask_da_xoa` giữ nghĩa "số PNG đã xoá"), file ở gốc vẫn được giữ.
+18. **P2 — `manifest.jsonl` ghi SAU cổng "không công bố"**: ghi trước thì một lần chạy lỗi để lại
+    manifest rách, và lần `--qc` sau đó in theo bản rách đó.
+19. **P2 — `thu_thap_muc_tieu` đòi `nhan` khác rỗng và `buoc` là int** trước khi ghi `dong_theo_buoc`;
+    dòng nhãn không có `buoc` trước đây bị đếm thành bước 0.
+20. **P2/P3 — PNG ghi ATOMIC** (`<tên>.tmp.png` rồi `os.replace`): Ctrl-C/đĩa đầy giữa đường trước đây
+    để lại PNG cụt mang **đúng** tên cache ⇒ lần sau `imread` đọc nửa ảnh và **không bao giờ** sinh lại.
+21. **P3 — `--qc` dùng `.get`** và in số bản ghi THIẾU `qc` thay vì chết bằng `KeyError` + traceback;
+    `dem_dong` khử trùng theo **bước** (một bước lặp 2 lần làm `trung_lap` phồng); tách
+    `so_buoc_co_hop_hieu_luc` (1 251) khỏi `so_buoc_tung_co_hop` (1 271) — hai đại lượng khác luật, gộp
+    một số là không đọc được cái nào; thêm `ghi_chu_ms_moi_mask` (giữ nguyên tên khoá `ms_moi_mask` để
+    artifact cũ còn so được).
+22. **Test 32 → 36**: ca PNG atomic (không còn rác `.tmp.png`), `--out` chỉ có file bị từ chối,
+    `frame_idx` phải đi qua `label_ui.chi_so_khung` (một định nghĩa duy nhất), manifest không bị ghi đè
+    khi lỗi.
+
 ## 📤 Output / Kết quả
 
-Sinh lại toàn bộ trên **cây sạch** — `data/gt_pseudo_metrics.json` (`git_rev 537760c`,
+Sinh lại toàn bộ trên **cây sạch** — `data/gt_pseudo_metrics.json` (`git_rev b35c7fa`,
 `git_dirty_code = false`, `image_size_hieu_luc = 512` = yêu cầu):
 
 | | 26-11 (`127f428`) | 27-11 (`ab318b1`) |
@@ -87,15 +108,21 @@ phải thời gian sinh mask (artifact có `ghi_chu_giay_tong`).
 
 **Đếm dòng nhãn (kiểm được bằng số học):** 1 490 dòng có `bbox_dung` − **210** dòng bị dòng sau thay thế
 (`so_dong_trung_lap`) − **29** dòng của **20 bước** mà nhãn CUỐI bỏ hộp (`nhan_cuoi_khong_co_hop`) =
-**1 251** mask. `so_o_co_bbox = 1 271` (bước có hộp, sau khi trừ 20 bước bị bỏ), `bo_qua_file = {}`.
+**1 251** mask. `so_buoc_co_hop_hieu_luc = 1 251` và `so_buoc_tung_co_hop = 1 271` (1 271 − 20),
+`bo_qua_file = {}`.
 
-Kiểm tra: `./run lint` **xanh**; `pytest tests/test_make_pseudo_masks.py -q` = **32 passed**.
+Ba rev (`ab318b1` → `537760c` → `b35c7fa`) cho **cùng** bộ số ở bảng trên: mọi sửa của vòng 2/vòng 3 là
+đổi cách ĐẾM và đổi KHOÁ, không đổi mask. Khác duy nhất: `giay_tong` 13,9 → 8,9 → **8,0 s** (vẫn là đọc
+cache, `do_toc_do = false`), và bộ khoá mới (`so_buoc_*`, `ghi_chu_ms_moi_mask`).
+
+Kiểm tra: `./run lint` **xanh**; `pytest tests/test_make_pseudo_masks.py -q` = **36 passed**;
+`./run test` (làn nhanh `-m "not slow"`) = **2 286 passed, 6 deselected** (230 s).
 
 File thay đổi:
-- `scripts/make_pseudo_masks.py` — 2 P1 + 7 P2 (commit `ab318b1`), rồi P1 + 6 P2 của vòng review 2
-  (commit `537760c`).
-- `tests/test_make_pseudo_masks.py` — 19 → 23 → **32** test, sửa 2 ca "test giả".
-- `data/gt_pseudo_metrics.json` — sinh lại trên cây sạch (`537760c`).
+- `scripts/make_pseudo_masks.py` — 2 P1 + 7 P2 (`ab318b1`), P1 + 6 P2 của vòng review 2 (`537760c`),
+  rồi 4 P2 + 4 P3 của vòng review 3 (`b35c7fa`).
+- `tests/test_make_pseudo_masks.py` — 19 → 23 → 32 → **36** test, sửa 2 ca "test giả".
+- `data/gt_pseudo_metrics.json` — sinh lại trên cây sạch (`b35c7fa`).
 - `docs/task/27-11-2026-mask-gia-sua-theo-review.md` — log này.
 
 ## 🐞 Vấn đề gặp phải & cách xử lý
@@ -122,17 +149,23 @@ File thay đổi:
    210 trùng lặp / 29 dòng của 20 bước bị nhãn cuối bỏ hộp — khớp số trong artifact mới.
 6. **Log 26-11 giữ nguyên** (AGENTS §2.3: không sửa log ngày cũ). Bảng số của ngày đó là của artifact
    rev `127f428` (`cham_bien 337`, `nghi 369`) — khác hôm nay vì **đổi định nghĩa** `cham_bien` (từng
-   phía + ngưỡng 2 px), không phải mask tốt lên. Đọc số hiện hành phải lấy artifact `537760c`.
+   phía + ngưỡng 2 px), không phải mask tốt lên. Đọc số hiện hành phải lấy artifact `b35c7fa`.
+7. **Ba lượt review độc lập trên nhánh này, không lượt nào có P0.** Lượt 26-11 → 2 P1 + 7 P2 (sửa ở
+   `ab318b1`); lượt 27-11 trên `ab318b1` → 1 P1 + 6 P2 (sửa ở `537760c`); lượt cuối trên `537760c` → 4 mục
+   P2 + các P3 còn nợ (sửa ở `b35c7fa`). Toàn bộ P1/P2 đã sửa; còn nợ 2 P3 ghi ở Next steps.
 
 ## 📌 Việc cần làm tiếp (Next steps)
 
 - [x] Review độc lập `ab318b1` (AGENTS §9.1): 1 P1 + 6 P2 + 4 P3; P1 và 5 P2 đã sửa ở `537760c`.
-- [ ] **Review vòng 2** cho `537760c` (phần vừa sửa) trước khi mở PR.
-- [ ] P3 còn nợ (review 27-11, chưa sửa — ghi để không im lặng):
+- [x] **Lượt review cuối** cho `537760c`: 4 mục P2 + các P3 còn nợ, đã sửa hết ở `b35c7fa`.
+- [ ] P3 còn nợ (review 27-11 **vòng 3**, chưa sửa — ghi để không im lặng):
       `dau_van_tay` chưa gồm **phiên bản code** (`src/tracker_engine.py`, chính script) và **nội dung**
       checkpoint (chỉ đường dẫn), chưa gồm `data/<phiên>_web.mp4` (đường fallback của `_mo_video`);
       `qc()` chưa phòng thủ mask shape `(0,0)`/`()` (hiện engine luôn trả `(H,W)` bool nên chưa nổ).
-- [ ] Cài đủ `requirements.txt` vào `.venv` WSL để làn nhanh `./run test` xanh được trên máy này.
+- [x] Làn nhanh xanh **trong env `samurai`** (conda): `./run lint` + `./run test` = 2 286 passed /
+      6 deselected (230 s). `.venv` của WSL vẫn thiếu `fastapi/uvicorn/httpx/pydantic` ⇒ vẫn phải chạy
+      qua `/home/msi/miniconda3/envs/samurai/bin/python`.
+- [ ] Mở PR `feat/mask-gia-tu-o-nguoi-ve` → `main` (merge commit, CI xanh trước khi merge).
 - [ ] (Tuỳ chọn) xoá `data/gt_pseudo` rồi chạy lại đủ để có `ms/mask` cho cả 1 251 mask trên cây sạch.
 - [ ] Sửa tay 308 mask "nghi" (38 ca `nho` + các ca xem mắt thấy ăn nền) ⇒ ~943 mask "tạm tin".
 

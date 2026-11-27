@@ -1,9 +1,9 @@
 {
  "schema": 1,
- "do_luc": "2026-11-27T02:34:56+0700",
+ "do_luc": "2026-11-27T07:44:32+0700",
  "lenh": "scripts/make_pseudo_masks.py --image-size 512",
- "git_rev": "537760c",
- "git_dirty": true,
+ "git_rev": "b35c7fa",
+ "git_dirty": false,
  "git_dirty_code": false,
  "image_size_yeu_cau": 512,
  "image_size_hieu_luc": 512,
@@ -16,6 +16,7 @@
  "loi_mask": 0,
  "loi_ghi": 0,
  "ms_moi_mask": null,
+ "ghi_chu_ms_moi_mask": "đo từ ngay trước `engine.start()` tới sau khi ghi PNG + qc; KHÔNG gồm đọc frame/seek và không gồm lần chạy đọc cache ⇒ đọc kèm `do_toc_do`",
  "do_toc_do": false,
  "qc_dem": {
   "rong": 0,
@@ -34,7 +35,7 @@
  },
  "so_frame_khac_nhau": 1018,
  "so_phien": 30,
- "giay_tong": 8.9,
+ "giay_tong": 8.0,
  "ghi_chu_giay_tong": "gồm cả thời gian đọc cache; khi `do_toc_do` false thì đây KHÔNG phải thời gian sinh mask (đừng lấy giay_tong / so_mask ra làm ms/mask)",
  "dau_van_tay": "9f88b1a54038c9bb",
  "so_mask_da_xoa": 0,
@@ -43,7 +44,8 @@
  "bo_qua_buoc": {
   "nhan_cuoi_khong_co_hop": 20
  },
- "so_o_co_bbox": 1271,
+ "so_buoc_co_hop_hieu_luc": 1251,
+ "so_buoc_tung_co_hop": 1271,
  "so_dong_co_bbox_tho": 1490,
  "so_dong_trung_lap": 210,
  "so_dong_cua_buoc_bi_bo": 29,
