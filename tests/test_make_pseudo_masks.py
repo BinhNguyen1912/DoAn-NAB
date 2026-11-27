@@ -164,6 +164,44 @@ class TestSinhMask:
         assert dem["loi_ghi"] == 1 and dem["moi"] == 0, dem
         assert ban_ghi == [], "không được công bố mask chưa ghi được ra đĩa"
 
+    def test_ghi_PNG_qua_file_tam_roi_doi_ten(self, tmp_path, monkeypatch):
+        """Ghi thẳng vào TÊN CACHE ⇒ Ctrl-C/đĩa đầy để lại ảnh cụt, lần sau `imread` đọc nửa ảnh đó.
+
+        Review 27-11 vòng 2 (P3): phải ghi `.tmp.png` rồi `os.replace`, và không để rác `.tmp.png`.
+        """
+        rec = {"phien": "p", "buoc": 0, "frame_idx": 0, "box": [10, 10, 50, 40],
+               "nhan": "sai", "video_rong": 64, "video_cao": 48, "fps": 10.0}
+
+        class CapGia:
+            def set(self, *a):
+                return True
+            def get(self, *a):
+                return 0
+            def read(self):
+                return True, np.zeros((48, 64, 3), np.uint8)
+
+        class EngineOk:
+            def start(self, *a, **k):
+                m = np.zeros((48, 64), bool)
+                m[10:40, 10:50] = True
+                return type("KQ", (), {"mask": m})()
+
+        monkeypatch.setattr(psm.L, "_mo_video", lambda ten: (CapGia(), 10.0, 20, 64, 48))
+        monkeypatch.setattr(psm.L, "_CAP_LOCK", __import__("contextlib").nullcontext())
+        ten_da_ghi = []
+        imwrite_that = psm.cv2.imwrite
+
+        def imwrite_theo_doi(p, m):
+            ten_da_ghi.append(str(p))
+            return imwrite_that(p, m)
+
+        monkeypatch.setattr(psm.cv2, "imwrite", imwrite_theo_doi)
+        ban_ghi, dem = psm.sinh_mask(EngineOk(), [rec], tmp_path, ghi_de=True)
+        assert dem["moi"] == 1 and dem["loi_ghi"] == 0, dem
+        assert ten_da_ghi and ten_da_ghi[0].endswith(".tmp.png"), ten_da_ghi
+        assert ban_ghi[0]["mask"].endswith(".png") and not ban_ghi[0]["mask"].endswith(".tmp.png")
+        assert list(tmp_path.rglob("*.tmp.png")) == [], "còn rác .tmp.png ⇒ cache sẽ không bao giờ khớp"
+
     def test_model_loi_khong_lam_chet_ca_lo(self, tmp_path, monkeypatch):
         """Một frame lỗi phải được ĐẾM vào `loi_mask` và bỏ qua, không ném ra ngoài.
 
@@ -234,6 +272,17 @@ class TestDonCache:
         assert psm.don_cache_neu_can(tmp_path / "moi", "v1") == 0
         assert (tmp_path / "moi" / ".dau_van_tay").read_text() == "v1"
 
+    def test_tu_choi_thu_muc_chi_co_FILE(self, tmp_path):
+        """`--out docs` (chỉ có file, không thư mục con) từng được nhận rồi bị đóng dấu là cache.
+
+        Review 27-11 vòng 2 (P2): guard cũ chỉ đếm thư mục con ⇒ lần sau thư mục lạ đó bị coi là cache
+        để xoá. Nay đếm **mọi** entry.
+        """
+        (tmp_path / "a.jsonl").write_text("{}", encoding="utf-8")
+        with pytest.raises(ValueError):
+            psm.don_cache_neu_can(tmp_path, "moi")
+        assert not (tmp_path / ".dau_van_tay").exists(), "không được đóng dấu cache lên thư mục lạ"
+
 
 class TestThuThap:
     def _dat(self, tmp_path, monkeypatch, dong: list[dict], co_csv=True, co_video=True):
@@ -279,6 +328,17 @@ class TestThuThap:
         assert viec == [] and bo_qua["buoc"].get("nhan_cuoi_khong_co_hop") == 1, bo_qua
         assert dong == {"tho": 1, "trung_lap": 0, "cua_buoc_bi_bo": 1}, dong
 
+    def test_frame_idx_di_qua_label_ui_chu_khong_tu_tinh(self, tmp_path, monkeypatch):
+        """Ánh xạ bước→frame phải dùng CHUNG `label_ui.chi_so_khung` (một định nghĩa, AGENTS §6).
+
+        Review 27-11 vòng 2 (P3): nếu script tự tính frame thì nhãn rơi sang frame khác mà không test
+        nào đỏ (bài học "hai định nghĩa cùng đại lượng"). Ca này thay hàm gốc ⇒ `frame_idx` phải đổi theo.
+        """
+        self._dat(tmp_path, monkeypatch, [{"buoc": 0, "nhan": "sai", "bbox_dung": [1, 1, 9, 9]}])
+        monkeypatch.setattr(psm.L, "chi_so_khung", lambda phien, buoc: (2, None))
+        viec, _, _ = psm.thu_thap_muc_tieu()
+        assert len(viec) == 1 and viec[0]["frame_idx"] == 2, viec
+
     def test_so_hoc_dong_va_buoc(self, tmp_path, monkeypatch):
         """`tho − trung_lap − cua_buoc_bi_bo` phải bằng số BƯỚC sinh được ("1 490 dòng → 1 251 mask")."""
         self._dat(tmp_path, monkeypatch, [
@@ -289,3 +349,48 @@ class TestThuThap:
         viec, _, dong = psm.thu_thap_muc_tieu()
         assert len(viec) == 2, viec
         assert dong == {"tho": 3, "trung_lap": 1, "cua_buoc_bi_bo": 0}, dong
+
+
+class TestMain:
+    def test_loi_thi_KHONG_ghi_de_manifest_va_artifact(self, tmp_path, monkeypatch):
+        """Lần chạy lỗi không được ghi đè `manifest.jsonl`/artifact của lần chạy tốt trước.
+
+        Review 27-11 vòng 2 (P2): manifest được ghi **trước** cổng "không công bố" nên một lần lỗi để lại
+        manifest rách, và `--qc` sau đó in theo bản rách.
+        """
+        import types
+
+        ck, cfg = "ck.pt", "cfg.yaml"
+        nhan = tmp_path / "nhan"
+        nhan.mkdir()
+        monkeypatch.setattr(psm, "NHAN", nhan)
+        monkeypatch.setattr(psm, "DATA", tmp_path)
+        out = tmp_path / "gt_pseudo"
+        out.mkdir()
+        man = out / "manifest.jsonl"
+        man.write_text('{"cu": 1}\n', encoding="utf-8")
+        # vân tay KHỚP ⇒ `don_cache_neu_can` không coi thư mục có sẵn là thư mục lạ
+        (out / ".dau_van_tay").write_text(psm.dau_van_tay(512, ck, cfg), encoding="utf-8")
+
+        class EngineGia:
+            image_size_hieu_luc = 512
+
+            @staticmethod
+            def build_default(**k):
+                return EngineGia()
+
+        gia = types.ModuleType("src.tracker_engine")
+        gia.TrackerEngine = EngineGia
+        monkeypatch.setitem(sys.modules, "src.tracker_engine", gia)
+        monkeypatch.setattr(psm, "thu_thap_muc_tieu",
+                            lambda: ([{"phien": "p", "buoc": 0, "frame_idx": 0, "box": [1, 1, 9, 9]}],
+                                     {"file": {}, "buoc": {}}, {"tho": 1, "trung_lap": 0, "cua_buoc_bi_bo": 0}))
+        monkeypatch.setattr(psm, "sinh_mask",
+                            lambda *a, **k: ([], {"co_cache": 0, "moi": 0, "loi_doc_frame": 0,
+                                                  "loi_mask": 0, "loi_ghi": 1, "ms_moi_mask": None}))
+        monkeypatch.setattr(sys, "argv", ["make_pseudo_masks.py", "--out", str(out),
+                                          "--checkpoint", ck, "--model-cfg", cfg])
+
+        assert psm.main() == 1
+        assert man.read_text(encoding="utf-8") == '{"cu": 1}\n', "manifest cũ bị ghi đè"
+        assert not (tmp_path / "gt_pseudo_metrics.json").exists(), "artifact không được ghi khi có lỗi"

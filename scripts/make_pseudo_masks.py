@@ -102,15 +102,17 @@ def don_cache_neu_can(out_dir: pathlib.Path, van_tay: str) -> int:
     if cu == van_tay:
         return 0
     con = list(out_dir.iterdir()) if out_dir.is_dir() else []
-    thu_muc_con = [c for c in con if c.is_dir()]
-    if thu_muc_con and not da_co_van_tay:
+    # Đếm **mọi** entry, không chỉ thư mục con: bản trước chỉ chặn khi có thư mục con ⇒ `--out docs/task`
+    # (chỉ có file) được chấp nhận, bị đóng dấu vân tay, rồi lần sau bị coi là cache để xoá (review
+    # 27-11 vòng 2, P2).
+    if con and not da_co_van_tay:
         raise ValueError(
-            f"{out_dir} có {len(thu_muc_con)} thư mục con nhưng KHÔNG có `.dau_van_tay` ⇒ không dám coi "
-            f"là thư mục cache để xoá ({', '.join(c.name for c in thu_muc_con[:3])}…). Dùng `--out` mới "
-            f"hoặc xoá tay.")
-    so_file = sum(1 for d in thu_muc_con for _ in d.rglob("*.png"))
-    for d in thu_muc_con:                     # giữ file ở gốc (manifest/artifact không nằm ở đây)
-        shutil.rmtree(d, ignore_errors=True)
+            f"{out_dir} có {len(con)} entry nhưng KHÔNG có `.dau_van_tay` ⇒ không dám coi là thư mục "
+            f"cache để xoá ({', '.join(c.name for c in con[:3])}…). Dùng `--out` mới hoặc xoá tay.")
+    so_file = sum(1 for d in con if d.is_dir() for _ in d.rglob("*.png"))   # chỉ đếm PNG, đếm trước khi xoá
+    for d in con:                             # giữ file ở gốc (manifest/artifact không nằm ở đây)
+        if d.is_dir():
+            shutil.rmtree(d, ignore_errors=True)
     out_dir.mkdir(parents=True, exist_ok=True)
     tep.write_text(van_tay, encoding="utf-8")
     return so_file
@@ -180,8 +182,8 @@ def thu_thap_muc_tieu() -> tuple[list[dict], dict, dict]:
                 r = json.loads(dong)
             except ValueError:
                 continue
-            if isinstance(r, dict) and r.get("bbox_dung"):
-                k = (phien, int(r.get("buoc") or 0))
+            if isinstance(r, dict) and r.get("bbox_dung") and r.get("nhan") and isinstance(r.get("buoc"), int):
+                k = (phien, r["buoc"])
                 dong_theo_buoc[k] = dong_theo_buoc.get(k, 0) + 1
         csv_p = DATA / f"{phien}_metrics.csv"
         if not csv_p.is_file():
@@ -229,8 +231,11 @@ def dem_dong(dong_theo_buoc: dict[tuple[str, int], int], viec: list[dict]) -> di
     cua_buoc_bi_bo == số bước làm được` ⇒ câu "1 490 ô → 1 251 mask" kiểm được bằng số học.
     """
     tho = sum(dong_theo_buoc.values())
-    giu = sum(dong_theo_buoc.get((v["phien"], v["buoc"]), 0) for v in viec)
-    return {"tho": tho, "trung_lap": giu - len(viec), "cua_buoc_bi_bo": tho - giu}
+    # Khử trùng theo bước: một bước xuất hiện 2 lần trong `viec` sẽ làm `trung_lap` phồng (review 27-11
+    # vòng 2, P3) — hôm nay không xảy ra nhưng chặn bằng code rẻ hơn là tin vào đường đi.
+    khoa = {(v["phien"], v["buoc"]) for v in viec}
+    giu = sum(dong_theo_buoc.get(k, 0) for k in khoa)
+    return {"tho": tho, "trung_lap": giu - len(khoa), "cua_buoc_bi_bo": tho - giu}
 
 
 def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> tuple[list, dict]:
@@ -284,11 +289,17 @@ def sinh_mask(engine, viec: list[dict], out_dir: pathlib.Path, ghi_de: bool) -> 
             thu_muc.mkdir(parents=True, exist_ok=True)
             # `cv2.imwrite` trả False khi đĩa đầy/quyền hỏng; bỏ qua giá trị trả thì artifact công bố
             # `so_mask` > số PNG thật trên đĩa mà `loi_* = 0` (review 27-11, P2).
-            if not cv2.imwrite(str(dich), (mask.astype(np.uint8) * 255)):
+            # Ghi qua file tạm rồi `os.replace`: Ctrl-C/đĩa đầy giữa đường không để lại PNG cụt mang
+            # ĐÚNG tên cache (lần sau sẽ đọc nửa ảnh và không bao giờ sinh lại). Đuôi phải là `.png`
+            # để `cv2.imwrite` chọn codec (review 27-11 vòng 2, P3).
+            tam = dich.with_name(dich.stem + ".tmp.png")
+            if not cv2.imwrite(str(tam), (mask.astype(np.uint8) * 255)):
                 dem["loi_ghi"] += 1
+                tam.unlink(missing_ok=True)
                 if dem["loi_ghi"] <= 3:
-                    print(f"  LỖI ghi {dich}", file=sys.stderr)
+                    print(f"  LỖI ghi {tam}", file=sys.stderr)
                 continue
+            os.replace(tam, dich)
             rec["mask"] = str(dich.relative_to(out_dir))
         tong_ms += (time.perf_counter() - t0) * 1000
         dem["moi"] += 1
@@ -327,8 +338,12 @@ def main() -> int:
             print(f"chưa có {man} — chạy không kèm --qc trước", file=sys.stderr)
             return 1
         recs = [json.loads(x) for x in man.read_text(encoding="utf-8").splitlines() if x.strip()]
-        nghi = [r for r in recs if r["qc"]["nghi"]]
-        print(f"{len(recs)} mask · {len(nghi)} cần xem lại")
+        # `.get` thay vì chỉ mục: manifest do bản CŨ (hoặc dòng rách) không có `qc` thì `--qc` phải
+        # NÓI RA số bản ghi thiếu, không chết bằng `KeyError` + traceback (review 27-11 vòng 2, P3).
+        thieu_qc = [r for r in recs if not isinstance(r.get("qc"), dict)]
+        nghi = [r for r in recs if isinstance(r.get("qc"), dict) and r["qc"].get("nghi")]
+        print(f"{len(recs)} mask · {len(nghi)} cần xem lại"
+              + (f" · {len(thieu_qc)} bản ghi KHÔNG có qc (manifest cũ?)" if thieu_qc else ""))
         for r in nghi[:40]:
             print(f"  {r['phien']}#{r['buoc']:3d} {r['qc']}")
         return 0
@@ -363,9 +378,6 @@ def main() -> int:
     ban_ghi, dem = sinh_mask(engine, viec, out_dir, ghi_de=not args.limit)
     giay_tong = round(time.perf_counter() - t_lo, 1)
     man = out_dir / "manifest.jsonl"
-    if not args.limit:
-        man.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in ban_ghi),
-                       encoding="utf-8")
 
     # P2-6: phát ĐỦ 4 khoá (0 tường minh) — nếu chỉ phát cờ > 0 thì "0 rỗng / 0 tràn" trong log là suy
     # từ code, không đọc được từ artifact (bẫy "0/None ≠ đã đo").
@@ -399,6 +411,8 @@ def main() -> int:
         "loi_mask": dem["loi_mask"],
         "loi_ghi": dem["loi_ghi"],
         "ms_moi_mask": dem["ms_moi_mask"],
+        "ghi_chu_ms_moi_mask": ("đo từ ngay trước `engine.start()` tới sau khi ghi PNG + qc; KHÔNG gồm "
+                               "đọc frame/seek và không gồm lần chạy đọc cache ⇒ đọc kèm `do_toc_do`"),
         "do_toc_do": dem["moi"] > 0,
         "qc_dem": dem_co,
         "so_mask_nhieu_co": so_nhieu_co,
@@ -414,7 +428,9 @@ def main() -> int:
         "da_xoa_cache_cu": so_da_xoa > 0,
         "bo_qua_file": bo_qua["file"],
         "bo_qua_buoc": bo_qua["buoc"],
-        "so_o_co_bbox": len(viec) + sum(bo_qua["buoc"].values()),
+        # Hai đại lượng KHÁC luật, đừng gộp thành một số (review 27-11 vòng 2, P3).
+        "so_buoc_co_hop_hieu_luc": len(viec),
+        "so_buoc_tung_co_hop": len(viec) + sum(bo_qua["buoc"].values()),
         "so_dong_co_bbox_tho": dem_dong_nhan["tho"],
         "so_dong_trung_lap": dem_dong_nhan["trung_lap"],
         "so_dong_cua_buoc_bi_bo": dem_dong_nhan["cua_buoc_bi_bo"],
@@ -430,11 +446,17 @@ def main() -> int:
             "biên khung mà hộp không chạm) — phải xem bằng mắt trước khi coi là GT."),
     }
     # P2-9: lỗi model / đọc frame / GHI file ⇒ KHÔNG công bố, và KHÔNG ghi đè manifest + artifact đã có.
+    # `manifest.jsonl` phải nằm DƯỚI cổng này: ghi trước thì một lần chạy lỗi để lại manifest rách và
+    # `--qc` sau đó in theo bản rách (review 27-11 vòng 2, P2).
     if (dem["loi_mask"] or dem["loi_doc_frame"] or dem["loi_ghi"]
             or len(ban_ghi) < len(viec)):
         print(f"KHÔNG CÔNG BỐ — lỗi model {dem['loi_mask']}, lỗi đọc frame {dem['loi_doc_frame']}, "
               f"lỗi ghi {dem['loi_ghi']}, mask {len(ban_ghi)}/{len(viec)}", file=sys.stderr)
         return 1
+
+    if not args.limit:
+        man.write_text("".join(json.dumps(r, ensure_ascii=False) + "\n" for r in ban_ghi),
+                       encoding="utf-8")
 
     if not args.limit:
         p = pathlib.Path(args.metrics) if args.metrics else out_dir.with_name(out_dir.name + "_metrics.json")
