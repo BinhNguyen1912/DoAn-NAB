@@ -206,7 +206,9 @@ File thay đổi:
       6 deselected (230 s). `.venv` của WSL vẫn thiếu `fastapi/uvicorn/httpx/pydantic` ⇒ vẫn phải chạy
       qua `/home/msi/miniconda3/envs/samurai/bin/python`.
 - [x] Vòng 4 review (2 P1 + 2 P2) đã sửa + 4 test mới (36 → 40).
-- [ ] Sinh lại `data/gt_pseudo_metrics.json` trên rev mới (schema 2; chỉ đọc cache, KHÔNG sinh lại mask).
+- [x] Sinh lại `data/gt_pseudo_metrics.json` trên rev mới (schema 2; chỉ đọc cache, KHÔNG sinh lại mask):
+      `git_rev c8ae393`, `git_dirty_code false`, `qc_dem` đủ 5 khoá (`shape_la 0`), `phien_ban_sinh null`
+      (lần chạy không sinh mask mới ⇒ đúng giới hạn đã nêu, không bịa dòng provenance).
 - [ ] Mở PR `feat/mask-gia-tu-o-nguoi-ve` → `main` (merge commit, CI xanh trước khi merge).
 - [ ] (Tuỳ chọn) xoá `data/gt_pseudo` rồi chạy lại đủ để có `ms/mask` cho cả 1 251 mask trên cây sạch.
 - [ ] Sửa tay 308 mask "nghi" (38 ca `nho` + các ca xem mắt thấy ăn nền) ⇒ ~943 mask "tạm tin".
