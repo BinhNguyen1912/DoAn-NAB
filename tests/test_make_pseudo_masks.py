@@ -114,6 +114,14 @@ class TestQc:
         assert not psm.qc(m, [2, 10, 40, 40], 64, 48)["cham_bien"], "hộp cách mép 2 px ⇒ coi là hộp sát"
         assert psm.qc(m, [3, 10, 40, 40], 64, 48)["cham_bien"], "hộp cách mép 3 px ⇒ phải báo"
 
+    def test_mask_shape_la_khong_lam_chet_ca_lo(self):
+        """Mask lệch chiều từng làm `mask[0, :]` ném IndexError ⇒ mất cả lô 1 251 mask (review 27-11, P3)."""
+        for m in (np.zeros((0, 0), bool), np.zeros((), bool), np.zeros(5, bool), np.zeros((1, 4, 4), bool)):
+            q = psm.qc(m, [10, 10, 50, 40], 64, 48)
+            assert q["shape_la"] and q["nghi"], m.shape
+            assert not q["cham_bien"], m.shape
+            assert q["rong"] == (int(m.sum()) == 0), m.shape
+
 
 class TestSinhMask:
     def test_dung_cache_khong_goi_model_lai(self, tmp_path, monkeypatch):

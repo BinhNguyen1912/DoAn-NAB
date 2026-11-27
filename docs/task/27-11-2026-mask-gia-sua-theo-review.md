@@ -120,8 +120,8 @@ Kiểm tra: `./run lint` **xanh**; `pytest tests/test_make_pseudo_masks.py -q` =
 
 File thay đổi:
 - `scripts/make_pseudo_masks.py` — 2 P1 + 7 P2 (`ab318b1`), P1 + 6 P2 của vòng review 2 (`537760c`),
-  rồi 4 P2 + 4 P3 của vòng review 3 (`b35c7fa`).
-- `tests/test_make_pseudo_masks.py` — 19 → 23 → 32 → **36** test, sửa 2 ca "test giả".
+  rồi 4 P2 + 4 P3 của vòng review 3 (`b35c7fa`), rồi P3 cuối: cờ `shape_la` trong `qc()`.
+- `tests/test_make_pseudo_masks.py` — 19 → 23 → 32 → 36 → **37** test (thêm ca mask lệch chiều), sửa 2 ca "test giả".
 - `data/gt_pseudo_metrics.json` — sinh lại trên cây sạch (`b35c7fa`).
 - `docs/task/27-11-2026-mask-gia-sua-theo-review.md` — log này.
 
@@ -154,14 +154,26 @@ File thay đổi:
    `ab318b1`); lượt 27-11 trên `ab318b1` → 1 P1 + 6 P2 (sửa ở `537760c`); lượt cuối trên `537760c` → 4 mục
    P2 + các P3 còn nợ (sửa ở `b35c7fa`). Toàn bộ P1/P2 đã sửa; còn nợ 2 P3 ghi ở Next steps.
 
+8. **Vòng 4 (sau khi đã merge-ready): sửa 1 P3, CỐ Ý hoãn 1 P3.** `qc()` thêm cờ `shape_la`
+   (`mask.ndim != 2 or mask.size == 0`) và trả sớm, bỏ kiểm biên — trước đó `mask[0, :]` ném
+   `IndexError` giữa lô, tức một ca lạ làm mất cả lượt sinh. Số artifact **không đổi** vì mọi mask
+   hiện có đều `(H,W)`.
+   Còn `dau_van_tay` **không** sửa lúc này, và đây là quyết định có lý do đo được: đổi công thức vân tay
+   ⇒ `don_cache_neu_can` xoá **toàn bộ 1 251 PNG** trong `data/gt_pseudo/` — đúng thư mục đang là đích
+   sửa tay của 308 ca "nghi" — rồi SAM 2 sinh lại **không tất định** (AGENTS §6) nên `rong/nho/tran/
+   cham_bien` của artifact sẽ đổi mà **không phải mask tốt lên**. Việc này để dành đúng lúc sinh lại
+   mask (khi đó cache vô hiệu là ý định, không phải tai nạn).
+
 ## 📌 Việc cần làm tiếp (Next steps)
 
 - [x] Review độc lập `ab318b1` (AGENTS §9.1): 1 P1 + 6 P2 + 4 P3; P1 và 5 P2 đã sửa ở `537760c`.
 - [x] **Lượt review cuối** cho `537760c`: 4 mục P2 + các P3 còn nợ, đã sửa hết ở `b35c7fa`.
-- [ ] P3 còn nợ (review 27-11 **vòng 3**, chưa sửa — ghi để không im lặng):
-      `dau_van_tay` chưa gồm **phiên bản code** (`src/tracker_engine.py`, chính script) và **nội dung**
-      checkpoint (chỉ đường dẫn), chưa gồm `data/<phiên>_web.mp4` (đường fallback của `_mo_video`);
-      `qc()` chưa phòng thủ mask shape `(0,0)`/`()` (hiện engine luôn trả `(H,W)` bool nên chưa nổ).
+- [x] P3 `qc()` phòng thủ mask shape lệch chiều: cờ `shape_la` + test `test_mask_shape_la_khong_lam_chet_ca_lo`
+      (4 shape: `(0,0)`, `()`, `(5,)`, `(1,4,4)`). Số artifact **không đổi** (mọi mask thật đều `(H,W)`).
+- [ ] P3 **cố ý hoãn** — `dau_van_tay` chưa gồm **phiên bản code** (`src/tracker_engine.py`, chính script)
+      và **nội dung** checkpoint, chưa gồm `data/<phiên>_web.mp4` (fallback của `_mo_video`).
+      **Vì sao hoãn:** đổi vân tay ⇒ xoá sạch 1 251 mask đang sửa tay + SAM 2 sinh lại không tất định
+      ⇒ số trong artifact đổi mà không phải mask tốt lên. Sửa vào lúc **sinh lại mask**, không trước đó.
 - [x] Làn nhanh xanh **trong env `samurai`** (conda): `./run lint` + `./run test` = 2 286 passed /
       6 deselected (230 s). `.venv` của WSL vẫn thiếu `fastapi/uvicorn/httpx/pydantic` ⇒ vẫn phải chạy
       qua `/home/msi/miniconda3/envs/samurai/bin/python`.

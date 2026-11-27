@@ -18,6 +18,7 @@ QC (để biết mask nào cần xem lại bằng mắt)
 - `nho`: diện tích mask < 20 % diện tích hộp (SAM 2 bắt được mẩu).
 - `tran`: diện tích mask > 150 % diện tích hộp (mask "ăn" nền).
 - `cham_bien`: mask chạm mép khung trong khi hộp KHÔNG chạm mép.
+- `shape_la`: mask trả về không phải 2 chiều / rỗng chiều (ca lạ ⇒ tính là nghi, bỏ kiểm biên).
 Mỗi cờ đều ghi vào manifest + đếm trong artifact (AGENTS §6: "0/None ≠ đã đo").
 
     python scripts/make_pseudo_masks.py --limit 8            # thử 8 ô, đo ms/mask
@@ -138,12 +139,21 @@ def qc(mask: np.ndarray, box: list[int], rong: int, cao: int) -> dict:
     phóng to rồi làm tròn về pixel video nên hộp "chạm" mép thường lệch 1–2 px — ngưỡng 1 px báo oan 63
     ca trên 1 251 mask, đo 27-11).
     """
+    mask = np.asarray(mask)
     dien_tich = int(mask.sum())
     x1, y1, x2, y2 = box
     d_h = max(1, (x2 - x1) * (y2 - y1))
     ty = dien_tich / d_h
     co = {"rong": dien_tich == 0, "nho": 0 < ty < NHO, "tran": ty > TRAN,
           "ty_le_dien_tich": round(ty, 3), "dien_tich": dien_tich, "dien_tich_hop": d_h}
+    # Mask 2 chiều là hợp đồng của model và của `imread`, NHƯNG shape rỗng/lệch chiều sẽ làm
+    # `mask[0, :]` ném IndexError giữa lô (mất cả 1 251 mask vì một ca lạ). Báo cờ riêng thay vì
+    # đoán; cờ này cũng vào `nghi` để ca lạ không lọt khỏi danh sách cần xem lại (review 27-11, P3).
+    co["shape_la"] = bool(mask.ndim != 2 or mask.size == 0)
+    if co["shape_la"]:
+        co["cham_bien"] = False
+        co["nghi"] = True
+        return co
     # So theo TỪNG PHÍA: mask chạm mép nào thì chỉ bỏ qua nếu mép HỘP tương ứng cũng sát mép đó.
     # Bản đầu dùng OR 4 phía ⇒ hộp chạm đáy (y2 = cao-1) làm BỎ SÓT mask tràn sang trái/phải/trên
     # (review độc lập 26-11, P2).
