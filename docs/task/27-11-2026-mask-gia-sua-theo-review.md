@@ -241,6 +241,10 @@ File thay đổi:
 - [x] Sinh lại `data/gt_pseudo_metrics.json` trên rev mới (schema 2; chỉ đọc cache, KHÔNG sinh lại mask):
       `git_rev c8ae393`, `git_dirty_code false`, `qc_dem` đủ 5 khoá (`shape_la 0`), `phien_ban_sinh null`
       (lần chạy không sinh mask mới ⇒ đúng giới hạn đã nêu, không bịa dòng provenance).
+- [x] Sinh lại `data/gt_pseudo_metrics.json` **sau** 3 sửa của vòng 5 (chỉ đọc cache): `git_rev e47c7d0`,
+      `git_dirty_code false`, `so_mask 1251`, `so_mask_moi_sinh 0`, `co_cache 1251`, `qc_dem` y nguyên
+      (0/38/0/274/0), và có `ghi_chu_phien_ban_sinh`. Diff chỉ 4 dòng: `do_luc`, `git_rev`, `giay_tong`,
+      key mới ⇒ chứng minh đây là lần đọc cache, không sinh lại mask.
 - [x] Vòng review 5: P0 = 0, không P1 mới ⇒ đã làm 3 điều kiện merge (in `loi_shape`, thêm
       `ghi_chu_phien_ban_sinh`, ghi cảnh báo mtime-nhãn). 40 → 40 test (sửa 2 test sẵn có), lint xanh.
 - [ ] P2 (ticket): `loi_shape` dùng chung cổng "không công bố" với `loi_mask` ⇒ 1 ca lạ chặn cả lô.
